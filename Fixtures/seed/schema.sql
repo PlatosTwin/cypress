@@ -33,11 +33,15 @@
 PRAGMA foreign_keys = ON;
 
 -- ---------------------------------------------------------------- species --
--- All content columns below (family, leaf_retention, id_tips, seasonal,
--- care_notes, curated) are DELIBERATELY EMPTY in the city import. They are the
--- target of the authored species pipeline in BUILD-PLAN section 8. The types
--- and constraints are declared here so that pipeline and the Swift data layer
--- have a fixed contract to write against.
+-- The city import supplies only the two names. Every other content column
+-- (family, leaf_retention, id_tips, seasonal, care_notes, curated) is filled
+-- from Fixtures/species/*.yaml, the authored species pipeline of BUILD-PLAN
+-- section 8, and is NULL or empty wherever no source could be found.
+--
+-- leaf_retention in particular is null for the species whose habit no
+-- authoritative source states. That is a real state, not a gap to be papered
+-- over with a default: unknown renders no phenology chip and no autumn colour
+-- anywhere in the app (ERRATA E9).
 CREATE TABLE species (
     id              INTEGER PRIMARY KEY,
     uuid            TEXT NOT NULL UNIQUE,       -- stable external identity
@@ -189,7 +193,13 @@ CREATE TABLE species_map (
     confidence      REAL NOT NULL,
     is_stub         INTEGER NOT NULL,      -- 1 = fell through to the stub path
     is_placeholder  INTEGER NOT NULL,      -- 1 = vacant-site placeholder, no species
-    tree_count      INTEGER NOT NULL
+    -- 1 = the string names no taxon ("Shrub", "Privet", "To Be Determine").
+    -- A tree stands at the site, so it is NOT a placeholder and its status is
+    -- `alive`; it simply carries no species. Provenance is a queryable column
+    -- rather than a comment (DECISIONS constraint 13).
+    is_non_taxon    INTEGER NOT NULL DEFAULT 0,
+    tree_count      INTEGER NOT NULL,
+    CHECK (species_id IS NULL OR (is_placeholder = 0 AND is_non_taxon = 0))
 );
 
 -- Single-row build receipt.

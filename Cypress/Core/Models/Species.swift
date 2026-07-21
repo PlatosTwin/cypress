@@ -4,6 +4,11 @@ import Foundation
 ///
 /// Every phenology surface derives from this attribute — an evergreen never shows a fall-colour
 /// chip or an autumn strip colour (D5, DECISIONS §3.14).
+///
+/// **Absence is modelled by `Optional`, never by a case.** 59 of the 569 seeded species have no
+/// authoritative source for their habit, and the seed column is NULL for them (ERRATA E9). An
+/// `unknown` case here would be a fourth value every `switch` could quietly treat as a fact; an
+/// optional forces each call site to say what it does when nobody has established the answer.
 public enum LeafRetention: String, Codable, Sendable, Hashable, CaseIterable {
     case evergreen = "evergreen"
     case deciduous = "deciduous"
@@ -119,8 +124,9 @@ public struct Species: CoreEntity {
     public let scientificName: String
     public let commonName: String
     public let family: String?
-    /// Drives every phenology surface (D5).
-    public let leafRetention: LeafRetention
+    /// Drives every phenology surface (D5). `nil` means no source states this species' habit,
+    /// which renders as no phenology surface at all (ERRATA E9).
+    public let leafRetention: LeafRetention?
     public let idTips: [IDTip]
     public let seasonal: SeasonalCalendar
     public let careNotes: [CareNote]
@@ -138,12 +144,15 @@ public struct Species: CoreEntity {
     /// to a database string column (BUILD-PLAN §4), so the invariant is enforced at construction
     /// and all stored properties are `let`, leaving no post-construction path back into the
     /// invalid state.
+    ///
+    /// `leafRetention` has no default. A species whose habit nobody has established passes `nil`
+    /// deliberately; it must never arrive because a caller left the argument out (ERRATA E9).
     public init(
         id: UUID = UUID(),
         scientificName: String,
         commonName: String,
         family: String? = nil,
-        leafRetention: LeafRetention,
+        leafRetention: LeafRetention?,
         idTips: [IDTip] = [],
         seasonal: SeasonalCalendar = .empty,
         careNotes: [CareNote] = [],
@@ -157,6 +166,9 @@ public struct Species: CoreEntity {
         if let bad = seasonal.allMonths.first(where: { !(1...12).contains($0) }) {
             throw SpeciesValidationError.monthOutOfRange(bad)
         }
+        // D5 binds only when the habit is known. An unknown species carrying fall-colour months is
+        // not a contradiction — it is a species somebody sourced a calendar for and a habit for
+        // nobody has (ERRATA E9).
         if leafRetention == .evergreen, !seasonal.fallColorMonths.isEmpty {
             throw SpeciesValidationError.evergreenWithFallColorMonths(
                 scientificName: scientificName,
@@ -192,7 +204,8 @@ public struct Species: CoreEntity {
             scientificName: try c.decode(String.self, forKey: .scientificName),
             commonName: try c.decode(String.self, forKey: .commonName),
             family: try c.decodeIfPresent(String.self, forKey: .family),
-            leafRetention: try c.decode(LeafRetention.self, forKey: .leafRetention),
+            // Absent and explicitly null both mean unknown; neither is repaired (ERRATA E9).
+            leafRetention: try c.decodeIfPresent(LeafRetention.self, forKey: .leafRetention),
             idTips: try c.decodeIfPresent([IDTip].self, forKey: .idTips) ?? [],
             seasonal: try c.decodeIfPresent(SeasonalCalendar.self, forKey: .seasonal) ?? .empty,
             careNotes: try c.decodeIfPresent([CareNote].self, forKey: .careNotes) ?? [],
@@ -208,7 +221,14 @@ extension Species {
     ///
     /// Fall colour is absent for evergreens by construction, so a chip set built from this
     /// property cannot show "Fall color starting!" on a Monterey Cypress.
+    ///
+    /// **Unknown habit yields the empty set** (ERRATA E9). Every remaining tag — even `fullLeaf`,
+    /// which looks harmless — is a claim about what this tree does over a year, and the whole
+    /// vocabulary hangs off an attribute nobody has established. The long tail already renders
+    /// "name, family, and a generic silhouette" and nothing else (BUILD-PLAN §8); an unsourced
+    /// species gets the same treatment rather than a partial vocabulary.
     public var availablePhenologyTags: Set<PhenologyTag> {
+        guard let leafRetention else { return [] }
         var tags: Set<PhenologyTag> = [.fullLeaf, .flowering, .fruiting, .leafOut]
         if leafRetention.canShowFallColor {
             tags.insert(.fallColor)
@@ -219,7 +239,10 @@ extension Species {
         return tags
     }
 
-    /// The months this species is in leaf, used by the vitality seasonality rule (PRODUCT §3).
+    /// The months this species is in leaf, used by the vitality seasonality rule (PRODUCT §3), or
+    /// `nil` when the species' habit is unknown and there is therefore no leaf-on window to state
+    /// (ERRATA E9). `nil` is not "no months" — see `Vitality.isRatingPermitted` for what the
+    /// distinction buys.
     ///
     /// Evergreen and semi-deciduous species are in leaf year-round. For deciduous species the
     /// window is derived from the authored seasonal calendar: from the first `new_growth_months`
@@ -227,11 +250,13 @@ extension Species {
     /// array is empty the northern-hemisphere default April–October applies — this fallback is a
     /// derivation, not authored botany, and is the one seasonality value not stated in the source
     /// documents.
-    public var leafOnMonths: Set<Int> {
+    public var leafOnMonths: Set<Int>? {
         switch leafRetention {
-        case .evergreen, .semiDeciduous:
+        case nil:
+            return nil
+        case .evergreen?, .semiDeciduous?:
             return Set(1...12)
-        case .deciduous:
+        case .deciduous?:
             guard
                 let start = seasonal.newGrowthMonths.first,
                 let end = seasonal.fallColorMonths.last,

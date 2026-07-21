@@ -14,6 +14,16 @@ Sources (verified live 2026-07-21):
                   backing tabular view is j2bu-swwd; only the tabular view
                   serves geometry over SODA)
                  https://data.sfgov.org/resource/j2bu-swwd.geojson?$limit=200
+  species        Fixtures/species/leaf_retention.yaml  family + leaf retention,
+                 one entry per mapped species, cited or null
+                 Fixtures/species/curated.yaml         the authored field guide
+                 for the top 40 SF species (BUILD-PLAN 8)
+
+Determinism. The seed is a build product and the repo treats it as
+byte-for-byte reproducible (.gitignore says so). Every timestamp therefore
+comes from SEED_EPOCH, never from the wall clock, and every derived table is
+written in a sorted or file order. Two runs over the same inputs produce the
+same sha256.
 
 Identity model (two keys, on purpose):
   trees.id    INTEGER PRIMARY KEY -- internal join key. Every foreign key and
@@ -50,6 +60,11 @@ import time
 import urllib.request
 import uuid
 from datetime import datetime, timezone
+
+try:
+    import yaml
+except ImportError:  # pragma: no cover
+    yaml = None
 
 # --------------------------------------------------------------------------
 # Constants
@@ -99,6 +114,84 @@ PLACEHOLDER_SPECIES = {
     "unknown ::",
 }
 
+# qSpecies strings whose scientific-name half names no taxon: a growth habit
+# ("Shrub"), an ownership note ("Private shrub"), a vernacular that resolves to
+# no single plant ("Privet" is any of three Ligustrum species in this same
+# inventory), a genus the surveyor could not read ("Palm (unknown Genus)"), or
+# an admission that nobody has identified it yet ("To Be Determine").
+#
+# These are NOT placeholders: the city recorded something growing at the site,
+# so the tree is `alive`. They are also not species, so they map to no species
+# row at all. Before this list existed each one minted a species of its own and
+# a site labelled `Shrub` inherited that species' phenology chips, autumn strip
+# and field guide (DECISIONS constraint 15: do not invent botanical content).
+#
+# The test for membership is "no taxon at any rank can be recovered from the
+# string", and Fixtures/species/leaf_retention.yaml is the evidence: these seven
+# are the only entries of 577 for which the sourcing pass resolved NEITHER a
+# family NOR a leaf retention, because there is nothing to resolve. `Ficus
+# laurel` deliberately stays out — `Ficus` is a genus the city did record, and
+# the entry carries a sourced family. See ERRATA E15 for why the count is seven
+# and not the six SOURCES.md section 10.2 lists.
+#
+# Keys are lowercased and whitespace-collapsed.
+NON_TAXON_SPECIES = {
+    "shrub :: shrub",
+    "private shrub :: private shrub",
+    "privet ::",
+    ":: to be determine",
+    "palm (unknown genus) :: palm spp",
+    "new zealand tea tree :: new zealand tea tree",
+    ":: brisbane box",
+}
+
+# Misspellings in qSpecies that hold one species as two. Keyed on the lowercased
+# whitespace-collapsed qSpecies string; the value is (scientific name, confidence).
+#
+# Only entries an outside source already resolved belong here. `patanus racemosa`
+# is a one-character misspelling of a name present in this same dataset, and
+# Fixtures/species/leaf_retention.yaml carries the resolution with its own
+# citation (SelecTree tree-detail/1107, match_method
+# `fuzzy_name_edit_distance_1_to_"platanus racemosa"`). The confidence is below
+# the 1.0 a clean binomial earns because the correction is ours, not the city's.
+#
+# What must NOT go here: a vernacular-only string merged onto a binomial by
+# judgment. "Brisbane Box" names both Lophostemon confertus and Tristania
+# conferta, which this inventory carries as two separate species rows, so
+# merging on the common name would be a synonymy ruling with no source behind
+# it. Those strings go to NON_TAXON_SPECIES instead.
+QSPECIES_NAME_CORRECTIONS = {
+    "patanus racemosa ::": ("Platanus racemosa", 0.9),
+}
+
+# Fixtures/species/*.yaml carries one entry per species the PREVIOUS build
+# minted, so correcting the map above strands eight of them: the seven non-taxa
+# lose their species row, and `patanus racemosa ::` folds into Platanus
+# racemosa. The YAML files are left byte-identical — they are a sourcing record
+# with citations, not a generated index — so the loader is told which absences
+# are deliberate. Any OTHER stranded entry is real drift between the fixtures
+# and the parser, and fails the build.
+#
+# Keyed on the `scientific_name` the previous build wrote, which is what the
+# YAML entry carries; species uuids are derived from that name and are not
+# restated here.
+RETIRED_SPECIES_NAMES = {
+    "Shrub",
+    "Private shrub",
+    "Privet",
+    ":: To Be Determine",
+    "Palm (unknown Genus)",
+    "New Zealand Tea Tree",
+    ":: Brisbane Box",
+}
+
+# The stranded entry whose sourced content is not discarded but re-keyed onto
+# the species it was always a misspelling of. Its leaf retention must agree with
+# what the target's own entry says, or the build fails.
+MERGED_SPECIES_NAMES = {
+    "patanus racemosa ::": "Platanus racemosa",
+}
+
 # DataSF columns consumed by an explicit mapping; everything else (plus
 # qLegalStatus, which is explicitly retained per BUILD-PLAN 7) goes to city_raw.
 MAPPED_COLUMNS = {
@@ -125,7 +218,25 @@ STUB_CEILING_PCT = 2.0
 DBH_BUCKET_CM = 5.0
 INCH_TO_CM = 2.54
 
-NOW = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+# Every created_at / updated_at in the seed, and the build receipt's own
+# generated_at. FROZEN, and deliberately not the wall clock: the seed is a build
+# product the repo declares byte-for-byte reproducible, and a clock reading in
+# 195,309 rows makes every rebuild a different file for no gain. The value is
+# the DataSF Street Tree List snapshot date (ERRATA E1), which is what these
+# rows are actually as-of. Override with SOURCE_DATE_EPOCH when rebuilding from
+# a newer download.
+SEED_EPOCH_DEFAULT = "2026-07-20T00:00:00+00:00"
+
+
+def _seed_epoch() -> str:
+    raw = os.environ.get("SOURCE_DATE_EPOCH", "").strip()
+    if not raw:
+        return SEED_EPOCH_DEFAULT
+    try:
+        seconds = int(raw)
+    except ValueError:
+        die(f"SOURCE_DATE_EPOCH must be an integer number of seconds, got {raw!r}")
+    return datetime.fromtimestamp(seconds, timezone.utc).replace(microsecond=0).isoformat()
 
 
 # --------------------------------------------------------------------------
@@ -168,11 +279,15 @@ SCHEMA_SQL = r"""
 PRAGMA foreign_keys = ON;
 
 -- ---------------------------------------------------------------- species --
--- All content columns below (family, leaf_retention, id_tips, seasonal,
--- care_notes, curated) are DELIBERATELY EMPTY in the city import. They are the
--- target of the authored species pipeline in BUILD-PLAN section 8. The types
--- and constraints are declared here so that pipeline and the Swift data layer
--- have a fixed contract to write against.
+-- The city import supplies only the two names. Every other content column
+-- (family, leaf_retention, id_tips, seasonal, care_notes, curated) is filled
+-- from Fixtures/species/*.yaml, the authored species pipeline of BUILD-PLAN
+-- section 8, and is NULL or empty wherever no source could be found.
+--
+-- leaf_retention in particular is null for the species whose habit no
+-- authoritative source states. That is a real state, not a gap to be papered
+-- over with a default: unknown renders no phenology chip and no autumn colour
+-- anywhere in the app (ERRATA E9).
 CREATE TABLE species (
     id              INTEGER PRIMARY KEY,
     uuid            TEXT NOT NULL UNIQUE,       -- stable external identity
@@ -324,7 +439,13 @@ CREATE TABLE species_map (
     confidence      REAL NOT NULL,
     is_stub         INTEGER NOT NULL,      -- 1 = fell through to the stub path
     is_placeholder  INTEGER NOT NULL,      -- 1 = vacant-site placeholder, no species
-    tree_count      INTEGER NOT NULL
+    -- 1 = the string names no taxon ("Shrub", "Privet", "To Be Determine").
+    -- A tree stands at the site, so it is NOT a placeholder and its status is
+    -- `alive`; it simply carries no species. Provenance is a queryable column
+    -- rather than a comment (DECISIONS constraint 13).
+    is_non_taxon    INTEGER NOT NULL DEFAULT 0,
+    tree_count      INTEGER NOT NULL,
+    CHECK (species_id IS NULL OR (is_placeholder = 0 AND is_non_taxon = 0))
 );
 
 -- Single-row build receipt.
@@ -347,6 +468,9 @@ def log(msg: str) -> None:
 def die(msg: str, code: int = 3) -> "None":
     print(f"[build_seed] FATAL: {msg}", file=sys.stderr, flush=True)
     sys.exit(code)
+
+
+NOW = _seed_epoch()
 
 
 def fetch(url: str, dest: str) -> None:
@@ -413,11 +537,22 @@ def parse_qspecies(raw: str):
     """Parse the DataSF 'Scientific name :: Common name' convention.
 
     Returns (kind, scientific_name, common_name, confidence) where kind is one
-    of 'placeholder', 'parsed', 'stub'.
+    of 'placeholder', 'non_taxon', 'parsed', 'stub'.
     """
     s = (raw or "").strip()
     if s.lower() in PLACEHOLDER_SPECIES:
         return "placeholder", None, None, 0.0
+
+    key = " ".join(s.lower().split())
+    if key in NON_TAXON_SPECIES:
+        # Something is planted here; it is just not a species. See NON_TAXON_SPECIES.
+        return "non_taxon", None, None, 0.0
+
+    correction = QSPECIES_NAME_CORRECTIONS.get(key)
+    if correction:
+        corrected_name, corrected_conf = correction
+        _, _, common = s.partition("::")
+        return "parsed", corrected_name, " ".join(common.strip().split()) or None, corrected_conf
 
     if "::" not in s:
         # No convention marker at all -> stub with the raw string as the name.
@@ -462,6 +597,138 @@ def parse_qspecies(raw: str):
         conf = 0.6
 
     return "parsed", sci, common or None, conf
+
+
+SEASONAL_KEYS = ("bloom_months", "fall_color_months", "fruit_months", "new_growth_months")
+
+
+def _compact_json(value) -> str:
+    """One spelling of every JSON column, so a rebuild is byte-identical."""
+    return json.dumps(value, separators=(",", ":"), ensure_ascii=False)
+
+
+def load_species_content(fixtures_dir: str, species_by_key: dict, strict: bool = True) -> dict:
+    """Fixtures/species/*.yaml -> {species uuid: content row}. BUILD-PLAN section 8.
+
+    Two files, read in this order so the authored guide wins the overlap:
+
+      leaf_retention.yaml  family + leaf_retention for every mapped species,
+                           null wherever no source states it (ERRATA E9, E10)
+      curated.yaml         the top 40 by SF row count, with id_tips, seasonal
+                           and care_notes
+
+    Citations are not copied into the database. They are the reason a value is
+    allowed to exist (DECISIONS constraint 15) and they live in the YAML, which
+    is checked in; the seed carries the value, and Tools/validate_species.py is
+    what refuses to let an uncited one through.
+
+    Returns (content, stats).
+    """
+    if yaml is None:
+        die("PyYAML is required to load the species content; "
+            "pip install -r Tools/requirements.txt")
+
+    uuid_to_name = {sp["uuid"]: sp["scientific_name"] for sp in species_by_key.values()}
+    merge_targets = {
+        name: str(uuid.uuid5(NS_SPECIES, normalise_species_key(target)))
+        for name, target in MERGED_SPECIES_NAMES.items()
+    }
+
+    content = {}
+    stats = {"leaf_retention": 0, "family": 0, "curated": 0, "retired": 0, "merged": 0, "absent": 0}
+
+    def apply(entry: dict, path: str, curated: bool) -> None:
+        name = entry.get("scientific_name")
+        species_uuid = entry.get("species_uuid")
+
+        if name in RETIRED_SPECIES_NAMES:
+            stats["retired"] += 1
+            return
+        if name in merge_targets:
+            species_uuid = merge_targets[name]
+            if species_uuid not in uuid_to_name:
+                if not strict:
+                    stats["absent"] += 1
+                    return
+                die(f"{os.path.basename(path)}: {name!r} merges into a species the seed does "
+                    f"not carry ({species_uuid})")
+            stats["merged"] += 1
+        elif species_uuid not in uuid_to_name:
+            if not strict:
+                # `--limit` builds only part of the CSV, so most species are simply absent.
+                stats["absent"] += 1
+                return
+            die(f"{os.path.basename(path)}: {name!r} ({species_uuid}) is not a species in the "
+                f"seed, and is not one of the entries the map corrections retire. The fixtures "
+                f"and the qSpecies parser have drifted apart.")
+
+        if name not in merge_targets and uuid_to_name[species_uuid] != name:
+            die(f"{os.path.basename(path)}: {species_uuid} is {uuid_to_name[species_uuid]!r} in "
+                f"the seed but {name!r} in the fixture")
+
+        row = content.setdefault(
+            species_uuid,
+            {"family": None, "leaf_retention": None, "id_tips": [], "seasonal": {},
+             "care_notes": [], "curated": 0},
+        )
+
+        for field in ("family", "leaf_retention"):
+            value = entry.get(field)
+            if value is None:
+                continue
+            if row[field] is not None and row[field] != value:
+                # Two entries landing on one species must agree. This is the check
+                # that makes the `patanus racemosa` merge safe rather than a guess.
+                die(f"{name}: {field} is {row[field]!r} from one fixture and {value!r} from "
+                    f"another; they describe the same species and must agree")
+            row[field] = value
+
+        if not curated:
+            return
+
+        row["curated"] = 1
+        row["id_tips"] = [
+            {"icon": tip["icon"], "text": tip["text"]} for tip in entry.get("id_tips") or []
+        ]
+        seasonal = entry.get("seasonal") or {}
+        row["seasonal"] = {key: sorted(seasonal.get(key) or []) for key in SEASONAL_KEYS}
+        row["care_notes"] = [
+            {
+                "month_range": {
+                    "start": note["month_range"]["start"],
+                    "end": note["month_range"]["end"],
+                },
+                "text": note["text"],
+            }
+            for note in entry.get("care_notes") or []
+        ]
+
+    for path, curated in (
+        (os.path.join(fixtures_dir, "species", "leaf_retention.yaml"), False),
+        (os.path.join(fixtures_dir, "species", "curated.yaml"), True),
+    ):
+        if not os.path.exists(path):
+            die(f"missing species fixture {path}")
+        with open(path, "r", encoding="utf-8") as fh:
+            document = yaml.safe_load(fh)
+        entries = document.get("species") or []
+        log(f"loaded {len(entries)} entries from {os.path.basename(path)}")
+        for entry in entries:
+            apply(entry, path, curated)
+
+    # D5 / DECISIONS constraint 14, enforced here as well as in the database CHECK,
+    # in Species.init and in Tools/validate_species.py. BUILD-PLAN section 7 wants
+    # ingest failures loud, and a fall-colour chip on an evergreen is exactly the
+    # bug D5 was written for.
+    for species_uuid, row in content.items():
+        if row["leaf_retention"] == "evergreen" and (row["seasonal"].get("fall_color_months") or []):
+            die(f"D5 violation: {uuid_to_name.get(species_uuid, species_uuid)} is evergreen and "
+                f"carries fall_color_months {row['seasonal']['fall_color_months']}")
+
+    stats["leaf_retention"] = sum(1 for r in content.values() if r["leaf_retention"])
+    stats["family"] = sum(1 for r in content.values() if r["family"])
+    stats["curated"] = sum(1 for r in content.values() if r["curated"])
+    return content, stats
 
 
 def load_neighborhoods(path: str):
@@ -574,6 +841,7 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool) -> in
         "assertions": 0,
         "stub_rows": 0,
         "parsed_rows": 0,
+        "non_taxon_rows": 0,
         "no_neighborhood": 0,
         "planted_year_present": 0,
         "dbh_present": 0,
@@ -655,7 +923,9 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool) -> in
             qs["count"] += 1
 
             species_id = None
-            if kind != "placeholder":
+            if kind == "non_taxon":
+                stats["non_taxon_rows"] += 1
+            elif kind != "placeholder":
                 key = normalise_species_key(sci)
                 sp = species_by_key.get(key)
                 if sp is None:
@@ -764,6 +1034,37 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool) -> in
     )
     conn.commit()
 
+    # ------------------------------------------------- species content (sec 8)
+    species_content, content_stats = load_species_content(
+        fixtures_dir, species_by_key, strict=not limit
+    )
+    id_by_uuid = {sp["uuid"]: sp["id"] for sp in species_by_key.values()}
+    conn.executemany(
+        "UPDATE species SET family=?, leaf_retention=?, id_tips=?, seasonal=?, "
+        "care_notes=?, curated=? WHERE id=?",
+        [
+            (
+                row["family"],
+                # NULL, not '' and not a sentinel: the column means "no source
+                # states this species' habit" and the app must be able to tell
+                # that apart from every real value (ERRATA E9).
+                row["leaf_retention"],
+                _compact_json(row["id_tips"]),
+                _compact_json(row["seasonal"] or {key: [] for key in SEASONAL_KEYS}),
+                _compact_json(row["care_notes"]),
+                row["curated"],
+                id_by_uuid[species_uuid],
+            )
+            for species_uuid, row in sorted(species_content.items())
+        ],
+    )
+    conn.commit()
+    log(
+        f"species content: leaf_retention on {content_stats['leaf_retention']}, "
+        f"family on {content_stats['family']}, curated {content_stats['curated']} "
+        f"of {len(species_by_key)} species"
+    )
+
     # ------------------------------------------------------------ stub ceiling
     species_bearing_rows = stats["parsed_rows"] + stats["stub_rows"]
     stub_pct = (
@@ -784,12 +1085,13 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool) -> in
                 round(info["confidence"], 2),
                 1 if info["kind"] == "stub" else 0,
                 1 if info["kind"] == "placeholder" else 0,
+                1 if info["kind"] == "non_taxon" else 0,
                 info["count"],
             )
         )
     conn.executemany(
         "INSERT INTO species_map(qspecies_string,species_id,species_uuid,confidence,"
-        "is_stub,is_placeholder,tree_count) VALUES(?,?,?,?,?,?,?)",
+        "is_stub,is_placeholder,is_non_taxon,tree_count) VALUES(?,?,?,?,?,?,?,?)",
         map_rows,
     )
 
@@ -798,8 +1100,14 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool) -> in
         # species_id carries the species UUID, not the internal integer id:
         # integer ids depend on CSV row order, uuids are order-independent and
         # survive a rebuild, which is what a checked-in mapping file needs.
+        #
+        # An empty species_id is the honest answer for three kinds of string: a
+        # vacant-site placeholder, a string that names no taxon
+        # (NON_TAXON_SPECIES), and nothing else. This file is REGENERATED by
+        # every build, so a correction belongs in the tables at the top of this
+        # script, not in the CSV — editing the CSV loses the edit on the next run.
         w.writerow(["qSpecies_string", "species_id", "confidence"])
-        for qs_string, _sid, suuid, conf, _stub, _ph, _count in map_rows:
+        for qs_string, _sid, suuid, conf, _stub, _ph, _nt, _count in map_rows:
             w.writerow([qs_string, suuid or "", f"{conf:.2f}"])
     log(f"wrote {map_path} ({len(map_rows)} distinct qSpecies strings)")
 
@@ -820,6 +1128,10 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool) -> in
         "dropped_out_of_bbox": str(stats["dropped_out_of_bbox"]),
         "dropped_dupe_treeid": str(stats["dropped_dupe_treeid"]),
         "vacant_site_rows": str(stats["vacant_site"]),
+        "non_taxon_rows": str(stats["non_taxon_rows"]),
+        "species_with_leaf_retention": str(content_stats["leaf_retention"]),
+        "species_with_family": str(content_stats["family"]),
+        "species_curated": str(content_stats["curated"]),
         "stub_rows": str(stats["stub_rows"]),
         "stub_pct_of_species_rows": f"{stub_pct:.4f}",
         "stub_ceiling_pct": str(STUB_CEILING_PCT),
@@ -856,12 +1168,17 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool) -> in
     print(f"  trees written          {stats['kept']:,}")
     print(f"    status=alive         {stats['alive']:,}")
     print(f"    status=vacant_site   {stats['vacant_site']:,}")
+    print(f"    alive, no species    {stats['non_taxon_rows']:,}  (qSpecies names no taxon)")
     print(f"    planted_year set     {stats['planted_year_present']:,}")
     print(f"    dbh bucket set       {stats['dbh_present']:,}")
     print(f"    no neighborhood      {stats['no_neighborhood']:,}")
     print(f"  species_assertions     {stats['assertions']:,}")
     print(f"  distinct qSpecies      {len(qspecies_stats):,}")
     print(f"  species rows           {len(species_by_key):,}")
+    print(f"    leaf_retention set   {content_stats['leaf_retention']:,}"
+          f"   ({len(species_by_key) - content_stats['leaf_retention']:,} NULL: unknown, ERRATA E9)")
+    print(f"    family set           {content_stats['family']:,}")
+    print(f"    curated              {content_stats['curated']:,}")
     print(f"  stub rows              {stats['stub_rows']:,}")
     print(f"  stub % (species rows)  {stub_pct:.4f}%   ceiling {STUB_CEILING_PCT}%")
     print(f"  stub % (all rows)      {stub_pct_all:.4f}%")

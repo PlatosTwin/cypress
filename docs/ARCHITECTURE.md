@@ -108,7 +108,10 @@ accident while writing UI code. The full list is binding; these are the ones tha
 3. Estimated and measured series are never one series in a chart (D7).
 4. Never render "sent to the city" copy. The honest state is "the city has not been notified."
 5. Evergreen species never get fall-color chips or autumn strip colors — the chip set derives from
-   `species.leafRetention` (D5).
+   `species.leafRetention` (D5). That attribute is **optional**: 59 of the 569 seeded species have
+   no sourced habit, and a species with `leafRetention == nil` gets *no* phenology surface at all —
+   not a neutral chip, not a grey one, nothing (ERRATA E9). Never write `?? .deciduous` or any other
+   default; a default is the bug.
 6. Aggregate surfaces below their cold-start threshold do not render at all. "Caretakers" needs ≥3.
 7. Copy: **no spaces around em dashes** (`trees—memorials`). Micro-labels are uppercase mono with
    letter-spacing; prose is sentence case. Dates read "Summer 2026".

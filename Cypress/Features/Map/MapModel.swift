@@ -75,7 +75,7 @@ final class MapModel {
     private(set) var selectedPinID: UUID?
 
     /// Species resolved for the bloom filter, keyed by id. Populated lazily and only for species
-    /// that are actually on screen — the catalogue is 577 rows and the map does not need it.
+    /// that are actually on screen — the catalogue is 569 rows and the map does not need it.
     private var species: [UUID: Species] = [:]
     private var speciesMisses: Set<UUID> = []
 
@@ -225,7 +225,7 @@ final class MapModel {
 
     /// Resolves the species of the pins currently on screen, once each, so `In bloom` can answer
     /// from real seasonal data. Bounded by the pin budget and by the distinct species in view — in
-    /// SF that is a few dozen, not the whole 577-row catalogue.
+    /// SF that is a few dozen, not the whole 569-row catalogue.
     private func resolveSpeciesForVisiblePins() {
         guard case let .pins(pins) = content else { return }
         let wanted = Set(pins.compactMap(\.speciesID))

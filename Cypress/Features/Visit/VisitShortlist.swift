@@ -182,19 +182,20 @@ enum VisitPhenologyVocabulary {
 
     /// The chips to offer, in order.
     ///
-    /// Two gates, both from the documents:
+    /// Three gates, all from the documents:
     ///
     /// 1. **No species record → nothing.** There is no vocabulary to validate against, and guessing
     ///    at one is the bug D5 names.
-    /// 2. **Not curated → nothing.** Every row in the shipped seed has `curated = 0`, because
-    ///    `leaf_retention`, `seasonal` and the rest "are DELIBERATELY EMPTY in the city import"
-    ///    (`SpeciesQueries`, BUILD-PLAN §8). The long tail "renders name, family, and a generic
-    ///    silhouette" — *no phenology surface at all*. Offering "Flowering" for a species whose
-    ///    seasonal calendar nobody has authored would be a phenological claim the record does not
-    ///    make, which is precisely BUILD-PLAN §15's prohibition.
+    /// 2. **Not curated → nothing.** 529 of the seed's 569 species have no authored field-guide
+    ///    entry (BUILD-PLAN §8); that long tail "renders name, family, and a generic silhouette" —
+    ///    *no phenology surface at all*. Offering "Flowering" for a species whose seasonal calendar
+    ///    nobody has authored would be a phenological claim the record does not make, which is
+    ///    precisely BUILD-PLAN §15's prohibition.
+    /// 3. **Habit unknown → nothing**, which `Species.availablePhenologyTags` enforces one layer
+    ///    down (ERRATA E9). The whole vocabulary hangs off `leaf_retention`, so a curated species
+    ///    with no sourced habit still surfaces no chips.
     ///
-    /// Consequence, stated plainly: **the chip row is empty for every species in today's seed.**
-    /// It fills in when the curated pipeline lands, with no change here.
+    /// Consequence, stated plainly: **the chip row is offered for the curated 40 and nobody else.**
     static func tags(for species: Species?) -> [PhenologyTag] {
         guard let species, species.curated else { return [] }
         return order.filter { $0.isAvailable(for: species) }

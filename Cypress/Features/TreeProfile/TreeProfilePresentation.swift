@@ -212,7 +212,10 @@ struct TreeProfilePresentation {
         Set(visiblePhotos.map { calendar.component(.month, from: $0.capturedAt) })
     }
 
-    var leafRetention: LeafRetention { species?.leafRetention ?? .evergreen }
+    /// `nil` for a site with no species on the record and for a species whose habit no source
+    /// states (ERRATA E9). `FoliageStrip` treats both the same way it treats an evergreen: no cell
+    /// may take the leaf-off treatment, because that would be a claim about a canopy nobody sourced.
+    var leafRetention: LeafRetention? { species?.leafRetention }
 
     /// `FoliageStrip` labels every cell as a canopy state; on a coverage strip that would be a
     /// claim about foliage nobody made. The view replaces the per-cell labels with this.
@@ -228,11 +231,11 @@ struct TreeProfilePresentation {
 
     /// The C14 green callout's body, or `nil`.
     ///
-    /// **BUILD-PLAN §15 / DECISIONS §3.15**: the curated species pipeline (BUILD-PLAN §8) has not
-    /// run, so `species.id_tips` is `[]` for all 577 seeded species. There is no empty-state copy
-    /// for this callout in SCREENS.md, and ARCHITECTURE §5.8 says an unmocked state is a question
-    /// for design rather than a string to invent — so the section is simply absent, and no
-    /// placeholder botany is written in its place.
+    /// **BUILD-PLAN §15 / DECISIONS §3.15**: the curated species pipeline (BUILD-PLAN §8) has run
+    /// for the top 40 species, so `species.id_tips` is `[]` for the other 529 of the seed's 569.
+    /// There is no empty-state copy for this callout in SCREENS.md, and ARCHITECTURE §5.8 says an
+    /// unmocked state is a question for design rather than a string to invent — so the section is
+    /// simply absent, and no placeholder botany is written in its place.
     var recognitionTip: IDTip? { species?.idTips.first }
 
     static let recognitionLeadIn = "How to recognize it:"
@@ -425,7 +428,8 @@ struct TreeProfilePresentation {
         return "SF #\(ref)"
     }
 
-    /// 14's `Watch for` card. Authored species care content only; empty until BUILD-PLAN §8 runs.
+    /// 14's `Watch for` card. Authored species care content only — 20 of the curated 40 carry any
+    /// (BUILD-PLAN §8), and a species with none simply has no card.
     var watchForText: String? {
         let month = calendar.component(.month, from: now)
         return species?.careNotes.first { $0.monthRange.contains(month) }?.text

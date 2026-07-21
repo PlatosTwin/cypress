@@ -10,6 +10,10 @@
 //  species' `LeafRetention` as a required parameter and applies the rule itself: an evergreen's
 //  months are clamped so no cell can render the leaf-off treatment. A caller cannot forget.
 //
+//  The parameter is optional because "nobody has established this species' habit" is a real state
+//  (ERRATA E9), and it clamps exactly as an evergreen does. The asymmetry is deliberate: drawing a
+//  bare month is a claim about the tree, leaving it out is not.
+//
 //  The 3-step ramp of §1.2 is the *only* colour vocabulary SCREENS.md gives this component — there
 //  is no autumn hue anywhere in the spec. So the enforcement is a clamp, not a colour swap, and no
 //  fourth colour is invented here (SCREENS.md ground rule: nothing is invented).
@@ -86,11 +90,12 @@ struct FoliageStrip: View {
     private let showsEyebrow: Bool
 
     /// - Parameters:
-    ///   - leafRetention: the species attribute that drives every phenology surface (D5).
+    ///   - leafRetention: the species attribute that drives every phenology surface (D5), or `nil`
+    ///     when no source states it (ERRATA E9).
     ///   - densities: twelve months, January first. Short arrays are padded with `.full`; long ones
     ///     are truncated, because a 12-cell strip is the component's contract.
     init(
-        leafRetention: LeafRetention,
+        leafRetention: LeafRetention?,
         densities: [Density],
         variant: Variant = .profile,
         showsMonthRow: Bool = true,
@@ -119,14 +124,19 @@ struct FoliageStrip: View {
         )
     }
 
-    /// D5, applied once: an evergreen is never bare, in any month.
-    static func enforcingD5(_ input: [Density], leafRetention: LeafRetention) -> [Density] {
+    /// D5, applied once: an evergreen is never bare, in any month. Neither is a species whose
+    /// habit is unknown — the strip may only draw what somebody established (ERRATA E9).
+    static func enforcingD5(_ input: [Density], leafRetention: LeafRetention?) -> [Density] {
         var months = Array(input.prefix(12))
         if months.count < 12 {
             months.append(contentsOf: Array(repeating: Density.full, count: 12 - months.count))
         }
-        guard leafRetention == .evergreen else { return months }
-        return months.map { $0 == .bare ? .thin : $0 }
+        switch leafRetention {
+        case .deciduous?, .semiDeciduous?:
+            return months
+        case .evergreen?, nil:
+            return months.map { $0 == .bare ? .thin : $0 }
+        }
     }
 
     var body: some View {

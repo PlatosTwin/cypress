@@ -145,6 +145,17 @@ enum GallerySample {
         curated: true
     )
 
+    /// One of the 59 seeded species whose habit no source states (ERRATA E9). It is `curated`
+    /// precisely so the gallery shows that a species with authored content still surfaces no
+    /// phenology when the attribute the whole vocabulary hangs off is unknown.
+    static let unknownHabit: Species? = try? Species(
+        scientificName: "Ficus laurel",
+        commonName: "Laurel Fig",
+        family: "Moraceae",
+        leafRetention: nil,
+        curated: true
+    )
+
     /// Twelve months with a bare winter — the input D5 has to defuse for an evergreen.
     static let deciduousYear: [FoliageStrip.Density] = [
         .bare, .bare, .thin, .partial, .full, .full,
@@ -268,6 +279,13 @@ private struct GalleryC3: View {
                         showsEyebrow: false
                     )
                 }
+                Variant("habit unknown · SAME input, clamped too — a bare month is a claim (E9)") {
+                    FoliageStrip(
+                        leafRetention: nil,
+                        densities: GallerySample.deciduousYear,
+                        showsEyebrow: false
+                    )
+                }
             }
         }
     }
@@ -375,6 +393,15 @@ private struct GalleryC4: View {
                             HStack(spacing: CypressSpacing.gapRows) {
                                 Chip.phenology(.fullLeaf, for: deciduous, isOn: true)
                                 Chip.phenology(.fallColor, for: deciduous, isOn: false)
+                            }
+                            if let unknown = GallerySample.unknownHabit {
+                                HStack(spacing: CypressSpacing.gapRows) {
+                                    Chip.phenology(.fullLeaf, for: unknown, isOn: true)
+                                    Chip.phenology(.fallColor, for: unknown, isOn: false)
+                                    Text("← habit unknown: nothing at all")
+                                        .font(CypressFont.mono10)
+                                        .foregroundStyle(CypressColor.textFaint)
+                                }
                             }
                         }
                         .padding(6)

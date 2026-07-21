@@ -99,9 +99,30 @@ default is a botanical claim we cannot support:
   *cannot* violate D5) asserts that 66 species keep their leaves, which is unsourced.
 
 The honest model is `LeafRetention?`, with unknown rendering **no** phenology chips and **no** autumn
-strip colours — the same treatment the long tail already gets for `id_tips`. Deferred only because
-three feature agents are currently building against the existing API; it is the first change after
-they land.
+strip colours — the same treatment the long tail already gets for `id_tips`.
+
+**Resolved.** `Species.leafRetention` is now `LeafRetention?` and the seed column round-trips SQL
+NULL rather than a substitute. What each call site decided, since "what does nil mean here" is a
+different question in each:
+
+- `Species.availablePhenologyTags` returns the **empty set**. Every tag, `fullLeaf` included, is a
+  claim about what the tree does over a year, and the whole vocabulary hangs off the one attribute
+  nobody sourced.
+- `Species.leafOnMonths` returns `nil`, not an empty set — "no window is known" and "in leaf no
+  month of the year" are different facts.
+- `Vitality.isRatingPermitted` **permits** the rating year-round. PRODUCT §3 suppresses *deciduous*
+  species off-season, and suppression is itself an assertion — that this tree is out of leaf right
+  now. The two errors do not cost the same: wrongly permitting costs one observation a rater can
+  skip, wrongly suppressing removes the vitality UI from a tree for half the year.
+- `FoliageStrip.enforcingD5` clamps a bare month away, exactly as for an evergreen. Drawing a bare
+  cell is a claim; leaving it out is not.
+- `SpeciesQueries.leafRetention` resolves nothing at all, and its `seasonal:` argument is gone — it
+  existed only to pick between `.deciduous` and `.evergreen`.
+
+D5's throw still fires for `evergreen` + non-empty `fall_color_months` and never fires for nil, in
+`Species.init`, in the database CHECK and in `Tools/validate_species.py`. After the content load the
+seed carries leaf retention for **510 of 569** species; the remaining 59 render no phenology surface
+at all.
 
 ### E10 — Cal Poly SelecTree contradicts itself, and one of the contradictions is load-bearing
 
@@ -211,3 +232,184 @@ scales with zoom, a density-aware pin, raising the clustering threshold past 16,
 ribbon as an intentional "this street is planted" texture — are all outside the mocks. The
 underlying fact for whoever picks: **San Francisco's street trees are 5.5 m apart, and 18 pt is
 5.5 m only at zoom 18.6.** A pin size and a clustering threshold cannot both be chosen freely.
+
+### E20 — Screen 06's 311 panel uses two values §1's token tables do not carry
+
+SCREENS.md 06 §4 gives the 311 panel `radius 20px` and puts a phone glyph filled `#FDF3E3` inside a
+54×54 `#B4711F` circle. Neither value has a row in §1:
+
+- §1.4 (radii) runs `18 / 16 / 14 / 12` for cards and controls. **There is no 20.** The panel is the
+  only surface in the app at that radius.
+- §1.2 (colors) has no `#FDF3E3`. The hex reaches the document only in §1.1, as the *swatch text
+  color* printed on the Signal Amber chip — a legibility choice on the palette board, borrowed here
+  as a fill.
+
+Both are transcription-complete, so this is a gap in the token tables rather than in screen 06.
+Resolved by adding `CypressColor.hazardPanelGlyph` beside the other 311 tokens (a colour in a
+feature is a bug, ARCHITECTURE §6) and by naming the radius in `ReportMetrics` with the rest of 06's
+one-off geometry, the way `TreeProfileMetrics` already holds 03's.
+
+### E21 — The hazard chips SCREENS.md 06 draws are not the hazard categories the product defines
+
+Three sources name the hazard vocabulary and none of them agree with the mock:
+
+| PRODUCT §5 M7 (the categories) | SCREENS.md 06 §2 (the chips drawn) |
+|---|---|
+| hanging or broken limb over a path | `Hanging limb` |
+| uprooted | — |
+| struck by vehicle | — |
+| blocking a signal or sightline | `Blocking path` |
+| — | `Split trunk` |
+
+`Split trunk` is a hazard no category can hold; `Blocking path` renames a different one; two
+categories are undrawn. This is load-bearing rather than cosmetic: the chip decides the
+`HazardCategory` that a `POST /reports/hazard-redirect` and D4's private reminder both carry, so a
+chip with no category either cannot be built or is stored as a hazard it is not.
+
+Resolved by precedence. Categories are data, and on data BUILD-PLAN/PRODUCT outrank the drawing
+(ARCHITECTURE §1), so the picker is driven by `HazardCategory.allCases` and labelled with PRODUCT's
+own words shortened to chip length: `Hanging limb` · `Uprooted` · `Struck by vehicle` ·
+`Blocking a sightline`. Four chips wrap to two rows where the mock draws one row of three.
+
+Related, and left as drawn: the panel body ("A hanging or broken limb over a path needs the city's
+crew…") is written for the one chip the mock selects. No per-category variant is written, because
+none is specified and three invented paragraphs would be three invented states (DECISIONS
+constraint 21). A designer picking this up owes 06 either generic panel copy or four bodies.
+
+### E22 — 06's two unspecified states, and what was built for them
+
+SCREENS.md 06 says it outright: "the 311 panel appears because a hazard chip is selected. **NOT
+SPECIFIED:** what the screen looks like with only a neighborly chip selected, or with nothing
+selected." Both were needed to ship the screen. What was chosen, and why it is a reading of the spec
+rather than an invention:
+
+- **Nothing selected.** Header and the two pickers. Everything below them — the 311 panel, the
+  private-reminder button, the dashed disclosure — is one branch bound to a hazard selection, not
+  three independent blocks: the disclosure's own sentences are about the call ("until you call"),
+  and a private reminder's category *is* a `HazardCategory`, so neither is expressible without one.
+- **Only a neighborly chip selected.** The same, with the chip on. Notably **no submit CTA**: the
+  mock draws no primary button for the neighborly branch and BUILD-PLAN §9 asks for none, so posting
+  a community note has no drawn affordance and none was added.
+
+Also unspecified and needed: the *selected* appearance of a neighborly chip, since 06 draws all
+three off. C4's "structure flag, on (05)" — `#2F6B4F` / `#fff` / 700 at the same `11px 16px` — is
+the catalogue's existing partner for the idle variant 06 does specify, so it is used unchanged
+rather than a new amber-free selected style being drawn.
+
+Two smaller gaps in the same screen: the vertical gap between a section's micro-label and its chips
+(the chips' own `gap:7px` is reused), and any pressed state on the 311 CTA (none, per C6's own
+NOT SPECIFIED note in `Buttons.swift`).
+
+### E23 — D4's private reminder cannot be written, because D4 and D9 disagree about who owns it
+
+SCREENS.md 06 §5 draws `Save a private reminder for yourself`, and D4 makes that reminder the only
+record a hazard is allowed to leave. It cannot be saved today, and the blocker is not the UI:
+
+1. **`PrivateReminder` requires a `userID`,** deliberately: `private_reminders.user_id` is `NOT NULL`
+   and `Core/Models/Hazard.swift` states the reason — "a private reminder belongs to an account, so
+   there is no anonymous device-only variant that could later be attributed to the wrong person."
+2. **There is no account.** D9 moved accounts later in the funnel: first saves are anonymous under a
+   device id, and the ask arrives at the third save via screen 15, which is not built. `LocalAPI`
+   ships with `userID == nil` and nothing in the app sets it.
+
+So the reminder is unwritable *by construction* on every device the app currently runs on, and the
+two decisions that produce that are both binding. Adding a write path does not fix it: a
+`CypressAPI.savePrivateReminder` would throw `unauthorized` on every call, and the outbox has no
+kind for one either (`OutboxPayload` covers visit, observation, measurement, care event, favourite).
+
+Nothing was faked. The button is drawn as specified, `ReportModel` assembles a
+`PrivateReminderDraft` (tree + hazard category — the part it can honestly know) and hands it to an
+injected save action that `RootView` does not supply, so a tap claims nothing. No confirmation
+state, no toast, no "saved" copy: DECISIONS constraint 3's principle is that the app never says it
+did a thing it did not do, and that applies to the reminder as much as to the city.
+
+**What a decision-owner has to settle:** either D4 relaxes to allow a device-scoped reminder before
+sign-in (which is what D9 implies every other first save does), or screen 06's reminder button is
+gated behind the account ask, which puts a sign-in wall inside a safety flow. Until then the
+`CypressAPI` addition is not worth making.
+
+### E13 — The seed was declared byte-for-byte reproducible and was not
+
+`.gitignore` says of the bundled seed: "an 88 MB build product of `Tools/build_seed.py`,
+**byte-for-byte reproducible**. Regenerate with: `python3 Tools/build_seed.py`." It was not. Two
+consecutive runs over the identical `Fixtures/raw/street_tree_list.csv` produced two different
+files:
+
+```
+a2c95a33b664bb9a640671337fca460d31725aa730751ab6fef1b5a2c43c0f26
+06ee5e2131197cf6faa14cea6915b897b868b718ed4b26b0f0edf442d3bb2dbf
+```
+
+The cause was one line: `NOW = datetime.now(timezone.utc)`, written into `created_at` and
+`updated_at` on all 195,309 trees, all 569 species and all 41 neighborhoods, plus
+`seed_meta.generated_at`. The uuids were stable, exactly as designed — nothing about identity was
+wrong — so the claim looked true from every angle anybody had checked.
+
+This is worse than an idle claim, because the seed is gitignored: the only way anyone verifies that
+the file on their machine is the file the pipeline describes is to rebuild it and compare. A hash
+that never matches makes that check useless, and a build product nobody can check is a build
+product nobody can trust.
+
+Timestamps now come from a frozen `SEED_EPOCH` — the DataSF snapshot date (E1), which is what these
+rows are actually as-of — overridable with `SOURCE_DATE_EPOCH` for a newer download. Reproducibility
+verified after the change: two runs, same sha256, seed and `Fixtures/sf_species_map.csv` alike.
+
+### E14 — BUILD-PLAN §7 has no category for an occupied site whose label is not a taxon, and the file it tells you to fix is overwritten on every build
+
+Two findings from the same corner of the ingest.
+
+**The missing category.** §7 splits `qSpecies` into two outcomes: a species, or a site placeholder
+that becomes `vacant_site` (E5 widened the placeholder set, and that is still a widening of the same
+two-way split). Seven strings covering **312 trees** fit neither — `Shrub :: Shrub`,
+`Private shrub :: Private Shrub`, `Privet ::`, `:: To Be Determine`,
+`Palm (unknown Genus) :: Palm Spp`, `New Zealand Tea Tree :: New Zealand Tea Tree`,
+`:: Brisbane Box`. Something is growing at each of these sites, so they are not vacant; none of the
+strings names a taxon, so they are not species either. The parser minted a species row per string,
+which meant a planting site labelled `Shrub` had a species uuid, a field-guide slot and a phenology
+surface of its own — the shape of a botanical record, holding a growth habit.
+
+They now map to **no species at all** (`NON_TAXON_SPECIES` in `Tools/build_seed.py`), keep
+`status = alive`, and carry no `species_assertion`. `species_map.is_non_taxon` records which,
+because a provenance fact belongs in a queryable column (DECISIONS §3.13). The profile falls back to
+the street address, which is what the city actually recorded.
+
+**The file that could not be fixed.** `build_seed.py`'s own fatal message for the 2 % stub ceiling
+reads: "Extend the qSpecies parser or **hand-map the offenders in `Fixtures/sf_species_map.csv`**."
+That file is written by `build_seed.py` on every run. Any hand edit survives until the next build
+and then vanishes, silently, with the build reporting success. Corrections belong in the tables at
+the top of the script; the CSV carries a comment saying so, and the message no longer sends anyone
+to edit an output.
+
+Same pass, same file: `patanus racemosa ::` (167 trees) carried a different species id from
+`Platanus racemosa :: California Sycamore` (84 trees), so one species was held as two — recorded in
+`Fixtures/species/SOURCES.md` §10.1, which says "fixing that belongs in the species map, not here."
+It is now folded onto `Platanus racemosa` by `QSPECIES_NAME_CORRECTIONS`, at confidence 0.90 rather
+than the 1.00 a clean binomial earns, because the correction is ours and not the city's.
+
+### E15 — `SOURCES.md` names six strings that are not taxa; there are seven, and one of the six is not one of them
+
+`Fixtures/species/SOURCES.md` §4 states "Eight species have no family: six placeholder strings that
+are not taxa (`Shrub`, `:: To Be Determine`, `Private shrub`, `Palm (unknown Genus)`, `Privet`,
+`Ficus laurel`) and two DataSF strings GBIF could not resolve (`patanus racemosa ::`,
+`:: Brisbane Box`)", and §10.2 repeats the six as the set that "should probably map to null".
+
+The eight species carrying no family in `leaf_retention.yaml` are: `Shrub`, `:: To Be Determine`,
+`Palm (unknown Genus)`, `Private shrub`, `Privet`, **`New Zealand Tea Tree`**, `:: Brisbane Box`,
+`patanus racemosa ::`. `Ficus laurel` is not among them and `New Zealand Tea Tree` is. Sorting the
+eight by whether a taxon can be recovered from the string gives **seven** non-taxa, not six:
+`:: Brisbane Box` and `New Zealand Tea Tree` are bare vernaculars with no genus in them, and the
+one string of the eight that is a genuine misspelling of a real name is `patanus racemosa ::`,
+which E14 merges.
+
+**Why `Ficus laurel` stays a species.** It has a family — `Moraceae`, from GBIF — so the sourcing
+pass did resolve it, and `Ficus` is a genus the city really did record. But look at how the family
+arrived: `match_type: FUZZY`, `rank_matched: SPECIES`, `matched_name: Ficus laureola Warb. ex
+C.C.Berg & Carauta`, confidence 95. A Southeast Asian fig nobody plants in San Francisco. The family
+is right only because *Ficus laureola* is a *Ficus*; the match itself is wrong, and at any rank
+below family it would have written a fact about the wrong plant. This is E10's failure mode in a
+second source: a mechanically-scraped botanical field, validated, confidently wrong. Fuzzy matching
+at species rank should not be allowed to write a field when the query string is not a binomial.
+
+The `leaf_retention` null breakdown in §11 ("38 with no source found, 12 genus-only strings whose
+genus is not uniform, 10 where SelecTree contradicted itself, 6 that are not taxa at all" = 66)
+inherits the same off-by-one and does not re-add to 66 once the seventh is counted.

@@ -13,10 +13,17 @@ Checks (BUILD-PLAN.md section 7 row rules + the on-device index contract):
   3. zero trees with NULL lat/lon
   4. stub-path share below 2%
   5. a bbox query against trees_rtree uses the R*Tree index (EXPLAIN QUERY PLAN)
-  6. every tree with a non-placeholder qSpecies has exactly one species assertion
+  6. every tree carrying a species has exactly one species assertion, and a
+     tree with no species -- a vacant site, or a qSpecies string that names no
+     taxon -- carries none
   plus structural checks: FK integrity, rtree/trees parity, coordinate parity,
   vacant sites carry no species, dbh buckets well-formed, neighborhood coverage,
-  UUIDv5 determinism, and the D5 evergreen/fall-colour rule.
+  UUIDv5 determinism, the curated/id_tips pairing, and the D5
+  evergreen/fall-colour rule.
+
+Note on leaf_retention: NULL is a value, not a gap. It means no authoritative
+source states the species' habit, and the app renders no phenology chip and no
+autumn colour for it (ERRATA E9). The checks below never require it to be set.
 """
 
 from __future__ import annotations
@@ -125,7 +132,8 @@ def main() -> int:
         "SELECT COALESCE(SUM(tree_count),0) FROM species_map WHERE is_stub=1"
     )[0]
     species_rows = q(
-        "SELECT COALESCE(SUM(tree_count),0) FROM species_map WHERE is_placeholder=0"
+        "SELECT COALESCE(SUM(tree_count),0) FROM species_map "
+        "WHERE is_placeholder=0 AND is_non_taxon=0"
     )[0]
     stub_pct = 100.0 * stub_rows / species_rows if species_rows else 0.0
     c.check(
@@ -197,14 +205,37 @@ def main() -> int:
     )
 
     # --------------------------------------------------------- 6 one assertion
+    # A tree with no species carries no assertion, and there are two ways to get
+    # there: the site is vacant, or the city's qSpecies string names no taxon
+    # ("Shrub", "Privet", "To Be Determine" -- NON_TAXON_SPECIES in
+    # Tools/build_seed.py). The second kind is a live tree with an unidentified
+    # occupant, so it must not be asserted onto a species it does not have.
     missing = q(
-        "SELECT COUNT(*) FROM trees WHERE status <> 'vacant_site' AND id NOT IN "
+        "SELECT COUNT(*) FROM trees WHERE status <> 'vacant_site' "
+        "AND species_current IS NOT NULL AND id NOT IN "
         "(SELECT tree_id FROM species_assertions WHERE source='city_import')"
     )[0]
     c.check(
-        "6a. every non-placeholder tree has a city_import assertion",
+        "6a. every tree carrying a species has a city_import assertion",
         missing == 0,
         f"{missing} trees with no assertion",
+    )
+    non_taxon_asserted = q(
+        "SELECT COUNT(*) FROM species_assertions a JOIN trees t ON t.id = a.tree_id "
+        "WHERE t.species_current IS NULL"
+    )[0]
+    c.check(
+        "6d. no tree without a species carries an assertion",
+        non_taxon_asserted == 0,
+        f"{non_taxon_asserted} offending rows",
+    )
+    non_taxon_mapped = q(
+        "SELECT COUNT(*) FROM species_map WHERE is_non_taxon = 1 AND species_id IS NOT NULL"
+    )[0]
+    c.check(
+        "6e. a qSpecies string that names no taxon maps to no species",
+        non_taxon_mapped == 0,
+        f"{non_taxon_mapped} offending rows",
     )
     dupes = q(
         "SELECT COUNT(*) FROM (SELECT tree_id FROM species_assertions "
@@ -308,13 +339,25 @@ def main() -> int:
     )[0]
     c.check("14. planted_year values are plausible", bad_year == 0, f"{bad_year} offending rows")
 
-    stub_species = q(
-        "SELECT COUNT(*) FROM species WHERE curated = 1"
+    # `curated` means "this species has an authored field-guide entry in
+    # Fixtures/species/curated.yaml" (BUILD-PLAN 8). The city import never sets
+    # it; only the content load does, and only for entries that carry id_tips.
+    # A curated row with no id_tips would put an empty field guide on a profile.
+    curated_without_tips = q(
+        "SELECT COUNT(*) FROM species WHERE curated = 1 AND json_array_length(id_tips) = 0"
     )[0]
     c.check(
-        "15. no city-import species is marked curated",
-        stub_species == 0,
-        f"{stub_species} species with curated=1",
+        "15a. every curated species carries id_tips",
+        curated_without_tips == 0,
+        f"{curated_without_tips} curated species with an empty id_tips array",
+    )
+    tips_without_curated = q(
+        "SELECT COUNT(*) FROM species WHERE curated = 0 AND json_array_length(id_tips) > 0"
+    )[0]
+    c.check(
+        "15b. no uncurated species carries id_tips",
+        tips_without_curated == 0,
+        f"{tips_without_curated} uncurated species with id_tips",
     )
 
     # ------------------------------------------------- uuid identity model --
@@ -400,8 +443,10 @@ def main() -> int:
     populated = q(
         "SELECT COUNT(*) FROM species WHERE leaf_retention IS NOT NULL"
     )[0]
-    print(f"  [note] species content pipeline (BUILD-PLAN 8) progress: "
-          f"{populated}/{species} rows have leaf_retention")
+    curated_rows = q("SELECT COUNT(*) FROM species WHERE curated = 1")[0]
+    print(f"  [note] species content (BUILD-PLAN 8): {populated}/{species} rows have "
+          f"leaf_retention, {species - populated} are unknown (ERRATA E9), "
+          f"{curated_rows} carry an authored field guide")
 
     print("-" * 70)
     print(f"  {c.checks - c.failures}/{c.checks} checks passed")

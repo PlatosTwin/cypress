@@ -118,7 +118,7 @@ Ulmus parvifolia 'Drake' :: Drake's Chinese Elm,5195c33e-e753-58f8-8299-32fe90ac
 Cupressus sempervirens :: Italian Cypress,d64a2dcb-017c-506e-bac2-49391fb5e9b9,1.00
 Ligustrum japonicum :: Japanese Privet,019ebbdf-5dea-5d3f-af72-0ecdbf4d6515,1.00
 Cotoneaster SPP :: Cotoneaster,26516ff8-d755-5a91-b84b-bf3bab18dc28,0.75
-patanus racemosa ::,141bd6c1-a953-5fad-bc20-f4e20da540a4,0.20
+patanus racemosa ::,887bf022-3b31-549c-8400-9b6f371d0293,0.90
 Olea europaea 'Wilsonii' :: Wilson Olive Semi-fruitless,50ee2d2b-de7f-5faa-9a8e-7bb0760e3c30,0.90
 Acacia longifolia :: Golden Wattle,98e2e649-6030-55e4-a17e-ff5f1cda812e,1.00
 Agonis flexuosa 'After Dark' :: Peppermint willow 'After Dark',ef4313e5-af9c-5670-a06b-7d0f8561f53e,0.90
@@ -143,7 +143,7 @@ Cupressocyparis leylandii :: Leyland Cypress,9846c997-e925-51dc-997a-597110f3a0c
 Hymenosporum flavum :: Sweet Shade,e74755e9-3911-5683-92a2-489472b23300,1.00
 Malus floribunda :: Showy Crab Apple: Japanese Crabapple,acdd30d8-7680-5a54-a719-a414482d9392,1.00
 Photinia fraseri :: Photinia Tree,9bcffe56-c7bc-5d0c-a5f3-e95a30dd2e8d,1.00
-Shrub :: Shrub,3dc4b87c-069b-5c57-9d2b-97fcecbba053,0.70
+Shrub :: Shrub,,0.00
 Leptospermum scoparium 'Ruby Glow' :: New Zealand Ruby Glow Tea Tree,5b50e05a-ae23-5523-9186-769fede897fe,0.90
 Tree :: Tree,,0.00
 Aesculus x carnea :: Red Horse Chestnut,af1edbf1-d5a9-5b2e-b265-689dcd00fdd4,0.75
@@ -200,7 +200,7 @@ Calocedrus decurrens :: Incense Cedar,13e5bf65-3ec4-56d9-8724-36a8f0f06493,1.00
 Cassia leptophylla :: Gold Medallion Tree,5015a315-2e5d-5499-a225-36f802fdf310,1.00
 Ilex aquifolium :: European Holly,c21e3bcb-29e9-5cab-9989-df4e9225f63e,1.00
 Phoenix dactylifera :: Date Palm,3a90e17a-d4a5-59ff-8251-1e867f8a3643,1.00
-:: To Be Determine,b2bc1dcf-f671-528e-a598-d72ad308563d,0.30
+:: To Be Determine,,0.00
 Albizia julibrissin :: Mimosa Silk Tree,248ed22b-1dbf-5648-9ced-7dc11917a3d7,1.00
 Quercus virginiana :: Southern Live Oak,f25c7b11-8e79-5548-9dbf-0a6ff324c45c,1.00
 Eriobotrya deflexa 'Coppertone' :: Coppertone Loquat,2ef2cd1c-3bcb-55a2-8e01-4a7919b38788,0.90
@@ -217,7 +217,7 @@ Magnolia grandiflora 'Majestic Beauty' :: Majestic Beauty Magnolia,6b8c1204-dba0
 Ficus carica :: Edible Fig,9f52120a-0194-5559-91bc-a5616f04a0fb,1.00
 Prunus persica :: Peach,30b4e651-6d3f-589d-9d51-8dff94cdbc64,1.00
 Azara microphylla :: Little-Leaf Azara,968140bf-88ec-57e8-b5b3-967032b9034a,1.00
-Palm (unknown Genus) :: Palm Spp,f307b115-cdfb-52f3-9b84-62cf48bcd308,0.60
+Palm (unknown Genus) :: Palm Spp,,0.00
 Cercis canadensis :: Eastern Redbud,f768334a-6811-5485-8b5f-f4d14c698ece,1.00
 Ginkgo biloba 'Princeton Sentry' :: Princeton Sentry Maidenhair,6006b15a-fb2c-5726-a543-3a3d58dcd60f,0.90
 Melaleuca spp :: Melaleuca spp,367f9b2d-4cdd-55f6-a3e5-cdff08385b5d,0.75
@@ -247,7 +247,7 @@ Casurina stricta :: Beefwood: Drooping She-Oak,85aec2c5-da57-5e8c-ab34-28ee23a20
 Ficus rubiginosa :: Port Jackson Fig,8ceb330e-4fa1-5990-afca-50147d93c453,1.00
 Acer palmatum 'Bloodgood' :: Bloodgood Japanese Maple,f5528dc7-9767-5538-bc21-d0609badecb4,0.90
 Populus spp :: Poplar Spp,04aa1bb1-0942-5bf6-8a0d-fe2ae21eaed8,0.75
-Private shrub :: Private Shrub,0d69f3ec-25ae-5194-8415-7168c606d362,1.00
+Private shrub :: Private Shrub,,0.00
 Corymbia citriodora :: Lemon Scented Gum,26264134-00a5-5afa-8c22-1465f0924a67,1.00
 Picea Spp :: Spruce Spp,2c8ffefb-1433-5eae-9363-337dff81abae,0.75
 Pseudotsuga menziesii :: Douglas Fir,3ee32509-22e6-55dc-9f06-a4745247108c,1.00
@@ -293,7 +293,7 @@ Olea europaea 'Swan Hill' :: Olive,b5e390bb-666b-597b-b333-d1af19efbfd1,0.90
 Quercus coccinea :: Scarlet Oak,75ec88fe-97e7-55e3-aa0d-5517c87be880,1.00
 Quercus lobata :: Valley Oak,15f2a9a3-39c5-5d6a-a591-d33fbae72ec7,1.00
 Platanus x hispanica 'Bloodgood' :: Bloodgood London Plane,c40345cb-7c43-5a56-b14c-062db439b6e8,0.75
-Privet ::,fd3abb08-3d6d-5234-a3da-b6ce3110dad2,0.70
+Privet ::,,0.00
 Pyrus calleryana 'Redspire' :: Ornamental Pear Tree 'Redspire',0e7db594-4427-5d2e-9e0f-22d7bd5e4919,0.90
 Salix babylonica :: Weeping Willow,1fd5fc2f-f539-5c9a-a02c-19b6c0459199,1.00
 Metasequoia glyplostroboides :: Dawn Redwood,cb2d8d47-b403-5d9b-89d4-3b4579666ccb,1.00
@@ -374,7 +374,7 @@ Ficus microcarpa 'Retusa' :: Pot Belly Fig,a9cfae47-8931-5be8-8395-3ce6af45d8b8,
 Gleditsia triacanthos 'Sunburst' :: Sunburst Honey Locust,02c18052-4189-5702-83a5-e57cac1fcf9c,0.90
 Leptospermum petersonii :: Lemon Scented Tea Tree,0765e68b-61c3-55cd-943e-36a297d41f9b,1.00
 Leptospermum scoparium 'Snow White' :: New Zealand White Tea Tree,2b5f43b4-cc61-5d6d-8db1-13440ba8c9d9,0.90
-New Zealand Tea Tree :: New Zealand Tea Tree,72ee6b1a-85b5-51c1-9937-c0b59641b123,0.60
+New Zealand Tea Tree :: New Zealand Tea Tree,,0.00
 Prunus x 'Amanogawa' :: Flowering Cherry,2457441d-c14e-5b5b-8a09-fde89947156b,0.75
 Pyrus calleryana 'Capital' :: Ornamental Pear Tree 'Capital',324ebf59-b31e-53e0-99b5-95cb620798a0,0.90
 Pyrus calleryana 'Cleveland' :: Ornamental Pear Tree 'Cleveland',2b8ca4e4-da68-5a94-a3be-6ceb1615d06f,0.90
@@ -382,7 +382,7 @@ Syringa :: Lilac Tree,d1e90aeb-0e37-53f5-bc78-8c15e4d94f65,0.70
 Taxodium mucronatum :: Montezuma Cypress,5d2f9a2d-952c-5115-ba6c-6ea45607ff38,1.00
 Ulmus 'Frontier' :: Frontier Elm,41a04727-984c-5c4d-9516-e88a42a29111,0.60
 Washingtonia × filibusta :: Washingtonia × filibusta,96b75154-f747-54a2-9a80-888dbb5e50f3,0.60
-:: Brisbane Box,7233e58d-5a7c-50e4-b12f-eff6fdfe431e,0.30
+:: Brisbane Box,,0.00
 Abutilon hybridum :: Flowering maple,b8ad6187-021b-5aeb-b6b5-88e7fd2f85cc,1.00
 Archontophoenix myolensis :: Myola palm,14c680a0-a668-5716-88f3-8ac80c2cf83a,1.00
 Auranticarpa rhombifolia :: Queensland Pittosporum,7cdd21f3-a01f-5292-8b42-87705ad85c6e,1.00

@@ -69,20 +69,32 @@ extension Vitality {
     /// Evergreen and semi-deciduous species are ratable year-round: they carry foliage in every
     /// month, so "full, dense canopy **for the season**" is always answerable.
     ///
+    /// **Unknown habit permits the rating** (ERRATA E9). The rule PRODUCT §3 states is narrow —
+    /// *deciduous* species are suppressed off-season — and suppression is itself an assertion, that
+    /// this tree is out of leaf right now. With no sourced habit we cannot make it, and the cost of
+    /// the two errors is not symmetric: wrongly permitting costs one observation a rater can skip,
+    /// wrongly suppressing removes the vitality UI from a tree for half the year with no way for
+    /// anybody in the field to say otherwise.
+    ///
     /// - Parameters:
-    ///   - leafRetention: the species attribute that drives all phenology surfaces (D5).
+    ///   - leafRetention: the species attribute that drives all phenology surfaces (D5), or `nil`
+    ///     when no source states it.
     ///   - month: calendar month, 1–12.
-    ///   - leafOnMonths: the months this species is in leaf. See `Species.leafOnMonths`.
+    ///   - leafOnMonths: the months this species is in leaf, or `nil` when unknown.
+    ///     See `Species.leafOnMonths`.
     public static func isRatingPermitted(
-        leafRetention: LeafRetention,
+        leafRetention: LeafRetention?,
         month: Int,
-        leafOnMonths: Set<Int>
+        leafOnMonths: Set<Int>?
     ) -> Bool {
         guard (1...12).contains(month) else { return false }
         switch leafRetention {
-        case .evergreen, .semiDeciduous:
+        case nil, .evergreen?, .semiDeciduous?:
             return true
-        case .deciduous:
+        case .deciduous?:
+            // A deciduous species always has a window (`Species.leafOnMonths`), so this only
+            // fires for a caller that has the habit but not the calendar; it does not suppress.
+            guard let leafOnMonths else { return true }
             return leafOnMonths.contains(month)
         }
     }

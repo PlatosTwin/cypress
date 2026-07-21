@@ -50,15 +50,15 @@ public struct SpeciesQueries {
     /// **Note what the plan actually says: `SCAN … USING COVERING INDEX`, not a range `SEARCH`.**
     /// `COLLATE NOCASE` on the comparison does not match the `BINARY` collation the seed's indexes
     /// were built with, so SQLite cannot turn the range into a seek and walks the index instead. It
-    /// is still a *covering* walk — the `species` table itself is never touched — over 577 rows, and
+    /// is still a *covering* walk — the `species` table itself is never touched — over 569 rows, and
     /// it measures 0.1 ms. Dropping `COLLATE NOCASE` would restore the seek and break "quercus"
     /// matching "Quercus", which is the whole point of an autocomplete field. Rebuilding the seed's
     /// two name indexes `COLLATE NOCASE` would give both, and belongs in `Tools/build_seed.py`
-    /// rather than in a client-side workaround; at 577 rows it buys nothing measurable today.
+    /// rather than in a client-side workaround; at 569 rows it buys nothing measurable today.
     ///
     /// **The gap versus §6.** Trigram matching finds "oak" inside "Coast Live Oak"; a prefix scan
     /// does not. Closing it needs an FTS5 index the seed does not carry, and building one on device
-    /// over 577 rows at first launch is cheap — but the seed is read-only and the index belongs
+    /// over 569 rows at first launch is cheap — but the seed is read-only and the index belongs
     /// beside the data, so this is the ingest pipeline's to add, not the client's to fake.
     /// Recorded here rather than silently approximated.
     public func search(query: String, limit: Int, connection: SQLiteConnection) throws -> [Species] {
@@ -137,14 +137,11 @@ public struct SpeciesQueries {
         return try Species(
             id: id,
             scientificName: scientificName,
-            // `common_name` is NULL for 13 of the 577 seeded species. The scientific name is the
+            // `common_name` is NULL for 11 of the 569 seeded species. The scientific name is the
             // honest fallback — inventing a common name would be fabricating content (§15).
             commonName: try row.stringIfPresent("species_common_name") ?? scientificName,
             family: try row.stringIfPresent("species_family"),
-            leafRetention: leafRetention(
-                stored: try row.stringIfPresent("species_leaf_retention"),
-                seasonal: seasonal
-            ),
+            leafRetention: leafRetention(stored: try row.stringIfPresent("species_leaf_retention")),
             idTips: decodeJSON([IDTip].self, try row.stringIfPresent("species_id_tips")) ?? [],
             seasonal: seasonal,
             careNotes: decodeCareNotes(try row.stringIfPresent("species_care_notes")),
@@ -154,32 +151,20 @@ public struct SpeciesQueries {
         )
     }
 
-    /// Resolves `species.leaf_retention`, which is **NULL for every row in the shipped seed**.
+    /// Reads `species.leaf_retention`, which is NULL for 59 of the 569 seeded species.
     ///
-    /// The seed's own header states this is deliberate: "All content columns below (family,
-    /// leaf_retention, id_tips, seasonal, care_notes, curated) are DELIBERATELY EMPTY in the city
-    /// import. They are the target of the authored species pipeline in BUILD-PLAN section 8."
-    /// `Core`'s `Species.leafRetention` is not optional, so the read layer must resolve something.
+    /// The column carries exactly the three strings of `LeafRetention` or SQL NULL, and NULL means
+    /// no authoritative source states this species' habit (ERRATA E9, and the seed schema's own
+    /// note beside the column). Nothing is resolved, substituted or inferred here: this read layer
+    /// used to pick a value for the unauthored rows, and *any* pick is a botanical claim the record
+    /// does not carry — `.deciduous` lets a fall-colour chip onto an unclassified tree, `.evergreen`
+    /// asserts that 59 species keep their leaves through winter.
     ///
-    /// The rule below is chosen so that no resolution can ever *invent a phenological claim*:
-    ///
-    /// - Authored value present → use it. This is the only case that will exist once §8 lands.
-    /// - Absent, but the row carries `fall_color_months` → `.deciduous`. The data has already said
-    ///   the species colours in autumn; calling it evergreen would make `Species.init` throw its
-    ///   D5 validation, which is the correct reading of that combination.
-    /// - Absent and no fall-colour months → `.evergreen`. Of the three, it is the only value that
-    ///   cannot violate D5: `canShowFallColor` is false, so no fall-colour chip and no autumn strip
-    ///   colour can be derived from a species whose leaf retention nobody has authored yet. It also
-    ///   never suppresses the vitality UI off-season, so an unauthored species does not lose a
-    ///   capability it should have.
-    ///
-    /// This value is unobservable today regardless: every seeded row has `curated = 0`, and the
-    /// long tail "renders name, family, and a generic silhouette" (BUILD-PLAN §8) with no phenology
-    /// surface at all. The rule exists so that if that gate is ever missed, the failure is a
-    /// missing chip rather than a wrong one.
-    static func leafRetention(stored: String?, seasonal: SeasonalCalendar) -> LeafRetention {
-        if let stored, let authored = LeafRetention(rawValue: stored) { return authored }
-        return seasonal.fallColorMonths.isEmpty ? .evergreen : .deciduous
+    /// An unrecognised string is also `nil` rather than a throw: the vocabulary is pinned by a
+    /// database CHECK, so a value outside it means the seed and this enum have drifted, and losing
+    /// a chip is the right failure for that. `Tools/verify_seed.py` check 17b is what catches it.
+    static func leafRetention(stored: String?) -> LeafRetention? {
+        stored.flatMap(LeafRetention.init(rawValue:))
     }
 
     // MARK: - JSON columns

@@ -20,6 +20,13 @@ Checks, in the order BUILD-PLAN section 8 and DECISIONS D5 care about them:
      BUILD-PLAN section 15: "Do not invent botanical content".
   4. Scientific names, species ids and common names match the seed database's
      `species` table exactly, so the loading migration cannot silently create rows.
+     The exception is the handful of entries `Tools/build_seed.py` deliberately
+     retires or merges (its `RETIRED_SPECIES_NAMES` / `MERGED_SPECIES_NAMES`,
+     imported here rather than restated): the YAML is a sourcing record with
+     citations and is not rewritten when the qSpecies map is corrected, so those
+     entries are expected to have no seed row of their own. They are held to a
+     stricter rule instead -- a retired non-taxon must carry no botanical claim,
+     and a merged entry must agree with the species it merged into.
   5. Shape rules: leaf_retention is one of the three enum values, curated entries
      carry 2 to 4 id_tips, ids are unique, id_tip icons come from the documented
      vocabulary.
@@ -45,6 +52,9 @@ except ImportError:  # pragma: no cover
         "PyYAML is required: python3 -m pip install -r Tools/requirements.txt\n"
         "(or: python3 -m pip install pyyaml)"
     )
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from build_seed import MERGED_SPECIES_NAMES, RETIRED_SPECIES_NAMES  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
 LEAF_RETENTION_VALUES = {"evergreen", "deciduous", "semi_deciduous"}
@@ -82,7 +92,8 @@ def seed_species(path: Path) -> dict[str, dict]:
         # `uuid` is the stable external identity; the integer `id` is an internal
         # primary key and must not be referenced from checked-in content.
         rows = con.execute(
-            "SELECT uuid, scientific_name, common_name FROM species WHERE deleted_at IS NULL"
+            "SELECT uuid, scientific_name, common_name, leaf_retention FROM species "
+            "WHERE deleted_at IS NULL"
         ).fetchall()
     return {row["uuid"]: dict(row) for row in rows}
 
@@ -125,6 +136,40 @@ def check_months(values, where: str, report: Report) -> None:
 def check_entry(entry: dict, seed: dict[str, dict], report: Report, *, curated: bool) -> None:
     name = entry.get("scientific_name", "<unnamed>")
     species_uuid = entry.get("species_uuid")
+
+    # ---- Rule 4, first exception: strings that name no taxon. Tools/build_seed.py
+    # maps them to no species, so there is no seed row to match against. What
+    # matters instead is that nobody has written botany onto a growth habit.
+    if name in RETIRED_SPECIES_NAMES:
+        report.check(
+            species_uuid not in seed,
+            f"{name}: retired as a non-taxon by build_seed, but the seed still carries "
+            f"a species row for it",
+        )
+        report.check(
+            entry.get("family") is None and entry.get("leaf_retention") is None,
+            f"{name}: names no taxon, so it must carry no family and no leaf_retention",
+        )
+        return
+
+    # ---- Rule 4, second exception: a misspelling merged onto the species it
+    # misspells. The entry's own uuid is retired; what it says must agree with
+    # the row it merged into, or the merge changed a botanical fact.
+    merged_into = MERGED_SPECIES_NAMES.get(name)
+    if merged_into is not None:
+        target = next(
+            (r for r in seed.values() if r["scientific_name"] == merged_into), None
+        )
+        if report.check(
+            target is not None,
+            f"{name}: merged into {merged_into!r}, which is not in the seed",
+        ):
+            report.check(
+                target["leaf_retention"] == entry.get("leaf_retention"),
+                f"{name}: merged into {merged_into!r} but their leaf_retention disagrees "
+                f"({entry.get('leaf_retention')!r} vs {target['leaf_retention']!r} in the seed)",
+            )
+        return
 
     # ---- Rule 4: the seed database is the authority on identity.
     row = seed.get(species_uuid)
@@ -272,7 +317,15 @@ def main() -> int:
         f"family set for {sum(1 for e in lr if e.get('family'))}/{len(lr)} species, "
         f"{with_family:,} mapped rows"
     )
-    report.note(f"{len(nulls)} species carry a null leaf_retention and render as 'not known yet'")
+    # A null leaf_retention is a value the app can represent, not a hole to be
+    # filled: unknown renders no phenology chip and no autumn colour (ERRATA E9).
+    report.note(f"{len(nulls)} entries carry a null leaf_retention and render as 'not known yet'")
+    retired = [e for e in lr if e.get("scientific_name") in RETIRED_SPECIES_NAMES]
+    report.note(
+        f"{len(retired)} of those entries name no taxon and were retired from the seed "
+        f"entirely ({sum(e.get('sf_tree_count') or 0 for e in retired):,} planting sites, "
+        f"now carrying no species at all)"
+    )
     evergreens = [e for e in lr if e.get("leaf_retention") == "evergreen"]
     report.note(f"{len(evergreens)} evergreen species; all checked against D5")
 

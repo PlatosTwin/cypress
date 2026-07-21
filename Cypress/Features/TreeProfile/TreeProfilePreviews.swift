@@ -131,18 +131,20 @@ enum TreeProfileSeedFixtures {
 
     // MARK: Species, verbatim from the seed
     //
-    // `leaf_retention`, `id_tips`, `seasonal` and `care_notes` are NULL/empty for all 577 seeded
-    // species — the curated pipeline of BUILD-PLAN §8 has not run. They are left empty here too,
-    // because the whole point of the preview is to see what the screen does with that absence.
-    // `SpeciesQueries.leafRetention(stored:seasonal:)` resolves an unauthored row to `.evergreen`,
-    // the only value that cannot violate D5, and that resolution is reproduced here.
+    // Both of these are in the curated 40 (BUILD-PLAN §8), so they carry a sourced family, habit
+    // and id_tips; the values are copied from the seed rather than written here. `seasonal` is
+    // empty for both because no source gives either a bloom or fruit calendar.
+    //
+    // The species-less case — where `leafRetention` is `nil` and the profile must derive no
+    // phenology at all (ERRATA E9) — is the `vacant` preview below.
 
     static let montereyCypressSpecies = try! Species(
         id: montereyCypressSpeciesID,
         scientificName: "Cupressus macrocarpa",
         commonName: "Monterey Cypress",
+        family: "Cupressaceae",
         leafRetention: .evergreen,
-        curated: false,
+        curated: true,
         createdAt: date(2026, 7, 21),
         updatedAt: date(2026, 7, 21)
     )
@@ -151,8 +153,9 @@ enum TreeProfileSeedFixtures {
         id: brisbaneBoxSpeciesID,
         scientificName: "Lophostemon confertus",
         commonName: "Brisbane Box",
+        family: "Myrtaceae",
         leafRetention: .evergreen,
-        curated: false,
+        curated: true,
         createdAt: date(2026, 7, 21),
         updatedAt: date(2026, 7, 21)
     )
