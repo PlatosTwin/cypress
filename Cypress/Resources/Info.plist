@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDisplayName</key>
+	<string>Cypress</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Cypress uses your location to show the street trees around you and to work out which one you are standing in front of.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>A visit is a photo of a tree lined up against the last one. Cypress needs the camera to take it.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Cypress can keep a copy of the photos you take of a tree in your own library.</string>
+	<key>UIAppFonts</key>
+	<array>
+		<string>SourceSerif4-Regular.ttf</string>
+		<string>SourceSerif4-SemiBold.ttf</string>
+		<string>SourceSerif4-Bold.ttf</string>
+		<string>SourceSerif4-Italic.ttf</string>
+		<string>AlegreyaSans-Regular.ttf</string>
+		<string>AlegreyaSans-Medium.ttf</string>
+		<string>AlegreyaSans-Bold.ttf</string>
+		<string>AlegreyaSans-ExtraBold.ttf</string>
+		<string>AlegreyaSans-Italic.ttf</string>
+		<string>SplineSansMono-Regular.ttf</string>
+		<string>SplineSansMono-Medium.ttf</string>
+		<string>SplineSansMono-SemiBold.ttf</string>
+	</array>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+</dict>
+</plist>
