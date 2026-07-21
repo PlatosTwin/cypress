@@ -1,6 +1,6 @@
-#if canImport(Testing)
 import Foundation
 import Testing
+@testable import Cypress
 
 /// **Acceptance gate (ARCHITECTURE §7).** "The bundled seed database's schema and row invariants are
 /// pinned; a diff fails the test."
@@ -8,8 +8,8 @@ import Testing
 /// Extended with the query plans, because a plan that quietly stops using `idx_trees_lat_lon` is a
 /// 195,309-row table scan on the map's critical path and passes every correctness assertion.
 ///
-/// > No test target is configured yet, so these do not run in CI. `DataGates.seedContract(seedURL:)`
-/// > is the same check driven from a plain executable, which is how it was verified.
+/// > `DataGates.seedContract(seedURL:)` is the same check driven from a plain executable, kept for
+/// > verifying a seed rebuild without booting a simulator.
 @Suite("Seed contract")
 struct SeedContractTests {
 
@@ -31,7 +31,7 @@ struct SeedContractTests {
     func contract() async throws {
         let seedURL = try #require(Self.seedURL, "no seed database; set CYPRESS_SEED_PATH")
         let failures = try await DataGates.seedContract(seedURL: seedURL)
-        #expect(failures.isEmpty, "\(failures.count) gate failures:\n" + failures.joined(separator: "\n"))
+        #expect(failures.isEmpty, "\(failures.count) gate failures:\n\(failures.joined(separator: "\n"))")
     }
 
     @Test("the seed is attached read-only and cannot be written")
@@ -77,23 +77,52 @@ struct SeedContractTests {
         #expect(!bounds.contains(farNorth))
     }
 
-    @Test("an unauthored leaf_retention never produces a fall-colour claim (D5)")
-    func unauthoredLeafRetentionIsSafe() {
-        // The shipped seed leaves `leaf_retention` NULL for all 577 species. Whatever the read
-        // layer resolves it to must not let a fall-colour chip appear.
-        let resolved = SpeciesQueries.leafRetention(stored: nil, seasonal: .empty)
-        #expect(!resolved.canShowFallColor)
+    @Test("a NULL leaf_retention stays unknown all the way to the UI (ERRATA E9)")
+    func unknownLeafRetentionStaysUnknown() throws {
+        // The seed leaves `leaf_retention` NULL for 59 of its 569 species. The read layer resolves
+        // nothing: NULL in, `nil` out. Any substitute would be a botanical claim nobody sourced.
+        #expect(SpeciesQueries.leafRetention(stored: nil) == nil)
+        #expect(SpeciesQueries.leafRetention(stored: "semi_deciduous") == .semiDeciduous)
+        // A value outside the CHECK vocabulary means the seed and the enum have drifted; losing a
+        // chip is the right failure for that, not inventing one.
+        #expect(SpeciesQueries.leafRetention(stored: "evergreenish") == nil)
 
-        // …but if the row does carry fall-colour months, calling it evergreen would be wrong and
-        // would make Species.init throw its D5 validation.
-        let withFallColor = SpeciesQueries.leafRetention(
-            stored: nil,
-            seasonal: SeasonalCalendar(fallColorMonths: [10, 11])
+        let unknown = try Species(
+            scientificName: "Ficus laurel",
+            commonName: "Laurel Fig",
+            leafRetention: nil,
+            curated: true
         )
-        #expect(withFallColor == .deciduous)
 
-        // An authored value always wins.
-        #expect(SpeciesQueries.leafRetention(stored: "semi_deciduous", seasonal: .empty) == .semiDeciduous)
+        // No phenology chip, anywhere: not fall colour, not a neutral one. What the chip row and
+        // the season strip then do with an empty vocabulary is checked in `VisitGates`.
+        #expect(unknown.availablePhenologyTags.isEmpty)
+        #expect(PhenologyTag.validated(PhenologyTag.allCases, for: unknown).isEmpty)
+
+        // No leaf-on window to state, and therefore no month in which the vitality UI is
+        // suppressed — suppression asserts the tree is out of leaf, which nobody established.
+        #expect(unknown.leafOnMonths == nil)
+        for month in 1...12 {
+            #expect(Vitality.isRatingPermitted(for: unknown, month: month))
+            #expect(Vitality.suppression(for: unknown, month: month) == .none)
+        }
+
+        // D5's invariant does not fire on an unknown habit: the throw is about evergreens.
+        #expect(throws: Never.self) {
+            try Species(
+                scientificName: "Ficus laurel",
+                commonName: "Laurel Fig",
+                leafRetention: nil,
+                seasonal: SeasonalCalendar(fallColorMonths: [10, 11])
+            )
+        }
+        #expect(throws: SpeciesValidationError.self) {
+            try Species(
+                scientificName: "Hesperocyparis macrocarpa",
+                commonName: "Monterey Cypress",
+                leafRetention: .evergreen,
+                seasonal: SeasonalCalendar(fallColorMonths: [10, 11])
+            )
+        }
     }
 }
-#endif

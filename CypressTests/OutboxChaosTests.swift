@@ -1,6 +1,6 @@
-#if canImport(Testing)
 import Foundation
 import Testing
+@testable import Cypress
 
 /// **Acceptance gate (ARCHITECTURE §7).** 20 queued mutations across scripted failures; zero loss,
 /// zero duplicates on `clientUUID`, correct per-item terminal states, and a backoff schedule that
@@ -9,15 +9,15 @@ import Testing
 /// The scenario itself lives in `DataGates.outboxChaos()` so that it can also be run from a plain
 /// executable — which is how it was verified before a test target existed. See `DataGates`.
 ///
-/// > No test target is configured for this project yet. These suites compile into the app target as
-/// > nothing (`canImport(Testing)` is false there) and are ready to be added to one.
+/// > The gate stays in `DataGates` rather than moving in here, because it is also driven from a
+/// > plain executable when a change needs verifying without a simulator.
 @Suite("Outbox chaos")
 struct OutboxChaosTests {
 
     @Test("20 mutations survive scripted failures with zero loss and zero duplicates")
     func chaos() async throws {
         let failures = try await DataGates.outboxChaos()
-        #expect(failures.isEmpty, "\(failures.count) gate failures:\n" + failures.joined(separator: "\n"))
+        #expect(failures.isEmpty, "\(failures.count) gate failures:\n\(failures.joined(separator: "\n"))")
     }
 
     @Test("the backoff schedule is 30 s, 2 m, 10 m, 1 h, then hourly")
@@ -67,6 +67,12 @@ struct OutboxChaosTests {
         #expect(first.clientUUID == second.clientUUID)
     }
 
+    @Test("a photo's shot type survives the persisted outbox and reaches the transport")
+    func shotTypesSurviveTheOutbox() async throws {
+        let failures = try await DataGates.outboxPhotoShotTypes()
+        #expect(failures.isEmpty, "\(failures.count) gate failures:\n\(failures.joined(separator: "\n"))")
+    }
+
     @Test("the wifi-only toggle gates photo binaries and nothing else")
     func wifiOnlyGatesBinariesOnly() async throws {
         let store = try await CypressStore.inMemory()
@@ -74,20 +80,25 @@ struct OutboxChaosTests {
         let queue = OutboxQueue(queue: store.queue, transport: transport)
 
         let visit = Visit(treeID: UUID(), attribution: OutboxTestSupport.attribution, capturedAt: Date())
-        _ = try await queue.enqueue(.visit(visit), photoPaths: ["/tmp/a.jpg", "/tmp/b.jpg"])
+        _ = try await queue.enqueue(.visit(visit), photos: [
+            OutboxPhoto(path: "/tmp/a.jpg", shotType: .fullTree),
+            OutboxPhoto(path: "/tmp/b.jpg", shotType: .leaf)
+        ])
 
         _ = try await queue.drain(photoUploadsAllowed: false)
         var record = try #require(try await queue.records().first)
         #expect(record.jsonSynced)
         #expect(record.item.state == .pending)
-        #expect(record.item.photoPaths.count == 2)
+        #expect(record.item.photos.count == 2)
         #expect(await transport.uploadedPhotoPaths.isEmpty)
 
         _ = try await queue.drain(photoUploadsAllowed: true)
         record = try #require(try await queue.records().first)
         #expect(record.item.state == .done)
-        #expect(record.item.photoPaths.isEmpty)
+        #expect(record.item.photos.isEmpty)
         #expect(await transport.uploadedPhotoPaths.count == 2)
+        // The framing the contributor chose is what the transport is handed, per photo.
+        #expect(await transport.uploadedPhotos.map(\.shotType) == [.fullTree, .leaf])
     }
 
     @Test("screen 17's snapshot reports state, fail count, and a reason per item")
@@ -115,4 +126,3 @@ struct OutboxChaosTests {
         #expect(snapshot.lostCount == 0)
     }
 }
-#endif

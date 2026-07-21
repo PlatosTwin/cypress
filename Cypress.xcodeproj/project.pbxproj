@@ -8,7 +8,18 @@
 
 /* Begin PBXFileReference section */
 		CY0000000000000000000003 /* Cypress.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Cypress.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		CY0000000000000000000030 /* CypressTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CypressTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
+
+/* Begin PBXContainerItemProxy section */
+		CY0000000000000000000037 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = CY0000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = CY0000000000000000000004;
+			remoteInfo = Cypress;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
 		CY0000000000000000000011 /* Exceptions for "Cypress" folder in "Cypress" target */ = {
@@ -29,10 +40,22 @@
 			path = Cypress;
 			sourceTree = "<group>";
 		};
+		CY0000000000000000000031 /* CypressTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = CypressTests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		CY0000000000000000000006 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CY0000000000000000000034 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -54,6 +77,7 @@
 			isa = PBXGroup;
 			children = (
 				CY0000000000000000000003 /* Cypress.app */,
+				CY0000000000000000000030 /* CypressTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -81,7 +105,36 @@
 			productReference = CY0000000000000000000003 /* Cypress.app */;
 			productType = "com.apple.product-type.application";
 		};
+		CY0000000000000000000032 /* CypressTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CY0000000000000000000038 /* Build configuration list for PBXNativeTarget "CypressTests" */;
+			buildPhases = (
+				CY0000000000000000000033 /* Sources */,
+				CY0000000000000000000034 /* Frameworks */,
+				CY0000000000000000000035 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				CY0000000000000000000036 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				CY0000000000000000000031 /* CypressTests */,
+			);
+			name = CypressTests;
+			productName = CypressTests;
+			productReference = CY0000000000000000000030 /* CypressTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
+
+/* Begin PBXTargetDependency section */
+		CY0000000000000000000036 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = CY0000000000000000000004 /* Cypress */;
+			targetProxy = CY0000000000000000000037 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXProject section */
 		CY0000000000000000000000 /* Project object */ = {
@@ -93,6 +146,10 @@
 				TargetAttributes = {
 					CY0000000000000000000004 = {
 						CreatedOnToolsVersion = 16.4;
+					};
+					CY0000000000000000000032 = {
+						CreatedOnToolsVersion = 16.4;
+						TestTargetID = CY0000000000000000000004;
 					};
 				};
 			};
@@ -111,6 +168,7 @@
 			projectRoot = "";
 			targets = (
 				CY0000000000000000000004 /* Cypress */,
+				CY0000000000000000000032 /* CypressTests */,
 			);
 		};
 /* End PBXProject section */
@@ -123,10 +181,24 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		CY0000000000000000000035 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		CY0000000000000000000005 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CY0000000000000000000033 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -269,6 +341,40 @@
 			};
 			name = Release;
 		};
+		CY0000000000000000000039 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = app.cypress.CypressTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Cypress.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Cypress";
+			};
+			name = Debug;
+		};
+		CY000000000000000000003A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = app.cypress.CypressTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Cypress.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Cypress";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -286,6 +392,15 @@
 			buildConfigurations = (
 				CY0000000000000000000020 /* Debug */,
 				CY0000000000000000000021 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		CY0000000000000000000038 /* Build configuration list for PBXNativeTarget "CypressTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CY0000000000000000000039 /* Debug */,
+				CY000000000000000000003A /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

@@ -1,6 +1,6 @@
-#if canImport(Testing)
 import Foundation
 import Testing
+@testable import Cypress
 
 /// The sqlite3 wrapper, the migration runner, and the schema invariants BUILD-PLAN §13 asks to be
 /// enforced by the engine rather than by convention.
@@ -10,7 +10,7 @@ struct SQLiteStoreTests {
     @Test("binding lifetime, transactions, migrations, and schema invariants")
     func storeGate() async throws {
         let failures = try await DataGates.sqliteStore()
-        #expect(failures.isEmpty, "\(failures.count) gate failures:\n" + failures.joined(separator: "\n"))
+        #expect(failures.isEmpty, "\(failures.count) gate failures:\n\(failures.joined(separator: "\n"))")
     }
 
     @Test("every checked return code surfaces as a SQLiteError, not as silence")
@@ -53,7 +53,7 @@ struct SQLiteStoreTests {
     }
 
     @Test("timestamps round-trip through both spellings the seed and the app emit")
-    func timestampRoundTrip() {
+    func timestampRoundTrip() throws {
         let date = Date(timeIntervalSince1970: 1_800_000_000.25)
         let text = SQLiteTimestamp.string(from: date)
         let parsed = try #require(SQLiteTimestamp.date(from: text))
@@ -132,7 +132,7 @@ struct SQLiteStoreTests {
                 capturedAt: Date(),
                 status: status
             )
-            #expect(observation.raisesReviewFlagKind != nil == status.opensReviewFlag)
+            #expect((observation.raisesReviewFlagKind != nil) == status.opensReviewFlag)
         }
     }
 
@@ -145,4 +145,3 @@ struct SQLiteStoreTests {
         #expect(!schemas.contains(SeedDatabase.schemaName))
     }
 }
-#endif

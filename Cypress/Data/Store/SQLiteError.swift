@@ -19,7 +19,8 @@ enum SQLiteExtendedCode {
 /// than against "the ones we usually see": `SQLITE_MISUSE`, `SQLITE_CORRUPT`, and the extended
 /// `SQLITE_IOERR_*` family all arrive through the same door and all mean the caller must stop.
 public struct SQLiteError: Error, CustomStringConvertible, Equatable {
-    /// Primary result code, e.g. `SQLITE_CONSTRAINT` (19).
+    /// Whatever `sqlite3_errcode` returned. Extended result codes are enabled on every connection
+    /// here, so this is usually an *extended* code despite the name. Classify on `primaryCode`.
     public let code: Int32
     /// Extended result code, e.g. `SQLITE_CONSTRAINT_UNIQUE` (2067). Equal to `code` when the
     /// connection has no extended code to offer.
@@ -65,6 +66,18 @@ public struct SQLiteError: Error, CustomStringConvertible, Equatable {
 
     // MARK: - Classification
 
+    /// The primary result code, whatever `code` happens to hold.
+    ///
+    /// `code` comes from `sqlite3_errcode`, and this layer enables extended result codes on every
+    /// connection — so `sqlite3_errcode` returns *extended* codes too, and `code` is 1555
+    /// (`SQLITE_CONSTRAINT_PRIMARYKEY`) where the doc comment above promises 19
+    /// (`SQLITE_CONSTRAINT`). Comparing `code` to a primary constant therefore never matched.
+    ///
+    /// Masking is sqlite's own documented relationship between the two: the low byte of an
+    /// extended code is its primary code, and a code with no extended form is unchanged by the
+    /// mask. Classify on this, never on `code`.
+    public var primaryCode: Int32 { code & 0xFF }
+
     /// A uniqueness violation. The outbox relies on this to make `clientUUID` insertion idempotent
     /// rather than racy (BUILD-PLAN §4).
     public var isUniqueConstraintViolation: Bool {
@@ -74,10 +87,10 @@ public struct SQLiteError: Error, CustomStringConvertible, Equatable {
 
     /// Any CHECK / NOT NULL / FK / trigger-RAISE violation. These are schema-invariant failures
     /// (BUILD-PLAN §13) and are never retryable — the same row will fail the same way forever.
-    public var isConstraintViolation: Bool { code == SQLITE_CONSTRAINT }
+    public var isConstraintViolation: Bool { primaryCode == SQLITE_CONSTRAINT }
 
     /// Transient contention. Retryable.
-    public var isBusy: Bool { code == SQLITE_BUSY || code == SQLITE_LOCKED }
+    public var isBusy: Bool { primaryCode == SQLITE_BUSY || primaryCode == SQLITE_LOCKED }
 
     /// Mapping into the BUILD-PLAN §6 taxonomy so a storage failure reaching the API boundary
     /// arrives as one of the eight codes the UI knows how to render (ARCHITECTURE §4).

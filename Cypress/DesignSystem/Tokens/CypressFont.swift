@@ -305,7 +305,8 @@ enum CypressFont {
     /// Idempotent and safe to call alongside `UIAppFonts` — a face that is already registered
     /// simply reports `alreadyRegistered` and is ignored. This exists so the design system does
     /// not depend on an Info.plist edit (see ARCHITECTURE §2: the project file is not hand-edited).
-    /// Call once from the composition root in `App/`.
+    /// Call once from the composition root in `App/`. Returns the number of faces *newly*
+    /// registered, so a second call legitimately returns 0 — it is not a count of faces available.
     @discardableResult
     static func registerBundledFonts(in bundle: Bundle = .main) -> Int {
         let urls = bundle.urls(forResourcesWithExtension: "ttf", subdirectory: nil) ?? []
