@@ -8,8 +8,9 @@ import Foundation
 public protocol OutboxTransport: Sendable {
     /// `POST /sync`. One result per item, matched on `clientUUID`.
     func sync(_ items: [OutboxItem]) async throws -> [SyncResult]
-    /// Uploads one photo binary. Gated by the wifi-only toggle; the JSON above never is.
-    func uploadPhoto(at localPath: String, for item: OutboxItem) async throws
+    /// Uploads one photo binary, with the shot type it was framed as. Gated by the wifi-only
+    /// toggle; the JSON above never is.
+    func uploadPhoto(_ photo: OutboxPhoto, for item: OutboxItem) async throws
 }
 
 /// What one drain pass did. Returned for tests and for the outbox screen's summary line.
@@ -76,8 +77,8 @@ public actor OutboxQueue {
     ///
     /// Returns the row as stored, whether or not this call is the one that created it.
     @discardableResult
-    public func enqueue(_ payload: OutboxPayload, photoPaths: [String] = []) async throws -> OutboxItem {
-        let item = try payload.makeItem(photoPaths: photoPaths, createdAt: now())
+    public func enqueue(_ payload: OutboxPayload, photos: [OutboxPhoto] = []) async throws -> OutboxItem {
+        let item = try payload.makeItem(photos: photos, createdAt: now())
         try await queue.write { connection in
             try store.enqueue(item, connection: connection)
         }
@@ -186,12 +187,12 @@ public actor OutboxQueue {
             }
 
             // --- Photo binaries.
-            if !record.item.photoPaths.isEmpty {
+            if !record.item.photos.isEmpty {
                 guard photoUploadsAllowed else {
                     try await queue.write { connection in
                         try store.reschedule(
                             record.id,
-                            reason: OutboxFailureReason.awaitingWifi(photoCount: record.item.photoPaths.count),
+                            reason: OutboxFailureReason.awaitingWifi(photoCount: record.item.photos.count),
                             at: settledAt,
                             connection: connection
                         )
@@ -201,11 +202,11 @@ public actor OutboxQueue {
                 }
 
                 var photoFailure: Error?
-                for path in record.item.photoPaths {
+                for photo in record.item.photos {
                     do {
-                        try await transport.uploadPhoto(at: path, for: record.item)
+                        try await transport.uploadPhoto(photo, for: record.item)
                         try await queue.write { connection in
-                            try store.removePhotoPath(path, from: record.id, at: settledAt, connection: connection)
+                            try store.removePhoto(atPath: photo.path, from: record.id, at: settledAt, connection: connection)
                         }
                     } catch {
                         photoFailure = error
@@ -295,7 +296,7 @@ public actor OutboxQueue {
             kind: record.item.kind,
             clientUUID: record.item.clientUUID,
             payload: record.item.payload,
-            photoPaths: record.item.photoPaths,
+            photos: record.item.photos,
             state: .pending,
             failCount: failCount,
             createdAt: record.windowStartedAt,
@@ -355,10 +356,14 @@ public struct APIOutboxTransport: OutboxTransport {
         try await api.sync(items)
     }
 
-    public func uploadPhoto(at localPath: String, for item: OutboxItem) async throws {
+    public func uploadPhoto(_ photo: OutboxPhoto, for item: OutboxItem) async throws {
         // §6 splits this in two: POST /photos/begin reserves the id and the destination, then the
-        // client PUTs the binary there. The outbox carries only the path, so the ticket is minted
-        // per upload; `LocalAPI` makes it a move inside the app container.
+        // client PUTs the binary there. The ticket is therefore minted per upload; `LocalAPI` makes
+        // it a move inside the app container.
+        //
+        // The shot type comes off the queued photo, which is where the chip the contributor tapped
+        // on screen 04 ends up. `photos.shot_type` is append-only, so this is the last moment the
+        // true framing exists to be recorded (BUILD-PLAN §4).
         let payload = try OutboxPayload.decode(kind: item.kind, from: item.payload)
         let ticket = try await api.beginPhotoUpload(
             PhotoUploadRequest(
@@ -367,11 +372,11 @@ public struct APIOutboxTransport: OutboxTransport {
                     if case let .visit(visit) = payload { return visit.id }
                     return nil
                 }(),
-                shotType: .fullTree,
-                localPath: localPath,
+                shotType: photo.shotType,
+                localPath: photo.path,
                 capturedAt: item.createdAt
             )
         )
-        try await api.uploadPhoto(at: localPath, ticket: ticket)
+        try await api.uploadPhoto(at: photo.path, ticket: ticket)
     }
 }

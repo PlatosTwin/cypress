@@ -30,9 +30,12 @@ struct VisitDraft {
     var phenologyTags: [PhenologyTag]
     /// D6: "Store per-contribution GPS accuracy." Nil only when there was no fix at all.
     var gpsAccuracyM: Double?
-    /// The photo the visit is about. A visit without one cannot be saved — "Log visit" is disabled
-    /// until a photo is snapped (PROTOTYPE-FLOW §1.6.1).
-    var photoPath: String?
+    /// The photo the visit is about, and the framing chip it was taken under. A visit without one
+    /// cannot be saved — "Log visit" is disabled until a photo is snapped (PROTOTYPE-FLOW §1.6.1).
+    ///
+    /// Path and shot type are one value because they are written together and read together: the
+    /// upload records `photos.shot_type` from whatever it is handed, and that record is append-only.
+    var photo: OutboxPhoto?
     var capturedAt: Date
 
     init(
@@ -41,7 +44,7 @@ struct VisitDraft {
         note: String? = nil,
         phenologyTags: [PhenologyTag] = [],
         gpsAccuracyM: Double? = nil,
-        photoPath: String? = nil,
+        photo: OutboxPhoto? = nil,
         capturedAt: Date = Date()
     ) {
         self.visitID = visitID
@@ -49,11 +52,12 @@ struct VisitDraft {
         self.note = note
         self.phenologyTags = phenologyTags
         self.gpsAccuracyM = gpsAccuracyM
-        self.photoPath = photoPath
+        self.photo = photo
         self.capturedAt = capturedAt
     }
 
-    var hasPhoto: Bool { photoPath != nil }
+    var photoPath: String? { photo?.path }
+    var hasPhoto: Bool { photo != nil }
 }
 
 /// What a save produced, for the confirmation screen.
@@ -107,7 +111,7 @@ enum VisitOutboxWriter {
         species: Species? = nil,
         now: Date = Date()
     ) async throws -> (visit: Visit, item: OutboxItem) {
-        guard let photoPath = draft.photoPath else { throw APIError.validationFailed }
+        guard let photo = draft.photo else { throw APIError.validationFailed }
 
         // D5, enforced at the boundary as well as in the chip row: an evergreen never carries
         // `fall_color`, whatever the UI thought it was offering.
@@ -128,7 +132,9 @@ enum VisitOutboxWriter {
             updatedAt: now
         )
 
-        let item = try await outbox.enqueue(.visit(visit), photoPaths: [photoPath])
+        // The shot type rides along with the binary. It is the only carrier: the payload beside it
+        // is a `Visit`, which has no photo columns, and the upload is what writes `photos.shot_type`.
+        let item = try await outbox.enqueue(.visit(visit), photos: [photo])
         return (visit, item)
     }
 }

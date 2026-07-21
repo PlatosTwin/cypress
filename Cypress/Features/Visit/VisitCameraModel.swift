@@ -147,7 +147,10 @@ final class VisitCameraModel {
     private func apply(imageData: Data) {
         guard let image = UIImage(data: imageData) else { return }
         do {
-            draft.photoPath = try VisitPhotoStaging.write(imageData, for: draft.visitID)
+            let path = try VisitPhotoStaging.write(imageData, for: draft.visitID)
+            // The chip as it stands at capture. It is re-read at save, below, because the chip row
+            // stays live after the shutter and the last tap before "Log visit" is the answer.
+            draft.photo = OutboxPhoto(path: path, shotType: shotType)
             draft.capturedAt = Date()
             snapshot = image
             saveError = nil
@@ -159,7 +162,7 @@ final class VisitCameraModel {
     }
 
     func retake() {
-        draft.photoPath = nil
+        draft.photo = nil
         snapshot = nil
     }
 
@@ -176,6 +179,11 @@ final class VisitCameraModel {
 
         draft.note = note
         draft.phenologyTags = Array(selectedTags)
+        // The chips stay tappable after the shutter, so the framing is resolved here, where the note
+        // and the tags are, rather than being frozen at capture.
+        if let path = draft.photoPath {
+            draft.photo = OutboxPhoto(path: path, shotType: shotType)
+        }
 
         do {
             let receipt = try await VisitOutboxWriter.save(

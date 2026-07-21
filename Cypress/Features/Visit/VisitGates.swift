@@ -33,6 +33,9 @@ public enum VisitGates {
         public var treeID: UUID
         public var note: String
         public var photoPath: String
+        /// The chip the contributor tapped. Deliberately not `full_tree` in this gate: the framing
+        /// used to be invented at upload, and only a non-default value can prove it no longer is.
+        public var shotType: ShotType
         public var gpsAccuracyM: Double
 
         public static func url(besides databaseURL: URL) -> URL {
@@ -76,7 +79,11 @@ public enum VisitGates {
             "the outbox row must carry the visit's client-generated clientUUID",
             into: &failures
         )
-        expect(item.photoPaths == [draft.photoPath!], "the photo binary must travel with the row", into: &failures)
+        expect(
+            item.photos == [draft.photo!],
+            "the photo binary and its shot type must travel with the row, was \(item.photos)",
+            into: &failures
+        )
         expect(
             visit.gpsAccuracyM != nil,
             "D6: every contribution stores its GPS accuracy",
@@ -97,6 +104,7 @@ public enum VisitGates {
             treeID: treeID,
             note: visit.note ?? "",
             photoPath: draft.photoPath!,
+            shotType: draft.photo!.shotType,
             gpsAccuracyM: visit.gpsAccuracyM ?? -1
         )
         try JSONEncoder().encode(manifest).write(to: Manifest.url(besides: databaseURL), options: .atomic)
@@ -134,8 +142,8 @@ public enum VisitGates {
             into: &failures
         )
         expect(
-            record.item.photoPaths == [manifest.photoPath],
-            "the photo binary reference must survive termination too",
+            record.item.photos == [OutboxPhoto(path: manifest.photoPath, shotType: manifest.shotType)],
+            "the photo reference and its shot type must survive termination too, was \(record.item.photos)",
             into: &failures
         )
         expect(
@@ -180,6 +188,18 @@ public enum VisitGates {
         let photos = try await api.treeProfile(id: manifest.treeID).photos
         expect(photos.count == 1, "expected one photo record, found \(photos.count)", into: &failures)
         expect(photos.first?.storageKey != nil, "the photo record should carry a storage key once uploaded", into: &failures)
+        // The sentence this gate was extended for: what the contributor framed is what got stored.
+        // `photos.shot_type` is append-only, so a wrong value here is permanent.
+        expect(
+            photos.first?.shotType == manifest.shotType,
+            "the photo was stored as \(String(describing: photos.first?.shotType)), expected \(manifest.shotType)",
+            into: &failures
+        )
+        expect(
+            photos.first?.shotType.supportsGhostOverlay == false,
+            "a \(manifest.shotType.rawValue) shot must not become the next visit's framing reference",
+            into: &failures
+        )
 
         return failures
     }
@@ -222,7 +242,7 @@ public enum VisitGates {
         // Idempotency on the client-generated key: replaying the identical item must come back a
         // duplicate and must not create a second row.
         let replay = try await api.sync([
-            OutboxPayload.visit(profile.visits[0]).makeItem(photoPaths: [])
+            OutboxPayload.visit(profile.visits[0]).makeItem(photos: [])
         ])
         expect(replay.first?.status == .duplicate, "a replay should be a duplicate, was \(String(describing: replay.first?.status))", into: &failures)
         let after = try await api.treeProfile(id: manifest.treeID).visits
@@ -358,7 +378,7 @@ public enum VisitGates {
 
         func species(
             _ name: String,
-            _ retention: LeafRetention,
+            _ retention: LeafRetention?,
             curated: Bool,
             fallColorMonths: [Int] = []
         ) throws -> Species {
@@ -396,6 +416,38 @@ public enum VisitGates {
         expect(
             deciduousTags == VisitPhenologyVocabulary.order.filter(deciduousTags.contains),
             "the chip row must read in seasonal order, was \(deciduousTags)",
+            into: &failures
+        )
+
+        // --- Habit unknown: no chip at all, even though the entry is curated. 59 of the seed's
+        // 569 species are in this state and every one of them is a species somebody authored
+        // content for and nobody could source a leaf retention for (ERRATA E9).
+        let unknownHabit = try species("Ficus laurel", nil, curated: true)
+        expect(
+            VisitPhenologyVocabulary.tags(for: unknownHabit).isEmpty,
+            "a species whose habit no source states must offer no phenology chips",
+            into: &failures
+        )
+        expect(
+            PhenologyTag.validated(PhenologyTag.allCases, for: unknownHabit).isEmpty,
+            "the outbox write must drop every phenology tag for a species with no habit",
+            into: &failures
+        )
+
+        // --- The season strip clamps for an unknown habit exactly as it does for an evergreen:
+        // drawing a bare month is a claim about the canopy, leaving it out is not.
+        let bareWinter: [FoliageStrip.Density] = [.bare, .bare, .thin, .full, .full, .full,
+                                                  .full, .full, .full, .thin, .bare, .bare]
+        let unknownStrip = await FoliageStrip.enforcingD5(bareWinter, leafRetention: nil)
+        let deciduousStrip = await FoliageStrip.enforcingD5(bareWinter, leafRetention: .deciduous)
+        expect(
+            !unknownStrip.contains(.bare),
+            "the season strip must not render a bare month for a species with no habit",
+            into: &failures
+        )
+        expect(
+            deciduousStrip.contains(.bare),
+            "a deciduous species must keep its bare months",
             into: &failures
         )
 
@@ -437,7 +489,9 @@ public enum VisitGates {
             note: "Fog dripping off the crown",
             phenologyTags: [],
             gpsAccuracyM: 9,
-            photoPath: photo.path,
+            // A trunk shot, because the bug this gate now guards was that every shot arrived
+            // labelled `full_tree`, and the default would have passed either way.
+            photo: OutboxPhoto(path: photo.path, shotType: .trunk),
             capturedAt: Date(timeIntervalSince1970: 1_800_000_000)
         )
     }

@@ -27,7 +27,8 @@ public enum AppSchema {
     /// Every migration, in order. Checked in, never edited after shipping — a new step gets a new
     /// version number.
     public static let migrations: [Migration] = [
-        Migration(version: 1, name: "contributions and outbox", sql: v1)
+        Migration(version: 1, name: "contributions and outbox", sql: v1),
+        Migration(version: 2, name: "outbox photos carry their shot type", sql: v2)
     ]
 
     /// The version a freshly migrated database reports.
@@ -364,5 +365,42 @@ public enum AppSchema {
                       'blocking_signal_or_sightline')),
         shown_at  TEXT NOT NULL
     );
+    """
+
+    // MARK: - v2
+
+    /// `outbox.photo_paths` goes from a list of paths to a list of `{path, shotType}` objects.
+    ///
+    /// v1 stored the path alone, so the upload had nothing to send and labelled every binary
+    /// `full_tree`. Whichever chip the contributor tapped on screen 04, the photo record came out a
+    /// full-tree shot, which is what the ghost overlay lines the next visit up against and what A3
+    /// picks as a tree's best photo. `photos.shot_type` is append-only: nothing recovers the truth
+    /// afterwards, so the shot type has to travel with the binary from the outbox onwards.
+    ///
+    /// **Rows already on disk become `.other`, not `.full_tree`.** The outbox is durable across
+    /// launches, so an upgrade meets pending rows written by the old build, and their real framing
+    /// is not recorded anywhere. `full_tree` is the guess that caused the bug, and it is the one
+    /// label that makes a photo eligible to become a ghost reference and a best photo — carrying it
+    /// forward would keep a leaf close-up in that role forever. `other` is the stored vocabulary's
+    /// unclassified value (BUILD-PLAN §4): the photo still uploads and still reaches the timeline,
+    /// it is simply not promoted on a label nobody chose. `OutboxPhoto`'s decoder makes the same
+    /// choice for the same reason.
+    ///
+    /// The column keeps its name. Renaming it would rewrite the table's CHECK constraints for a
+    /// cosmetic gain, and the outbox is the one table that must not be rebuilt under a pending
+    /// contributor's feet.
+    ///
+    /// Idempotent, per `Migration`: after the rewrite no element is a JSON text node, so a replay
+    /// matches nothing. The guard reads `json_each`'s own `type` column rather than calling
+    /// `json_type(value)`, which would re-parse a bare path as JSON and abort the whole migration.
+    private static let v2 = """
+    UPDATE outbox
+       SET photo_paths = (
+             SELECT COALESCE(json_group_array(json_object('path', value, 'shotType', 'other')), json('[]'))
+               FROM json_each(outbox.photo_paths)
+           )
+     WHERE EXISTS (
+             SELECT 1 FROM json_each(outbox.photo_paths) WHERE type = 'text'
+           );
     """
 }

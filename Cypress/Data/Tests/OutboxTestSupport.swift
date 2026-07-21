@@ -64,7 +64,10 @@ public enum OutboxTestSupport {
         public private(set) var offers: [UUID: Int] = [:]
         /// Every item that came back `applied` rather than `duplicate`. Must equal `applied`.
         public private(set) var appliedResponses: [UUID] = []
-        public private(set) var uploadedPhotoPaths: [String] = []
+        /// Every binary the drain offered, with the shot type it was offered under. The shot type is
+        /// recorded because that is the field the transport used to invent.
+        public private(set) var uploadedPhotos: [OutboxPhoto] = []
+        public var uploadedPhotoPaths: [String] { uploadedPhotos.map(\.path) }
         public private(set) var syncCallCount = 0
 
         public init(script: Script = .allSucceed) {
@@ -116,9 +119,9 @@ public enum OutboxTestSupport {
             return SyncResult(clientUUID: item.clientUUID, status: .applied)
         }
 
-        public func uploadPhoto(at localPath: String, for item: OutboxItem) async throws {
+        public func uploadPhoto(_ photo: OutboxPhoto, for item: OutboxItem) async throws {
             if script == .photosFail { throw URLError(.networkConnectionLost) }
-            uploadedPhotoPaths.append(localPath)
+            uploadedPhotos.append(photo)
         }
     }
 
@@ -132,9 +135,9 @@ public enum OutboxTestSupport {
     }
 
     /// Twenty mutations across all five outbox kinds, deterministic so a failure is reproducible.
-    public static func twentyMutations(treeIDs: [UUID], capturedAt: Date) -> [(OutboxPayload, [String])] {
+    public static func twentyMutations(treeIDs: [UUID], capturedAt: Date) -> [(OutboxPayload, [OutboxPhoto])] {
         precondition(!treeIDs.isEmpty, "need at least one tree to attach contributions to")
-        var result: [(OutboxPayload, [String])] = []
+        var result: [(OutboxPayload, [OutboxPhoto])] = []
 
         for index in 0..<20 {
             let treeID = treeIDs[index % treeIDs.count]
@@ -154,8 +157,11 @@ public enum OutboxTestSupport {
                         createdAt: moment,
                         updatedAt: moment
                     )),
-                    // Every fourth visit carries a binary, so the wifi-only path is exercised.
-                    index % 20 == 0 ? ["/tmp/cypress-test-photo-\(index).jpg"] : []
+                    // Every fourth visit carries a binary, so the wifi-only path is exercised. It is
+                    // a trunk shot: the chaos gate should notice if the framing goes missing.
+                    index % 20 == 0
+                        ? [OutboxPhoto(path: "/tmp/cypress-test-photo-\(index).jpg", shotType: .trunk)]
+                        : []
                 ))
             case 1:
                 result.append((

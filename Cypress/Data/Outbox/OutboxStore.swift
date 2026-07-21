@@ -46,7 +46,7 @@ public struct OutboxStore {
             ":kind": item.kind.rawValue,
             ":client": item.clientUUID,
             ":payload": String(data: item.payload, encoding: .utf8) ?? "{}",
-            ":photos": JSONColumn.encode(item.photoPaths) ?? "[]",
+            ":photos": JSONColumn.encode(item.photos) ?? "[]",
             ":state": item.state.rawValue,
             ":failCount": item.failCount,
             ":lastError": item.lastError,
@@ -87,13 +87,19 @@ public struct OutboxStore {
     }
 
     /// Removes an uploaded binary from the item's pending list.
-    public func removePhotoPath(_ path: String, from id: UUID, at date: Date, connection: SQLiteConnection) throws {
+    ///
+    /// Keyed on the path rather than the whole object: the path is what the upload consumed, and a
+    /// row cannot stage the same file twice — `VisitPhotoStaging` names the file after the visit.
+    /// `json(value)` re-inserts each survivor as an object instead of a quoted string, which is the
+    /// difference between rewriting the list and destroying it. Every element is an object by the
+    /// time this runs; `AppSchema` v2 converts the rows that were not.
+    public func removePhoto(atPath path: String, from id: UUID, at date: Date, connection: SQLiteConnection) throws {
         let statement = try connection.cachedStatement("""
             UPDATE outbox
                SET photo_paths = (
-                     SELECT COALESCE(json_group_array(value), json('[]'))
+                     SELECT COALESCE(json_group_array(json(value)), json('[]'))
                        FROM json_each(outbox.photo_paths)
-                      WHERE value <> :path
+                      WHERE json_extract(value, '$.path') <> :path
                    ),
                    updated_at = :now
              WHERE id = :id
@@ -279,7 +285,9 @@ public struct OutboxStore {
             kind: try row.value("kind", OutboxItem.Kind.self),
             clientUUID: try row.uuid("client_uuid"),
             payload: Data((try row.string("payload")).utf8),
-            photoPaths: JSONColumn.decode([String].self, try row.stringIfPresent("photo_paths")) ?? [],
+            // `OutboxPhoto` decodes the pre-shot-type bare-string form too, so a row that somehow
+            // escaped the v2 migration still yields its binaries instead of an empty list.
+            photos: JSONColumn.decode([OutboxPhoto].self, try row.stringIfPresent("photo_paths")) ?? [],
             state: try row.value("state", OutboxItem.State.self),
             failCount: try row.int("fail_count"),
             lastError: try row.stringIfPresent("last_error"),

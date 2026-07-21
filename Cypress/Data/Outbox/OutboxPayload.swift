@@ -107,14 +107,14 @@ public enum OutboxPayload: Sendable {
 
     /// Builds the outbox row for this mutation.
     ///
-    /// `photoPaths` are on-device paths of binaries that have not been uploaded. The wifi-only
-    /// toggle gates these and nothing else (BUILD-PLAN §4).
-    public func makeItem(photoPaths: [String] = [], createdAt: Date = Date()) throws -> OutboxItem {
+    /// `photos` are binaries that have not been uploaded, each carrying the shot type it was framed
+    /// as. The wifi-only toggle gates these and nothing else (BUILD-PLAN §4).
+    public func makeItem(photos: [OutboxPhoto] = [], createdAt: Date = Date()) throws -> OutboxItem {
         OutboxItem(
             kind: kind,
             clientUUID: clientUUID,
             payload: try encoded(),
-            photoPaths: photoPaths,
+            photos: photos,
             createdAt: createdAt,
             updatedAt: createdAt
         )

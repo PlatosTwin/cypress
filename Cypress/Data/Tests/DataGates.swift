@@ -90,7 +90,11 @@ public enum DataGates {
             let first = try SchemaMigrator.migrate(AppSchema.migrations, on: connection)
             let second = try SchemaMigrator.migrate(AppSchema.migrations, on: connection)
             let version = try connection.userVersion
-            expect(first == [1], "migrations: first run applied \(first), expected [1]", into: &failures)
+            expect(
+                first == AppSchema.migrations.map(\.version),
+                "migrations: first run applied \(first), expected \(AppSchema.migrations.map(\.version))",
+                into: &failures
+            )
             expect(second.isEmpty, "migrations: second run re-applied \(second)", into: &failures)
             expect(
                 version == AppSchema.currentVersion,
@@ -183,7 +187,8 @@ public enum DataGates {
             await rejects("outbox row marked done with photos pending", """
                 INSERT INTO outbox (id, kind, client_uuid, payload, photo_paths, state, json_synced,
                     window_started_at, created_at, updated_at)
-                VALUES ('\(UUID().uuidString)','visit','\(UUID().uuidString)','{}','["/tmp/a.jpg"]','done',1,
+                VALUES ('\(UUID().uuidString)','visit','\(UUID().uuidString)','{}',
+                    '[{"path":"/tmp/a.jpg","shotType":"trunk"}]','done',1,
                     '\(now)','\(now)','\(now)')
                 """)
 
@@ -248,11 +253,11 @@ public enum DataGates {
 
         // --- Enqueue, twice. The second pass must be a complete no-op: enqueuing is idempotent on
         // clientUUID, which is what protects against a double tap or a re-run view model.
-        for (payload, photoPaths) in mutations {
-            _ = try await queue.enqueue(payload, photoPaths: photoPaths)
+        for (payload, photos) in mutations {
+            _ = try await queue.enqueue(payload, photos: photos)
         }
-        for (payload, photoPaths) in mutations {
-            _ = try await queue.enqueue(payload, photoPaths: photoPaths)
+        for (payload, photos) in mutations {
+            _ = try await queue.enqueue(payload, photos: photos)
         }
 
         var records = try await queue.records()
@@ -456,14 +461,17 @@ public enum DataGates {
                 gpsAccuracyM: 5,
                 capturedAt: clock.now
             )
-            _ = try await queue.enqueue(.visit(visit), photoPaths: ["/tmp/cypress-photo.jpg"])
+            _ = try await queue.enqueue(
+                .visit(visit),
+                photos: [OutboxPhoto(path: "/tmp/cypress-photo.jpg", shotType: .leaf)]
+            )
 
             // Metered connection: the JSON goes, the binary waits.
             _ = try await queue.drain(photoUploadsAllowed: false)
             var record = try await queue.records().first
             expect(record?.jsonSynced == true, "wifi-only: the JSON item did not sync on a metered connection", into: &failures)
             expect(record?.item.state == .pending, "wifi-only: item is \(String(describing: record?.item.state))", into: &failures)
-            expect(record?.item.photoPaths.count == 1, "wifi-only: the photo was uploaded anyway", into: &failures)
+            expect(record?.item.photos.count == 1, "wifi-only: the photo was uploaded anyway", into: &failures)
             expect(record?.item.failCount == 0, "wifi-only: waiting for wi-fi counted as a failure", into: &failures)
             let uploadsBefore = await transport.uploadedPhotoPaths.count
             expect(uploadsBefore == 0, "wifi-only: \(uploadsBefore) binaries uploaded on a metered connection", into: &failures)
@@ -506,6 +514,183 @@ public enum DataGates {
         }
 
         return failures
+    }
+
+    // MARK: - Gate 1b: a photo's shot type survives the outbox
+
+    /// **The framing chip the contributor tapped is what the upload records.**
+    ///
+    /// The outbox used to carry paths alone, so `APIOutboxTransport` had nothing to send and
+    /// labelled every binary `full_tree`. `photos.shot_type` is append-only and drives both the
+    /// ghost overlay's reference shot and A3's best photo, so a wrong label is permanent and
+    /// visible. This gate follows one non-full-tree photo the whole way: enqueue, close the
+    /// database, reopen it, drain, and check what the transport was handed.
+    ///
+    /// It also covers the upgrade case, which is the one that can lose work rather than mislabel
+    /// it: rows written by the previous build are already on disk in the bare-path shape.
+    public static func outboxPhotoShotTypes() async throws -> [String] {
+        var failures: [String] = []
+        let outboxStore = OutboxStore()
+
+        // --- A leaf close-up, across a close and reopen of a real file, and out to the transport.
+        do {
+            let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("cypress-shot-type-\(UUID().uuidString)", isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let databaseURL = directory.appendingPathComponent("cypress.sqlite")
+
+            let photo = OutboxPhoto(path: directory.appendingPathComponent("leaf.jpg").path, shotType: .leaf)
+            let visit = Visit(
+                treeID: UUID(),
+                attribution: OutboxTestSupport.attribution,
+                note: "Leaf close-up",
+                capturedAt: Date(timeIntervalSince1970: 1_800_000_000)
+            )
+
+            // Session one: enqueue and stop, the way a save in a basement ends.
+            do {
+                let store = try await CypressStore.open(databaseURL: databaseURL, seedURL: nil)
+                let queue = OutboxQueue(
+                    queue: store.queue,
+                    transport: OutboxTestSupport.ScriptedTransport()
+                )
+                _ = try await queue.enqueue(.visit(visit), photos: [photo])
+                // Idempotency is keyed on clientUUID and must not have moved with the payload shape.
+                _ = try await queue.enqueue(.visit(visit), photos: [photo])
+                let records = try await queue.records()
+                expect(records.count == 1, "shot type: a second enqueue made \(records.count) rows", into: &failures)
+            }
+
+            // Session two: a different process would see exactly this.
+            let store = try await CypressStore.open(databaseURL: databaseURL, seedURL: nil)
+            let transport = OutboxTestSupport.ScriptedTransport()
+            let queue = OutboxQueue(queue: store.queue, transport: transport)
+
+            guard let reopened = try await queue.records().first else {
+                failures.append("shot type: the queued row did not survive a reopen")
+                return failures
+            }
+            expect(
+                reopened.item.photos == [photo],
+                "shot type: the row came back as \(reopened.item.photos), expected \(photo)",
+                into: &failures
+            )
+            expect(
+                reopened.item.clientUUID == visit.clientUUID,
+                "shot type: the idempotency key did not survive the reopen",
+                into: &failures
+            )
+
+            _ = try await queue.drain()
+            let offered = await transport.uploadedPhotos
+            expect(
+                offered == [photo],
+                "shot type: the transport was handed \(offered), expected \(photo)",
+                into: &failures
+            )
+            expect(
+                offered.first?.shotType != .fullTree,
+                "shot type: a leaf close-up was uploaded as a full-tree shot",
+                into: &failures
+            )
+            let settled = try await queue.records().first
+            expect(settled?.item.state == .done, "shot type: the row did not settle after its photo went", into: &failures)
+            expect(settled?.item.photos.isEmpty == true, "shot type: the uploaded binary was not removed", into: &failures)
+        }
+
+        // --- Two binaries on one row: removing the uploaded one must not flatten the survivor.
+        do {
+            let store = try await CypressStore.inMemory()
+            let transport = OutboxTestSupport.ScriptedTransport()
+            let queue = OutboxQueue(queue: store.queue, transport: transport)
+            let trunk = OutboxPhoto(path: "/tmp/cypress-trunk.jpg", shotType: .trunk)
+            let leaf = OutboxPhoto(path: "/tmp/cypress-leaf.jpg", shotType: .leaf)
+            let item = try await queue.enqueue(
+                .visit(Visit(treeID: UUID(), attribution: OutboxTestSupport.attribution, capturedAt: Date())),
+                photos: [trunk, leaf]
+            )
+            try await store.queue.write { connection in
+                try outboxStore.removePhoto(atPath: trunk.path, from: item.id, at: Date(), connection: connection)
+            }
+            let remaining = try await queue.records().first?.item.photos
+            expect(
+                remaining == [leaf],
+                "shot type: after one upload the row holds \(String(describing: remaining)), expected \(leaf)",
+                into: &failures
+            )
+        }
+
+        // --- The upgrade. A row written by the previous build, in a v1 database, then migrated.
+        do {
+            let connection = try SQLiteConnection(path: ":memory:")
+            _ = try SchemaMigrator.migrate(AppSchema.migrations.filter { $0.version <= 1 }, on: connection)
+
+            let now = SQLiteTimestamp.string(from: Date(timeIntervalSince1970: 1_800_000_000))
+            let clientUUID = UUID().uuidString
+            try connection.execute("""
+                INSERT INTO outbox (id, kind, client_uuid, payload, photo_paths, state, json_synced,
+                    window_started_at, created_at, updated_at)
+                VALUES ('\(UUID().uuidString)','visit','\(clientUUID)','{}',
+                    '["/tmp/old-a.jpg","/tmp/old-b.jpg"]','pending',0,'\(now)','\(now)','\(now)')
+                """)
+
+            let applied = try SchemaMigrator.migrate(AppSchema.migrations, on: connection)
+            expect(applied == [2], "upgrade: migrating a v1 database applied \(applied), expected [2]", into: &failures)
+
+            var rows = try outboxStore.allItems(connection: connection)
+            expect(rows.count == 1, "upgrade: \(rows.count) rows survived the migration, expected 1", into: &failures)
+            expect(
+                rows.first?.item.photos.map(\.path) == ["/tmp/old-a.jpg", "/tmp/old-b.jpg"],
+                "upgrade: the pending binaries were lost: \(String(describing: rows.first?.item.photos))",
+                into: &failures
+            )
+            expect(
+                rows.first?.item.photos.allSatisfy { $0.shotType == .other } == true,
+                "upgrade: an old row was labelled \(String(describing: rows.first?.item.photos.map(\.shotType)))",
+                into: &failures
+            )
+            expect(
+                rows.first?.item.clientUUID == UUID(uuidString: clientUUID),
+                "upgrade: the migration moved the idempotency key",
+                into: &failures
+            )
+
+            // Replaying the migration must not re-wrap what it already wrapped.
+            let stored = try storedPhotoPathsJSON(connection: connection)
+            try AppSchema.migrations.first(where: { $0.version == 2 })?.migrate(connection)
+            let afterReplay = try storedPhotoPathsJSON(connection: connection)
+            expect(
+                stored == afterReplay,
+                "upgrade: replaying the migration changed the column: \(stored) then \(afterReplay)",
+                into: &failures
+            )
+
+            // And a bare-path row that somehow reaches a migrated database still decodes rather than
+            // dropping a contributor's pending visit.
+            try connection.execute("""
+                INSERT INTO outbox (id, kind, client_uuid, payload, photo_paths, state, json_synced,
+                    window_started_at, created_at, updated_at)
+                VALUES ('\(UUID().uuidString)','visit','\(UUID().uuidString)','{}',
+                    '["/tmp/stray.jpg"]','pending',0,'\(now)','\(now)','\(now)')
+                """)
+            rows = try outboxStore.allItems(connection: connection)
+            expect(rows.count == 2, "upgrade: a bare-path row failed to decode and vanished", into: &failures)
+            expect(
+                rows.last?.item.photos == [OutboxPhoto(path: "/tmp/stray.jpg", shotType: .other)],
+                "upgrade: a bare-path row decoded as \(String(describing: rows.last?.item.photos))",
+                into: &failures
+            )
+        }
+
+        return failures
+    }
+
+    /// The `outbox.photo_paths` column exactly as SQLite holds it, for the migration's replay check.
+    private static func storedPhotoPathsJSON(connection: SQLiteConnection) throws -> String {
+        let statement = try connection.prepare("SELECT group_concat(photo_paths) AS j FROM outbox")
+        defer { statement.finalize() }
+        return try statement.fetchOne { try $0.stringIfPresent("j") ?? "" } ?? ""
     }
 
     // MARK: - Gate 2: the seed contract
@@ -832,22 +1017,68 @@ public enum DataGates {
         let matches = try await store.queue.read { connection in
             try speciesQueries.search(query: "Quercus", limit: 25, connection: connection)
         }
-        expect(!matches.isEmpty, "species search: 'Quercus' matched nothing in a 577-species seed", into: &failures)
+        expect(!matches.isEmpty, "species search: 'Quercus' matched nothing in a 569-species seed", into: &failures)
         expect(
             matches.allSatisfy { $0.scientificName.lowercased().hasPrefix("quercus") || $0.commonName.lowercased().hasPrefix("quercus") },
             "species search: a match starts with neither name",
             into: &failures
         )
 
-        // --- The species content pipeline (BUILD-PLAN §8) has not run: leaf_retention is NULL for
-        // every row. Pinned so that when it does run, this line has to be updated deliberately.
-        let unauthored = try await count("""
-            SELECT COUNT(*) AS n FROM \(SeedDatabase.schemaName).species WHERE leaf_retention IS NULL
+        // --- The species content pipeline (BUILD-PLAN §8) has run, and its coverage is pinned to
+        // the build receipt rather than to a literal, so a content rebuild updates both halves at
+        // once. `unknown` is not a shortfall to be closed: those species have no authoritative
+        // source for their habit and the app renders no phenology for them (ERRATA E9).
+        let withLeafRetention = try await count("""
+            SELECT COUNT(*) AS n FROM \(SeedDatabase.schemaName).species WHERE leaf_retention IS NOT NULL
             """)
         let curated = try await count("SELECT COUNT(*) AS n FROM \(SeedDatabase.schemaName).species WHERE curated = 1")
         expect(
-            unauthored == speciesCount && curated == 0,
-            "seed contract: species content has landed (\(speciesCount - unauthored) with leaf_retention, \(curated) curated); update SpeciesQueries.leafRetention and this expectation together",
+            String(withLeafRetention) == meta["species_with_leaf_retention"],
+            "seed contract: \(withLeafRetention) species carry leaf_retention but seed_meta says \(meta["species_with_leaf_retention"] ?? "absent")",
+            into: &failures
+        )
+        expect(
+            String(curated) == meta["species_curated"],
+            "seed contract: \(curated) curated species but seed_meta says \(meta["species_curated"] ?? "absent")",
+            into: &failures
+        )
+
+        // --- Every value in the column is one the enum knows, so nothing decodes to `nil` by
+        // accident. `SpeciesQueries.leafRetention` maps an unknown string to `nil`, which would
+        // silently look exactly like the honest unknown state.
+        let unrecognised = try await count("""
+            SELECT COUNT(*) AS n FROM \(SeedDatabase.schemaName).species
+             WHERE leaf_retention IS NOT NULL
+               AND leaf_retention NOT IN ('evergreen','deciduous','semi_deciduous')
+            """)
+        expect(
+            unrecognised == 0,
+            "seed contract: \(unrecognised) species carry a leaf_retention outside the enum",
+            into: &failures
+        )
+
+        // --- D5 in the shipped file, not just in the CHECK that wrote it (DECISIONS §3.14). The
+        // `IS 'evergreen'` form is null-safe, so an unknown habit is untouched by this rule.
+        let d5Violations = try await count("""
+            SELECT COUNT(*) AS n FROM \(SeedDatabase.schemaName).species
+             WHERE leaf_retention IS 'evergreen'
+               AND json_array_length(COALESCE(json_extract(seasonal, '$.fall_color_months'), '[]')) > 0
+            """)
+        expect(
+            d5Violations == 0,
+            "seed contract: \(d5Violations) evergreen species carry fall_color_months (D5)",
+            into: &failures
+        )
+
+        // --- A tree whose city record names no taxon carries no species at all, so it cannot
+        // inherit a real species' phenology, autumn colour or field guide.
+        let nonTaxonWithSpecies = try await count("""
+            SELECT COUNT(*) AS n FROM \(SeedDatabase.schemaName).species_map
+             WHERE is_non_taxon = 1 AND species_id IS NOT NULL
+            """)
+        expect(
+            nonTaxonWithSpecies == 0,
+            "seed contract: \(nonTaxonWithSpecies) qSpecies strings that name no taxon still map to a species",
             into: &failures
         )
 

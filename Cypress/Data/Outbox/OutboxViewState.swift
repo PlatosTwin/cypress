@@ -132,7 +132,7 @@ public struct OutboxSnapshot: Sendable, Equatable {
                 errorCode: record.item.lastErrorCode,
                 treeID: treeID,
                 treeName: treeNames[treeID],
-                photoCount: record.item.photoPaths.count,
+                photoCount: record.item.photos.count,
                 createdAt: record.item.createdAt,
                 nextAttemptAt: record.nextAttemptAt
             )
@@ -141,7 +141,7 @@ public struct OutboxSnapshot: Sendable, Equatable {
         waitingCount = records.filter { $0.item.state == .pending || $0.item.state == .uploading }.count
         failedCount = records.filter { $0.item.state == .failed }.count
         syncedRecentlyCount = records.filter { $0.item.state == .done && $0.item.updatedAt >= dayAgo }.count
-        awaitingWifiCount = records.filter { $0.item.state != .done && !$0.item.photoPaths.isEmpty }.count
+        awaitingWifiCount = records.filter { $0.item.state != .done && !$0.item.photos.isEmpty }.count
         // A row that is neither waiting, failed, nor done has no state left to be in. The outbox's
         // four states are exhaustive, so this is structurally zero; it is here because the screen
         // claims it out loud.
