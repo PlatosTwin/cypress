@@ -1,0 +1,30 @@
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcscmblueprint
+*.xccheckout
+.swiftpm/
+Packages/
+*.moved-aside
+
+# Handoff bundle, unpacked
+_unzipped/
+
+# Seed pipeline: the raw DataSF download is ~50 MB and regenerable via Tools/build_seed.py
+Fixtures/raw/
+
+# Python tooling
+.venv/
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+
+# Bundled seed: an 88 MB build product of Tools/build_seed.py, byte-for-byte reproducible.
+# Regenerate with: python3 Tools/build_seed.py
+# schema.sql beside it IS checked in — it is the readable contract; the .sqlite is just its output.
+Fixtures/seed/*.sqlite
+Cypress/Resources/cypress-seed.sqlite
