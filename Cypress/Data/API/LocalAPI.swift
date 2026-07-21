@@ -1,0 +1,584 @@
+import Foundation
+
+/// The implementation that ships (ARCHITECTURE §4).
+///
+/// Reads the bundled SF seed, writes to the local database, and drains the outbox into that same
+/// local store. The app is fully functional with no network. When the Fastify service exists,
+/// `RemoteAPI` implements the same protocol and `LocalAPI` becomes the offline cache behind it —
+/// nothing in `Features` changes.
+public actor LocalAPI: CypressAPI {
+    private let store: CypressStore
+    private let treeQueries: TreeQueries?
+    private let speciesQueries: SpeciesQueries?
+    private let communityTrees = CommunityTreeStore()
+    private let contributions = ContributionStore()
+    private let now: @Sendable () -> Date
+
+    /// This installation's device id (D9). Contributions made before sign-in are attributed here.
+    public let deviceID: UUID
+    /// The signed-in user, when there is one.
+    public private(set) var userID: UUID?
+    /// Where photo binaries live once "uploaded". `LocalAPI`'s upload is a move into this
+    /// directory, which is what makes the outbox's photo phase exercisable with no network.
+    private let photoDirectory: URL
+
+    public init(
+        store: CypressStore,
+        deviceID: UUID,
+        userID: UUID? = nil,
+        photoDirectory: URL? = nil,
+        now: @escaping @Sendable () -> Date = { Date() }
+    ) {
+        self.store = store
+        self.deviceID = deviceID
+        self.userID = userID
+        self.now = now
+        self.treeQueries = store.seed.map {
+            TreeQueries(schema: $0, seedHasSoftDeletedTrees: store.seedHasSoftDeletedTrees)
+        }
+        self.speciesQueries = store.seed.map { SpeciesQueries(schema: $0) }
+        self.photoDirectory = photoDirectory
+            ?? store.databaseURL.deletingLastPathComponent().appendingPathComponent("Photos", isDirectory: true)
+    }
+
+    public func setUserID(_ id: UUID?) {
+        userID = id
+    }
+
+    private var attribution: Attribution {
+        Attribution(userID: userID, deviceID: deviceID)
+    }
+
+    // MARK: - Map
+
+    public func mapContent(in viewport: MapViewport) async throws -> MapContent {
+        let seedContent = try await store.queue.read { connection -> MapContent in
+            guard let treeQueries else {
+                return viewport.shouldCluster ? .clusters([]) : .pins([])
+            }
+            return try treeQueries.mapContent(in: viewport, connection: connection)
+        }
+
+        // Community-added trees live in `main` and are merged here rather than unioned in SQL. See
+        // `CommunityTreeStore` for why.
+        let added = try await store.queue.read { connection in
+            try communityTrees.inBounds(viewport.bounds, limit: viewport.pinLimit, connection: connection)
+        }
+        guard !added.isEmpty else { return seedContent }
+
+        switch seedContent {
+        case var .pins(pins):
+            pins.append(contentsOf: added.map {
+                TreePin(
+                    id: $0.id,
+                    coordinate: $0.coordinate,
+                    status: $0.status,
+                    source: $0.source,
+                    verificationState: $0.verificationState,
+                    speciesID: $0.speciesCurrentID
+                )
+            })
+            return .pins(Array(pins.prefix(viewport.pinLimit)))
+
+        case var .clusters(clusters):
+            let centreLatitude = (viewport.bounds.minLatitude + viewport.bounds.maxLatitude) / 2
+            let cell = TreeQueries.cellSize(zoom: viewport.zoom, centreLatitude: centreLatitude)
+            var byCell = Dictionary(uniqueKeysWithValues: clusters.map { ($0.id, $0) })
+            for tree in added {
+                let cellY = Int((tree.coordinate.latitude + 90.0) / cell.latitude)
+                let cellX = Int((tree.coordinate.longitude + 180.0) / cell.longitude)
+                let id = "z\(viewport.zoom):\(cellY):\(cellX)"
+                if let existing = byCell[id] {
+                    // Weighted mean, so adding one community tree to a cell of 2,000 does not move
+                    // the badge.
+                    let total = existing.count + 1
+                    byCell[id] = TreeCluster(
+                        id: id,
+                        coordinate: Coordinate(
+                            latitude: (existing.coordinate.latitude * Double(existing.count) + tree.coordinate.latitude) / Double(total),
+                            longitude: (existing.coordinate.longitude * Double(existing.count) + tree.coordinate.longitude) / Double(total)
+                        ),
+                        count: total
+                    )
+                } else {
+                    byCell[id] = TreeCluster(id: id, coordinate: tree.coordinate, count: 1)
+                }
+            }
+            clusters = Array(byCell.values)
+            return .clusters(clusters)
+        }
+    }
+
+    public func treesNear(_ coordinate: Coordinate, radiusM: Double, limit: Int) async throws -> [NearbyTree] {
+        let fromSeed = try await store.queue.read { connection -> [NearbyTree] in
+            guard let treeQueries else { return [] }
+            return try treeQueries.nearest(to: coordinate, radiusM: radiusM, limit: limit, connection: connection)
+        }
+        let added = try await store.queue.read { connection in
+            try communityTrees.near(coordinate, radiusM: radiusM, limit: limit, connection: connection)
+        }
+        guard !added.isEmpty else { return Array(fromSeed.prefix(limit)) }
+
+        let addedRows = added.map {
+            NearbyTree(
+                tree: $0,
+                distanceM: coordinate.distance(to: $0.coordinate),
+                speciesScientificName: nil,
+                speciesCommonName: nil,
+                tell: nil
+            )
+        }
+        return (fromSeed + addedRows).sorted { $0.distanceM < $1.distanceM }.prefix(limit).map { $0 }
+    }
+
+    // MARK: - Profile
+
+    public func treeProfile(id: UUID) async throws -> TreeProfile {
+        let moment = now()
+        return try await store.queue.readConsistently { connection -> TreeProfile in
+            let record = try treeQueries?.tree(id: id, connection: connection)
+            let inventoryTree = try record?.tree ?? communityTrees.tree(id: id, connection: connection)
+            guard let tree = inventoryTree else { throw APIError.notFound }
+
+            return TreeProfile(
+                tree: tree,
+                activeName: try contributions.activeName(treeID: id, connection: connection),
+                species: try Self.resolveSpecies(
+                    record: record,
+                    speciesID: tree.speciesCurrentID,
+                    queries: speciesQueries,
+                    connection: connection
+                ),
+                neighborhoodName: record?.neighborhoodName,
+                latestObservation: try contributions.latestObservation(treeID: id, connection: connection),
+                photos: try contributions.photos(treeID: id, connection: connection),
+                measurements: try contributions.measurements(treeID: id, connection: connection),
+                visits: try contributions.visits(treeID: id, connection: connection),
+                careEvents: try contributions.careEvents(treeID: id, connection: connection),
+                communityNotes: try contributions.communityNotes(treeID: id, at: moment, connection: connection),
+                siteLineageTreeID: record?.siteLineageID
+            )
+        }
+    }
+
+    private static func resolveSpecies(
+        record: TreeQueries.TreeRecord?,
+        speciesID: UUID?,
+        queries: SpeciesQueries?,
+        connection: SQLiteConnection
+    ) throws -> Species? {
+        if let species = record?.species { return species }
+        guard let speciesID, let queries else { return nil }
+        return try queries.species(id: speciesID, connection: connection)
+    }
+
+    /// `POST /trees`. Requires a photo; runs the 10 m proximity dedupe against any species.
+    public func addTree(_ draft: TreeDraft) async throws -> Tree {
+        guard !draft.photoLocalPath.isEmpty else { throw APIError.validationFailed }
+
+        let candidates = try await treesNear(
+            draft.coordinate,
+            radiusM: TreeDraft.proximityDedupeRadiusM,
+            limit: 10
+        )
+        if !candidates.isEmpty {
+            // §6 returns `conflict` with the candidate list. `ProximityConflict` carries the list;
+            // the taxonomy code is what the outbox and the error banner read, and `conflict` is not
+            // retryable, so the item will not burn 48 h on an answer the user has to give.
+            throw ProximityConflict(candidates: candidates)
+        }
+
+        let moment = now()
+        let tree = Tree(
+            source: .community,
+            coordinate: draft.coordinate,
+            address: draft.address,
+            status: .alive,
+            speciesCurrentID: draft.speciesID,
+            verificationState: .unverified,
+            createdAt: moment,
+            updatedAt: moment
+        )
+
+        try await store.queue.write { connection in
+            try communityTrees.insert(tree, clientUUID: draft.clientUUID, connection: connection)
+            let photo = Photo(
+                treeID: tree.id,
+                shotType: .fullTree,
+                capturedAt: moment,
+                createdAt: moment,
+                updatedAt: moment
+            )
+            try contributions.insert(photo, localPath: draft.photoLocalPath, connection: connection)
+        }
+        return tree
+    }
+
+    // MARK: - Species
+
+    public func species(id: UUID) async throws -> Species {
+        let found = try await store.queue.read { connection -> Species? in
+            try speciesQueries?.species(id: id, connection: connection)
+        }
+        guard let found else { throw APIError.notFound }
+        return found
+    }
+
+    public func searchSpecies(query: String, limit: Int) async throws -> [Species] {
+        try await store.queue.read { connection -> [Species] in
+            guard let speciesQueries else { return [] }
+            return try speciesQueries.search(query: query, limit: min(limit, Page<Species>.maximumLimit), connection: connection)
+        }
+    }
+
+    /// The curated field-guide list (BUILD-PLAN §8). Not a §6 endpoint; screen 08 needs it and it
+    /// is a filter on `GET /species?` in every meaningful sense.
+    public func curatedSpecies(limit: Int = 100) async throws -> [Species] {
+        try await store.queue.read { connection -> [Species] in
+            guard let speciesQueries else { return [] }
+            return try speciesQueries.curated(limit: limit, connection: connection)
+        }
+    }
+
+    // MARK: - Sync
+
+    /// `POST /sync`, locally.
+    ///
+    /// Applies each item to the local store and reports per-item status. Dedupe is on
+    /// `client_uuid`, exactly as the server does it: the unique index plus `ON CONFLICT DO NOTHING`
+    /// means a replayed item comes back `.duplicate`, which is a success, and no second row exists.
+    ///
+    /// Each item commits in its own transaction. One bad item must not roll back the twenty good
+    /// ones behind it — that would be loss, and zero loss is the acceptance criterion.
+    public func sync(_ items: [OutboxItem]) async throws -> [SyncResult] {
+        var results: [SyncResult] = []
+        results.reserveCapacity(items.count)
+
+        for item in items {
+            do {
+                let payload = try OutboxPayload.decode(kind: item.kind, from: item.payload)
+                let outcome = try await apply(payload)
+                results.append(SyncResult(clientUUID: item.clientUUID, status: outcome.syncStatus))
+            } catch let error as APIError {
+                results.append(SyncResult(clientUUID: item.clientUUID, status: .failed, error: error))
+            } catch let error as SQLiteError {
+                results.append(SyncResult(clientUUID: item.clientUUID, status: .failed, error: error.asAPIError))
+            } catch {
+                // A payload that will not decode is a client bug, not a transient one. Reporting it
+                // as `validation_failed` keeps the item out of a 48 h retry loop it cannot escape.
+                results.append(SyncResult(clientUUID: item.clientUUID, status: .failed, error: .validationFailed))
+            }
+        }
+        return results
+    }
+
+    private func apply(_ payload: OutboxPayload) async throws -> ContributionStore.WriteOutcome {
+        try await store.queue.write { connection -> ContributionStore.WriteOutcome in
+            switch payload {
+            case let .visit(visit):
+                try requireTree(visit.treeID, connection: connection)
+                return try contributions.insert(visit, connection: connection)
+
+            case let .observation(observation):
+                try requireTree(observation.treeID, connection: connection)
+                let outcome = try contributions.insert(observation, connection: connection)
+                // "An observation with status appears_removed does not mutate trees.status directly;
+                // it opens a review_flag" (BUILD-PLAN §6, DECISIONS §3.7). Only on first apply, so a
+                // replay does not open a second flag.
+                if outcome == .inserted, let kind = observation.raisesReviewFlagKind {
+                    try contributions.insert(
+                        ReviewFlag(
+                            treeID: observation.treeID,
+                            kind: kind,
+                            raisedBy: observation.userID,
+                            createdAt: observation.capturedAt,
+                            updatedAt: observation.capturedAt
+                        ),
+                        connection: connection
+                    )
+                }
+                return outcome
+
+            case let .measurement(measurement):
+                try requireTree(measurement.treeID, connection: connection)
+                return try contributions.insert(measurement, connection: connection)
+
+            case let .careEvent(event):
+                try requireTree(event.treeID, connection: connection)
+                return try contributions.insert(event, connection: connection)
+
+            case let .favoriteToggle(toggle):
+                try requireTree(toggle.treeID, connection: connection)
+                return try contributions.applyFavoriteToggle(
+                    userID: toggle.userID,
+                    treeID: toggle.treeID,
+                    clientUUID: toggle.clientUUID,
+                    isFavorite: toggle.isFavorite,
+                    at: toggle.occurredAt,
+                    connection: connection
+                )
+            }
+        }
+    }
+
+    /// No foreign key can span the attached seed (see `AppSchema`), so referential integrity
+    /// against the inventory is checked here instead. A contribution about a tree that does not
+    /// exist is `not_found`, which is not retryable — the right answer, since retrying will not
+    /// make the tree appear.
+    private func requireTree(_ id: UUID, connection: SQLiteConnection) throws {
+        let inSeed = (try? treeQueries?.exists(id: id, connection: connection)) ?? false
+        if inSeed == true { return }
+        if try communityTrees.exists(id: id, connection: connection) { return }
+        throw APIError.notFound
+    }
+
+    // MARK: - Photos
+
+    /// `POST /photos/begin`. Locally, the "presigned URL" is a destination inside the app container.
+    public func beginPhotoUpload(_ request: PhotoUploadRequest) async throws -> PhotoUploadTicket {
+        let moment = now()
+        let photo = Photo(
+            treeID: request.treeID,
+            visitID: request.visitID,
+            shotType: request.shotType,
+            capturedAt: request.capturedAt,
+            publicCoordinate: request.publicCoordinate,
+            createdAt: moment,
+            updatedAt: moment
+        )
+        try await store.queue.write { connection in
+            try contributions.insert(photo, localPath: request.localPath, connection: connection)
+        }
+        try FileManager.default.createDirectory(at: photoDirectory, withIntermediateDirectories: true)
+        let destination = photoDirectory.appendingPathComponent("\(photo.id.uuidString).jpg")
+        return PhotoUploadTicket(photoID: photo.id, destination: destination)
+    }
+
+    public func uploadPhoto(at localPath: String, ticket: PhotoUploadTicket) async throws {
+        let source = URL(fileURLWithPath: localPath)
+        let manager = FileManager.default
+        guard manager.fileExists(atPath: source.path) else {
+            // The binary is gone. Not retryable: no amount of waiting brings a deleted file back.
+            throw APIError.notFound
+        }
+        try manager.createDirectory(at: photoDirectory, withIntermediateDirectories: true)
+        if manager.fileExists(atPath: ticket.destination.path) {
+            try manager.removeItem(at: ticket.destination)
+        }
+        try manager.moveItem(at: source, to: ticket.destination)
+
+        let moment = now()
+        try await store.queue.write { connection in
+            try contributions.markPhotoUploaded(
+                id: ticket.photoID,
+                storageKey: ticket.destination.lastPathComponent,
+                at: moment,
+                connection: connection
+            )
+        }
+    }
+
+    /// `GET /me/outbox-status`.
+    ///
+    /// The local store has no separate server-side record of recent sync results; the outbox rows
+    /// are that record. This returns the settled state of every row so screen 17's "says why" line
+    /// has the same shape it will have against the real service.
+    public func outboxStatus() async throws -> [SyncResult] {
+        let records = try await store.queue.read { connection in
+            try OutboxStore().allItems(connection: connection)
+        }
+        return records.map { record in
+            switch record.item.state {
+            case .done:
+                return SyncResult(clientUUID: record.item.clientUUID, status: .applied)
+            case .failed:
+                return SyncResult(
+                    clientUUID: record.item.clientUUID,
+                    status: .failed,
+                    error: record.item.lastErrorCode ?? .serverError
+                )
+            case .pending, .uploading:
+                return SyncResult(clientUUID: record.item.clientUUID, status: .failed, error: record.item.lastErrorCode)
+            }
+        }
+    }
+
+    // MARK: - Personal surfaces
+
+    public func grove() async throws -> [GroveEntry] {
+        let rows = try await store.queue.read { connection in
+            try contributions.groveTreeIDs(userID: userID, deviceID: deviceID, connection: connection)
+        }
+        var entries: [GroveEntry] = []
+        entries.reserveCapacity(rows.count)
+        for row in rows {
+            guard let profileTree = try await treeIfPresent(row.treeID) else { continue }
+            entries.append(
+                GroveEntry(
+                    treeID: row.treeID,
+                    displayName: (try await displayNameIfPresent(for: row.treeID)) ?? "",
+                    coordinate: profileTree.coordinate,
+                    lastVisitedAt: row.lastVisitedAt,
+                    isFavorite: row.isFavorite
+                )
+            )
+        }
+        return entries
+    }
+
+    public func journal(cursor: String?, limit: Int) async throws -> Page<JournalEntry> {
+        let cursorDate = cursor.flatMap(SQLiteTimestamp.date(from:))
+        let capped = min(limit, Page<JournalEntry>.maximumLimit)
+        let rows = try await store.queue.read { connection in
+            try contributions.journal(
+                userID: userID,
+                deviceID: deviceID,
+                before: cursorDate,
+                limit: capped,
+                connection: connection
+            )
+        }
+
+        // One name lookup per distinct tree, not per row: a journal page is usually several
+        // contributions about the same handful of trees.
+        let names = await displayNames(for: Array(Set(rows.map(\.treeID))))
+
+        let entries = rows.map { row in
+            JournalEntry(
+                id: row.id,
+                kind: row.kind,
+                treeID: row.treeID,
+                treeDisplayName: names[row.treeID] ?? "",
+                capturedAt: row.capturedAt,
+                summary: Self.humanize(kind: row.kind, storedSummary: row.summary)
+            )
+        }
+        // The cursor is the last row's capture time. Contributions are append-only and never
+        // back-dated across a page boundary, so this is stable under concurrent writes.
+        let nextCursor = entries.count == capped
+            ? entries.last.map { SQLiteTimestamp.string(from: $0.capturedAt) }
+            : nil
+        return Page(items: entries, nextCursor: nextCursor)
+    }
+
+    /// `care_events.actions` is stored as a JSON array; the journal query hands it back raw rather
+    /// than teaching SQL to write English.
+    static func humanize(kind: JournalEntry.Kind, storedSummary: String) -> String {
+        guard kind == .careEvent else { return storedSummary }
+        let actions = JSONColumn.decodeRawValues(CareAction.self, storedSummary)
+        return actions.map(\.rawValue.replacingUnderscores).joined(separator: ", ")
+    }
+
+    public func claimDevice(deviceUUID: UUID, userID: UUID) async throws {
+        let moment = now()
+        try await store.queue.write { connection in
+            try contributions.claimDevice(deviceUUID: deviceUUID, userID: userID, at: moment, connection: connection)
+        }
+        self.userID = userID
+        try await store.setAppState(.currentUserID, to: userID.uuidString)
+    }
+
+    // MARK: - Reports and export
+
+    public func logHazardRedirect(_ event: HazardRedirectEvent) async throws {
+        try await store.queue.write { connection in
+            try contributions.log(event, connection: connection)
+        }
+    }
+
+    /// `GET /export/latest.csv` / `.geojson`.
+    ///
+    /// The nightly export is a server job over the whole corpus (BUILD-PLAN §6); on device this
+    /// exports **this device's own contributions**, which is what a coordinator's "export my
+    /// morning" and the account-data request both need. It carries `verification_state` and the
+    /// structure-flag disclaimer in the header, per D12 and BUILD-PLAN §4.
+    public func exportLatest(_ format: ExportFormat) async throws -> Data {
+        let page = try await journal(cursor: nil, limit: Page<JournalEntry>.maximumLimit)
+        switch format {
+        case .csv:
+            var lines = [
+                "# \(StructureFlag.disclaimer)",
+                "kind,tree_id,captured_at,summary,verification_state"
+            ]
+            for entry in page.items {
+                lines.append(
+                    [
+                        entry.kind.rawValue,
+                        entry.treeID.uuidString,
+                        SQLiteTimestamp.string(from: entry.capturedAt),
+                        Self.csvEscape(entry.summary),
+                        VerificationState.unverified.rawValue
+                    ].joined(separator: ",")
+                )
+            }
+            return Data(lines.joined(separator: "\n").utf8)
+
+        case .geojson:
+            var features: [[String: Any]] = []
+            for entry in page.items {
+                guard let tree = try await treeIfPresent(entry.treeID) else { continue }
+                features.append([
+                    "type": "Feature",
+                    "geometry": [
+                        "type": "Point",
+                        "coordinates": [tree.coordinate.longitude, tree.coordinate.latitude]
+                    ],
+                    "properties": [
+                        "kind": entry.kind.rawValue,
+                        "tree_id": entry.treeID.uuidString,
+                        "captured_at": SQLiteTimestamp.string(from: entry.capturedAt),
+                        "summary": entry.summary,
+                        "verification_state": VerificationState.unverified.rawValue
+                    ]
+                ])
+            }
+            let root: [String: Any] = [
+                "type": "FeatureCollection",
+                "note": StructureFlag.disclaimer,
+                "features": features
+            ]
+            return try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys])
+        }
+    }
+
+    static func csvEscape(_ value: String) -> String {
+        guard value.contains(",") || value.contains("\"") || value.contains("\n") else { return value }
+        return "\"" + value.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+    }
+
+    // MARK: - Name resolution
+
+    private func treeIfPresent(_ id: UUID) async throws -> Tree? {
+        try await store.queue.read { connection -> Tree? in
+            if let record = try treeQueries?.tree(id: id, connection: connection) { return record.tree }
+            return try communityTrees.tree(id: id, connection: connection)
+        }
+    }
+
+    /// The name a tree shows: its one active nickname, else the species common name (D15). Never a
+    /// fabricated label.
+    public func displayNameIfPresent(for id: UUID) async throws -> String? {
+        try await store.queue.read { connection -> String? in
+            if let name = try contributions.activeName(treeID: id, connection: connection) {
+                return name.name
+            }
+            guard let record = try treeQueries?.tree(id: id, connection: connection) else { return nil }
+            return record.species?.commonName
+        }
+    }
+
+    /// Resolves several tree names in one pass, for `OutboxViewState`.
+    public func displayNames(for ids: [UUID]) async -> [UUID: String] {
+        var names: [UUID: String] = [:]
+        for id in ids {
+            if let name = try? await displayNameIfPresent(for: id), !name.isEmpty {
+                names[id] = name
+            }
+        }
+        return names
+    }
+}
+
+private extension String {
+    var replacingUnderscores: String { replacingOccurrences(of: "_", with: " ") }
+}

@@ -1,0 +1,127 @@
+import Foundation
+
+/// Reads and writes over `main.community_trees` — trees the user added (`POST /trees`).
+///
+/// Deliberately a separate type from `TreeQueries` rather than a `UNION` inside it. The seed
+/// queries are tuned against 195,309 rows and a covering index; this table holds tens. Unioning
+/// them would force the whole clustered viewport through a materialized subquery and lose the
+/// covering index for the 99.99 % of rows that come from the city. Merging two small result sets in
+/// Swift costs nothing and keeps both plans optimal.
+public struct CommunityTreeStore {
+    public init() {}
+
+    // MARK: - Writing
+
+    /// Idempotent on `clientUUID`, like every other contribution.
+    @discardableResult
+    public func insert(_ tree: Tree, clientUUID: UUID, connection: SQLiteConnection) throws -> ContributionStore.WriteOutcome {
+        let statement = try connection.cachedStatement("""
+            INSERT INTO community_trees
+                (id, client_uuid, external_ref, source, lat, lon, address, site_type, status,
+                 species_current, planted_year, dbh_city_cm_min, dbh_city_cm_max, site_lineage,
+                 verification_state, created_at, updated_at, deleted_at)
+            VALUES
+                (:id, :client, :ref, 'community', :lat, :lon, :address, :site, :status,
+                 :species, :planted, :dbhMin, :dbhMax, :lineage,
+                 :verification, :created, :updated, :deleted)
+            ON CONFLICT(client_uuid) DO NOTHING
+            """)
+        _ = try statement.bind([
+            ":id": tree.id,
+            ":client": clientUUID,
+            ":ref": tree.externalRef,
+            ":lat": tree.coordinate.latitude,
+            ":lon": tree.coordinate.longitude,
+            ":address": tree.address,
+            ":site": tree.siteType,
+            ":status": tree.status.rawValue,
+            ":species": tree.speciesCurrentID,
+            ":planted": tree.plantedYear,
+            ":dbhMin": tree.dbhCityCmRange?.lowerBound,
+            ":dbhMax": tree.dbhCityCmRange?.upperBound,
+            ":lineage": tree.siteLineage,
+            ":verification": tree.verificationState.rawValue,
+            ":created": tree.createdAt,
+            ":updated": tree.updatedAt,
+            ":deleted": tree.deletedAt
+        ])
+        try statement.run()
+        let inserted = connection.changes > 0
+        _ = try statement.reset()
+        return inserted ? .inserted : .duplicate
+    }
+
+    // MARK: - Reading
+
+    public func tree(id: UUID, connection: SQLiteConnection) throws -> Tree? {
+        let statement = try connection.cachedStatement("""
+            SELECT * FROM community_trees WHERE id = :id COLLATE NOCASE
+            """)
+        _ = try statement.bind(id.uuidString, forName: ":id")
+        return try statement.fetchOne(Self.decode)
+    }
+
+    public func exists(id: UUID, connection: SQLiteConnection) throws -> Bool {
+        let statement = try connection.cachedStatement("""
+            SELECT 1 AS present FROM community_trees WHERE id = :id COLLATE NOCASE
+            """)
+        _ = try statement.bind(id.uuidString, forName: ":id")
+        return try statement.fetchOne { _ in true } ?? false
+    }
+
+    /// Rows inside a bounding box.
+    ///
+    /// ```
+    /// SEARCH community_trees USING INDEX idx_community_trees_lat_lon (lat>? AND lat<?)
+    /// ```
+    public func inBounds(_ bounds: BoundingBox, limit: Int, connection: SQLiteConnection) throws -> [Tree] {
+        let statement = try connection.cachedStatement("""
+            SELECT * FROM community_trees
+             WHERE lat BETWEEN :minLat AND :maxLat
+               AND lon BETWEEN :minLon AND :maxLon
+               AND deleted_at IS NULL
+             LIMIT :limit
+            """)
+        _ = try statement.bind([
+            ":minLat": bounds.minLatitude,
+            ":maxLat": bounds.maxLatitude,
+            ":minLon": bounds.minLongitude,
+            ":maxLon": bounds.maxLongitude,
+            ":limit": limit
+        ])
+        return try statement.fetchAll(Self.decode)
+    }
+
+    /// The 10 m proximity dedupe from `POST /trees`, over the community table. The seed half runs
+    /// through `TreeQueries.nearest`.
+    public func near(_ coordinate: Coordinate, radiusM: Double, limit: Int, connection: SQLiteConnection) throws -> [Tree] {
+        let bounds = BoundingBox(around: coordinate, radiusM: radiusM)
+        return try inBounds(bounds, limit: limit, connection: connection)
+            .filter { coordinate.distance(to: $0.coordinate) <= radiusM }
+            .sorted { coordinate.distance(to: $0.coordinate) < coordinate.distance(to: $1.coordinate) }
+    }
+
+    static func decode(_ row: SQLiteRow) throws -> Tree {
+        let minimum = try row.intIfPresent("dbh_city_cm_min")
+        let maximum = try row.intIfPresent("dbh_city_cm_max")
+        return Tree(
+            id: try row.uuid("id"),
+            externalRef: try row.stringIfPresent("external_ref"),
+            source: try row.value("source", TreeSource.self),
+            coordinate: Coordinate(latitude: try row.double("lat"), longitude: try row.double("lon")),
+            address: try row.stringIfPresent("address"),
+            siteType: try row.stringIfPresent("site_type"),
+            neighborhoodID: nil,
+            status: try row.value("status", TreeStatus.self),
+            speciesCurrentID: try row.uuidIfPresent("species_current"),
+            plantedYear: try row.intIfPresent("planted_year"),
+            dbhCityCmRange: (minimum != nil && maximum != nil)
+                ? IntRange(lowerBound: minimum!, upperBound: maximum!) : nil,
+            siteLineage: try row.uuidIfPresent("site_lineage"),
+            verificationState: try row.value("verification_state", VerificationState.self),
+            createdAt: try row.date("created_at"),
+            updatedAt: try row.date("updated_at"),
+            deletedAt: try row.dateIfPresent("deleted_at")
+        )
+    }
+}
