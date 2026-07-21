@@ -88,6 +88,11 @@ struct Callout: View {
     var leadIn: String?
     /// The rest, verbatim including its leading space.
     let text: String
+    /// The bold run *inside* the sentence, with everything that follows it. 06's dashed disclosure
+    /// emphasises `the city has not been notified` in the middle of its third clause, which
+    /// `leadIn` cannot express because it only bolds the front. Both are `nil` everywhere else.
+    var emphasis: String?
+    var continuation: String?
     /// 19's green callout uses `radius:14px` and `padding:13px 15px` instead of the 03 values.
     var largePadding: Bool = false
 
@@ -96,6 +101,15 @@ struct Callout: View {
         self.style = style
         self.leadIn = leadIn
         self.largePadding = largePadding
+    }
+
+    /// The mid-sentence-emphasis form: `text` + **`emphasis`** + `continuation`, each verbatim
+    /// including its own leading space. SCREENS.md 06 §6.
+    init(_ text: String, style: Style, emphasis: String, continuation: String) {
+        self.text = text
+        self.style = style
+        self.emphasis = emphasis
+        self.continuation = continuation
     }
 
     var body: some View {
@@ -136,7 +150,13 @@ struct Callout: View {
                 restColor: style.text
             )
         }
-        return Text(text).font(style.font).foregroundColor(style.text)
+        let opening = Text(text).font(style.font).foregroundColor(style.text)
+        if let emphasis, let continuation {
+            return opening
+                + Text(emphasis).font(style.leadInFont).foregroundColor(style.text)
+                + Text(continuation).font(style.font).foregroundColor(style.text)
+        }
+        return opening
     }
 
     /// D2 lifts the lead-in to `#D6E0CE` against the `#B9C7B2` body; in light both are the same

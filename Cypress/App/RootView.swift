@@ -57,9 +57,18 @@ struct RootView: View {
                 onFavorite: { _ in /* outbox mutation — wired with the grove, M2 */ }
             )
 
+        case .report(let id):
+            // Screen 06. `onSaveReminder` is deliberately not passed: D4's private reminder needs a
+            // `userID`, `private_reminders.user_id` is NOT NULL by that decision's own reasoning,
+            // and D9 leaves this device anonymous until the account sheet (screen 15) ships — so
+            // there is no user to attribute one to, and `CypressAPI` has no write for it either.
+            // The screen draws the button (SCREENS.md 06 §5) and claims nothing. See ERRATA E23;
+            // when the protocol grows the method, the handler lands here and nowhere else.
+            ReportView(treeID: id, api: data.api)
+
         // Every remaining route has a mocked screen but no built feature yet. Naming them here
         // rather than defaulting means adding one is a compile error, not a silent no-op.
-        case .identify, .species, .careLog, .share, .growthHistory, .report, .measure, .outbox:
+        case .identify, .species, .careLog, .share, .growthHistory, .measure, .outbox:
             NotBuiltYetView(route: route)
         }
     }

@@ -369,6 +369,12 @@ enum CypressColor {
     /// 311 hazard panel body text `#6B5122`.
     // TODO: no dark value specified in SCREENS.md
     static let hazardPanelText = lightOnly(0x6B5122)
+    /// 311 hazard panel phone glyph `#FDF3E3`, on the 54×54 Signal Amber circle (06 §4).
+    ///
+    /// §1.2 has no row for this: the hex reaches SCREENS.md only as Signal Amber's *swatch text
+    /// color* in §1.1, which is where 06 borrows it from. Recorded in ERRATA (E20).
+    // TODO: no dark value specified in SCREENS.md
+    static let hazardPanelGlyph = lightOnly(0xFDF3E3)
 
     /// 311 CTA button fill `#A35F12` (06).
     // TODO: no dark value specified in SCREENS.md
