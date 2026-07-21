@@ -175,6 +175,14 @@ enum CypressFont {
     /// `body.12.5` — 12.5 / 400. Chip labels, secondary text.
     static let body125 = font(Face.sansRegular, 12.5, .caption)
 
+    /// 11.5 / 400. The vitality anchor line (05 §3) and 17's "Notes and numbers sync on any
+    /// connection".
+    ///
+    /// Not a row in §1.3: the ramp jumps 12 → 12.5 and never names 11.5, yet two screens set it.
+    /// The ramp grows by one row rather than the anchor sentence being rounded to 12 — this is the
+    /// smallest type in the app that carries meaning a rating depends on (D3). See ERRATA (E26).
+    static let body115 = font(Face.sansRegular, 11.5, .caption)
+
     /// `body.12` — 12 / 400. Footnotes.
     static let body12 = font(Face.sansRegular, 12, .caption)
     /// `body.12` — 12 / 600 → Bold (see header). Action-row labels.
@@ -271,6 +279,8 @@ enum CypressFont {
         static let body15: CGFloat = 5.25
         /// `body.13.5`, line-height 1.45–1.55 → 1.50.
         static let body135: CGFloat = 4.05
+        /// The 11.5pt anchor line, line-height 1.3 (SCREENS.md 05 §3).
+        static let body115: CGFloat = 1.15
         /// `species.hero`, line-height 1.1 — tighter than natural; clamp at 0.
         static let speciesHero: CGFloat = 0
         /// `tree.name.hero`, line-height 1.05 — tighter than natural; clamp at 0.

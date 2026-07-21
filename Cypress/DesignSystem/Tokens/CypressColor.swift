@@ -251,9 +251,12 @@ enum CypressColor {
     /// `text.faint` `#8B9482` ↔ `dark.text.faint` `#5F6F61` — micro-labels, timestamps, mono meta.
     static let textFaint = dynamic(light: 0x8B9482, dark: 0x5F6F61)
 
-    /// `text.faintAlt` `#77836F` — footnote lines under screens.
-    // TODO: no dark value specified in SCREENS.md
-    static let textFaintAlt = lightOnly(0x77836F)
+    /// `text.faintAlt` `#77836F` ↔ `#5F6F61` — footnote lines under screens.
+    ///
+    /// §1.2 gives no dark counterpart, but D3's delta list does, in prose: "Footnote `#5F6F61`" —
+    /// the same `dark.text.faint` value `textFaint` already carries. Transcribed as light-only
+    /// originally, which is the same miss as the taped badge below. See ERRATA (E27).
+    static let textFaintAlt = dynamic(light: 0x77836F, dark: 0x5F6F61)
 
     /// `text.onDark` `#FFFFFF` — on Cypress Deep / Canopy fills.
     /// Identical in both schemes by definition: it rides on a dark fill, not on the page.

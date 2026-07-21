@@ -51,8 +51,14 @@ public enum Vitality: Int, Codable, Sendable, Hashable, CaseIterable, Comparable
     /// The numeric class as stored in `observations.vitality` (BUILD-PLAN §4, `vitality int 1 to 5`).
     public var classNumber: Int { rawValue }
 
-    /// The five rows in the order screen 05 presents them: best at the top (D3, five full-width rows).
-    public static let rubric: [Vitality] = [.thriving, .good, .fair, .poor, .severeDecline]
+    /// The five rows in the order screen 05 presents them (D3, five full-width rows).
+    ///
+    /// **Worst at the top.** The design export draws the rows `1 · Severe decline` … `5 · Thriving`
+    /// downward, and SCREENS.md 05 §3 transcribes them in that order; this constant said "best at
+    /// the top" and listed the reverse, which nothing rendered until now. The order is part of the
+    /// rubric rather than of the view, for the same reason the anchor sentences are: a rater who
+    /// learns "the top row is the bad one" on one screen must not meet the opposite on another.
+    public static let rubric: [Vitality] = [.severeDecline, .poor, .fair, .good, .thriving]
 
     public static func < (lhs: Vitality, rhs: Vitality) -> Bool { lhs.rawValue < rhs.rawValue }
 }
