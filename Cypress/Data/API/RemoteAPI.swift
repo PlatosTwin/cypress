@@ -118,6 +118,14 @@ public struct RemoteAPI: CypressAPI {
         throw unimplemented
     }
 
+    /// Will call the separate `private_reminders` POST (BUILD-PLAN §6). The owner travels in the
+    /// body: a reminder written before sign-in is the device's, and the server adopts it at
+    /// `POST /devices/claim` exactly as the local store does (D9, ERRATA E23).
+    @discardableResult
+    public func savePrivateReminder(_ reminder: PrivateReminder) async throws -> SyncResult.Status {
+        throw unimplemented
+    }
+
     /// Will call `GET /export/latest.csv` or `GET /export/latest.geojson`.
     public func exportLatest(_ format: ExportFormat) async throws -> Data {
         throw unimplemented

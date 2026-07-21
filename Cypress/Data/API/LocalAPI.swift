@@ -45,7 +45,13 @@ public actor LocalAPI: CypressAPI {
         userID = id
     }
 
-    private var attribution: Attribution {
+    /// Who a contribution written right now belongs to: the signed-in user when there is one, this
+    /// device otherwise (D9).
+    ///
+    /// Public because the composition root has to stamp it onto a mutation *before* the mutation
+    /// reaches the outbox, and identity is not a view's question to answer — screen 06's reminder is
+    /// the first write whose owner depends on it (ERRATA E23).
+    public var attribution: Attribution {
         Attribution(userID: userID, deviceID: deviceID)
     }
 
@@ -307,6 +313,13 @@ public actor LocalAPI: CypressAPI {
                 try requireTree(event.treeID, connection: connection)
                 return try contributions.insert(event, connection: connection)
 
+            case let .privateReminder(reminder):
+                try requireTree(reminder.treeID, connection: connection)
+                // The owner arrives on the payload and is written as it stands. Nothing here
+                // upgrades a device-owned reminder to a user: that only happens at
+                // `POST /devices/claim`, where it is one statement with one WHERE clause (D9).
+                return try contributions.insert(reminder, connection: connection)
+
             case let .favoriteToggle(toggle):
                 try requireTree(toggle.treeID, connection: connection)
                 return try contributions.applyFavoriteToggle(
@@ -483,6 +496,33 @@ public actor LocalAPI: CypressAPI {
     public func logHazardRedirect(_ event: HazardRedirectEvent) async throws {
         try await store.queue.write { connection in
             try contributions.log(event, connection: connection)
+        }
+    }
+
+    /// The separate `private_reminders` POST (BUILD-PLAN §6, D4).
+    ///
+    /// Expressed in terms of the same applier the batch uses, so the single-item endpoint and the
+    /// queued item cannot diverge: one statement, one idempotency rule, one referential check. The
+    /// reminder reaches here already owned — by the signed-in user, or by this device (D9) — and
+    /// this method does not second-guess that.
+    ///
+    /// Writing a reminder tells the city nothing, and nothing about this call may be rendered as if
+    /// it had (ARCHITECTURE §5.4).
+    @discardableResult
+    public func savePrivateReminder(_ reminder: PrivateReminder) async throws -> SyncResult.Status {
+        try await apply(.privateReminder(reminder)).syncStatus
+    }
+
+    /// This contributor's own reminders: the account's, plus the ones this device wrote before there
+    /// was an account. Never anyone else's — there is no query that could return one (D4, D11).
+    public func privateReminders(limit: Int = 50) async throws -> [PrivateReminder] {
+        try await store.queue.read { connection in
+            try contributions.privateReminders(
+                userID: userID,
+                deviceID: deviceID,
+                limit: limit,
+                connection: connection
+            )
         }
     }
 

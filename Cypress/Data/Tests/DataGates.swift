@@ -168,6 +168,31 @@ public enum DataGates {
                         '\(now)','\(now)','\(now)')
                     """)
             }
+            // A private reminder always has exactly one owner (ERRATA E23). Never none…
+            await rejects("private reminder with no owner", """
+                INSERT INTO private_reminders (id, tree_uuid, category, created_at, updated_at)
+                VALUES ('\(UUID().uuidString)','\(tree)','hanging_or_broken_limb','\(now)','\(now)')
+                """)
+            // …and never two, which is what would make "whose reminder is this" a precedence rule.
+            await rejects("private reminder owned by both a user and a device", """
+                INSERT INTO private_reminders (id, user_id, device_id, tree_uuid, category, created_at, updated_at)
+                VALUES ('\(UUID().uuidString)','\(UUID().uuidString)','\(device)','\(tree)',
+                    'hanging_or_broken_limb','\(now)','\(now)')
+                """)
+            // The CHECK has to reject those two and accept a device-owned reminder — a constraint
+            // that rejects everything would pass both assertions above and break screen 06.
+            do {
+                try await store.queue.write { connection in
+                    try connection.execute("""
+                        INSERT INTO private_reminders (id, device_id, tree_uuid, category, created_at, updated_at)
+                        VALUES ('\(UUID().uuidString)','\(device)','\(tree)',
+                            'hanging_or_broken_limb','\(now)','\(now)')
+                        """)
+                }
+            } catch {
+                failures.append("a device-owned private reminder was rejected: \(error)")
+            }
+
             // …and the inverse: a private reminder can only hold a hazard category.
             for category in CommunityNote.Category.allCases {
                 await rejects("community-note category '\(category.rawValue)' stored as a private reminder", """
@@ -635,8 +660,15 @@ public enum DataGates {
                     '["/tmp/old-a.jpg","/tmp/old-b.jpg"]','pending',0,'\(now)','\(now)','\(now)')
                 """)
 
+            // Every step above v1, not literally `[2]`: this gate is about the shot-type rewrite
+            // surviving an upgrade, and it must not fail the day an unrelated migration is added.
+            let expected = AppSchema.migrations.map(\.version).filter { $0 > 1 }
             let applied = try SchemaMigrator.migrate(AppSchema.migrations, on: connection)
-            expect(applied == [2], "upgrade: migrating a v1 database applied \(applied), expected [2]", into: &failures)
+            expect(
+                applied == expected,
+                "upgrade: migrating a v1 database applied \(applied), expected \(expected)",
+                into: &failures
+            )
 
             var rows = try outboxStore.allItems(connection: connection)
             expect(rows.count == 1, "upgrade: \(rows.count) rows survived the migration, expected 1", into: &failures)

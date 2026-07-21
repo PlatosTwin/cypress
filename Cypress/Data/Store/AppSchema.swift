@@ -19,7 +19,8 @@ import Foundation
 /// - no numeric measurement without unit *and* method metadata (D7) — `measurements` CHECKs;
 /// - `measurement_height_m` exists exactly for DBH and never for height (D7);
 /// - hazard categories cannot be stored as public community notes (D4) — `community_notes` CHECK;
-/// - private reminders can only hold hazard categories, and carry no `stale_at` at all;
+/// - private reminders can only hold hazard categories, carry no `stale_at` at all, and have
+///   exactly one owner — a user or a device, never both, never neither (v3);
 /// - favorites are tombstoned, never hard-deleted — a `BEFORE DELETE` trigger that raises;
 /// - one active name per tree (D15) — a partial unique index;
 /// - an outbox row can only be `done` once its JSON *and* its photos have gone.
@@ -28,7 +29,9 @@ public enum AppSchema {
     /// version number.
     public static let migrations: [Migration] = [
         Migration(version: 1, name: "contributions and outbox", sql: v1),
-        Migration(version: 2, name: "outbox photos carry their shot type", sql: v2)
+        Migration(version: 2, name: "outbox photos carry their shot type", sql: v2),
+        Migration(version: 3, name: "a private reminder can be owned by a device", migrate: applyV3),
+        Migration(version: 4, name: "the outbox carries private reminders", migrate: applyV4)
     ]
 
     /// The version a freshly migrated database reports.
@@ -36,6 +39,9 @@ public enum AppSchema {
 
     // MARK: - v1
 
+    // Historical, and not edited: this is the schema as it shipped, comments included. Where a later
+    // step changed it, that step says so — `private_reminders`' owner rule below, and the `outbox`
+    // `kind` vocabulary, were both superseded (v3 and v4).
     private static let v1 = """
     -- ------------------------------------------------------------------ device --
     -- BUILD-PLAN §4 `devices`. One row. Anonymous contributions attach here and
@@ -403,4 +409,164 @@ public enum AppSchema {
              SELECT 1 FROM json_each(outbox.photo_paths) WHERE type = 'text'
            );
     """
+
+    // MARK: - v3
+
+    /// `private_reminders` gains a device owner, so D4's reminder can be written before there is an
+    /// account (ERRATA E23).
+    ///
+    /// **What v1 got wrong.** v1 made `user_id` NOT NULL and said why: "a private reminder belongs
+    /// to an account, so there is no anonymous variant that could later be attributed to the wrong
+    /// person." D9 then keeps the device anonymous until the account ask at the third save, which is
+    /// screen 15 and is not built — so the row was unwritable on every device the app runs on, and
+    /// screen 06's "Save a private reminder for yourself" could not save. A sign-in wall inside a
+    /// safety flow was the alternative, and standing under a broken limb is the worst moment in the
+    /// product to ask someone to make an account.
+    ///
+    /// **The shape.** `user_id` becomes nullable, `device_id` appears beside it, and a CHECK makes
+    /// exactly one of them non-null:
+    ///
+    /// ```sql
+    /// CHECK ((user_id IS NULL) <> (device_id IS NULL))
+    /// ```
+    ///
+    /// Not "nullable user_id plus a NOT NULL device_id". That shape leaves both columns populated
+    /// after sign-in, which means the owner is whatever a query decides to COALESCE first, and it
+    /// keeps a permanent device↔account link on a table whose entire purpose is privacy. Exclusive
+    /// ownership makes the invariant the engine's job — a reminder can never be ownerless and never
+    /// have two owners — and makes adoption a move rather than an addition: `POST /devices/claim`
+    /// sets `user_id` and clears `device_id`, so the account gains a record and the device link
+    /// disappears. Strictly less data after sign-in than before, which is the direction DECISIONS §3
+    /// requires this to move in.
+    ///
+    /// The column is `device_id` rather than `device_uuid` because it holds exactly the value
+    /// `visits.device_id`, `observations.device_id`, `measurements.device_id` and
+    /// `care_events.device_id` hold, and one value should not have two names in one schema. It is
+    /// D9's anonymous handle and nothing else: it identifies an installation, never a person.
+    ///
+    /// **One consequence, stated rather than discovered later.** DECISIONS §3.12 has account
+    /// deletion anonymize attributed rows — "user_id nulled, device link severed" — and a private
+    /// reminder cannot survive both of those, because it would then be owned by nobody. So when that
+    /// path is built it has to choose, explicitly, between deleting reminders with the account and
+    /// re-homing them onto the device. The CHECK is what forces the choice to be made rather than
+    /// leaving behind a hazard note no query can ever return.
+    ///
+    /// **Existing rows survive.** Every row in a v1/v2 database is user-owned by construction, so
+    /// the copy carries `user_id` across and leaves `device_id` NULL — which the new CHECK already
+    /// accepts. SQLite cannot drop a NOT NULL or add a CHECK in place, so this is the documented
+    /// 12-step table rebuild; nothing references `private_reminders`, so the drop is safe and the
+    /// index is recreated afterwards.
+    ///
+    /// Idempotent by guard rather than by `IF NOT EXISTS`: a rebuild replayed against an
+    /// already-rebuilt table would copy and re-drop live rows for no reason, so it asks the schema
+    /// whether it has already run.
+    private static func applyV3(_ connection: SQLiteConnection) throws {
+        guard try !connection.columnNames(ofTable: "private_reminders").contains("device_id") else { return }
+        try connection.execute("""
+            CREATE TABLE private_reminders_owned (
+                id         TEXT PRIMARY KEY,
+                user_id    TEXT,
+                device_id  TEXT,
+                tree_uuid  TEXT NOT NULL,
+                category   TEXT NOT NULL CHECK (category IN (
+                               'hanging_or_broken_limb','uprooted','struck_by_vehicle',
+                               'blocking_signal_or_sightline')),
+                note       TEXT,
+                photo_id   TEXT REFERENCES photos(id),
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                deleted_at TEXT,
+                -- Exactly one owner, always. A reminder nobody owns is a reminder nobody can read
+                -- back, and one owned twice needs a precedence rule somewhere a query can get wrong.
+                CHECK ((user_id IS NULL) <> (device_id IS NULL))
+            );
+
+            INSERT INTO private_reminders_owned
+                (id, user_id, device_id, tree_uuid, category, note, photo_id,
+                 created_at, updated_at, deleted_at)
+            SELECT id, user_id, NULL, tree_uuid, category, note, photo_id,
+                   created_at, updated_at, deleted_at
+              FROM private_reminders;
+
+            DROP TABLE private_reminders;
+            ALTER TABLE private_reminders_owned RENAME TO private_reminders;
+
+            CREATE INDEX IF NOT EXISTS idx_private_reminders_user
+                ON private_reminders(user_id, created_at DESC);
+            -- The pre-sign-in read, and the one `POST /devices/claim` drives.
+            CREATE INDEX IF NOT EXISTS idx_private_reminders_device
+                ON private_reminders(device_id, created_at DESC);
+            """)
+    }
+
+    // MARK: - v4
+
+    /// `outbox.kind` learns `private_reminder`.
+    ///
+    /// The reminder is a mutation, so it goes through the outbox like every other one: written to
+    /// disk first, attempted after (ARCHITECTURE §4). v1's `kind` CHECK is a closed vocabulary of
+    /// five and SQLite cannot widen a CHECK in place, so the table is rebuilt.
+    ///
+    /// **This is the rebuild v2 declined to do, and the reason it declined does not apply.** v2 kept
+    /// `photo_paths` under its old name rather than rebuild "the one table that must not be rebuilt
+    /// under a pending contributor's feet" — for a *cosmetic* gain. Here the alternative is that the
+    /// row cannot be written at all. The copy is column for column and carries `seq`, so FIFO order,
+    /// retry counts, error text, the 48 h window and the photo lists all come across untouched; a
+    /// contributor with a queued visit sees the same queue in the same order afterwards. `seq` is
+    /// copied explicitly, which is also what re-seeds `sqlite_sequence` for the AUTOINCREMENT
+    /// column, so no id is ever reused.
+    ///
+    /// Idempotent by guard, for the reason v3 gives.
+    private static func applyV4(_ connection: SQLiteConnection) throws {
+        let existing = try outboxDefinition(connection: connection)
+        guard !existing.contains("private_reminder") else { return }
+        try connection.execute("""
+            CREATE TABLE outbox_with_reminders (
+                seq               INTEGER PRIMARY KEY AUTOINCREMENT,
+                id                TEXT NOT NULL UNIQUE,
+                kind              TEXT NOT NULL CHECK (kind IN (
+                                      'visit','observation','measurement','care_event',
+                                      'favorite_toggle','private_reminder')),
+                client_uuid       TEXT NOT NULL UNIQUE,
+                payload           TEXT NOT NULL CHECK (json_valid(payload)),
+                photo_paths       TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(photo_paths)),
+                state             TEXT NOT NULL DEFAULT 'pending'
+                                  CHECK (state IN ('pending','uploading','failed','done')),
+                fail_count        INTEGER NOT NULL DEFAULT 0 CHECK (fail_count >= 0),
+                last_error        TEXT,
+                last_error_code   TEXT,
+                json_synced       INTEGER NOT NULL DEFAULT 0 CHECK (json_synced IN (0,1)),
+                window_started_at TEXT NOT NULL,
+                next_attempt_at   TEXT,
+                created_at        TEXT NOT NULL,
+                updated_at        TEXT NOT NULL,
+                CHECK (state <> 'done' OR (json_synced = 1 AND json_array_length(photo_paths) = 0))
+            );
+
+            INSERT INTO outbox_with_reminders
+                (seq, id, kind, client_uuid, payload, photo_paths, state, fail_count,
+                 last_error, last_error_code, json_synced, window_started_at,
+                 next_attempt_at, created_at, updated_at)
+            SELECT seq, id, kind, client_uuid, payload, photo_paths, state, fail_count,
+                   last_error, last_error_code, json_synced, window_started_at,
+                   next_attempt_at, created_at, updated_at
+              FROM outbox;
+
+            DROP TABLE outbox;
+            ALTER TABLE outbox_with_reminders RENAME TO outbox;
+
+            CREATE INDEX IF NOT EXISTS idx_outbox_drain ON outbox(state, next_attempt_at, seq);
+            CREATE INDEX IF NOT EXISTS idx_outbox_created ON outbox(created_at);
+            """)
+    }
+
+    /// The `CREATE TABLE` text SQLite holds for `outbox`, which is where the `kind` vocabulary
+    /// actually lives — `pragma_table_info` reports columns, not their CHECKs.
+    private static func outboxDefinition(connection: SQLiteConnection) throws -> String {
+        let statement = try connection.prepare(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'outbox'"
+        )
+        defer { statement.finalize() }
+        return try statement.fetchOne { try $0.stringIfPresent("sql") ?? "" } ?? ""
+    }
 }

@@ -61,6 +61,11 @@ public struct OutboxItem: CoreEntity {
         case measurement = "measurement"
         case careEvent = "care_event"
         case favoriteToggle = "favorite_toggle"
+        /// D4's private reminder. Not in §4's original list, because §4 was written while the
+        /// reminder needed an account it could not have (ERRATA E23); §6 already says its POST is
+        /// separate from the hazard-redirect log, so it is a mutation like any other and queues like
+        /// one. `AppSchema` v4 widens the stored vocabulary to match.
+        case privateReminder = "private_reminder"
     }
 
     /// `outbox.state` (BUILD-PLAN §4), verbatim. Screen 17 shows per-item state and retry.

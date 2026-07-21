@@ -14,6 +14,7 @@ enum Route: Hashable {
     case careLog(UUID)          // 09
     case share(UUID)            // 10
     case growthHistory(UUID)    // 11
+    case checkIn(UUID)          // 05
     case report(UUID)           // 06
     case measure(UUID)          // 16
     case outbox                 // 17

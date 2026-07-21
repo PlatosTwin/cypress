@@ -24,7 +24,7 @@ struct ReportView: View {
         api: any CypressAPI,
         dialer: any TelephoneDialing = SystemTelephoneDialer(),
         initialSelection: ReportSelection = .nothing,
-        onSaveReminder: ((PrivateReminderDraft) async -> Void)? = nil
+        onSaveReminder: ((PrivateReminderDraft) async throws -> Void)? = nil
     ) {
         _model = State(
             wrappedValue: ReportModel(
@@ -197,12 +197,36 @@ struct ReportView: View {
 
     // MARK: - Reminder and disclosure
 
+    /// The button, and the one line that answers a tap on it.
+    ///
+    /// Once the reminder is saved the button is gone rather than disabled: the work is done, there
+    /// is nothing to press, and SCREENS.md §5 gap 2 leaves disabled styling **NOT SPECIFIED**, so
+    /// there is no drawn state to fall back on. A failure keeps the button — the reminder is not on
+    /// disk and pressing again is the honest next move.
+    @ViewBuilder
     private var reminderButton: some View {
-        SecondaryOutlineButton(ReportCopy.saveReminder, style: .compact) {
-            Task { await model.saveReminder() }
+        VStack(spacing: ReportMetrics.reminderNoteTop) {
+            if model.reminderSaveState == .saved {
+                reminderNote(ReportCopy.reminderSaved)
+            } else {
+                SecondaryOutlineButton(ReportCopy.saveReminder, style: .compact) {
+                    Task { await model.saveReminder() }
+                }
+                if model.reminderSaveState == .failed {
+                    reminderNote(ReportCopy.reminderFailed)
+                }
+            }
         }
         .padding(.top, ReportMetrics.secondaryTop)
         .padding(.horizontal, CypressSpacing.gutter)
+    }
+
+    private func reminderNote(_ text: String) -> some View {
+        Text(text)
+            .font(CypressFont.body125)
+            .foregroundStyle(CypressColor.textMuted)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
     }
 
     private var disclosure: some View {

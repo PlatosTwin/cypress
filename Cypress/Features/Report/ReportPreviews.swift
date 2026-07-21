@@ -14,6 +14,10 @@ import SwiftUI
 /// Accepts the redirect log and refuses everything else. Previews only.
 struct ReportPreviewAPI: CypressAPI {
     func logHazardRedirect(_ event: HazardRedirectEvent) async throws {}
+    /// D4's private reminder, which previews never write.
+    func savePrivateReminder(_ reminder: PrivateReminder) async throws -> SyncResult.Status {
+        throw APIError.forbidden
+    }
 
     func mapContent(in viewport: MapViewport) async throws -> MapContent { .pins([]) }
     func treesNear(_ coordinate: Coordinate, radiusM: Double, limit: Int) async throws -> [NearbyTree] { [] }

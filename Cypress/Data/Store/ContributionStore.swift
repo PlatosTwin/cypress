@@ -333,17 +333,27 @@ public struct ContributionStore {
         return try statement.fetchAll(Self.decodeCommunityNote)
     }
 
+    /// D4's private reminder.
+    ///
+    /// Idempotent on `id`, which is also the mutation's `clientUUID` in the outbox (see
+    /// `PrivateReminder`): a replayed reminder reports `.duplicate` and no second row exists, the
+    /// same guarantee the other contribution tables get from their `client_uuid` column.
+    ///
+    /// The owner binds to exactly one of the two columns, and the schema's CHECK rejects any other
+    /// combination — so a reminder cannot be stored ownerless even by a hand-written INSERT.
     @discardableResult
     public func insert(_ reminder: PrivateReminder, connection: SQLiteConnection) throws -> WriteOutcome {
         let statement = try connection.cachedStatement("""
             INSERT INTO private_reminders
-                (id, user_id, tree_uuid, category, note, photo_id, created_at, updated_at, deleted_at)
-            VALUES (:id, :user, :tree, :category, :note, :photo, :created, :updated, :deleted)
+                (id, user_id, device_id, tree_uuid, category, note, photo_id,
+                 created_at, updated_at, deleted_at)
+            VALUES (:id, :user, :device, :tree, :category, :note, :photo, :created, :updated, :deleted)
             ON CONFLICT(id) DO NOTHING
             """)
         _ = try statement.bind([
             ":id": reminder.id,
-            ":user": reminder.userID,
+            ":user": reminder.owner.userID,
+            ":device": reminder.owner.deviceID,
             ":tree": reminder.treeID,
             ":category": reminder.category.rawValue,
             ":note": reminder.note,
@@ -353,6 +363,34 @@ public struct ContributionStore {
             ":deleted": reminder.deletedAt
         ])
         return try run(statement, on: connection)
+    }
+
+    /// The reminders one contributor can see: their account's, plus this device's own.
+    ///
+    /// Both halves are needed at once because ownership moves at sign-in and nothing forces a claim
+    /// to have happened — a signed-in contributor who has never claimed this device still wrote the
+    /// device-owned rows in front of them. There is no "everyone's reminders" query and no way to
+    /// ask for another owner's: a caller states who it is, and privacy is the shape of the API
+    /// rather than a filter someone can forget (D4, DECISIONS §3.11).
+    public func privateReminders(
+        userID: UUID?,
+        deviceID: UUID?,
+        limit: Int = 50,
+        connection: SQLiteConnection
+    ) throws -> [PrivateReminder] {
+        let statement = try connection.cachedStatement("""
+            SELECT * FROM private_reminders
+             WHERE deleted_at IS NULL
+               AND ((:user IS NOT NULL AND user_id = :user COLLATE NOCASE)
+                    OR (:device IS NOT NULL AND device_id = :device COLLATE NOCASE))
+             ORDER BY created_at DESC LIMIT :limit
+            """)
+        _ = try statement.bind([
+            ":user": userID?.uuidString,
+            ":device": deviceID?.uuidString,
+            ":limit": limit
+        ])
+        return try statement.fetchAll(Self.decodePrivateReminder)
     }
 
     @discardableResult
@@ -512,6 +550,12 @@ public struct ContributionStore {
     ///
     /// Every contribution table is updated in one transaction: three visits made before sign-in
     /// must all arrive attributed, or none should (BUILD-PLAN §12, M2 acceptance).
+    ///
+    /// Idempotent, in the only way that matters here: every statement is an UPDATE whose WHERE
+    /// clause stops matching once it has run. Nothing inserts, so nothing can duplicate; nothing
+    /// deletes, so nothing can be orphaned. A second claim by the same user matches zero rows, and a
+    /// claim by a *different* user leaves already-attributed rows alone rather than stealing them —
+    /// the `user_id IS NULL` guard is what makes both true.
     public func claimDevice(deviceUUID: UUID, userID: UUID, at date: Date, connection: SQLiteConnection) throws {
         for table in ["visits", "observations", "measurements", "care_events"] {
             let statement = try connection.cachedStatement("""
@@ -522,6 +566,19 @@ public struct ContributionStore {
             try statement.run()
             _ = try statement.reset()
         }
+
+        // D4's reminder, adopted by the same mechanism (ERRATA E23). It is not in the loop above
+        // because ownership here is exclusive: the account gains the row and the device link is
+        // dropped in the same statement, so the "exactly one owner" CHECK holds at every instant and
+        // the reminder carries strictly less about the device afterwards than before. A reminder
+        // written *after* sign-in already has `user_id` and is not matched.
+        let reminders = try connection.cachedStatement("""
+            UPDATE private_reminders SET user_id = :user, device_id = NULL, updated_at = :now
+             WHERE device_id = :device COLLATE NOCASE AND user_id IS NULL
+            """)
+        _ = try reminders.bind([":user": userID, ":now": date, ":device": deviceUUID.uuidString])
+        try reminders.run()
+        _ = try reminders.reset()
 
         let device = try connection.cachedStatement("""
             INSERT INTO device (id, device_uuid, user_id, created_at, updated_at)
@@ -676,6 +733,31 @@ public struct ContributionStore {
             photoID: try row.uuidIfPresent("photo_id"),
             createdAt: try row.date("created_at"),
             staleAt: try row.date("stale_at"),
+            updatedAt: try row.date("updated_at"),
+            deletedAt: try row.dateIfPresent("deleted_at")
+        )
+    }
+
+    static func decodePrivateReminder(_ row: SQLiteRow) throws -> PrivateReminder {
+        // No `?? .device(...)` fallback and no default owner. The schema's CHECK makes an ownerless
+        // row unstorable, so a row that has neither is corruption, and inventing an owner for it
+        // would attribute someone's private record to a party that never wrote it.
+        let owner: ReminderOwner
+        if let userID = try row.uuidIfPresent("user_id") {
+            owner = .user(userID)
+        } else if let deviceID = try row.uuidIfPresent("device_id") {
+            owner = .device(deviceID)
+        } else {
+            throw APIError.validationFailed
+        }
+        return PrivateReminder(
+            id: try row.uuid("id"),
+            owner: owner,
+            treeID: try row.uuid("tree_uuid"),
+            category: try row.value("category", HazardCategory.self),
+            note: try row.stringIfPresent("note"),
+            photoID: try row.uuidIfPresent("photo_id"),
+            createdAt: try row.date("created_at"),
             updatedAt: try row.date("updated_at"),
             deletedAt: try row.dateIfPresent("deleted_at")
         )

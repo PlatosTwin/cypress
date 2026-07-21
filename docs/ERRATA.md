@@ -328,6 +328,69 @@ sign-in (which is what D9 implies every other first save does), or screen 06's r
 gated behind the account ask, which puts a sign-in wall inside a safety flow. Until then the
 `CypressAPI` addition is not worth making.
 
+**RESOLVED — private reminders are device-scoped.** The first branch was taken: D4's reminder can be
+owned by a device, and the account ask stays where D9 put it. A sign-in wall inside a safety flow was
+never a real option — someone is standing under a broken limb, and the product's premise is that
+contributing is frictionless and everything is optional. The contradiction above is left standing
+because the source documents still contain it: D4's reasoning in BUILD-PLAN §4 and `Hazard.swift`
+argued for an account-only record, and this entry is why the code now says otherwise.
+
+The reasoning, since it is the part worth keeping:
+
+- **A device-scoped reminder is *more* private than an account-scoped one.** It never leaves the
+  installation that wrote it, so nothing in DECISIONS §3 loosens. The device id stays exactly what
+  D9 makes it — an anonymous handle for un-attributed contributions — and never becomes a user
+  identifier.
+- **The adoption mechanism already existed.** `claimDevice(deviceUUID:userID:)` is in `CypressAPI`
+  for precisely this pattern. When screen 15 lands, reminders written before sign-in arrive on the
+  account with the visits, observations, measurements and care events that D9 already migrates.
+
+What changed:
+
+1. **Schema, `AppSchema` v3.** `private_reminders.user_id` becomes nullable, `device_id` appears
+   beside it, and `CHECK ((user_id IS NULL) <> (device_id IS NULL))` makes exactly one of them
+   non-null. Not "nullable user plus non-null device": that leaves both populated after sign-in, so
+   the owner becomes whichever column a query coalesces first, and it keeps a permanent
+   device↔account link on the one table whose entire point is privacy. Exclusive ownership means the
+   engine carries the invariant — a reminder is never ownerless and never doubly owned — and it makes
+   adoption a *move*. `ReminderOwner` is the same rule in Swift: two cases, no third state.
+2. **Migration.** v3 rebuilds the table (SQLite cannot drop a NOT NULL in place) and carries every
+   existing row across as user-owned, which the new CHECK already accepts. v4 rebuilds `outbox` to
+   widen its `kind` vocabulary by one value — the rebuild v2 declined to do for a cosmetic gain, done
+   here because the alternative is that the row cannot be written at all. `seq`, state, fail counts,
+   error text and photo lists are copied column for column, so a pending contributor's queue is
+   unchanged in content and order.
+3. **Adoption.** `claimDevice` gains one statement: `SET user_id = :user, device_id = NULL WHERE
+   device_id = :device AND user_id IS NULL`. It is an UPDATE whose WHERE clause stops matching once
+   it has run, so a second claim moves nothing, nothing is inserted (no duplicates) and nothing is
+   deleted (no orphans). A claim by a *different* account leaves already-attributed reminders alone.
+4. **The write path.** `OutboxItem.Kind` gains `private_reminder` and `OutboxPayload` a
+   `.privateReminder` case, so the reminder is durable before it is attempted like every other
+   mutation. `CypressAPI.savePrivateReminder(_:)` is the separate `private_reminders` POST that
+   BUILD-PLAN §6 already names; `LocalAPI` implements it, `RemoteAPI` keeps the shape. The reminder's
+   own id is the idempotency key, so two taps save one reminder.
+5. **Screen 06.** `RootView` now supplies `onSaveReminder`, which resolves the owner from
+   `LocalAPI.attribution` (the screen never sees an identity) and hands the mutation to
+   `ReminderOutboxWriter`. On success the button is replaced by one line: `Saved. Your reminder stays
+   yours alone.` — the screen's own sentence, taken from the dashed disclosure directly beneath it,
+   which goes on saying the city has not been notified. A failed save says `Not saved. Tap to try
+   again.` and keeps the button. The saved and failed states are **NOT SPECIFIED** by SCREENS.md 06,
+   which draws the button and nothing after it; a control that acts and says nothing is the same
+   dishonesty in the other direction, so this is the smallest answer that is not silence.
+
+**One thing this hands to whoever builds account deletion.** DECISIONS §3.12 anonymizes attributed
+rows — "user_id nulled, device link severed" — and a private reminder cannot survive both, since it
+would then be owned by nobody. That path has to choose between deleting reminders with the account
+and re-homing them onto the device. The CHECK forces the choice to be made rather than leaving a
+hazard note no query can return; it is not made here. **OPEN.**
+
+Proven by `CypressTests/PrivateReminderTests.swift`: a reminder saves with no user present and is
+owned by the device; it survives a relaunch both drained and still queued; migrating a v2 database
+preserves its reminders and its pending outbox rows and both new migrations replay as no-ops;
+`claimDevice` adopts device-owned reminders and claiming twice changes nothing, including nobody
+else's. `DataGates` adds the schema invariant: an ownerless or doubly-owned reminder is rejected by
+the engine, and a device-owned one is accepted.
+
 ### E13 — The seed was declared byte-for-byte reproducible and was not
 
 `.gitignore` says of the bundled seed: "an 88 MB build product of `Tools/build_seed.py`,
@@ -413,3 +476,145 @@ at species rank should not be allowed to write a field when the query string is 
 The `leaf_retention` null breakdown in §11 ("38 with no source found, 12 genus-only strings whose
 genus is not uniform, 10 where SelecTree contradicted itself, 6 that are not taxa at all" = 66)
 inherits the same off-by-one and does not re-add to 66 once the seventh is counted.
+
+### E24 — Nothing in the mock set opens screen 05
+
+Screen 05 is the highest-frequency contribution in the app (ROADMAP M1) and no mocked screen
+contains an affordance that reaches it.
+
+- **03 · Tree profile** has one primary CTA, `Visit · say hello with a photo`, and a quad action row
+  of `Favorite` · `Care` · `Share` · `Report`. Its affordance list ends "`Report` → 06; DBH/Height
+  cards → 11". No check-in.
+- **The clickable prototype never reaches 05 at all.** PROTOTYPE-FLOW §1.2's `screen` enum is
+  `'map' | 'identify' | 'profile' | 'camera' | 'saved' | 'grove'`.
+- **18 · Next tree is 05's exit.** Its success block reads `Check-in saved`, and its caption opens
+  "Saving a check-in immediately offers the next nearest tree." So the screen after 05 is drawn and
+  the screen before it is not.
+
+`Route.checkIn(UUID)` exists and `RootView` resolves it, so the destination is built and one line
+away from being reachable. **No entry point was invented** — DECISIONS constraint 21. The two
+candidates a decision-owner has to choose between are a fifth cell in C8's quad row (which is drawn
+with exactly four) and a second primary CTA on 03 (which is drawn with exactly one); both change a
+mocked screen, which is not a call to make inside a view file.
+
+Screen 18 is also not wired as 05's confirmation, for a smaller reason: `VisitSavedView` takes a
+`VisitSaveReceipt` and its model derives the next tree from a `Visit`. Generalising it over both
+contribution kinds is real work in another feature's folder, and until an entry point exists there
+is no flow to put it in. The check-in pops back to wherever it was pushed from.
+
+### E25 — 05's optional well has no editor behind it
+
+SCREENS.md 05 §6 draws C15 with the copy `Add photos · notes (optional)` and specifies nothing that
+happens when it is tapped: no picker, no sheet, no note field, no target in the affordance list.
+Screen 09's well carries the same ambiguity.
+
+The well is drawn and is inert. Inventing a photo picker and a note editor would be inventing two
+screens (DECISIONS constraint 21) — and the note editor in particular is not obvious, because 04's
+note field is a single line inside a dark camera tray and 05 is neither.
+
+`CheckInDraft` carries `note: String?` and `photos: [OutboxPhoto]` regardless, and
+`CheckInOutboxWriter` already writes both through the outbox in the current payload shape — a photo
+travels as `OutboxPhoto{path, shotType}` so `photos.shot_type` is recorded from the framing the
+contributor chose rather than guessed at upload. When the editor is designed, the view is the only
+file that changes.
+
+### E26 — §1.3's type ramp has no 11.5px row, and two screens set one
+
+The vitality anchor line is `11.5px` (SCREENS.md 05 §3) and screen 17's `Notes and numbers sync on
+any connection` is `11.5px` (17 §4). §1.3's sans ramp goes 12 → 12.5 and never names 11.5.
+
+`CypressFont.body115` was added rather than the anchor sentence being rounded to `body.12`. This is
+the smallest type in the app that carries meaning a rating depends on: D3's whole argument is that
+the anchor is legible at rating time, in sun glare, at 7 am. Rounding it is the kind of half-point
+decision that is invisible in review and visible in a parking strip.
+
+Same shape as the `body.15.5` / weight-800 gap the ramp already grew a row for (see
+`CypressFont.body155ExtraBold`).
+
+### E27 — `text.faintAlt` has a documented dark value; §1.2 does not carry it
+
+§1.2's text table lists `text.faintAlt` `#77836F` with no dark counterpart, and `CypressColor`
+transcribed it as light-only. D3's delta list states one in prose: "Footnote `#5F6F61`" — which is
+`dark.text.faint`, the value `textFaint` already pairs with.
+
+This is the third instance of the same failure mode: a dark value stated in a screen's delta prose
+rather than in the §1.2 table, and therefore missed by a table-driven transcription. The `taped`
+badge (D2) was the first two. Any audit of the 59 tokens marked "no dark value specified" (ERRATA
+E8, ROADMAP §3) should read the D1–D3 delta lists before deriving anything, because a derived value
+that overwrites a documented one is worse than no value at all.
+
+`textFaintAlt` is now `dynamic(light: 0x77836F, dark: 0x5F6F61)`. Its other user is screen 18's
+footnote, which has no dark mock and is improved by the pairing.
+
+### E28 — The leaf-off vitality state is a required build with no copy
+
+BUILD-PLAN §9 lists "vitality suppressed leaf-off state for deciduous species" as an M2 build
+requirement. PRODUCT §3 states the rule — "deciduous species are rated only in leaf-on season. The
+app suppresses the vitality UI off-season using species leaf phenology; structure flags remain
+available year-round" — and no document gives the words the volunteer reads.
+
+Written as: `Out of leaf this month, so there is no canopy to rate. Everything else on this card
+still counts.` It says only what PRODUCT §3 says, asserts nothing about this tree's health, and
+keeps the section so the card does not silently lose one between November and March. Flagged for
+design review.
+
+The section's micro-label drops its instruction clause in this state, from
+`Vitality · tap the closest match` to `Vitality` — a subtraction from the verbatim label, because
+there is nothing to tap and the full label would contradict the sentence directly beneath it.
+
+The section is suppressed, never the screen. `Vitality.isRatingPermitted` is also re-checked in
+`CheckInOutboxWriter` at enqueue time, so a rating collected while the species read was still in
+flight cannot reach the record if the species that lands forbids it.
+
+Note that a species with `leafRetention == nil` is rated year-round (ERRATA E9), and so is a tree
+whose profile read failed — both reach `isRatingPermitted` as "no habit stated", which permits.
+
+### E29 — C5's `status` convenience is typed on the wrong status vocabulary
+
+`SegmentedControl.status(selection:)` in `DesignSystem/Components/SegmentedControl.swift` is
+documented as "05 / D3 `Status`" and is typed on `TreeStatus`.
+
+A check-in reports an `ObservationStatus`. The two are separate types on purpose:
+`Core/Models/TreeObservation.swift` says so at the top — "An observation never mutates
+`trees.status`: the last two cases open a review flag that a moderator or org coordinator confirms
+(DECISIONS §3.7)" — and DECISIONS constraint 7 makes it binding. A screen that used the convenience
+would have a `TreeStatus` in hand at the moment it built the observation, which is one careless
+assignment away from a citizen observation editing the city's record.
+
+Screen 05 builds the control from the generic `SegmentedControl` over `ObservationStatus` instead.
+The convenience is left in place because it may be right for a moderator surface; it should not
+claim screen 05 in its documentation, and its `.vacantSite` case has no segment on any mocked
+screen.
+
+### E30 — The five vitality anchor photographs do not exist, and they are an entry gate
+
+BUILD-PLAN §8: "The five vitality anchor photos per class ship as app assets and are an entry gate
+for M2: the check-in screen does not ship without them (screen 5 shows them inline)." DECISIONS
+constraint 19 repeats it. PRODUCT §3 says each class shows a "reference photo per class shown inline
+at rating time".
+
+There are no such assets in the repository. What 05 draws, and what is built, is SCREENS.md §1.2's
+`linear-gradient(140deg, …)` placeholder — the design export's own stand-in, transcribed exactly.
+
+The gate is not satisfied. It is worth stating plainly what is missing: colour is explicitly
+secondary coding (D3), so a gradient swatch carries none of the calibration the reference photo is
+there to provide. What ships today is the label and the anchor sentence, always visible, which is
+the part D3 could specify without photography.
+
+### E31 — D3 drops three fields; the build keeps them
+
+D3's delta list ends: "**Dropped vs. 05:** the `Foliage` segmented control, the optional
+photos/notes well, and the fifth structure chip `Stake / tie issue`."
+
+Those are not implemented as drops. A check-in that offers four structure flags at night and five in
+the morning, and cannot record foliage density after dark, would make the record depend on the
+device's appearance setting — and every one of the three is a field that reaches `observations`.
+
+Read as drawing economy, which is what the neighbouring dark screens do with theirs: D1 omits
+`48TH AVE` and the removed pin, D2 "drops" the regulars row and the season strip's month row. None
+of those is a behaviour either. D3 is described as "Same structure as 05 with these deltas", and a
+missing field is not a delta of appearance.
+
+Everything else in D3's list — the mint selection, the weight-800 chips and CTA, the desaturated
+swatch column, the shadowless selected row, `#D6E0CE` titles against `#E4EBE2` on the selected one —
+is implemented, and resolves off the system colour scheme rather than being pinned dark.

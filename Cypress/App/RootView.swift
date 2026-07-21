@@ -57,14 +57,42 @@ struct RootView: View {
                 onFavorite: { _ in /* outbox mutation — wired with the grove, M2 */ }
             )
 
+        case .checkIn(let id):
+            // Screen 05. Anonymous under the device id until the account ask ships (D9); the
+            // composition root owns that choice, not the feature.
+            //
+            // **Nothing pushes this route yet.** No mocked screen carries an affordance that opens
+            // the check-in: 03's quad row is Favorite / Care / Share / Report, its one primary CTA
+            // is the visit, and the prototype never reaches 05 at all. Screen 18's success block
+            // reads `Check-in saved`, so 05's *exit* is drawn while its entrance is not. Inventing
+            // the button is exactly what DECISIONS constraint 21 forbids, so the destination is
+            // wired and the affordance is a question for design. See ERRATA (E24).
+            CheckInView(
+                treeID: id,
+                api: data.api,
+                outbox: data.outbox,
+                attribution: .anonymous(deviceID: data.deviceID),
+                onSaved: { _ in router.pop() }
+            )
+
         case .report(let id):
-            // Screen 06. `onSaveReminder` is deliberately not passed: D4's private reminder needs a
-            // `userID`, `private_reminders.user_id` is NOT NULL by that decision's own reasoning,
-            // and D9 leaves this device anonymous until the account sheet (screen 15) ships — so
-            // there is no user to attribute one to, and `CypressAPI` has no write for it either.
-            // The screen draws the button (SCREENS.md 06 §5) and claims nothing. See ERRATA E23;
-            // when the protocol grows the method, the handler lands here and nowhere else.
-            ReportView(treeID: id, api: data.api)
+            // Screen 06. D4's private reminder is device-owned until an account exists, so the save
+            // works on a device that has never seen the account sheet — which is every device the
+            // app currently runs on (D9, ERRATA E23). The owner comes from `LocalAPI.attribution`
+            // and never from the screen: the reminder belongs to the signed-in user when there is
+            // one, and to this installation otherwise. When screen 15 lands, `claimDevice` moves
+            // these reminders onto the account and this line does not change.
+            ReportView(
+                treeID: id,
+                api: data.api,
+                onSaveReminder: { draft in
+                    try await ReminderOutboxWriter.save(
+                        draft,
+                        attribution: await data.api.attribution,
+                        outbox: data.outbox
+                    )
+                }
+            )
 
         // Every remaining route has a mocked screen but no built feature yet. Naming them here
         // rather than defaulting means adding one is a compile error, not a silent no-op.

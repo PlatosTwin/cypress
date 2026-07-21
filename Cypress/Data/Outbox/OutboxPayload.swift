@@ -33,6 +33,10 @@ public enum OutboxPayload: Sendable {
     case measurement(TreeMeasurement)
     case careEvent(CareEvent)
     case favoriteToggle(FavoriteToggle)
+    /// D4's private reminder (ERRATA E23). It queues like every other mutation: durable first,
+    /// attempted after. Its payload carries a `ReminderOwner`, so a reminder written before sign-in
+    /// arrives at the API owned by the device rather than by nobody.
+    case privateReminder(PrivateReminder)
 
     public var kind: OutboxItem.Kind {
         switch self {
@@ -41,6 +45,7 @@ public enum OutboxPayload: Sendable {
         case .measurement: return .measurement
         case .careEvent: return .careEvent
         case .favoriteToggle: return .favoriteToggle
+        case .privateReminder: return .privateReminder
         }
     }
 
@@ -52,6 +57,9 @@ public enum OutboxPayload: Sendable {
         case let .measurement(value): return value.clientUUID
         case let .careEvent(value): return value.clientUUID
         case let .favoriteToggle(value): return value.clientUUID
+        // The reminder's own id. Minted on device before the save and never reused, which is what
+        // an idempotency key has to be; see `PrivateReminder`.
+        case let .privateReminder(value): return value.id
         }
     }
 
@@ -63,6 +71,7 @@ public enum OutboxPayload: Sendable {
         case let .measurement(value): return value.treeID
         case let .careEvent(value): return value.treeID
         case let .favoriteToggle(value): return value.treeID
+        case let .privateReminder(value): return value.treeID
         }
     }
 
@@ -91,6 +100,7 @@ public enum OutboxPayload: Sendable {
         case let .measurement(value): return try encoder.encode(value)
         case let .careEvent(value): return try encoder.encode(value)
         case let .favoriteToggle(value): return try encoder.encode(value)
+        case let .privateReminder(value): return try encoder.encode(value)
         }
     }
 
@@ -102,6 +112,7 @@ public enum OutboxPayload: Sendable {
         case .measurement: return .measurement(try decoder.decode(TreeMeasurement.self, from: data))
         case .careEvent: return .careEvent(try decoder.decode(CareEvent.self, from: data))
         case .favoriteToggle: return .favoriteToggle(try decoder.decode(FavoriteToggle.self, from: data))
+        case .privateReminder: return .privateReminder(try decoder.decode(PrivateReminder.self, from: data))
         }
     }
 

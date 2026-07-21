@@ -84,6 +84,23 @@ public protocol CypressAPI: Sendable {
     /// public record. `private_reminders` is a separate write (D4).
     func logHazardRedirect(_ event: HazardRedirectEvent) async throws
 
+    /// The separate `private_reminders` POST that §6 names beside the hazard-redirect log (D4).
+    ///
+    /// Takes a finished `PrivateReminder` rather than a draft because the reminder is written to the
+    /// outbox *before* this is called, and what goes into the outbox has to be the whole mutation
+    /// (ARCHITECTURE §4). The drain reaches the same write through `sync`, which carries the queued
+    /// reminder in its batch; this is the single-item door for a caller that already has one in hand.
+    ///
+    /// The reminder arrives owned — by the signed-in user, or by the device that wrote it before
+    /// there was one (D9, `ReminderOwner`). Adoption is `claimDevice`'s job, never this method's.
+    ///
+    /// Returns `.duplicate` when the reminder is already stored, exactly as `sync` does for every
+    /// other kind — a replay after a flap is a success, not a second reminder.
+    ///
+    /// Never public, never auto-staled, and it does not tell the city anything (D4, DECISIONS §3.3).
+    @discardableResult
+    func savePrivateReminder(_ reminder: PrivateReminder) async throws -> SyncResult.Status
+
     /// `GET /export/latest.csv` / `.geojson` — the nightly export, carrying `verification_state`
     /// (D12, BUILD-PLAN §5).
     func exportLatest(_ format: ExportFormat) async throws -> Data

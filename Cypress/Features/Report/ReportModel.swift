@@ -51,17 +51,39 @@ struct SystemTelephoneDialer: TelephoneDialing {
 
 // MARK: - The private reminder
 
-/// What screen 06 knows about a reminder it cannot yet save.
+/// What screen 06 knows about a reminder.
 ///
-/// A `Core.PrivateReminder` needs a `userID`, and there is no signed-in user on a device that has
-/// never seen the account sheet (screen 15, unbuilt) — D9 makes the first saves anonymous under a
-/// device id, while `private_reminders.user_id` is `NOT NULL` by D4's own reasoning. The two
-/// decisions disagree, and this draft is the part the screen can honestly assemble. See ERRATA
-/// (E23) and `ReportModel.saveReminder()`.
+/// The screen assembles the two facts it can honestly know — which tree, which hazard — and an id.
+/// It does **not** decide who the reminder belongs to: D9's answer to that (the signed-in user, else
+/// this device) lives behind `CypressAPI`, and a view deciding an identity question is a view
+/// deciding something it cannot see. `ReminderOutboxWriter` turns this into a `PrivateReminder`.
 struct PrivateReminderDraft: Hashable, Sendable {
+    /// Minted once per selection, not per tap. It is the mutation's idempotency key in the outbox,
+    /// so two taps on the same selected hazard save one reminder rather than two (ARCHITECTURE §4).
+    let reminderID: UUID
     let treeID: UUID
     /// A `HazardCategory`, never a `CommunityNote.Category`. D4 at the type level.
     let category: HazardCategory
+
+    init(reminderID: UUID = UUID(), treeID: UUID, category: HazardCategory) {
+        self.reminderID = reminderID
+        self.treeID = treeID
+        self.category = category
+    }
+}
+
+/// Where the reminder button is, between taps.
+///
+/// **NOT SPECIFIED** by SCREENS.md 06, which draws the button and no state after it. The restrained
+/// reading is that the button has to answer the tap somehow — a control that does something and says
+/// nothing is the thing DECISIONS constraint 3 is about, in the other direction. Recorded in ERRATA
+/// (E23).
+enum ReminderSaveState: Hashable {
+    case idle
+    case saving
+    case saved
+    /// The enqueue itself failed — the reminder is not on disk and nothing may say it is.
+    case failed
 }
 
 // MARK: - Model
@@ -78,10 +100,17 @@ final class ReportModel {
     /// see `ReportCopy.callUnavailableTitle`.
     var isShowingCallUnavailable = false
 
+    /// Reset whenever the selection changes: a reminder is about one hazard, so a different hazard
+    /// is a different reminder and the confirmation for the old one must not stand over it.
+    private(set) var reminderSaveState: ReminderSaveState = .idle
+
+    /// The id the next save will carry. Minted per selected hazard so a double tap is one reminder.
+    private var reminderID = UUID()
+
     let treeID: UUID
     private let api: any CypressAPI
     private let dialer: any TelephoneDialing
-    private let onSaveReminder: ((PrivateReminderDraft) async -> Void)?
+    private let onSaveReminder: ((PrivateReminderDraft) async throws -> Void)?
 
     /// `POST /reports/hazard-redirect` is "logs that a 311 redirect was *shown*" (BUILD-PLAN §6), so
     /// it fires when the panel appears, not when the call is placed. One log per category per visit
@@ -96,7 +125,7 @@ final class ReportModel {
         api: any CypressAPI,
         dialer: any TelephoneDialing = SystemTelephoneDialer(),
         initialSelection: ReportSelection = .nothing,
-        onSaveReminder: ((PrivateReminderDraft) async -> Void)? = nil
+        onSaveReminder: ((PrivateReminderDraft) async throws -> Void)? = nil
     ) {
         self.selection = initialSelection
         self.treeID = treeID
@@ -109,15 +138,17 @@ final class ReportModel {
         ReportPresentation(selection: selection)
     }
 
-    /// Whether a reminder can be written at all. The button is drawn either way — SCREENS.md 06 §5
-    /// draws it — but nothing pretends a save happened when none can (DECISIONS constraint 3's
-    /// principle: never claim a thing the app did not do).
+    /// Whether a reminder can be written at all — false only in previews, which stand up the screen
+    /// without a composition root. The button is drawn either way, because SCREENS.md 06 §5 draws
+    /// it, but a tap with nothing wired stays `.idle` and therefore says nothing: the screen never
+    /// claims a save it did not make (DECISIONS constraint 3's principle).
     var canSaveReminder: Bool { onSaveReminder != nil }
 
     // MARK: - Picking
 
     func select(hazard: HazardCategory) async {
         selection = selection.hazard == hazard ? .nothing : .hazard(hazard)
+        resetReminder()
         if let shown = selection.hazard {
             await logRedirectShown(shown)
         }
@@ -125,6 +156,13 @@ final class ReportModel {
 
     func select(note: CommunityNote.Category) {
         selection = selection.note == note ? .nothing : .note(note)
+        resetReminder()
+    }
+
+    /// A new selection is a new reminder: a fresh idempotency key, and no stale confirmation.
+    private func resetReminder() {
+        reminderSaveState = .idle
+        reminderID = UUID()
     }
 
     // MARK: - The call
@@ -149,13 +187,25 @@ final class ReportModel {
     /// never auto-staled."
     ///
     /// The draft is handed out rather than written here, for the same reason the profile hands out
-    /// its visit action: the composition root owns which service performs a mutation. Today no
-    /// service can — `CypressAPI` has no reminder write, the outbox has no kind for one, and
-    /// `PrivateReminder` needs a user this app cannot yet have. Rather than fake a confirmation,
-    /// this does nothing when nothing is wired. See ERRATA (E23).
+    /// its visit action: the composition root owns which service performs a mutation. What it hands
+    /// over is what the screen can honestly know — this tree, this hazard — and the owner is
+    /// resolved behind the boundary (D9, `ReminderOwner`). See ERRATA (E23) for why this was inert
+    /// until the reminder could be owned by a device.
+    ///
+    /// A failure leaves `.failed`, not `.saved`. The confirmation is drawn from the state and from
+    /// nothing else, so the screen cannot claim a save that did not reach the disk.
     func saveReminder() async {
         guard let category = selection.hazard, let onSaveReminder else { return }
-        await onSaveReminder(PrivateReminderDraft(treeID: treeID, category: category))
+        guard reminderSaveState != .saved, reminderSaveState != .saving else { return }
+        reminderSaveState = .saving
+        do {
+            try await onSaveReminder(
+                PrivateReminderDraft(reminderID: reminderID, treeID: treeID, category: category)
+            )
+            reminderSaveState = .saved
+        } catch {
+            reminderSaveState = .failed
+        }
     }
 
     // MARK: - Analytics

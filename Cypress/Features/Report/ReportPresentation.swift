@@ -106,6 +106,17 @@ enum ReportCopy {
     static let callCTA = "Call 311 now"
     static let saveReminder = "Save a private reminder for yourself"
 
+    /// **NOT SPECIFIED.** SCREENS.md 06 §5 draws the button and nothing after it, so what a
+    /// successful save looks like is not in the mock. This is the screen's own sentence — the
+    /// disclosure below already says "Your reminder stays yours alone" — rather than new copy, which
+    /// is the least invented answer available (DECISIONS constraint 21). It states what happened and
+    /// stops: the reminder is on this device's own record, and the city still has not been notified,
+    /// which the dashed disclosure directly beneath keeps saying (ARCHITECTURE §5.4). Recorded in
+    /// ERRATA (E23).
+    static let reminderSaved = "Saved. Your reminder stays yours alone."
+    /// **NOT SPECIFIED**, same note. The reminder is not on disk, so nothing may suggest it is.
+    static let reminderFailed = "Not saved. Tap to try again."
+
     /// The dashed disclosure (C14 dashed), split at its bold run. Each part carries its own spacing
     /// exactly as SCREENS.md writes it.
     static let disclosureOpening = """
@@ -193,6 +204,9 @@ enum ReportMetrics {
     static let panelBodyBottom: CGFloat = 16
     /// 06 §5: secondary button block `padding:10px 16px 0`.
     static let secondaryTop: CGFloat = 10
+    /// Gap between the reminder button and the line that answers a tap on it. **NOT SPECIFIED** —
+    /// the state itself is not in the mock. The chip gap is reused rather than a new number invented.
+    static let reminderNoteTop: CGFloat = CypressSpacing.gapDense
     /// 06 §6: dashed disclosure `margin:14px 16px 0`.
     static let disclosureTop: CGFloat = 14
     /// Bottom inset before the home indicator. §1.6 gives 36 for a screen that ends in a line of
