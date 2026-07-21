@@ -141,6 +141,24 @@ accident while writing UI code. The full list is binding; these are the ones tha
 - Snapshot-testing the screens against the mocks is explicitly *not* set up yet. Visual verification
   is by running the app in the simulator and comparing to `SCREENS.md`.
 
+### Building while others are building
+
+Most of this codebase is written by parallel agents, and Xcode's build system takes a lock on its
+build database. Two `xcodebuild` invocations sharing the default DerivedData will block each other,
+and a blocked build looks exactly like a failed build to whoever is waiting on it — which is how a
+correct change gets "fixed" until it breaks.
+
+So **always build into your own DerivedData**:
+
+```
+xcodebuild -project Cypress.xcodeproj -scheme Cypress \
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
+  -derivedDataPath /tmp/cypress-build-<your-task-name> \
+  -configuration Debug build
+```
+
+The first build there is cold and slow. That is the price of not corrupting someone else's.
+
 ## 8. Milestones
 
 Mapped from BUILD-PLAN §12, minus everything that was about the server.
