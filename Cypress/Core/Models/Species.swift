@@ -1,0 +1,249 @@
+import Foundation
+
+/// `species.leaf_retention` (BUILD-PLAN §4). Drives phenology chips and season strip rendering (D5).
+///
+/// Every phenology surface derives from this attribute — an evergreen never shows a fall-colour
+/// chip or an autumn strip colour (D5, DECISIONS §3.14).
+public enum LeafRetention: String, Codable, Sendable, Hashable, CaseIterable {
+    case evergreen = "evergreen"
+    case deciduous = "deciduous"
+    case semiDeciduous = "semi_deciduous"
+
+    /// Whether fall colour is a possible phenological event for this species at all (D5).
+    public var canShowFallColor: Bool {
+        switch self {
+        case .evergreen: return false
+        case .deciduous, .semiDeciduous: return true
+        }
+    }
+}
+
+/// One entry of `species.id_tips jsonb`: `{icon, text}` (BUILD-PLAN §4).
+/// Authored content only — no fabricated botany (DECISIONS §3.15).
+public struct IDTip: Hashable, Codable, Sendable {
+    public let icon: String
+    public let text: String
+
+    public init(icon: String, text: String) {
+        self.icon = icon
+        self.text = text
+    }
+}
+
+/// A wrapping inclusive month window, e.g. November–February. `1 == January`.
+public struct MonthRange: Hashable, Codable, Sendable {
+    public let start: Int
+    public let end: Int
+
+    public init?(start: Int, end: Int) {
+        guard (1...12).contains(start), (1...12).contains(end) else { return nil }
+        self.start = start
+        self.end = end
+    }
+
+    public func contains(_ month: Int) -> Bool {
+        guard (1...12).contains(month) else { return false }
+        if start <= end { return month >= start && month <= end }
+        return month >= start || month <= end // wraps the year boundary
+    }
+
+    public var months: Set<Int> {
+        Set((1...12).filter(contains))
+    }
+}
+
+/// One entry of `species.care_notes jsonb`: `{month_range, text}` (BUILD-PLAN §4).
+public struct CareNote: Hashable, Codable, Sendable {
+    public let monthRange: MonthRange
+    public let text: String
+
+    public init(monthRange: MonthRange, text: String) {
+        self.monthRange = monthRange
+        self.text = text
+    }
+}
+
+/// `species.seasonal jsonb`: `{bloom_months, fall_color_months, fruit_months, new_growth_months}`
+/// (BUILD-PLAN §4). Empty arrays are valid.
+public struct SeasonalCalendar: Hashable, Codable, Sendable {
+    public let bloomMonths: [Int]
+    public let fallColorMonths: [Int]
+    public let fruitMonths: [Int]
+    public let newGrowthMonths: [Int]
+
+    public init(
+        bloomMonths: [Int] = [],
+        fallColorMonths: [Int] = [],
+        fruitMonths: [Int] = [],
+        newGrowthMonths: [Int] = []
+    ) {
+        self.bloomMonths = bloomMonths.sorted()
+        self.fallColorMonths = fallColorMonths.sorted()
+        self.fruitMonths = fruitMonths.sorted()
+        self.newGrowthMonths = newGrowthMonths.sorted()
+    }
+
+    public static let empty = SeasonalCalendar()
+
+    var allMonths: [Int] { bloomMonths + fallColorMonths + fruitMonths + newGrowthMonths }
+}
+
+/// Why a `Species` could not be constructed. Species records are loaded from the curated YAML by
+/// migration and are never hand-edited in production (DECISIONS §3.15), so a throw here is a
+/// content bug that must fail the import loudly.
+public enum SpeciesValidationError: Error, Hashable, Sendable, CustomStringConvertible {
+    /// D5 / DECISIONS §3.14 / BUILD-PLAN §4: "fall_color_months must be empty when
+    /// leaf_retention = evergreen". Pinned by a schema invariant test (BUILD-PLAN §13).
+    case evergreenWithFallColorMonths(scientificName: String, months: [Int])
+    case monthOutOfRange(Int)
+    case emptyScientificName
+
+    public var description: String {
+        switch self {
+        case let .evergreenWithFallColorMonths(name, months):
+            return "\(name) is evergreen but carries fall_color_months \(months) (D5)"
+        case let .monthOutOfRange(month):
+            return "month \(month) is outside 1...12"
+        case .emptyScientificName:
+            return "scientific_name is required"
+        }
+    }
+}
+
+/// A species field-guide entry (BUILD-PLAN §4 `species`, PRODUCT §3 "Species").
+///
+/// The curated list is roughly 100 species covering 90 % of SF street trees (BUILD-PLAN §8); the
+/// long tail renders name, family, and a generic silhouette, with `curated == false`.
+public struct Species: CoreEntity {
+    public let id: UUID
+    public let scientificName: String
+    public let commonName: String
+    public let family: String?
+    /// Drives every phenology surface (D5).
+    public let leafRetention: LeafRetention
+    public let idTips: [IDTip]
+    public let seasonal: SeasonalCalendar
+    public let careNotes: [CareNote]
+    /// True for the authored top list (BUILD-PLAN §8). False for stub rows produced by the ingest
+    /// fallback path (BUILD-PLAN §7).
+    public let curated: Bool
+    public let createdAt: Date
+    public let updatedAt: Date
+
+    /// Validating initializer. Throws rather than silently repairing, because the only writer is
+    /// the curated-YAML migration and BUILD-PLAN §7 requires ingest to fail loudly.
+    ///
+    /// An evergreen carrying `fallColorMonths` is rejected here (D5, DECISIONS §3.14). This is the
+    /// practical form of "unrepresentable": `LeafRetention` must stay a flat enum because it maps
+    /// to a database string column (BUILD-PLAN §4), so the invariant is enforced at construction
+    /// and all stored properties are `let`, leaving no post-construction path back into the
+    /// invalid state.
+    public init(
+        id: UUID = UUID(),
+        scientificName: String,
+        commonName: String,
+        family: String? = nil,
+        leafRetention: LeafRetention,
+        idTips: [IDTip] = [],
+        seasonal: SeasonalCalendar = .empty,
+        careNotes: [CareNote] = [],
+        curated: Bool = false,
+        createdAt: Date = Date(),
+        updatedAt: Date = Date()
+    ) throws {
+        guard !scientificName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw SpeciesValidationError.emptyScientificName
+        }
+        if let bad = seasonal.allMonths.first(where: { !(1...12).contains($0) }) {
+            throw SpeciesValidationError.monthOutOfRange(bad)
+        }
+        if leafRetention == .evergreen, !seasonal.fallColorMonths.isEmpty {
+            throw SpeciesValidationError.evergreenWithFallColorMonths(
+                scientificName: scientificName,
+                months: seasonal.fallColorMonths
+            )
+        }
+        self.id = id
+        self.scientificName = scientificName
+        self.commonName = commonName
+        self.family = family
+        self.leafRetention = leafRetention
+        self.idTips = idTips
+        self.seasonal = seasonal
+        self.careNotes = careNotes
+        self.curated = curated
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+
+    /// Property-name keys. The snake_case column and jsonb names of BUILD-PLAN §4 are produced by
+    /// the coder's key strategy in `Data`, so no type in `Core` restates them.
+    public enum CodingKeys: String, CodingKey {
+        case id, scientificName, commonName, family, leafRetention
+        case idTips, seasonal, careNotes, curated, createdAt, updatedAt
+    }
+
+    /// Decoding runs the same validation, so a corrupt row cannot enter the app through a decoder
+    /// either (D5).
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            id: try c.decode(UUID.self, forKey: .id),
+            scientificName: try c.decode(String.self, forKey: .scientificName),
+            commonName: try c.decode(String.self, forKey: .commonName),
+            family: try c.decodeIfPresent(String.self, forKey: .family),
+            leafRetention: try c.decode(LeafRetention.self, forKey: .leafRetention),
+            idTips: try c.decodeIfPresent([IDTip].self, forKey: .idTips) ?? [],
+            seasonal: try c.decodeIfPresent(SeasonalCalendar.self, forKey: .seasonal) ?? .empty,
+            careNotes: try c.decodeIfPresent([CareNote].self, forKey: .careNotes) ?? [],
+            curated: try c.decodeIfPresent(Bool.self, forKey: .curated) ?? false,
+            createdAt: try c.decode(Date.self, forKey: .createdAt),
+            updatedAt: try c.decode(Date.self, forKey: .updatedAt)
+        )
+    }
+}
+
+extension Species {
+    /// The phenology events this species may legitimately surface (D5).
+    ///
+    /// Fall colour is absent for evergreens by construction, so a chip set built from this
+    /// property cannot show "Fall color starting!" on a Monterey Cypress.
+    public var availablePhenologyTags: Set<PhenologyTag> {
+        var tags: Set<PhenologyTag> = [.fullLeaf, .flowering, .fruiting, .leafOut]
+        if leafRetention.canShowFallColor {
+            tags.insert(.fallColor)
+            tags.insert(.bare)
+        }
+        if !seasonal.bloomMonths.isEmpty { tags.insert(.flowering) }
+        if !seasonal.fruitMonths.isEmpty { tags.insert(.fruiting) }
+        return tags
+    }
+
+    /// The months this species is in leaf, used by the vitality seasonality rule (PRODUCT §3).
+    ///
+    /// Evergreen and semi-deciduous species are in leaf year-round. For deciduous species the
+    /// window is derived from the authored seasonal calendar: from the first `new_growth_months`
+    /// entry through the last `fall_color_months` entry, wrapping the year if needed. When either
+    /// array is empty the northern-hemisphere default April–October applies — this fallback is a
+    /// derivation, not authored botany, and is the one seasonality value not stated in the source
+    /// documents.
+    public var leafOnMonths: Set<Int> {
+        switch leafRetention {
+        case .evergreen, .semiDeciduous:
+            return Set(1...12)
+        case .deciduous:
+            guard
+                let start = seasonal.newGrowthMonths.first,
+                let end = seasonal.fallColorMonths.last,
+                let window = MonthRange(start: start, end: end)
+            else {
+                return Species.defaultDeciduousLeafOnMonths
+            }
+            return window.months
+        }
+    }
+
+    /// April through October. Applies only when a deciduous species has no authored new-growth or
+    /// fall-colour months. See `leafOnMonths`.
+    public static let defaultDeciduousLeafOnMonths: Set<Int> = Set(4...10)
+}
