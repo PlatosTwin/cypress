@@ -1,0 +1,4146 @@
+# Cypress curated species content (BUILD-PLAN.md section 8).
+#
+# The top 40 SF street-tree species by DataSF row count, with authored field-guide entries.
+# Loaded by migration; never hand-edited in production (DECISIONS constraint 15).
+#
+# RULE OF THIS FILE, from BUILD-PLAN section 15 and DECISIONS constraint 15:
+#   "Do not invent botanical content; the curated YAML is the only source."
+# Every botanical value below carries a `citations` block naming a source that was
+# actually fetched, the field or quote it came from, and its licence. Where no source
+# could be found the value is null or an empty array, which the app renders as
+# "not known yet". Nothing here is written from recall.
+#
+# D5 (DECISIONS section 3.14): fall_color_months is empty for every evergreen. That is
+# enforced when this file is generated, again by Tools/validate_species.py, again by
+# Species.init in Cypress/Core/Models/Species.swift, and again by a database CHECK.
+#
+# id_tips icon vocabulary (authored here; no icon font exists yet, see SCREENS.md
+# section "Icons (all hand-drawn, no icon font)"):
+#   leaf | bark | flower | fruit | cone | form | trunk
+#
+# care_notes month_range is inclusive and wraps the year boundary. {start: 1, end: 12}
+# means the source attaches no month restriction.
+#
+# Provenance of the whole file, and licence analysis, is in Fixtures/species/SOURCES.md.
+#
+generated: "2026-07-21"
+generator: "authored in a Claude Code session; the fetch and join scripts are described in SOURCES.md"
+schema_version: 1
+species:
+- species_uuid: "7d22dcda-354d-5f7d-9be0-3739ea8c6688"
+  scientific_name: "Platanus x hispanica"
+  common_name: "Sycamore: London Plane"
+  sf_rank: 1
+  sf_tree_count: 11953
+  family: "Platanaceae"
+  leaf_retention: "deciduous"
+  curated: true
+  id_tips:
+    - icon: "bark"
+      text: "Bark flakes off in irregular pieces and leaves a creamy olive patchwork on the trunk."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/platanus-x-acerifolia/"
+          fields:
+            - "Bark Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/1099"
+          api: "https://selectree.calpoly.edu/api/tree/detail/1099"
+          matched_taxon: "Platanus &times hispanica"
+          fields:
+            - "bark_texture"
+            - "bark_color"
+          values:
+            bark_texture: "Exfoliating, Smooth"
+            bark_color: "Cream, Light Green, Light Gray or Multicolored"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "leaf"
+      text: "Big maple-shaped leaves, alternate along the twig, each cut into three to five rounded lobes."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/platanus-x-acerifolia/"
+          fields:
+            - "Leaf Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/1099"
+          api: "https://selectree.calpoly.edu/api/tree/detail/1099"
+          matched_taxon: "Platanus &times hispanica"
+          fields:
+            - "leaf_arrangement"
+            - "leaf_form"
+            - "leaflet_shape"
+          values:
+            leaf_arrangement: "Alternate"
+            leaf_form: "Simple"
+            leaflet_shape: "Palmately-lobed"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "fruit"
+      text: "Brown seed balls about an inch across, usually two to a stalk, and they often stay on through winter."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/platanus-x-acerifolia/"
+          fields:
+            - "Fruit Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+    - icon: "form"
+      text: "Bark, twigs and dry fruit collect on the pavement underneath."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/1099"
+          api: "https://selectree.calpoly.edu/api/tree/detail/1099"
+          matched_taxon: "Platanus &times hispanica"
+          fields:
+            - "litter_type"
+          values:
+            litter_type: "Bark, Dry Fruit, Twigs"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+  seasonal:
+    bloom_months: []
+    fall_color_months: []
+    fruit_months: []
+    new_growth_months: []
+  care_notes:
+    - month_range:
+        start: 1
+        end: 12
+      text: "Prefers wind protection. Susceptible to anthracnose and powdery mildew."
+      citations:
+        - source: "San Francisco Public Works / Urban Forestry Council, \"2024 Recommended Street Tree Species List\" (approved 27 August 2024)"
+          url: "https://sfpublicworks.org/sites/default/files/BUF/Street%20Tree%20Planting/AUGUST%202024%20Recommended%20Street%20Tree%20List%20Update.pdf"
+          accessed: "2026-07-21"
+          licence: "City and County of San Francisco publication; see SOURCES.md"
+          quotes: "Notes column for Platanus x acerifolia 'Columbia': \"Prefers wind protection; susceptible to anthracnose and powdery mildew; observation needed.\""
+          supports: "care_note"
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/1099"
+          api: "https://selectree.calpoly.edu/api/tree/detail/1099"
+          matched_taxon: "Platanus &times hispanica"
+          fields:
+            - "disease_susceptibility"
+          values:
+            disease_susceptibility: "Anthracnose, Powdery Mildew"
+          supports: "care_note"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Platanus%20x%20hispanica"
+        query: "Platanus x hispanica"
+        field: "family"
+        value: "Platanaceae"
+        matched_name: "Platanus × hispanica Mill. ex Münchh."
+        match_type: "EXACT"
+        match_confidence: 99
+        rank_matched: "SPECIES"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+        url: "https://selectree.calpoly.edu/tree-detail/1099"
+        api: "https://selectree.calpoly.edu/api/tree/detail/1099"
+        field: "foliage_type"
+        value: "Deciduous"
+        matched_taxon: "Platanus &times hispanica"
+        match_method: "selectree_name_exact"
+        accessed: "2026-07-21"
+        licence: "no explicit reuse licence published (see SOURCES.md)"
+- species_uuid: "ea4f4595-b255-56a6-bfe9-b57d41267457"
+  scientific_name: "Lophostemon confertus"
+  common_name: "Brisbane Box"
+  sf_rank: 2
+  sf_tree_count: 10309
+  family: "Myrtaceae"
+  leaf_retention: "evergreen"
+  curated: true
+  id_tips:
+    - icon: "bark"
+      text: "Bark peels away low on the trunk and leaves smooth red-brown and pale green patches."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/1425"
+          api: "https://selectree.calpoly.edu/api/tree/detail/1425"
+          matched_taxon: "Lophostemon confertus"
+          fields:
+            - "bark_texture"
+            - "bark_color"
+          values:
+            bark_texture: "Exfoliating, Smooth"
+            bark_color: "Striking, Light Green, Red Brown or Multicolored"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "leaf"
+      text: "Oval leaves crowded towards the ends of the shoots, so the foliage looks tufted."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/1425"
+          api: "https://selectree.calpoly.edu/api/tree/detail/1425"
+          matched_taxon: "Lophostemon confertus"
+          fields:
+            - "leaflet_shape"
+            - "leaf_arrangement"
+          values:
+            leaflet_shape: "Ovate"
+            leaf_arrangement: "Alternate/Whorled"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "flower"
+      text: "Small white flowers in spring, easy to miss unless you look closely."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/1425"
+          api: "https://selectree.calpoly.edu/api/tree/detail/1425"
+          matched_taxon: "Lophostemon confertus"
+          fields:
+            - "flower_color"
+            - "flower_showiness"
+            - "flower_time"
+          values:
+            flower_color: "White"
+            flower_showiness: "Inconspicuous"
+            flower_time: "Spring"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+  seasonal:
+    bloom_months: []
+    fall_color_months: []
+    fruit_months: []
+    new_growth_months: []
+  care_notes:
+    - month_range:
+        start: 1
+        end: 12
+      text: "A fast grower, and it needs a 12 ft sidewalk."
+      citations:
+        - source: "San Francisco Public Works / Urban Forestry Council, \"2024 Recommended Street Tree Species List\" (approved 27 August 2024)"
+          url: "https://sfpublicworks.org/sites/default/files/BUF/Street%20Tree%20Planting/AUGUST%202024%20Recommended%20Street%20Tree%20List%20Update.pdf"
+          accessed: "2026-07-21"
+          licence: "City and County of San Francisco publication; see SOURCES.md"
+          quotes: "Notes column: \"Formerly Tristania conferta; fast grower.\" Minimum sidewalk width 12 ft."
+          supports: "care_note"
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Lophostemon%20confertus"
+        query: "Lophostemon confertus"
+        field: "family"
+        value: "Myrtaceae"
+        matched_name: "Lophostemon confertus (R.Br.) Paul G.Wilson & J.T.Waterh."
+        match_type: "EXACT"
+        match_confidence: 100
+        rank_matched: "SPECIES"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+        url: "https://selectree.calpoly.edu/tree-detail/1425"
+        api: "https://selectree.calpoly.edu/api/tree/detail/1425"
+        field: "foliage_type"
+        value: "Evergreen"
+        matched_taxon: "Lophostemon confertus"
+        match_method: "selectree_name_exact"
+        accessed: "2026-07-21"
+        licence: "no explicit reuse licence published (see SOURCES.md)"
+- species_uuid: "678a3e0f-9a5a-55f1-8588-293dc1a4c5d7"
+  scientific_name: "Metrosideros excelsa"
+  common_name: "New Zealand Xmas Tree"
+  sf_rank: 3
+  sf_tree_count: 8912
+  family: "Myrtaceae"
+  leaf_retention: "evergreen"
+  curated: true
+  id_tips:
+    - icon: "flower"
+      text: "Red brush-like flowers, showy enough to spot from down the block."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/939"
+          api: "https://selectree.calpoly.edu/api/tree/detail/939"
+          matched_taxon: "Metrosideros excelsa"
+          fields:
+            - "flower_color"
+            - "flower_showiness"
+          values:
+            flower_color: "Red"
+            flower_showiness: "Showy"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "leaf"
+      text: "Leaves in opposite pairs, dark green, oval and thick."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/939"
+          api: "https://selectree.calpoly.edu/api/tree/detail/939"
+          matched_taxon: "Metrosideros excelsa"
+          fields:
+            - "leaf_arrangement"
+            - "foliage_growth_color"
+            - "leaflet_shape"
+          values:
+            leaf_arrangement: "Opposite"
+            foliage_growth_color: "Dark Green"
+            leaflet_shape: "Oval"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "bark"
+      text: "Dark brown trunk under a broad rounded head."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/939"
+          api: "https://selectree.calpoly.edu/api/tree/detail/939"
+          matched_taxon: "Metrosideros excelsa"
+          fields:
+            - "bark_color"
+            - "tree_shape"
+          values:
+            bark_color: "Dark Brown"
+            tree_shape: "Rounded"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+  seasonal:
+    bloom_months: [2, 3, 4, 5, 6, 7]
+
+    fall_color_months: []
+    fruit_months: [1, 2, 3, 4, 5, 6, 7, 12]
+
+    new_growth_months: []
+  care_notes:
+    - month_range:
+        start: 1
+        end: 12
+      text: "Needs a very large basin and a very wide sidewalk; the city sets a 15 ft minimum."
+      citations:
+        - source: "San Francisco Public Works / Urban Forestry Council, \"2024 Recommended Street Tree Species List\" (approved 27 August 2024)"
+          url: "https://sfpublicworks.org/sites/default/files/BUF/Street%20Tree%20Planting/AUGUST%202024%20Recommended%20Street%20Tree%20List%20Update.pdf"
+          accessed: "2026-07-21"
+          licence: "City and County of San Francisco publication; see SOURCES.md"
+          quotes: "Notes column: \"Needs a very large basin and very wide sidewalks; pollinators.\" Minimum sidewalk width 15 ft."
+          supports: "care_note"
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Metrosideros%20excelsa"
+        query: "Metrosideros excelsa"
+        field: "family"
+        value: "Myrtaceae"
+        matched_name: "Metrosideros excelsa Sol. ex Gaertn."
+        match_type: "EXACT"
+        match_confidence: 99
+        rank_matched: "SPECIES"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+        url: "https://selectree.calpoly.edu/tree-detail/939"
+        api: "https://selectree.calpoly.edu/api/tree/detail/939"
+        field: "foliage_type"
+        value: "Evergreen"
+        matched_taxon: "Metrosideros excelsa"
+        match_method: "selectree_name_exact"
+        accessed: "2026-07-21"
+        licence: "no explicit reuse licence published (see SOURCES.md)"
+    seasonal.bloom_months:
+      - source: "iNaturalist observation annotations, month-of-year histogram"
+        url: "https://api.inaturalist.org/v1/observations/histogram?taxon_id=122905&place_id=854&interval=month_of_year&term_id=12&term_value_id=13"
+        taxon: "Metrosideros excelsa"
+        taxon_id: 122905
+        annotation: "Flowers and Fruits = Flowers"
+        place: "sf_county"
+        observations: 102
+        monthly_counts: "1:5, 2:14, 3:7, 4:14, 5:11, 6:15, 7:18, 8:2, 9:3, 10:2, 11:7, 12:4"
+        derivation: "smallest run of consecutive months holding at least 70 percent of the annotated observations; emitted only when the run is 8 months or shorter"
+        accessed: "2026-07-21"
+        licence: "iNaturalist content is CC BY-NC by default; see SOURCES.md"
+    seasonal.fruit_months:
+      - source: "iNaturalist observation annotations, month-of-year histogram"
+        url: "https://api.inaturalist.org/v1/observations/histogram?taxon_id=122905&place_id=14&interval=month_of_year&term_id=12&term_value_id=14"
+        taxon: "Metrosideros excelsa"
+        taxon_id: 122905
+        annotation: "Flowers and Fruits = Fruits or Seeds"
+        place: "california"
+        observations: 168
+        monthly_counts: "1:16, 2:15, 3:10, 4:12, 5:15, 6:18, 7:18, 8:9, 9:12, 10:16, 11:12, 12:15"
+        derivation: "smallest run of consecutive months holding at least 70 percent of the annotated observations; emitted only when the run is 8 months or shorter"
+        accessed: "2026-07-21"
+        licence: "iNaturalist content is CC BY-NC by default; see SOURCES.md"
+- species_uuid: "14182c5c-a190-5e38-ac0c-5fda78b68459"
+  scientific_name: "Tristaniopsis laurina"
+  common_name: "Swamp Myrtle"
+  sf_rank: 4
+  sf_tree_count: 7531
+  family: "Myrtaceae"
+  leaf_retention: "evergreen"
+  curated: true
+  id_tips:
+    - icon: "bark"
+      text: "Bark sheds in smooth patches of cream, red-brown and dark brown."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/1486"
+          api: "https://selectree.calpoly.edu/api/tree/detail/1486"
+          matched_taxon: "Tristaniopsis laurina"
+          fields:
+            - "bark_texture"
+            - "bark_color"
+          values:
+            bark_texture: "Exfoliating, Smooth"
+            bark_color: "Striking, Cream, Dark Brown, Red Brown or Multicolored"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "leaf"
+      text: "Narrow spear-shaped leaves set alternately along the twig."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/1486"
+          api: "https://selectree.calpoly.edu/api/tree/detail/1486"
+          matched_taxon: "Tristaniopsis laurina"
+          fields:
+            - "leaflet_shape"
+            - "leaf_arrangement"
+          values:
+            leaflet_shape: "Spear-shaped"
+            leaf_arrangement: "Alternate"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "flower"
+      text: "Small yellow flowers in spring and summer, showy in mass."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/1486"
+          api: "https://selectree.calpoly.edu/api/tree/detail/1486"
+          matched_taxon: "Tristaniopsis laurina"
+          fields:
+            - "flower_color"
+            - "flower_showiness"
+            - "flower_time"
+          values:
+            flower_color: "Yellow"
+            flower_showiness: "Showy"
+            flower_time: "Spring, Summer"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+  seasonal:
+    bloom_months: []
+    fall_color_months: []
+    fruit_months: []
+    new_growth_months: []
+  care_notes:
+    - month_range:
+        start: 1
+        end: 12
+      text: "San Francisco recommends the standard species only; the 'Elegant' variety is not recommended."
+      citations:
+        - source: "San Francisco Public Works / Urban Forestry Council, \"2024 Recommended Street Tree Species List\" (approved 27 August 2024)"
+          url: "https://sfpublicworks.org/sites/default/files/BUF/Street%20Tree%20Planting/AUGUST%202024%20Recommended%20Street%20Tree%20List%20Update.pdf"
+          accessed: "2026-07-21"
+          licence: "City and County of San Francisco publication; see SOURCES.md"
+          quotes: "Notes column: \"Standard species ONLY. 'Elegant' variety NOT recommended.\""
+          supports: "care_note"
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Tristaniopsis%20laurina"
+        query: "Tristaniopsis laurina"
+        field: "family"
+        value: "Myrtaceae"
+        matched_name: "Tristaniopsis laurina (Sm.) Paul G.Wilson & J.T.Waterh."
+        match_type: "EXACT"
+        match_confidence: 100
+        rank_matched: "SPECIES"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+        url: "https://selectree.calpoly.edu/tree-detail/1486"
+        api: "https://selectree.calpoly.edu/api/tree/detail/1486"
+        field: "foliage_type"
+        value: "Evergreen"
+        matched_taxon: "Tristaniopsis laurina"
+        match_method: "selectree_name_exact"
+        accessed: "2026-07-21"
+        licence: "no explicit reuse licence published (see SOURCES.md)"
+- species_uuid: "30e4fb9a-9350-5998-b96c-91281a4126c6"
+  scientific_name: "Pittosporum undulatum"
+  common_name: "Victorian Box"
+  sf_rank: 5
+  sf_tree_count: 7227
+  family: "Pittosporaceae"
+  leaf_retention: "evergreen"
+  curated: true
+  id_tips:
+    - icon: "flower"
+      text: "White flowers with a strong scent; across California the flowering records run from January into April."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/1097"
+          api: "https://selectree.calpoly.edu/api/tree/detail/1097"
+          matched_taxon: "Pittosporum undulatum"
+          fields:
+            - "flower_color"
+            - "flower_showiness"
+            - "fragrance"
+          values:
+            flower_color: "White"
+            flower_showiness: "Showy"
+            fragrance: 1
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+        - source: "iNaturalist observation annotations, month-of-year histogram"
+          url: "https://api.inaturalist.org/v1/observations/histogram?taxon_id=51594&place_id=14&interval=month_of_year&term_id=12&term_value_id=13"
+          taxon: "Pittosporum undulatum"
+          taxon_id: 51594
+          annotation: "Flowers and Fruits = Flowers"
+          place: "california"
+          observations: 123
+          monthly_counts: "1:7, 2:21, 3:54, 4:7, 5:8, 6:4, 7:3, 8:5, 9:3, 10:6, 11:1, 12:4"
+          derivation: "smallest run of consecutive months holding at least 70 percent of the annotated observations; emitted only when the run is 8 months or shorter"
+          accessed: "2026-07-21"
+          licence: "iNaturalist content is CC BY-NC by default; see SOURCES.md"
+    - icon: "leaf"
+      text: "Oblong leaves with wavy edges, arranged alternately."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/1097"
+          api: "https://selectree.calpoly.edu/api/tree/detail/1097"
+          matched_taxon: "Pittosporum undulatum"
+          fields:
+            - "leaflet_shape"
+            - "leaf_arrangement"
+          values:
+            leaflet_shape: "Oblong"
+            leaf_arrangement: "Alternate"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "fruit"
+      text: "Small orange to yellow capsules that split open."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/1097"
+          api: "https://selectree.calpoly.edu/api/tree/detail/1097"
+          matched_taxon: "Pittosporum undulatum"
+          fields:
+            - "fruit_type"
+            - "fruit_color"
+            - "fruit_size"
+          values:
+            fruit_type: "Capsule"
+            fruit_color: "Orange, Yellow"
+            fruit_size: "Small"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+  seasonal:
+    bloom_months: [1, 2, 3, 4]
+
+    fall_color_months: []
+    fruit_months: [1, 2, 9, 10, 11, 12]
+
+    new_growth_months: []
+  care_notes:
+    - month_range:
+        start: 1
+        end: 12
+      text: "Listed by the California Invasive Plant Council as Watch; do not plant near natural areas."
+      citations:
+        - source: "San Francisco Public Works / Urban Forestry Council, \"2024 Recommended Street Tree Species List\" (approved 27 August 2024)"
+          url: "https://sfpublicworks.org/sites/default/files/BUF/Street%20Tree%20Planting/AUGUST%202024%20Recommended%20Street%20Tree%20List%20Update.pdf"
+          accessed: "2026-07-21"
+          licence: "City and County of San Francisco publication; see SOURCES.md"
+          quotes: "Notes column: \"California Invasive Plant Council listed Watch do not plant near natural areas.\""
+          supports: "care_note"
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Pittosporum%20undulatum"
+        query: "Pittosporum undulatum"
+        field: "family"
+        value: "Pittosporaceae"
+        matched_name: "Pittosporum undulatum Vent."
+        match_type: "EXACT"
+        match_confidence: 99
+        rank_matched: "SPECIES"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+        url: "https://selectree.calpoly.edu/tree-detail/1097"
+        api: "https://selectree.calpoly.edu/api/tree/detail/1097"
+        field: "foliage_type"
+        value: "Evergreen"
+        matched_taxon: "Pittosporum undulatum"
+        match_method: "selectree_name_exact"
+        accessed: "2026-07-21"
+        licence: "no explicit reuse licence published (see SOURCES.md)"
+    seasonal.bloom_months:
+      - source: "iNaturalist observation annotations, month-of-year histogram"
+        url: "https://api.inaturalist.org/v1/observations/histogram?taxon_id=51594&place_id=14&interval=month_of_year&term_id=12&term_value_id=13"
+        taxon: "Pittosporum undulatum"
+        taxon_id: 51594
+        annotation: "Flowers and Fruits = Flowers"
+        place: "california"
+        observations: 123
+        monthly_counts: "1:7, 2:21, 3:54, 4:7, 5:8, 6:4, 7:3, 8:5, 9:3, 10:6, 11:1, 12:4"
+        derivation: "smallest run of consecutive months holding at least 70 percent of the annotated observations; emitted only when the run is 8 months or shorter"
+        accessed: "2026-07-21"
+        licence: "iNaturalist content is CC BY-NC by default; see SOURCES.md"
+    seasonal.fruit_months:
+      - source: "iNaturalist observation annotations, month-of-year histogram"
+        url: "https://api.inaturalist.org/v1/observations/histogram?taxon_id=51594&place_id=14&interval=month_of_year&term_id=12&term_value_id=14"
+        taxon: "Pittosporum undulatum"
+        taxon_id: 51594
+        annotation: "Flowers and Fruits = Fruits or Seeds"
+        place: "california"
+        observations: 212
+        monthly_counts: "1:25, 2:17, 3:6, 4:12, 5:10, 6:11, 7:12, 8:10, 9:17, 10:30, 11:37, 12:25"
+        derivation: "smallest run of consecutive months holding at least 70 percent of the annotated observations; emitted only when the run is 8 months or shorter"
+        accessed: "2026-07-21"
+        licence: "iNaturalist content is CC BY-NC by default; see SOURCES.md"
+- species_uuid: "6393a177-ef67-568b-85a1-34e11cc3c720"
+  scientific_name: "Prunus cerasifera"
+  common_name: "Cherry Plum"
+  sf_rank: 6
+  sf_tree_count: 6670
+  family: "Rosaceae"
+  leaf_retention: "deciduous"
+  curated: true
+  id_tips:
+    - icon: "flower"
+      text: "Pure white five-petalled flowers, crowded along the twigs; across California the flowering records land in February and March."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/prunus-cerasifera/"
+          fields:
+            - "Flower Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+        - source: "iNaturalist observation annotations, month-of-year histogram"
+          url: "https://api.inaturalist.org/v1/observations/histogram?taxon_id=55837&place_id=14&interval=month_of_year&term_id=12&term_value_id=13"
+          taxon: "Prunus cerasifera"
+          taxon_id: 55837
+          annotation: "Flowers and Fruits = Flowers"
+          place: "california"
+          observations: 174
+          monthly_counts: "1:3, 2:99, 3:58, 4:9, 5:2, 6:0, 7:2, 8:0, 9:0, 10:0, 11:0, 12:1"
+          derivation: "smallest run of consecutive months holding at least 70 percent of the annotated observations; emitted only when the run is 8 months or shorter"
+          accessed: "2026-07-21"
+          licence: "iNaturalist content is CC BY-NC by default; see SOURCES.md"
+    - icon: "bark"
+      text: "Young bark is red-brown to dark grey and smooth, with many horizontal lenticels."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/prunus-cerasifera/"
+          fields:
+            - "Bark Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+    - icon: "leaf"
+      text: "Alternate simple leaves with toothed edges; many of the trees planted in San Francisco are purple-leaved cultivars."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/prunus-cerasifera/"
+          fields:
+            - "Leaf Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+        - source: "DataSF Street Tree List (the seed inventory itself)"
+          url: "https://data.sfgov.org/City-Infrastructure/Street-Tree-List/tkzw-k3nq"
+          quotes: "'Krauter Vesuvius', 'Atropurpurea' and 'Thundercloud' are separate entries in the DataSF inventory"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "see SOURCES.md"
+    - icon: "fruit"
+      text: "Round red or yellow plums, ripe from April into June in California, and they drop on the pavement."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/prunus-cerasifera/"
+          fields:
+            - "Fruit Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/1500"
+          api: "https://selectree.calpoly.edu/api/tree/detail/1500"
+          matched_taxon: "Prunus cerasifera"
+          fields:
+            - "litter_type"
+          values:
+            litter_type: "Wet Fruit, Flowers"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+        - source: "iNaturalist observation annotations, month-of-year histogram"
+          url: "https://api.inaturalist.org/v1/observations/histogram?taxon_id=55837&place_id=14&interval=month_of_year&term_id=12&term_value_id=14"
+          taxon: "Prunus cerasifera"
+          taxon_id: 55837
+          annotation: "Flowers and Fruits = Fruits or Seeds"
+          place: "california"
+          observations: 157
+          monthly_counts: "1:0, 2:1, 3:6, 4:47, 5:31, 6:36, 7:28, 8:5, 9:3, 10:0, 11:0, 12:0"
+          derivation: "smallest run of consecutive months holding at least 70 percent of the annotated observations; emitted only when the run is 8 months or shorter"
+          accessed: "2026-07-21"
+          licence: "iNaturalist content is CC BY-NC by default; see SOURCES.md"
+  seasonal:
+    bloom_months: [2, 3]
+
+    fall_color_months: []
+    fruit_months: [4, 5, 6]
+
+    new_growth_months: []
+  care_notes: []
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Prunus%20cerasifera"
+        query: "Prunus cerasifera"
+        field: "family"
+        value: "Rosaceae"
+        matched_name: "Prunus cerasifera Ehrh."
+        match_type: "EXACT"
+        match_confidence: 99
+        rank_matched: "SPECIES"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "NC State Extension Gardener Plant Toolbox"
+        role: "primary"
+        url: "https://plants.ces.ncsu.edu/plants/prunus-cerasifera/"
+        field: "Whole Plant Traits > Leaf Characteristics"
+        value: "Deciduous"
+        accessed: "2026-07-21"
+        licence: "(c) NC State University; see SOURCES.md"
+    seasonal.bloom_months:
+      - source: "iNaturalist observation annotations, month-of-year histogram"
+        url: "https://api.inaturalist.org/v1/observations/histogram?taxon_id=55837&place_id=14&interval=month_of_year&term_id=12&term_value_id=13"
+        taxon: "Prunus cerasifera"
+        taxon_id: 55837
+        annotation: "Flowers and Fruits = Flowers"
+        place: "california"
+        observations: 174
+        monthly_counts: "1:3, 2:99, 3:58, 4:9, 5:2, 6:0, 7:2, 8:0, 9:0, 10:0, 11:0, 12:1"
+        derivation: "smallest run of consecutive months holding at least 70 percent of the annotated observations; emitted only when the run is 8 months or shorter"
+        accessed: "2026-07-21"
+        licence: "iNaturalist content is CC BY-NC by default; see SOURCES.md"
+    seasonal.fruit_months:
+      - source: "iNaturalist observation annotations, month-of-year histogram"
+        url: "https://api.inaturalist.org/v1/observations/histogram?taxon_id=55837&place_id=14&interval=month_of_year&term_id=12&term_value_id=14"
+        taxon: "Prunus cerasifera"
+        taxon_id: 55837
+        annotation: "Flowers and Fruits = Fruits or Seeds"
+        place: "california"
+        observations: 157
+        monthly_counts: "1:0, 2:1, 3:6, 4:47, 5:31, 6:36, 7:28, 8:5, 9:3, 10:0, 11:0, 12:0"
+        derivation: "smallest run of consecutive months holding at least 70 percent of the annotated observations; emitted only when the run is 8 months or shorter"
+        accessed: "2026-07-21"
+        licence: "iNaturalist content is CC BY-NC by default; see SOURCES.md"
+  notes:
+    - "SelecTree record 1500 (Prunus cerasifera) is internally inconsistent (foliage_type=Evergreen alongside foliage_fall_color=1) and was not used"
+    - "leaf_retention taken from NC State because the SelecTree record is inconsistent"
+- species_uuid: "9633ad82-e024-5fdf-ac1c-fc877b82dbc2"
+  scientific_name: "Magnolia grandiflora"
+  common_name: "Southern Magnolia"
+  sf_rank: 7
+  sf_tree_count: 6569
+  family: "Magnoliaceae"
+  leaf_retention: "evergreen"
+  curated: true
+  id_tips:
+    - icon: "leaf"
+      text: "Big leathery leaves, glossy dark green above, with rusty-brown felt underneath."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/magnolia-grandiflora/"
+          fields:
+            - "Leaf Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+    - icon: "flower"
+      text: "Creamy white flowers up to a foot across, scented, mostly late spring with a scattering through summer."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/magnolia-grandiflora/"
+          fields:
+            - "Flower Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+    - icon: "fruit"
+      text: "Cone-like fruit clusters that split to release rose-red seeds on thin threads."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/magnolia-grandiflora/"
+          fields:
+            - "Fruit Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+  seasonal:
+    bloom_months: []
+    fall_color_months: []
+    fruit_months: []
+    new_growth_months: []
+  care_notes:
+    - month_range:
+        start: 1
+        end: 12
+      text: "A proven performer in San Francisco, but it wants a 12 ft sidewalk."
+      citations:
+        - source: "San Francisco Public Works / Urban Forestry Council, \"2024 Recommended Street Tree Species List\" (approved 27 August 2024)"
+          url: "https://sfpublicworks.org/sites/default/files/BUF/Street%20Tree%20Planting/AUGUST%202024%20Recommended%20Street%20Tree%20List%20Update.pdf"
+          accessed: "2026-07-21"
+          licence: "City and County of San Francisco publication; see SOURCES.md"
+          quotes: "Notes column for Magnolia grandiflora 'Sam Sommers,' 'Majestic Beauty,' 'D.D. Blanchard': \"Proven success; pollinators.\" Minimum sidewalk width 12 ft."
+          supports: "care_note"
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Magnolia%20grandiflora"
+        query: "Magnolia grandiflora"
+        field: "family"
+        value: "Magnoliaceae"
+        matched_name: "Magnolia grandiflora L."
+        match_type: "EXACT"
+        match_confidence: 100
+        rank_matched: "SPECIES"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+        url: "https://selectree.calpoly.edu/tree-detail/2264"
+        api: "https://selectree.calpoly.edu/api/tree/detail/2264"
+        field: "foliage_type"
+        value: "Evergreen"
+        matched_taxon: "Magnolia grandiflora"
+        match_method: "selectree_name_exact"
+        accessed: "2026-07-21"
+        licence: "no explicit reuse licence published (see SOURCES.md)"
+      - source: "NC State Extension Gardener Plant Toolbox"
+        role: "corroborating"
+        url: "https://plants.ces.ncsu.edu/plants/magnolia-grandiflora/"
+        field: "Whole Plant Traits > Leaf Characteristics"
+        value: "Broadleaf Evergreen"
+        accessed: "2026-07-21"
+        licence: "(c) NC State University; see SOURCES.md"
+- species_uuid: "4bc73093-9727-559f-aed1-ad5731d8fb19"
+  scientific_name: "Arbutus 'Marina'"
+  common_name: "Hybrid Strawberry Tree"
+  sf_rank: 8
+  sf_tree_count: 5823
+  family: "Ericaceae"
+  leaf_retention: "evergreen"
+  curated: true
+  id_tips:
+    - icon: "bark"
+      text: "Smooth red-brown bark that peels in thin sheets."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/174"
+          api: "https://selectree.calpoly.edu/api/tree/detail/174"
+          matched_taxon: "Arbutus 'Marina'"
+          fields:
+            - "bark_texture"
+            - "bark_color"
+          values:
+            bark_texture: "Exfoliating, Smooth"
+            bark_color: "Red Brown"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "flower"
+      text: "Small pink flowers, at almost any time of year."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/174"
+          api: "https://selectree.calpoly.edu/api/tree/detail/174"
+          matched_taxon: "Arbutus 'Marina'"
+          fields:
+            - "flower_color"
+            - "flower_time"
+          values:
+            flower_color: "Pink, Rose"
+            flower_time: "Fall, Winter, Spring, Summer"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "fruit"
+      text: "Small red to yellow berries, often on the tree at the same time as flowers."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/174"
+          api: "https://selectree.calpoly.edu/api/tree/detail/174"
+          matched_taxon: "Arbutus 'Marina'"
+          fields:
+            - "fruit_type"
+            - "fruit_color"
+            - "fruit_size"
+            - "fruiting_time"
+            - "flower_time"
+          values:
+            fruit_type: "Berry"
+            fruit_color: "Red or Yellow"
+            fruit_size: "Small"
+            fruiting_time: "Fall, Winter"
+            flower_time: "Fall, Winter, Spring, Summer"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+  seasonal:
+    bloom_months: []
+    fall_color_months: []
+    fruit_months: []
+    new_growth_months: []
+  care_notes:
+    - month_range:
+        start: 1
+        end: 12
+      text: "Fruit drop ranges from light to heavy. It may be short lived and need replacing in 20 to 25 years."
+      citations:
+        - source: "San Francisco Public Works / Urban Forestry Council, \"2024 Recommended Street Tree Species List\" (approved 27 August 2024)"
+          url: "https://sfpublicworks.org/sites/default/files/BUF/Street%20Tree%20Planting/AUGUST%202024%20Recommended%20Street%20Tree%20List%20Update.pdf"
+          accessed: "2026-07-21"
+          licence: "City and County of San Francisco publication; see SOURCES.md"
+          quotes: "Notes column: \"Fruit drop can range from low volume to significant. May be short lived; may need to be replanted in 20-25 years; pollinators.\""
+          supports: "care_note"
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Arbutus"
+        query: "Arbutus"
+        field: "family"
+        value: "Ericaceae"
+        matched_name: "Arbutus L."
+        match_type: "HIGHERRANK"
+        match_confidence: 95
+        rank_matched: "GENUS"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+        url: "https://selectree.calpoly.edu/tree-detail/174"
+        api: "https://selectree.calpoly.edu/api/tree/detail/174"
+        field: "foliage_type"
+        value: "Evergreen"
+        matched_taxon: "Arbutus 'Marina'"
+        match_method: "selectree_name_exact"
+        accessed: "2026-07-21"
+        licence: "no explicit reuse licence published (see SOURCES.md)"
+- species_uuid: "b3d8b7a4-b473-5b28-9e19-e16c06fedeb1"
+  scientific_name: "Ficus microcarpa nitida 'Green Gem'"
+  common_name: "Indian Laurel Fig Tree 'Green Gem'"
+  sf_rank: 9
+  sf_tree_count: 5519
+  family: "Moraceae"
+  leaf_retention: "evergreen"
+  curated: true
+  id_tips:
+    - icon: "leaf"
+      text: "Leathery glossy green leaves with short pointed tips, in a dense rounded head."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/ficus-microcarpa/"
+          fields:
+            - "Leaf Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/609"
+          api: "https://selectree.calpoly.edu/api/tree/detail/609"
+          matched_taxon: "Ficus microcarpa"
+          fields:
+            - "tree_shape"
+          values:
+            tree_shape: "Rounded"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "bark"
+      text: "Smooth pale grey trunk."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/609"
+          api: "https://selectree.calpoly.edu/api/tree/detail/609"
+          matched_taxon: "Ficus microcarpa"
+          fields:
+            - "bark_texture"
+            - "bark_color"
+          values:
+            bark_texture: "Smooth"
+            bark_color: "Light Gray"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "fruit"
+      text: "Small figs sit on the twigs, green at first and ripening reddish; the flowers are inside the fig, so you never see them."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/ficus-microcarpa/"
+          fields:
+            - "Fruit Description"
+            - "Flower Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+  seasonal:
+    bloom_months: []
+    fall_color_months: []
+    fruit_months: []
+    new_growth_months: []
+  care_notes: []
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Ficus%20microcarpa%20nitida"
+        query: "Ficus microcarpa nitida"
+        field: "family"
+        value: "Moraceae"
+        matched_name: "Ficus microcarpa var. nitida (King) R.R.Fernandez"
+        match_type: "EXACT"
+        match_confidence: 98
+        rank_matched: "VARIETY"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+        url: "https://selectree.calpoly.edu/tree-detail/609"
+        api: "https://selectree.calpoly.edu/api/tree/detail/609"
+        field: "foliage_type"
+        value: "Evergreen"
+        matched_taxon: "Ficus microcarpa"
+        match_method: "selectree_name_exact_species_level"
+        accessed: "2026-07-21"
+        licence: "no explicit reuse licence published (see SOURCES.md)"
+- species_uuid: "967ed14a-54ac-5a8d-a8b6-eeebcd89226b"
+  scientific_name: "Prunus serrulata 'Kwanzan'"
+  common_name: "Kwanzan Flowering Cherry"
+  sf_rank: 10
+  sf_tree_count: 3979
+  family: "Rosaceae"
+  leaf_retention: "deciduous"
+  curated: true
+  id_tips:
+    - icon: "flower"
+      text: "Double pink flowers in clusters of three to five, usually late March into April."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/prunus-serrulata/"
+          fields:
+            - "Flower Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+    - icon: "bark"
+      text: "Red-brown to grey bark with horizontal lenticels, which is the easiest way to name it out of flower."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/prunus-serrulata/"
+          fields:
+            - "Bark Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+    - icon: "leaf"
+      text: "New leaves come out red and bronze before turning green."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/prunus-serrulata/"
+          fields:
+            - "Leaf Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+  seasonal:
+    bloom_months: []
+    fall_color_months: []
+    fruit_months: []
+    new_growth_months: []
+  care_notes: []
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Prunus%20serrulata"
+        query: "Prunus serrulata"
+        field: "family"
+        value: "Rosaceae"
+        matched_name: "Prunus serrulata Lindl."
+        match_type: "EXACT"
+        match_confidence: 99
+        rank_matched: "SPECIES"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+        url: "https://selectree.calpoly.edu/tree-detail/1181"
+        api: "https://selectree.calpoly.edu/api/tree/detail/1181"
+        field: "foliage_type"
+        value: "Deciduous"
+        matched_taxon: "Prunus 'Kwanzan'"
+        match_method: "selectree_synonym_other_taxa"
+        accessed: "2026-07-21"
+        licence: "no explicit reuse licence published (see SOURCES.md)"
+      - source: "NC State Extension Gardener Plant Toolbox"
+        role: "corroborating"
+        url: "https://plants.ces.ncsu.edu/plants/prunus-serrulata/"
+        field: "Whole Plant Traits > Leaf Characteristics"
+        value: "Deciduous"
+        accessed: "2026-07-21"
+        licence: "(c) NC State University; see SOURCES.md"
+- species_uuid: "a6669e1b-f3be-5892-b6ac-f511994ee7aa"
+  scientific_name: "Acacia melanoxylon"
+  common_name: "Blackwood Acacia"
+  sf_rank: 11
+  sf_tree_count: 3960
+  family: "Fabaceae"
+  leaf_retention: "evergreen"
+  curated: true
+  id_tips:
+    - icon: "leaf"
+      text: "Narrow blue-green to grey foliage, broadest above the middle, alternate along the twig."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/28"
+          api: "https://selectree.calpoly.edu/api/tree/detail/28"
+          matched_taxon: "Acacia melanoxylon"
+          fields:
+            - "leaflet_shape"
+            - "foliage_growth_color"
+            - "leaf_arrangement"
+          values:
+            leaflet_shape: "Oblanceolate"
+            foliage_growth_color: "Bluish Green, Silver, Gray Green"
+            leaf_arrangement: "Alternate"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "flower"
+      text: "Pale cream flowers in late winter and early spring; across California the records land in February and March."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/28"
+          api: "https://selectree.calpoly.edu/api/tree/detail/28"
+          matched_taxon: "Acacia melanoxylon"
+          fields:
+            - "flower_color"
+            - "flower_time"
+          values:
+            flower_color: "Cream, White"
+            flower_time: "Winter, Spring"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+        - source: "iNaturalist observation annotations, month-of-year histogram"
+          url: "https://api.inaturalist.org/v1/observations/histogram?taxon_id=53344&place_id=14&interval=month_of_year&term_id=12&term_value_id=13"
+          taxon: "Acacia melanoxylon"
+          taxon_id: 53344
+          annotation: "Flowers and Fruits = Flowers"
+          place: "california"
+          observations: 224
+          monthly_counts: "1:4, 2:69, 3:133, 4:15, 5:1, 6:0, 7:1, 8:0, 9:0, 10:0, 11:0, 12:1"
+          derivation: "smallest run of consecutive months holding at least 70 percent of the annotated observations; emitted only when the run is 8 months or shorter"
+          accessed: "2026-07-21"
+          licence: "iNaturalist content is CC BY-NC by default; see SOURCES.md"
+    - icon: "fruit"
+      text: "Long brown pods, large and conspicuous once they form."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/28"
+          api: "https://selectree.calpoly.edu/api/tree/detail/28"
+          matched_taxon: "Acacia melanoxylon"
+          fields:
+            - "fruit_type"
+            - "fruit_color"
+            - "fruit_size"
+          values:
+            fruit_type: "Legume"
+            fruit_color: "Brown or Purple"
+            fruit_size: "Very Large"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+  seasonal:
+    bloom_months: [2, 3]
+
+    fall_color_months: []
+    fruit_months: [1, 2, 3, 4, 5, 6, 7, 8]
+
+    new_growth_months: []
+  care_notes: []
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Acacia%20melanoxylon"
+        query: "Acacia melanoxylon"
+        field: "family"
+        value: "Fabaceae"
+        matched_name: "Acacia melanoxylon R.Br."
+        match_type: "EXACT"
+        match_confidence: 100
+        rank_matched: "SPECIES"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+        url: "https://selectree.calpoly.edu/tree-detail/28"
+        api: "https://selectree.calpoly.edu/api/tree/detail/28"
+        field: "foliage_type"
+        value: "Evergreen"
+        matched_taxon: "Acacia melanoxylon"
+        match_method: "selectree_name_exact"
+        accessed: "2026-07-21"
+        licence: "no explicit reuse licence published (see SOURCES.md)"
+    seasonal.bloom_months:
+      - source: "iNaturalist observation annotations, month-of-year histogram"
+        url: "https://api.inaturalist.org/v1/observations/histogram?taxon_id=53344&place_id=14&interval=month_of_year&term_id=12&term_value_id=13"
+        taxon: "Acacia melanoxylon"
+        taxon_id: 53344
+        annotation: "Flowers and Fruits = Flowers"
+        place: "california"
+        observations: 224
+        monthly_counts: "1:4, 2:69, 3:133, 4:15, 5:1, 6:0, 7:1, 8:0, 9:0, 10:0, 11:0, 12:1"
+        derivation: "smallest run of consecutive months holding at least 70 percent of the annotated observations; emitted only when the run is 8 months or shorter"
+        accessed: "2026-07-21"
+        licence: "iNaturalist content is CC BY-NC by default; see SOURCES.md"
+    seasonal.fruit_months:
+      - source: "iNaturalist observation annotations, month-of-year histogram"
+        url: "https://api.inaturalist.org/v1/observations/histogram?taxon_id=53344&place_id=14&interval=month_of_year&term_id=12&term_value_id=14"
+        taxon: "Acacia melanoxylon"
+        taxon_id: 53344
+        annotation: "Flowers and Fruits = Fruits or Seeds"
+        place: "california"
+        observations: 68
+        monthly_counts: "1:7, 2:8, 3:11, 4:3, 5:7, 6:1, 7:6, 8:7, 9:9, 10:4, 11:3, 12:2"
+        derivation: "smallest run of consecutive months holding at least 70 percent of the annotated observations; emitted only when the run is 8 months or shorter"
+        accessed: "2026-07-21"
+        licence: "iNaturalist content is CC BY-NC by default; see SOURCES.md"
+- species_uuid: "11ef0468-ce98-5800-a4a6-20d909473c3c"
+  scientific_name: "Maytenus boaria"
+  common_name: "Mayten"
+  sf_rank: 12
+  sf_tree_count: 3882
+  family: "Celastraceae"
+  leaf_retention: "evergreen"
+  curated: true
+  id_tips:
+    - icon: "form"
+      text: "Weeping habit, with fine branch tips that hang down."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/925"
+          api: "https://selectree.calpoly.edu/api/tree/detail/925"
+          matched_taxon: "Maytenus boaria"
+          fields:
+            - "tree_shape"
+          values:
+            tree_shape: "Rounded, Weeping"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "leaf"
+      text: "Small alternate oval leaves on thin drooping twigs."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/925"
+          api: "https://selectree.calpoly.edu/api/tree/detail/925"
+          matched_taxon: "Maytenus boaria"
+          fields:
+            - "leaflet_shape"
+            - "leaf_arrangement"
+            - "tree_shape"
+          values:
+            leaflet_shape: "Ovate"
+            leaf_arrangement: "Alternate"
+            tree_shape: "Rounded, Weeping"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "fruit"
+      text: "Very small capsules that open to orange-red seeds."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/925"
+          api: "https://selectree.calpoly.edu/api/tree/detail/925"
+          matched_taxon: "Maytenus boaria"
+          fields:
+            - "fruit_type"
+            - "fruit_color"
+            - "fruit_size"
+          values:
+            fruit_type: "Capsule"
+            fruit_color: "Orange, Red"
+            fruit_size: "Very Small"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+  seasonal:
+    bloom_months: []
+    fall_color_months: []
+    fruit_months: []
+    new_growth_months: []
+  care_notes: []
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Maytenus%20boaria"
+        query: "Maytenus boaria"
+        field: "family"
+        value: "Celastraceae"
+        matched_name: "Maytenus boaria Molina"
+        match_type: "EXACT"
+        match_confidence: 100
+        rank_matched: "SPECIES"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+        url: "https://selectree.calpoly.edu/tree-detail/925"
+        api: "https://selectree.calpoly.edu/api/tree/detail/925"
+        field: "foliage_type"
+        value: "Evergreen"
+        matched_taxon: "Maytenus boaria"
+        match_method: "selectree_name_exact"
+        accessed: "2026-07-21"
+        licence: "no explicit reuse licence published (see SOURCES.md)"
+- species_uuid: "eb15cfcd-add4-54b8-b398-b6fc8fc057a9"
+  scientific_name: "Olea europaea"
+  common_name: "Olive Tree"
+  sf_rank: 13
+  sf_tree_count: 3756
+  family: "Oleaceae"
+  leaf_retention: "evergreen"
+  curated: true
+  id_tips:
+    - icon: "leaf"
+      text: "Narrow leaves in opposite pairs, grey-green on top and silver underneath."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/olea-europaea/"
+          fields:
+            - "Leaf Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/970"
+          api: "https://selectree.calpoly.edu/api/tree/detail/970"
+          matched_taxon: "Olea europaea"
+          fields:
+            - "leaf_arrangement"
+            - "foliage_growth_color"
+          values:
+            leaf_arrangement: "Opposite"
+            foliage_growth_color: "Bluish Green, Silver, Gray Green"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "bark"
+      text: "Smooth and grey when young, gnarled and furrowed with age."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/olea-europaea/"
+          fields:
+            - "Bark Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+    - icon: "fruit"
+      text: "Oval green drupes that turn purple-black as they ripen, mostly from July onward in California."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/olea-europaea/"
+          fields:
+            - "Fruit Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+        - source: "iNaturalist observation annotations, month-of-year histogram"
+          url: "https://api.inaturalist.org/v1/observations/histogram?taxon_id=57140&place_id=14&interval=month_of_year&term_id=12&term_value_id=14"
+          taxon: "Olea europaea"
+          taxon_id: 57140
+          annotation: "Flowers and Fruits = Fruits or Seeds"
+          place: "california"
+          observations: 163
+          monthly_counts: "1:9, 2:12, 3:5, 4:7, 5:1, 6:4, 7:17, 8:14, 9:17, 10:36, 11:20, 12:21"
+          derivation: "smallest run of consecutive months holding at least 70 percent of the annotated observations; emitted only when the run is 8 months or shorter"
+          accessed: "2026-07-21"
+          licence: "iNaturalist content is CC BY-NC by default; see SOURCES.md"
+  seasonal:
+    bloom_months: []
+    fall_color_months: []
+    fruit_months: [7, 8, 9, 10, 11, 12]
+
+    new_growth_months: []
+  care_notes:
+    - month_range:
+        start: 1
+        end: 12
+      text: "Needs a very large basin and prefers wind protection. Listed by the California Invasive Plant Council as Limited; do not plant near natural areas."
+      citations:
+        - source: "San Francisco Public Works / Urban Forestry Council, \"2024 Recommended Street Tree Species List\" (approved 27 August 2024)"
+          url: "https://sfpublicworks.org/sites/default/files/BUF/Street%20Tree%20Planting/AUGUST%202024%20Recommended%20Street%20Tree%20List%20Update.pdf"
+          accessed: "2026-07-21"
+          licence: "City and County of San Francisco publication; see SOURCES.md"
+          quotes: "Notes column: \"Needs a very large basin; prefers wind protection; Swan Hill and Wilsoni preferred; California Invasive Plant Council listed Limited do not plant near natural areas.\""
+          supports: "care_note"
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Olea%20europaea"
+        query: "Olea europaea"
+        field: "family"
+        value: "Oleaceae"
+        matched_name: "Olea europaea L."
+        match_type: "EXACT"
+        match_confidence: 99
+        rank_matched: "SPECIES"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+        url: "https://selectree.calpoly.edu/tree-detail/970"
+        api: "https://selectree.calpoly.edu/api/tree/detail/970"
+        field: "foliage_type"
+        value: "Evergreen"
+        matched_taxon: "Olea europaea"
+        match_method: "selectree_name_exact"
+        accessed: "2026-07-21"
+        licence: "no explicit reuse licence published (see SOURCES.md)"
+      - source: "NC State Extension Gardener Plant Toolbox"
+        role: "corroborating"
+        url: "https://plants.ces.ncsu.edu/plants/olea-europaea/"
+        field: "Whole Plant Traits > Leaf Characteristics"
+        value: "Broadleaf Evergreen"
+        accessed: "2026-07-21"
+        licence: "(c) NC State University; see SOURCES.md"
+    seasonal.fruit_months:
+      - source: "iNaturalist observation annotations, month-of-year histogram"
+        url: "https://api.inaturalist.org/v1/observations/histogram?taxon_id=57140&place_id=14&interval=month_of_year&term_id=12&term_value_id=14"
+        taxon: "Olea europaea"
+        taxon_id: 57140
+        annotation: "Flowers and Fruits = Fruits or Seeds"
+        place: "california"
+        observations: 163
+        monthly_counts: "1:9, 2:12, 3:5, 4:7, 5:1, 6:4, 7:17, 8:14, 9:17, 10:36, 11:20, 12:21"
+        derivation: "smallest run of consecutive months holding at least 70 percent of the annotated observations; emitted only when the run is 8 months or shorter"
+        accessed: "2026-07-21"
+        licence: "iNaturalist content is CC BY-NC by default; see SOURCES.md"
+- species_uuid: "32458031-0a81-52e8-83c2-7a56ae40ba5c"
+  scientific_name: "Corymbia ficifolia"
+  common_name: "Red Flowering Gum"
+  sf_rank: 14
+  sf_tree_count: 3586
+  family: "Myrtaceae"
+  leaf_retention: "evergreen"
+  curated: true
+  id_tips:
+    - icon: "flower"
+      text: "Clusters of red, orange, pink or rose stamen brushes; across California the flowering records run July to September."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/540"
+          api: "https://selectree.calpoly.edu/api/tree/detail/540"
+          matched_taxon: "Eucalyptus ficifolia"
+          fields:
+            - "flower_color"
+            - "flower_showiness"
+          values:
+            flower_color: "Orange, Pink, Red, Rose"
+            flower_showiness: "Showy"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+        - source: "iNaturalist observation annotations, month-of-year histogram"
+          url: "https://api.inaturalist.org/v1/observations/histogram?taxon_id=122024&place_id=14&interval=month_of_year&term_id=12&term_value_id=13"
+          taxon: "Corymbia ficifolia"
+          taxon_id: 122024
+          annotation: "Flowers and Fruits = Flowers"
+          place: "california"
+          observations: 52
+          monthly_counts: "1:0, 2:1, 3:1, 4:1, 5:0, 6:3, 7:13, 8:10, 9:19, 10:3, 11:1, 12:0"
+          derivation: "smallest run of consecutive months holding at least 70 percent of the annotated observations; emitted only when the run is 8 months or shorter"
+          accessed: "2026-07-21"
+          licence: "iNaturalist content is CC BY-NC by default; see SOURCES.md"
+    - icon: "fruit"
+      text: "Thick woody capsules, medium sized and heavy enough to notice underfoot."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/540"
+          api: "https://selectree.calpoly.edu/api/tree/detail/540"
+          matched_taxon: "Eucalyptus ficifolia"
+          fields:
+            - "fruit_type"
+            - "fruit_color"
+            - "fruit_size"
+          values:
+            fruit_type: "Capsule"
+            fruit_color: "Brown"
+            fruit_size: "Medium"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "leaf"
+      text: "Broad dark green leaves, alternate and thick."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/540"
+          api: "https://selectree.calpoly.edu/api/tree/detail/540"
+          matched_taxon: "Eucalyptus ficifolia"
+          fields:
+            - "leaflet_shape"
+            - "foliage_growth_color"
+            - "leaf_arrangement"
+          values:
+            leaflet_shape: "Ovate"
+            foliage_growth_color: "Dark Green"
+            leaf_arrangement: "Alternate"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+  seasonal:
+    bloom_months: [7, 8, 9]
+
+    fall_color_months: []
+    fruit_months: []
+    new_growth_months: []
+  care_notes:
+    - month_range:
+        start: 1
+        end: 12
+      text: "Needs a very large basin and a wide sidewalk, and it drops large seed pods."
+      citations:
+        - source: "San Francisco Public Works / Urban Forestry Council, \"2024 Recommended Street Tree Species List\" (approved 27 August 2024)"
+          url: "https://sfpublicworks.org/sites/default/files/BUF/Street%20Tree%20Planting/AUGUST%202024%20Recommended%20Street%20Tree%20List%20Update.pdf"
+          accessed: "2026-07-21"
+          licence: "City and County of San Francisco publication; see SOURCES.md"
+          quotes: "Notes column: \"Needs a very large basin and wide sidewalk; drops large seed pods; pollinators.\""
+          supports: "care_note"
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Corymbia%20ficifolia"
+        query: "Corymbia ficifolia"
+        field: "family"
+        value: "Myrtaceae"
+        matched_name: "Corymbia ficifolia (F.Muell.) K.D.Hill & L.A.S.Johnson"
+        match_type: "EXACT"
+        match_confidence: 100
+        rank_matched: "SPECIES"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+        url: "https://selectree.calpoly.edu/tree-detail/540"
+        api: "https://selectree.calpoly.edu/api/tree/detail/540"
+        field: "foliage_type"
+        value: "Evergreen"
+        matched_taxon: "Eucalyptus ficifolia"
+        match_method: "selectree_synonym_other_taxa"
+        accessed: "2026-07-21"
+        licence: "no explicit reuse licence published (see SOURCES.md)"
+    seasonal.bloom_months:
+      - source: "iNaturalist observation annotations, month-of-year histogram"
+        url: "https://api.inaturalist.org/v1/observations/histogram?taxon_id=122024&place_id=14&interval=month_of_year&term_id=12&term_value_id=13"
+        taxon: "Corymbia ficifolia"
+        taxon_id: 122024
+        annotation: "Flowers and Fruits = Flowers"
+        place: "california"
+        observations: 52
+        monthly_counts: "1:0, 2:1, 3:1, 4:1, 5:0, 6:3, 7:13, 8:10, 9:19, 10:3, 11:1, 12:0"
+        derivation: "smallest run of consecutive months holding at least 70 percent of the annotated observations; emitted only when the run is 8 months or shorter"
+        accessed: "2026-07-21"
+        licence: "iNaturalist content is CC BY-NC by default; see SOURCES.md"
+- species_uuid: "f5df51ba-bfd4-5f80-b241-85f8d6763671"
+  scientific_name: "Ginkgo biloba"
+  common_name: "Maidenhair Tree"
+  sf_rank: 15
+  sf_tree_count: 3421
+  family: "Ginkgoaceae"
+  leaf_retention: "deciduous"
+  curated: true
+  id_tips:
+    - icon: "leaf"
+      text: "Fan-shaped leaves with veins that fork in twos, in clusters of three to five, unlike anything else on the street."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/ginkgo-biloba/"
+          fields:
+            - "Leaf Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/657"
+          api: "https://selectree.calpoly.edu/api/tree/detail/657"
+          matched_taxon: "Ginkgo biloba"
+          fields:
+            - "leaflet_shape"
+          values:
+            leaflet_shape: "Fan-shaped"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "form"
+      text: "Short stubby spur shoots along the branches, and a conical outline when young."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/ginkgo-biloba/"
+          fields:
+            - "Stem Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/657"
+          api: "https://selectree.calpoly.edu/api/tree/detail/657"
+          matched_taxon: "Ginkgo biloba"
+          fields:
+            - "tree_shape"
+          values:
+            tree_shape: "Conical"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "leaf"
+      text: "Turns yellow in autumn; across California the coloured-leaf records cluster in November and December."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/ginkgo-biloba/"
+          fields:
+            - "Leaf Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+        - source: "iNaturalist observation annotations, month-of-year histogram"
+          url: "https://api.inaturalist.org/v1/observations/histogram?taxon_id=64350&place_id=14&interval=month_of_year&term_id=36&term_value_id=39"
+          taxon: "Ginkgo biloba"
+          taxon_id: 64350
+          annotation: "Leaves = Colored Leaves"
+          place: "california"
+          observations: 408
+          monthly_counts: "1:21, 2:1, 3:3, 4:0, 5:0, 6:0, 7:0, 8:5, 9:12, 10:31, 11:88, 12:247"
+          derivation: "smallest run of consecutive months holding at least 70 percent of the annotated observations; emitted only when the run is 8 months or shorter"
+          accessed: "2026-07-21"
+          licence: "iNaturalist content is CC BY-NC by default; see SOURCES.md"
+  seasonal:
+    bloom_months: []
+    fall_color_months: [11, 12]
+
+    fruit_months: []
+    new_growth_months: []
+  care_notes:
+    - month_range:
+        start: 1
+        end: 12
+      text: "A slow grower that prefers wind protection."
+      citations:
+        - source: "San Francisco Public Works / Urban Forestry Council, \"2024 Recommended Street Tree Species List\" (approved 27 August 2024)"
+          url: "https://sfpublicworks.org/sites/default/files/BUF/Street%20Tree%20Planting/AUGUST%202024%20Recommended%20Street%20Tree%20List%20Update.pdf"
+          accessed: "2026-07-21"
+          licence: "City and County of San Francisco publication; see SOURCES.md"
+          quotes: "Notes column: \"Slow grower; prefers wind protection.\""
+          supports: "care_note"
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Ginkgo%20biloba"
+        query: "Ginkgo biloba"
+        field: "family"
+        value: "Ginkgoaceae"
+        matched_name: "Ginkgo biloba L."
+        match_type: "EXACT"
+        match_confidence: 100
+        rank_matched: "SPECIES"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+        url: "https://selectree.calpoly.edu/tree-detail/657"
+        api: "https://selectree.calpoly.edu/api/tree/detail/657"
+        field: "foliage_type"
+        value: "Deciduous"
+        matched_taxon: "Ginkgo biloba"
+        match_method: "selectree_name_exact"
+        accessed: "2026-07-21"
+        licence: "no explicit reuse licence published (see SOURCES.md)"
+      - source: "NC State Extension Gardener Plant Toolbox"
+        role: "corroborating"
+        url: "https://plants.ces.ncsu.edu/plants/ginkgo-biloba/"
+        field: "Whole Plant Traits > Leaf Characteristics"
+        value: "Deciduous"
+        accessed: "2026-07-21"
+        licence: "(c) NC State University; see SOURCES.md"
+    seasonal.fall_color_months:
+      - source: "iNaturalist observation annotations, month-of-year histogram"
+        url: "https://api.inaturalist.org/v1/observations/histogram?taxon_id=64350&place_id=14&interval=month_of_year&term_id=36&term_value_id=39"
+        taxon: "Ginkgo biloba"
+        taxon_id: 64350
+        annotation: "Leaves = Colored Leaves"
+        place: "california"
+        observations: 408
+        monthly_counts: "1:21, 2:1, 3:3, 4:0, 5:0, 6:0, 7:0, 8:5, 9:12, 10:31, 11:88, 12:247"
+        derivation: "smallest run of consecutive months holding at least 70 percent of the annotated observations; emitted only when the run is 8 months or shorter"
+        accessed: "2026-07-21"
+        licence: "iNaturalist content is CC BY-NC by default; see SOURCES.md"
+- species_uuid: "c3d51eb4-42a0-585e-8836-7912cd7198af"
+  scientific_name: "Callistemon citrinus"
+  common_name: "Lemon Bottlebrush"
+  sf_rank: 16
+  sf_tree_count: 3290
+  family: "Myrtaceae"
+  leaf_retention: "evergreen"
+  curated: true
+  id_tips:
+    - icon: "flower"
+      text: "Crimson bottlebrush spikes, a cylinder of long stamens at the end of a shoot."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/callistemon-citrinus/"
+          fields:
+            - "Flower Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+    - icon: "leaf"
+      text: "Bright green lance-shaped leaves with a ribbed mid vein; they smell of lemon when crushed."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/callistemon-citrinus/"
+          fields:
+            - "Leaf Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+    - icon: "fruit"
+      text: "Woody cup-shaped capsules about a quarter inch across, clamped to the older wood."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/callistemon-citrinus/"
+          fields:
+            - "Fruit Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+  seasonal:
+    bloom_months: [2, 3, 4, 5, 6, 7]
+
+    fall_color_months: []
+    fruit_months: [1, 2, 3, 4, 5, 6, 7]
+
+    new_growth_months: []
+  care_notes:
+    - month_range:
+        start: 1
+        end: 12
+      text: "Grows low with a wide canopy, so it needs a wide sidewalk. The flowers are sticky."
+      citations:
+        - source: "San Francisco Public Works / Urban Forestry Council, \"2024 Recommended Street Tree Species List\" (approved 27 August 2024)"
+          url: "https://sfpublicworks.org/sites/default/files/BUF/Street%20Tree%20Planting/AUGUST%202024%20Recommended%20Street%20Tree%20List%20Update.pdf"
+          accessed: "2026-07-21"
+          licence: "City and County of San Francisco publication; see SOURCES.md"
+          quotes: "Notes column: \"Grows low; wide canopy and needs a wide sidewalk; sticky flowers; pollinators.\""
+          supports: "care_note"
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Callistemon%20citrinus"
+        query: "Callistemon citrinus"
+        field: "family"
+        value: "Myrtaceae"
+        matched_name: "Callistemon citrinus (Curtis) Skeels"
+        match_type: "EXACT"
+        match_confidence: 99
+        rank_matched: "SPECIES"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+        url: "https://selectree.calpoly.edu/tree-detail/238"
+        api: "https://selectree.calpoly.edu/api/tree/detail/238"
+        field: "foliage_type"
+        value: "Evergreen"
+        matched_taxon: "Callistemon citrinus"
+        match_method: "selectree_name_exact"
+        accessed: "2026-07-21"
+        licence: "no explicit reuse licence published (see SOURCES.md)"
+      - source: "NC State Extension Gardener Plant Toolbox"
+        role: "corroborating"
+        url: "https://plants.ces.ncsu.edu/plants/callistemon-citrinus/"
+        field: "Whole Plant Traits > Leaf Characteristics"
+        value: "Broadleaf Evergreen"
+        accessed: "2026-07-21"
+        licence: "(c) NC State University; see SOURCES.md"
+    seasonal.bloom_months:
+      - source: "iNaturalist observation annotations, month-of-year histogram"
+        url: "https://api.inaturalist.org/v1/observations/histogram?taxon_id=77976&place_id=14&interval=month_of_year&term_id=12&term_value_id=13"
+        taxon: "Melaleuca citrina"
+        taxon_id: 77976
+        annotation: "Flowers and Fruits = Flowers"
+        place: "california"
+        observations: 240
+        monthly_counts: "1:9, 2:23, 3:29, 4:42, 5:39, 6:21, 7:16, 8:9, 9:11, 10:19, 11:16, 12:6"
+        derivation: "smallest run of consecutive months holding at least 70 percent of the annotated observations; emitted only when the run is 8 months or shorter"
+        accessed: "2026-07-21"
+        licence: "iNaturalist content is CC BY-NC by default; see SOURCES.md"
+    seasonal.fruit_months:
+      - source: "iNaturalist observation annotations, month-of-year histogram"
+        url: "https://api.inaturalist.org/v1/observations/histogram?taxon_id=77976&place_id=14&interval=month_of_year&term_id=12&term_value_id=14"
+        taxon: "Melaleuca citrina"
+        taxon_id: 77976
+        annotation: "Flowers and Fruits = Fruits or Seeds"
+        place: "california"
+        observations: 78
+        monthly_counts: "1:4, 2:9, 3:8, 4:6, 5:12, 6:12, 7:6, 8:1, 9:4, 10:4, 11:8, 12:4"
+        derivation: "smallest run of consecutive months holding at least 70 percent of the annotated observations; emitted only when the run is 8 months or shorter"
+        accessed: "2026-07-21"
+        licence: "iNaturalist content is CC BY-NC by default; see SOURCES.md"
+- species_uuid: "fc55d55a-8706-593e-9ca8-c2d0b6cba3e7"
+  scientific_name: "Pyrus calleryana"
+  common_name: "Ornamental Pear"
+  sf_rank: 17
+  sf_tree_count: 2982
+  family: "Rosaceae"
+  leaf_retention: "deciduous"
+  curated: true
+  id_tips:
+    - icon: "flower"
+      text: "Creamy white five-petalled flowers in dense clusters, before the leaves; across California that is February and March, and they smell bad up close."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/pyrus-calleryana/"
+          fields:
+            - "Flower Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+        - source: "iNaturalist observation annotations, month-of-year histogram"
+          url: "https://api.inaturalist.org/v1/observations/histogram?taxon_id=119793&place_id=14&interval=month_of_year&term_id=12&term_value_id=13"
+          taxon: "Pyrus calleryana"
+          taxon_id: 119793
+          annotation: "Flowers and Fruits = Flowers"
+          place: "california"
+          observations: 62
+          monthly_counts: "1:4, 2:31, 3:22, 4:3, 5:1, 6:0, 7:0, 8:0, 9:0, 10:1, 11:0, 12:0"
+          derivation: "smallest run of consecutive months holding at least 70 percent of the annotated observations; emitted only when the run is 8 months or shorter"
+          accessed: "2026-07-21"
+          licence: "iNaturalist content is CC BY-NC by default; see SOURCES.md"
+    - icon: "leaf"
+      text: "Glossy dark green leaves with wavy, rounded-toothed edges, alternate along the twig."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/pyrus-calleryana/"
+          fields:
+            - "Leaf Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+    - icon: "fruit"
+      text: "Hard yellow-green to brown pears about half an inch across."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/pyrus-calleryana/"
+          fields:
+            - "Fruit Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+  seasonal:
+    bloom_months: [2, 3]
+
+    fall_color_months: []
+    fruit_months: []
+    new_growth_months: []
+  care_notes: []
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Pyrus%20calleryana"
+        query: "Pyrus calleryana"
+        field: "family"
+        value: "Rosaceae"
+        matched_name: "Pyrus calleryana Decne."
+        match_type: "EXACT"
+        match_confidence: 99
+        rank_matched: "SPECIES"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+        url: "https://selectree.calpoly.edu/tree-detail/1214"
+        api: "https://selectree.calpoly.edu/api/tree/detail/1214"
+        field: "foliage_type"
+        value: "Deciduous"
+        matched_taxon: "Pyrus calleryana"
+        match_method: "selectree_name_exact"
+        accessed: "2026-07-21"
+        licence: "no explicit reuse licence published (see SOURCES.md)"
+      - source: "NC State Extension Gardener Plant Toolbox"
+        role: "corroborating"
+        url: "https://plants.ces.ncsu.edu/plants/pyrus-calleryana/"
+        field: "Whole Plant Traits > Leaf Characteristics"
+        value: "Deciduous"
+        accessed: "2026-07-21"
+        licence: "(c) NC State University; see SOURCES.md"
+    seasonal.bloom_months:
+      - source: "iNaturalist observation annotations, month-of-year histogram"
+        url: "https://api.inaturalist.org/v1/observations/histogram?taxon_id=119793&place_id=14&interval=month_of_year&term_id=12&term_value_id=13"
+        taxon: "Pyrus calleryana"
+        taxon_id: 119793
+        annotation: "Flowers and Fruits = Flowers"
+        place: "california"
+        observations: 62
+        monthly_counts: "1:4, 2:31, 3:22, 4:3, 5:1, 6:0, 7:0, 8:0, 9:0, 10:1, 11:0, 12:0"
+        derivation: "smallest run of consecutive months holding at least 70 percent of the annotated observations; emitted only when the run is 8 months or shorter"
+        accessed: "2026-07-21"
+        licence: "iNaturalist content is CC BY-NC by default; see SOURCES.md"
+- species_uuid: "9596b71d-aa14-5032-88d9-b9c5b5feee99"
+  scientific_name: "Prunus serrulata"
+  common_name: "Ornamental Cherry"
+  sf_rank: 18
+  sf_tree_count: 2713
+  family: "Rosaceae"
+  leaf_retention: "deciduous"
+  curated: true
+  id_tips:
+    - icon: "flower"
+      text: "Pink to white flowers in clusters of three to five, typically late March into April."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/prunus-serrulata/"
+          fields:
+            - "Flower Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+    - icon: "bark"
+      text: "Red-brown to grey bark banded with horizontal lenticels."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/prunus-serrulata/"
+          fields:
+            - "Bark Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+    - icon: "fruit"
+      text: "Small round black cherries in late summer, easy to overlook."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/prunus-serrulata/"
+          fields:
+            - "Fruit Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+  seasonal:
+    bloom_months: []
+    fall_color_months: []
+    fruit_months: []
+    new_growth_months: []
+  care_notes: []
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Prunus%20serrulata"
+        query: "Prunus serrulata"
+        field: "family"
+        value: "Rosaceae"
+        matched_name: "Prunus serrulata Lindl."
+        match_type: "EXACT"
+        match_confidence: 99
+        rank_matched: "SPECIES"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+        url: "https://selectree.calpoly.edu/tree-detail/1518"
+        api: "https://selectree.calpoly.edu/api/tree/detail/1518"
+        field: "foliage_type"
+        value: "Deciduous"
+        matched_taxon: "Prunus serrulata"
+        match_method: "selectree_name_exact"
+        accessed: "2026-07-21"
+        licence: "no explicit reuse licence published (see SOURCES.md)"
+      - source: "NC State Extension Gardener Plant Toolbox"
+        role: "corroborating"
+        url: "https://plants.ces.ncsu.edu/plants/prunus-serrulata/"
+        field: "Whole Plant Traits > Leaf Characteristics"
+        value: "Deciduous"
+        accessed: "2026-07-21"
+        licence: "(c) NC State University; see SOURCES.md"
+- species_uuid: "a99e44cc-fdd9-5147-9ef1-e6566de12c8e"
+  scientific_name: "Eriobotrya deflexa"
+  common_name: "Bronze Loquat"
+  sf_rank: 19
+  sf_tree_count: 2510
+  family: "Rosaceae"
+  leaf_retention: "evergreen"
+  curated: true
+  id_tips:
+    - icon: "leaf"
+      text: "Long stiff oblong leaves; the name bronze loquat comes from the new growth."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/508"
+          api: "https://selectree.calpoly.edu/api/tree/detail/508"
+          matched_taxon: "Eriobotrya deflexa"
+          fields:
+            - "leaflet_shape"
+            - "foliage_growth_color"
+          values:
+            leaflet_shape: "Oblong"
+            foliage_growth_color: "Green"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "flower"
+      text: "Clusters of small white flowers in spring."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/508"
+          api: "https://selectree.calpoly.edu/api/tree/detail/508"
+          matched_taxon: "Eriobotrya deflexa"
+          fields:
+            - "flower_color"
+            - "flower_showiness"
+            - "flower_time"
+          values:
+            flower_color: "White"
+            flower_showiness: "Showy"
+            flower_time: "Spring"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "fruit"
+      text: "Yellow to green pome fruit in summer."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/508"
+          api: "https://selectree.calpoly.edu/api/tree/detail/508"
+          matched_taxon: "Eriobotrya deflexa"
+          fields:
+            - "fruit_type"
+            - "fruit_color"
+            - "fruit_size"
+            - "fruiting_time"
+          values:
+            fruit_type: "Pome"
+            fruit_color: "Yellow or Mostly Green"
+            fruit_size: "Medium"
+            fruiting_time: "Summer"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+  seasonal:
+    bloom_months: []
+    fall_color_months: []
+    fruit_months: []
+    new_growth_months: []
+  care_notes:
+    - month_range:
+        start: 1
+        end: 12
+      text: "Needs wind protection, does badly in sandy soil, and is susceptible to fire blight."
+      citations:
+        - source: "San Francisco Public Works / Urban Forestry Council, \"2024 Recommended Street Tree Species List\" (approved 27 August 2024)"
+          url: "https://sfpublicworks.org/sites/default/files/BUF/Street%20Tree%20Planting/AUGUST%202024%20Recommended%20Street%20Tree%20List%20Update.pdf"
+          accessed: "2026-07-21"
+          licence: "City and County of San Francisco publication; see SOURCES.md"
+          quotes: "Notes column: \"Needs wind protection; does not perform well in sandy soils; susceptible to fire blight; pollinators.\""
+          supports: "care_note"
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/508"
+          api: "https://selectree.calpoly.edu/api/tree/detail/508"
+          matched_taxon: "Eriobotrya deflexa"
+          fields:
+            - "disease_susceptibility"
+          values:
+            disease_susceptibility: "Fire Blight"
+          supports: "care_note"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Eriobotrya%20deflexa"
+        query: "Eriobotrya deflexa"
+        field: "family"
+        value: "Rosaceae"
+        matched_name: "Eriobotrya deflexa (Hemsl.) Nakai"
+        match_type: "EXACT"
+        match_confidence: 100
+        rank_matched: "SPECIES"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+        url: "https://selectree.calpoly.edu/tree-detail/508"
+        api: "https://selectree.calpoly.edu/api/tree/detail/508"
+        field: "foliage_type"
+        value: "Evergreen"
+        matched_taxon: "Eriobotrya deflexa"
+        match_method: "selectree_name_exact"
+        accessed: "2026-07-21"
+        licence: "no explicit reuse licence published (see SOURCES.md)"
+- species_uuid: "b4ad0a9f-7aa9-5eee-b136-8d3622a32dc1"
+  scientific_name: "Ulmus parvifolia"
+  common_name: "Chinese Elm"
+  sf_rank: 20
+  sf_tree_count: 2388
+  family: "Ulmaceae"
+  leaf_retention: "semi_deciduous"
+  curated: true
+  id_tips:
+    - icon: "bark"
+      text: "Bark flakes off in irregular patches and leaves a mottle of brown, tan, grey, olive and cinnamon."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/ulmus-parvifolia/"
+          fields:
+            - "Bark Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+    - icon: "leaf"
+      text: "Small alternate leaves with toothed edges and a base that is slightly lopsided."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/ulmus-parvifolia/"
+          fields:
+            - "Leaf Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+    - icon: "fruit"
+      text: "Papery winged seeds about half an inch long, in autumn, sometimes into early winter."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/ulmus-parvifolia/"
+          fields:
+            - "Fruit Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+  seasonal:
+    bloom_months: []
+    fall_color_months: []
+    fruit_months: []
+    new_growth_months: []
+  care_notes:
+    - month_range:
+        start: 1
+        end: 12
+      text: "A fast grower that needs extensive pruning and maintenance."
+      citations:
+        - source: "San Francisco Public Works / Urban Forestry Council, \"2024 Recommended Street Tree Species List\" (approved 27 August 2024)"
+          url: "https://sfpublicworks.org/sites/default/files/BUF/Street%20Tree%20Planting/AUGUST%202024%20Recommended%20Street%20Tree%20List%20Update.pdf"
+          accessed: "2026-07-21"
+          licence: "City and County of San Francisco publication; see SOURCES.md"
+          quotes: "Notes column for Ulmus parvifolia 'Drake': \"Fast grower; requires extensive pruning and maintenance.\""
+          supports: "care_note"
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Ulmus%20parvifolia"
+        query: "Ulmus parvifolia"
+        field: "family"
+        value: "Ulmaceae"
+        matched_name: "Ulmus parvifolia Jacq."
+        match_type: "EXACT"
+        match_confidence: 100
+        rank_matched: "SPECIES"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+        url: "https://selectree.calpoly.edu/tree-detail/1443"
+        api: "https://selectree.calpoly.edu/api/tree/detail/1443"
+        field: "foliage_type"
+        value: "Partly Deciduous"
+        matched_taxon: "Ulmus parvifolia"
+        match_method: "selectree_name_exact"
+        accessed: "2026-07-21"
+        licence: "no explicit reuse licence published (see SOURCES.md)"
+- species_uuid: "c288cf24-60f6-597f-bf66-2b9b445a1a25"
+  scientific_name: "Pinus radiata"
+  common_name: "Monterey Pine"
+  sf_rank: 21
+  sf_tree_count: 2362
+  family: "Pinaceae"
+  leaf_retention: "evergreen"
+  curated: true
+  id_tips:
+    - icon: "leaf"
+      text: "Dark green needles rather than scales or flat leaves."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/1071"
+          api: "https://selectree.calpoly.edu/api/tree/detail/1071"
+          matched_taxon: "Pinus radiata"
+          fields:
+            - "leaflet_shape"
+            - "foliage_growth_color"
+          values:
+            leaflet_shape: "Needle"
+            foliage_growth_color: "Dark Green"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "cone"
+      text: "Very large woody cones that stay on the branches."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/1071"
+          api: "https://selectree.calpoly.edu/api/tree/detail/1071"
+          matched_taxon: "Pinus radiata"
+          fields:
+            - "fruit_type"
+            - "fruit_color"
+            - "fruit_size"
+          values:
+            fruit_type: "Cone"
+            fruit_color: "Brown"
+            fruit_size: "Very Large"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "bark"
+      text: "Deeply fissured grey to red-brown bark."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/1071"
+          api: "https://selectree.calpoly.edu/api/tree/detail/1071"
+          matched_taxon: "Pinus radiata"
+          fields:
+            - "bark_texture"
+            - "bark_color"
+          values:
+            bark_texture: "Fissured"
+            bark_color: "Light Gray or Red Brown"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+  seasonal:
+    bloom_months: []
+    fall_color_months: []
+    fruit_months: []
+    new_growth_months: []
+  care_notes: []
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Pinus%20radiata"
+        query: "Pinus radiata"
+        field: "family"
+        value: "Pinaceae"
+        matched_name: "Pinus radiata D.Don"
+        match_type: "EXACT"
+        match_confidence: 100
+        rank_matched: "SPECIES"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+        url: "https://selectree.calpoly.edu/tree-detail/1071"
+        api: "https://selectree.calpoly.edu/api/tree/detail/1071"
+        field: "foliage_type"
+        value: "Evergreen"
+        matched_taxon: "Pinus radiata"
+        match_method: "selectree_name_exact"
+        accessed: "2026-07-21"
+        licence: "no explicit reuse licence published (see SOURCES.md)"
+- species_uuid: "43c56960-4385-59fe-9936-9fd9907f1c11"
+  scientific_name: "Ligustrum lucidum"
+  common_name: "Glossy Privet"
+  sf_rank: 22
+  sf_tree_count: 2174
+  family: "Oleaceae"
+  leaf_retention: "evergreen"
+  curated: true
+  id_tips:
+    - icon: "leaf"
+      text: "Glossy leaves in opposite pairs; hold one up to the light and the veins show through."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/ligustrum-lucidum/"
+          fields:
+            - "Leaf Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+    - icon: "flower"
+      text: "Big pyramidal sprays of small creamy white flowers in early summer, with an unpleasant smell."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/ligustrum-lucidum/"
+          fields:
+            - "Flower Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+        - source: "iNaturalist observation annotations, month-of-year histogram"
+          url: "https://api.inaturalist.org/v1/observations/histogram?taxon_id=77740&place_id=14&interval=month_of_year&term_id=12&term_value_id=13"
+          taxon: "Ligustrum lucidum"
+          taxon_id: 77740
+          annotation: "Flowers and Fruits = Flowers"
+          place: "california"
+          observations: 159
+          monthly_counts: "1:1, 2:0, 3:1, 4:0, 5:7, 6:40, 7:69, 8:28, 9:7, 10:2, 11:3, 12:1"
+          derivation: "smallest run of consecutive months holding at least 70 percent of the annotated observations; emitted only when the run is 8 months or shorter"
+          accessed: "2026-07-21"
+          licence: "iNaturalist content is CC BY-NC by default; see SOURCES.md"
+    - icon: "fruit"
+      text: "Blue-black olive-like berries that persist into winter."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/ligustrum-lucidum/"
+          fields:
+            - "Fruit Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+        - source: "iNaturalist observation annotations, month-of-year histogram"
+          url: "https://api.inaturalist.org/v1/observations/histogram?taxon_id=77740&place_id=14&interval=month_of_year&term_id=12&term_value_id=14"
+          taxon: "Ligustrum lucidum"
+          taxon_id: 77740
+          annotation: "Flowers and Fruits = Fruits or Seeds"
+          place: "california"
+          observations: 641
+          monthly_counts: "1:113, 2:75, 3:54, 4:32, 5:4, 6:9, 7:15, 8:27, 9:42, 10:55, 11:106, 12:109"
+          derivation: "smallest run of consecutive months holding at least 70 percent of the annotated observations; emitted only when the run is 8 months or shorter"
+          accessed: "2026-07-21"
+          licence: "iNaturalist content is CC BY-NC by default; see SOURCES.md"
+  seasonal:
+    bloom_months: [5, 6, 7]
+
+    fall_color_months: []
+    fruit_months: [1, 2, 10, 11, 12]
+
+    new_growth_months: []
+  care_notes: []
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Ligustrum%20lucidum"
+        query: "Ligustrum lucidum"
+        field: "family"
+        value: "Oleaceae"
+        matched_name: "Ligustrum lucidum W.T.Aiton"
+        match_type: "EXACT"
+        match_confidence: 99
+        rank_matched: "SPECIES"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+        url: "https://selectree.calpoly.edu/tree-detail/812"
+        api: "https://selectree.calpoly.edu/api/tree/detail/812"
+        field: "foliage_type"
+        value: "Evergreen"
+        matched_taxon: "Ligustrum lucidum"
+        match_method: "selectree_name_exact"
+        accessed: "2026-07-21"
+        licence: "no explicit reuse licence published (see SOURCES.md)"
+      - source: "NC State Extension Gardener Plant Toolbox"
+        role: "corroborating"
+        url: "https://plants.ces.ncsu.edu/plants/ligustrum-lucidum/"
+        field: "Whole Plant Traits > Leaf Characteristics"
+        value: "Broadleaf Evergreen"
+        accessed: "2026-07-21"
+        licence: "(c) NC State University; see SOURCES.md"
+    seasonal.bloom_months:
+      - source: "iNaturalist observation annotations, month-of-year histogram"
+        url: "https://api.inaturalist.org/v1/observations/histogram?taxon_id=77740&place_id=14&interval=month_of_year&term_id=12&term_value_id=13"
+        taxon: "Ligustrum lucidum"
+        taxon_id: 77740
+        annotation: "Flowers and Fruits = Flowers"
+        place: "california"
+        observations: 159
+        monthly_counts: "1:1, 2:0, 3:1, 4:0, 5:7, 6:40, 7:69, 8:28, 9:7, 10:2, 11:3, 12:1"
+        derivation: "smallest run of consecutive months holding at least 70 percent of the annotated observations; emitted only when the run is 8 months or shorter"
+        accessed: "2026-07-21"
+        licence: "iNaturalist content is CC BY-NC by default; see SOURCES.md"
+    seasonal.fruit_months:
+      - source: "iNaturalist observation annotations, month-of-year histogram"
+        url: "https://api.inaturalist.org/v1/observations/histogram?taxon_id=77740&place_id=14&interval=month_of_year&term_id=12&term_value_id=14"
+        taxon: "Ligustrum lucidum"
+        taxon_id: 77740
+        annotation: "Flowers and Fruits = Fruits or Seeds"
+        place: "california"
+        observations: 641
+        monthly_counts: "1:113, 2:75, 3:54, 4:32, 5:4, 6:9, 7:15, 8:27, 9:42, 10:55, 11:106, 12:109"
+        derivation: "smallest run of consecutive months holding at least 70 percent of the annotated observations; emitted only when the run is 8 months or shorter"
+        accessed: "2026-07-21"
+        licence: "iNaturalist content is CC BY-NC by default; see SOURCES.md"
+- species_uuid: "f909a9ee-939c-5933-8220-66bb56d0c923"
+  scientific_name: "Cupressus macrocarpa"
+  common_name: "Monterey Cypress"
+  sf_rank: 23
+  sf_tree_count: 2020
+  family: "Cupressaceae"
+  leaf_retention: "evergreen"
+  curated: true
+  id_tips:
+    - icon: "leaf"
+      text: "Foliage is blunt scales pressed tight to the twig, not needles, and smells lemony when crushed."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/cupressus-macrocarpa/"
+          fields:
+            - "Leaf Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+    - icon: "bark"
+      text: "Dark grey to red-brown bark, fibrous and rough with irregular furrows."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/cupressus-macrocarpa/"
+          fields:
+            - "Bark Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+    - icon: "cone"
+      text: "Round to elliptical cones an inch or so long that take two seasons to ripen."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/cupressus-macrocarpa/"
+          fields:
+            - "Fruit Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+  seasonal:
+    bloom_months: []
+    fall_color_months: []
+    fruit_months: []
+    new_growth_months: []
+  care_notes: []
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Cupressus%20macrocarpa"
+        query: "Cupressus macrocarpa"
+        field: "family"
+        value: "Cupressaceae"
+        matched_name: "Cupressus macrocarpa Hartw. ex Gordon"
+        match_type: "EXACT"
+        match_confidence: 99
+        rank_matched: "SPECIES"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+        url: "https://selectree.calpoly.edu/tree-detail/476"
+        api: "https://selectree.calpoly.edu/api/tree/detail/476"
+        field: "foliage_type"
+        value: "Evergreen"
+        matched_taxon: "Hesperocyparis macrocarpa"
+        match_method: "selectree_synonym_other_taxa"
+        accessed: "2026-07-21"
+        licence: "no explicit reuse licence published (see SOURCES.md)"
+      - source: "NC State Extension Gardener Plant Toolbox"
+        role: "corroborating"
+        url: "https://plants.ces.ncsu.edu/plants/cupressus-macrocarpa/"
+        field: "Whole Plant Traits > Leaf Characteristics"
+        value: "Needled Evergreen"
+        accessed: "2026-07-21"
+        licence: "(c) NC State University; see SOURCES.md"
+- species_uuid: "142f687f-c164-58ea-b2af-3342b46f3e27"
+  scientific_name: "Pyrus kawakamii"
+  common_name: "Evergreen Pear"
+  sf_rank: 24
+  sf_tree_count: 1990
+  family: "Rosaceae"
+  leaf_retention: "semi_deciduous"
+  curated: true
+  id_tips:
+    - icon: "leaf"
+      text: "Glossy oval leaves held through most of the year here, which is why it is sold as evergreen pear."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/1222"
+          api: "https://selectree.calpoly.edu/api/tree/detail/1222"
+          matched_taxon: "Pyrus kawakamii"
+          fields:
+            - "leaflet_shape"
+            - "foliage_type"
+          values:
+            leaflet_shape: "Oval"
+            foliage_type: "Partly Deciduous"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "flower"
+      text: "White flowers in late winter and spring."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/1222"
+          api: "https://selectree.calpoly.edu/api/tree/detail/1222"
+          matched_taxon: "Pyrus kawakamii"
+          fields:
+            - "flower_color"
+            - "flower_showiness"
+            - "flower_time"
+          values:
+            flower_color: "White"
+            flower_showiness: "Showy"
+            flower_time: "Winter, Spring"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "form"
+      text: "Low sprawling branches that need training up over a footway."
+      citations:
+        - source: "San Francisco Public Works / Urban Forestry Council, \"2024 Recommended Street Tree Species List\" (approved 27 August 2024)"
+          url: "https://sfpublicworks.org/sites/default/files/BUF/Street%20Tree%20Planting/AUGUST%202024%20Recommended%20Street%20Tree%20List%20Update.pdf"
+          accessed: "2026-07-21"
+          licence: "City and County of San Francisco publication; see SOURCES.md"
+          quotes: "Notes column: 'Plant only in warmest areas of city'"
+          supports: "id_tip"
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/1222"
+          api: "https://selectree.calpoly.edu/api/tree/detail/1222"
+          matched_taxon: "Pyrus kawakamii"
+          fields:
+            - "tree_shape"
+          values:
+            tree_shape: "Rounded"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+  seasonal:
+    bloom_months: []
+    fall_color_months: []
+    fruit_months: []
+    new_growth_months: []
+  care_notes:
+    - month_range:
+        start: 1
+        end: 12
+      text: "San Francisco advises planting this only in the warmest parts of the city. Leaf spot and fungus are likely and can cause early leaf drop, it does not flower well in this climate, and it is susceptible to fire blight."
+      citations:
+        - source: "San Francisco Public Works / Urban Forestry Council, \"2024 Recommended Street Tree Species List\" (approved 27 August 2024)"
+          url: "https://sfpublicworks.org/sites/default/files/BUF/Street%20Tree%20Planting/AUGUST%202024%20Recommended%20Street%20Tree%20List%20Update.pdf"
+          accessed: "2026-07-21"
+          licence: "City and County of San Francisco publication; see SOURCES.md"
+          quotes: "Notes column: \"Plant only in warmest areas of city. Semi-evergreen; leaf spot/fungus likely to occur and may cause premature leaf drop; does not flower well in our climate; susceptible to fire blight.\""
+          supports: "care_note"
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Pyrus%20kawakamii"
+        query: "Pyrus kawakamii"
+        field: "family"
+        value: "Rosaceae"
+        matched_name: "Pyrus kawakamii T.S.Liu & H.J.Su"
+        match_type: "EXACT"
+        match_confidence: 99
+        rank_matched: "SPECIES"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+        url: "https://selectree.calpoly.edu/tree-detail/1222"
+        api: "https://selectree.calpoly.edu/api/tree/detail/1222"
+        field: "foliage_type"
+        value: "Partly Deciduous"
+        matched_taxon: "Pyrus kawakamii"
+        match_method: "selectree_name_exact"
+        accessed: "2026-07-21"
+        licence: "no explicit reuse licence published (see SOURCES.md)"
+- species_uuid: "10de4265-12f3-5b16-940b-7e32a75c9d95"
+  scientific_name: "Tristaniopsis laurina 'Elegant'"
+  common_name: "Small-leaf Tristania 'Elegant'"
+  sf_rank: 25
+  sf_tree_count: 1856
+  family: "Myrtaceae"
+  leaf_retention: "evergreen"
+  curated: true
+  id_tips:
+    - icon: "bark"
+      text: "Bark peels in papery mottled patches of cream, red-brown and light brown."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/1426"
+          api: "https://selectree.calpoly.edu/api/tree/detail/1426"
+          matched_taxon: "Tristaniopsis laurina 'Elegant'"
+          fields:
+            - "bark_texture"
+            - "bark_color"
+          values:
+            bark_texture: "Exfoliating, Smooth, Papery, Mottled"
+            bark_color: "Cream, Dark Brown, Light Brown, Reddish"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "leaf"
+      text: "New growth flushes reddish before turning green."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/1426"
+          api: "https://selectree.calpoly.edu/api/tree/detail/1426"
+          matched_taxon: "Tristaniopsis laurina 'Elegant'"
+          fields:
+            - "foliage_growth_color"
+          values:
+            foliage_growth_color: "Green, Reddish"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "flower"
+      text: "Small yellow flower clusters in spring and summer."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/1426"
+          api: "https://selectree.calpoly.edu/api/tree/detail/1426"
+          matched_taxon: "Tristaniopsis laurina 'Elegant'"
+          fields:
+            - "flower_color"
+            - "flower_showiness"
+            - "flower_time"
+          values:
+            flower_color: "Yellow"
+            flower_showiness: "Showy"
+            flower_time: "Spring, Summer"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+  seasonal:
+    bloom_months: []
+    fall_color_months: []
+    fruit_months: []
+    new_growth_months: []
+  care_notes:
+    - month_range:
+        start: 1
+        end: 12
+      text: "San Francisco does not recommend the 'Elegant' variety; the standard species is preferred."
+      citations:
+        - source: "San Francisco Public Works / Urban Forestry Council, \"2024 Recommended Street Tree Species List\" (approved 27 August 2024)"
+          url: "https://sfpublicworks.org/sites/default/files/BUF/Street%20Tree%20Planting/AUGUST%202024%20Recommended%20Street%20Tree%20List%20Update.pdf"
+          accessed: "2026-07-21"
+          licence: "City and County of San Francisco publication; see SOURCES.md"
+          quotes: "Notes column for Tristaniopsis laurina: \"Standard species ONLY. 'Elegant' variety NOT recommended.\""
+          supports: "care_note"
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Tristaniopsis%20laurina"
+        query: "Tristaniopsis laurina"
+        field: "family"
+        value: "Myrtaceae"
+        matched_name: "Tristaniopsis laurina (Sm.) Paul G.Wilson & J.T.Waterh."
+        match_type: "EXACT"
+        match_confidence: 100
+        rank_matched: "SPECIES"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+        url: "https://selectree.calpoly.edu/tree-detail/1426"
+        api: "https://selectree.calpoly.edu/api/tree/detail/1426"
+        field: "foliage_type"
+        value: "Evergreen"
+        matched_taxon: "Tristaniopsis laurina 'Elegant'"
+        match_method: "selectree_name_exact"
+        accessed: "2026-07-21"
+        licence: "no explicit reuse licence published (see SOURCES.md)"
+- species_uuid: "4b9e1d5d-c949-539a-b7f5-9771504e3506"
+  scientific_name: "Melaleuca quinquenervia"
+  common_name: "Cajeput"
+  sf_rank: 26
+  sf_tree_count: 1796
+  family: "Myrtaceae"
+  leaf_retention: "evergreen"
+  curated: true
+  id_tips:
+    - icon: "bark"
+      text: "Thick cream-coloured bark that peels off in papery sheets."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/933"
+          api: "https://selectree.calpoly.edu/api/tree/detail/933"
+          matched_taxon: "Melaleuca quinquenervia"
+          fields:
+            - "bark_texture"
+            - "bark_color"
+          values:
+            bark_texture: "Exfoliating"
+            bark_color: "Striking, Cream or Light Green"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "leaf"
+      text: "Stiff oblong pale green leaves."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/933"
+          api: "https://selectree.calpoly.edu/api/tree/detail/933"
+          matched_taxon: "Melaleuca quinquenervia"
+          fields:
+            - "leaflet_shape"
+            - "foliage_growth_color"
+          values:
+            leaflet_shape: "Oblong"
+            foliage_growth_color: "Light Green"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "flower"
+      text: "Pink, purple or yellow bottlebrush spikes in summer and autumn."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/933"
+          api: "https://selectree.calpoly.edu/api/tree/detail/933"
+          matched_taxon: "Melaleuca quinquenervia"
+          fields:
+            - "flower_color"
+            - "flower_showiness"
+            - "flower_time"
+          values:
+            flower_color: "Pink, Purple, Yellow"
+            flower_showiness: "Showy"
+            flower_time: "Fall, Summer"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+  seasonal:
+    bloom_months: []
+    fall_color_months: []
+    fruit_months: []
+    new_growth_months: []
+  care_notes:
+    - month_range:
+        start: 1
+        end: 12
+      text: "Grows fast into a dense irregular form. Prefers wind protection and is sensitive to cold."
+      citations:
+        - source: "San Francisco Public Works / Urban Forestry Council, \"2024 Recommended Street Tree Species List\" (approved 27 August 2024)"
+          url: "https://sfpublicworks.org/sites/default/files/BUF/Street%20Tree%20Planting/AUGUST%202024%20Recommended%20Street%20Tree%20List%20Update.pdf"
+          accessed: "2026-07-21"
+          licence: "City and County of San Francisco publication; see SOURCES.md"
+          quotes: "Notes column: \"Grows fast, dense, irregular form; prefers wind protection; sensitive to cold.\""
+          supports: "care_note"
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Melaleuca%20quinquenervia"
+        query: "Melaleuca quinquenervia"
+        field: "family"
+        value: "Myrtaceae"
+        matched_name: "Melaleuca quinquenervia (Cav.) S.T.Blake"
+        match_type: "EXACT"
+        match_confidence: 100
+        rank_matched: "SPECIES"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+        url: "https://selectree.calpoly.edu/tree-detail/933"
+        api: "https://selectree.calpoly.edu/api/tree/detail/933"
+        field: "foliage_type"
+        value: "Evergreen"
+        matched_taxon: "Melaleuca quinquenervia"
+        match_method: "selectree_name_exact"
+        accessed: "2026-07-21"
+        licence: "no explicit reuse licence published (see SOURCES.md)"
+- species_uuid: "0ae2641f-97f4-595f-84eb-1667f974f261"
+  scientific_name: "Pittosporum crassifolium"
+  common_name: "Karo Tree"
+  sf_rank: 27
+  sf_tree_count: 1790
+  family: "Pittosporaceae"
+  leaf_retention: "evergreen"
+  curated: true
+  id_tips:
+    - icon: "leaf"
+      text: "Thick oval leaves, grey-green and paler underneath."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/1090"
+          api: "https://selectree.calpoly.edu/api/tree/detail/1090"
+          matched_taxon: "Pittosporum crassifolium"
+          fields:
+            - "leaflet_shape"
+            - "foliage_growth_color"
+          values:
+            leaflet_shape: "Oval"
+            foliage_growth_color: "Bluish Green, Silver, Gray Green"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "flower"
+      text: "Small dark maroon flowers, scented."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/1090"
+          api: "https://selectree.calpoly.edu/api/tree/detail/1090"
+          matched_taxon: "Pittosporum crassifolium"
+          fields:
+            - "flower_color"
+            - "flower_showiness"
+            - "fragrance"
+          values:
+            flower_color: "Maroon"
+            flower_showiness: "Showy"
+            fragrance: 1
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "fruit"
+      text: "Green woody capsules that split open."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/1090"
+          api: "https://selectree.calpoly.edu/api/tree/detail/1090"
+          matched_taxon: "Pittosporum crassifolium"
+          fields:
+            - "fruit_type"
+            - "fruit_color"
+            - "fruit_size"
+          values:
+            fruit_type: "Capsule"
+            fruit_color: "Mostly Green"
+            fruit_size: "Medium"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+  seasonal:
+    bloom_months: []
+    fall_color_months: []
+    fruit_months: []
+    new_growth_months: []
+  care_notes: []
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Pittosporum%20crassifolium"
+        query: "Pittosporum crassifolium"
+        field: "family"
+        value: "Pittosporaceae"
+        matched_name: "Pittosporum crassifolium Banks & Sol. ex A.Cunn."
+        match_type: "EXACT"
+        match_confidence: 99
+        rank_matched: "SPECIES"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+        url: "https://selectree.calpoly.edu/tree-detail/1090"
+        api: "https://selectree.calpoly.edu/api/tree/detail/1090"
+        field: "foliage_type"
+        value: "Evergreen"
+        matched_taxon: "Pittosporum crassifolium"
+        match_method: "selectree_name_exact"
+        accessed: "2026-07-21"
+        licence: "no explicit reuse licence published (see SOURCES.md)"
+- species_uuid: "1630d455-2bd8-5f77-8388-9dd70b2621bb"
+  scientific_name: "Cordyline australis"
+  common_name: "Dracena Palm"
+  sf_rank: 28
+  sf_tree_count: 1662
+  family: "Asparagaceae"
+  leaf_retention: "evergreen"
+  curated: true
+  id_tips:
+    - icon: "form"
+      text: "A bare trunk topped with one or more spiky rosettes of leaves."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/388"
+          api: "https://selectree.calpoly.edu/api/tree/detail/388"
+          matched_taxon: "Cordyline australis"
+          fields:
+            - "tree_shape"
+          values:
+            tree_shape: "Sword Palm"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "leaf"
+      text: "Sword-shaped grey-green leaves up to three feet long and only a couple of inches wide."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/cordyline-australis/"
+          fields:
+            - "Leaf Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+    - icon: "bark"
+      text: "Grey bark, corky and fissured, and spongy to the touch."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/cordyline-australis/"
+          fields:
+            - "Bark Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+  seasonal:
+    bloom_months: []
+    fall_color_months: []
+    fruit_months: []
+    new_growth_months: []
+  care_notes: []
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Cordyline%20australis"
+        query: "Cordyline australis"
+        field: "family"
+        value: "Asparagaceae"
+        matched_name: "Cordyline australis (G.Forst.) Endl."
+        match_type: "EXACT"
+        match_confidence: 99
+        rank_matched: "SPECIES"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+        url: "https://selectree.calpoly.edu/tree-detail/388"
+        api: "https://selectree.calpoly.edu/api/tree/detail/388"
+        field: "foliage_type"
+        value: "Evergreen"
+        matched_taxon: "Cordyline australis"
+        match_method: "selectree_name_exact"
+        accessed: "2026-07-21"
+        licence: "no explicit reuse licence published (see SOURCES.md)"
+      - source: "NC State Extension Gardener Plant Toolbox"
+        role: "corroborating"
+        url: "https://plants.ces.ncsu.edu/plants/cordyline-australis/"
+        field: "Whole Plant Traits > Leaf Characteristics"
+        value: "Broadleaf Evergreen"
+        accessed: "2026-07-21"
+        licence: "(c) NC State University; see SOURCES.md"
+- species_uuid: "cea2a378-3b2f-5e4c-9337-e17432005f32"
+  scientific_name: "Ficus nitida"
+  common_name: "Laurel Fig"
+  sf_rank: 29
+  sf_tree_count: 1629
+  family: "Moraceae"
+  leaf_retention: "evergreen"
+  curated: true
+  id_tips:
+    - icon: "leaf"
+      text: "Leathery glossy green leaves with short pointed tips, in a dense rounded crown."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/ficus-microcarpa/"
+          fields:
+            - "Leaf Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/609"
+          api: "https://selectree.calpoly.edu/api/tree/detail/609"
+          matched_taxon: "Ficus microcarpa"
+          fields:
+            - "tree_shape"
+          values:
+            tree_shape: "Rounded"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "bark"
+      text: "Smooth pale grey bark."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/609"
+          api: "https://selectree.calpoly.edu/api/tree/detail/609"
+          matched_taxon: "Ficus microcarpa"
+          fields:
+            - "bark_texture"
+            - "bark_color"
+          values:
+            bark_texture: "Smooth"
+            bark_color: "Light Gray"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "fruit"
+      text: "Small figs held on the twigs, green then ripening reddish."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/ficus-microcarpa/"
+          fields:
+            - "Fruit Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+  seasonal:
+    bloom_months: []
+    fall_color_months: []
+    fruit_months: []
+    new_growth_months: []
+  care_notes: []
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Ficus%20nitida"
+        query: "Ficus nitida"
+        field: "family"
+        value: "Moraceae"
+        matched_name: "Ficus nitida B.Heyne ex Roth, 1821"
+        match_type: "EXACT"
+        match_confidence: 99
+        rank_matched: "SPECIES"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+        url: "https://selectree.calpoly.edu/tree-detail/609"
+        api: "https://selectree.calpoly.edu/api/tree/detail/609"
+        field: "foliage_type"
+        value: "Evergreen"
+        matched_taxon: "Ficus microcarpa"
+        match_method: "selectree_synonym_other_taxa"
+        accessed: "2026-07-21"
+        licence: "no explicit reuse licence published (see SOURCES.md)"
+- species_uuid: "16934db9-16c4-5fb9-86e3-45177c3737ae"
+  scientific_name: "Liquidambar styraciflua"
+  common_name: "American Sweet Gum"
+  sf_rank: 30
+  sf_tree_count: 1522
+  family: "Altingiaceae"
+  leaf_retention: "deciduous"
+  curated: true
+  id_tips:
+    - icon: "leaf"
+      text: "Star-shaped leaves with five to seven pointed lobes, alternate, and fragrant if you bruise one."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/liquidambar-styraciflua/"
+          fields:
+            - "Leaf Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+    - icon: "fruit"
+      text: "Hard bristly seed balls one to three inches across, formed in late summer and hanging on through winter."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/liquidambar-styraciflua/"
+          fields:
+            - "Fruit Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+    - icon: "bark"
+      text: "Deeply furrowed bark, and twigs that often grow corky wings after their second year."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/liquidambar-styraciflua/"
+          fields:
+            - "Bark Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+  seasonal:
+    bloom_months: []
+    fall_color_months: []
+    fruit_months: []
+    new_growth_months: []
+  care_notes: []
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Liquidambar%20styraciflua"
+        query: "Liquidambar styraciflua"
+        field: "family"
+        value: "Altingiaceae"
+        matched_name: "Liquidambar styraciflua L."
+        match_type: "EXACT"
+        match_confidence: 100
+        rank_matched: "SPECIES"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+        url: "https://selectree.calpoly.edu/tree-detail/819"
+        api: "https://selectree.calpoly.edu/api/tree/detail/819"
+        field: "foliage_type"
+        value: "Deciduous"
+        matched_taxon: "Liquidambar styraciflua"
+        match_method: "selectree_name_exact"
+        accessed: "2026-07-21"
+        licence: "no explicit reuse licence published (see SOURCES.md)"
+      - source: "NC State Extension Gardener Plant Toolbox"
+        role: "corroborating"
+        url: "https://plants.ces.ncsu.edu/plants/liquidambar-styraciflua/"
+        field: "Whole Plant Traits > Leaf Characteristics"
+        value: "Deciduous"
+        accessed: "2026-07-21"
+        licence: "(c) NC State University; see SOURCES.md"
+- species_uuid: "2b2624b2-e6a3-5d29-9a9e-edb57eb12e9c"
+  scientific_name: "Myoporum laetum"
+  common_name: "Myoporum"
+  sf_rank: 31
+  sf_tree_count: 1517
+  family: "Scrophulariaceae"
+  leaf_retention: "evergreen"
+  curated: true
+  id_tips:
+    - icon: "leaf"
+      text: "Dark green oval leaves."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/1485"
+          api: "https://selectree.calpoly.edu/api/tree/detail/1485"
+          matched_taxon: "Myoporum laetum"
+          fields:
+            - "foliage_growth_color"
+            - "leaflet_shape"
+          values:
+            foliage_growth_color: "Dark Green"
+            leaflet_shape: "Oval"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "flower"
+      text: "Small purple and white flowers; across California the flowering records run from February through July."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/1485"
+          api: "https://selectree.calpoly.edu/api/tree/detail/1485"
+          matched_taxon: "Myoporum laetum"
+          fields:
+            - "flower_color"
+          values:
+            flower_color: "Purple, White"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+        - source: "iNaturalist observation annotations, month-of-year histogram"
+          url: "https://api.inaturalist.org/v1/observations/histogram?taxon_id=63611&place_id=14&interval=month_of_year&term_id=12&term_value_id=13"
+          taxon: "Myoporum laetum"
+          taxon_id: 63611
+          annotation: "Flowers and Fruits = Flowers"
+          place: "california"
+          observations: 157
+          monthly_counts: "1:9, 2:10, 3:17, 4:28, 5:19, 6:22, 7:16, 8:10, 9:10, 10:8, 11:1, 12:7"
+          derivation: "smallest run of consecutive months holding at least 70 percent of the annotated observations; emitted only when the run is 8 months or shorter"
+          accessed: "2026-07-21"
+          licence: "iNaturalist content is CC BY-NC by default; see SOURCES.md"
+    - icon: "fruit"
+      text: "Small red to purple berries."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/1485"
+          api: "https://selectree.calpoly.edu/api/tree/detail/1485"
+          matched_taxon: "Myoporum laetum"
+          fields:
+            - "fruit_type"
+            - "fruit_color"
+            - "fruit_size"
+          values:
+            fruit_type: "Drupe"
+            fruit_color: "Purple or Red"
+            fruit_size: "Small"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+        - source: "iNaturalist observation annotations, month-of-year histogram"
+          url: "https://api.inaturalist.org/v1/observations/histogram?taxon_id=63611&place_id=14&interval=month_of_year&term_id=12&term_value_id=14"
+          taxon: "Myoporum laetum"
+          taxon_id: 63611
+          annotation: "Flowers and Fruits = Fruits or Seeds"
+          place: "california"
+          observations: 62
+          monthly_counts: "1:2, 2:1, 3:0, 4:2, 5:1, 6:11, 7:19, 8:7, 9:6, 10:6, 11:3, 12:4"
+          derivation: "smallest run of consecutive months holding at least 70 percent of the annotated observations; emitted only when the run is 8 months or shorter"
+          accessed: "2026-07-21"
+          licence: "iNaturalist content is CC BY-NC by default; see SOURCES.md"
+  seasonal:
+    bloom_months: [2, 3, 4, 5, 6, 7]
+
+    fall_color_months: []
+    fruit_months: [5, 6, 7, 8, 9]
+
+    new_growth_months: []
+  care_notes: []
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Myoporum%20laetum"
+        query: "Myoporum laetum"
+        field: "family"
+        value: "Scrophulariaceae"
+        matched_name: "Myoporum laetum G.Forst."
+        match_type: "EXACT"
+        match_confidence: 100
+        rank_matched: "SPECIES"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+        url: "https://selectree.calpoly.edu/tree-detail/1485"
+        api: "https://selectree.calpoly.edu/api/tree/detail/1485"
+        field: "foliage_type"
+        value: "Evergreen"
+        matched_taxon: "Myoporum laetum"
+        match_method: "selectree_name_exact"
+        accessed: "2026-07-21"
+        licence: "no explicit reuse licence published (see SOURCES.md)"
+    seasonal.bloom_months:
+      - source: "iNaturalist observation annotations, month-of-year histogram"
+        url: "https://api.inaturalist.org/v1/observations/histogram?taxon_id=63611&place_id=14&interval=month_of_year&term_id=12&term_value_id=13"
+        taxon: "Myoporum laetum"
+        taxon_id: 63611
+        annotation: "Flowers and Fruits = Flowers"
+        place: "california"
+        observations: 157
+        monthly_counts: "1:9, 2:10, 3:17, 4:28, 5:19, 6:22, 7:16, 8:10, 9:10, 10:8, 11:1, 12:7"
+        derivation: "smallest run of consecutive months holding at least 70 percent of the annotated observations; emitted only when the run is 8 months or shorter"
+        accessed: "2026-07-21"
+        licence: "iNaturalist content is CC BY-NC by default; see SOURCES.md"
+    seasonal.fruit_months:
+      - source: "iNaturalist observation annotations, month-of-year histogram"
+        url: "https://api.inaturalist.org/v1/observations/histogram?taxon_id=63611&place_id=14&interval=month_of_year&term_id=12&term_value_id=14"
+        taxon: "Myoporum laetum"
+        taxon_id: 63611
+        annotation: "Flowers and Fruits = Fruits or Seeds"
+        place: "california"
+        observations: 62
+        monthly_counts: "1:2, 2:1, 3:0, 4:2, 5:1, 6:11, 7:19, 8:7, 9:6, 10:6, 11:3, 12:4"
+        derivation: "smallest run of consecutive months holding at least 70 percent of the annotated observations; emitted only when the run is 8 months or shorter"
+        accessed: "2026-07-21"
+        licence: "iNaturalist content is CC BY-NC by default; see SOURCES.md"
+- species_uuid: "1e223e2c-3110-5564-a7e0-42b46eb15e8e"
+  scientific_name: "Juniperus chinensis"
+  common_name: "Juniper"
+  sf_rank: 32
+  sf_tree_count: 1415
+  family: "Cupressaceae"
+  leaf_retention: "evergreen"
+  curated: true
+  id_tips:
+    - icon: "leaf"
+      text: "Dark green flat scales on adult growth mixed with bluish-green needle-like juvenile growth."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/juniperus-chinensis/"
+          fields:
+            - "Leaf Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+    - icon: "cone"
+      text: "Blue fleshy berry-like cones rather than true fruit."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/juniperus-chinensis/"
+          fields:
+            - "Fruit Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+    - icon: "bark"
+      text: "Ridged and fissured bark that peels in thin strips."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/juniperus-chinensis/"
+          fields:
+            - "Bark Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+  seasonal:
+    bloom_months: []
+    fall_color_months: []
+    fruit_months: []
+    new_growth_months: []
+  care_notes: []
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Juniperus%20chinensis"
+        query: "Juniperus chinensis"
+        field: "family"
+        value: "Cupressaceae"
+        matched_name: "Juniperus chinensis L."
+        match_type: "EXACT"
+        match_confidence: 99
+        rank_matched: "SPECIES"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+        url: "https://selectree.calpoly.edu/tree-detail/751"
+        api: "https://selectree.calpoly.edu/api/tree/detail/751"
+        field: "foliage_type"
+        value: "Evergreen"
+        matched_taxon: "Juniperus chinensis"
+        match_method: "selectree_name_exact"
+        accessed: "2026-07-21"
+        licence: "no explicit reuse licence published (see SOURCES.md)"
+      - source: "NC State Extension Gardener Plant Toolbox"
+        role: "corroborating"
+        url: "https://plants.ces.ncsu.edu/plants/juniperus-chinensis/"
+        field: "Whole Plant Traits > Leaf Characteristics"
+        value: "Needled Evergreen"
+        accessed: "2026-07-21"
+        licence: "(c) NC State University; see SOURCES.md"
+- species_uuid: "5ee6abb3-e596-5db5-8962-9ae75088a016"
+  scientific_name: "Ficus retusa nitida"
+  common_name: "Banyan Fig"
+  sf_rank: 33
+  sf_tree_count: 1345
+  family: "Moraceae"
+  leaf_retention: "evergreen"
+  curated: true
+  id_tips:
+    - icon: "leaf"
+      text: "Leathery glossy green leaves with short pointed tips, in a dense rounded crown."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/ficus-microcarpa/"
+          fields:
+            - "Leaf Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/609"
+          api: "https://selectree.calpoly.edu/api/tree/detail/609"
+          matched_taxon: "Ficus microcarpa"
+          fields:
+            - "tree_shape"
+          values:
+            tree_shape: "Rounded"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "bark"
+      text: "Smooth pale grey bark."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/609"
+          api: "https://selectree.calpoly.edu/api/tree/detail/609"
+          matched_taxon: "Ficus microcarpa"
+          fields:
+            - "bark_texture"
+            - "bark_color"
+          values:
+            bark_texture: "Smooth"
+            bark_color: "Light Gray"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "fruit"
+      text: "Small figs held on the twigs, green then ripening reddish."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/ficus-microcarpa/"
+          fields:
+            - "Fruit Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+  seasonal:
+    bloom_months: []
+    fall_color_months: []
+    fruit_months: []
+    new_growth_months: []
+  care_notes: []
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Ficus%20retusa%20nitida"
+        query: "Ficus retusa nitida"
+        field: "family"
+        value: "Moraceae"
+        matched_name: "Ficus L."
+        match_type: "HIGHERRANK"
+        match_confidence: 98
+        rank_matched: "GENUS"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+        url: "https://selectree.calpoly.edu/tree-detail/609"
+        api: "https://selectree.calpoly.edu/api/tree/detail/609"
+        field: "foliage_type"
+        value: "Evergreen"
+        matched_taxon: "Ficus microcarpa"
+        match_method: "selectree_synonym_other_taxa"
+        accessed: "2026-07-21"
+        licence: "no explicit reuse licence published (see SOURCES.md)"
+  notes:
+    - "family: resolved only to genus"
+- species_uuid: "24d6772a-b8bd-5a70-b823-239398828e1e"
+  scientific_name: "Jacaranda mimosifolia"
+  common_name: "Jacaranda"
+  sf_rank: 34
+  sf_tree_count: 1234
+  family: "Bignoniaceae"
+  leaf_retention: "semi_deciduous"
+  curated: true
+  id_tips:
+    - icon: "leaf"
+      text: "Leaves divide twice into many small pointed leaflets, in opposite pairs, so the crown looks fern-like."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/jacaranda-mimosifolia/"
+          fields:
+            - "Leaf Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+    - icon: "flower"
+      text: "Purple-blue trumpet flowers that cover the whole crown while the tree is still bare; across California the records cluster in May to July."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/jacaranda-mimosifolia/"
+          fields:
+            - "Flower Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+        - source: "iNaturalist observation annotations, month-of-year histogram"
+          url: "https://api.inaturalist.org/v1/observations/histogram?taxon_id=77541&place_id=14&interval=month_of_year&term_id=12&term_value_id=13"
+          taxon: "Jacaranda mimosifolia"
+          taxon_id: 77541
+          annotation: "Flowers and Fruits = Flowers"
+          place: "california"
+          observations: 71
+          monthly_counts: "1:0, 2:0, 3:0, 4:13, 5:15, 6:21, 7:17, 8:0, 9:2, 10:3, 11:0, 12:0"
+          derivation: "smallest run of consecutive months holding at least 70 percent of the annotated observations; emitted only when the run is 8 months or shorter"
+          accessed: "2026-07-21"
+          licence: "iNaturalist content is CC BY-NC by default; see SOURCES.md"
+    - icon: "fruit"
+      text: "Round flat dry discs that break open to release winged seeds."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/jacaranda-mimosifolia/"
+          fields:
+            - "Fruit Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+  seasonal:
+    bloom_months: [5, 6, 7]
+
+    fall_color_months: []
+    fruit_months: []
+    new_growth_months: []
+  care_notes:
+    - month_range:
+        start: 1
+        end: 12
+      text: "An uneven performer here. Prefers heat, wind protection and good drainage."
+      citations:
+        - source: "San Francisco Public Works / Urban Forestry Council, \"2024 Recommended Street Tree Species List\" (approved 27 August 2024)"
+          url: "https://sfpublicworks.org/sites/default/files/BUF/Street%20Tree%20Planting/AUGUST%202024%20Recommended%20Street%20Tree%20List%20Update.pdf"
+          accessed: "2026-07-21"
+          licence: "City and County of San Francisco publication; see SOURCES.md"
+          quotes: "Notes column: \"Uneven performer; prefers heat, wind protection, and good drainage; spring leaf drop.\""
+          supports: "care_note"
+    - month_range:
+        start: 3
+        end: 5
+      text: "Expect leaf drop in spring."
+      citations:
+        - source: "San Francisco Public Works / Urban Forestry Council, \"2024 Recommended Street Tree Species List\" (approved 27 August 2024)"
+          url: "https://sfpublicworks.org/sites/default/files/BUF/Street%20Tree%20Planting/AUGUST%202024%20Recommended%20Street%20Tree%20List%20Update.pdf"
+          accessed: "2026-07-21"
+          licence: "City and County of San Francisco publication; see SOURCES.md"
+          quotes: "Notes column: \"...spring leaf drop.\""
+          supports: "care_note"
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Jacaranda%20mimosifolia"
+        query: "Jacaranda mimosifolia"
+        field: "family"
+        value: "Bignoniaceae"
+        matched_name: "Jacaranda mimosifolia D.Don"
+        match_type: "EXACT"
+        match_confidence: 100
+        rank_matched: "SPECIES"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+        url: "https://selectree.calpoly.edu/tree-detail/741"
+        api: "https://selectree.calpoly.edu/api/tree/detail/741"
+        field: "foliage_type"
+        value: "Partly Deciduous"
+        matched_taxon: "Jacaranda mimosifolia"
+        match_method: "selectree_name_exact"
+        accessed: "2026-07-21"
+        licence: "no explicit reuse licence published (see SOURCES.md)"
+      - source: "NC State Extension Gardener Plant Toolbox"
+        role: "corroborating"
+        url: "https://plants.ces.ncsu.edu/plants/jacaranda-mimosifolia/"
+        field: "Whole Plant Traits > Leaf Characteristics"
+        value: "Deciduous"
+        accessed: "2026-07-21"
+        licence: "(c) NC State University; see SOURCES.md"
+    seasonal.bloom_months:
+      - source: "iNaturalist observation annotations, month-of-year histogram"
+        url: "https://api.inaturalist.org/v1/observations/histogram?taxon_id=77541&place_id=14&interval=month_of_year&term_id=12&term_value_id=13"
+        taxon: "Jacaranda mimosifolia"
+        taxon_id: 77541
+        annotation: "Flowers and Fruits = Flowers"
+        place: "california"
+        observations: 71
+        monthly_counts: "1:0, 2:0, 3:0, 4:13, 5:15, 6:21, 7:17, 8:0, 9:2, 10:3, 11:0, 12:0"
+        derivation: "smallest run of consecutive months holding at least 70 percent of the annotated observations; emitted only when the run is 8 months or shorter"
+        accessed: "2026-07-21"
+        licence: "iNaturalist content is CC BY-NC by default; see SOURCES.md"
+- species_uuid: "9f5842e1-186d-5bc5-9b50-da185df6bdbb"
+  scientific_name: "Lagunaria patersonii"
+  common_name: "Primrose Tree"
+  sf_rank: 35
+  sf_tree_count: 1222
+  family: "Malvaceae"
+  leaf_retention: "evergreen"
+  curated: true
+  id_tips:
+    - icon: "flower"
+      text: "Pink, rose or white flowers in summer and autumn."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/799"
+          api: "https://selectree.calpoly.edu/api/tree/detail/799"
+          matched_taxon: "Lagunaria patersonia"
+          fields:
+            - "flower_color"
+            - "flower_showiness"
+            - "flower_time"
+          values:
+            flower_color: "Pink, Rose, White"
+            flower_showiness: "Showy"
+            flower_time: "Fall, Summer"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "leaf"
+      text: "Grey-green oval leaves on a narrow upright tree."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/799"
+          api: "https://selectree.calpoly.edu/api/tree/detail/799"
+          matched_taxon: "Lagunaria patersonia"
+          fields:
+            - "foliage_growth_color"
+            - "leaflet_shape"
+            - "height_high"
+            - "width_high"
+          values:
+            foliage_growth_color: "Bluish Green, Silver, Gray Green"
+            leaflet_shape: "Oval"
+            height_high: 50
+            width_high: 20
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "fruit"
+      text: "Brown capsules, and the tree is listed as a skin irritant, so do not pull the pods apart."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/799"
+          api: "https://selectree.calpoly.edu/api/tree/detail/799"
+          matched_taxon: "Lagunaria patersonia"
+          fields:
+            - "fruit_type"
+            - "fruit_color"
+            - "fruit_size"
+            - "health_hazard"
+          values:
+            fruit_type: "Capsule"
+            fruit_color: "Brown"
+            fruit_size: "Medium"
+            health_hazard: "Irritant"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+        - source: "San Francisco Public Works / Urban Forestry Council, \"2024 Recommended Street Tree Species List\" (approved 27 August 2024)"
+          url: "https://sfpublicworks.org/sites/default/files/BUF/Street%20Tree%20Planting/AUGUST%202024%20Recommended%20Street%20Tree%20List%20Update.pdf"
+          accessed: "2026-07-21"
+          licence: "City and County of San Francisco publication; see SOURCES.md"
+          quotes: "Allergy Friendly column: 'No'"
+          supports: "id_tip"
+  seasonal:
+    bloom_months: []
+    fall_color_months: []
+    fruit_months: []
+    new_growth_months: []
+  care_notes:
+    - month_range:
+        start: 1
+        end: 12
+      text: "Does well in windy places."
+      citations:
+        - source: "San Francisco Public Works / Urban Forestry Council, \"2024 Recommended Street Tree Species List\" (approved 27 August 2024)"
+          url: "https://sfpublicworks.org/sites/default/files/BUF/Street%20Tree%20Planting/AUGUST%202024%20Recommended%20Street%20Tree%20List%20Update.pdf"
+          accessed: "2026-07-21"
+          licence: "City and County of San Francisco publication; see SOURCES.md"
+          quotes: "Notes column: \"Grows well in windy areas; pollinators.\""
+          supports: "care_note"
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Lagunaria%20patersonii"
+        query: "Lagunaria patersonii"
+        field: "family"
+        value: "Malvaceae"
+        matched_name: "Lagunaria patersonii (Andrews) G.Don"
+        match_type: "EXACT"
+        match_confidence: 100
+        rank_matched: "SPECIES"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+        url: "https://selectree.calpoly.edu/tree-detail/799"
+        api: "https://selectree.calpoly.edu/api/tree/detail/799"
+        field: "foliage_type"
+        value: "Evergreen"
+        matched_taxon: "Lagunaria patersonia"
+        match_method: "selectree_synonym_other_taxa"
+        accessed: "2026-07-21"
+        licence: "no explicit reuse licence published (see SOURCES.md)"
+- species_uuid: "1725edd3-6817-53dc-809c-a0bcc7b32a51"
+  scientific_name: "Magnolia grandiflora 'Little Gem'"
+  common_name: "Little Gem Magnolia"
+  sf_rank: 36
+  sf_tree_count: 1097
+  family: "Magnoliaceae"
+  leaf_retention: "evergreen"
+  curated: true
+  id_tips:
+    - icon: "leaf"
+      text: "Leathery leaves, glossy dark green above with rusty-brown felt underneath, smaller than the standard southern magnolia."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/magnolia-grandiflora/"
+          fields:
+            - "Leaf Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/850"
+          api: "https://selectree.calpoly.edu/api/tree/detail/850"
+          matched_taxon: "Magnolia grandiflora 'Little Gem'"
+          fields:
+            - "leaflet_shape"
+          values:
+            leaflet_shape: "Oval"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "form"
+      text: "Stays much shorter than the species, so it fits a narrower sidewalk."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/850"
+          api: "https://selectree.calpoly.edu/api/tree/detail/850"
+          matched_taxon: "Magnolia grandiflora 'Little Gem'"
+          fields:
+            - "height_high"
+          values:
+            height_high: 20
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+        - source: "San Francisco Public Works / Urban Forestry Council, \"2024 Recommended Street Tree Species List\" (approved 27 August 2024)"
+          url: "https://sfpublicworks.org/sites/default/files/BUF/Street%20Tree%20Planting/AUGUST%202024%20Recommended%20Street%20Tree%20List%20Update.pdf"
+          accessed: "2026-07-21"
+          licence: "City and County of San Francisco publication; see SOURCES.md"
+          quotes: "minimum sidewalk width 7.5 ft for 'Little Gem' against 12 ft for standard southern magnolia"
+          supports: "id_tip"
+    - icon: "flower"
+      text: "Creamy white scented flowers over a long season rather than one burst."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/magnolia-grandiflora/"
+          fields:
+            - "Flower Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/850"
+          api: "https://selectree.calpoly.edu/api/tree/detail/850"
+          matched_taxon: "Magnolia grandiflora 'Little Gem'"
+          fields:
+            - "flower_time"
+          values:
+            flower_time: "Fall, Spring, Summer"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+  seasonal:
+    bloom_months: []
+    fall_color_months: []
+    fruit_months: []
+    new_growth_months: []
+  care_notes:
+    - month_range:
+        start: 1
+        end: 12
+      text: "A proven performer in San Francisco and the city's minimum sidewalk width for it is 7.5 ft, narrower than for the standard southern magnolia."
+      citations:
+        - source: "San Francisco Public Works / Urban Forestry Council, \"2024 Recommended Street Tree Species List\" (approved 27 August 2024)"
+          url: "https://sfpublicworks.org/sites/default/files/BUF/Street%20Tree%20Planting/AUGUST%202024%20Recommended%20Street%20Tree%20List%20Update.pdf"
+          accessed: "2026-07-21"
+          licence: "City and County of San Francisco publication; see SOURCES.md"
+          quotes: "Notes column: \"Proven success; pollinators.\" Minimum sidewalk width 7.5 ft."
+          supports: "care_note"
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Magnolia%20grandiflora"
+        query: "Magnolia grandiflora"
+        field: "family"
+        value: "Magnoliaceae"
+        matched_name: "Magnolia grandiflora L."
+        match_type: "EXACT"
+        match_confidence: 100
+        rank_matched: "SPECIES"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+        url: "https://selectree.calpoly.edu/tree-detail/850"
+        api: "https://selectree.calpoly.edu/api/tree/detail/850"
+        field: "foliage_type"
+        value: "Evergreen"
+        matched_taxon: "Magnolia grandiflora 'Little Gem'"
+        match_method: "selectree_name_exact"
+        accessed: "2026-07-21"
+        licence: "no explicit reuse licence published (see SOURCES.md)"
+      - source: "NC State Extension Gardener Plant Toolbox"
+        role: "corroborating"
+        url: "https://plants.ces.ncsu.edu/plants/magnolia-grandiflora/"
+        field: "Whole Plant Traits > Leaf Characteristics"
+        value: "Broadleaf Evergreen"
+        accessed: "2026-07-21"
+        licence: "(c) NC State University; see SOURCES.md"
+- species_uuid: "1be2efa6-9fd6-545d-b8a0-bebf27a7943f"
+  scientific_name: "Schinus terebinthifolius"
+  common_name: "Brazilian Pepper"
+  sf_rank: 37
+  sf_tree_count: 1051
+  family: "Anacardiaceae"
+  leaf_retention: "evergreen"
+  curated: true
+  id_tips:
+    - icon: "leaf"
+      text: "Leaves divide into several oblong leaflets along a central stalk."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/1323"
+          api: "https://selectree.calpoly.edu/api/tree/detail/1323"
+          matched_taxon: "Schinus terebinthifolia"
+          fields:
+            - "leaf_form"
+            - "leaflet_shape"
+          values:
+            leaf_form: "Pinnately Compound"
+            leaflet_shape: "Oblong"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "fruit"
+      text: "Clusters of very small red berries."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/1323"
+          api: "https://selectree.calpoly.edu/api/tree/detail/1323"
+          matched_taxon: "Schinus terebinthifolia"
+          fields:
+            - "fruit_type"
+            - "fruit_color"
+            - "fruit_size"
+          values:
+            fruit_type: "Drupe"
+            fruit_color: "Red"
+            fruit_size: "Very Small"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "form"
+      text: "Broad low head, about as wide as it is tall."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/1323"
+          api: "https://selectree.calpoly.edu/api/tree/detail/1323"
+          matched_taxon: "Schinus terebinthifolia"
+          fields:
+            - "height_high"
+            - "width_high"
+          values:
+            height_high: 30
+            width_high: 30
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+  seasonal:
+    bloom_months: []
+    fall_color_months: []
+    fruit_months: []
+    new_growth_months: []
+  care_notes: []
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Schinus%20terebinthifolius"
+        query: "Schinus terebinthifolius"
+        field: "family"
+        value: "Anacardiaceae"
+        matched_name: "Schinus terebinthifolia Raddi"
+        match_type: "FUZZY"
+        match_confidence: 98
+        rank_matched: "SPECIES"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+        url: "https://selectree.calpoly.edu/tree-detail/1323"
+        api: "https://selectree.calpoly.edu/api/tree/detail/1323"
+        field: "foliage_type"
+        value: "Evergreen"
+        matched_taxon: "Schinus terebinthifolia"
+        match_method: "selectree_synonym_other_taxa"
+        accessed: "2026-07-21"
+        licence: "no explicit reuse licence published (see SOURCES.md)"
+- species_uuid: "fed5828b-ea45-5130-b371-f3f62955cf1e"
+  scientific_name: "Washingtonia robusta"
+  common_name: "Mexican Fan Palm"
+  sf_rank: 38
+  sf_tree_count: 1040
+  family: "Arecaceae"
+  leaf_retention: "evergreen"
+  curated: true
+  id_tips:
+    - icon: "leaf"
+      text: "Fan-shaped fronds up to five feet across, split about halfway to the base, with drooping tips."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/washingtonia-robusta/"
+          fields:
+            - "Leaf Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+    - icon: "trunk"
+      text: "Slender red-brown trunk ringed with old leaf scars, weathering to light grey."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/washingtonia-robusta/"
+          fields:
+            - "Bark Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+    - icon: "fruit"
+      text: "Many small black fruits; birds eat them and spread the seed."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/washingtonia-robusta/"
+          fields:
+            - "Fruit Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+  seasonal:
+    bloom_months: []
+    fall_color_months: []
+    fruit_months: []
+    new_growth_months: []
+  care_notes: []
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Washingtonia%20robusta"
+        query: "Washingtonia robusta"
+        field: "family"
+        value: "Arecaceae"
+        matched_name: "Washingtonia robusta H.Wendl."
+        match_type: "EXACT"
+        match_confidence: 100
+        rank_matched: "SPECIES"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+        url: "https://selectree.calpoly.edu/tree-detail/1471"
+        api: "https://selectree.calpoly.edu/api/tree/detail/1471"
+        field: "foliage_type"
+        value: "Evergreen"
+        matched_taxon: "Washingtonia robusta"
+        match_method: "selectree_name_exact"
+        accessed: "2026-07-21"
+        licence: "no explicit reuse licence published (see SOURCES.md)"
+      - source: "NC State Extension Gardener Plant Toolbox"
+        role: "corroborating"
+        url: "https://plants.ces.ncsu.edu/plants/washingtonia-robusta/"
+        field: "Whole Plant Traits > Leaf Characteristics"
+        value: "Broadleaf Evergreen"
+        accessed: "2026-07-21"
+        licence: "(c) NC State University; see SOURCES.md"
+- species_uuid: "455ef35e-d583-5aae-bbd9-fa6813411cfa"
+  scientific_name: "Eucalyptus polyanthemos"
+  common_name: "Silver Dollar Eucalyptus"
+  sf_rank: 39
+  sf_tree_count: 1012
+  family: "Myrtaceae"
+  leaf_retention: "evergreen"
+  curated: true
+  id_tips:
+    - icon: "leaf"
+      text: "Rounded silver-blue leaves, which is where the silver dollar name comes from."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/561"
+          api: "https://selectree.calpoly.edu/api/tree/detail/561"
+          matched_taxon: "Eucalyptus polyanthemos"
+          fields:
+            - "leaflet_shape"
+            - "foliage_growth_color"
+          values:
+            leaflet_shape: "Oval"
+            foliage_growth_color: "Bluish Green, Silver, Gray Green"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "bark"
+      text: "Grey bark on a tall upright trunk."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/561"
+          api: "https://selectree.calpoly.edu/api/tree/detail/561"
+          matched_taxon: "Eucalyptus polyanthemos"
+          fields:
+            - "bark_color"
+            - "height_high"
+          values:
+            bark_color: "Dark Gray or Light Gray"
+            height_high: 80
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "fruit"
+      text: "Small brown woody capsules."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/561"
+          api: "https://selectree.calpoly.edu/api/tree/detail/561"
+          matched_taxon: "Eucalyptus polyanthemos"
+          fields:
+            - "fruit_type"
+            - "fruit_color"
+            - "fruit_size"
+          values:
+            fruit_type: "Capsule"
+            fruit_color: "Brown"
+            fruit_size: "Small"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+  seasonal:
+    bloom_months: []
+    fall_color_months: []
+    fruit_months: []
+    new_growth_months: []
+  care_notes:
+    - month_range:
+        start: 1
+        end: 12
+      text: "Needs a large basin. Fast growing, high maintenance, and it drops limbs."
+      citations:
+        - source: "San Francisco Public Works / Urban Forestry Council, \"2024 Recommended Street Tree Species List\" (approved 27 August 2024)"
+          url: "https://sfpublicworks.org/sites/default/files/BUF/Street%20Tree%20Planting/AUGUST%202024%20Recommended%20Street%20Tree%20List%20Update.pdf"
+          accessed: "2026-07-21"
+          licence: "City and County of San Francisco publication; see SOURCES.md"
+          quotes: "Notes column: \"Needs a large basin; fast grower; high maintenance; drops limbs; pollinators.\""
+          supports: "care_note"
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Eucalyptus%20polyanthemos"
+        query: "Eucalyptus polyanthemos"
+        field: "family"
+        value: "Myrtaceae"
+        matched_name: "Eucalyptus polyanthemos Schauer"
+        match_type: "EXACT"
+        match_confidence: 100
+        rank_matched: "SPECIES"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+        url: "https://selectree.calpoly.edu/tree-detail/561"
+        api: "https://selectree.calpoly.edu/api/tree/detail/561"
+        field: "foliage_type"
+        value: "Evergreen"
+        matched_taxon: "Eucalyptus polyanthemos"
+        match_method: "selectree_name_exact"
+        accessed: "2026-07-21"
+        licence: "no explicit reuse licence published (see SOURCES.md)"
+- species_uuid: "ed867065-2def-5fd2-bccf-ea14330de3aa"
+  scientific_name: "Callistemon viminalis"
+  common_name: "Weeping Bottlebrush"
+  sf_rank: 40
+  sf_tree_count: 985
+  family: "Myrtaceae"
+  leaf_retention: "evergreen"
+  curated: true
+  id_tips:
+    - icon: "form"
+      text: "Weeping habit, with slender branches hanging from the top of the tree."
+      citations:
+        - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+          url: "https://selectree.calpoly.edu/tree-detail/241"
+          api: "https://selectree.calpoly.edu/api/tree/detail/241"
+          matched_taxon: "Callistemon viminalis"
+          fields:
+            - "tree_shape"
+          values:
+            tree_shape: "Rounded"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "no explicit reuse licence published (see SOURCES.md)"
+    - icon: "flower"
+      text: "Bright red flower spikes two to four inches long at and around the branch ends, with up to fifty flowers in a spike."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/callistemon-viminalis/"
+          fields:
+            - "Flower Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+    - icon: "leaf"
+      text: "Narrow leaves tapering to a sharp point, with many oil glands you can see against the light."
+      citations:
+        - source: "NC State Extension Gardener Plant Toolbox"
+          url: "https://plants.ces.ncsu.edu/plants/callistemon-viminalis/"
+          fields:
+            - "Leaf Description"
+          supports: "id_tip"
+          accessed: "2026-07-21"
+          licence: "(c) NC State University; see SOURCES.md"
+  seasonal:
+    bloom_months: [3, 4, 5, 6, 7]
+
+    fall_color_months: []
+    fruit_months: []
+    new_growth_months: []
+  care_notes: []
+  citations:
+    family:
+      - source: "GBIF Backbone Taxonomy"
+        api: "GET /v1/species/match"
+        url: "https://api.gbif.org/v1/species/match?kingdom=Plantae&name=Callistemon%20viminalis"
+        query: "Callistemon viminalis"
+        field: "family"
+        value: "Myrtaceae"
+        matched_name: "Callistemon viminalis (Sol. ex Gaertn.) G.Don"
+        match_type: "EXACT"
+        match_confidence: 99
+        rank_matched: "SPECIES"
+        accessed: "2026-07-21"
+        licence: "CC BY 4.0"
+    leaf_retention:
+      - source: "Cal Poly SelecTree (Urban Forest Ecosystems Institute)"
+        url: "https://selectree.calpoly.edu/tree-detail/241"
+        api: "https://selectree.calpoly.edu/api/tree/detail/241"
+        field: "foliage_type"
+        value: "Evergreen"
+        matched_taxon: "Callistemon viminalis"
+        match_method: "selectree_name_exact"
+        accessed: "2026-07-21"
+        licence: "no explicit reuse licence published (see SOURCES.md)"
+      - source: "NC State Extension Gardener Plant Toolbox"
+        role: "corroborating"
+        url: "https://plants.ces.ncsu.edu/plants/callistemon-viminalis/"
+        field: "Whole Plant Traits > Leaf Characteristics"
+        value: "Broadleaf Evergreen"
+        accessed: "2026-07-21"
+        licence: "(c) NC State University; see SOURCES.md"
+    seasonal.bloom_months:
+      - source: "iNaturalist observation annotations, month-of-year histogram"
+        url: "https://api.inaturalist.org/v1/observations/histogram?taxon_id=77977&place_id=14&interval=month_of_year&term_id=12&term_value_id=13"
+        taxon: "Melaleuca viminalis"
+        taxon_id: 77977
+        annotation: "Flowers and Fruits = Flowers"
+        place: "california"
+        observations: 105
+        monthly_counts: "1:4, 2:4, 3:11, 4:33, 5:21, 6:3, 7:11, 8:3, 9:4, 10:5, 11:4, 12:2"
+        derivation: "smallest run of consecutive months holding at least 70 percent of the annotated observations; emitted only when the run is 8 months or shorter"
+        accessed: "2026-07-21"
+        licence: "iNaturalist content is CC BY-NC by default; see SOURCES.md"

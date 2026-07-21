@@ -1,0 +1,13 @@
+# Dependencies for Tools/build_seed.py, Tools/verify_seed.py and Tools/validate_species.py
+#
+#   python3 -m venv .venv
+#   .venv/bin/pip install -r Tools/requirements.txt
+#   .venv/bin/python Tools/build_seed.py --fetch
+#
+# Everything else is Python 3.9+ stdlib (csv, sqlite3, json, urllib, uuid).
+# sqlite3 must be built with the R*Tree module (the macOS and iOS system
+# libsqlite3 both are; so is the CPython amalgamation).
+
+shapely==2.0.7   # point-in-polygon neighborhood stamping, STRtree index
+numpy==2.0.2     # shapely 2.x runtime dependency
+pyyaml==6.0.2    # Tools/validate_species.py reads Fixtures/species/*.yaml
