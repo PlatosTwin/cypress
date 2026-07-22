@@ -1,0 +1,140 @@
+//
+//  SpeciesGuide.swift
+//  Cypress — Data/API
+//
+//  The payload behind screen 07. `GET /species/{id}` hands back a `Species`, and a `Species` is a
+//  field-guide entry: what the tree is and how to recognise it. SCREENS.md 07 also draws *how
+//  common it is nearby* — two count cards and a list of individuals — and none of that is a
+//  property of the species record. So it travels here, beside it.
+//
+
+import Foundation
+
+/// Screen 07's payload: the species record, plus the two things about its population that the
+/// record cannot carry.
+///
+/// Every population number on this type is optional or a `Series`, and that is the point. A count
+/// is only printable when the read that produced it was a whole read (ERRATA E38); an
+/// implementation that cannot count has to say so rather than hand back a plausible zero.
+public struct SpeciesGuide: Sendable {
+
+    public let species: Species
+
+    /// 07 §5's `In San Francisco` card: inventoried trees of this species in the seeded city.
+    ///
+    /// A **total**, never a page — `COUNT(*)` over the whole inventory. `nil` means this
+    /// implementation did not count, which is not the same fact as `0`, and the card does not draw.
+    public let cityTreeCount: Int?
+
+    /// 07 §5's `Near you` card. `nil` when there is no location fix, because then there is no
+    /// "your area" for a count to be about (A4).
+    public let nearYou: SpeciesNeighborhoodCount?
+
+    /// 07 §6's `Nearby individuals`. Empty without a fix — a distance needs somewhere to be from.
+    public let nearby: Series<NearbySpeciesTree>
+
+    public init(
+        species: Species,
+        cityTreeCount: Int? = nil,
+        nearYou: SpeciesNeighborhoodCount? = nil,
+        nearby: Series<NearbySpeciesTree> = .empty
+    ) {
+        self.species = species
+        self.cityTreeCount = cityTreeCount
+        self.nearYou = nearYou
+        self.nearby = nearby
+    }
+}
+
+/// How many of this species stand in the neighbourhood the caller is standing in.
+///
+/// A4 fixes "your area" as an SF Analysis Neighborhood, and the seed carries those polygons and
+/// the city's own assignment of every tree to one. It does **not** fix how the app decides which
+/// polygon a person is in: A4's mechanism is "resident neighborhood inferred from most-visited,
+/// overridable in settings", and neither a visit history nor a settings screen exists yet.
+///
+/// So the neighbourhood is resolved through the nearest inventoried tree's `neighborhood_id` — the
+/// city's assignment, not a second point-in-polygon implementation of mine that could disagree with
+/// it. In a city with 195,309 inventoried trees the nearest one is metres away. This is a
+/// derivation and is named as one; see ERRATA (E44).
+public struct SpeciesNeighborhoodCount: Hashable, Sendable {
+    /// The SF Analysis Neighborhood name, as the seed spells it.
+    public let neighborhoodName: String
+    /// Inventoried trees of this species inside it. A total.
+    public let count: Int
+
+    public init(neighborhoodName: String, count: Int) {
+        self.neighborhoodName = neighborhoodName
+        self.count = count
+    }
+}
+
+/// One row of 07 §6 — an individual of this species, near the caller.
+public struct NearbySpeciesTree: Hashable, Sendable, Identifiable {
+
+    public var id: UUID { treeID }
+    public let treeID: UUID
+
+    /// The row's title. The tree's active name when it has one, else the street address the city
+    /// recorded (SCREENS.md 07 §6 draws `Great Highway at Judah`, an address).
+    ///
+    /// `nil` when the city recorded no address and nobody has named it. 94 of the 195,309 seeded
+    /// trees have no address, and a row for one of them draws no title rather than a placeholder.
+    public let title: String?
+
+    /// Great-circle metres from the caller. 07 §6 renders it as `220 m`.
+    public let distanceM: Double
+
+    /// Photographs on this tree. `nil` unless the whole series was read, so a page's size can never
+    /// reach the screen as a total (ERRATA E38).
+    public let photoCount: Int?
+
+    /// The most recent check-in's vitality class, if this tree has ever been checked in on.
+    /// 07 §6 renders it as the lowercased class label — `thriving`, `good`.
+    public let vitality: Vitality?
+
+    public init(
+        treeID: UUID,
+        title: String?,
+        distanceM: Double,
+        photoCount: Int?,
+        vitality: Vitality?
+    ) {
+        self.treeID = treeID
+        self.title = title
+        self.distanceM = distanceM
+        self.photoCount = photoCount
+        self.vitality = vitality
+    }
+}
+
+/// The two numbers screen 07 §6 needs and SCREENS.md does not give.
+///
+/// Both are **NOT SPECIFIED**. The section is drawn as a finished list with no query behind it, so
+/// these are the narrowest readings of the drawing rather than a design: the mock shows exactly two
+/// rows, and its farther row is `400 m`, so the search has to reach at least that far. Recorded in
+/// ERRATA (E43) rather than settled quietly here.
+public enum SpeciesGuideLimits {
+    /// How far `Nearby individuals` looks. 500 m clears the `400 m` row the mock draws.
+    public static let nearbyRadiusM: Double = 500
+    /// How many rows it draws. Two, as drawn.
+    public static let nearbyRowLimit = 2
+}
+
+// MARK: - Default implementation
+
+public extension CypressAPI {
+
+    /// The field-guide entry with no population facts attached.
+    ///
+    /// A default rather than a bare requirement because `speciesGuide` is the only method on the
+    /// protocol whose answer an implementation may legitimately not have any of: `RemoteAPI` has no
+    /// service to ask, and a preview double stands the screen up from a fixture. Both would
+    /// otherwise have to write this same body, and the failure mode of writing it badly — returning
+    /// `0` instead of "did not count" — is exactly what screen 07 must never render.
+    ///
+    /// `LocalAPI` overrides it, because `LocalAPI` has the inventory.
+    func speciesGuide(id: UUID, near coordinate: Coordinate?) async throws -> SpeciesGuide {
+        SpeciesGuide(species: try await species(id: id))
+    }
+}

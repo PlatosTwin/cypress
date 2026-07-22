@@ -104,6 +104,110 @@ public struct SpeciesQueries {
         return try statement.fetchAll { try Self.decodeIfPresent($0) }.compactMap { $0 }
     }
 
+    // MARK: - How common it is nearby (screen 07 §5)
+
+    /// How many trees of this species the city inventory holds — screen 07 §5's `In San Francisco`
+    /// card.
+    ///
+    /// ```
+    /// SEARCH s USING COVERING INDEX sqlite_autoindex_species_1 (uuid=?)
+    /// SEARCH t USING COVERING INDEX idx_trees_species_current (species_current=?)
+    /// ```
+    ///
+    /// A `COUNT(*)` over the whole inventory, which is what makes the number printable at all: the
+    /// card says "in San Francisco", so anything short of the whole city is the wrong number
+    /// wearing the right label (ERRATA E38). It is not a count of user actions and D1 does not
+    /// reach it — it counts trees the city planted, most of them before the app existed.
+    ///
+    /// Vacant planting sites fall out for free: 12,518 of them carry no `species_current` at all
+    /// (ERRATA E11), so a species-scoped count never includes a basin with nothing in it.
+    public func cityTreeCount(speciesID: UUID, connection: SQLiteConnection) throws -> Int {
+        let sql = """
+        SELECT count(*) AS species_tree_count
+          FROM \(seed).trees t
+          JOIN \(seed).species s ON s.id = t.species_current
+         WHERE s.\(schema.speciesIdentityColumn) = :uuid COLLATE NOCASE
+           AND t.deleted_at IS NULL
+        """
+        let statement = try connection.cachedStatement(sql)
+        _ = try statement.bind(speciesID.uuidString, forName: ":uuid")
+        return try statement.fetchOne { try $0.int("species_tree_count") } ?? 0
+    }
+
+    /// The same count restricted to one neighbourhood — 07 §5's `Near you` card.
+    ///
+    /// Takes the neighbourhood `resolveNeighborhood(near:)` found rather than a coordinate, so the
+    /// two decisions stay separable: which area you are in, and how many of these grow in it.
+    public func neighborhoodTreeCount(
+        speciesID: UUID,
+        neighborhoodID: Int,
+        connection: SQLiteConnection
+    ) throws -> Int {
+        let sql = """
+        SELECT count(*) AS species_tree_count
+          FROM \(seed).trees t
+          JOIN \(seed).species s ON s.id = t.species_current
+         WHERE s.\(schema.speciesIdentityColumn) = :uuid COLLATE NOCASE
+           AND t.neighborhood_id = :neighborhood
+           AND t.deleted_at IS NULL
+        """
+        let statement = try connection.cachedStatement(sql)
+        _ = try statement.bind([":uuid": speciesID.uuidString, ":neighborhood": neighborhoodID])
+        return try statement.fetchOne { try $0.int("species_tree_count") } ?? 0
+    }
+
+    /// Which SF Analysis Neighborhood a coordinate sits in — A4's unit of "your area".
+    ///
+    /// ```
+    /// SEARCH t USING INDEX idx_trees_lat_lon (lat>? AND lat<?)
+    /// SEARCH n USING INTEGER PRIMARY KEY (rowid=?)
+    /// ```
+    ///
+    /// **Resolved through the nearest inventoried tree, not through the polygon.** The seed carries
+    /// `neighborhoods.geom_geojson`, so a point-in-polygon test is available in principle; what it
+    /// would produce is a *second* answer to a question the seed has already answered 195,309 times
+    /// — the city assigned every tree to a neighbourhood at ingest, and `trees.neighborhood_id` is
+    /// that assignment. A ray-cast of mine that disagreed with it on a boundary block would make
+    /// the count card and the map disagree about where you are, for no gain. See ERRATA (E44).
+    ///
+    /// `nil` when no inventoried tree is within `radiusM` — outside SF, or in the middle of the
+    /// bay. Then there is no area, and the `Near you` card does not draw at all.
+    public func resolveNeighborhood(
+        near coordinate: Coordinate,
+        radiusM: Double = 400,
+        connection: SQLiteConnection
+    ) throws -> (id: Int, name: String)? {
+        let bounds = BoundingBox(around: coordinate, radiusM: radiusM)
+        // The same squared-distance ordering `TreeQueries.nearest` uses: no sqrt, no trigonometry
+        // per row, and monotonically identical to true distance over a box this size.
+        let longitudeWeight = pow(cos(coordinate.latitude * .pi / 180), 2)
+
+        let sql = """
+        SELECT t.neighborhood_id AS neighborhood_id, n.name AS neighborhood_name
+          FROM \(seed).trees t
+          JOIN \(seed).neighborhoods n ON n.id = t.neighborhood_id
+         WHERE t.lat BETWEEN :minLat AND :maxLat
+           AND t.lon BETWEEN :minLon AND :maxLon
+           AND t.deleted_at IS NULL
+         ORDER BY (t.lat - :lat) * (t.lat - :lat)
+                + (t.lon - :lon) * (t.lon - :lon) * :lonWeight
+         LIMIT 1
+        """
+        let statement = try connection.cachedStatement(sql)
+        _ = try statement.bind([
+            ":minLat": bounds.minLatitude,
+            ":maxLat": bounds.maxLatitude,
+            ":minLon": bounds.minLongitude,
+            ":maxLon": bounds.maxLongitude,
+            ":lat": coordinate.latitude,
+            ":lon": coordinate.longitude,
+            ":lonWeight": longitudeWeight
+        ])
+        return try statement.fetchOne { row in
+            (id: try row.int("neighborhood_id"), name: try row.string("neighborhood_name"))
+        }
+    }
+
     // MARK: - Projection and decoding
 
     /// The `species` projection, aliased so the decoder is shape-independent. Every consumer of

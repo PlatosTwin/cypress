@@ -200,10 +200,17 @@ public struct TreeQueries {
     ///
     /// `LIMIT` runs before the re-check, which is safe **because the ordering is by distance**: any
     /// row the circle rejects is farther than every row it keeps.
+    ///
+    /// `speciesID` narrows the answer to one species — screen 07 §6's `Nearby individuals`, which
+    /// is the same question the shortlist asks with the species already known. It is an optional
+    /// parameter rather than a second query because the box, the ordering, the `LIMIT`-then-recheck
+    /// and the exact-distance pass are all the same work, and a copy of them would be a second
+    /// place for the ERRATA E35 bug to come back.
     public func nearest(
         to coordinate: Coordinate,
         radiusM: Double,
         limit: Int,
+        speciesID: UUID? = nil,
         strategy: SpatialIndexStrategy = .default,
         connection: SQLiteConnection
     ) throws -> [NearbyTree] {
@@ -212,13 +219,20 @@ public struct TreeQueries {
         // the two terms comparable before they are added.
         let longitudeWeight = pow(cos(coordinate.latitude * .pi / 180), 2)
 
+        // A `LEFT JOIN` with a predicate on the right-hand table is an inner join, which is what
+        // narrowing to one species means: a tree the city recorded no species for is not one of
+        // them.
+        let speciesPredicate = speciesID == nil
+            ? ""
+            : "AND s.\(schema.speciesIdentityColumn) = :speciesUUID COLLATE NOCASE"
+
         let sql = """
         SELECT \(treeColumns),
                s.\(schema.speciesIdentityColumn) AS species_uuid,
                s.scientific_name AS species_scientific_name,
                s.common_name AS species_common_name,
                s.id_tips AS species_id_tips
-        \(bboxSource(strategy, joins: speciesJoin, extraPredicates: "AND t.deleted_at IS NULL"))
+        \(bboxSource(strategy, joins: speciesJoin, extraPredicates: "AND t.deleted_at IS NULL \(speciesPredicate)"))
          ORDER BY (t.lat - :lat) * (t.lat - :lat)
                 + (t.lon - :lon) * (t.lon - :lon) * :lonWeight
          LIMIT :limit
@@ -232,6 +246,9 @@ public struct TreeQueries {
             ":lonWeight": longitudeWeight,
             ":limit": limit
         ])
+        if let speciesID {
+            _ = try statement.bind(speciesID.uuidString, forName: ":speciesUUID")
+        }
 
         let rows = try statement.fetchAll { row -> NearbyTree in
             let tree = try Self.decodeTree(row)
