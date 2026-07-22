@@ -15,12 +15,34 @@
 //  the SwiftUI environment — that means it is also correct inside `UIViewRepresentable`
 //  (MapKit overlays, camera previews) where `@Environment(\.colorScheme)` is not available.
 //
-//  Where SCREENS.md documents no dark counterpart for a token, the light value is used in
-//  both schemes and the line is marked `// TODO: no dark value specified in SCREENS.md`.
-//  No dark value is invented here.
+//  Every token declares where its dark value came from, and the constructor is the declaration:
+//
+//      dynamic(light:dark:)   the pair is transcribed from SCREENS.md — SPECIFIED.
+//      derived(light:dark:)   the dark value was computed from the documented pairs — DERIVED.
+//      escalated(_:)          the transform was run and rejected; still light-only, reason inline.
+//      lightOnly(_:)          the token has no second appearance by definition (see below).
+//
+//  `derived` and `escalated` are both listed in `reviewTokens`, which TokenGallery renders as
+//  its first two sections, so design review of ERRATA E8 is one screen rather than an audit of
+//  the whole palette. Promoting a derived token to specified is one line: `derived` -> `dynamic`.
+//  `DerivedTokenTests` fails if the registry and the live tokens disagree.
+//
+//  `lightOnly` is now reserved for tokens that genuinely have no second appearance: colour that
+//  rides on imagery, colour on a screen that is dark regardless of the system setting (04),
+//  the spec document's own page chrome, W1 web-only surfaces, and the six brand hues (whose
+//  scheme-dependent roles are carried by the paired role tokens further down).
 //
 //  Screen 04 (camera) and D1–D3 are dark regardless of the system setting. Those views use
 //  `CypressColor.Dark.*`, which is the flat, non-resolving dark palette.
+//
+//  How the derived values were obtained is documented in ERRATA E8. In one paragraph: the 55
+//  documented pairs were analysed in OKLCh, which separates the three things a designer actually
+//  moves — lightness, chroma, hue. Lightness is repositioned per *role* (a border does not
+//  invert like a background); chroma is kept where there is chroma to keep and floored at
+//  ~0.025 where there is not, because the dark palette is green-tinted black rather than grey
+//  (D2's own caption says so); hue is preserved above C≈0.06 and pulled to the house green
+//  ~150° below C≈0.02. The transform is a function of role AND value, never of value alone:
+//  `#FFFFFF` has three documented dark counterparts and `#77836F` has two.
 //
 
 import SwiftUI
@@ -67,37 +89,60 @@ enum CypressColor {
         })
     }
 
-    /// A token SCREENS.md §1 gives for light only. Resolves to the same value in both schemes
-    /// deliberately; see the file header. Every call site carries the TODO marker.
+    /// A token with no second appearance by definition — it rides on imagery, it lives on a
+    /// screen that is dark regardless of the system setting, it belongs to the spec document or
+    /// to W1, or it is a raw brand hue whose scheme-dependent roles are carried by the paired
+    /// role tokens. Resolves to the same value in both schemes deliberately.
     static func lightOnly(_ hex: UInt32, alpha: Double = 1) -> Color {
+        Color(cypressHex: hex, alpha: alpha)
+    }
+
+    /// A pair whose dark half was **derived** from the documented pairs, not transcribed
+    /// (ERRATA E8, ROADMAP §3). Identical in behaviour to `dynamic` — the difference is the
+    /// claim being made, and that claim is what `reviewTokens` collects for design review.
+    ///
+    /// When a designer corrects one of these, change `derived` to `dynamic` and drop its line
+    /// from `reviewTokens`. The test enforces that the two stay in step.
+    static func derived(
+        light: UInt32,
+        dark: UInt32,
+        lightAlpha: Double = 1,
+        darkAlpha: Double = 1
+    ) -> Color {
+        dynamic(light: light, dark: dark, lightAlpha: lightAlpha, darkAlpha: darkAlpha)
+    }
+
+    /// A token the transform was run on and **rejected** — it stays light-only, and the reason
+    /// is on the line above it. Behaves exactly like `lightOnly`; the difference, again, is the
+    /// claim. These are the tokens a designer must answer rather than merely check.
+    static func escalated(_ hex: UInt32, alpha: Double = 1) -> Color {
         Color(cypressHex: hex, alpha: alpha)
     }
 
     // MARK: - §1.1 Brand palette ("Palette · from the tree itself")
     //
-    // Six named brand hues. SCREENS.md gives no dark counterpart for the hues themselves;
-    // dark screens re-derive their accents from the `dark.accent.*` rows (see `rolePairs` below).
+    // Six named brand hues. SCREENS.md gives no dark counterpart for the hues themselves, and
+    // none is derived for them: a brand hue has no single dark answer. D1 proves it — the same
+    // `#2F6B4F` becomes `#6FAE8C` as a pin, `#8EC3A5` as a selection, and stays `#2F6B4F` as the
+    // "You" avatar fill. The scheme-dependent roles are carried by the paired role tokens
+    // (`ctaFill`, `pinFill`, `selectionFill`, `accentAmber`), which is where a caller belongs.
 
     /// Cypress Deep `#1D4634` — primary buttons, active nav, cluster badges, dark header.
-    // TODO: no dark value specified in SCREENS.md
     static let cypressDeep = lightOnly(0x1D4634)
     /// Swatch text color that rides on Cypress Deep — `#DFE8D6`.
     static let onCypressDeep = lightOnly(0xDFE8D6)
 
     /// Canopy `#2F6B4F` — links, selection borders, pins, selected chips.
-    // TODO: no dark value specified in SCREENS.md
     static let canopy = lightOnly(0x2F6B4F)
     /// Swatch text color that rides on Canopy — `#E8F0E4`.
     static let onCanopy = lightOnly(0xE8F0E4)
 
     /// New Growth `#4E8F6A` — secondary accents, avatars, dark-mode CTA fill on 04.
-    // TODO: no dark value specified in SCREENS.md
     static let newGrowth = lightOnly(0x4E8F6A)
     /// Swatch text color that rides on New Growth — `#10281C`.
     static let onNewGrowth = lightOnly(0x10281C)
 
     /// Bark `#7A4F33` — third-series charts, avatar accent.
-    // TODO: no dark value specified in SCREENS.md
     static let bark = lightOnly(0x7A4F33)
     /// Swatch text color that rides on Bark — `#F2E6DA`.
     static let onBark = lightOnly(0xF2E6DA)
@@ -114,7 +159,6 @@ enum CypressColor {
     // MARK: - §1.2 Surfaces
 
     /// `page.parchment` `#EBE8DC` — `body` background of the spec page itself (not app UI).
-    // TODO: no dark value specified in SCREENS.md
     static let pageParchment = lightOnly(0xEBE8DC)
 
     /// `surface.screen` `#F5F6EF` ↔ `dark.bg.screen` `#0E1712` — mobile screen background.
@@ -123,16 +167,18 @@ enum CypressColor {
     /// `surface.card` `#FFFFFF` ↔ `dark.surface.card` `#18251D` — cards, stat cards, list rows.
     static let surfaceCard = dynamic(light: 0xFFFFFF, dark: 0x18251D)
 
-    /// `surface.sheet` `#FDFDF8` — bottom sheets (09, 10, 15).
-    // TODO: no dark value specified in SCREENS.md
-    static let surfaceSheet = lightOnly(0xFDFDF8)
+    /// `surface.sheet` `#FDFDF8` ↔ **derived** `#18251D` — bottom sheets (09, 10, 15).
+    ///
+    /// The headline glare in ERRATA E8: a near-white sheet over a dimmed dark screen. Snapped to
+    /// `dark.surface.card`, which is where the documented transform puts every raised plane —
+    /// `surface.card`, the hero back circle, the search bar and the glass filter chip all land on
+    /// `#18251D` from four different light values. A sheet is a raised plane.
+    static let surfaceSheet = derived(light: 0xFDFDF8, dark: 0x18251D)
 
     /// `surface.warmPanel` `#F7F5EC` — spec-page palette/type panels (not app UI).
-    // TODO: no dark value specified in SCREENS.md
     static let surfaceWarmPanel = lightOnly(0xF7F5EC)
 
     /// `surface.web` `#FBFBF5` — W1 web header + fact column. W1 is out of scope for iOS.
-    // TODO: no dark value specified in SCREENS.md
     static let surfaceWeb = lightOnly(0xFBFBF5)
 
     /// `surface.mapPaper` `#E9E5D4` ↔ `dark.bg.map` `#141E16` — map canvas ground (01, 15).
@@ -144,23 +190,28 @@ enum CypressColor {
     /// `surface.mapStreetBand` `#FAF7EC` ↔ `dark.map.street` `#232F24` — named street bands on 01.
     static let surfaceMapStreetBand = dynamic(light: 0xFAF7EC, dark: 0x232F24)
 
-    /// `surface.routeMap` `#E4E9D3` — mini route map on 18.
-    // TODO: no dark value specified in SCREENS.md
-    static let surfaceRouteMap = lightOnly(0xE4E9D3)
-    /// `surface.routeMap` border `#DBE0CB`.
-    // TODO: no dark value specified in SCREENS.md
-    static let borderRouteMap = lightOnly(0xDBE0CB)
-    /// `surface.routeMap` grid `#F4F1E2`.
-    // TODO: no dark value specified in SCREENS.md
-    static let surfaceRouteMapGrid = lightOnly(0xF4F1E2)
+    /// `surface.routeMap` `#E4E9D3` ↔ **derived** `#141E16` — mini route map on 18.
+    ///
+    /// 18's map is the same object as 01's at a smaller size, so it takes 01's dark ground
+    /// (`dark.bg.map`) rather than a transformed value. Same for its grid and its border below.
+    static let surfaceRouteMap = derived(light: 0xE4E9D3, dark: 0x141E16)
+    /// `surface.routeMap` border `#DBE0CB` ↔ **derived** `dark.border.alt` `#2B3A2C` (D1's map border).
+    static let borderRouteMap = derived(light: 0xDBE0CB, dark: 0x2B3A2C)
+    /// `surface.routeMap` grid `#F4F1E2` ↔ **derived** `dark.map.grid` `#1C2A1F`.
+    static let surfaceRouteMapGrid = derived(light: 0xF4F1E2, dark: 0x1C2A1F)
 
-    /// `surface.emptyThumb` `#FAFBF4` — cold-start empty photo well (14).
-    // TODO: no dark value specified in SCREENS.md
-    static let surfaceEmptyThumb = lightOnly(0xFAFBF4)
+    /// `surface.emptyThumb` `#FAFBF4` ↔ **derived** `#1F2E22` — cold-start empty photo well (14).
+    ///
+    /// A recess inside a card, which is what `dark.surface.thumb` is for: D2 puts the activity
+    /// thumb base there.
+    static let surfaceEmptyThumb = derived(light: 0xFAFBF4, dark: 0x1F2E22)
 
-    /// `surface.skeleton` `#E3E8D9` — skeleton blocks behind sheets (09, 10).
-    // TODO: no dark value specified in SCREENS.md
-    static let surfaceSkeleton = lightOnly(0xE3E8D9)
+    /// `surface.skeleton` `#E3E8D9` ↔ **derived** `#27352B` — skeleton blocks behind sheets (09, 10).
+    ///
+    /// The strongest derivation in the set: `#E3E8D9` is the *same light hex* as `border.cool`,
+    /// whose dark counterpart `#27352B` is documented. The role differs (a fill, not a hairline),
+    /// so it is derived rather than transcribed, but the number is the designer's own.
+    static let surfaceSkeleton = derived(light: 0xE3E8D9, dark: 0x27352B)
 
     // MARK: - §1.2 Borders and hairlines
 
@@ -168,74 +219,97 @@ enum CypressColor {
     static let borderCool = dynamic(light: 0xE3E8D9, dark: 0x27352B)
 
     /// `border.warm` `#DDD9C9` — spec-page panel border (not app UI).
-    // TODO: no dark value specified in SCREENS.md
     static let borderWarm = lightOnly(0xDDD9C9)
 
     /// `border.hairline` `#D8D4C4` — spec-page header/footer rule (not app UI).
-    // TODO: no dark value specified in SCREENS.md
     static let borderHairline = lightOnly(0xD8D4C4)
 
-    /// `border.dashed` `#C9D1BC` — optional-field dashed wells (05, 06, 09).
-    // TODO: no dark value specified in SCREENS.md
-    static let borderDashed = lightOnly(0xC9D1BC)
+    /// `border.dashed` `#C9D1BC` ↔ **derived** `#353F34` — optional-field dashed wells (05, 06, 09).
+    ///
+    /// ERRATA E8 names this one: light-only, it was the brightest element on the dark check-in
+    /// screen — a hairline outshining the mint CTA. D3 could not settle it, because D3 drops the
+    /// optional well entirely. Derived from the border rule fitted on the three documented border
+    /// pairs (`border.cool`, the park inset ring, the street-band ring), which reproduces all
+    /// three to within 0.005 in OKLab. It lands one step above `dark.border`, which is exactly
+    /// where it sits relative to `border.cool` in light.
+    static let borderDashed = derived(light: 0xC9D1BC, dark: 0x353F34)
 
-    /// `border.dashedStrong` `#C4CEB4` — empty photo well (14), `2px dashed`.
-    // TODO: no dark value specified in SCREENS.md
-    static let borderDashedStrong = lightOnly(0xC4CEB4)
+    /// `border.dashedStrong` `#C4CEB4` ↔ **derived** `#364133` — empty photo well (14), `2px dashed`.
+    /// Same border rule; keeps its one-step lead over `border.dashed`.
+    static let borderDashedStrong = derived(light: 0xC4CEB4, dark: 0x364133)
 
-    /// `border.sheetGrabber` `#DDE2D2` — 40×5 sheet grabber pill.
-    // TODO: no dark value specified in SCREENS.md
-    static let borderSheetGrabber = lightOnly(0xDDE2D2)
+    /// `border.sheetGrabber` `#DDE2D2` ↔ **derived** `dark.border.alt` `#2B3A2C` — 40×5 grabber pill.
+    /// The border rule lands within 0.014 of the documented `#2B3A2C`, so the documented hex is
+    /// used rather than a minted one.
+    static let borderSheetGrabber = derived(light: 0xDDE2D2, dark: 0x2B3A2C)
 
     /// `border.web.row` `#E9ECDE` — W1 fact-row separators. W1 is out of scope for iOS.
-    // TODO: no dark value specified in SCREENS.md
     static let borderWebRow = lightOnly(0xE9ECDE)
 
-    /// `border.calloutGreen` `#DFE6CD` — green callout border.
-    // TODO: no dark value specified in SCREENS.md
-    static let borderCalloutGreen = lightOnly(0xDFE6CD)
+    /// `border.calloutGreen` `#DFE6CD` ↔ `#27352B` — green callout border.
+    ///
+    /// §1.2 gives no dark counterpart; D2's delta list does, in prose: "Recognize-it callout:
+    /// fill `#1A241A`, border `1px #27352B`". Same miss as `text.faintAlt` (E27) and the taped
+    /// badge (E8) — a dark value stated in a screen's prose and absent from the table.
+    static let borderCalloutGreen = dynamic(light: 0xDFE6CD, dark: 0x27352B)
 
     /// `border.calloutGradient` `#D9E3C8` — "In July" / "New species!" gradient callout border.
-    // TODO: no dark value specified in SCREENS.md
-    static let borderCalloutGradient = lightOnly(0xD9E3C8)
+    ///
+    /// **Escalated.** It bounds `calloutGradient`, which has no dark counterpart anywhere in
+    /// SCREENS.md and is not derivable — a two-stop gradient is a drawing, not a value. Darkening
+    /// the border while the fill it bounds stays light would be worse than leaving both alone.
+    /// Moves the day the gradient does.
+    static let borderCalloutGradient = escalated(0xD9E3C8)
 
-    /// `border.amberSoft` `#EBD3A8` — amber pill borders.
-    // TODO: no dark value specified in SCREENS.md
-    static let borderAmberSoft = lightOnly(0xEBD3A8)
+    /// `border.amberSoft` `#EBD3A8` ↔ **derived** `dark.accent.amber` `#D99A4E` — amber pill borders.
+    ///
+    /// The dark palette contains exactly two ambers: `#D99A4E` for the mark and `#2E271A` for the
+    /// ground it sits on. D1 maps the amber pin onto the first and D2 maps the `est.` badge onto
+    /// both, so every amber in the dark is one of the two. The border rule was run here and
+    /// rejected: fitted on neutral hairlines it extrapolates a chromatic amber to `#44361A`, a
+    /// brown 0.40 away in OKLab from the only amber the dark palette has — see ERRATA E8.
+    ///
+    /// The cost of the collapse, and the question it hands back: light has three amber border
+    /// weights (`soft` / `strong` / `mid`) and dark now has one, so the amber pill, the selected
+    /// amber chip and the 311 panel no longer differ by border weight after dark.
+    static let borderAmberSoft = derived(light: 0xEBD3A8, dark: 0xD99A4E)
 
-    /// `border.amberMid` `#D9A05B` — attention card border (`1.5px`).
-    // TODO: no dark value specified in SCREENS.md
-    static let borderAmberMid = lightOnly(0xD9A05B)
+    /// `border.amberMid` `#D9A05B` ↔ **derived** `dark.accent.amber` `#D99A4E` — attention card
+    /// border (`1.5px`). This one barely moves: `#D9A05B` is 0.016 from `#D99A4E` in OKLab, so
+    /// the light attention border was already sitting on the dark amber.
+    static let borderAmberMid = derived(light: 0xD9A05B, dark: 0xD99A4E)
 
-    /// `border.amberStrong` `#E0B070` — 311 hazard panel border (`1.5px`).
-    // TODO: no dark value specified in SCREENS.md
-    static let borderAmberStrong = lightOnly(0xE0B070)
+    /// `border.amberStrong` `#E0B070` ↔ **derived** `dark.accent.amber` `#D99A4E` — 311 hazard
+    /// panel border (`1.5px`). See `borderAmberSoft`.
+    static let borderAmberStrong = derived(light: 0xE0B070, dark: 0xD99A4E)
 
-    /// `border.memorial` `#C4C8B8` — memorial banner border (`1.5px`).
-    // TODO: no dark value specified in SCREENS.md
-    static let borderMemorial = lightOnly(0xC4C8B8)
+    /// `border.memorial` `#C4C8B8` ↔ **derived** `#39423A` — memorial banner border (`1.5px`).
+    /// Border rule; keeps its one step above the banner fill.
+    static let borderMemorial = derived(light: 0xC4C8B8, dark: 0x39423A)
 
-    /// `border.account` `#D8DECB` — account sheet secondary buttons (`1.5px`).
-    // TODO: no dark value specified in SCREENS.md
-    static let borderAccount = lightOnly(0xD8DECB)
+    /// `border.account` `#D8DECB` ↔ **derived** `dark.border.alt` `#2B3A2C` — account sheet
+    /// secondary buttons (`1.5px`). Border rule, within 0.012 of the documented hex.
+    static let borderAccount = derived(light: 0xD8DECB, dark: 0x2B3A2C)
 
-    /// `border.shareCard` `#E0DDC9` — share preview card.
-    // TODO: no dark value specified in SCREENS.md
-    static let borderShareCard = lightOnly(0xE0DDC9)
+    /// `border.shareCard` `#E0DDC9` ↔ **derived** `dark.border.alt` `#2B3A2C` — share preview card.
+    /// Border rule, within 0.011 of the documented hex.
+    static let borderShareCard = derived(light: 0xE0DDC9, dark: 0x2B3A2C)
 
-    /// `border.pinRing` `rgba(29,70,52,.14)` — gradient thumbnail hairline. (29,70,52) is Cypress Deep.
-    // TODO: no dark value specified in SCREENS.md
-    static let borderPinRing = lightOnly(0x1D4634, alpha: 0.14)
+    /// `border.pinRing` `rgba(29,70,52,.14)` ↔ `#2B3A2C` — gradient thumbnail hairline.
+    ///
+    /// §1.2 gives no dark counterpart; D1's delta table does: "Card thumb … border `#2B3A2C`".
+    /// The dark value is opaque, exactly as `searchBorder` and `tabBarTopBorder` already are.
+    static let borderPinRing = dynamic(light: 0x1D4634, dark: 0x2B3A2C, lightAlpha: 0.14)
 
-    /// `border.glass` `rgba(29,70,52,.10)` — search bar edge.
-    // TODO: no dark value specified in SCREENS.md
-    static let borderGlassSearch = lightOnly(0x1D4634, alpha: 0.10)
-    /// `border.glass` `rgba(29,70,52,.12)` — filter chip edge.
-    // TODO: no dark value specified in SCREENS.md
-    static let borderGlassChip = lightOnly(0x1D4634, alpha: 0.12)
-    /// `border.glass` `rgba(29,70,52,.08)` — bottom bar top edge.
-    // TODO: no dark value specified in SCREENS.md
-    static let borderGlassBottomBar = lightOnly(0x1D4634, alpha: 0.08)
+    /// `border.glass` `rgba(29,70,52,.10)` ↔ `#2B3A2C` — search bar edge.
+    /// D1: "Search bar … `rgba(24,37,29,.94)`, border `#2B3A2C`".
+    static let borderGlassSearch = dynamic(light: 0x1D4634, dark: 0x2B3A2C, lightAlpha: 0.10)
+    /// `border.glass` `rgba(29,70,52,.12)` ↔ `#2B3A2C` — filter chip edge.
+    /// D1: "Filter chip off … `rgba(24,37,29,.92)`, border `#2B3A2C`".
+    static let borderGlassChip = dynamic(light: 0x1D4634, dark: 0x2B3A2C, lightAlpha: 0.12)
+    /// `border.glass` `rgba(29,70,52,.08)` ↔ `#26332A` — bottom bar top edge.
+    /// D1: "Tab bar … `rgba(16,24,18,.95)`, top border `#26332A`".
+    static let borderGlassBottomBar = dynamic(light: 0x1D4634, dark: 0x26332A, lightAlpha: 0.08)
 
     // MARK: - §1.2 Text
 
@@ -259,8 +333,16 @@ enum CypressColor {
     static let textFaintAlt = dynamic(light: 0x77836F, dark: 0x5F6F61)
 
     /// `text.onDark` `#FFFFFF` — on Cypress Deep / Canopy fills.
-    /// Identical in both schemes by definition: it rides on a dark fill, not on the page.
-    static let textOnDark = lightOnly(0xFFFFFF)
+    ///
+    /// **Escalated.** `#FFFFFF` is the clearest counterexample to a value-only transform: it has
+    /// three documented dark counterparts — `#0E1712` under `ctaLabel`, `#18251D` under
+    /// `surfaceCard`, `#DFE8D6` under `tabAvatarLetter` — 0.73 apart in OKLab. Which one applies
+    /// depends on whether the fill beneath moves, and this token's three call sites disagree:
+    /// the cluster count rides on `ctaFill` (D1 documents `#0E1712` for it), the phenology chip
+    /// rides on `selectionFill` (for which `onSelectionFill` already exists), and the avatar
+    /// letter rides on a fill D1 documents as unchanged. The fix is at those call sites, not
+    /// here, so no dark value is put on the token.
+    static let textOnDark = escalated(0xFFFFFF)
 
     /// `text.onPhoto` `#EAF2E6` (03) — text over a hero gradient.
     /// The onPhoto family is scheme-independent by definition: it rides on imagery.
@@ -286,14 +368,13 @@ enum CypressColor {
     /// Thriving badge text — light `#28623F` ↔ dark `#8EC3A5`.
     static let thrivingBadgeText = dynamic(light: 0x28623F, dark: 0x8EC3A5)
 
-    /// `taped` method badge fill `#E2EFE2` (03, 11, W1).
-    // TODO: no dark value specified in SCREENS.md
+    /// `taped` method badge fill `#E2EFE2` ↔ `#1F3A2C` (03, 11, W1).
+    ///
     /// SCREENS.md D2 states it outright: "both method badges keep their meaning in the dark …
     /// `taped` → `#8EC3A5` on `#1F3A2C`" — the same pair as the thriving badge. Transcribed as
     /// light-only originally; two agents independently hit it rendering screen D2.
     static let tapedBadgeFill = dynamic(light: 0xE2EFE2, dark: 0x1F3A2C)
-    /// `taped` method badge text `#28623F`.
-    // TODO: no dark value specified in SCREENS.md
+    /// `taped` method badge text `#28623F` ↔ `#8EC3A5`. Same D2 sentence.
     static let tapedBadgeText = dynamic(light: 0x28623F, dark: 0x8EC3A5)
 
     /// `est.` / `estimated` badge fill `#F1EAD8` ↔ `dark.accent.amberBg` `#2E271A`.
@@ -301,99 +382,113 @@ enum CypressColor {
     /// `est.` / `estimated` badge text `#8A6A2A` ↔ `dark.accent.amber` `#D99A4E`.
     static let estimatedBadgeText = dynamic(light: 0x8A6A2A, dark: 0xD99A4E)
 
-    /// `city record` badge fill `#EAF0E2` (14).
-    // TODO: no dark value specified in SCREENS.md
-    static let cityRecordBadgeFill = lightOnly(0xEAF0E2)
-    /// `city record` badge text `#41522F`.
-    // TODO: no dark value specified in SCREENS.md
-    static let cityRecordBadgeText = lightOnly(0x41522F)
+    /// `city record` badge fill `#EAF0E2` ↔ **derived** `#1F3A2C` (14).
+    ///
+    /// A green badge on a green badge fill, which the palette has already answered twice: the
+    /// thriving badge and the `taped` badge both go `#E2EFE2`/`#28623F` → `#1F3A2C`/`#8EC3A5`.
+    /// `#EAF0E2`/`#41522F` is the same badge one shade apart, so it takes the same dark pair
+    /// rather than a transformed one.
+    static let cityRecordBadgeFill = derived(light: 0xEAF0E2, dark: 0x1F3A2C)
+    /// `city record` badge text `#41522F` ↔ **derived** `dark.accent.mint` `#8EC3A5`.
+    static let cityRecordBadgeText = derived(light: 0x41522F, dark: 0x8EC3A5)
 
-    /// `PLANTED 2024` badge fill `#EAF0E2` (14).
-    // TODO: no dark value specified in SCREENS.md
-    static let plantedBadgeFill = lightOnly(0xEAF0E2)
-    /// `PLANTED 2024` badge text `#41522F`.
-    // TODO: no dark value specified in SCREENS.md
-    static let plantedBadgeText = lightOnly(0x41522F)
+    /// `PLANTED 2024` badge fill `#EAF0E2` ↔ **derived** `#1F3A2C` (14). See `cityRecordBadgeFill`.
+    static let plantedBadgeFill = derived(light: 0xEAF0E2, dark: 0x1F3A2C)
+    /// `PLANTED 2024` badge text `#41522F` ↔ **derived** `dark.accent.mint` `#8EC3A5`.
+    static let plantedBadgeText = derived(light: 0x41522F, dark: 0x8EC3A5)
 
-    /// `REMOVED` badge fill `#E4E6DC` (19).
-    // TODO: no dark value specified in SCREENS.md
-    static let removedBadgeFill = lightOnly(0xE4E6DC)
-    /// `REMOVED` badge text `#5C6555`.
-    // TODO: no dark value specified in SCREENS.md
-    static let removedBadgeText = lightOnly(0x5C6555)
+    /// `REMOVED` badge fill `#E4E6DC` ↔ **derived** `dark.border` `#27352B` (19).
+    ///
+    /// The tinted-fill rule fitted on the two documented badge fills: a badge fill in the dark is
+    /// its own family's hue held at L≈0.30 with the chroma of a green-tinted black. `REMOVED` has
+    /// no family hue, so it takes the house green and lands on `#27352B`, within 0.013 of the fit.
+    static let removedBadgeFill = derived(light: 0xE4E6DC, dark: 0x27352B)
+    /// `REMOVED` badge text `#5C6555` ↔ **derived** `dark.text.muted` `#94A496`.
+    /// A muted grey label: the documented dark ladder has a rung for exactly that.
+    static let removedBadgeText = derived(light: 0x5C6555, dark: 0x94A496)
 
     /// Green callout fill `#EFF3E3` ↔ `dark.surface.callout` `#1A241A` (03, 14, 16, 19; D2).
     static let calloutGreenFill = dynamic(light: 0xEFF3E3, dark: 0x1A241A)
-    /// Green callout border `#DFE6CD`. Same value as `border.calloutGreen`.
-    // TODO: no dark value specified in SCREENS.md
-    static let calloutGreenBorder = lightOnly(0xDFE6CD)
-    /// Green callout text `#41522F`.
-    // TODO: no dark value specified in SCREENS.md
-    static let calloutGreenText = lightOnly(0x41522F)
+    /// Green callout border `#DFE6CD` ↔ `#27352B`. Same value as `border.calloutGreen`, and the
+    /// same D2 sentence gives its dark counterpart.
+    static let calloutGreenBorder = dynamic(light: 0xDFE6CD, dark: 0x27352B)
+    /// Green callout text `#41522F` ↔ `#B9C7B2`.
+    ///
+    /// §1.2's semantic table gives no dark counterpart; D2 does, in prose: the recognize-it
+    /// callout's "body `#B9C7B2`". `calloutGreenBody` in the §2 block below already carries that
+    /// pair; this §1.2 token was left light-only and is the same miss.
+    static let calloutGreenText = dynamic(light: 0x41522F, dark: 0xB9C7B2)
 
     /// Gradient callout border `#D9E3C8` (07, 08). See `calloutGradient` for the fill.
-    // TODO: no dark value specified in SCREENS.md
-    static let calloutGradientBorder = lightOnly(0xD9E3C8)
+    /// **Escalated** with the gradient it bounds — see `borderCalloutGradient`.
+    static let calloutGradientBorder = escalated(0xD9E3C8)
     /// Gradient callout text `#1C2A21` — the `text.ink` token, so it carries ink's dark pair.
     static let calloutGradientText = textInk
 
-    /// Amber pill / banner fill `#F8EFDF` (02, 06, 17).
-    // TODO: no dark value specified in SCREENS.md
-    static let amberPillFill = lightOnly(0xF8EFDF)
-    /// Amber pill / banner border `#EBD3A8`.
-    // TODO: no dark value specified in SCREENS.md
-    static let amberPillBorder = lightOnly(0xEBD3A8)
-    /// Amber pill / banner text `#8A5A17`.
-    // TODO: no dark value specified in SCREENS.md
-    static let amberPillText = lightOnly(0x8A5A17)
+    // The amber family. SCREENS.md gives it no dark row at all, and the dark palette answers it
+    // with two values and no more: `dark.accent.amber` `#D99A4E` is the mark, `dark.accent.amberBg`
+    // `#2E271A` is the ground under it. D1 sends the amber pin to the first; D2 sends the `est.`
+    // badge to both. Every amber fill below therefore derives to `#2E271A` and every amber mark to
+    // `#D99A4E`, which mints no hex. What that loses is recorded on `borderAmberSoft`.
 
-    /// Amber selected chip fill `#F8EFDF` (06).
-    // TODO: no dark value specified in SCREENS.md
-    static let amberChipSelectedFill = lightOnly(0xF8EFDF)
-    /// Amber selected chip border `#D9A05B` (`1.5px`).
-    // TODO: no dark value specified in SCREENS.md
-    static let amberChipSelectedBorder = lightOnly(0xD9A05B)
-    /// Amber selected chip text `#8A5A17`.
-    // TODO: no dark value specified in SCREENS.md
-    static let amberChipSelectedText = lightOnly(0x8A5A17)
+    /// Amber pill / banner fill `#F8EFDF` ↔ **derived** `dark.accent.amberBg` `#2E271A` (02, 06, 17).
+    static let amberPillFill = derived(light: 0xF8EFDF, dark: 0x2E271A)
+    /// Amber pill / banner border `#EBD3A8` ↔ **derived** `dark.accent.amber` `#D99A4E`.
+    static let amberPillBorder = derived(light: 0xEBD3A8, dark: 0xD99A4E)
+    /// Amber pill / banner text `#8A5A17` ↔ **derived** `dark.accent.amber` `#D99A4E`.
+    /// 6.1:1 on the derived fill, against 5.2:1 in light.
+    static let amberPillText = derived(light: 0x8A5A17, dark: 0xD99A4E)
+
+    /// Amber selected chip fill `#F8EFDF` ↔ **derived** `#2E271A` (06).
+    static let amberChipSelectedFill = derived(light: 0xF8EFDF, dark: 0x2E271A)
+    /// Amber selected chip border `#D9A05B` ↔ **derived** `#D99A4E` (`1.5px`).
+    static let amberChipSelectedBorder = derived(light: 0xD9A05B, dark: 0xD99A4E)
+    /// Amber selected chip text `#8A5A17` ↔ **derived** `#D99A4E`.
+    static let amberChipSelectedText = derived(light: 0x8A5A17, dark: 0xD99A4E)
 
     /// Amber attention card fill `#FFFFFF` (12, 17) — the `surface.card` token.
     static let amberAttentionCardFill = surfaceCard
-    /// Amber attention card border `#D9A05B` (`1.5px`).
-    // TODO: no dark value specified in SCREENS.md
-    static let amberAttentionCardBorder = lightOnly(0xD9A05B)
+    /// Amber attention card border `#D9A05B` ↔ **derived** `#D99A4E` (`1.5px`).
+    static let amberAttentionCardBorder = derived(light: 0xD9A05B, dark: 0xD99A4E)
 
-    /// 311 hazard panel fill `#F8EFDF` (06).
-    // TODO: no dark value specified in SCREENS.md
-    static let hazardPanelFill = lightOnly(0xF8EFDF)
-    /// 311 hazard panel border `#E0B070` (`1.5px`).
-    // TODO: no dark value specified in SCREENS.md
-    static let hazardPanelBorder = lightOnly(0xE0B070)
-    /// 311 hazard panel body text `#6B5122`.
-    // TODO: no dark value specified in SCREENS.md
-    static let hazardPanelText = lightOnly(0x6B5122)
-    /// 311 hazard panel phone glyph `#FDF3E3`, on the 54×54 Signal Amber circle (06 §4).
+    /// 311 hazard panel fill `#F8EFDF` ↔ **derived** `#2E271A` (06).
+    static let hazardPanelFill = derived(light: 0xF8EFDF, dark: 0x2E271A)
+    /// 311 hazard panel border `#E0B070` ↔ **derived** `#D99A4E` (`1.5px`).
+    static let hazardPanelBorder = derived(light: 0xE0B070, dark: 0xD99A4E)
+    /// 311 hazard panel body text `#6B5122` ↔ **derived** `#BDA680`.
+    ///
+    /// The one amber that is not a mark: it is body copy inside the panel, and the documented
+    /// analogue is D2's green callout, whose body goes `#41522F` → `#B9C7B2` — lightened and
+    /// desaturated, not moved onto the accent. Same text rule, run at the amber hue. 6.3:1 on
+    /// the derived fill, against 6.5:1 in light.
+    static let hazardPanelText = derived(light: 0x6B5122, dark: 0xBDA680)
+    /// 311 hazard panel phone glyph `#FDF3E3` ↔ **derived** `dark.bg.screen` `#0E1712`, on the
+    /// 54×54 Signal Amber circle (06 §4).
     ///
     /// §1.2 has no row for this: the hex reaches SCREENS.md only as Signal Amber's *swatch text
-    /// color* in §1.1, which is where 06 borrows it from. Recorded in ERRATA (E20).
-    // TODO: no dark value specified in SCREENS.md
-    static let hazardPanelGlyph = lightOnly(0xFDF3E3)
+    /// color* in §1.1, which is where 06 borrows it from. Recorded in ERRATA (E20). The circle it
+    /// rides on is `signalAmber`, which does have a documented dark value, so the glyph follows
+    /// `ctaLabel`'s documented pattern and inverts to the ground: a near-white glyph on `#D99A4E`
+    /// is 2.2:1 and unreadable, the ground is 7.6:1.
+    static let hazardPanelGlyph = derived(light: 0xFDF3E3, dark: 0x0E1712)
 
-    /// 311 CTA button fill `#A35F12` (06).
-    // TODO: no dark value specified in SCREENS.md
-    static let hazardCTAFill = lightOnly(0xA35F12)
-    /// 311 CTA button label `#FFFFFF`.
-    static let hazardCTAText = lightOnly(0xFFFFFF)
+    /// 311 CTA button fill `#A35F12` ↔ **derived** `dark.accent.amber` `#D99A4E` (06).
+    /// The accent rule puts it at `#DC9657`, 0.016 from the documented amber, so the documented
+    /// hex is used.
+    static let hazardCTAFill = derived(light: 0xA35F12, dark: 0xD99A4E)
+    /// 311 CTA button label `#FFFFFF` ↔ **derived** `dark.bg.screen` `#0E1712`.
+    /// Its fill inverts, so the label inverts with it — `ctaLabel` and `onSelectionFill` are the
+    /// documented instances of the same move. 7.6:1, against 5.0:1 in light.
+    static let hazardCTAText = derived(light: 0xFFFFFF, dark: 0x0E1712)
 
-    /// Memorial banner fill `#EDEEE6` (19).
-    // TODO: no dark value specified in SCREENS.md
-    static let memorialBannerFill = lightOnly(0xEDEEE6)
-    /// Memorial banner border `#C4C8B8` (`1.5px`).
-    // TODO: no dark value specified in SCREENS.md
-    static let memorialBannerBorder = lightOnly(0xC4C8B8)
-    /// Memorial banner text `#4A5344`.
-    // TODO: no dark value specified in SCREENS.md
-    static let memorialBannerText = lightOnly(0x4A5344)
+    /// Memorial banner fill `#EDEEE6` ↔ **derived** `dark.border` `#27352B` (19).
+    /// Tinted-fill rule at the house green; lands within 0.017 of the documented hex.
+    static let memorialBannerFill = derived(light: 0xEDEEE6, dark: 0x27352B)
+    /// Memorial banner border `#C4C8B8` ↔ **derived** `#39423A` (`1.5px`).
+    /// Same value as `border.memorial`, same border rule.
+    static let memorialBannerBorder = derived(light: 0xC4C8B8, dark: 0x39423A)
+    /// Memorial banner text `#4A5344` ↔ **derived** `dark.text.secondary` `#AEBBAB`.
+    static let memorialBannerText = derived(light: 0x4A5344, dark: 0xAEBBAB)
 
     /// GPS dot fill `#3577C9` ↔ `dark.accent.gps` `#6FA8E8` (01, 02).
     static let gpsDot = dynamic(light: 0x3577C9, dark: 0x6FA8E8)
@@ -570,7 +665,11 @@ enum CypressColor {
     // MARK: - Named gradients
 
     /// Gradient callout `linear-gradient(120deg,#EAF2E6,#F6F2DF)` (07, 08).
-    // TODO: no dark value specified in SCREENS.md
+    ///
+    /// **Escalated.** Two stops and an angle are a drawing, not a value: the transform can move
+    /// each stop but cannot say whether a pale two-hue wash even survives on a dark ground, and
+    /// D1–D3 never draw one. Its border and its ink are pinned light with it, so 07 and 08 keep
+    /// a coherent callout in both schemes until a designer draws the dark one.
     static let calloutGradient = linearGradient(120, [
         Color(cypressHex: 0xEAF2E6),
         Color(cypressHex: 0xF6F2DF),
@@ -751,24 +850,33 @@ extension CypressColor {
 
         var id: String { rawValue }
 
+        /// **Escalated.** The accent is the 0% stop of a radial that has faded out by 55%, so its
+        /// perceived lightness is set by the base beneath it rather than by its own value — and
+        /// the accent rule is a lightness anchor. Run anyway, it moves three of the five by less
+        /// than one RGB step and sends `elder` to within 0.031 of `dark.accent.pin`, which is a
+        /// reserved meaning (map pins). The five are a set and want deciding as one.
         var accent: Color {
             switch self {
-            case .bloom: return CypressColor.lightOnly(0xD77A8A)
-            case .elder: return CypressColor.lightOnly(0x4E8F6A)
-            case .newGrowth: return CypressColor.lightOnly(0x8FB573)
-            case .water: return CypressColor.lightOnly(0x7FA8C4)
-            case .record: return CypressColor.lightOnly(0xC9B44A)
+            case .bloom: return CypressColor.escalated(0xD77A8A)
+            case .elder: return CypressColor.escalated(0x4E8F6A)
+            case .newGrowth: return CypressColor.escalated(0x8FB573)
+            case .water: return CypressColor.escalated(0x7FA8C4)
+            case .record: return CypressColor.escalated(0xC9B44A)
             }
         }
 
-        // TODO: no dark values specified in SCREENS.md for the C10 tiles.
+        /// **Derived.** Five pale tinted surfaces, which is the one thing the documented pairs do
+        /// say something about: a tinted fill in the dark is its family's hue held at L≈0.30 with
+        /// the chroma of a tinted black (fitted on the thriving and `est.` badge fills). Each base
+        /// keeps its own accent's hue, so the five tiles stay told apart by hue after dark, which
+        /// is how they are told apart before it.
         var base: Color {
             switch self {
-            case .bloom: return CypressColor.lightOnly(0xF6E8E4)
-            case .elder: return CypressColor.lightOnly(0xE7EFE2)
-            case .newGrowth: return CypressColor.lightOnly(0xEDF2E0)
-            case .water: return CypressColor.lightOnly(0xE8EEF2)
-            case .record: return CypressColor.lightOnly(0xF4F0DE)
+            case .bloom: return CypressColor.derived(light: 0xF6E8E4, dark: 0x38292B)
+            case .elder: return CypressColor.derived(light: 0xE7EFE2, dark: 0x27352B)
+            case .newGrowth: return CypressColor.derived(light: 0xEDF2E0, dark: 0x1F2E22)
+            case .water: return CypressColor.derived(light: 0xE8EEF2, dark: 0x282F34)
+            case .record: return CypressColor.derived(light: 0xF4F0DE, dark: 0x322E1A)
             }
         }
     }
@@ -785,7 +893,8 @@ extension CypressColor {
     /// Gradient callout ink — the literal `#1C2A21` of §1.2's `text.ink`, deliberately **not** the
     /// paired `textInk` token. The gradient fill (`#EAF2E6 → #F6F2DF`) has no dark counterpart in
     /// SCREENS.md, so it stays light in both schemes — and text on it must stay dark with it.
-    static let calloutGradientInk = lightOnly(0x1C2A21)
+    /// **Escalated** with the gradient; it moves the day the gradient does.
+    static let calloutGradientInk = escalated(0x1C2A21)
 
     // MARK: C16 · BottomTabBar
 
@@ -830,14 +939,18 @@ extension CypressColor {
     /// Community-layer pin fill — `#EDF1E3` ↔ D1 `#1B241B`.
     static let pinCommunityFill = dynamic(light: 0xEDF1E3, dark: 0x1B241B)
     /// Removed / memorial pin fill — `#C4C8B8`.
-    // TODO: no dark value specified in SCREENS.md (D1 omits the removed pin entirely).
-    static let pinRemovedFill = lightOnly(0xC4C8B8)
-    /// Removed pin's centred 8×2 bar — `#7A8272`.
-    // TODO: no dark value specified in SCREENS.md
-    static let pinRemovedBar = lightOnly(0x7A8272)
-    /// Route "done" pin (18) — `#AEBFA1`.
-    // TODO: no dark value specified in SCREENS.md
-    static let pinRouteDone = lightOnly(0xAEBFA1)
+    ///
+    /// **Escalated**, and the reason is in the document rather than in the arithmetic: D1 draws
+    /// every other pin in the dark and ends with "**`48TH AVE` and the removed/gray pin are
+    /// omitted**". The one dark screen that could have answered this declined to. A muted pin
+    /// also pulls the transform two ways — the accent rule lifts it to L≈0.73, where it competes
+    /// with the live pins it is supposed to recede behind, and the text rule drops it to L≈0.41,
+    /// where it stops reading against `dark.bg.map` at all.
+    static let pinRemovedFill = escalated(0xC4C8B8)
+    /// Removed pin's centred 8×2 bar — `#7A8272`. **Escalated** with the pin it sits in.
+    static let pinRemovedBar = escalated(0x7A8272)
+    /// Route "done" pin (18) — `#AEBFA1`. **Escalated**: the same muted-pin family, same problem.
+    static let pinRouteDone = escalated(0xAEBFA1)
 
     // MARK: C20 · SearchBar
 
@@ -854,48 +967,75 @@ extension CypressColor {
 
     // MARK: C23 · ChartCard
 
-    /// Gridlines and empty bars — `#EAEDDF`.
-    // TODO: no dark value specified in SCREENS.md
-    static let chartGridline = lightOnly(0xEAEDDF)
-    /// Series 1 (photos, DBH, height) — Canopy.
-    static let chartSeriesPrimary = canopy
-    /// Series 2 (check-ins) — New Growth.
-    static let chartSeriesSecondary = newGrowth
-    /// Series 3 (care) — Bark.
-    static let chartSeriesTertiary = bark
+    /// Gridlines and empty bars — `#EAEDDF` ↔ **derived** `dark.border` `#27352B`.
+    /// A gridline is a hairline; border rule, within 0.014 of the documented hex.
+    static let chartGridline = derived(light: 0xEAEDDF, dark: 0x27352B)
+
+    // The three chart series are **escalated as a set**, which is the only way they make sense.
+    // The accent rule reproduces every documented accent to within 0.043 in OKLab, and it is
+    // still wrong here: it anchors lightness, so Canopy and New Growth — 0.117 apart in light —
+    // land 0.011 apart in dark and C23's three series become two. A series palette is chosen for
+    // separation, not per colour, and the dark palette has no third green to separate them with.
+    // Left light, which is a stated contrast failure rather than a hidden one: Canopy on
+    // `dark.surface.card` is 2.5:1 and Bark is 2.3:1.
+
+    /// Series 1 (photos, DBH, height) — Canopy. **Escalated** with the other two.
+    static let chartSeriesPrimary = escalated(0x2F6B4F)
+    /// Series 2 (check-ins) — New Growth. **Escalated** with the other two.
+    static let chartSeriesSecondary = escalated(0x4E8F6A)
+    /// Series 3 (care) — Bark. **Escalated** with the other two.
+    static let chartSeriesTertiary = escalated(0x7A4F33)
 
     // MARK: C26 · AvatarStack
 
-    /// Avatar ring — `2px solid #fff`.
-    // TODO: no dark value specified in SCREENS.md
-    static let avatarRing = lightOnly(0xFFFFFF)
+    /// Avatar ring — `2px solid #fff` ↔ **derived** `dark.surface.card` `#18251D`.
+    ///
+    /// The ring is white because the card behind it is white — it is a gap punched in the stack,
+    /// not a colour. `pinRingStroke` is the documented instance of the same idea and goes
+    /// `#FFFFFF` → `#0E1712`, the ground *it* sits on; an avatar stack sits on a card.
+    static let avatarRing = derived(light: 0xFFFFFF, dark: 0x18251D)
     /// Avatar fills in the drawn order: `#2F6B4F`, `#7A4F33`, `#4E8F6A`, `#66735F`.
+    ///
+    /// Unchanged after dark, and that is documented rather than assumed: D1's delta table gives
+    /// the "You" avatar as `#2F6B4F on #fff` → `#2F6B4F on #DFE8D6` — the letter moves, the fill
+    /// does not. It is also the evidence that a brand hue has no single dark answer, since the
+    /// same `#2F6B4F` becomes `#6FAE8C` two rows above it.
     static let avatarFills: [Color] = [canopy, bark, newGrowth, lightOnly(0x66735F)]
 
     // MARK: C27 · ProgressRing
 
-    /// Ring track — `#E0E6D8`.
-    // TODO: no dark value specified in SCREENS.md
-    static let progressRingTrack = lightOnly(0xE0E6D8)
+    /// Ring track — `#E0E6D8` ↔ **derived** `dark.border` `#27352B`.
+    /// The unfilled part of a ring is a hairline at ring width; border rule, within 0.011.
+    static let progressRingTrack = derived(light: 0xE0E6D8, dark: 0x27352B)
     /// Inner disc — `#F5F6EF`, the `surface.screen` value.
     static let progressRingInner = surfaceScreen
 
     // MARK: C25 · Toggle
 
     /// Toggle knob — `#FFFFFF`.
-    static let toggleKnob = lightOnly(0xFFFFFF)
+    ///
+    /// **Escalated.** The knob rides on two tracks that move in opposite directions after dark:
+    /// the on-track is `selectionFill`, which inverts to mint, and the off-track is `border.cool`,
+    /// which inverts to `#27352B`. `ctaLabel`'s documented move (white → the ground) reads on the
+    /// mint and vanishes on the hairline; keeping it white does the reverse. No mocked screen
+    /// draws a toggle in the dark — 17 has no dark counterpart — so both states are a guess.
+    static let toggleKnob = escalated(0xFFFFFF)
     /// Toggle off track. **NOT SPECIFIED** in SCREENS.md (§5 gap 4); `border.cool` is used so the
     /// off state reads as the same inactive hairline every other idle control uses.
     static let toggleOffTrack = borderCool
 
     // MARK: C29 · SpeciesTile
 
-    /// Locked tile fill — `#E9ECDE`.
-    // TODO: no dark value specified in SCREENS.md
-    static let speciesTileLockedFill = lightOnly(0xE9ECDE)
-    /// Locked tile `?` glyph — `#A8B29C`.
-    // TODO: no dark value specified in SCREENS.md
-    static let speciesTileLockedGlyph = lightOnly(0xA8B29C)
+    /// Locked tile fill — `#E9ECDE` ↔ **derived** `dark.surface.card` `#18251D`.
+    /// A locked tile is a card-level plane in a grid of photo tiles.
+    static let speciesTileLockedFill = derived(light: 0xE9ECDE, dark: 0x18251D)
+    /// Locked tile `?` glyph — `#A8B29C` ↔ **derived** `#4C584B`. Text rule.
+    ///
+    /// It stays a deliberately quiet mark: 2.1:1 on the derived fill against 1.8:1 in light. Both
+    /// fail WCAG and the glyph is decorative in both — the tile's meaning is carried by its label,
+    /// not by the `?`. Flagged in ERRATA E8 rather than fixed here, because raising it is a design
+    /// change to a mocked screen and not a dark-mode question.
+    static let speciesTileLockedGlyph = derived(light: 0xA8B29C, dark: 0x4C584B)
     /// Species tile label shadow — `0 1px 3px rgba(10,22,15,.5)`.
     static let speciesTileLabelShadow = lightOnly(0x0A160F, alpha: 0.5)
 
@@ -911,4 +1051,218 @@ extension CypressColor {
     /// something" family and not one card's decoration. It is a shade lighter than `text.faint` in
     /// both schemes on purpose: a chevron is an affordance, not a piece of text.
     static let chevronDisclosure = dynamic(light: 0xB4BCA9, dark: 0x4A5A4C)
+}
+
+// MARK: - The E8 review sheet
+//
+// Everything a designer has to rule on, and nothing else. `TokenGallery` renders this list as its
+// first two sections, so reviewing ERRATA E8 costs one screen rather than an audit of 137 values.
+//
+// This list and the tokens above are two statements of the same fact, and `DerivedTokenTests`
+// fails if they drift: it resolves every token below in both trait collections and compares.
+
+/// One row of the review sheet: a token whose dark value was derived, or one where the transform
+/// was run and rejected.
+struct CypressReviewToken: Identifiable {
+
+    enum Kind {
+        /// The dark value was computed from the documented pairs. Check it.
+        case derived
+        /// The transform was run and rejected; the token is still light-only. Answer it.
+        case escalated
+    }
+
+    let name: String
+    let kind: Kind
+    /// The documented light value.
+    let light: UInt32
+    /// The derived dark value, or `nil` where the token was escalated.
+    let dark: UInt32?
+    /// Where the value came from, or why there is none — one line, for the gallery.
+    let basis: String
+    /// The live token, so the gallery renders the real thing and the test can compare against it.
+    let color: Color
+    /// Set only for `calloutGradient`, which is a drawing rather than a value.
+    var gradient: LinearGradient?
+
+    var id: String { name }
+
+    init(
+        _ name: String,
+        _ kind: Kind,
+        light: UInt32,
+        dark: UInt32? = nil,
+        basis: String,
+        color: Color,
+        gradient: LinearGradient? = nil
+    ) {
+        self.name = name
+        self.kind = kind
+        self.light = light
+        self.dark = dark
+        self.basis = basis
+        self.color = color
+        self.gradient = gradient
+    }
+}
+
+extension CypressColor {
+
+    /// The 47 derived tokens and the 17 escalated ones. See ERRATA E8 for the transform itself.
+    static let reviewTokens: [CypressReviewToken] = derivedTokens + escalatedTokens
+
+    // MARK: Derived — check these
+
+    static let derivedTokens: [CypressReviewToken] = [
+        // Surfaces. The dark surface ladder is quantised: four different light surfaces land on
+        // `#18251D` in the documented pairs, so these snap to a rung rather than mint a value.
+        .init("surfaceSheet", .derived, light: 0xFDFDF8, dark: 0x18251D,
+              basis: "raised plane → dark.surface.card", color: surfaceSheet),
+        .init("surfaceEmptyThumb", .derived, light: 0xFAFBF4, dark: 0x1F2E22,
+              basis: "recess in a card → dark.surface.thumb", color: surfaceEmptyThumb),
+        .init("surfaceSkeleton", .derived, light: 0xE3E8D9, dark: 0x27352B,
+              basis: "same light hex as border.cool, whose dark is documented", color: surfaceSkeleton),
+        .init("surfaceRouteMap", .derived, light: 0xE4E9D3, dark: 0x141E16,
+              basis: "18's map is 01's map → dark.bg.map", color: surfaceRouteMap),
+        .init("surfaceRouteMapGrid", .derived, light: 0xF4F1E2, dark: 0x1C2A1F,
+              basis: "→ dark.map.grid", color: surfaceRouteMapGrid),
+        .init("borderRouteMap", .derived, light: 0xDBE0CB, dark: 0x2B3A2C,
+              basis: "→ dark.border.alt, D1's map border", color: borderRouteMap),
+        .init("speciesTileLockedFill", .derived, light: 0xE9ECDE, dark: 0x18251D,
+              basis: "card-level plane → dark.surface.card", color: speciesTileLockedFill),
+        .init("avatarRing", .derived, light: 0xFFFFFF, dark: 0x18251D,
+              basis: "the ring is the card behind it; cf. pinRingStroke", color: avatarRing),
+
+        // Borders. L' = 0.816 − 0.543·L, fitted on the three documented border pairs, which it
+        // reproduces to within 0.005 in OKLab.
+        .init("borderDashed", .derived, light: 0xC9D1BC, dark: 0x353F34,
+              basis: "border rule; E8's brightest-thing-on-D3", color: borderDashed),
+        .init("borderDashedStrong", .derived, light: 0xC4CEB4, dark: 0x364133,
+              basis: "border rule, one step above border.dashed", color: borderDashedStrong),
+        .init("borderSheetGrabber", .derived, light: 0xDDE2D2, dark: 0x2B3A2C,
+              basis: "border rule → dark.border.alt (ΔE 0.014)", color: borderSheetGrabber),
+        .init("borderAccount", .derived, light: 0xD8DECB, dark: 0x2B3A2C,
+              basis: "border rule → dark.border.alt (ΔE 0.012)", color: borderAccount),
+        .init("borderShareCard", .derived, light: 0xE0DDC9, dark: 0x2B3A2C,
+              basis: "border rule → dark.border.alt (ΔE 0.011)", color: borderShareCard),
+        .init("borderMemorial", .derived, light: 0xC4C8B8, dark: 0x39423A,
+              basis: "border rule, one step above the banner fill", color: borderMemorial),
+        .init("chartGridline", .derived, light: 0xEAEDDF, dark: 0x27352B,
+              basis: "border rule → dark.border (ΔE 0.014)", color: chartGridline),
+        .init("progressRingTrack", .derived, light: 0xE0E6D8, dark: 0x27352B,
+              basis: "border rule → dark.border (ΔE 0.011)", color: progressRingTrack),
+
+        // The amber family. Two documented ambers and no more; see `borderAmberSoft`.
+        .init("amberPillFill", .derived, light: 0xF8EFDF, dark: 0x2E271A,
+              basis: "amber ground → dark.accent.amberBg", color: amberPillFill),
+        .init("amberPillBorder", .derived, light: 0xEBD3A8, dark: 0xD99A4E,
+              basis: "amber mark → dark.accent.amber; loses a weight", color: amberPillBorder),
+        .init("amberPillText", .derived, light: 0x8A5A17, dark: 0xD99A4E,
+              basis: "amber mark → dark.accent.amber; 6.1:1", color: amberPillText),
+        .init("amberChipSelectedFill", .derived, light: 0xF8EFDF, dark: 0x2E271A,
+              basis: "amber ground → dark.accent.amberBg", color: amberChipSelectedFill),
+        .init("amberChipSelectedBorder", .derived, light: 0xD9A05B, dark: 0xD99A4E,
+              basis: "already the dark amber (ΔE 0.016)", color: amberChipSelectedBorder),
+        .init("amberChipSelectedText", .derived, light: 0x8A5A17, dark: 0xD99A4E,
+              basis: "amber mark → dark.accent.amber", color: amberChipSelectedText),
+        .init("amberAttentionCardBorder", .derived, light: 0xD9A05B, dark: 0xD99A4E,
+              basis: "already the dark amber (ΔE 0.016)", color: amberAttentionCardBorder),
+        .init("borderAmberSoft", .derived, light: 0xEBD3A8, dark: 0xD99A4E,
+              basis: "amber mark; three light weights collapse to one", color: borderAmberSoft),
+        .init("borderAmberMid", .derived, light: 0xD9A05B, dark: 0xD99A4E,
+              basis: "already the dark amber (ΔE 0.016)", color: borderAmberMid),
+        .init("borderAmberStrong", .derived, light: 0xE0B070, dark: 0xD99A4E,
+              basis: "amber mark → dark.accent.amber", color: borderAmberStrong),
+        .init("hazardPanelFill", .derived, light: 0xF8EFDF, dark: 0x2E271A,
+              basis: "amber ground → dark.accent.amberBg", color: hazardPanelFill),
+        .init("hazardPanelBorder", .derived, light: 0xE0B070, dark: 0xD99A4E,
+              basis: "amber mark → dark.accent.amber", color: hazardPanelBorder),
+        .init("hazardPanelText", .derived, light: 0x6B5122, dark: 0xBDA680,
+              basis: "text rule at the amber hue, as D2's callout body; 6.3:1", color: hazardPanelText),
+        .init("hazardPanelGlyph", .derived, light: 0xFDF3E3, dark: 0x0E1712,
+              basis: "inverts with its circle; 2.2:1 → 7.6:1", color: hazardPanelGlyph),
+        .init("hazardCTAFill", .derived, light: 0xA35F12, dark: 0xD99A4E,
+              basis: "accent rule → dark.accent.amber (ΔE 0.016)", color: hazardCTAFill),
+        .init("hazardCTAText", .derived, light: 0xFFFFFF, dark: 0x0E1712,
+              basis: "its fill inverts, so it inverts; cf. ctaLabel", color: hazardCTAText),
+
+        // Badges.
+        .init("cityRecordBadgeFill", .derived, light: 0xEAF0E2, dark: 0x1F3A2C,
+              basis: "the thriving/taped badge pair, one shade apart", color: cityRecordBadgeFill),
+        .init("cityRecordBadgeText", .derived, light: 0x41522F, dark: 0x8EC3A5,
+              basis: "the thriving/taped badge pair; 6.2:1", color: cityRecordBadgeText),
+        .init("plantedBadgeFill", .derived, light: 0xEAF0E2, dark: 0x1F3A2C,
+              basis: "the thriving/taped badge pair", color: plantedBadgeFill),
+        .init("plantedBadgeText", .derived, light: 0x41522F, dark: 0x8EC3A5,
+              basis: "the thriving/taped badge pair; 6.2:1", color: plantedBadgeText),
+        .init("removedBadgeFill", .derived, light: 0xE4E6DC, dark: 0x27352B,
+              basis: "tinted-fill rule, house green → dark.border", color: removedBadgeFill),
+        .init("removedBadgeText", .derived, light: 0x5C6555, dark: 0x94A496,
+              basis: "muted label → dark.text.muted; 4.9:1", color: removedBadgeText),
+
+        // Memorial (19).
+        .init("memorialBannerFill", .derived, light: 0xEDEEE6, dark: 0x27352B,
+              basis: "tinted-fill rule → dark.border (ΔE 0.017)", color: memorialBannerFill),
+        .init("memorialBannerBorder", .derived, light: 0xC4C8B8, dark: 0x39423A,
+              basis: "border rule; same as border.memorial", color: memorialBannerBorder),
+        .init("memorialBannerText", .derived, light: 0x4A5344, dark: 0xAEBBAB,
+              basis: "→ dark.text.secondary; 6.4:1", color: memorialBannerText),
+
+        .init("speciesTileLockedGlyph", .derived, light: 0xA8B29C, dark: 0x4C584B,
+              basis: "text rule; 1.8:1 → 2.1:1, decorative in both", color: speciesTileLockedGlyph),
+
+        // C10 tile bases (12, 13) — each keeps its own accent's hue so the five stay told apart.
+        .init("TileAccent.bloom.base", .derived, light: 0xF6E8E4, dark: 0x38292B,
+              basis: "tinted-fill rule at the bloom hue", color: TileAccent.bloom.base),
+        .init("TileAccent.elder.base", .derived, light: 0xE7EFE2, dark: 0x27352B,
+              basis: "tinted-fill rule at the elder hue", color: TileAccent.elder.base),
+        .init("TileAccent.newGrowth.base", .derived, light: 0xEDF2E0, dark: 0x1F2E22,
+              basis: "tinted-fill rule at the new-growth hue", color: TileAccent.newGrowth.base),
+        .init("TileAccent.water.base", .derived, light: 0xE8EEF2, dark: 0x282F34,
+              basis: "tinted-fill rule at the water hue", color: TileAccent.water.base),
+        .init("TileAccent.record.base", .derived, light: 0xF4F0DE, dark: 0x322E1A,
+              basis: "tinted-fill rule at the record hue", color: TileAccent.record.base),
+    ]
+
+    // MARK: Escalated — answer these
+
+    static let escalatedTokens: [CypressReviewToken] = [
+        .init("calloutGradient", .escalated, light: 0xEAF2E6,
+              basis: "a two-stop wash is a drawing, not a value; D1–D3 never draw one",
+              color: lightOnly(0xEAF2E6), gradient: calloutGradient),
+        .init("borderCalloutGradient", .escalated, light: 0xD9E3C8,
+              basis: "bounds a fill that stays light", color: borderCalloutGradient),
+        .init("calloutGradientBorder", .escalated, light: 0xD9E3C8,
+              basis: "bounds a fill that stays light", color: calloutGradientBorder),
+        .init("calloutGradientInk", .escalated, light: 0x1C2A21,
+              basis: "rides on a fill that stays light", color: calloutGradientInk),
+        .init("textOnDark", .escalated, light: 0xFFFFFF,
+              basis: "#FFFFFF has three documented darks; the call sites disagree", color: textOnDark),
+        .init("pinRemovedFill", .escalated, light: 0xC4C8B8,
+              basis: "D1 draws every pin but this one, and says so", color: pinRemovedFill),
+        .init("pinRemovedBar", .escalated, light: 0x7A8272,
+              basis: "with the pin it sits in", color: pinRemovedBar),
+        .init("pinRouteDone", .escalated, light: 0xAEBFA1,
+              basis: "same muted-pin family", color: pinRouteDone),
+        .init("toggleKnob", .escalated, light: 0xFFFFFF,
+              basis: "two tracks, opposite answers; 17 has no dark mock", color: toggleKnob),
+        .init("chartSeriesPrimary", .escalated, light: 0x2F6B4F,
+              basis: "series separation collapses 0.117 → 0.011; 2.5:1 on a dark card",
+              color: chartSeriesPrimary),
+        .init("chartSeriesSecondary", .escalated, light: 0x4E8F6A,
+              basis: "chosen as a set with series 1 and 3", color: chartSeriesSecondary),
+        .init("chartSeriesTertiary", .escalated, light: 0x7A4F33,
+              basis: "chosen as a set; 2.3:1 on a dark card", color: chartSeriesTertiary),
+        .init("TileAccent.bloom.accent", .escalated, light: 0xD77A8A,
+              basis: "0% stop of a radial that fades by 55%", color: TileAccent.bloom.accent),
+        .init("TileAccent.elder.accent", .escalated, light: 0x4E8F6A,
+              basis: "the rule lands it 0.031 from dark.accent.pin, a reserved meaning",
+              color: TileAccent.elder.accent),
+        .init("TileAccent.newGrowth.accent", .escalated, light: 0x8FB573,
+              basis: "the rule moves it by less than one RGB step", color: TileAccent.newGrowth.accent),
+        .init("TileAccent.water.accent", .escalated, light: 0x7FA8C4,
+              basis: "the rule moves it by less than one RGB step", color: TileAccent.water.accent),
+        .init("TileAccent.record.accent", .escalated, light: 0xC9B44A,
+              basis: "the five tile accents want deciding as one set", color: TileAccent.record.accent),
+    ]
 }

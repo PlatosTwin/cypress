@@ -7,6 +7,12 @@
 //  is verified before any screen is built — run the two previews below side by side and compare
 //  against SCREENS.md §1.
 //
+//  The first two sections are the ERRATA E8 review sheet, and they are first on purpose: SCREENS.md
+//  documents dark for three screens, so a majority of the palette's dark values were derived from
+//  the documented pairs rather than transcribed. Those sections are exactly the values that were
+//  guessed — the derived ones to check, the escalated ones to answer — so reviewing E8 costs one
+//  screen instead of an audit of the whole palette. Run the Dark preview to review them.
+//
 //  Not shipped in any screen. It imports nothing outside DesignSystem.
 //
 
@@ -86,6 +92,29 @@ struct TokenGallery: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 28) {
                 header
+
+                ReviewSection(
+                    title: "Derived — check these (ERRATA E8)",
+                    blurb: """
+                        No dark value for these is written down anywhere. Each one below was \
+                        computed from the \(TokenGalleryData.specifiedPairCount) pairs that are, \
+                        by fitting the light→dark relationship per role in OKLCh. Nothing here is \
+                        a per-token invention, and \(TokenGalleryData.reusedHexCount) of the \
+                        \(CypressColor.derivedTokens.count) reuse a hex the designer already \
+                        wrote rather than minting one.
+                        """,
+                    tokens: CypressColor.derivedTokens
+                )
+
+                ReviewSection(
+                    title: "Escalated — answer these (ERRATA E8)",
+                    blurb: """
+                        The transform was run on each of these and rejected, so they are still \
+                        light-only and will look light-only after dark. The line under each says \
+                        why. These need a decision, not a check.
+                        """,
+                    tokens: CypressColor.escalatedTokens
+                )
 
                 SwatchSection(title: "§1.1 Brand palette", swatches: TokenGalleryData.brand)
                 SwatchSection(title: "§1.2 Surfaces", swatches: TokenGalleryData.surfaces)
@@ -341,6 +370,85 @@ private struct SectionTitle: View {
     }
 }
 
+/// The ERRATA E8 review sheet. One row per token: the live swatch, the pair it resolves from, and
+/// one line saying where the dark value came from — or, for an escalated token, why there is none.
+private struct ReviewSection: View {
+    let title: String
+    let blurb: String
+    let tokens: [CypressReviewToken]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: CypressSpacing.gapRows) {
+            SectionTitle("\(title) · \(tokens.count)")
+            Text(blurb)
+                .font(CypressFont.body125)
+                .foregroundStyle(CypressColor.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 9) {
+                ForEach(tokens) { token in
+                    ReviewCell(token: token)
+                }
+            }
+        }
+        .cypressLabelGutter()
+    }
+}
+
+private struct ReviewCell: View {
+    let token: CypressReviewToken
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            swatch
+            VStack(alignment: .leading, spacing: 1) {
+                Text(token.name)
+                    .font(CypressFont.body12Bold)
+                    .foregroundStyle(CypressColor.textInk)
+                Text(hexPair)
+                    .font(CypressFont.mono10)
+                    .foregroundStyle(CypressColor.textFaint)
+                Text(token.basis)
+                    .font(CypressFont.body12)
+                    .foregroundStyle(CypressColor.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    /// A 2px ring in `border.cool` so a derived value that lands near the card is still bounded.
+    private var swatch: some View {
+        RoundedRectangle(cornerRadius: CypressRadius.thumbXs, style: .continuous)
+            .fill(CypressColor.surfaceCard)
+            .overlay {
+                gradientOrColor
+                    .clipShape(
+                        RoundedRectangle(cornerRadius: CypressRadius.thumbXs, style: .continuous)
+                    )
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: CypressRadius.thumbXs, style: .continuous)
+                    .strokeBorder(CypressColor.borderCool, lineWidth: 1)
+            }
+            .frame(width: 40, height: 40)
+    }
+
+    @ViewBuilder
+    private var gradientOrColor: some View {
+        if let gradient = token.gradient {
+            Rectangle().fill(gradient)
+        } else {
+            Rectangle().fill(token.color)
+        }
+    }
+
+    private var hexPair: String {
+        let light = String(format: "%06X", token.light)
+        guard let dark = token.dark else { return "\(light) · light only" }
+        return "\(light) ↔ \(String(format: "%06X", dark))"
+    }
+}
+
 private struct SwatchSection: View {
     let title: String
     let swatches: [Swatch]
@@ -396,6 +504,26 @@ private struct SwatchCell: View {
 
 private enum TokenGalleryData {
 
+    /// SCREENS.md §1.2's dark table plus the dark values D1–D3 give only in prose, as a set, so
+    /// the review blurb can count how many derived values reuse a hex the designer wrote.
+    private static let documentedDarkHexes: Set<UInt32> = [
+        0x0E1712, 0x101812, 0x141E16, 0x10160F, 0x151D15, 0x18251D, 0x1B241B, 0x1A241A,
+        0x1F2E22, 0x27352B, 0x2B3A2C, 0x2A362B, 0x26332A, 0x1C2A1F, 0x14282B, 0x183034,
+        0x2B3226, 0x1B3123, 0x274531, 0x232F24, 0x1F3A2C, 0x2E271A,
+        0xE4EBE2, 0xD6E0CE, 0xAEBBAB, 0x94A496, 0x5F6F61, 0xB9C7B2, 0xDFE8D6, 0xCFE0D2,
+        0x8EC3A5, 0x6FAE8C, 0xD99A4E, 0x6FA8E8, 0x4A5A4C,
+        0x5C6B57, 0x557A50, 0x4E7A74, 0x3E6B44, 0x587D50, 0x6E8A5F,
+    ]
+
+    /// Documented light/dark pairs — every `CypressColor.dynamic` token.
+    static let specifiedPairCount = 62
+
+    /// Derived tokens whose dark value is a hex the designer already wrote.
+    static let reusedHexCount = CypressColor.derivedTokens.filter {
+        guard let dark = $0.dark else { return false }
+        return documentedDarkHexes.contains(dark)
+    }.count
+
     static let brand: [Swatch] = [
         Swatch("cypressDeep", "1D4634", CypressColor.cypressDeep),
         Swatch("canopy", "2F6B4F", CypressColor.canopy),
@@ -409,39 +537,39 @@ private enum TokenGalleryData {
         Swatch("pageParchment", "EBE8DC", CypressColor.pageParchment),
         Swatch("surfaceScreen", "F5F6EF ↔ 0E1712", CypressColor.surfaceScreen),
         Swatch("surfaceCard", "FFFFFF ↔ 18251D", CypressColor.surfaceCard),
-        Swatch("surfaceSheet", "FDFDF8", CypressColor.surfaceSheet),
+        Swatch("surfaceSheet", "FDFDF8 ↔ 18251D", CypressColor.surfaceSheet),
         Swatch("surfaceWarmPanel", "F7F5EC", CypressColor.surfaceWarmPanel),
         Swatch("surfaceWeb", "FBFBF5", CypressColor.surfaceWeb),
         Swatch("surfaceMapPaper", "E9E5D4 ↔ 141E16", CypressColor.surfaceMapPaper),
         Swatch("surfaceMapGrid", "F7F4E6 ↔ 1C2A1F", CypressColor.surfaceMapGrid),
         Swatch("surfaceMapStreetBand", "FAF7EC ↔ 232F24", CypressColor.surfaceMapStreetBand),
-        Swatch("surfaceRouteMap", "E4E9D3", CypressColor.surfaceRouteMap),
-        Swatch("surfaceRouteMapGrid", "F4F1E2", CypressColor.surfaceRouteMapGrid),
-        Swatch("surfaceEmptyThumb", "FAFBF4", CypressColor.surfaceEmptyThumb),
-        Swatch("surfaceSkeleton", "E3E8D9", CypressColor.surfaceSkeleton),
+        Swatch("surfaceRouteMap", "E4E9D3 ↔ 141E16", CypressColor.surfaceRouteMap),
+        Swatch("surfaceRouteMapGrid", "F4F1E2 ↔ 1C2A1F", CypressColor.surfaceRouteMapGrid),
+        Swatch("surfaceEmptyThumb", "FAFBF4 ↔ 1F2E22", CypressColor.surfaceEmptyThumb),
+        Swatch("surfaceSkeleton", "E3E8D9 ↔ 27352B", CypressColor.surfaceSkeleton),
     ]
 
     static let borders: [Swatch] = [
         Swatch("borderCool", "E3E8D9 ↔ 27352B", CypressColor.borderCool),
         Swatch("borderWarm", "DDD9C9", CypressColor.borderWarm),
         Swatch("borderHairline", "D8D4C4", CypressColor.borderHairline),
-        Swatch("borderDashed", "C9D1BC", CypressColor.borderDashed),
-        Swatch("borderDashedStrong", "C4CEB4", CypressColor.borderDashedStrong),
-        Swatch("borderSheetGrabber", "DDE2D2", CypressColor.borderSheetGrabber),
+        Swatch("borderDashed", "C9D1BC ↔ 353F34", CypressColor.borderDashed),
+        Swatch("borderDashedStrong", "C4CEB4 ↔ 364133", CypressColor.borderDashedStrong),
+        Swatch("borderSheetGrabber", "DDE2D2 ↔ 2B3A2C", CypressColor.borderSheetGrabber),
         Swatch("borderWebRow", "E9ECDE", CypressColor.borderWebRow),
-        Swatch("borderCalloutGreen", "DFE6CD", CypressColor.borderCalloutGreen),
+        Swatch("borderCalloutGreen", "DFE6CD ↔ 27352B", CypressColor.borderCalloutGreen),
         Swatch("borderCalloutGradient", "D9E3C8", CypressColor.borderCalloutGradient),
-        Swatch("borderAmberSoft", "EBD3A8", CypressColor.borderAmberSoft),
-        Swatch("borderAmberMid", "D9A05B", CypressColor.borderAmberMid),
-        Swatch("borderAmberStrong", "E0B070", CypressColor.borderAmberStrong),
-        Swatch("borderMemorial", "C4C8B8", CypressColor.borderMemorial),
-        Swatch("borderAccount", "D8DECB", CypressColor.borderAccount),
-        Swatch("borderShareCard", "E0DDC9", CypressColor.borderShareCard),
-        Swatch("borderRouteMap", "DBE0CB", CypressColor.borderRouteMap),
-        Swatch("borderPinRing", "1D4634 @14%", CypressColor.borderPinRing),
-        Swatch("borderGlassSearch", "1D4634 @10%", CypressColor.borderGlassSearch),
-        Swatch("borderGlassChip", "1D4634 @12%", CypressColor.borderGlassChip),
-        Swatch("borderGlassBottomBar", "1D4634 @8%", CypressColor.borderGlassBottomBar),
+        Swatch("borderAmberSoft", "EBD3A8 ↔ D99A4E", CypressColor.borderAmberSoft),
+        Swatch("borderAmberMid", "D9A05B ↔ D99A4E", CypressColor.borderAmberMid),
+        Swatch("borderAmberStrong", "E0B070 ↔ D99A4E", CypressColor.borderAmberStrong),
+        Swatch("borderMemorial", "C4C8B8 ↔ 39423A", CypressColor.borderMemorial),
+        Swatch("borderAccount", "D8DECB ↔ 2B3A2C", CypressColor.borderAccount),
+        Swatch("borderShareCard", "E0DDC9 ↔ 2B3A2C", CypressColor.borderShareCard),
+        Swatch("borderRouteMap", "DBE0CB ↔ 2B3A2C", CypressColor.borderRouteMap),
+        Swatch("borderPinRing", "1D4634 @14% ↔ 2B3A2C", CypressColor.borderPinRing),
+        Swatch("borderGlassSearch", "1D4634 @10% ↔ 2B3A2C", CypressColor.borderGlassSearch),
+        Swatch("borderGlassChip", "1D4634 @12% ↔ 2B3A2C", CypressColor.borderGlassChip),
+        Swatch("borderGlassBottomBar", "1D4634 @8% ↔ 26332A", CypressColor.borderGlassBottomBar),
     ]
 
     static let text: [Swatch] = [
@@ -449,7 +577,7 @@ private enum TokenGalleryData {
         Swatch("textBody", "3C4A3E ↔ AEBBAB", CypressColor.textBody),
         Swatch("textMuted", "66735F ↔ 94A496", CypressColor.textMuted),
         Swatch("textFaint", "8B9482 ↔ 5F6F61", CypressColor.textFaint),
-        Swatch("textFaintAlt", "77836F", CypressColor.textFaintAlt),
+        Swatch("textFaintAlt", "77836F ↔ 5F6F61", CypressColor.textFaintAlt),
         Swatch("textOnDark", "FFFFFF", CypressColor.textOnDark),
         Swatch("textOnPhoto", "EAF2E6", CypressColor.textOnPhoto),
         Swatch("textOnPhotoSpecies", "F0F5EC", CypressColor.textOnPhotoSpecies),
@@ -463,37 +591,37 @@ private enum TokenGalleryData {
     static let semantic: [Swatch] = [
         Swatch("thrivingBadgeFill", "E2EFE2 ↔ 1F3A2C", CypressColor.thrivingBadgeFill),
         Swatch("thrivingBadgeText", "28623F ↔ 8EC3A5", CypressColor.thrivingBadgeText),
-        Swatch("tapedBadgeFill", "E2EFE2", CypressColor.tapedBadgeFill),
-        Swatch("tapedBadgeText", "28623F", CypressColor.tapedBadgeText),
+        Swatch("tapedBadgeFill", "E2EFE2 ↔ 1F3A2C", CypressColor.tapedBadgeFill),
+        Swatch("tapedBadgeText", "28623F ↔ 8EC3A5", CypressColor.tapedBadgeText),
         Swatch("estimatedBadgeFill", "F1EAD8 ↔ 2E271A", CypressColor.estimatedBadgeFill),
         Swatch("estimatedBadgeText", "8A6A2A ↔ D99A4E", CypressColor.estimatedBadgeText),
-        Swatch("cityRecordBadgeFill", "EAF0E2", CypressColor.cityRecordBadgeFill),
-        Swatch("cityRecordBadgeText", "41522F", CypressColor.cityRecordBadgeText),
-        Swatch("plantedBadgeFill", "EAF0E2", CypressColor.plantedBadgeFill),
-        Swatch("plantedBadgeText", "41522F", CypressColor.plantedBadgeText),
-        Swatch("removedBadgeFill", "E4E6DC", CypressColor.removedBadgeFill),
-        Swatch("removedBadgeText", "5C6555", CypressColor.removedBadgeText),
+        Swatch("cityRecordBadgeFill", "EAF0E2 ↔ 1F3A2C", CypressColor.cityRecordBadgeFill),
+        Swatch("cityRecordBadgeText", "41522F ↔ 8EC3A5", CypressColor.cityRecordBadgeText),
+        Swatch("plantedBadgeFill", "EAF0E2 ↔ 1F3A2C", CypressColor.plantedBadgeFill),
+        Swatch("plantedBadgeText", "41522F ↔ 8EC3A5", CypressColor.plantedBadgeText),
+        Swatch("removedBadgeFill", "E4E6DC ↔ 27352B", CypressColor.removedBadgeFill),
+        Swatch("removedBadgeText", "5C6555 ↔ 94A496", CypressColor.removedBadgeText),
         Swatch("calloutGreenFill", "EFF3E3 ↔ 1A241A", CypressColor.calloutGreenFill),
-        Swatch("calloutGreenBorder", "DFE6CD", CypressColor.calloutGreenBorder),
-        Swatch("calloutGreenText", "41522F", CypressColor.calloutGreenText),
+        Swatch("calloutGreenBorder", "DFE6CD ↔ 27352B", CypressColor.calloutGreenBorder),
+        Swatch("calloutGreenText", "41522F ↔ B9C7B2", CypressColor.calloutGreenText),
         Swatch("calloutGradientBorder", "D9E3C8", CypressColor.calloutGradientBorder),
         Swatch("calloutGradientText", "1C2A21 ↔ E4EBE2", CypressColor.calloutGradientText),
-        Swatch("amberPillFill", "F8EFDF", CypressColor.amberPillFill),
-        Swatch("amberPillBorder", "EBD3A8", CypressColor.amberPillBorder),
-        Swatch("amberPillText", "8A5A17", CypressColor.amberPillText),
-        Swatch("amberChipSelectedFill", "F8EFDF", CypressColor.amberChipSelectedFill),
-        Swatch("amberChipSelectedBorder", "D9A05B", CypressColor.amberChipSelectedBorder),
-        Swatch("amberChipSelectedText", "8A5A17", CypressColor.amberChipSelectedText),
+        Swatch("amberPillFill", "F8EFDF ↔ 2E271A", CypressColor.amberPillFill),
+        Swatch("amberPillBorder", "EBD3A8 ↔ D99A4E", CypressColor.amberPillBorder),
+        Swatch("amberPillText", "8A5A17 ↔ D99A4E", CypressColor.amberPillText),
+        Swatch("amberChipSelectedFill", "F8EFDF ↔ 2E271A", CypressColor.amberChipSelectedFill),
+        Swatch("amberChipSelectedBorder", "D9A05B ↔ D99A4E", CypressColor.amberChipSelectedBorder),
+        Swatch("amberChipSelectedText", "8A5A17 ↔ D99A4E", CypressColor.amberChipSelectedText),
         Swatch("amberAttentionCardFill", "FFFFFF ↔ 18251D", CypressColor.amberAttentionCardFill),
-        Swatch("amberAttentionCardBorder", "D9A05B", CypressColor.amberAttentionCardBorder),
-        Swatch("hazardPanelFill", "F8EFDF", CypressColor.hazardPanelFill),
-        Swatch("hazardPanelBorder", "E0B070", CypressColor.hazardPanelBorder),
-        Swatch("hazardPanelText", "6B5122", CypressColor.hazardPanelText),
-        Swatch("hazardCTAFill", "A35F12", CypressColor.hazardCTAFill),
-        Swatch("hazardCTAText", "FFFFFF", CypressColor.hazardCTAText),
-        Swatch("memorialBannerFill", "EDEEE6", CypressColor.memorialBannerFill),
-        Swatch("memorialBannerBorder", "C4C8B8", CypressColor.memorialBannerBorder),
-        Swatch("memorialBannerText", "4A5344", CypressColor.memorialBannerText),
+        Swatch("amberAttentionCardBorder", "D9A05B ↔ D99A4E", CypressColor.amberAttentionCardBorder),
+        Swatch("hazardPanelFill", "F8EFDF ↔ 2E271A", CypressColor.hazardPanelFill),
+        Swatch("hazardPanelBorder", "E0B070 ↔ D99A4E", CypressColor.hazardPanelBorder),
+        Swatch("hazardPanelText", "6B5122 ↔ BDA680", CypressColor.hazardPanelText),
+        Swatch("hazardCTAFill", "A35F12 ↔ D99A4E", CypressColor.hazardCTAFill),
+        Swatch("hazardCTAText", "FFFFFF ↔ 0E1712", CypressColor.hazardCTAText),
+        Swatch("memorialBannerFill", "EDEEE6 ↔ 27352B", CypressColor.memorialBannerFill),
+        Swatch("memorialBannerBorder", "C4C8B8 ↔ 39423A", CypressColor.memorialBannerBorder),
+        Swatch("memorialBannerText", "4A5344 ↔ AEBBAB", CypressColor.memorialBannerText),
         Swatch("gpsDot", "3577C9 ↔ 6FA8E8", CypressColor.gpsDot),
         Swatch("gpsDotHalo", "3577C9 @18% ↔ 16%", CypressColor.gpsDotHalo),
         Swatch("pinRingStroke", "FFFFFF ↔ 0E1712", CypressColor.pinRingStroke),

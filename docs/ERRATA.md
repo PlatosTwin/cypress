@@ -159,8 +159,149 @@ visually identical to the thriving badge, which *does* have a documented dark pa
 `#8EC3A5`) and almost certainly should share it.
 
 Per DECISIONS constraint 21 ("when a screen or state is not in the mocks, stop and ask rather than
-inventing it") no dark values were invented. Each gap is marked `// TODO: no dark value specified`
+inventing it") no dark values were invented. Each gap was marked `// TODO: no dark value specified`
 in `CypressColor.swift`. Dark mode is milestone M4; this needs a design answer before then.
+
+**RESOLVED for 47 tokens, escalated for 17 rows, and the gap in SCREENS.md is still real.**
+ROADMAP §3 took the decision: derive the missing values from the documented pairs rather than
+invent them per token or ship a broken dark mode, and label every derived value so that review is
+one screen. What follows is what the derivation found, because the finding is worth more than the
+numbers are.
+
+**The counts, recounted.** The 137 / 78 / 59 above was right when it was written and has drifted
+since — E20 added a token, E27 and the taped badge converted three. `CypressColor` now holds **157
+colour tokens** carrying a value of their own (plus five aliases that resolve through another
+token), of which **62 carry a documented pair** — 55 before this pass, plus 7 found in the D1–D2
+delta prose (below). Of the remaining 95, **32 have no second appearance by definition**: they ride
+on imagery, they live on screen 04 which is dark always, they belong to the spec document or to W1,
+or they are the six raw brand hues, whose scheme-dependent roles are carried by the paired role
+tokens instead. That leaves **63 genuine gaps: 47 derived, 16 escalated** — 64 rows in the review
+sheet, because the gradient callout is escalated too and is not a colour.
+
+**Seven more dark values were documented in prose and missed by the table-driven transcription.**
+E27 called itself the third instance of this; there are now ten. All seven below are `dynamic`,
+not derived — they were never gaps, only unread:
+
+| Token | Dark | Stated in |
+|---|---|---|
+| `border.pinRing` | `#2B3A2C` | D1, "Card thumb … border `#2B3A2C`" |
+| `border.glass` (chip) | `#2B3A2C` | D1, "Filter chip off … border `#2B3A2C`" |
+| `border.glass` (search) | `#2B3A2C` | D1, "Search bar … border `#2B3A2C`" |
+| `border.glass` (bottom bar) | `#26332A` | D1, "Tab bar … top border `#26332A`" |
+| `border.calloutGreen` | `#27352B` | D2, "Recognize-it callout … border `1px #27352B`" |
+| `calloutGreen` border | `#27352B` | same sentence |
+| `calloutGreen` text | `#B9C7B2` | D2, "… body `#B9C7B2`" |
+
+Anyone auditing a token table against a screen should read the delta prose first. Every one of
+these ten was in the document; none of them was in §1.
+
+**The transform, and it is not one transform.** The 55 pairs were analysed in OKLCh rather than
+sRGB, because lightness, chroma and hue are the three things a designer moves and sRGB mixes them.
+Fitted per role, on documented pairs, with the map excluded (D1 paints every map layer by hand and
+all of them are already specified):
+
+| Role | Fit | n | Quality |
+|---|---|---|---|
+| Text | `L' = 1.174 − 0.970·L` | 6 | r² 0.94 — very nearly a reflection about L = 0.585 |
+| Borders | `L' = 0.816 − 0.543·L` | 3 | r² 0.99, residual ≤ 0.005 |
+| Accents | `L' = 0.73` (constant) | 5 | sd 0.031; a linear fit is worse (r² 0.27) |
+| Foliage ramp | `L' = 0.184 + 0.498·L` | 3 | r² 0.998 — compressed, **not** inverted |
+| Badge / tinted fills | `L' ≈ 0.30`, hue from the family's accent | 2 | both reproduced within 0.027 |
+
+Chroma is kept where there is chroma to keep (×0.9 on average) and floored at ≈0.025 where there
+is not — the dark neutrals are *more* chromatic than the light ones, which is D2's own caption
+("green-tinted blacks, never neutral gray") stated as a number. Hue is preserved above C ≈ 0.06
+(|ΔH| ≤ 8° on every documented pair) and pulled to the house green ≈150° below
+C ≈ 0.02, ramped smoothly between the two.
+
+**Where it does not hold, which is the part worth keeping.**
+
+1. **Surfaces have no transform at all.** `L'` is not a function of `L` for them: r² 0.21, and the
+   ordering is not even preserved. `surface.card` (`#FFFFFF`, L 1.000) and `calloutGreenFill`
+   (`#EFF3E3`, L 0.957) both land at L ≈ 0.248, while `surface.screen` (L 0.970) and `tabBarFill`
+   (L 0.983) — *between* them in light — both land at L ≈ 0.196. The dark surfaces are a
+   quantised two-rung ladder set by elevation rather than by value: ground at L ≈ 0.20, raised at
+   L ≈ 0.25. Every derived surface below snaps to a rung rather than computing one.
+2. **The transform is a function of role AND value, never of value alone.** Five light hexes have
+   more than one documented dark counterpart. `#FFFFFF` has three (`#0E1712`, `#18251D`,
+   `#DFE8D6` — 0.73 apart in OKLab). `#77836F` has two (`#5F6F61` and `#94A496`, 0.178 apart),
+   which is why the text rule's two worst residuals, 0.073 and 0.106, are both at that one hex.
+   `#41522F` has two, `#2F6B4F` has two, `#1D4634` has three. A value-only transform is not
+   merely imprecise here; it is contradicted by the data.
+3. **The amber borders.** The border rule, which reproduces its three documented pairs to within
+   0.005, extrapolates `#EBD3A8` to `#44361A` — a brown 0.40 in OKLab from `dark.accent.amber`,
+   the only amber the dark palette contains. That is 8× the tolerance, so the rule was rejected
+   and the amber family snapped onto the two documented ambers instead. See below.
+4. **The chart series.** The accent rule reproduces every documented accent to within 0.043 and is
+   still wrong for C23: it anchors lightness, so Canopy and New Growth — 0.117 apart in light —
+   land 0.011 apart in dark and three series become two. Escalated as a set.
+
+**The tolerance, and why 0.05.** A derivation is rejected where the fitted transform disagrees
+with the documented pairs it claims to cover by more than **ΔE 0.05 in OKLab**. That is the 90th
+percentile of the fit residual across all 26 covered pairs (median 0.027), and it is well under
+the smallest step between two adjacent rungs of the documented dark text ladder (0.075), so a
+prediction inside it lands unambiguously on one rung. A separate, tighter threshold — ΔE 0.02 —
+decides when to stop minting: below it the fitted value and a hex the designer already wrote are
+the same colour, so the designer's hex is used. **38 of the 47 derived values reuse a documented
+hex; 9 are minted**, all of them borders and tinted panels for which the palette has no rung.
+
+**The amber family, which is the one that changes a screen.** SCREENS.md gives it no dark row at
+all. The dark palette answers it with exactly two values — `dark.accent.amber` `#D99A4E` for the
+mark and `dark.accent.amberBg` `#2E271A` for the ground under it — and D1 and D2 send every amber
+they draw to one of the two. So every amber fill derives to `#2E271A` and every amber mark to
+`#D99A4E`, minting nothing. Measured on device: the amber pill text is **6.1:1** on its derived
+fill (5.2:1 in light), the 311 panel body **6.3:1** (6.5:1), the 311 CTA label **7.6:1** (5.0:1).
+The amber family does not fail WCAG after dark; it improves.
+
+Two things it costs, and both are design questions rather than bugs:
+
+- **Light has three amber border weights and dark now has one.** `border.amberSoft` / `amberStrong`
+  / `amberMid` all become `#D99A4E`, so after dark the amber pill, the selected amber chip and the
+  311 hazard panel no longer differ by border weight. Worth noting that `#D9A05B` — light's
+  attention-card border — is ΔE **0.016** from `#D99A4E`, so one of the three was already sitting
+  on the dark amber; it is the pale end of the range that has nowhere to go.
+- **The 311 phone glyph and CTA label had to invert.** `#FDF3E3` on `#D99A4E` is 2.2:1 and
+  unreadable; both now take `dark.bg.screen`, which is the move `ctaLabel` already documents.
+
+**Other contrast findings, reported rather than fixed.**
+
+- `speciesTileLockedGlyph` on `speciesTileLockedFill` is **2.1:1** after dark and **1.8:1** in
+  light. Both fail. The `?` is decorative — the tile's meaning is in its label — and raising it
+  is a change to a mocked screen, not a dark-mode question.
+- The three C23 chart series are left light, so Canopy reads at **2.5:1** and Bark at **2.3:1** on
+  a dark card. That is a stated failure rather than a hidden one; it is why they are escalated.
+- Everything else derived clears AA: badges 4.9–6.2:1, the memorial banner 6.4:1.
+
+**The 17 escalated rows**, with the reason on each in `CypressColor.swift` and in the gallery. The
+seven amber borders are *not* among them — they are derived, above. The list is: the gradient
+callout with its border, its border-alias and its ink (4, because a two-stop wash is a drawing and
+D1–D3 never draw one), `text.onDark` (1, the `#FFFFFF` ambiguity), the muted-pin family (3 — D1
+draws every pin in the dark and then says outright that the removed one is omitted), `toggleKnob`
+(1, two tracks that move in opposite directions after dark), the three C23 chart series, and the
+five C10 tile accents, whose lightness is set by the base under the radial rather than by their
+own value.
+
+**Where the work lives.**
+
+- `CypressColor.derived(light:dark:)` and `CypressColor.escalated(_:)` sit beside `dynamic` and
+  `lightOnly`, so the source itself says which of the four claims each token makes. Promoting a
+  derived token to specified is one line: `derived` → `dynamic`.
+- `CypressColor.reviewTokens` is the 64-row review sheet, and `TokenGallery` renders it as its
+  first two sections — derived first to check, escalated second to answer. Design review of this
+  entry is one screen, which was the point of the decision in ROADMAP §3.
+- `CypressTests/DerivedTokenTests.swift` pins the three ways this fails quietly: a token that
+  claims to be derived and still resolves to one colour, a review sheet that has drifted from the
+  tokens it prints, and an amber or badge pair that stops clearing WCAG AA after dark.
+
+**What remains, and it is the original entry.** SCREENS.md still documents dark for three screens
+out of nineteen. 47 of these values are a considered guess and a designer may overturn any of
+them; 17 rows have no answer at all. Nothing here promotes a derivation to a specification.
+
+Verified on device (iPhone 16 Pro, dark): every derived value in `TokenGallery`, the D1 map home,
+and the D2/D3 elements built from the real components. `border.dashed` — the token this entry
+singles out as "the brightest element on the dark check-in screen" — now reads at 1.7:1 against
+the dark ground, where it used to read at 11.6:1 and the mint CTA reads at 9.1:1. D3's caption
+asks for the CTA to be the brightest thing on the screen; it now is.
 
 ### E7 — The leaf-on window that the seasonality rule depends on is never defined
 
@@ -618,3 +759,257 @@ missing field is not a delta of appearance.
 Everything else in D3's list — the mint selection, the weight-800 chips and CTA, the desaturated
 swatch column, the shadowless selected row, `#D6E0CE` titles against `#E4EBE2` on the selected one —
 is implemented, and resolves off the system colour scheme rather than being pinned dark.
+
+### E32 — `awaitingWifiCount` counted items that were not waiting on wi-fi
+
+`OutboxSnapshot.awaitingWifiCount` was `records.filter { $0.item.state != .done && !$0.item.photos.isEmpty }.count`,
+under a doc comment reading "Items whose JSON went and whose photos are queued behind the wi-fi
+toggle." The predicate checked neither clause.
+
+It counted a visit enqueued two hundred milliseconds ago and never drained, whose note has not gone
+anywhere. It counted an item that came back `validation_failed` and happens to carry a photo, which
+is terminal and is asking for a tap, not for a connection. Screen 17's footnote — "an item that
+cannot sync says so, says why, and waits for you" — is the contract that count feeds, and both cases
+made it say the note was saved when it was not. That is the inverse of the screen's job.
+
+The predicate now requires all four clauses of the sentence `awaitingWifi(photoCount:)` writes: the
+JSON has been accepted (`jsonSynced`), binaries are still on the device, the row is still alive
+(`pending` or `uploading`, so a terminal failure is counted by `failedCount` and nothing else), and
+the toggle is on.
+
+The toggle is the part worth stating. Nothing is "queued behind the wi-fi toggle" while the toggle is
+off — with it off the binaries go on whatever connection there is, exactly as notes and numbers
+always do (BUILD-PLAN §4). So `OutboxSnapshot.init` and `OutboxQueue.snapshot` now take
+`syncPhotosOnWifiOnly`, with no default value: neither type owns the preference, `OutboxViewState`
+and the store behind it do, and a default would let a caller that cannot know the answer give one
+anyway. `OutboxViewState` also refreshes the snapshot when the toggle changes, because the count is
+now a statement about the toggle as much as about the rows.
+
+### E33 — a sorted month array cannot carry a phenological start or end
+
+`SeasonalCalendar.init` sorts `bloom_months`, `fall_color_months`, `fruit_months` and
+`new_growth_months`. `Species.leafOnMonths` read `newGrowthMonths.first` and `fallColorMonths.last`
+as the opening and close of the leaf-on window. After the sort those are the numeric minimum and
+maximum, so a deciduous species authored with a November-through-January fall — `[11, 12, 1]`,
+stored as `[1, 11, 12]` — closed its leaf-on window in December. January became leaf-off,
+`Vitality.isRatingPermitted` suppressed the vitality rows for a month the authored calendar says the
+tree is still in leaf, and D3's anchored rows are not something a rater standing in front of the
+tree can put back.
+
+Sorting is not the mistake. BUILD-PLAN §4 stores each season as a bare month array, which is a *set*:
+two spellings of the same season should be one value and `Hashable` should agree, and sorting is how
+that is achieved. The mistake was reading an ordered meaning out of a collection whose order carries
+none — and the alternative, preserving authoring order and calling it the season, only moves the trap
+to the YAML, where `[1, 11, 12]` and `[11, 12, 1]` would silently mean different years and nothing
+would tell an author which spelling was load-bearing.
+
+So the window is recovered from the membership instead. `MonthRange.spanning(_:)` returns the one
+wrapping run a set of months describes, by finding the month whose predecessor around the circle is
+absent; every spelling of November-through-January yields `MonthRange(start: 11, end: 1)`, and
+`MonthRange` already handles the wrap correctly from there. A set with a gap in it — two separate
+bloom flushes — describes no single window and returns `nil` rather than a window invented across the
+gap, which sends `leafOnMonths` to the documented April–October fallback.
+
+This is latent, not live: every `seasonal` in the shipped seed is empty, so every deciduous species
+takes the fallback today. It lands the moment the curated species pipeline authors a calendar that
+wraps, which is most fall calendars in the northern hemisphere.
+
+### E34 — a missed account ask could never fire again
+
+`VisitSaveLedger.recordSave()` was `saveCount += 1; return saveCount == accountAskThreshold &&
+!isAskResolved`. The equality is a faithful transcription of the prototype's `saves + 1 == 3`
+(PROTOTYPE-FLOW §1.6.3), and the prototype was never backgrounded.
+
+On a phone, the save that earns the ask and the answer to it are separated by a sheet presentation.
+If the app is suspended and killed with the sheet up, or the sheet is swiped away without its
+dismissal handler running, `isAskResolved` stays false while `saveCount` moves to four — past the
+only value the guard could ever match. D9's account ask is then gone for the life of the install, and
+D9 is the decision that gets anyone an account at all.
+
+A plain `>=` is the other failure, and it is the one DECISIONS is more explicit about: it re-offers
+the ask on every save until answered, and D9 exists precisely to keep the auth sheet off "second 8 of
+a ten-second street-corner visit". An ask that returns every time somebody saves a tree hands that
+friction back in instalments.
+
+The ledger now counts presentations separately from resolution and bounds them at two: the ask is
+owed from the third save (D9's threshold is the earliest save it may appear on, not the only one),
+and an unanswered ask gets exactly one second chance on the next save. Silence is never written back
+as a decline — `isAskResolved` still means the user answered, so `storageLine` keeps saying an
+account can be added later.
+
+Dismissal is made resolvable rather than left to the sheet's author to remember:
+`VisitSavedModel.accountAskPresentation` is the `Binding<Bool>` screen 15 presents from, and SwiftUI
+writes `false` through it for an interactive dismissal as well as a programmatic one, so a swipe-away
+reaches `resolveAccountAsk()`. The bound and the binding are two halves of the same fix; neither is
+meant to carry it alone.
+
+### E35 — the 10 m proximity dedupe fired out to 14.1 m
+
+`BoundingBox(around:radiusM:)` builds a square whose half-width is `radiusM` on **both** axes, so it
+circumscribes the circle rather than inscribing it: a point on the diagonal is admitted out to
+`radiusM·√2`. For the 10 m any-species dedupe DECISIONS §3.16 requires, that is 14.14 m.
+
+`TreeQueries.nearest` never re-checked the true distance, and `LocalAPI.addTree` reads a non-empty
+candidate list as the conflict. So standing 12 m from an inventoried tree — SF street trees sit
+6–10 m apart (D6), so this is the common case rather than the edge — adding a genuinely new tree
+returned `conflict`. `conflict` is not retryable (BUILD-PLAN §6), so the outbox item went terminal
+on the first attempt and the contributor was refused permanently, with a real nearby tree named as
+the reason, which made the refusal look correct.
+
+`CommunityTreeStore.near` had the exact re-check from the start; the seed half never got it. It is
+there now, on both index strategies, with the `LIMIT` left where it was: the SQL orders by distance,
+so a row the circle rejects is farther than every row it keeps. This is the same shape as the R*Tree
+rule in E3 — a conservative index filter, then the true predicate — and it is now what makes the box
+a pre-filter rather than the answer.
+
+Found in the same place: `CommunityTreeStore.near` passed the caller's limit down into `inBounds`,
+which has no `ORDER BY`. A `LIMIT` there drops rows in storage order, so the row discarded can be
+the 2 m duplicate the query exists to find. The box is now read whole and the limit applied to exact
+metres afterwards; within any dedupe radius that table holds tens of rows.
+
+### E36 — community-added trees were silently dropped from the map
+
+`LocalAPI.mapContent`, `.pins` branch. Seed pins come back already capped at `viewport.pinLimit`;
+community trees were appended after them and the result cut with `prefix(pinLimit)`. Whenever the
+seed query reached its cap, every community tree was cut — no error, no log, nothing in the payload
+to notice.
+
+It reaches its cap in normal use. `MapModel` reads the viewport as five horizontal bands of 260 pins
+each, and a zoom-16 band over SF measures around 264. So a contributor added a tree and their own
+pin never appeared on screen 01, on the screen they added it from. DECISIONS §3.16 requires community
+trees on a visually distinct layer; the layer was absent. The cluster branch merged correctly all
+along, which is what made the pin branch look deliberate.
+
+The community layer now takes its own share of the budget — `seedBudget = pinLimit − communityCount`
+— rather than the tail of the seed's. The response stays the same size, and what it spends is one
+seed pin per community tree. That is the right trade at any density: the 260th seed pin in a
+viewport of 264 is worth less than the tree somebody stood in front of and added.
+
+### E37 — no photograph was visible anywhere in the app
+
+`Photo.isPubliclyVisible` required `moderation_state == 'approved'`, and `visiblePhotos` on screens
+03/14 was gated on it. Nothing in the shipping app can set `.approved`: there is no moderation
+service, `beginPhotoUpload` and `addTree` both construct photos as `.pending`, and the schema's
+default is `'pending'`. So `visiblePhotos` was always empty — no hero, no season strip, no best
+photo, on every tree, forever.
+
+The failure was invisible because it was total. The visit still landed, so `isCold` was false and
+the cold-start copy did not render either; what showed was a profile with no photograph and no
+explanation, which reads exactly like a designed empty state.
+
+**The decision, recorded because it is a product call and not a bug fix.** Moderation is a gate on
+*publication*. DECISIONS §3 puts it on public timelines, published locations and the open export;
+nothing in it says a contributor may not see the photograph they just took on the device they took
+it with. So local display now includes this device's own photos, and the public predicate keeps
+meaning exactly what it says.
+
+What was **not** done: marking the photos `.approved`. Leaving them `.pending` is the honest state,
+because nothing has in fact moderated them, and a fake approval would survive into whatever
+publishes.
+
+The two questions are now two names, in `Photo`: `isPubliclyVisible` / `isPublicBestPhotoCandidate`
+for "the world can see this", `isVisibleToItsContributor` / `isBestPhotoShot` for "I can see this".
+Which photos are the viewer's own is not a judgement a view can make and not one to infer from a
+`.pending` state, so it travels on the payload as `TreeProfile.ownPhotoIDs`. `LocalAPI` fills it
+with everything it read, because `main.photos` holds what this device wrote and nothing else;
+`RemoteAPI` will fill it from the server's attribution, and everything it does not list stays gated
+on `.approved`.
+
+### E38 — a page of 30 was presented as the tree's whole photo series
+
+`ContributionStore.photos` defaulted to `LIMIT 30 ORDER BY captured_at DESC`, and
+`LocalAPI.treeProfile` called it with no limit — so `TreeProfile.photos` was page one, typed as a
+bare array that could not say so.
+
+`TreeProfilePresentation.heroMetaPill` then reported that page's size as the tree's photo count and
+that page's earliest `capturedAt` as its "since" year. A tree with 214 photographs going back to
+2019 rendered `30 photos · since 2024`. Both numbers wrong, both plausible, neither checkable from
+the screen. A5's season strip was computed over the same 30, so a well-photographed tree stopped
+filling its strip and could lose months it had shown the year before — and a thin cell is a claim
+that no photograph exists for that month.
+
+Same shape, lower harm: `visits(limit: 50)` and `careEvents(limit: 50)` feed A8's caretakers
+threshold ("2 or more care events in 24 months, shown at 3 or more"), counted over at most the 50
+most recent.
+
+Fixed by making the type carry the fact. `Series<Element>` has `items` and `isComplete`, and no
+`count` — the size of the series is `totalCount`, which is `nil` unless the read proved it had all of
+it, which `ContributionStore` proves by asking for one row more than the caller wanted. Filtering
+and sorting preserve completeness, so a visibility filter does not launder a page into a total. The
+profile reads each series whole; everything that counts renders nothing when handed a page, which is
+a state each of those surfaces already has.
+
+### E39 — the export took page one and dropped the cursor
+
+`LocalAPI.exportLatest` called `journal(cursor: nil, limit: 100)` and used `page.items`, discarding
+`nextCursor`. Its own doc comment names the account-data request as a use case, so that is an
+incomplete subject-access export presented as complete: capped at 100 rows, with no truncation
+marker in the CSV or the GeoJSON and no way for the person holding it to tell.
+
+It now follows the cursor to the end. Termination is a property of the query rather than an
+assumption: `journal` returns a cursor only when the page came back full, and each page asks for
+rows strictly older than the last one seen.
+
+**Residual, not fixed here.** That strict `<` means contributions sharing a `captured_at` across a
+page boundary are skipped. Timestamps carry fractional seconds, so it takes a batch write to
+produce, but the honest fix is a keyset cursor on `(captured_at, id)` and that changes the cursor
+format on a documented endpoint (BUILD-PLAN §6). Recorded rather than done.
+
+### E40 — nothing strips EXIF, on the path DECISIONS §3.10 requires it on
+
+DECISIONS §3.10: "Strip all EXIF server-side on ingest; store capture timestamp and the app's own
+fuzzed coordinates in columns." §3.9: "Never collect birthdates, passwords, or exact photo GPS."
+
+There is no server. The ingest path is `LocalAPI.uploadPhoto`, and it was a `FileManager.moveItem`:
+the file that landed in the app's photo directory was the camera's file, byte for byte.
+`AVCapturePhoto.fileDataRepresentation()` carries the full metadata sidecar — camera make and model,
+lens, capture timestamp — and the photo-library fallback (`PhotosPicker`, `loadTransferable`) hands
+over the original file from the library, which is the one that can carry a GPS fix from whatever app
+took it. `Photo`'s own doc comment asserted the strip happens ("EXIF, including GPS, is stripped
+server-side on ingest"), which is how it went unnoticed.
+
+`PhotoBinary.writeStrippingMetadata` now rewrites the container with GPS, Exif, Exif-Aux, IPTC, TIFF,
+Maker Notes and XMP dropped, through `CGImageDestinationCopyImageSource` — the compressed pixels are
+copied, not re-encoded, so there is no generation loss.
+
+Two passes, for one reason worth stating: ImageIO refuses an exclusion and an orientation in the same
+call, and orientation is not personal data — it is which way up the picture goes. An iPhone portrait
+photograph is landscape pixels plus an orientation tag, so a single-pass strip turns every portrait
+shot on its side in the hero and behind the ghost overlay. So: strip everything, then put that one
+value back. What survives is what ImageIO synthesises for any JPEG it writes — pixel dimensions,
+colour space, an Exif version number — and `PhotoBinary.carriesIdentifyingMetadata` is the
+postcondition, written against the fields that identify a person or a place rather than against the
+presence of a container.
+
+When the rewrite fails — a container ImageIO cannot re-emit — the original is moved across rather
+than dropped, because refusing it fails the outbox item terminally and costs the contributor the only
+copy of their photograph. Under `LocalAPI` the file never leaves the device and no surface reads it.
+`RemoteAPI` must not inherit that reasoning: nothing may be **published** out of that fallback.
+
+### E41 — a photo's pixel size was never recorded, so A3's tie-break never ran
+
+`APIOutboxTransport.uploadPhoto` built its `PhotoUploadRequest` without `width` or `height`, and
+`LocalAPI.beginPhotoUpload` ignored both fields even when they were set. Every `photos.width` and
+`photos.height` was NULL, so `Photo.resolution` was 0 on every row and A3's "ties broken by
+resolution" could not distinguish anything — on the one case the tie-break exists for, several
+photographs sharing a capture date.
+
+The transport now reads the size off the staged file before handing it over (`PhotoBinary.pixelSize`,
+a header read rather than a decode), and `beginPhotoUpload` stores what it is given.
+
+### E42 — `publicCoordinate` is deliberately not populated
+
+The same request carries `publicCoordinate`, and it is left `nil`. This is a decision, not an
+oversight, and it is recorded here so it is not "fixed" later by someone reading E41.
+
+Storing it would mean writing where the contributor was standing when they took the photograph.
+DECISIONS §3.10 requires a 25 m snap for **public photo locations**, and §3.11 plus D11 are explicit
+about the threat: a public record of where a named person stands is what reconstructs their life.
+The tree's own pin is already exact and already public — trees are public objects — so a photo
+coordinate adds nothing a public surface needs, and adds a second, independent record of a person.
+
+The safest place to keep a location is nowhere. `Photo.publicCoordinate` and its 25 m snap stay in
+the model and are exercised, so the day a surface genuinely needs a photo location it snaps before it
+is stored (`Photo.init` does it unconditionally); until then nothing writes one. Screen 10 (share) is
+where this will be re-opened, and it should be re-opened as a product decision rather than as
+plumbing.
