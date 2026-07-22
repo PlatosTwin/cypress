@@ -10,8 +10,14 @@ document, it cites the entry in `docs/ERRATA.md` that records the conflict.
 
 ## Status
 
-**M0, M1 and M2 are complete.** Screens 01–14 and 18 are built, tested and committed; M3's
-remaining four (15, 16, 17, 19) are in progress. 208 tests, stable across repeated runs.
+**M0 through M4 are complete.** All nineteen screens are built, routed, tested and committed, with
+the animation, Dynamic Type and VoiceOver passes behind them. What remains before the app installs on
+a phone is M5, below.
+
+**The five questions that were design's and had no answer are now ruled on** — see `docs/RULINGS.md`.
+They were delegated explicitly by the project owner on 2026-07-21, and R1 is the only place in the
+app where a transcribed hex has been overruled. That file, not this one, is where a designer arriving
+later should start.
 
 Three things learned along the way that outrank anything in the sequencing below.
 
@@ -133,6 +139,40 @@ contrast verification on the amber family, which is the palette most likely to f
 
 ---
 
+## M5 — the thing installs on a phone
+
+M4 was the last milestone about screens. M5 is about the difference between nineteen screens and an
+app, which turns out to be short.
+
+| | Work | State |
+|---|---|---|
+| 1 | **The vacant planting-site state** (E11) — 12,518 pins, 6.4% of the map, still rendering as a stripped-down cold profile | resolved below, being built |
+| 2 | **The caption ramp** (R1) — `text.faint` fails AA in both appearances across 61 call sites | ruled, being built |
+| 3 | **The favourite comes off** (R2, E101) — a tap that can be made and not taken back | ruled, being built |
+| 4 | **Account deletion** (R3) — §3.12 and the exclusive-ownership CHECK cannot both hold | ruled, being built |
+| 5 | **Icon, accent, launch screen** | done |
+| 6 | **Screen 15 gated** (R4) behind `BetaCapability.accountsAvailable` | ruled, to build |
+
+Bundle identity was already set: `app.cypress.Cypress`, marketing version 0.1, portrait only, iPhone
+only. **A local beta needs no Apple Developer Program membership** — a free Apple ID signs the app for
+seven days at a time on the owner's own device, which is the right shape for this stage. A paid Team
+ID buys a year instead of a week, TestFlight, and distribution to people who are not you; none of
+that is needed until someone else is holding the phone.
+
+### What M5 deliberately does not include
+
+**A backend.** There is none and none is planned for the beta. Everything the app does is local: the
+seed database ships in the bundle, contributions queue in the outbox and stay there, and no request
+leaves the device. The outbox is not disabled for this — it runs, retries, and backs off exactly as
+designed, against nothing. That is a better beta than a stubbed-out queue, because the thing being
+exercised is the thing that will ship.
+
+**Sign-in** — R4. **Moderation** — there is no moderator; E-numbered entries record what
+`moderationState` means in the meantime. **iNaturalist licensing** — a position, not a permission,
+and the owner has accepted it for the beta.
+
+---
+
 ## Resolutions on the three open questions
 
 These were escalated and handed back. Each is a decision I am taking, with the reasoning, so it can
@@ -207,6 +247,15 @@ roads darker and exposes no way to recolour them independently. `MapCanvas(basem
 kept as the seam for a vector basemap. Not scheduled — it is a real visual departure from the mock,
 and worth doing only if the map's look is judged to matter more than the work.
 
-**No test target.** Verification currently runs through harnesses rather than XCTest. That is
-adequate for proving a round trip and inadequate as a regression net. A test target should land
-before M2 widens the surface area.
+**Structural VoiceOver is not machine-checked.** SwiftUI builds no in-process accessibility tree, so
+the unit suite can assert that a label exists on a value and cannot assert that a screen's elements
+are ordered, grouped and reachable in the order a person hears them. That needs XCUITest, which needs
+a UI-test target, which is a project-file change. Worth doing; not blocking the beta.
+
+**Two contrast pairs are still failing and are design's** — the C10 locked glyph and the C23 chart
+series on a dark card, both under 3:1. R1 fixed the text ramp and deliberately left these, because a
+glyph and a data encoding are drawn decisions rather than a ramp. They are the first thing on a
+designer's list.
+
+*(The "no test target" entry that stood here is resolved: `CypressTests` is a hosted swift-testing
+bundle and has been since M2. It found two shipped bugs on the day it was wired.)*
