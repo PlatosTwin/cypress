@@ -338,7 +338,7 @@ struct MapCardSubject: Identifiable, Equatable {
     }
 
     var lastVisitedAt: Date? {
-        profile?.visits.map(\.capturedAt).max()
+        profile?.visits.items.map(\.capturedAt).max()
     }
 
     /// The four canonical C22 thumbnails cover four species; the rest of the catalogue has no

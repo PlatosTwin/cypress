@@ -73,8 +73,22 @@ public actor LocalAPI: CypressAPI {
         guard !added.isEmpty else { return seedContent }
 
         switch seedContent {
-        case var .pins(pins):
-            pins.append(contentsOf: added.map {
+        case let .pins(pins):
+            // The community layer gets its own share of the budget rather than the tail of the
+            // seed's.
+            //
+            // `pins` already comes back capped at `viewport.pinLimit`, so appending community trees
+            // and then taking `prefix(pinLimit)` dropped **every one of them** whenever the seed
+            // query hit its cap — which it does in normal SF density: `MapModel` reads each band at
+            // 260 and a zoom-16 band measures around 264. A contributor added a tree and their own
+            // pin never appeared on the screen they added it from, with no error and no log
+            // (ERRATA E36).
+            //
+            // Reserving the space instead keeps the response the same size and cannot starve the
+            // layer DECISIONS §3.16 requires to be visually distinct. What it spends is seed pins,
+            // one for each community tree — and the 260th seed pin in a viewport of 264 is worth
+            // less than the tree somebody stood in front of and added.
+            let communityPins = added.map {
                 TreePin(
                     id: $0.id,
                     coordinate: $0.coordinate,
@@ -83,8 +97,9 @@ public actor LocalAPI: CypressAPI {
                     verificationState: $0.verificationState,
                     speciesID: $0.speciesCurrentID
                 )
-            })
-            return .pins(Array(pins.prefix(viewport.pinLimit)))
+            }
+            let seedBudget = max(viewport.pinLimit - communityPins.count, 0)
+            return .pins(Array(pins.prefix(seedBudget)) + communityPins)
 
         case var .clusters(clusters):
             let centreLatitude = (viewport.bounds.minLatitude + viewport.bounds.maxLatitude) / 2
@@ -146,6 +161,13 @@ public actor LocalAPI: CypressAPI {
             let inventoryTree = try record?.tree ?? communityTrees.tree(id: id, connection: connection)
             guard let tree = inventoryTree else { throw APIError.notFound }
 
+            // Each series is read whole (`limit: nil`), because everything the profile derives from
+            // one is a statement about all of it: the hero's count and its `since` year, A5's
+            // season strip, A8's caretakers over 24 months. A page would answer each of those with
+            // a number that is wrong and looks right (ERRATA E38). These are one tree's own
+            // contributions — tens of rows, indexed on `tree_uuid` — not a corpus.
+            let photos = try contributions.photos(treeID: id, connection: connection)
+
             return TreeProfile(
                 tree: tree,
                 activeName: try contributions.activeName(treeID: id, connection: connection),
@@ -157,12 +179,17 @@ public actor LocalAPI: CypressAPI {
                 ),
                 neighborhoodName: record?.neighborhoodName,
                 latestObservation: try contributions.latestObservation(treeID: id, connection: connection),
-                photos: try contributions.photos(treeID: id, connection: connection),
+                photos: photos,
                 measurements: try contributions.measurements(treeID: id, connection: connection),
                 visits: try contributions.visits(treeID: id, connection: connection),
                 careEvents: try contributions.careEvents(treeID: id, connection: connection),
                 communityNotes: try contributions.communityNotes(treeID: id, at: moment, connection: connection),
-                siteLineageTreeID: record?.siteLineageID
+                siteLineageTreeID: record?.siteLineageID,
+                // Every row in `main.photos` was written by this installation — `beginPhotoUpload`
+                // and `addTree` are the only two writers and both run here, and nothing syncs
+                // anybody else's photos down. So this device may show its owner all of them, and
+                // `.pending` stays `.pending`, because nothing has in fact moderated them.
+                ownPhotoIDs: Set(photos.items.map(\.id))
             )
         }
     }
@@ -188,6 +215,11 @@ public actor LocalAPI: CypressAPI {
             limit: 10
         )
         if !candidates.isEmpty {
+            // Every candidate here is inside the circle, not merely inside the box `treesNear`
+            // searched: both halves re-check the exact metres (`TreeQueries.nearest`,
+            // `CommunityTreeStore.near`). That is load-bearing — this line turns a candidate into a
+            // permanent refusal, and it used to fire out to 14.1 m on the diagonal (ERRATA E35).
+            //
             // §6 returns `conflict` with the candidate list. `ProximityConflict` carries the list;
             // the taxonomy code is what the outbox and the error banner read, and `conflict` is not
             // retryable, so the item will not burn 48 h on an answer the user has to give.
@@ -354,6 +386,10 @@ public actor LocalAPI: CypressAPI {
             treeID: request.treeID,
             visitID: request.visitID,
             shotType: request.shotType,
+            // The request has carried these all along and this method dropped them, so the columns
+            // were NULL even once the transport started measuring the file (ERRATA E41).
+            width: request.width,
+            height: request.height,
             capturedAt: request.capturedAt,
             publicCoordinate: request.publicCoordinate,
             createdAt: moment,
@@ -378,7 +414,26 @@ public actor LocalAPI: CypressAPI {
         if manager.fileExists(atPath: ticket.destination.path) {
             try manager.removeItem(at: ticket.destination)
         }
-        try manager.moveItem(at: source, to: ticket.destination)
+
+        // Ingest, in DECISIONS §3.10's sense: "strip all EXIF ... on ingest". §3.10 says
+        // server-side, and there is no server — this method is where a captured file stops being
+        // the camera's and becomes the app's record, so it is the ingest path (ERRATA E40).
+        // Nothing else in the app ever did it: `AVCapturePhoto.fileDataRepresentation()` carries
+        // the full metadata sidecar, and the photo-library fallback carries whatever the original
+        // file had, which is the one that can hold GPS.
+        //
+        // On failure the original is moved across rather than dropped. A file this cannot rewrite
+        // is a file whose format ImageIO does not know, and refusing it would fail the outbox item
+        // terminally and lose the contributor the only copy of their photograph — a worse outcome
+        // than metadata sitting in the app's own container, which no surface reads and which never
+        // leaves the device under `LocalAPI`. `RemoteAPI` must not inherit that reasoning: nothing
+        // may be *published* out of this fallback.
+        do {
+            try PhotoBinary.writeStrippingMetadata(from: source, to: ticket.destination)
+            try manager.removeItem(at: source)
+        } catch {
+            try manager.moveItem(at: source, to: ticket.destination)
+        }
 
         let moment = now()
         try await store.queue.write { connection in
@@ -533,14 +588,14 @@ public actor LocalAPI: CypressAPI {
     /// morning" and the account-data request both need. It carries `verification_state` and the
     /// structure-flag disclaimer in the header, per D12 and BUILD-PLAN §4.
     public func exportLatest(_ format: ExportFormat) async throws -> Data {
-        let page = try await journal(cursor: nil, limit: Page<JournalEntry>.maximumLimit)
+        let entries = try await wholeJournal()
         switch format {
         case .csv:
             var lines = [
                 "# \(StructureFlag.disclaimer)",
                 "kind,tree_id,captured_at,summary,verification_state"
             ]
-            for entry in page.items {
+            for entry in entries {
                 lines.append(
                     [
                         entry.kind.rawValue,
@@ -555,7 +610,7 @@ public actor LocalAPI: CypressAPI {
 
         case .geojson:
             var features: [[String: Any]] = []
-            for entry in page.items {
+            for entry in entries {
                 guard let tree = try await treeIfPresent(entry.treeID) else { continue }
                 features.append([
                     "type": "Feature",
@@ -579,6 +634,27 @@ public actor LocalAPI: CypressAPI {
             ]
             return try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys])
         }
+    }
+
+    /// Every journal row this contributor owns, followed across the cursor to the end.
+    ///
+    /// The export used to take page one and drop the cursor, so a subject-access request — which
+    /// this method's own doc comment names as a use case — came back capped at 100 rows with
+    /// nothing saying so (ERRATA E39). An export that silently stops is worse than one that fails:
+    /// the person holding it has no way to tell it is short.
+    ///
+    /// Termination is not an assumption: `journal` only returns a cursor when the page came back
+    /// full, and each page asks for rows strictly older than the last one seen, so the window moves
+    /// backwards every time and the rows are finite.
+    private func wholeJournal() async throws -> [JournalEntry] {
+        var entries: [JournalEntry] = []
+        var cursor: String?
+        repeat {
+            let page = try await journal(cursor: cursor, limit: Page<JournalEntry>.maximumLimit)
+            entries.append(contentsOf: page.items)
+            cursor = page.nextCursor
+        } while cursor != nil
+        return entries
     }
 
     static func csvEscape(_ value: String) -> String {

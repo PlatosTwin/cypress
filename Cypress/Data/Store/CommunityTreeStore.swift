@@ -69,12 +69,12 @@ public struct CommunityTreeStore {
         return try statement.fetchOne { _ in true } ?? false
     }
 
-    /// Rows inside a bounding box.
+    /// Rows inside a bounding box. `limit: nil` reads every row in the box.
     ///
     /// ```
     /// SEARCH community_trees USING INDEX idx_community_trees_lat_lon (lat>? AND lat<?)
     /// ```
-    public func inBounds(_ bounds: BoundingBox, limit: Int, connection: SQLiteConnection) throws -> [Tree] {
+    public func inBounds(_ bounds: BoundingBox, limit: Int?, connection: SQLiteConnection) throws -> [Tree] {
         let statement = try connection.cachedStatement("""
             SELECT * FROM community_trees
              WHERE lat BETWEEN :minLat AND :maxLat
@@ -87,18 +87,28 @@ public struct CommunityTreeStore {
             ":maxLat": bounds.maxLatitude,
             ":minLon": bounds.minLongitude,
             ":maxLon": bounds.maxLongitude,
-            ":limit": limit
+            // A negative LIMIT is SQLite's documented "no upper bound".
+            ":limit": limit ?? -1
         ])
         return try statement.fetchAll(Self.decode)
     }
 
     /// The 10 m proximity dedupe from `POST /trees`, over the community table. The seed half runs
     /// through `TreeQueries.nearest`.
+    ///
+    /// The box is read **unbounded** and the caller's limit is applied afterwards. `inBounds` has no
+    /// `ORDER BY`, so a `LIMIT` inside it drops rows in storage order rather than by distance — the
+    /// row it discards can be the one 3 m away, and a dedupe that misses its own duplicate admits a
+    /// second record of the same tree. The box is a pre-filter; the circle and the limit are the
+    /// answer, and they are applied to exact metres. This table holds tens of rows within any
+    /// dedupe radius, so reading it whole costs nothing.
     public func near(_ coordinate: Coordinate, radiusM: Double, limit: Int, connection: SQLiteConnection) throws -> [Tree] {
         let bounds = BoundingBox(around: coordinate, radiusM: radiusM)
-        return try inBounds(bounds, limit: limit, connection: connection)
+        return try inBounds(bounds, limit: nil, connection: connection)
             .filter { coordinate.distance(to: $0.coordinate) <= radiusM }
             .sorted { coordinate.distance(to: $0.coordinate) < coordinate.distance(to: $1.coordinate) }
+            .prefix(limit)
+            .map { $0 }
     }
 
     static func decode(_ row: SQLiteRow) throws -> Tree {

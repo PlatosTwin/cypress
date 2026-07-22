@@ -19,8 +19,12 @@
 //    so nothing downstream can render it as something a person taped.
 //  - **D1**: no counts of user actions, no ranks, no streaks. See `caretakerHeadline`.
 //  - **A8**: the caretakers line renders only at ≥3 distinct caretakers.
-//  - **A3**: "best photo" is the most recent approved `full_tree` photo, resolution breaking ties.
+//  - **A3**: "best photo" is the most recent `full_tree` photo, resolution breaking ties. A3's word
+//    "approved" gates the *public* surfaces; this screen is the contributor's own device, and the
+//    two predicates are named apart in `Photo` so neither can be reached for the other (ERRATA E37).
 //  - **A5**: the season strip is the most recent photo per calendar month across all years.
+//  - **Pages are not totals**: everything that counts or spans a series reads `Series.totalCount`
+//    and renders nothing when the read was a page (ERRATA E38).
 //  - **BUILD-PLAN §15**: no invented botany. Absent species content produces an absent section.
 //
 
@@ -93,7 +97,7 @@ struct TreeProfilePresentation {
     ///
     /// Photos *and* visits, not photos alone: a visit whose photo is still in the outbox has
     /// already made the tree somebody's, and the cold-start copy ("be the first…") would be a lie.
-    var isCold: Bool { visiblePhotos.isEmpty && visibleVisits.isEmpty }
+    var isCold: Bool { visiblePhotos.items.isEmpty && visibleVisits.items.isEmpty }
 
     /// A planting site the city lists with no tree standing in it — 12,518 rows of the seed.
     ///
@@ -161,11 +165,16 @@ struct TreeProfilePresentation {
     // MARK: - Hero (03) and empty well (14)
 
     /// `214 photos · since 2019`.
+    ///
+    /// Both halves are claims about the tree's **whole** photo series, and a page can answer
+    /// neither: read off `LIMIT 30`, a tree with 214 photographs going back to 2019 rendered
+    /// `30 photos · since 2024`, two wrong numbers that both look like facts (ERRATA E38). So the
+    /// pill renders only from a complete series. A page renders nothing rather than a plausible
+    /// lie, and nothing is a state the hero already has — this is an optional.
     var heroMetaPill: String? {
-        guard !visiblePhotos.isEmpty else { return nil }
-        let count = visiblePhotos.count
+        guard let count = visiblePhotos.totalCount, count > 0 else { return nil }
         let noun = count == 1 ? "photo" : "photos"
-        guard let earliest = visiblePhotos.map(\.capturedAt).min() else { return nil }
+        guard let earliest = visiblePhotos.items.map(\.capturedAt).min() else { return nil }
         let year = calendar.component(.year, from: earliest)
         return "\(count) \(noun) · since \(year)"
     }
@@ -176,10 +185,16 @@ struct TreeProfilePresentation {
         return "Best photo · " + TreeProfilePresentation.monthYear.string(from: best.capturedAt)
     }
 
-    /// A3: most recent approved `full_tree` photo, ties broken by resolution.
+    /// A3: most recent `full_tree` photo, ties broken by resolution — over the set this screen may
+    /// show. A3's word "approved" is the *public* half of the rule and lives in
+    /// `Photo.isPublicBestPhotoCandidate`; applying it here would mean this device never shows its
+    /// owner a best photo of their own tree.
+    ///
+    /// The resolution tie-break only does anything once `width` and `height` are recorded, which
+    /// `APIOutboxTransport` now does.
     var bestPhoto: Photo? {
-        visiblePhotos
-            .filter(\.isBestPhotoCandidate)
+        visiblePhotos.items
+            .filter(\.isBestPhotoShot)
             .max { left, right in
                 if left.capturedAt != right.capturedAt { return left.capturedAt < right.capturedAt }
                 return left.resolution < right.resolution
@@ -193,7 +208,13 @@ struct TreeProfilePresentation {
 
     /// SCREENS.md 14 drops the strip; every other state keeps it, including a tree that has been
     /// visited but not yet photographed — that strip renders empty rather than disappearing.
-    var showsFoliageStrip: Bool { !isCold }
+    ///
+    /// It does need the whole photo series, though. A thin cell is a claim that this tree has no
+    /// photograph from that month, and computed over a page that claim can be false — which is
+    /// exactly what a well-photographed tree used to get: a strip that stopped filling and lost
+    /// months it had shown before (ERRATA E38). An absent strip asserts nothing, so the partial
+    /// case drops it rather than drawing it wrong.
+    var showsFoliageStrip: Bool { !isCold && visiblePhotos.isComplete }
 
     /// Twelve months, January first (A5: "the most recent photo per calendar month across all
     /// years, so a strip fills over time").
@@ -209,7 +230,7 @@ struct TreeProfilePresentation {
 
     /// The calendar months (1–12) that carry at least one visible photo.
     var photographedMonths: Set<Int> {
-        Set(visiblePhotos.map { calendar.component(.month, from: $0.capturedAt) })
+        Set(visiblePhotos.items.map { calendar.component(.month, from: $0.capturedAt) })
     }
 
     /// `nil` for a site with no species on the record and for a species whose habit no source
@@ -256,8 +277,15 @@ struct TreeProfilePresentation {
     /// observation half of A8 can only ever contribute one person. That is a payload limit, not a
     /// rule bent: the count is computed from what the record actually proves and never padded.
     var caretakers: Caretakers? {
+        // A8 counts distinct people over 24 months, and the sentence this feeds spells the number
+        // out at the contributor. A page of the 50 most recent care events undercounts a tree with
+        // more than that — silently, and by an amount nothing on screen could hint at — so a
+        // partial series produces no row rather than a wrong one. Below the threshold the row does
+        // not render anyway (DECISIONS constraint 1), which is the same shape of answer.
+        guard profile.careEvents.isComplete else { return nil }
+
         var eventsPerUser: [UUID: Int] = [:]
-        for event in profile.careEvents where event.deletedAt == nil {
+        for event in profile.careEvents.items where event.deletedAt == nil {
             guard let userID = event.userID, isWithinCaretakerWindow(event.capturedAt) else { continue }
             eventsPerUser[userID, default: 0] += 1
         }
@@ -302,7 +330,7 @@ struct TreeProfilePresentation {
 
     /// Visits and care events, most recent first.
     var activity: [ActivityItem] {
-        var items: [ActivityItem] = visibleVisits.map { visit in
+        var items: [ActivityItem] = visibleVisits.items.map { visit in
             ActivityItem(
                 id: visit.id,
                 kind: .visit,
@@ -312,7 +340,7 @@ struct TreeProfilePresentation {
                 timestamp: TreeProfilePresentation.dayStamp.string(from: visit.capturedAt)
             )
         }
-        items += profile.careEvents.filter { $0.deletedAt == nil }.map { event in
+        items += profile.careEvents.items.filter { $0.deletedAt == nil }.map { event in
             ActivityItem(
                 id: event.id,
                 kind: .care,
@@ -337,9 +365,9 @@ struct TreeProfilePresentation {
 
     private func sortDate(of item: ActivityItem) -> Date {
         if item.kind == .visit {
-            return visibleVisits.first { $0.id == item.id }?.capturedAt ?? .distantPast
+            return visibleVisits.items.first { $0.id == item.id }?.capturedAt ?? .distantPast
         }
-        return profile.careEvents.first { $0.id == item.id }?.capturedAt ?? .distantPast
+        return profile.careEvents.items.first { $0.id == item.id }?.capturedAt ?? .distantPast
     }
 
     /// `watered, mulched` — the BUILD-PLAN §4 vocabulary in prose.
@@ -471,12 +499,32 @@ struct TreeProfilePresentation {
 
     // MARK: - Filtered series
 
-    /// Only approved photos reach a public surface (BUILD-PLAN §10, A3).
-    var visiblePhotos: [Photo] {
-        profile.photos.filter { $0.deletedAt == nil && $0.moderationState.isPubliclyVisible }
+    /// The photos **this screen** may draw.
+    ///
+    /// This screen runs on the contributor's own device, and moderation is a gate on publication,
+    /// not between somebody and the photograph they took. Nothing in the shipping app can set
+    /// `.approved` — there is no moderation service — so gating this on it left every tree with no
+    /// hero, no season strip and no best photo, and because a visit still landed, `isCold` was
+    /// false and the cold-start copy did not render either: it read as a designed empty screen
+    /// (ERRATA E37).
+    ///
+    /// So: the device's own photos, plus anything that has actually been approved. The photos stay
+    /// `.pending`, which is the truth — nothing has moderated them.
+    var visiblePhotos: Series<Photo> {
+        profile.photos.filter { photo in
+            profile.isOwnPhoto(photo) ? photo.isVisibleToItsContributor : photo.isPubliclyVisible
+        }
     }
 
-    var visibleVisits: [Visit] {
+    /// The photos a **public** surface may draw — the shared tree page, the share card, the
+    /// OpenGraph render. Approved only, always (BUILD-PLAN §10, A3). Kept beside `visiblePhotos`
+    /// under a name that cannot be misread as it: one is "I can see this", the other is "the world
+    /// can see this", and they are not the same question.
+    var publiclyVisiblePhotos: Series<Photo> {
+        profile.photos.filter(\.isPubliclyVisible)
+    }
+
+    var visibleVisits: Series<Visit> {
         profile.visits.filter { $0.deletedAt == nil }
     }
 

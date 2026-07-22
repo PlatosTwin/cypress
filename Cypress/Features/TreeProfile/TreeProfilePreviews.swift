@@ -175,8 +175,12 @@ enum TreeProfileSeedFixtures {
     /// strip shows what A5 actually encodes: coverage that fills in over time.
     private static let photographedMonths = [1, 2, 3, 6, 7, 9, 10, 11, 12]
 
-    /// 214 approved full-tree photos from 2019 to 2025 — the hero's `214 photos · since 2019`.
-    /// The most recent lands in October 2025, so "best photo" (A3) resolves to `Oct 2025`.
+    /// 214 full-tree photos from 2019 to 2025 — the hero's `214 photos · since 2019`. The most
+    /// recent lands in October 2025, so "best photo" (A3) resolves to `Oct 2025`.
+    ///
+    /// `.pending`, deliberately: that is the only moderation state anything in the app can produce,
+    /// and a preview that quietly set `.approved` was the reason this screen looked fine in Xcode
+    /// while showing no photograph at all on a device (ERRATA E37).
     static let photos: [Photo] = {
         var dates: [Date] = []
         for year in 2019...2025 {
@@ -191,7 +195,7 @@ enum TreeProfileSeedFixtures {
             Photo(
                 treeID: montereyCypressID,
                 shotType: .fullTree,
-                moderationState: .approved,
+                moderationState: .pending,
                 width: 3024,
                 height: 4032,
                 capturedAt: captured
@@ -294,10 +298,16 @@ enum TreeProfileSeedFixtures {
             status: .alive,
             vitality: .thriving
         ),
-        photos: photos,
+        // Series, not arrays, and complete ones: this is the whole of what the fixture holds, so
+        // the hero's `214 photos · since 2019` is a real count of a real series rather than a page
+        // of one presented as a total (ERRATA E38).
+        photos: Series(complete: photos),
         measurements: measurements,
-        visits: visits,
-        careEvents: careEvents
+        visits: Series(complete: visits),
+        careEvents: Series(complete: careEvents),
+        // The preview device took every one of these, which is why they render at all while their
+        // moderation state is `.pending` (ERRATA E37).
+        ownPhotoIDs: Set(photos.map(\.id))
     )
 
     /// Screen 14 — the same shape of record every seeded tree actually has: city facts, nothing

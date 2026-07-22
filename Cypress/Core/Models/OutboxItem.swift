@@ -41,7 +41,7 @@ public struct OutboxPhoto: Codable, Hashable, Sendable {
     /// `.other` rather than `.fullTree`. The old code labelled every upload `full_tree`, and that is
     /// exactly the labelling this change exists to stop: a full-tree label is what makes a photo
     /// eligible to be a ghost-overlay reference and the tree's best photo (A3, `supportsGhostOverlay`
-    /// and `Photo.isBestPhotoCandidate`). Carrying that guess forward would keep offering a leaf
+    /// and `Photo.isBestPhotoShot`). Carrying that guess forward would keep offering a leaf
     /// close-up as the framing reference for a whole tree, permanently, with no way to tell which
     /// records were guesses. `.other` is the stored vocabulary's "unclassified" (BUILD-PLAN §4): the
     /// photo still reaches the timeline, it just does not get promoted on a label nobody chose.

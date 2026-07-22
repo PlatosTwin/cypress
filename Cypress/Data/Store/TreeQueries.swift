@@ -187,6 +187,19 @@ public struct TreeQueries {
     /// neighbourhood-sized box. The metres each row reports are then computed exactly, once per
     /// returned row, by `Coordinate.distance(to:)`, so the number the UI renders is the real one
     /// and the list is re-sorted on it.
+    ///
+    /// **The box is a pre-filter and the circle is the answer.** `BoundingBox(around:radiusM:)`
+    /// builds a square whose half-width is the radius on both axes, so it circumscribes the circle
+    /// and admits a tree on the diagonal out to `radius·√2` — 14.1 m for a 10 m ask. This query
+    /// used to return those, and `LocalAPI.addTree` reads a non-empty candidate list as the 10 m
+    /// proximity conflict: standing 12 m from an inventoried tree, adding a genuinely new one came
+    /// back `conflict`, which is not retryable, so the outbox item went terminal on the spot and
+    /// the contributor was refused for good — with a real nearby tree named as the reason, so the
+    /// error looked right (ERRATA E35). The exact re-check below is the same shape the R*Tree path
+    /// already uses on `bboxSource`: a conservative index filter, then the true predicate.
+    ///
+    /// `LIMIT` runs before the re-check, which is safe **because the ordering is by distance**: any
+    /// row the circle rejects is farther than every row it keeps.
     public func nearest(
         to coordinate: Coordinate,
         radiusM: Double,
@@ -230,7 +243,9 @@ public struct TreeQueries {
                 tell: Self.firstIDTip(try row.stringIfPresent("species_id_tips"))
             )
         }
-        return rows.sorted { $0.distanceM < $1.distanceM }
+        return rows
+            .filter { $0.distanceM <= radiusM }
+            .sorted { $0.distanceM < $1.distanceM }
     }
 
     // MARK: - Profile

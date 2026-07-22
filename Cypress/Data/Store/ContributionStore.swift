@@ -48,14 +48,15 @@ public struct ContributionStore {
         return try run(statement, on: connection)
     }
 
-    public func visits(treeID: UUID, limit: Int = 50, connection: SQLiteConnection) throws -> [Visit] {
+    /// This tree's visits, newest first. `limit: nil` reads the series whole.
+    public func visits(treeID: UUID, limit: Int? = nil, connection: SQLiteConnection) throws -> Series<Visit> {
         let statement = try connection.cachedStatement("""
             SELECT * FROM visits
              WHERE tree_uuid = :tree COLLATE NOCASE AND deleted_at IS NULL
              ORDER BY captured_at DESC LIMIT :limit
             """)
-        _ = try statement.bind([":tree": treeID.uuidString, ":limit": limit])
-        return try statement.fetchAll(Self.decodeVisit)
+        _ = try statement.bind([":tree": treeID.uuidString, ":limit": Self.rowsToRead(for: limit)])
+        return Self.series(try statement.fetchAll(Self.decodeVisit), limit: limit)
     }
 
     // MARK: - Observations
@@ -141,6 +142,9 @@ public struct ContributionStore {
         return try run(statement, on: connection)
     }
 
+    /// The whole measurement series, oldest first — there is no `LIMIT` here and there must not be
+    /// one added: D7's two never-connected chart series are drawn from all of it. If this ever has
+    /// to page, it returns a `Series` like `photos` and `visits` do, so the caller keeps knowing.
     public func measurements(treeID: UUID, connection: SQLiteConnection) throws -> [TreeMeasurement] {
         let statement = try connection.cachedStatement("""
             SELECT * FROM measurements
@@ -182,14 +186,20 @@ public struct ContributionStore {
         return try run(statement, on: connection)
     }
 
-    public func careEvents(treeID: UUID, limit: Int = 50, connection: SQLiteConnection) throws -> [CareEvent] {
+    /// This tree's care events, newest first. `limit: nil` reads the series whole.
+    ///
+    /// A8 counts "distinct users with 2 or more care_events or observations in 24 months" and
+    /// renders at 3 or more. Counted over the 50 most recent rows that is not A8's number, it is
+    /// A8's number restricted to a page — and it is printed at the contributor as a sentence about
+    /// how many people know the tree.
+    public func careEvents(treeID: UUID, limit: Int? = nil, connection: SQLiteConnection) throws -> Series<CareEvent> {
         let statement = try connection.cachedStatement("""
             SELECT * FROM care_events
              WHERE tree_uuid = :tree COLLATE NOCASE AND deleted_at IS NULL
              ORDER BY captured_at DESC LIMIT :limit
             """)
-        _ = try statement.bind([":tree": treeID.uuidString, ":limit": limit])
-        return try statement.fetchAll(Self.decodeCareEvent)
+        _ = try statement.bind([":tree": treeID.uuidString, ":limit": Self.rowsToRead(for: limit)])
+        return Self.series(try statement.fetchAll(Self.decodeCareEvent), limit: limit)
     }
 
     // MARK: - Favorites (tombstone toggles)
@@ -286,14 +296,21 @@ public struct ContributionStore {
         _ = try statement.reset()
     }
 
-    public func photos(treeID: UUID, limit: Int = 30, connection: SQLiteConnection) throws -> [Photo] {
+    /// This tree's photo timeline, newest first. `limit: nil` reads the series whole.
+    ///
+    /// The default used to be 30 and the profile called it with no limit at all, so the hero's
+    /// `214 photos · since 2019` was in fact the size and the earliest date *of page one*, and A5's
+    /// season strip was computed over the same 30 — a well-photographed tree stopped filling its
+    /// strip and could lose months it had shown the year before (ERRATA E38). Hence `Series`: a
+    /// page can no longer be counted as if it were the series.
+    public func photos(treeID: UUID, limit: Int? = nil, connection: SQLiteConnection) throws -> Series<Photo> {
         let statement = try connection.cachedStatement("""
             SELECT * FROM photos
              WHERE tree_uuid = :tree COLLATE NOCASE AND deleted_at IS NULL
              ORDER BY captured_at DESC LIMIT :limit
             """)
-        _ = try statement.bind([":tree": treeID.uuidString, ":limit": limit])
-        return try statement.fetchAll(Self.decodePhoto)
+        _ = try statement.bind([":tree": treeID.uuidString, ":limit": Self.rowsToRead(for: limit)])
+        return Self.series(try statement.fetchAll(Self.decodePhoto), limit: limit)
     }
 
     // MARK: - Notes, reminders, flags, names
@@ -323,6 +340,9 @@ public struct ContributionStore {
 
     /// Public notes for a tree, excluding stale ones. Hazard categories cannot appear because they
     /// cannot be stored (D4, `AppSchema`'s CHECK).
+    ///
+    /// No `LIMIT`, and the same rule as `measurements` if that ever changes: the live notes on a
+    /// tree are all of them, not the first page of them.
     public func communityNotes(treeID: UUID, at date: Date, connection: SQLiteConnection) throws -> [CommunityNote] {
         let statement = try connection.cachedStatement("""
             SELECT * FROM community_notes
@@ -588,6 +608,25 @@ public struct ContributionStore {
         _ = try device.bind([":id": UUID(), ":uuid": deviceUUID, ":user": userID, ":now": date])
         try device.run()
         _ = try device.reset()
+    }
+
+    // MARK: - Paging
+
+    /// How many rows to ask SQLite for, given what the caller wants.
+    ///
+    /// One more than the caller asked for, so the answer to "was that all of them?" comes from the
+    /// database rather than from a guess: a page that comes back short is provably the whole series.
+    /// A negative `LIMIT` is SQLite's documented "no upper bound", which is what `nil` means here.
+    static func rowsToRead(for limit: Int?) -> Int {
+        guard let limit else { return -1 }
+        return max(limit, 0) + 1
+    }
+
+    /// Trims the extra row back off and records what its presence proved.
+    static func series<Element>(_ rows: [Element], limit: Int?) -> Series<Element> {
+        guard let limit else { return Series(complete: rows) }
+        let wanted = max(limit, 0)
+        return Series(items: Array(rows.prefix(wanted)), isComplete: rows.count <= wanted)
     }
 
     // MARK: - Helpers

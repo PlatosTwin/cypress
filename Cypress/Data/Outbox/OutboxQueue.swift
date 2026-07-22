@@ -271,9 +271,21 @@ public actor OutboxQueue {
     }
 
     /// Screen 17's whole model, in one read.
-    public func snapshot(treeNames: [UUID: String] = [:]) async throws -> OutboxSnapshot {
+    ///
+    /// The queue does not own the wi-fi preference — `OutboxViewState` does, and the store behind
+    /// it — so the toggle arrives as an argument. It has no default here for the reason
+    /// `OutboxSnapshot.init` gives (ERRATA E38).
+    public func snapshot(
+        treeNames: [UUID: String] = [:],
+        syncPhotosOnWifiOnly: Bool
+    ) async throws -> OutboxSnapshot {
         let records = try await records()
-        return OutboxSnapshot(records: records, treeNames: treeNames, now: now())
+        return OutboxSnapshot(
+            records: records,
+            treeNames: treeNames,
+            now: now(),
+            syncPhotosOnWifiOnly: syncPhotosOnWifiOnly
+        )
     }
 
     // MARK: - Failure accounting
@@ -365,6 +377,19 @@ public struct APIOutboxTransport: OutboxTransport {
         // on screen 04 ends up. `photos.shot_type` is append-only, so this is the last moment the
         // true framing exists to be recorded (BUILD-PLAN §4).
         let payload = try OutboxPayload.decode(kind: item.kind, from: item.payload)
+
+        // The pixel size, read off the staged file before it is handed over. Without it every
+        // `photos.width`/`height` was NULL, so `Photo.resolution` was 0 for every row and A3's
+        // "ties broken by resolution" never ran — on a series where several photos share a capture
+        // date, which is the only case the tie-break exists for (ERRATA E41).
+        let size = PhotoBinary.pixelSize(atPath: photo.path)
+
+        // `publicCoordinate` is deliberately not set. See ERRATA E42: the tree's own pin is already
+        // exact and public, so a photo location adds nothing a public surface needs and does add a
+        // second, independent record of where the contributor was standing — which is the thing
+        // D11 exists to prevent. `Photo.publicCoordinate` and its 25 m snap stay in the model for
+        // the surface that one day genuinely needs one; not storing a location is the privacy-safe
+        // direction and is the one taken here.
         let ticket = try await api.beginPhotoUpload(
             PhotoUploadRequest(
                 treeID: payload.treeID,
@@ -374,7 +399,9 @@ public struct APIOutboxTransport: OutboxTransport {
                 }(),
                 shotType: photo.shotType,
                 localPath: photo.path,
-                capturedAt: item.createdAt
+                capturedAt: item.createdAt,
+                width: size?.width,
+                height: size?.height
             )
         )
         try await api.uploadPhoto(at: photo.path, ticket: ticket)

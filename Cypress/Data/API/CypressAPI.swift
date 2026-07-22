@@ -279,17 +279,32 @@ public struct TreeProfile: Hashable, Sendable {
     public let neighborhoodName: String?
     /// The most recent check-in, for the profile's summary line.
     public let latestObservation: TreeObservation?
-    /// Photo timeline, page 1.
-    public let photos: [Photo]
+    /// The photo timeline. BUILD-PLAN §6 calls this "photo timeline page 1", and a `Series` is what
+    /// carries that honestly: it says whether it *is* a page, so the hero's count and its `since`
+    /// year cannot be taken off one (ERRATA E38).
+    public let photos: Series<Photo>
     /// The full measurement series. Splitting it into the two never-connected chart series is
     /// `Collection<TreeMeasurement>.splitBySeries(kind:)`'s job (D7).
     public let measurements: [TreeMeasurement]
-    public let visits: [Visit]
-    public let careEvents: [CareEvent]
+    public let visits: Series<Visit>
+    public let careEvents: Series<CareEvent>
     /// Public notes only. Hazard categories cannot appear here — they cannot be stored (D4).
     public let communityNotes: [CommunityNote]
     /// The tree this site replaced, when the site has a lineage (memorial record, screen 19).
     public let siteLineageTreeID: UUID?
+
+    /// Which of `photos` this installation contributed itself.
+    ///
+    /// Moderation gates *publication*, not a person's own screen (see `Photo.isPubliclyVisible` vs
+    /// `Photo.isVisibleToItsContributor`). Deciding which photos are the viewer's own is not a
+    /// judgement a view can make, and it is not one to infer from a `.pending` state either — every
+    /// photo in the app is `.pending`, including, one day, other people's. So the fact travels on
+    /// the payload, from whoever knows it.
+    ///
+    /// `LocalAPI` knows it absolutely: `main.photos` holds what this device wrote and nothing else,
+    /// because there is no sync that brings anybody else's rows down. `RemoteAPI` will fill this
+    /// from the server's attribution, and everything it does not list stays gated on `.approved`.
+    public let ownPhotoIDs: Set<UUID>
 
     public init(
         tree: Tree,
@@ -297,12 +312,13 @@ public struct TreeProfile: Hashable, Sendable {
         species: Species? = nil,
         neighborhoodName: String? = nil,
         latestObservation: TreeObservation? = nil,
-        photos: [Photo] = [],
+        photos: Series<Photo> = .empty,
         measurements: [TreeMeasurement] = [],
-        visits: [Visit] = [],
-        careEvents: [CareEvent] = [],
+        visits: Series<Visit> = .empty,
+        careEvents: Series<CareEvent> = .empty,
         communityNotes: [CommunityNote] = [],
-        siteLineageTreeID: UUID? = nil
+        siteLineageTreeID: UUID? = nil,
+        ownPhotoIDs: Set<UUID> = []
     ) {
         self.tree = tree
         self.activeName = activeName
@@ -315,7 +331,12 @@ public struct TreeProfile: Hashable, Sendable {
         self.careEvents = careEvents
         self.communityNotes = communityNotes
         self.siteLineageTreeID = siteLineageTreeID
+        self.ownPhotoIDs = ownPhotoIDs
     }
+
+    /// Whether this device contributed the photo, and may therefore show it to the person who took
+    /// it whatever moderation has or has not done with it yet.
+    public func isOwnPhoto(_ photo: Photo) -> Bool { ownPhotoIDs.contains(photo.id) }
 }
 
 /// The body of `POST /trees`.

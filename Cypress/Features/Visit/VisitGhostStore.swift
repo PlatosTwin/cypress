@@ -24,8 +24,11 @@
 //    nothing.
 //
 //  **Seam:** when photos start arriving from the server, the ghost should prefer the newest
-//  approved `full_tree` photo from `TreeProfile.photos` and fall back to this cache. That is one
-//  `if let` in `ghost(for:)`, and the call sites do not change.
+//  `full_tree` photo from `TreeProfile.photos` and fall back to this cache. That is one `if let` in
+//  `ghost(for:)`, and the call sites do not change. Which photos are eligible is
+//  `Photo.isBestPhotoShot` over the set the device may show, **not** `isPublicBestPhotoCandidate`:
+//  lining a shot up against your own last visit is not publication, and gating it on moderation is
+//  what left this app with no photograph on any screen (ERRATA E37).
 //
 
 import Foundation
