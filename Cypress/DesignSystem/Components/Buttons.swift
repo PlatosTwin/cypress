@@ -7,9 +7,14 @@
 //  Both are full-width and already well above the 44pt minimum at every documented size
 //  (13pt padding + a 14.5pt label ≈ 45pt), so neither needs a hit-area expansion.
 //
-//  **NOT SPECIFIED** (SCREENS.md §5 gap 2): pressed, disabled and focus states. The README
-//  describes a `#1D4634`→`#2F6B4F` darken on press but the spec file does not, so no pressed
-//  styling is invented here beyond SwiftUI's default opacity on `.plain`.
+//  **NOT SPECIFIED** (SCREENS.md §5 gap 2): pressed and focus states. The README describes a
+//  `#1D4634`→`#2F6B4F` darken on press but the spec file does not, so no pressed styling is
+//  invented here beyond SwiftUI's default opacity on `.plain`.
+//
+//  The **disabled** state is specified, just not in SCREENS.md: PROTOTYPE-FLOW §1.4 gives
+//  `careBtnStyle` as `disabled → background:#E9ECDE;color:#8B9482`, behind §1.3's `logCare` guard
+//  ("no-op if no care chip is on"). Screen 09's `Done` is the one caller; see `CypressColor
+//  .ctaDisabledFill`.
 //
 
 import SwiftUI
@@ -76,13 +81,21 @@ struct PrimaryButton: View {
 
     let title: String
     var style: Style = .standard
+    /// Screen 09's `Done` is the only caller that passes `false`; see the file header.
+    var isEnabled: Bool = true
     let action: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
 
-    init(_ title: String, style: Style = .standard, action: @escaping () -> Void) {
+    init(
+        _ title: String,
+        style: Style = .standard,
+        isEnabled: Bool = true,
+        action: @escaping () -> Void
+    ) {
         self.title = title
         self.style = style
+        self.isEnabled = isEnabled
         self.action = action
     }
 
@@ -90,18 +103,21 @@ struct PrimaryButton: View {
         Button(action: action) {
             Text(title)
                 .font(style.font(forcedDarkWeight: colorScheme == .dark || style == .camera))
-                .foregroundStyle(style.label)
+                .foregroundStyle(isEnabled ? style.label : CypressColor.ctaDisabledLabel)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, style.padding)
                 .padding(.horizontal, style.padding)
                 .background {
                     RoundedRectangle(cornerRadius: style.radius, style: .continuous)
-                        .fill(style.fill)
+                        .fill(isEnabled ? style.fill : CypressColor.ctaDisabledFill)
                 }
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .cypressShadow(light: style.shadow, dark: nil)
+        .disabled(!isEnabled)
+        // The disabled fill is flat in the prototype: an elevation would still read as a live
+        // control, which is the one thing the state exists to deny.
+        .cypressShadow(light: isEnabled ? style.shadow : nil, dark: nil)
     }
 }
 

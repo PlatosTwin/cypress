@@ -279,6 +279,8 @@ enum CypressFont {
         static let body15: CGFloat = 5.25
         /// `body.13.5`, line-height 1.45–1.55 → 1.50.
         static let body135: CGFloat = 4.05
+        /// `body.12.5`, line-height 1.45 — 12's attention-card body (SCREENS.md 12 §4).
+        static let body125: CGFloat = 3.125
         /// The 11.5pt anchor line, line-height 1.3 (SCREENS.md 05 §3).
         static let body115: CGFloat = 1.15
         /// `species.hero`, line-height 1.1 — tighter than natural; clamp at 0.
@@ -465,6 +467,9 @@ extension CypressFont {
     /// `body.11` — 11 / 800. C16 active tab label.
     static let body11ExtraBold = styled(11, Face.sansExtraBold, .caption2)
 
+    /// `body.10.5` — 10.5 / 400. Screen 10's destination labels (`Messages`, `AirDrop`…), which
+    /// SCREENS.md 10 §4 gives as "label 10.5px `#66735F`" with no weight, so the page default.
+    static let body105 = styled(10.5, Face.sansRegular, .caption2)
     /// `body.10.5` — 10.5 / 600 → Bold. C12 method badge.
     ///
     /// **Family NOT SPECIFIED** in §1.3 for this row: §2 gives "10.5px/600" with no family, and the
@@ -484,6 +489,9 @@ extension CypressFont {
 
     /// `mono.14` — 14 / 600. C27 progress ring label.
     static let mono14SemiBold = styled(14, Face.monoSemiBold, .subheadline)
+    /// `mono.13.5` — 13.5 / 600 (11 §5 asks for "mono bold"; the face tops out at 600).
+    /// The value column of screen 11's measurement log, at that row's own 13.5px size.
+    static let mono135SemiBold = styled(13.5, Face.monoSemiBold, .footnote)
     /// `mono.13` — 13 / 600 (§2 asks for 700; the face tops out at 600). C23 latest-value label.
     static let mono13SemiBold = styled(13, Face.monoSemiBold, .footnote)
     /// `mono.12` — 12 / 600. C23 series totals, 17 outbox numeral tile.

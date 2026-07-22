@@ -80,7 +80,7 @@ struct ReportView: View {
 
     private func hazardPicker(_ presentation: ReportPresentation) -> some View {
         section(label: ReportCopy.hazardSectionLabel, color: CypressColor.signalAmber) {
-            ReportChipFlow(spacing: CypressSpacing.gapDense) {
+            CypressChipFlow(spacing: CypressSpacing.gapDense) {
                 ForEach(presentation.hazardCategories, id: \.self) { category in
                     Chip(
                         HazardCategoryLabel.text(for: category),
@@ -95,7 +95,7 @@ struct ReportView: View {
 
     private func notePicker(_ presentation: ReportPresentation) -> some View {
         section(label: ReportCopy.noteSectionLabel, color: CypressColor.textFaint) {
-            ReportChipFlow(spacing: CypressSpacing.gapDense) {
+            CypressChipFlow(spacing: CypressSpacing.gapDense) {
                 ForEach(presentation.noteCategories, id: \.self) { category in
                     // Idle is C4's "structure flag, idle" row, which is exactly the fill, border,
                     // text and padding SCREENS.md 06 §3 states for these chips. Its `on` twin is the
@@ -272,74 +272,5 @@ struct HazardPhoneGlyph: Shape {
         path.addCurve(to: point(5, 2), control1: point(2, 3.8), control2: point(3.8, 2))
         path.closeSubpath()
         return path
-    }
-}
-
-// MARK: - Chip wrapping
-
-/// The `flex-wrap` the chip rows of SCREENS.md 06 §2–3 declare, with its `gap:7px`.
-///
-/// SwiftUI has no wrapping stack, and the alternative — pre-splitting the chips into fixed rows —
-/// would bake in a line break that the spec expresses as a flow property and that Dynamic Type
-/// invalidates at AX1 (ARCHITECTURE §6). One gap value, applied on both axes, as CSS `gap` does.
-struct ReportChipFlow: Layout {
-
-    let spacing: CGFloat
-
-    init(spacing: CGFloat) {
-        self.spacing = spacing
-    }
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) -> CGSize {
-        let rows = rows(subviews: subviews, maxWidth: proposal.width ?? .infinity)
-        let height = rows.reduce(0) { $0 + $1.height }
-            + spacing * CGFloat(max(rows.count - 1, 0))
-        let width = rows.map(\.width).max() ?? 0
-        return CGSize(width: proposal.width ?? width, height: height)
-    }
-
-    func placeSubviews(
-        in bounds: CGRect,
-        proposal: ProposedViewSize,
-        subviews: Subviews,
-        cache: inout Void
-    ) {
-        var y = bounds.minY
-        for row in rows(subviews: subviews, maxWidth: bounds.width) {
-            var x = bounds.minX
-            for index in row.indices {
-                let size = subviews[index].sizeThatFits(.unspecified)
-                subviews[index].place(
-                    at: CGPoint(x: x, y: y + (row.height - size.height) / 2),
-                    proposal: ProposedViewSize(size)
-                )
-                x += size.width + spacing
-            }
-            y += row.height + spacing
-        }
-    }
-
-    private struct Row {
-        var indices: [Int] = []
-        var width: CGFloat = 0
-        var height: CGFloat = 0
-    }
-
-    private func rows(subviews: Subviews, maxWidth: CGFloat) -> [Row] {
-        var rows: [Row] = []
-        var current = Row()
-        for index in subviews.indices {
-            let size = subviews[index].sizeThatFits(.unspecified)
-            let candidate = current.indices.isEmpty ? size.width : current.width + spacing + size.width
-            if !current.indices.isEmpty, candidate > maxWidth {
-                rows.append(current)
-                current = Row()
-            }
-            current.width = current.indices.isEmpty ? size.width : current.width + spacing + size.width
-            current.height = max(current.height, size.height)
-            current.indices.append(index)
-        }
-        if !current.indices.isEmpty { rows.append(current) }
-        return rows
     }
 }

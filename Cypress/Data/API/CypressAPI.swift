@@ -54,6 +54,19 @@ public protocol CypressAPI: Sendable {
     /// the honest answer for an implementation that has no inventory to count.
     func speciesGuide(id: UUID, near coordinate: Coordinate?) async throws -> SpeciesGuide
 
+    // MARK: - Almanac
+
+    /// The neighbourhood almanac (screen 12). `near` is the caller's fix, or nil when there is none.
+    ///
+    /// Not a BUILD-PLAN §6 endpoint: §6 has no aggregate read at all, because the almanac arrived
+    /// with D1 after the API contract was written. On a server it is one `GET /neighborhoods/{id}/
+    /// almanac`; here the neighbourhood is resolved from the fix rather than named by the caller,
+    /// because A4's mechanism for naming one does not exist (ERRATA E44).
+    ///
+    /// Defaulted in `Almanac.swift` to the empty almanac, which is what an implementation with no
+    /// city inventory truthfully has.
+    func almanac(near coordinate: Coordinate?) async throws -> Almanac
+
     // MARK: - Sync
 
     /// `POST /sync` — the batch endpoint. Takes outbox items carrying their `client_uuid`s and

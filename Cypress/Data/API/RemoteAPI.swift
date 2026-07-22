@@ -69,6 +69,17 @@ public struct RemoteAPI: CypressAPI {
         throw unimplemented
     }
 
+    // MARK: - Almanac
+
+    /// Will call the server's neighbourhood almanac read (screen 12).
+    ///
+    /// Overrides the protocol's `.empty` default deliberately, exactly as `groveSpecies()` does: an
+    /// unbuilt server has no answer, and an empty almanac would draw "nothing is happening in your
+    /// neighbourhood" over "we could not ask".
+    public func almanac(near coordinate: Coordinate?) async throws -> Almanac {
+        throw unimplemented
+    }
+
     // MARK: - Sync
 
     /// Will call `POST /sync` with the array of outbox items, and decode the per-item

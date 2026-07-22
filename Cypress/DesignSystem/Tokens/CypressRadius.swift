@@ -147,6 +147,8 @@ extension CypressRadius {
     /// C23 legend swatch — `3px` (13); C10-adjacent composition swatch — `3.5px` (12).
     static let legendSwatch: CGFloat = 3
     static let compositionSwatch: CGFloat = 3.5
+    /// 12 §3's share track — `5px` on a 9pt bar, i.e. a capsule.
+    static let compositionTrack: CGFloat = 5
 
     /// C17 grabber — `3px` on a 40×5 pill (i.e. a capsule).
     static let sheetGrabber: CGFloat = 3

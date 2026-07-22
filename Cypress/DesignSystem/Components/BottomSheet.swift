@@ -72,7 +72,15 @@ struct BottomSheet<Content: View>: View {
             .padding(.top, style.paddingTop)
             .padding(.horizontal, style.paddingHorizontal)
             .padding(.bottom, CypressSpacing.bottomSheet)
-            .background { CypressSheetShape().fill(CypressColor.surfaceSheet) }
+            // The *fill* runs to the bottom of the display; the content does not move. §2 pins the
+            // sheet to the bottom, and the mock's own 44pt bottom padding is what holds it clear of
+            // the home indicator — so extending the whole view into the safe area would spend that
+            // padding twice and leave the CTA sitting on the indicator. Only the background crosses.
+            .background {
+                CypressSheetShape()
+                    .fill(CypressColor.surfaceSheet)
+                    .ignoresSafeArea(edges: .bottom)
+            }
             .cypressShadow(CypressShadow.sheet)
         }
     }

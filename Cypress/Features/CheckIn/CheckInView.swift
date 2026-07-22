@@ -240,7 +240,7 @@ struct CheckInView: View {
             // C4's wrapping chip row, shared with screen 06. One `Layout` rather than a second copy
             // of the same flex-wrap arithmetic; it belongs in `DesignSystem/Components` and should
             // move there when a third screen needs it.
-            ReportChipFlow(spacing: CypressSpacing.gapDense) {
+            CypressChipFlow(spacing: CypressSpacing.gapDense) {
                 ForEach(presentation.structureOptions, id: \.self) { flag in
                     let isOn = presentation.isFlagged(flag)
                     // D3 gives the dark chips their own C4 rows, including the weight-800 on-state,

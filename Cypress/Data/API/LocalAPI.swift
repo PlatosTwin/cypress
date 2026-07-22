@@ -13,6 +13,7 @@ public actor LocalAPI: CypressAPI {
     private let communityTrees = CommunityTreeStore()
     private let contributions = ContributionStore()
     private let groveQueries: GroveQueries?
+    private let almanacQueries: AlmanacQueries?
     private let now: @Sendable () -> Date
 
     /// This installation's device id (D9). Contributions made before sign-in are attributed here.
@@ -39,6 +40,7 @@ public actor LocalAPI: CypressAPI {
         }
         self.speciesQueries = store.seed.map { SpeciesQueries(schema: $0) }
         self.groveQueries = store.seed.map { GroveQueries(schema: $0) }
+        self.almanacQueries = store.seed.map { AlmanacQueries(schema: $0) }
         self.photoDirectory = photoDirectory
             ?? store.databaseURL.deletingLastPathComponent().appendingPathComponent("Photos", isDirectory: true)
     }
@@ -346,6 +348,123 @@ public actor LocalAPI: CypressAPI {
         try await store.queue.read { connection -> [Species] in
             guard let speciesQueries else { return [] }
             return try speciesQueries.curated(limit: limit, connection: connection)
+        }
+    }
+
+    // MARK: - Almanac
+
+    /// Screen 12's payload: what is happening to the trees in one neighbourhood.
+    ///
+    /// **A4, for this screen.** The area is resolved through the nearest inventoried tree — the same
+    /// derivation screen 07 uses and the same one line of SQL, `SpeciesQueries.resolveNeighborhood`,
+    /// so A4's real mechanism lands in one place when it exists (ERRATA E44). Screen 08 could use
+    /// A4's stated "most-visited" inference because a grove with no contributions renders nothing
+    /// anyway; screen 12 cannot, because four of its five blocks are city data that is complete on
+    /// day one and a fresh install has no history to infer from. Its own copy settles it too: §4
+    /// says the trees are "within a 15-minute walk", which is a claim about where the reader is
+    /// standing now, not about where they usually go.
+    ///
+    /// Read in one `readConsistently` block for the reason `speciesGuide` is: the elder, the mix,
+    /// the bloom and the coverage list are one statement about one neighbourhood, and five separate
+    /// reads could straddle a write and disagree about it.
+    ///
+    /// Without a fix there is no area and the whole payload is empty. That is not a degraded state
+    /// to apologise for; it is a screen whose subject does not exist.
+    public func almanac(near coordinate: Coordinate?) async throws -> Almanac {
+        guard let coordinate, let speciesQueries, let almanacQueries else { return .empty }
+        let moment = now()
+        let calendar = Calendar.current
+
+        return try await store.queue.readConsistently { connection -> Almanac in
+            guard let area = try speciesQueries.resolveNeighborhood(near: coordinate, connection: connection) else {
+                return .empty
+            }
+
+            // --- Who lives here. City data, so this is the one block a fresh install draws whole
+            // (A9: "species mix always renders from city data").
+            let mix = try almanacQueries.speciesMix(neighborhoodID: area.id, connection: connection)
+            let composition = mix.isEmpty ? nil : NeighborhoodComposition(
+                distinctSpeciesCount: mix.count,
+                treeCount: mix.reduce(0) { $0 + $1.treeCount },
+                leading: mix
+            )
+
+            // --- The elder. The active name is a `main` row and the tree is a `seed` row, so the
+            // two are read separately and joined here rather than across the attach boundary.
+            let elder = try almanacQueries.elder(neighborhoodID: area.id, connection: connection)
+                .map { found in
+                    ElderTree(
+                        treeID: found.treeID,
+                        activeName: try contributions.activeName(treeID: found.treeID, connection: connection)?.name,
+                        speciesCommonName: found.speciesCommonName,
+                        address: found.address,
+                        plantedYear: found.plantedYear
+                    )
+                }
+
+            // --- Newest neighbours. Absent outside spring, because the drawn copy has a word for
+            // exactly one season and inventing the others is inventing (DECISIONS constraint 21).
+            var newestNeighbors: RecentPlanting?
+            if let spring = AlmanacWindow.currentSpring(now: moment, calendar: calendar) {
+                let planted = try almanacQueries.plantings(
+                    neighborhoodID: area.id,
+                    from: spring.from,
+                    to: spring.to,
+                    connection: connection
+                )
+                let total = planted.reduce(0) { $0 + $1.treeCount }
+                if total > 0 {
+                    newestNeighbors = RecentPlanting(
+                        treeCount: total,
+                        leadingSpecies: planted.compactMap(\.name)
+                    )
+                }
+            }
+
+            // --- The first bloom of the year.
+            let bloom = try almanacQueries.firstBloom(
+                neighborhoodID: area.id,
+                since: AlmanacWindow.yearStart(now: moment, calendar: calendar),
+                connection: connection
+            ).map { found in
+                BloomFirst(
+                    treeID: found.treeID,
+                    speciesCommonName: found.speciesCommonName,
+                    address: found.address,
+                    firstSeenAt: found.firstSeenAt,
+                    observerCount: found.observerCount
+                )
+            }
+
+            // --- Where eyes are needed. One row more than the cap is read, so `isComplete` is a
+            // fact about the read rather than a guess — the same proof `ContributionStore` uses, and
+            // it has to hold here because this card is nothing but a count (ERRATA E38).
+            let found = try almanacQueries.youngTreesWithoutVisits(
+                neighborhoodID: area.id,
+                plantedOnOrAfter: AlmanacWindow.youngSince(now: moment, calendar: calendar),
+                limit: AlmanacLimits.coverageRowLimit + 1,
+                connection: connection
+            )
+            let isComplete = found.count <= AlmanacLimits.coverageRowLimit
+            let coverage = CoverageGap(
+                trees: Series(
+                    items: found.prefix(AlmanacLimits.coverageRowLimit)
+                        .map { CoverageTree(id: $0.treeID, distanceM: coordinate.distance(to: $0.coordinate)) }
+                        .sorted { $0.distanceM < $1.distanceM },
+                    isComplete: isComplete
+                )
+            )
+
+            return Almanac(
+                neighborhood: AlmanacNeighborhood(
+                    name: area.name,
+                    firstBloom: bloom,
+                    elder: elder,
+                    newestNeighbors: newestNeighbors,
+                    composition: composition,
+                    coverage: coverage
+                )
+            )
         }
     }
 

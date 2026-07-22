@@ -832,6 +832,38 @@ extension CypressColor {
     /// 04 CTA label — `#0E1A12`.
     static let ctaCameraLabel = lightOnly(0x0E1A12)
 
+    /// Disabled CTA fill `#E9ECDE` ↔ **derived** `dark.surface.card` `#18251D`.
+    ///
+    /// SCREENS.md §5 gap 2 lists the disabled button state as unspecified, and `Buttons.swift` says
+    /// so. It is specified elsewhere: PROTOTYPE-FLOW §1.4 gives `careBtnStyle` as
+    /// `disabled → background:#E9ECDE;color:#8B9482` for screen 09's `Done`, which §1.3's `logCare`
+    /// guard ("no-op if no care chip is on") is the behaviour behind. So the value is the
+    /// prototype's, not an invention — it is transcribed here rather than left to the one screen
+    /// that needs it.
+    ///
+    /// The dark half is derived on the same rule `speciesTileLockedFill` takes, whose light hex is
+    /// the identical `#E9ECDE`: a card-level plane lands on `dark.surface.card`.
+    static let ctaDisabledFill = derived(light: 0xE9ECDE, dark: 0x18251D)
+    /// Disabled CTA label — `#8B9482`, which is `text.faint` and already a documented pair.
+    static let ctaDisabledLabel = textFaint
+
+    // MARK: 10 · Share sheet
+
+    /// Share preview card fill `#FAF8EF` ↔ **derived** `dark.surface.card` `#18251D`.
+    ///
+    /// SCREENS.md 10 §3 gives it as a warm plane sitting on the `#FDFDF8` sheet. Dark takes the rung
+    /// every raised plane in the documented pairs lands on, which is the same one `surfaceSheet`
+    /// takes — so after dark the card is told apart from the sheet by `borderShareCard` alone. 10
+    /// has no dark row in SCREENS.md, so this is derived and unreviewed; see ERRATA (E55).
+    static let surfaceShareCard = derived(light: 0xFAF8EF, dark: 0x18251D)
+
+    /// Share destination icon well `#EAF0E2` ↔ **derived** `dark.surface.thumb` `#1F2E22`.
+    /// A 52pt circular recess inside the sheet, which is what `dark.surface.thumb` is for.
+    static let shareTargetWellFill = derived(light: 0xEAF0E2, dark: 0x1F2E22)
+    /// Share destination icon well border `#DDE2D2` ↔ **derived** `dark.border.alt` `#2B3A2C`,
+    /// on the same border rule `borderSheetGrabber` takes from the identical light hex.
+    static let shareTargetWellBorder = derived(light: 0xDDE2D2, dark: 0x2B3A2C)
+
     // MARK: C10 · IconTextRow tile accents (12, 13)
 
     /// One `radial-gradient(circle at 45% 42%, <accent> 0%, transparent 55%)` over a pale base.
@@ -880,6 +912,41 @@ extension CypressColor {
             }
         }
     }
+
+    // MARK: Screen 12 §3 · composition card
+    //
+    // The species-mix card has no C-number: SCREENS.md §2's catalogue does not carry it and screen
+    // 12 §3 describes it inline. Its colours live here anyway, because a feature may not write a
+    // hex (ARCHITECTURE §6) and because two of the four swatches are values the palette did not
+    // already carry.
+
+    /// Screen 12 §3's four swatches, in the drawn order: `#1D4634`, `#4E8F6A`, `#7A4F33`, `#C2CAB4`.
+    ///
+    /// **Escalated as a set, for the reason the C23 series palette is.** Three of the four are brand
+    /// hues, which §1.1 says have no single dark answer, and the fourth is the neutral that means
+    /// "everyone else". A series palette is chosen for separation between its members rather than
+    /// per colour, so deriving them one at a time is the one operation guaranteed to break the thing
+    /// they are for — `chartSeriesPrimary`'s note records the same transform collapsing Canopy and
+    /// New Growth to 0.011 apart in dark. The four want deciding together, by a designer, with the
+    /// track colour below in front of them.
+    static let compositionSwatches: [Color] = [
+        escalated(0x1D4634),
+        escalated(0x4E8F6A),
+        escalated(0x7A4F33),
+        compositionOther
+    ]
+
+    /// The `Everyone else` swatch — `#C2CAB4`. Also the colour its own share of the track is drawn
+    /// in. **Escalated** with the other three.
+    static let compositionOther = escalated(0xC2CAB4)
+
+    /// The unfilled part of a composition track — `#EDEFE3`.
+    ///
+    /// **Derived** onto `dark.border` `#27352B`, which is where `chartGridline` (`#EAEDDF`) already
+    /// goes. The two are the same kind of thing — a faint neutral rule on a white card — and their
+    /// light values are three RGB steps apart, so the two landing on one dark value is the rule
+    /// agreeing with itself rather than a second guess.
+    static let compositionTrack = derived(light: 0xEDEFE3, dark: 0x27352B)
 
     // MARK: C14 · Callout
 
@@ -1130,6 +1197,16 @@ extension CypressColor {
               basis: "→ dark.border.alt, D1's map border", color: borderRouteMap),
         .init("speciesTileLockedFill", .derived, light: 0xE9ECDE, dark: 0x18251D,
               basis: "card-level plane → dark.surface.card", color: speciesTileLockedFill),
+        .init("ctaDisabledFill", .derived, light: 0xE9ECDE, dark: 0x18251D,
+              basis: "PROTOTYPE-FLOW §1.4 careBtnStyle; same light hex as speciesTileLockedFill",
+              color: ctaDisabledFill),
+        .init("surfaceShareCard", .derived, light: 0xFAF8EF, dark: 0x18251D,
+              basis: "raised plane on the sheet → dark.surface.card", color: surfaceShareCard),
+        .init("shareTargetWellFill", .derived, light: 0xEAF0E2, dark: 0x1F2E22,
+              basis: "circular recess in the sheet → dark.surface.thumb", color: shareTargetWellFill),
+        .init("shareTargetWellBorder", .derived, light: 0xDDE2D2, dark: 0x2B3A2C,
+              basis: "border rule → dark.border.alt; same light hex as borderSheetGrabber",
+              color: shareTargetWellBorder),
         .init("avatarRing", .derived, light: 0xFFFFFF, dark: 0x18251D,
               basis: "the ring is the card behind it; cf. pinRingStroke", color: avatarRing),
 
@@ -1222,6 +1299,11 @@ extension CypressColor {
               basis: "tinted-fill rule at the water hue", color: TileAccent.water.base),
         .init("TileAccent.record.base", .derived, light: 0xF4F0DE, dark: 0x322E1A,
               basis: "tinted-fill rule at the record hue", color: TileAccent.record.base),
+
+        // Screen 12 §3's composition track.
+        .init("compositionTrack", .derived, light: 0xEDEFE3, dark: 0x27352B,
+              basis: "the same faint neutral rule chartGridline is; border rule → dark.border",
+              color: compositionTrack),
     ]
 
     // MARK: Escalated — answer these
@@ -1240,6 +1322,16 @@ extension CypressColor {
               basis: "#FFFFFF has three documented darks; the call sites disagree", color: textOnDark),
         .init("pinRemovedFill", .escalated, light: 0xC4C8B8,
               basis: "D1 draws every pin but this one, and says so", color: pinRemovedFill),
+        .init("compositionSwatch1", .escalated, light: 0x1D4634,
+              basis: "12 §3's four swatches are a series; separation is between them, not per colour",
+              color: compositionSwatches[0]),
+        .init("compositionSwatch2", .escalated, light: 0x4E8F6A,
+              basis: "12 §3's four swatches are a series", color: compositionSwatches[1]),
+        .init("compositionSwatch3", .escalated, light: 0x7A4F33,
+              basis: "12 §3's four swatches are a series", color: compositionSwatches[2]),
+        .init("compositionOther", .escalated, light: 0xC2CAB4,
+              basis: "the neutral member of that series; 'everyone else' has no other value",
+              color: compositionOther),
         .init("pinRemovedBar", .escalated, light: 0x7A8272,
               basis: "with the pin it sits in", color: pinRemovedBar),
         .init("pinRouteDone", .escalated, light: 0xAEBFA1,

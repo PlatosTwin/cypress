@@ -162,6 +162,20 @@ xcodebuild -project Cypress.xcodeproj -scheme Cypress \
 
 The first build there is cold and slow. That is the price of not corrupting someone else's.
 
+**A private DerivedData does not buy you a private simulator.** `xcodebuild test` installs onto a
+shared device, so a concurrent agent installing its build mid-run can crash the host out from under
+your tests — and a crashed host is reported as *whichever suite was running*, not as a crash. The
+slowest suite is the usual casualty, which makes it look like that suite is flaky when it is only
+unlucky.
+
+This has already produced a wrong diagnosis: two agents reported the same failing suite and gave
+contradictory causes, one of them having "reproduced" it in a clean worktree that shared the
+simulator with the other's build. Four consecutive clean runs on the settled tree showed the suite
+was never flaky.
+
+So: **a red test result observed while another agent is working is not evidence.** Re-run it once
+the tree is quiet before you believe it, and never "fix" a test that fails only under concurrency.
+
 ## 8. Milestones
 
 Mapped from BUILD-PLAN §12, minus everything that was about the server.

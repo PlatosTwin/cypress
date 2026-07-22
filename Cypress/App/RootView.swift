@@ -32,7 +32,56 @@ struct RootView: View {
                 }
         }
         .environment(router)
-        .fullScreenCover(isPresented: presentingVisitFlow) {
+        // **One** cover, switching on `router.sheet`, not one modifier per route. Stacking several
+        // `fullScreenCover`s on the same view is not a supported arrangement — SwiftUI keeps the
+        // last one and the others become dead code, which is exactly the kind of wiring bug that
+        // reads as "the Care button does nothing".
+        //
+        // Full-screen rather than `.sheet` because screens 09 and 10 draw their *own* scrim and
+        // their own profile skeleton (SCREENS.md §2 C17: "Background behind the sheet on 09/10 is a
+        // skeleton of the profile, not the live profile"). A system sheet would impose its own card,
+        // its own dimming and the live screen behind it — none of which is what the mocks draw.
+        // `AppRouter.sheet` already distinguishes these from `path` for exactly this reason.
+        .fullScreenCover(isPresented: presentingSheet) {
+            presentedSheet
+        }
+    }
+
+    @ViewBuilder
+    private var presentedSheet: some View {
+        switch router.sheet {
+        case let .careLog(id):
+            // Screen 09.
+            CareLogView(
+                treeID: id,
+                api: data.api,
+                outbox: data.outbox,
+                // Anonymous under the device id until the account ask ships (D9); the composition
+                // root owns that choice, not the feature.
+                attribution: .anonymous(deviceID: data.deviceID),
+                // D6 wants the fix's accuracy stored with every field contribution.
+                // `MapLocationProvider.Availability` carries a `Coordinate` and no accuracy, and
+                // `Coordinate` has no room for one — so there is nothing truthful to pass, and `nil`
+                // is what the column gets, exactly as `.checkIn` already passes. Care events are
+                // never charted, so nothing on any screen changes today; the day screen 16 lands,
+                // the measure sheet needs a real number and the provider has to grow one. Recorded
+                // in ERRATA (E65).
+                gpsAccuracyM: nil,
+                onClose: { router.sheet = nil },
+                onSaved: { _ in router.sheet = nil }
+            )
+
+        case let .share(id):
+            // Screen 10.
+            ShareView(
+                treeID: id,
+                api: data.api,
+                onClose: { router.sheet = nil }
+            )
+
+        case .identify:
+            // Screen 04 is a camera, so it is presented rather than pushed — and `Route` has no
+            // camera case by design (DECISIONS constraint 21). `.identify` is the flow's entry point.
             VisitFlowView(
                 api: data.api,
                 outbox: data.outbox,
@@ -51,6 +100,11 @@ struct RootView: View {
                     router.tab = .grove
                 }
             )
+
+        default:
+            // Nothing else is presentable. `AppRouter.present` is only ever called with the three
+            // above; anything else is a pushed destination and belongs on `path`.
+            EmptyView()
         }
     }
 
@@ -85,11 +139,15 @@ struct RootView: View {
         }
     }
 
-    // Screen 04 is a camera, so it is presented rather than pushed — and `Route` has no camera case
-    // by design (DECISIONS constraint 21). `.identify` is the flow's entry point.
-    private var presentingVisitFlow: Binding<Bool> {
+    /// Whether anything is presented over the tab root.
+    ///
+    /// Dismissing clears `sheet` itself rather than a separate flag, so a swipe-down, a tap on the
+    /// scrim and a completed save all leave the router in the same state — a stale `sheet` would
+    /// re-present on the next state change, which is the latent bug PROTOTYPE-FLOW §1.3 records
+    /// in `reset`.
+    private var presentingSheet: Binding<Bool> {
         Binding(
-            get: { router.sheet == .identify },
+            get: { router.sheet != nil },
             set: { if !$0 { router.sheet = nil } }
         )
     }
@@ -159,9 +217,42 @@ struct RootView: View {
                 coordinate: location.availability.coordinate
             )
 
+        case .growthHistory(let id):
+            // Screen 11. Its one drawn entrance is a measurement stat card on 03
+            // (`TreeProfilePresentation.StatItem.opensGrowthHistory`), which exists only when a
+            // measurement does — so on the shipped seed, which carries no measurements at all,
+            // nothing routes here yet. The destination is wired because the route exists and the
+            // screen has to answer for the empty case; see ERRATA (E63).
+            GrowthHistoryView(treeID: id, api: data.api)
+
+        case .almanac:
+            // Screen 12. Like 05 and unlike 07, **nothing opens it**: it is not one of C16's four
+            // tabs, no mocked screen carries an affordance reaching it, the clickable prototype's
+            // `screen` enum omits it, and BUILD-PLAN §9 lists no entry. The two least-invented
+            // candidates — a link from the Journal tab, or a row on 01's map chrome — are both
+            // design decisions, so neither was added (DECISIONS constraint 21). See ERRATA (E57).
+            //
+            // The elder and first-bloom rows name a specific tree, and §14's footnote calls the
+            // coverage list "the almanac's 'walk the nine' list, one tree at a time" — screen 14 is
+            // `treeProfile` in its cold-start form, so both land on a profile.
+            AlmanacView(
+                api: data.api,
+                coordinate: location.availability.coordinate,
+                onBack: { router.pop() },
+                onOpenTree: { id in router.push(.treeProfile(id)) },
+                onWalk: { id in router.push(.treeProfile(id)) }
+            )
+
+        // 09 and 10 are presented as sheets rather than pushed (see `fullScreenCover` above), so a
+        // *pushed* care-log or share route is a programming error rather than a screen. They stay
+        // named here so that adding a `router.push(.share(id))` somewhere is visible in review
+        // rather than silently pushing a scrim over the navigation stack.
+        case .careLog, .share:
+            NotBuiltYetView(route: route)
+
         // Every remaining route has a mocked screen but no built feature yet. Naming them here
         // rather than defaulting means adding one is a compile error, not a silent no-op.
-        case .identify, .careLog, .share, .growthHistory, .measure, .outbox:
+        case .identify, .measure, .outbox:
             NotBuiltYetView(route: route)
         }
     }
