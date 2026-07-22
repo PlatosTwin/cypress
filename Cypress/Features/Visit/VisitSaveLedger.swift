@@ -30,9 +30,31 @@ final class VisitSaveLedger {
     /// D9: "the ask comes at the third save."
     static let accountAskThreshold = 3
 
+    /// How many times an unanswered ask may be put in front of somebody, across the app's life.
+    ///
+    /// ── Why this exists, and why it is two ────────────────────────────────────────────────────
+    /// The guard used to be `saveCount == threshold`, a faithful transcription of the prototype's
+    /// `saves + 1 == 3`. The prototype was never backgrounded. On a phone, the save that earns the
+    /// ask and the moment the ask is answered are separated by a sheet presentation, and anything
+    /// can happen in between — the app is suspended and killed, the sheet is swiped away before its
+    /// dismissal handler runs. Equality means the fourth save moves the counter past the only value
+    /// that could ever be true again, and D9's ask is gone for the life of the install (ERRATA E34).
+    ///
+    /// A plain `>=` is the other failure. It re-asks on every save until answered, and DECISIONS §3
+    /// is built end to end on not pressuring a contributor — D1 kills the leaderboard, D9 exists
+    /// only to move the auth sheet off "second 8 of a ten-second street-corner visit". An ask that
+    /// returns every time somebody saves a tree is that friction handed back in instalments.
+    ///
+    /// Two is the smallest bound that fixes the loss without becoming the nag: the ask gets one
+    /// second chance, on the next save after one that went unanswered, and then stops for good.
+    /// D9 places the ask *at* the third save, which is the earliest it may appear, not the only
+    /// save it may appear on.
+    static let maxAccountAskPresentations = 2
+
     private let defaults: UserDefaults
     private let saveCountKey = "visit.saveCount"
     private let askResolvedKey = "visit.accountAskResolved"
+    private let askPresentationsKey = "visit.accountAskPresentations"
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -44,21 +66,43 @@ final class VisitSaveLedger {
         set { defaults.set(newValue, forKey: saveCountKey) }
     }
 
-    /// Set once the user has either linked an account or declined. The ask never fires twice —
-    /// `logVisit`'s guard in the prototype is `saves + 1 == 3 && account == 'none'`
-    /// (PROTOTYPE-FLOW §1.6.3), and "none" is exactly "not yet resolved".
+    /// Set once the user has either linked an account or declined. This is the answer, not the
+    /// showing: `logVisit`'s guard in the prototype is `saves + 1 == 3 && account == 'none'`
+    /// (PROTOTYPE-FLOW §1.6.3), and "none" is exactly "not yet resolved". Once true the ask is
+    /// over for good, whatever `askPresentationCount` says.
     private var isAskResolved: Bool {
         get { defaults.bool(forKey: askResolvedKey) }
         set { defaults.set(newValue, forKey: askResolvedKey) }
     }
 
-    /// Records a save and answers whether this is the one that earns the account ask.
-    func recordSave() -> Bool {
-        saveCount += 1
-        return saveCount == Self.accountAskThreshold && !isAskResolved
+    /// How many times the ask has actually been put on screen. Never rendered either; it bounds the
+    /// retry above, and it is persisted because the case it exists for is the app not surviving to
+    /// the next launch.
+    private var askPresentationCount: Int {
+        get { defaults.integer(forKey: askPresentationsKey) }
+        set { defaults.set(newValue, forKey: askPresentationsKey) }
     }
 
-    /// Called when screen 15 is dismissed either way — linked or "not now".
+    /// Records a save and answers whether this is a save that earns the account ask.
+    ///
+    /// Returning `true` counts as a presentation, because the caller's only reason to ask is to
+    /// show the sheet. If it turns out to be shown and not answered, the next save gets one more
+    /// go — see `maxAccountAskPresentations` for why exactly one more.
+    func recordSave() -> Bool {
+        saveCount += 1
+        guard !isAskResolved else { return false }
+        guard saveCount >= Self.accountAskThreshold else { return false }
+        guard askPresentationCount < Self.maxAccountAskPresentations else { return false }
+        askPresentationCount += 1
+        return true
+    }
+
+    /// Called when screen 15 closes, however it closes — linked, "not now", or swiped away.
+    ///
+    /// Every dismissal path has to reach this, which is why `VisitSavedModel` hands the sheet a
+    /// binding whose setter calls it rather than a raw flag: an interactive dismissal that never
+    /// resolved is precisely the state ERRATA E34 is about. Silence is never read as a decline —
+    /// `storageLine` keeps saying an account can be added later, because nobody said otherwise.
     func resolveAccountAsk() {
         isAskResolved = true
     }
@@ -78,5 +122,6 @@ final class VisitSaveLedger {
     func reset() {
         defaults.removeObject(forKey: saveCountKey)
         defaults.removeObject(forKey: askResolvedKey)
+        defaults.removeObject(forKey: askPresentationsKey)
     }
 }

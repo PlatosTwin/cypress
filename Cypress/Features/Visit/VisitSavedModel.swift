@@ -8,6 +8,7 @@
 
 import Foundation
 import Observation
+import SwiftUI
 
 @MainActor
 @Observable
@@ -109,7 +110,7 @@ final class VisitSavedModel {
     private func loadRecency() async {
         guard let profile = try? await api.treeProfile(id: receipt.visit.treeID) else { return }
         let cutoff = Date().addingTimeInterval(-Self.recencyWindow)
-        let others = profile.visits.filter {
+        let others = profile.visits.items.filter {
             $0.id != receipt.visit.id && $0.capturedAt >= cutoff
         }
         // ARCHITECTURE §5.6: below its threshold, an aggregate surface does not render at all.
@@ -121,5 +122,23 @@ final class VisitSavedModel {
     func resolveAccountAsk() {
         ledger.resolveAccountAsk()
         shouldPresentAccountAsk = false
+    }
+
+    /// The binding screen 15's sheet is presented from.
+    ///
+    /// It exists so that resolving is not something the sheet's author can forget. SwiftUI writes
+    /// `false` through this binding for an interactive dismissal — a swipe down, a tap outside —
+    /// exactly as it does for a programmatic one, so every way of closing the sheet lands on
+    /// `resolveAccountAsk()`. A raw `Bool` flag would let a swipe-away leave the ask owed and
+    /// unanswered, which is half of ERRATA E34; the ledger's re-offer is the other half, and
+    /// neither is meant to carry it alone.
+    var accountAskPresentation: Binding<Bool> {
+        Binding(
+            get: { [weak self] in self?.shouldPresentAccountAsk ?? false },
+            set: { [weak self] isPresented in
+                guard !isPresented else { return }
+                self?.resolveAccountAsk()
+            }
+        )
     }
 }

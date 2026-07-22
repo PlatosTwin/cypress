@@ -117,7 +117,19 @@ public struct OutboxSnapshot: Sendable, Equatable {
     /// than hard-coded so that if the invariant ever broke, the screen would say so.
     public let lostCount: Int
 
-    public init(records: [OutboxStore.Record], treeNames: [UUID: String], now: Date) {
+    /// - Parameter syncPhotosOnWifiOnly: screen 17's toggle, as it currently stands.
+    ///
+    /// The toggle is a parameter rather than an assumption because nothing is "queued behind the
+    /// wi-fi toggle" while the toggle is off — with it off the binaries go on whatever connection
+    /// there is, exactly as notes and numbers do (BUILD-PLAN §4). It deliberately has no default:
+    /// a caller that does not know the toggle's state cannot answer this question, and a default
+    /// would let it answer anyway (ERRATA E32).
+    public init(
+        records: [OutboxStore.Record],
+        treeNames: [UUID: String],
+        now: Date,
+        syncPhotosOnWifiOnly: Bool
+    ) {
         let dayAgo = now.addingTimeInterval(-OutboxQueue.completedRetention)
 
         items = records.map { record in
@@ -141,7 +153,21 @@ public struct OutboxSnapshot: Sendable, Equatable {
         waitingCount = records.filter { $0.item.state == .pending || $0.item.state == .uploading }.count
         failedCount = records.filter { $0.item.state == .failed }.count
         syncedRecentlyCount = records.filter { $0.item.state == .done && $0.item.updatedAt >= dayAgo }.count
-        awaitingWifiCount = records.filter { $0.item.state != .done && !$0.item.photos.isEmpty }.count
+        // The sentence this count drives is `awaitingWifi(photoCount:)` — "The note is saved. N
+        // photos are waiting for wi-fi." Screen 17's footnote makes that sentence a promise, so
+        // every clause of it has to be true before the count claims it: the note really is saved
+        // (`jsonSynced`), binaries really are still on the device, the row is still trying rather
+        // than given up on, and the toggle really is what is holding them. The old predicate
+        // asserted none of the four and swept up a visit enqueued a moment ago, and a
+        // `validation_failed` row that happened to carry a photo, into a sentence that told the
+        // contributor the opposite of what had happened (ERRATA E32).
+        awaitingWifiCount = syncPhotosOnWifiOnly
+            ? records.filter {
+                $0.jsonSynced
+                    && !$0.item.photos.isEmpty
+                    && ($0.item.state == .pending || $0.item.state == .uploading)
+            }.count
+            : 0
         // A row that is neither waiting, failed, nor done has no state left to be in. The outbox's
         // four states are exhaustive, so this is structurally zero; it is here because the screen
         // claims it out loud.
@@ -230,7 +256,14 @@ public final class OutboxViewState: Observable {
             registrar.withMutation(of: self, keyPath: \.syncPhotosOnWifiOnly) {
                 storedSyncPhotosOnWifiOnly = newValue
             }
-            Task { await self.persistWifiPreference(newValue) }
+            // The snapshot is recomputed as well as persisted, because `awaitingWifiCount` is now a
+            // statement about the toggle as much as about the rows: turning it off means no photo
+            // is waiting on wi-fi any more, and the screen has to stop saying so in the same
+            // gesture that made it untrue (ERRATA E32).
+            Task {
+                await self.persistWifiPreference(newValue)
+                await self.refresh()
+            }
         }
     }
 
@@ -251,7 +284,12 @@ public final class OutboxViewState: Observable {
         self.store = store
         self.storedSyncPhotosOnWifiOnly = syncPhotosOnWifiOnly
         self.treeNameResolver = treeNameResolver
-        self.storedSnapshot = OutboxSnapshot(records: [], treeNames: [:], now: Date())
+        self.storedSnapshot = OutboxSnapshot(
+            records: [],
+            treeNames: [:],
+            now: Date(),
+            syncPhotosOnWifiOnly: syncPhotosOnWifiOnly
+        )
     }
 
     /// Subscribes to the queue so the screen follows a drain without polling.
@@ -280,7 +318,12 @@ public final class OutboxViewState: Observable {
                 (try? OutboxPayload.decode(kind: $0.item.kind, from: $0.item.payload))?.treeID
             }
             let names = await treeNameResolver(Array(Set(treeIDs)))
-            snapshot = OutboxSnapshot(records: records, treeNames: names, now: Date())
+            snapshot = OutboxSnapshot(
+                records: records,
+                treeNames: names,
+                now: Date(),
+                syncPhotosOnWifiOnly: syncPhotosOnWifiOnly
+            )
             refreshError = nil
         } catch {
             refreshError = "Could not read the outbox."

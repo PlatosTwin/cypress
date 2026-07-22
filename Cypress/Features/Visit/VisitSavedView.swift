@@ -65,14 +65,16 @@ struct VisitSavedView: View {
         // ══════════════════════════════════════════════════════════════════════════════════════
         // D9 SEAM — screen 15 (the account ask) is presented here, and only here.
         //
-        // `model.shouldPresentAccountAsk` is true on the **third** save and never again
-        // (DESIGN v3 / D9 beat SPEC-PHASE1's "first"; see `VisitSaveLedger`). Screen 15 is not this
-        // feature's to build, so nothing is presented yet — wire the sheet to this flag, and call
-        // `model.resolveAccountAsk()` when it closes either way (linked *or* "not now"), which is
-        // what stops it re-firing.
+        // `model.shouldPresentAccountAsk` is true from the **third** save (DESIGN v3 / D9 beat
+        // SPEC-PHASE1's "first"; see `VisitSaveLedger`), and at most twice in total — once, plus one
+        // second chance if the first went unanswered because the app died with the sheet up
+        // (ERRATA E34). Screen 15 is not this feature's to build, so nothing is presented yet.
         //
-        //     .sheet(isPresented: Binding(get: { model.shouldPresentAccountAsk },
-        //                                 set: { if !$0 { model.resolveAccountAsk() } })) {
+        // Present it from `model.accountAskPresentation`, not from the flag: that binding resolves
+        // the ask on every way of closing the sheet, including a swipe-away that never reaches an
+        // `onFinish`.
+        //
+        //     .sheet(isPresented: model.accountAskPresentation) {
         //         AccountAskSheet(onFinish: { model.resolveAccountAsk() })   // screen 15
         //     }
         // ══════════════════════════════════════════════════════════════════════════════════════

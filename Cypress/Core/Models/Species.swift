@@ -55,6 +55,31 @@ public struct MonthRange: Hashable, Codable, Sendable {
     public var months: Set<Int> {
         Set((1...12).filter(contains))
     }
+
+    /// The one wrapping window a set of months describes, or `nil` when it does not describe
+    /// exactly one.
+    ///
+    /// BUILD-PLAN §4 stores each phenological season as a bare month array — `fall_color_months`
+    /// and friends — which carries membership and nothing else. Where a *window* is needed, the
+    /// ordered reading has to be recovered from that membership rather than assumed from the order
+    /// the array happens to be in: `[11, 12, 1]`, `[1, 11, 12]` and `[12, 1, 11]` are the same
+    /// November-through-January season, the curated YAML gives no reason to expect one spelling
+    /// over another, and `SeasonalCalendar` sorts them anyway (ERRATA E33).
+    ///
+    /// A set with a gap in it — two separate bloom flushes, say — describes no single window, and
+    /// this returns `nil` rather than inventing one that spans the gap.
+    public static func spanning(_ months: some Sequence<Int>) -> MonthRange? {
+        let set = Set(months.filter { (1...12).contains($0) })
+        guard !set.isEmpty else { return nil }
+        // A year-round season has no month that begins it; naming January is the only reading.
+        guard set.count < 12 else { return MonthRange(start: 1, end: 12) }
+        // The window opens at the month whose predecessor around the circle is absent. Exactly one
+        // such month exists when the set is contiguous; two or more mean a gap.
+        let openings = set.filter { !set.contains($0 == 1 ? 12 : $0 - 1) }
+        guard openings.count == 1, let start = openings.first else { return nil }
+        let unwrappedEnd = start + set.count - 1
+        return MonthRange(start: start, end: unwrappedEnd > 12 ? unwrappedEnd - 12 : unwrappedEnd)
+    }
 }
 
 /// One entry of `species.care_notes jsonb`: `{month_range, text}` (BUILD-PLAN §4).
@@ -76,6 +101,12 @@ public struct SeasonalCalendar: Hashable, Codable, Sendable {
     public let fruitMonths: [Int]
     public let newGrowthMonths: [Int]
 
+    /// The arrays are sorted on the way in, and that is deliberate: each one is a *set* of months,
+    /// so two spellings of the same season should be the same value, and `Hashable` should agree.
+    /// Nothing may read a phenological start or end off `first` or `last` here — sorting is exactly
+    /// what destroys that reading for a season that wraps the year. `MonthRange.spanning(_:)`
+    /// recovers the window from the membership instead, which is order-independent by construction
+    /// (ERRATA E33).
     public init(
         bloomMonths: [Int] = [],
         fallColorMonths: [Int] = [],
@@ -245,11 +276,18 @@ extension Species {
     /// distinction buys.
     ///
     /// Evergreen and semi-deciduous species are in leaf year-round. For deciduous species the
-    /// window is derived from the authored seasonal calendar: from the first `new_growth_months`
-    /// entry through the last `fall_color_months` entry, wrapping the year if needed. When either
-    /// array is empty the northern-hemisphere default April–October applies — this fallback is a
-    /// derivation, not authored botany, and is the one seasonality value not stated in the source
-    /// documents.
+    /// window runs from the opening of the new-growth season to the close of the fall-colour
+    /// season, wrapping the year if needed. When either season is absent — or is not one
+    /// contiguous run of months, and so states no season at all — the northern-hemisphere default
+    /// April–October applies; that fallback is a derivation, not authored botany, and is the one
+    /// seasonality value not stated in the source documents.
+    ///
+    /// Each season's opening and close come from `MonthRange.spanning(_:)` rather than from the
+    /// ends of the stored arrays. Reading `fallColorMonths.last` meant a species authored with a
+    /// November-through-January fall put its leaf-on window's close in December, because the
+    /// calendar sorts and December is the numeric maximum — and `Vitality.isRatingPermitted` would
+    /// then have hidden the vitality rows in a month the authored calendar says the tree is still
+    /// in leaf, with nothing a rater standing in front of it could do about that (ERRATA E33).
     public var leafOnMonths: Set<Int>? {
         switch leafRetention {
         case nil:
@@ -258,9 +296,9 @@ extension Species {
             return Set(1...12)
         case .deciduous?:
             guard
-                let start = seasonal.newGrowthMonths.first,
-                let end = seasonal.fallColorMonths.last,
-                let window = MonthRange(start: start, end: end)
+                let newGrowth = MonthRange.spanning(seasonal.newGrowthMonths),
+                let fallColor = MonthRange.spanning(seasonal.fallColorMonths),
+                let window = MonthRange(start: newGrowth.start, end: fallColor.end)
             else {
                 return Species.defaultDeciduousLeafOnMonths
             }

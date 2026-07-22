@@ -91,7 +91,7 @@ public enum VisitGates {
         )
 
         // Nothing has been synced. Prove it, rather than assuming it.
-        let timelineBefore = try await api.treeProfile(id: treeID).visits
+        let timelineBefore = try await api.treeProfile(id: treeID).visits.items
         expect(
             timelineBefore.isEmpty,
             "nothing may reach the timeline before a drain; found \(timelineBefore.count)",
@@ -171,7 +171,7 @@ public enum VisitGates {
         expect(report.synced == 1, "expected one item to sync, report was \(report)", into: &failures)
 
         // --- It is on the tree's timeline. This is the sentence M0 is graded on.
-        let timeline = try await api.treeProfile(id: manifest.treeID).visits
+        let timeline = try await api.treeProfile(id: manifest.treeID).visits.items
         expect(
             timeline.contains { $0.id == manifest.visitID },
             "the visit did not reach tree \(manifest.treeID)'s timeline after the drain",
@@ -185,7 +185,7 @@ public enum VisitGates {
             "the staged binary should have been moved out of staging by the upload phase",
             into: &failures
         )
-        let photos = try await api.treeProfile(id: manifest.treeID).photos
+        let photos = try await api.treeProfile(id: manifest.treeID).photos.items
         expect(photos.count == 1, "expected one photo record, found \(photos.count)", into: &failures)
         expect(photos.first?.storageKey != nil, "the photo record should carry a storage key once uploaded", into: &failures)
         // The sentence this gate was extended for: what the contributor framed is what got stored.
@@ -223,18 +223,18 @@ public enum VisitGates {
 
         let profile = try await api.treeProfile(id: manifest.treeID)
         expect(
-            profile.visits.contains { $0.id == manifest.visitID },
+            profile.visits.items.contains { $0.id == manifest.visitID },
             "the visit is not on the timeline after a second relaunch",
             into: &failures
         )
-        expect(profile.visits.count == 1, "expected one visit, found \(profile.visits.count)", into: &failures)
+        expect(profile.visits.items.count == 1, "expected one visit, found \(profile.visits.items.count)", into: &failures)
         expect(
-            profile.visits.first?.note == manifest.note,
+            profile.visits.items.first?.note == manifest.note,
             "the note did not survive the round trip",
             into: &failures
         )
         expect(
-            profile.visits.first?.gpsAccuracyM == manifest.gpsAccuracyM,
+            profile.visits.items.first?.gpsAccuracyM == manifest.gpsAccuracyM,
             "D6's gpsAccuracyM did not survive the round trip",
             into: &failures
         )
@@ -242,10 +242,10 @@ public enum VisitGates {
         // Idempotency on the client-generated key: replaying the identical item must come back a
         // duplicate and must not create a second row.
         let replay = try await api.sync([
-            OutboxPayload.visit(profile.visits[0]).makeItem(photos: [])
+            OutboxPayload.visit(profile.visits.items[0]).makeItem(photos: [])
         ])
         expect(replay.first?.status == .duplicate, "a replay should be a duplicate, was \(String(describing: replay.first?.status))", into: &failures)
-        let after = try await api.treeProfile(id: manifest.treeID).visits
+        let after = try await api.treeProfile(id: manifest.treeID).visits.items
         expect(after.count == 1, "a replay created a second row: \(after.count)", into: &failures)
 
         // The outbox row settled rather than lingering.

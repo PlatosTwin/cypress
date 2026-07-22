@@ -114,7 +114,10 @@ struct OutboxChaosTests {
         )
         _ = try await queue.drain()
 
-        let snapshot = try await queue.snapshot(treeNames: [treeID: "Grandmother Cypress"])
+        let snapshot = try await queue.snapshot(
+            treeNames: [treeID: "Grandmother Cypress"],
+            syncPhotosOnWifiOnly: true
+        )
         let item = try #require(snapshot.items.first)
         #expect(item.state == .failed)
         #expect(item.failCount == 1)
