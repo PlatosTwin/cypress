@@ -269,6 +269,74 @@ public struct OutboxStore {
         return changed
     }
 
+    /// Takes a deleted account out of the queue (RULINGS R3, and the half a deletion path is most
+    /// likely to forget).
+    ///
+    /// A mutation lives in the outbox between being written and being applied, and that gap can
+    /// straddle anything — `LocalAPI.adoptRowsWrittenAfterTheClaim` documents the same gap in the
+    /// other direction, where a row queued before sign-in lands after it. Straddling a *deletion* is
+    /// worse than straddling a claim: an item that drains afterwards re-creates, under the name of an
+    /// account that no longer exists, exactly what the deletion just removed.
+    ///
+    /// The two kinds of row get the two answers R3 gives, for the same reasons:
+    ///
+    /// 1. **A queued favourite or private reminder is discarded.** It is a mutation whose only
+    ///    possible destination is a row that no longer exists and may not be re-created: an
+    ///    ownerless one fails the `CHECK`, and a device-owned one is the re-homing R3 refused. There
+    ///    is nothing left for it to mean, so the row goes rather than failing forever in the queue
+    ///    where screen 17 would keep reporting it.
+    /// 2. **A queued contribution stays, with the account stripped out of its payload.** The
+    ///    contribution itself survives deletion — that is §3.12 — but it must arrive anonymous, and
+    ///    an untouched payload would re-attribute it on drain, silently undoing the anonymization for
+    ///    exactly the rows that were in flight. `json_remove` leaves the payload byte-identical to
+    ///    one written before sign-in, because `JSONEncoder` omits a nil `userID` rather than writing
+    ///    a null; the mutation's `client_uuid`, its photos, its retry state and its place in the FIFO
+    ///    are untouched.
+    ///
+    /// **Every state, not just the pending ones.** A `done` row is screen 17's receipt, and its
+    /// payload is a second copy of the attribution sitting on disk — anonymizing the table and
+    /// leaving the receipt would leave the account's id on the device. A `done` favourite's receipt
+    /// is worse still: it describes, by name, a tree this person kept, which is precisely the record
+    /// R3 says nobody but they could read.
+    ///
+    /// Both statements are `UPDATE`/`DELETE` whose `WHERE` stops matching once they have run, so a
+    /// second call over the same account changes nothing.
+    @discardableResult
+    public func forgetAccount(
+        userID: UUID,
+        at date: Date,
+        connection: SQLiteConnection
+    ) throws -> (discarded: Int, anonymized: Int) {
+        // The two exclusively-owned kinds. Their payload carries a `ReminderOwner`/`FavoriteOwner`,
+        // encoded as a single-key object — `{"user": …}` or `{"device": …}` — so `$.owner.user`
+        // matches an account-owned mutation and cannot match a device-owned one.
+        let discard = try connection.cachedStatement("""
+            DELETE FROM outbox
+             WHERE kind IN ('favorite_toggle','private_reminder')
+               AND json_extract(payload, '$.owner.user') = :user COLLATE NOCASE
+            """)
+        _ = try discard.bind([":user": userID.uuidString])
+        try discard.run()
+        let discarded = connection.changes
+        _ = try discard.reset()
+
+        // The four append-only contribution kinds. `userID` is a top-level key on each of their
+        // payloads (`Visit`, `TreeObservation`, `TreeMeasurement`, `CareEvent` all flatten
+        // `Attribution` into `userID` + `deviceID`).
+        let anonymize = try connection.cachedStatement("""
+            UPDATE outbox
+               SET payload = json_remove(payload, '$.userID'), updated_at = :now
+             WHERE kind IN ('visit','observation','measurement','care_event')
+               AND json_extract(payload, '$.userID') = :user COLLATE NOCASE
+            """)
+        _ = try anonymize.bind([":now": date, ":user": userID.uuidString])
+        try anonymize.run()
+        let anonymized = connection.changes
+        _ = try anonymize.reset()
+
+        return (discarded: discarded, anonymized: anonymized)
+    }
+
     public func counts(connection: SQLiteConnection) throws -> [OutboxItem.State: Int] {
         let statement = try connection.cachedStatement("SELECT state, COUNT(*) AS n FROM outbox GROUP BY state")
         let rows = try statement.fetchAll { row in

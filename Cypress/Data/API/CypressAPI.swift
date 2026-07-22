@@ -10,7 +10,9 @@ import Foundation
 /// - `POST /auth/*`, `POST /auth/refresh`, `POST /auth/logout`, `DELETE /me` — there is no auth
 ///   server and no local equivalent of a token exchange. Adding throwing stubs would suggest a
 ///   sign-in flow exists. Screens 15 and 19 gate on a local account record, which `LocalAPI`
-///   provides through `claimDevice`.
+///   provides through `claimDevice`. `DELETE /me`'s *local* half is not a stub and is not omitted:
+///   the rows it deletes and anonymizes are on this device, and `LocalAPI.deleteAccount()`
+///   implements RULINGS R3 over them.
 /// - `GET /tiles/{z}/{x}/{y}` — replaced by MapKit plus `mapContent(in:)` (ARCHITECTURE §1). PMTiles
 ///   range reads have no meaning in a native build with a vector basemap already on device.
 /// - `Admin: /admin/*` — moderator and admin surfaces are a web deliverable, out of scope for the

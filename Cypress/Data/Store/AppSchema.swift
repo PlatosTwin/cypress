@@ -22,8 +22,8 @@ import Foundation
 /// - private reminders can only hold hazard categories, carry no `stale_at` at all, and have
 ///   exactly one owner — a user or a device, never both, never neither (v3);
 /// - favorites have exactly one owner too (v5), and are tombstoned rather than hard-deleted — a
-///   `BEFORE DELETE` trigger that raises everywhere except the one adoption case it exists to
-///   protect (v5 again);
+///   `BEFORE DELETE` trigger that raises everywhere except the two cases it exists to protect: the
+///   adoption merge at sign-in (v5) and the erasure of the deleting account's own rows (v6, R3);
 /// - one active name per tree (D15) — a partial unique index;
 /// - an outbox row can only be `done` once its JSON *and* its photos have gone.
 public enum AppSchema {
@@ -34,7 +34,8 @@ public enum AppSchema {
         Migration(version: 2, name: "outbox photos carry their shot type", sql: v2),
         Migration(version: 3, name: "a private reminder can be owned by a device", migrate: applyV3),
         Migration(version: 4, name: "the outbox carries private reminders", migrate: applyV4),
-        Migration(version: 5, name: "a favourite can be owned by a device", migrate: applyV5)
+        Migration(version: 5, name: "a favourite can be owned by a device", migrate: applyV5),
+        Migration(version: 6, name: "an account's own rows go with the account", migrate: applyV6)
     ]
 
     /// The version a freshly migrated database reports.
@@ -651,6 +652,74 @@ public enum AppSchema {
             WHEN OLD.device_id IS NULL
               OR NOT EXISTS (SELECT 1 FROM favorites other
                               WHERE other.tree_uuid = OLD.tree_uuid AND other.user_id IS NOT NULL)
+            BEGIN
+                SELECT RAISE(ABORT, 'favorites are tombstoned via deleted_at, never hard-deleted');
+            END;
+            """)
+    }
+
+    // MARK: - v6
+
+    /// The tombstone trigger gains its second exception, so account deletion can delete the rows
+    /// only that account could ever read (RULINGS R3, closing the question E23 and E89 left OPEN).
+    ///
+    /// **The conflict this closes.** DECISIONS §3.12 says deletion anonymizes attributed rows —
+    /// `user_id` nulled, the device link severed — rather than removing them. v3 and v5 then gave
+    /// `private_reminders` and `favorites` a `CHECK ((user_id IS NULL) <> (device_id IS NULL))`, so
+    /// an exclusively-owned row cannot survive being anonymized: nulling its `user_id` leaves it
+    /// owned by nobody, which the engine refuses, and re-homing it onto the device would hand one
+    /// person's private records to whoever holds the phone next. R3 rules that these rows are
+    /// deleted, because §3.12 anonymizes *contributions* — things the forest keeps, whose value does
+    /// not depend on who made them — and a reminder nobody but its owner can read is not one.
+    ///
+    /// **Why the schema has to change at all.** v5's trigger refuses every `DELETE FROM favorites`
+    /// except the adoption merge, and it refuses a user-owned row first of all (`OLD.device_id IS
+    /// NULL` is the leading arm). So the erasure R3 orders is, today, unwritable — the same shape of
+    /// bug E89 fixed in the other direction, where the row could not be created.
+    ///
+    /// **The exception is a sentinel, not a hole.** A row may be deleted when a row in `app_state`
+    /// names its owner as the account currently being erased. `AccountDeletion` writes that key,
+    /// deletes, and clears the key, all inside one transaction — so the permission exists only for
+    /// the statements that need it, only for one named account, and cannot outlive the transaction
+    /// even if the process dies mid-way, because the rollback takes the sentinel with it. A trigger
+    /// cannot read a `temp` table (SQLite forbids a trigger referencing another database), which is
+    /// why the sentinel lives in `main.app_state` beside the settings rather than in a scratch table.
+    ///
+    /// The comparison is written as `EXISTS`, deliberately. `OLD.user_id = (SELECT value …)` reads
+    /// naturally and is **wrong**: with no sentinel row the subquery is NULL, the comparison is NULL,
+    /// `NOT (0 OR NULL)` is NULL, and a `WHEN` clause that evaluates to NULL does not fire — so the
+    /// trigger would permit every hard delete of a user-owned favourite on a database where nobody
+    /// is being deleted at all. `EXISTS` is 0 or 1 and never NULL. `DataGates` asserts the
+    /// no-sentinel case for exactly this reason.
+    ///
+    /// The key is spelled out here rather than interpolated from `AccountDeletion.erasureSentinelKey`
+    /// because a migration is frozen text: interpolating a Swift constant would let a later rename
+    /// silently change what new databases get while leaving upgraded ones on the old string.
+    /// `AccountDeletionTests` pins that the constant and this text still agree.
+    ///
+    /// **No table is rebuilt and nothing is copied**, so this needs no `applyV3`-style guard: `DROP
+    /// TRIGGER IF EXISTS` followed by `CREATE TRIGGER` is idempotent by construction, and a replay
+    /// after an interrupted run lands on the same definition.
+    private static func applyV6(_ connection: SQLiteConnection) throws {
+        try connection.execute("""
+            DROP TRIGGER IF EXISTS favorites_are_tombstoned;
+
+            CREATE TRIGGER favorites_are_tombstoned
+            BEFORE DELETE ON favorites
+            WHEN NOT (
+                    -- v5: the adoption merge. A device-owned row whose event has just been folded
+                    -- onto the account's row for the same tree, in the same transaction.
+                    (OLD.device_id IS NOT NULL
+                     AND EXISTS (SELECT 1 FROM favorites other
+                                  WHERE other.tree_uuid = OLD.tree_uuid
+                                    AND other.user_id IS NOT NULL))
+                    -- v6: account erasure (R3). Only rows owned by the account named in the
+                    -- sentinel, and only while that sentinel is set.
+                 OR (OLD.user_id IS NOT NULL
+                     AND EXISTS (SELECT 1 FROM app_state
+                                  WHERE key = 'account_deletion_user_id'
+                                    AND value = OLD.user_id COLLATE NOCASE))
+                )
             BEGIN
                 SELECT RAISE(ABORT, 'favorites are tombstoned via deleted_at, never hard-deleted');
             END;

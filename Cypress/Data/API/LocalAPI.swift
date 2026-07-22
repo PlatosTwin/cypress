@@ -815,6 +815,34 @@ public actor LocalAPI: CypressAPI {
         try await store.setAppState(.currentUserID, to: userID.uuidString)
     }
 
+    /// `DELETE /me` — deletion, in the two-part sense RULINGS R3 settles (see `AccountDeletion`).
+    ///
+    /// **Not on `CypressAPI`, and that is deliberate.** The protocol's header lists `DELETE /me`
+    /// among its omissions because there is no auth server; that reasoning still holds for the
+    /// server half — telling a backend to forget an account — and adding a throwing stub to
+    /// `RemoteAPI` would suggest a sign-in flow exists. What *is* implementable today is the local
+    /// half, which is not a stub: the rows are on this device and this is the only code that can
+    /// reach them. When the service lands, `DELETE /me` joins the protocol and this method becomes
+    /// the local half of it, unchanged. It sits beside `privateReminders` and `curatedSpecies`,
+    /// which are `LocalAPI`'s for the same kind of reason.
+    ///
+    /// Requires a signed-in account: deleting "the current account" when there is none would be a
+    /// no-op that reports success, and there is nothing else it could honestly mean — a device's own
+    /// rows are not an account's (see `AccountDeletion`).
+    ///
+    /// The signed-in state goes with it, in the same transaction as the rows, so there is no instant
+    /// at which the app believes it is signed in as an account whose records are gone.
+    @discardableResult
+    public func deleteAccount() async throws -> AccountDeletion.Outcome {
+        guard let account = userID else { throw APIError.unauthorized }
+        let moment = now()
+        let outcome = try await store.queue.write { connection in
+            try AccountDeletion().delete(userID: account, at: moment, connection: connection)
+        }
+        userID = nil
+        return outcome
+    }
+
     /// What this device is holding under its own id, for screen 15's one sentence with a number in
     /// it. See `DeviceContributions` for why this is a read rather than the ledger's save counter.
     ///

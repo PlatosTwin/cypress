@@ -301,6 +301,68 @@ public enum DataGates {
                 "DELETE FROM favorites WHERE tree_uuid = '\(lonely.uuidString)'"
             )
 
+            // The trigger's *second* exception (v6, RULINGS R3): an account's own favourites are
+            // deleted with the account. It is keyed on a sentinel that exists only inside a deletion
+            // transaction, so with nobody being deleted a user-owned favourite is exactly as
+            // undeletable as it was under v5.
+            //
+            // This is the assertion that catches the natural, wrong spelling of the WHEN clause.
+            // `OLD.user_id = (SELECT value FROM app_state WHERE key = …)` is NULL when the sentinel
+            // is absent, `NOT (0 OR NULL)` is NULL, and a NULL WHEN does not fire — so that form
+            // permits every hard delete of a user-owned favourite on every database where nobody is
+            // being deleted at all.
+            let erasedAccount = UUID()
+            let keptTree = UUID()
+            try await store.queue.write { connection in
+                try ContributionStore().applyFavoriteToggle(
+                    owner: .user(erasedAccount),
+                    treeID: keptTree,
+                    clientUUID: UUID(),
+                    isFavorite: true,
+                    at: Date(),
+                    connection: connection
+                )
+            }
+            await rejects(
+                "hard delete of a user-owned favorite with no erasure in progress",
+                "DELETE FROM favorites WHERE user_id = '\(erasedAccount.uuidString)'"
+            )
+            // A sentinel naming a different account does not open it either — the exception is one
+            // account wide, not "somebody is being deleted somewhere".
+            await rejects("hard delete of a favorite belonging to an account other than the one being erased", """
+                INSERT INTO app_state (key, value)
+                VALUES ('\(AccountDeletion.erasureSentinelKey)','\(UUID().uuidString)')
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value;
+                DELETE FROM favorites WHERE user_id = '\(erasedAccount.uuidString)';
+                """)
+            // …and it does open, or R3 is unimplementable: a trigger that refused everything would
+            // pass both assertions above and neither would notice.
+            do {
+                try await store.queue.write { connection in
+                    try AccountDeletion().delete(userID: erasedAccount, at: Date(), connection: connection)
+                }
+            } catch {
+                failures.append("R3: an account's own favourite could not be deleted with the account: \(error)")
+            }
+            let erasedRows = try await store.queue.read { connection -> Int in
+                let statement = try connection.prepare("""
+                    SELECT COUNT(*) AS n FROM favorites WHERE user_id = '\(erasedAccount.uuidString)'
+                    """)
+                defer { statement.finalize() }
+                return try statement.fetchOne { try $0.int("n") } ?? -1
+            }
+            expect(erasedRows == 0, "R3: \(erasedRows) favourites survived their account", into: &failures)
+            // The permission slip is torn up by the same transaction that wrote it. A sentinel left
+            // on disk would be a standing hole in the trigger for exactly one account id.
+            let sentinelSurvived = try await store.queue.read { connection -> Bool in
+                let statement = try connection.prepare("""
+                    SELECT COUNT(*) AS n FROM app_state WHERE key = '\(AccountDeletion.erasureSentinelKey)'
+                    """)
+                defer { statement.finalize() }
+                return (try statement.fetchOne { try $0.int("n") } ?? 0) > 0
+            }
+            expect(!sentinelSurvived, "R3: the erasure sentinel outlived the deletion transaction", into: &failures)
+
             // D15: one active name per tree.
             let named = UUID()
             try await store.queue.write { connection in

@@ -202,8 +202,14 @@ struct FavoriteTests {
                     '\(UUID().uuidString)','\(now)','\(now)','\(now)');
             """)
 
+        // Every step above v4, not literally `[5]`: this test is about a v4 database reaching the
+        // current schema with its rows intact, and it must not fail the day an unrelated migration
+        // is added — which is what happened when v6 widened the tombstone trigger for account
+        // deletion (RULINGS R3). `PrivateReminderTests` and `DataGates.outboxPhotoShotTypes` state
+        // the same rule for the same reason, and this line was the one that had not taken it.
+        let expected = AppSchema.migrations.map(\.version).filter { $0 > 4 }
         let applied = try SchemaMigrator.migrate(AppSchema.migrations, on: connection)
-        #expect(applied == [5])
+        #expect(applied == expected)
 
         let store = ContributionStore()
         #expect(try store.isFavorite(owner: .user(Self.userID), treeID: liveTree, connection: connection))
