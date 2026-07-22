@@ -88,8 +88,18 @@ final class VisitSaveLedger {
     /// Returning `true` counts as a presentation, because the caller's only reason to ask is to
     /// show the sheet. If it turns out to be shown and not answered, the next save gets one more
     /// go — see `maxAccountAskPresentations` for why exactly one more.
-    func recordSave() -> Bool {
+    /// - Parameter mayAsk: whether this build is *able* to honour an ask (RULINGS **R4**). Default
+    ///   `true`, because D9's rule is the ledger's job and a capability is not — the caller knows
+    ///   whether there is a server to send a magic link, and this type never should.
+    ///
+    ///   Passing `false` still counts the save, because the count is a fact about somebody's field
+    ///   work rather than about this build's capabilities, and it must not spend a presentation:
+    ///   a gate placed after `askPresentationCount` would silently burn both of a person's two goes
+    ///   while the feature is switched off, so that the day auth ships they are never asked at all.
+    ///   That is a bug which cannot be observed until the thing it breaks is turned on.
+    func recordSave(mayAsk: Bool = true) -> Bool {
         saveCount += 1
+        guard mayAsk else { return false }
         guard !isAskResolved else { return false }
         guard saveCount >= Self.accountAskThreshold else { return false }
         guard askPresentationCount < Self.maxAccountAskPresentations else { return false }

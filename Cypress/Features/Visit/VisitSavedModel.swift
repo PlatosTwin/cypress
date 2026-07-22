@@ -88,7 +88,11 @@ final class VisitSavedModel {
     // MARK: - Loading
 
     func load() async {
-        shouldPresentAccountAsk = ledger.recordSave()
+        // The ledger answers D9's question — has the ask earned its interruption. `mayAsk` answers a
+        // different one the ledger has no business knowing: whether this build could honour it.
+        // Screen 15 is built and cannot sign anyone in until a server exists to send a magic link
+        // (RULINGS R4), so it is not presented, and no presentation is spent refusing.
+        shouldPresentAccountAsk = ledger.recordSave(mayAsk: BetaCapability.accountsAvailable)
         await loadRoute()
         await loadRecency()
     }

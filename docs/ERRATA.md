@@ -3427,3 +3427,34 @@ because nothing in a unit test can see a navigation bar and no snapshot test exi
 "Snapshot-testing the screens against the mocks is explicitly *not* set up yet"). The fix is one
 modifier that sixteen other files already carry. What a suite of 375 tests cannot tell you is what
 the screen looks like, and the only thing that found this was somebody photographing it.
+
+### E111 — screen 15 asks for an email address the beta cannot send anything to, so it is gated rather than deleted
+
+Screen 15 is the account ask. It is built, it is tested by `AccountAskTests`, and it **cannot sign
+anyone in**: authentication is magic-link only (DECISIONS §3, no passwords ever), a magic link needs a
+server to send it, and the local beta has no backend. Presenting it would take an email address from
+somebody and give nothing back, which is the failure the whole of §3 is written to prevent.
+
+**Resolved by RULINGS R4**, which the project owner delegated. The screen stays built and stays
+unreachable behind `BetaCapability.accountsAvailable`, false, in one place. A route commented out is
+indistinguishable from a route somebody forgot to write; a named constant says that 15 exists, works,
+and is waiting on a server rather than on an engineer.
+
+**Where the gate went is the finding, and the first placement was wrong.** The obvious spot is inside
+`VisitSaveLedger.recordSave()`, which is where the ask is earned. Putting it there breaks six tests in
+`AccountAskTests`, and those tests are *right*: they pin D9 — the ask comes at the third save, gets
+exactly one second chance, then stops for good — and D9 is true whether or not this particular build
+has a server behind it. **A capability flag that has to rewrite six tests about a product decision is
+sitting in the wrong place.** The ledger answers "has the ask earned its interruption"; the capability
+answers "can this build honour it"; they are different questions and they now live in different
+types. `recordSave(mayAsk:)` takes the answer to the second one from its caller and defaults to
+`true`, so the D9 suite is untouched.
+
+**The half that is invisible if you get it wrong.** A gate placed *after* `askPresentationCount`
+increments would silently spend both of a person's two goes while the feature is switched off — so on
+the day auth ships, they are never asked at all. Nothing in the current build can show that symptom:
+it only appears once the thing it breaks is turned on. `BetaCapabilityTests` asserts it through the
+`UserDefaults` the ledger writes rather than through the ledger's own accessors, so a gate that stops
+the reader instead of the writer still fails. The save itself is still counted, because the count is a
+fact about somebody's field work rather than about this build's capabilities — otherwise D9 would
+later be measured from the wrong zero.
