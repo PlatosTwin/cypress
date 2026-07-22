@@ -3735,3 +3735,71 @@ longer the first bloom while the same visit on a standing tree still is.
 `removed` (E107, E113). `firstBloom` remains the only read here that could name a tree the reader
 cannot reach in the state the row implies — it now excludes the removed, but a bloom row is still a
 claim about a tree made out of one visit, which is A9's floor of one working as specified.
+
+### E114 — the whole app was photographed for the first time, and looking found no rendering lie and two design questions
+
+E110 and E106 were both found by photographing a running screen after four green milestones had missed
+them, and both were on screens nobody had ever photographed. This is the sweep that closes that gap:
+every screen SCREENS.md draws — 01 through 19, plus the two tab roots the build added (the Journal tab,
+which is the almanac's invented entrance, and the You tab) — rendered in **light and dark at the default
+size and at AX5**, read back as images, and compared against SCREENS.md. Twenty-one screens, four
+appearances each, plus thirteen cold-and-empty states in the two appearances a beta tester meets first.
+
+**The headline is a negative, and it is a real finding rather than the absence of one.** Nothing renders
+a lie. No copy asserts a write that did not happen, no control is dead, "sent to the city" appears
+nowhere and §5.4's honest "the city has not been notified" is on screen 06 in both appearances and at
+AX5. Nothing is inset where SCREENS.md says full-bleed — 01 was the one that was, and E110 already fixed
+it; the sixteen `toolbar(.hidden)` opt-outs and the new site screen all hold. Dark mode is coherent on
+every screen: cards sit at `#18251D` on `#0E1712`, no surface vanishes into its ground, and MapKit's
+navy never shows through the parchment wash (checked on a booted device, not only in the renderer). And
+AX5, which E105 said would keep breaking as screens were added, does not break on any of the twenty-one —
+the two structural fixes E105 made to C1 and the identity block hold everywhere they are reused, the
+mono furniture clamps at `.accessibility1` as designed, and every long screen becomes a scroll rather
+than a clip. Six screens had been photographed before this; the finding is that the other fifteen were
+right, and that is worth stating because it is the result of looking rather than of not looking.
+
+**What the sweep needed built, because three screens had no way to be photographed at all.** 02, 04 and
+18 were the only screens with no `#if DEBUG` preview fixture, which is exactly why they were unphotographed:
+02's content is a function of a GPS fix a detached renderer has no way to supply (`CLLocationManager` in a
+test host reports `notDetermined` forever, so every capture of 02 was its `Finding you` notice), 04 is a
+camera a simulator does not have, and 18 needs a `VisitSaveReceipt` the save produces. `VisitPreviews.swift`
+adds the three doubles, and `VisitLocationProvider` grows a `#if DEBUG init(pinnedFix:)` seam — the same
+shape every other feature already had as a `PreviewAPI` — so 02 can be handed the ranked shortlist the spec
+draws instead of the permission prompt. The photographs are produced by `ScreenSweepShots`, which extends
+the `UIHostingController`-in-an-offscreen-window harness E105 built (not `ImageRenderer`, for E105's reason),
+wraps every pushed screen in the `NavigationStack` `RootView` gives it — the bar E110 was about is inherited
+from that stack and a screen rendered bare cannot inherit it — and writes a 2×2 light/dark × default/AX5
+contact sheet per screen. It asserts only that an image was produced: ARCHITECTURE §7 still says snapshot
+baselines are not set up, and a baseline-free assertion passes on a blank image.
+
+**The first design question: screen 17's queue tiles do not carry the glyphs SCREENS.md 17 draws.** The
+spec gives the visit row a camera SVG and the check-in row a rotated ring; the build draws C21's leaf on
+both, and only the measurement row — whose mock *is* a mono reading in the tile — matches. This is a
+knowing decision recorded in `OutboxView.swift` ("§2's camera and ring glyphs are not in C1–C30 and are
+not invented here"), taken under constraint 21, and it is defensible as far as it goes. But it is still a
+visible divergence from the source of truth on the one screen whose whole job is to say *what* each queued
+item is, and at a glance a visit and a check-in are now indistinguishable by their tile. It is design's to
+answer whether C21's leaf is the right stand-in or whether C1–C30 should grow the two glyphs 17 already
+assumes; it is flagged here rather than fixed because drawing them is exactly the invention constraint 21
+forbids an agent.
+
+**The second: the cold path is a header, one faint sentence, and a screenful of nothing.** Growth history,
+tree activity, the grove and the outbox each render their empty state as a title and a single line of
+`text.muted` prose over an otherwise blank viewport (`No measurements on this tree yet.`, `Nothing has been
+recorded on this tree yet.`, the bare grove tab row, `Nothing is waiting to send.`). Every one of these is
+honest and every one is what a beta tester meets first — and for growth and activity it is what *every*
+shipped tree shows, because the seed carries no measurements table and no community rows at all (D8), so
+the cold state is not an edge case on those two screens, it is the only state. None of these is a bug: each
+is a documented "NOT SPECIFIED" empty state that declined to invent an illustration or a call to action
+(constraint 21 again). But a first run that is four blank screens deep is a product question SCREENS.md
+never had to answer because SCREENS.md only ever drew the populated screens, and it is the thing most likely
+to decide whether a beta tester takes a second look. Design's to answer what, if anything, those four
+screens should say when they are empty; not an agent's to draw.
+
+The images are under
+`/private/tmp/claude-501/-Users-nikitabogdanov-PycharmProjects-cypress/0d7c1eed-65e3-4ed3-b24f-b64dc9fb8b1c/scratchpad/sweep`,
+one `*-SHEET.png` per screen. The one surprise worth recording is how little there was to find: the
+defect rate on fifteen never-before-photographed screens was zero, which says the token layer and the
+component catalogue are carrying dark and AX5 correctly on their own, and that the two defects that were
+found by eye earlier were failures of *coverage* — screens nobody had looked at — rather than of a
+class of screen that keeps going wrong.

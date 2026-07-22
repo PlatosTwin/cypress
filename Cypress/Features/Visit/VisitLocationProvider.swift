@@ -59,8 +59,30 @@ final class VisitLocationProvider {
         manager.distanceFilter = 1
     }
 
+    #if DEBUG
+    /// A provider pinned to one fix, which never talks to CoreLocation.
+    ///
+    /// Screen 02 is the only screen in the app whose *content* is a function of where the phone is,
+    /// and an offscreen renderer has no phone: `CLLocationManager` in a test host reports
+    /// `notDetermined` and stays there, so every capture of 02 is its `Finding you` notice. That is
+    /// a real state and not the one the spec draws, which left the ranked shortlist — the whole
+    /// screen — unphotographed. This is the same seam every other feature already has as a
+    /// `PreviewAPI`: a double supplying the one input the screen derives from.
+    ///
+    /// `start()` and `stop()` become no-ops, so nothing here can ask for a permission or move a fix
+    /// out from under a capture. `#if DEBUG`, so it does not exist in a shipping build.
+    init(pinnedFix: Fix) {
+        self.fix = pinnedFix
+        self.isPinned = true
+    }
+    #endif
+
+    /// Whether this provider is a pinned double. Always `false` in a shipping build.
+    private var isPinned = false
+
     /// Asks for when-in-use permission if it has not been asked for, then starts updating.
     func start() {
+        if isPinned { return }
         switch manager.authorizationStatus {
         case .notDetermined:
             manager.requestWhenInUseAuthorization()
@@ -74,6 +96,7 @@ final class VisitLocationProvider {
     }
 
     func stop() {
+        if isPinned { return }
         manager.stopUpdatingLocation()
     }
 
