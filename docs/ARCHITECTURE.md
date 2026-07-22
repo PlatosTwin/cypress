@@ -176,6 +176,16 @@ was never flaky.
 So: **a red test result observed while another agent is working is not evidence.** Re-run it once
 the tree is quiet before you believe it, and never "fix" a test that fails only under concurrency.
 
+**If you need to look at the app while others are working, boot your own device.** The simulator list
+holds several; taking an idle one costs nothing, and it converts "I cannot verify this until the tree
+is quiet" into a screenshot. `xcrun simctl boot <udid>`, `install`, `launch`, `io <udid> screenshot`.
+The app icon and the launch screen were checked this way on an iPhone 16 Plus while three agents held
+the iPhone 16 — and a permission string that reads fine in a plist and badly in an alert is exactly
+the kind of thing only that check finds.
+
+The rule this does *not* suspend: a **test** run still belongs on a quiet tree, because a test run
+compiles and installs, and both of those race. Booting a spare device buys you looking, not proving.
+
 ## 8. Milestones
 
 Mapped from BUILD-PLAN §12, minus everything that was about the server.
@@ -187,6 +197,7 @@ Mapped from BUILD-PLAN §12, minus everything that was about the server.
 | **M2** | One level deeper, screens 07–13 | Species pages, grove, care log, share, growth history, almanac, activity. |
 | **M3** | In the field, screens 14–19 | Cold profile, account ask, measure sheet, outbox, next-tree, memorial. |
 | **M4** | Dark mode + polish | D1–D3, animations, accessibility pass. |
+| **M5** | Installs on a phone | The vacant-site state; the four rulings in `RULINGS.md` that need building; icon, accent and launch screen; screen 15 gated behind `BetaCapability`. No backend — the outbox runs against nothing, deliberately. |
 
 The public web tree page (W1) and the coordinator dashboard are out of scope for the iOS app; they
 are separate deliverables and are not built here.
