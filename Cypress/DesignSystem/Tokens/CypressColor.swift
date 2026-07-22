@@ -1053,6 +1053,16 @@ extension CypressColor {
     /// Series 3 (care) — Bark. **Escalated** with the other two.
     static let chartSeriesTertiary = escalated(0x7A4F33)
 
+    // MARK: 13 §4 · "Same week, other years" photo strip
+
+    /// The year chip on a strip photo — `rgba(255,255,255,.85)` (SCREENS.md 13 §4).
+    ///
+    /// **Light-only by definition, not by omission.** It is a scrim punched into a photograph so a
+    /// date can be read off it, which is the case `lightOnly` names ("colour that rides on
+    /// imagery"); `heroMetaPillFill` is the same idea from the other end of the value scale. A
+    /// photograph does not get darker because the phone did, so neither does the plate on it.
+    static let photoStripChipFill = lightOnly(0xFFFFFF, alpha: 0.85)
+
     // MARK: C26 · AvatarStack
 
     /// Avatar ring — `2px solid #fff` ↔ **derived** `dark.surface.card` `#18251D`.

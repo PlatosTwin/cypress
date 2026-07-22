@@ -273,31 +273,45 @@ struct TreeProfilePresentation {
     /// A8: "distinct users with 2 or more care_events or observations on the tree in 24 months;
     /// shown only when 3 or more".
     ///
-    /// `TreeProfile` carries the full care-event series and only the *latest* observation, so the
-    /// observation half of A8 can only ever contribute one person. That is a payload limit, not a
-    /// rule bent: the count is computed from what the record actually proves and never padded.
+    /// Both halves of A8's "care_events **or** observations" are now on the payload as whole series,
+    /// so the count is the one A8 describes. It used to be the care half plus whatever the single
+    /// `latestObservation` could add, which the code called a payload limit; screen 13 needed the
+    /// check-in series for its middle chart and the limit went with it.
     var caretakers: Caretakers? {
         // A8 counts distinct people over 24 months, and the sentence this feeds spells the number
         // out at the contributor. A page of the 50 most recent care events undercounts a tree with
         // more than that — silently, and by an amount nothing on screen could hint at — so a
         // partial series produces no row rather than a wrong one. Below the threshold the row does
         // not render anyway (DECISIONS constraint 1), which is the same shape of answer.
-        guard profile.careEvents.isComplete else { return nil }
+        guard profile.careEvents.isComplete, profile.observations.isComplete else { return nil }
 
-        var eventsPerUser: [UUID: Int] = [:]
+        var contributionsPerUser: [UUID: Int] = [:]
         for event in profile.careEvents.items where event.deletedAt == nil {
             guard let userID = event.userID, isWithinCaretakerWindow(event.capturedAt) else { continue }
-            eventsPerUser[userID, default: 0] += 1
-        }
-        var qualifying = Set(eventsPerUser.filter { $0.value >= TreeProfilePresentation.caretakerMinimumContributions }.keys)
-
-        if let observation = profile.latestObservation,
-           let userID = observation.userID,
-           isWithinCaretakerWindow(observation.capturedAt),
-           (eventsPerUser[userID] ?? 0) + 1 >= TreeProfilePresentation.caretakerMinimumContributions {
-            qualifying.insert(userID)
+            contributionsPerUser[userID, default: 0] += 1
         }
 
+        // The latest observation is the newest row of `observations`, so counting it from both
+        // places would credit one person with two check-ins they made once. The id is what tells
+        // them apart, and it is what a caller who only filled `latestObservation` still gets counted
+        // by.
+        var counted = Set<UUID>()
+        for observation in profile.observations.items where observation.deletedAt == nil {
+            counted.insert(observation.id)
+            guard let userID = observation.userID, isWithinCaretakerWindow(observation.capturedAt) else { continue }
+            contributionsPerUser[userID, default: 0] += 1
+        }
+        if let latest = profile.latestObservation,
+           !counted.contains(latest.id),
+           latest.deletedAt == nil,
+           let userID = latest.userID,
+           isWithinCaretakerWindow(latest.capturedAt) {
+            contributionsPerUser[userID, default: 0] += 1
+        }
+
+        let qualifying = contributionsPerUser
+            .filter { $0.value >= TreeProfilePresentation.caretakerMinimumContributions }
+            .keys
         guard qualifying.count >= TreeProfilePresentation.caretakerThreshold else { return nil }
         return Caretakers(count: qualifying.count, initials: injectedCaretakerInitials)
     }
@@ -526,6 +540,16 @@ struct TreeProfilePresentation {
 
     var visibleVisits: Series<Visit> {
         profile.visits.filter { $0.deletedAt == nil }
+    }
+
+    /// The check-ins, tombstones dropped. Screen 13's middle small multiple reads this.
+    var visibleObservations: Series<TreeObservation> {
+        profile.observations.filter { $0.deletedAt == nil }
+    }
+
+    /// The care events, tombstones dropped.
+    var visibleCareEvents: Series<CareEvent> {
+        profile.careEvents.filter { $0.deletedAt == nil }
     }
 
     // MARK: - Formatters

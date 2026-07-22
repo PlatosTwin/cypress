@@ -307,6 +307,20 @@ public struct TreeProfile: Hashable, Sendable {
     public let neighborhoodName: String?
     /// The most recent check-in, for the profile's summary line.
     public let latestObservation: TreeObservation?
+    /// The check-in series.
+    ///
+    /// Added for screen 13, whose middle small multiple is a twelve-month `Check-ins` row and whose
+    /// three charts share one scale (D2) — a scale set by the tallest bar across all three. Neither
+    /// the row nor the shared scale can be drawn from `latestObservation`: one check-in in October
+    /// renders as a year in which one check-in happened, which is the same class of wrong number
+    /// `Series` exists to make unwritable (ERRATA E38). So the series travels, and it travels as a
+    /// `Series` rather than an array for the same reason `visits` and `careEvents` do.
+    ///
+    /// It also completes A8. `TreeProfilePresentation.caretakers` counts "distinct users with 2 or
+    /// more care_events **or observations**"; with only the latest observation in hand the second
+    /// half of that sentence could contribute exactly one person, which the code said out loud and
+    /// called a payload limit. It is not a limit any more.
+    public let observations: Series<TreeObservation>
     /// The photo timeline. BUILD-PLAN §6 calls this "photo timeline page 1", and a `Series` is what
     /// carries that honestly: it says whether it *is* a page, so the hero's count and its `since`
     /// year cannot be taken off one (ERRATA E38).
@@ -340,6 +354,7 @@ public struct TreeProfile: Hashable, Sendable {
         species: Species? = nil,
         neighborhoodName: String? = nil,
         latestObservation: TreeObservation? = nil,
+        observations: Series<TreeObservation> = .empty,
         photos: Series<Photo> = .empty,
         measurements: [TreeMeasurement] = [],
         visits: Series<Visit> = .empty,
@@ -353,6 +368,7 @@ public struct TreeProfile: Hashable, Sendable {
         self.species = species
         self.neighborhoodName = neighborhoodName
         self.latestObservation = latestObservation
+        self.observations = observations
         self.photos = photos
         self.measurements = measurements
         self.visits = visits

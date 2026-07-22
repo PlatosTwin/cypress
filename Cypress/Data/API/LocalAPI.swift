@@ -171,6 +171,10 @@ public actor LocalAPI: CypressAPI {
             // a number that is wrong and looks right (ERRATA E38). These are one tree's own
             // contributions — tens of rows, indexed on `tree_uuid` — not a corpus.
             let photos = try contributions.photos(treeID: id, connection: connection)
+            // Read whole for the same reason, and one read rather than two: the newest row of this
+            // series *is* `latestObservation`, so asking the database twice for facts that have to
+            // agree is a way for them to stop agreeing.
+            let observations = try contributions.observations(treeID: id, connection: connection)
 
             return TreeProfile(
                 tree: tree,
@@ -182,7 +186,8 @@ public actor LocalAPI: CypressAPI {
                     connection: connection
                 ),
                 neighborhoodName: record?.neighborhoodName,
-                latestObservation: try contributions.latestObservation(treeID: id, connection: connection),
+                latestObservation: observations.items.first,
+                observations: observations,
                 photos: photos,
                 measurements: try contributions.measurements(treeID: id, connection: connection),
                 visits: try contributions.visits(treeID: id, connection: connection),

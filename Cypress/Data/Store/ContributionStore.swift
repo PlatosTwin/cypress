@@ -95,6 +95,25 @@ public struct ContributionStore {
         return try run(statement, on: connection)
     }
 
+    /// This tree's check-ins, newest first. `limit: nil` reads the series whole.
+    ///
+    /// Screen 13 draws a twelve-month bar row from this and shares one vertical scale across it and
+    /// two others (D2), so a page here does not just understate one row — it understates the scale
+    /// and draws the other two rows too tall. `Series` is what carries that fact to the caller.
+    public func observations(
+        treeID: UUID,
+        limit: Int? = nil,
+        connection: SQLiteConnection
+    ) throws -> Series<TreeObservation> {
+        let statement = try connection.cachedStatement("""
+            SELECT * FROM observations
+             WHERE tree_uuid = :tree COLLATE NOCASE AND deleted_at IS NULL
+             ORDER BY captured_at DESC LIMIT :limit
+            """)
+        _ = try statement.bind([":tree": treeID.uuidString, ":limit": Self.rowsToRead(for: limit)])
+        return Self.series(try statement.fetchAll(Self.decodeObservation), limit: limit)
+    }
+
     public func latestObservation(treeID: UUID, connection: SQLiteConnection) throws -> TreeObservation? {
         let statement = try connection.cachedStatement("""
             SELECT * FROM observations

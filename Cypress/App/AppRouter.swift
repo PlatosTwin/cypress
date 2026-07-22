@@ -17,6 +17,7 @@ enum Route: Hashable {
     case checkIn(UUID)          // 05
     case report(UUID)           // 06
     case almanac                // 12
+    case activity(UUID)         // 13
     case measure(UUID)          // 16
     case outbox                 // 17
 }

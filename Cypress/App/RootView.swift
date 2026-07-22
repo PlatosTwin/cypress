@@ -59,14 +59,11 @@ struct RootView: View {
                 // Anonymous under the device id until the account ask ships (D9); the composition
                 // root owns that choice, not the feature.
                 attribution: .anonymous(deviceID: data.deviceID),
-                // D6 wants the fix's accuracy stored with every field contribution.
-                // `MapLocationProvider.Availability` carries a `Coordinate` and no accuracy, and
-                // `Coordinate` has no room for one — so there is nothing truthful to pass, and `nil`
-                // is what the column gets, exactly as `.checkIn` already passes. Care events are
-                // never charted, so nothing on any screen changes today; the day screen 16 lands,
-                // the measure sheet needs a real number and the provider has to grow one. Recorded
-                // in ERRATA (E65).
-                gpsAccuracyM: nil,
+                // D6 wants the fix's accuracy stored with every field contribution, and the
+                // provider now carries one (E65 is resolved). It is genuinely nil only before the
+                // first fix, which is the honest answer then — D6 treats a missing accuracy as
+                // unusable rather than assuming it was good.
+                gpsAccuracyM: location.availability.accuracyM,
                 onClose: { router.sheet = nil },
                 onSaved: { _ in router.sheet = nil }
             )
@@ -178,6 +175,11 @@ struct RootView: View {
                 api: data.api,
                 outbox: data.outbox,
                 attribution: .anonymous(deviceID: data.deviceID),
+                // A check-in is a field contribution, so D6 wants the fix's accuracy on it. The
+                // parameter defaults to nil and was being defaulted away here, which is the quiet
+                // half of the same bug: a provider that drops the number and a composition root
+                // that never asks for it look identical from inside the feature.
+                gpsAccuracyM: location.availability.accuracyM,
                 onSaved: { _ in router.pop() }
             )
 
@@ -224,6 +226,19 @@ struct RootView: View {
             // nothing routes here yet. The destination is wired because the route exists and the
             // screen has to answer for the empty case; see ERRATA (E63).
             GrowthHistoryView(treeID: id, api: data.api)
+
+        case .activity(let id):
+            // Screen 13. **Nothing opens it**, and that is the fourth time this has been true in
+            // this file — 05, 11 and 12 are the others. 03's affordance list ends at
+            // `activity row → the observation behind it`, which is not this screen and is not a
+            // screen at all (ERRATA E64); SCREENS.md 13 is named as a destination nowhere; the
+            // clickable prototype's `screen` enum omits it; and BUILD-PLAN §9 lists no entry. The
+            // two least-invented candidates — a "see the whole year" link under 03's activity feed,
+            // or a tap on 03's foliage strip — are both design decisions, so neither was added
+            // (DECISIONS constraint 21). The destination is wired because the route exists and the
+            // screen has to answer for its empty state, which is the state every tree in the
+            // shipped seed is in. See ERRATA (E66).
+            ActivityView(treeID: id, api: data.api)
 
         case .almanac:
             // Screen 12. Like 05 and unlike 07, **nothing opens it**: it is not one of C16's four

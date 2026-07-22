@@ -1644,3 +1644,204 @@ as long as it did.
 The fix is small and is not in this round's scope: `Availability.located` needs to carry the fix's
 accuracy alongside its coordinate, and the provider needs to stop dropping it. Recorded so that
 whoever builds 16 does it first.
+
+### E66 — nothing opens screen 13, which is the fourth screen this is true of
+
+SCREENS.md 13 is named as a destination nowhere. Screen 03's affordance list ends at `hero → photo
+timeline (NOT SPECIFIED)`, `Visit → 04`, `Care → 09`, `Share → 10`, `Report → 06`, `DBH/Height → 11`
+and `activity row → the observation behind it` — that last one is not this screen and, per E64, is
+not a screen at all. The clickable prototype's `screen` enum is `map | identify | profile | camera |
+saved | grove` and never held 13. BUILD-PLAN §9 lists no entry for it.
+
+So the count is now four: 05 (E24), 12 (E57), 11 (E63, whose entrance exists but can never fire on
+the shipped seed) and 13. Their exits are drawn and their entrances are not.
+
+The two least-invented candidates are both design decisions and neither was taken (DECISIONS
+constraint 21):
+
+- **A "see the whole year" link under 03's activity feed.** 03 draws two C9 rows and no more, and
+  SCREENS.md states no control under them. Adding one is adding a control to a screen whose parts
+  are enumerated.
+- **A tap on 03's foliage strip.** The strip is A5's photo-coverage strip and 13 is a year of
+  activity; they are two different years of two different things, and making one open the other is a
+  claim about their relationship that nothing states.
+
+`Route.activity(UUID)` exists and `RootView` resolves it, because the route has to exist before the
+affordance can be designed and because the screen has to answer for its empty state — which, per E67,
+is the state every tree in the shipped app is in.
+
+### E67 — screen 13 has no empty state, and the empty state is the whole shipped app
+
+SCREENS.md 13 draws one state: a full chart card, three moments, a three-up photo strip and a
+footnote. It is a year in the life of a tree that 41 photographs, 18 check-ins and 9 care visits have
+happened to.
+
+**No tree in the shipped app has any of that.** The seed carries `trees`, `species`,
+`neighborhoods`, `species_assertions`, `species_map`, `seed_meta` and the R*Tree — no visits, no
+observations, no care events, no photos. Combined with E66 (nothing opens the screen) and E63 (the
+same is true of 11), the shipped state of screen 13 is: a C1 header, a trailing pill naming the tree,
+and one line.
+
+What was built, in the shape `GrowthHistoryCopy.emptyState` and
+`TreeProfilePresentation.coldStartFootnote` already use — state a fact and drop the rest of the
+screen:
+
+- **Nothing on the record at all** → the header and `Nothing has been recorded on this tree yet.`
+- **A year with nothing in it, on a tree with older records** → no chart card. Thirty-six empty bars
+  under `This year at a glance` is exactly the zero ARCHITECTURE §5.6 forbids, and E54 already
+  settled that argument at zero in §5.6's favour on screen 12.
+- **A page rather than a series** → nothing at all. See E68.
+
+The empty string is **NOT SPECIFIED** and is the one place copy was invented on this screen. It is a
+question for design.
+
+### E68 — screen 13's shared scale means a page in one series takes down all three
+
+ERRATA E38 established that a page's size is not a total. Screen 13 raises the stakes, because D2
+puts **one vertical scale** across its three small multiples: "the three remaining charts share one
+scale", and the mock's own footnote is `One scale across all three charts, so a tall bar means the
+same amount everywhere.`
+
+That scale is the tallest month anywhere in the thirty-six. A page understates it, and the two rows
+the page did **not** come from are then drawn against a ceiling that is too low — they render too
+tall, and the card's one stated claim becomes false with nothing on screen to hint at it. A wrong
+total is a wrong number; a wrong scale is three wrong charts.
+
+So `ActivityPresentation.glance` needs all three series complete or it renders nothing, and every
+other block on the screen holds the same line: the moments list states a first date, a span and a
+month range, and the photo strip states which years hold a photograph from this week — all of them
+claims about a whole series. `LocalAPI.treeProfile` reads every one of them with `limit: nil`, so on
+the shipping implementation the card always has what it needs; the guard is there because
+`RemoteAPI` will not, and because the failure is invisible.
+
+### E69 — the check-in series was not on the profile payload, and A8 was quietly short because of it
+
+`TreeProfile` carried `photos`, `visits` and `careEvents` as whole `Series` and carried observations
+as `latestObservation` — one row. Screen 13's middle small multiple is a twelve-month `Check-ins` bar
+row, which one row cannot draw: a single check-in in October renders as a year in which one check-in
+happened, and it would have set the shared scale for the other two rows as well (E68).
+
+**The same gap was already costing A8 on screen 03**, where it was recorded as a limitation rather
+than a bug: A8 counts "distinct users with 2 or more care_events **or observations** on the tree in
+24 months", and with only the latest observation in hand the observation half could contribute
+exactly one person. `TreeProfilePresentation.caretakers` said so in a comment and called it a payload
+limit.
+
+Fixed additively rather than with a new endpoint, which is what the shape of the thing asks for: a
+check-in belongs to a tree's profile exactly the way a visit does. `TreeProfile.observations:
+Series<TreeObservation>` (defaulted to `.empty`), `ContributionStore.observations(treeID:limit:)`,
+and `LocalAPI.treeProfile` reading it whole. `CypressAPI` grew no method. `latestObservation` is now
+taken from the head of that series rather than from a second query, so the two facts cannot disagree.
+
+`TreeProfilePresentation.caretakers` now counts over both whole series and de-duplicates the latest
+observation by id, so a caller that filled only `latestObservation` still gets it counted once.
+
+### E70 — SCREENS.md 13 prints a care total; BUILD-PLAN §4 says care events are never counted
+
+SCREENS.md 13 §2 draws three legend lines with three totals — `Photos 41`, `Check-ins 18`,
+`Care 9` — and §3's second moment reads `Jun–Aug · five care visits kept it going`.
+
+BUILD-PLAN §4, `care_events`, in full: "actions text[]: watered, mulched, weeded, litter_cleared,
+staked. Photo optional. **Never publicly counted or ranked (D1)**." It is the only one of the three
+series the data model singles out. BUILD-PLAN sits above SCREENS.md in the precedence order
+(ARCHITECTURE §1), and `CareEvent`'s own doc comment already reads it that way: "nothing may
+aggregate it into a user-visible total".
+
+**Resolved in BUILD-PLAN's favour, and narrowly.** The Care row draws its twelve bars — D2 keeps the
+chart, the caption's whole subject is the *rhythm* of care read against the photo spike, and a shape
+is not a tally — and prints no total. The moments row becomes `Watered through the dry weeks` /
+`Jun–Aug`. §5's ceiling sentence names the month that set the scale, so when that month is a care
+month the sentence is a care count in prose and is not written; the first sentence stands alone.
+
+**Why the other two totals stay.** Read literally, DECISIONS §3.1 ("no public counts of user actions
+anywhere") forbids the Photos and Check-ins series as well, since photographs and check-ins are also
+things users did — and that reading makes D2, a binding decision written specifically about this
+screen, unimplementable. D1's stated reason is entirely about ranking and farming *people*, and every
+number on screen 13 describes one tree and is attributable to nobody. That is the same reconciliation
+`TreeProfilePresentation.heroMetaPill` already ships with (`214 photos · since 2019`).
+
+The asymmetry is deliberate and will look like a bug to anyone who has the mock open, which is why it
+is written down. If the reviewers want the `9` back, it is one `mayPrintTotal` and two call sites.
+
+### E71 — C26 · AvatarStack cannot honestly show anything, on 13 or on 03
+
+Worth recording because 13 reads as the screen an avatar stack belongs on — it is the screen about
+who has been looking after a tree — and it does not have one.
+
+**SCREENS.md 13 draws no AvatarStack.** C26's catalogue entry names screen 03 and only 03; 13's parts
+are a header, a chart card, three C10 rows, a photo strip and a footnote. So nothing was removed.
+
+**And on 03, where it *is* drawn, it shows nothing either.** Three facts stack up:
+
+- **There is no account system (D9).** Every contribution the app writes is anonymous under a device
+  id: `RootView` passes `.anonymous(deviceID:)` at every call site, so `userID` is nil on every
+  visit, observation and care event. A8 counts *distinct users*, so its count is zero on every tree
+  in the shipped app, and at zero the surface does not render (ARCHITECTURE §5.6). `TreeProfileView`
+  is already correct about this; `TreeProfileModel.caretakerInitials` defaults to `[]` and nothing in
+  `RootView` passes any.
+- **Contribution feeds are private by default (D11).** Even with accounts, another person's initial
+  on this tree's page requires their opt-in public attribution, and
+  `User.isPublicAttributionEffective` is the only predicate allowed to answer that — it refuses for
+  under-18 accounts whatever the stored toggle says. Nothing on the profile payload carries a `User`,
+  so the predicate has no subject here.
+- **A blank stack is worse than no stack.** Circles with no letters in them, on a screen about who
+  knows a tree, is a claim that people are there.
+
+So screen 13 renders no name, no initial and no avatar, which is the strongest form of D11 compliance
+available: there is nothing for the predicate to gate. `SharePresentation` reached the same answer
+for screen 10 (E59) by the same route. The risk this leaves is **forward** — the day somebody adds an
+attribution row here, `publicAttribution` is the field autocomplete offers — so the predicate is
+pinned in `CypressTests/ActivityPresentationTests.swift` alongside the screen, as
+`SharePresentationTests` pins it alongside 10.
+
+### E72 — screen 13 has no dark row, and it is where the three-series palette visibly collapses
+
+Same class as E61 (09, 10 and 11 have no dark row) and E56 (12's four swatches want deciding
+together). SCREENS.md's dark deltas are D1–D3 plus 04; 13 is not among them, so what the token layer
+resolves it to is evidence rather than a design.
+
+One thing is worse here than a missing row, and it was predicted in the token file itself.
+`CypressColor.chartSeriesPrimary` records that the E8 accent transform "anchors lightness, so Canopy
+and New Growth — 0.117 apart in light — land 0.011 apart in dark and C23's three series become two",
+and the three are escalated as a set for that reason. Screen 11 draws one series at a time and never
+showed it. **Screen 13 draws all three at once, and it shows.** In the dark screenshot the `Photos`
+and `Check-ins` rows are told apart by position and by their labels, not by colour; only `Care`
+(Bark) separates. Left light, which is a stated failure rather than a hidden one, and it is now a
+failure with a picture of it.
+
+Two smaller derivations this screen introduces:
+
+- **`photoStripChipFill`** — §4's `rgba(255,255,255,.85)` year chip. Classified `lightOnly` rather
+  than derived, on the same grounds as `heroMetaPillFill`: it is a scrim punched into a photograph so
+  a date can be read off it, and a photograph does not get darker because the phone did.
+- **§4's current-week tile** takes `selectionFill` / `onSelectionFill` for its 2pt border and its
+  inverted chip rather than raw Canopy, so it follows the documented `#2F6B4F → #8EC3A5` selection
+  pair after dark instead of staying a brand hue.
+
+### E73 — three rules screen 13 needs and SCREENS.md does not state
+
+Recorded together because each is a decision inside `ActivityPresentation` that would otherwise be
+invisible, and each is something the mock states once as though it were a rule.
+
+**The bar heights are pixels, and the mock's own numbers do not reconcile.** §2 gives twelve heights
+per series (`8, 4, 10, 13, 17, 34, …`) and one count, in §5: `June’s 12 photos set the ceiling.`
+There is no linear map from those heights to counts that also sums to the drawn `41`. So the heights
+were treated as what they are — a drawing of one tree's year — and the rule was rebuilt from the two
+things the mock does state: one shared scale, and `4` for a month with nothing in it. A count of `n`
+draws `4 + 30·n/peak`; the peak reaches `34`; an empty month keeps the `4` stub and is told apart by
+colour, which is exactly how the mock's Care row distinguishes its starred bars from its unstarred
+ones at the same height.
+
+**"Watered through the dry weeks" is checked, not asserted.** §3's second row is the mock's `Jun–Aug`
+for one tree in one year, with no rule behind either the window or the word "through". The window is
+named as `ActivityMetrics.dryMonths` (6...8) — narrower than San Francisco's actual dry season, which
+is the direction that cannot overclaim — and the row needs waterings in **two** distinct months
+before it will say "through", because waterings inside one month are not a season of them. Same shape
+as A9's fifteen-minute-walk sentence on 12 (E55): a claim about duration is only written when it has
+been verified.
+
+**"Same week, other years" needs another year in it.** §4 draws three tiles: `2024`, `2025` and a
+bordered `this week`. A strip holding only the current week's photograph would draw one bordered tile
+under a heading that is false, so the block needs at least one prior year before it renders at all,
+and it never fills the row out with a tile for a week nobody photographed. The mock's third tile is
+also the answer to what the border means: it marks now, without printing a word.
