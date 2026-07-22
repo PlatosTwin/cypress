@@ -15,7 +15,7 @@ struct SQLiteStoreTests {
 
     @Test("every checked return code surfaces as a SQLiteError, not as silence")
     func errorsSurface() async throws {
-        let queue = try await DatabaseQueue.inMemory()
+        let queue = try DatabaseQueue.inMemory()
         await #expect(throws: SQLiteError.self) {
             try await queue.read { connection in
                 _ = try connection.prepare("SELECT * FROM a_table_that_does_not_exist")
@@ -30,7 +30,7 @@ struct SQLiteStoreTests {
 
     @Test("a unique violation is distinguishable from every other constraint failure")
     func uniqueViolationIsDistinguishable() async throws {
-        let queue = try await DatabaseQueue.inMemory()
+        let queue = try DatabaseQueue.inMemory()
         try await queue.write { connection in
             try connection.execute("CREATE TABLE t (id TEXT PRIMARY KEY, n INTEGER CHECK (n > 0))")
             try connection.execute("INSERT INTO t VALUES ('a', 1)")

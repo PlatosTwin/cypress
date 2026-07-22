@@ -87,6 +87,11 @@ answer, and it needs design input per DECISIONS constraint 21. The interesting p
 underneath it: a vacant site is exactly the "coverage gap" the almanac (D1) is supposed to direct
 attention toward, so this may want to be a first-class screen rather than a degraded profile.
 
+**Resolved in E107**, which is where the screen that was built, the one thing it offers, the two
+affordances that were declined and the three defects found alongside it are all written down. The
+placeholder is gone: a site now has its own route and its own feature, and it is no longer a tree
+profile with fields missing.
+
 ### E9 — "Unknown leaf retention" is a real state and the type system denies it
 
 `Core.Species.leafRetention` is non-optional, but the seed column is nullable and the sourced content
@@ -2960,6 +2965,13 @@ suspended on.
 
 ### E106 — the contrast sweep: the caption ramp fails AA in both appearances, and nothing here re-tints it
 
+> **Closed by RULINGS R1; see E108.** Five of the seven failures below were retinted rather than
+> reassigned: `text.faint`, `text.faintAlt` and `text.muted` were re-spaced so all four rungs of the
+> ramp clear their floors on every surface in both appearances, and the `est.` badge and the C24
+> border were lifted over theirs. The 311 panel border, the C10 locked glyph and the C23 chart series
+> are unchanged and still pinned. The ratios recorded in this entry are what those pairs read
+> *before* that ruling; E108 carries the current ones.
+
 ROADMAP M4 asks for "contrast verification on the amber family, which is the palette most likely to
 fail". E8 already measured the amber family *after dark* and found it improves. This is the same
 question asked in light — where nothing was derived and nothing was therefore checked — and asked of
@@ -3011,3 +3023,407 @@ saying "this one is different", at 2.30:1. That is the row to look at first.
 Nothing in this pass changed a colour token. **Dark mode was not re-opened** — E8's derivation stands
 and the only dark-mode observation to add is that `text.faint` on a card is *worse* after dark
 (2.98:1) than in light (3.16:1), which is the one place the transform moved a ratio the wrong way.
+
+### E107 — the vacant site is its own screen, and everything it can honestly offer is a statement rather than a write (closes E11)
+
+E11 left 12,518 rows — 6.4% of the map — rendering as screen 14 with the photo well and the CTA
+deleted, and called that a placeholder rather than an answer. ROADMAP §1 took the decision that a
+site gets a state of its own, on the grounds that modelling it as a degraded tree is what produced
+the wrong copy in the first place, and flagged the surface itself for design. This entry is what was
+built under that delegation and what a designer would overrule to change it.
+
+**The screen is `Cypress/Features/Site/`, reached by `Route.site`.** It is split into `SiteView` and
+`SiteScreen` for the reason screen 19 is: a layout whose content arrives after an `async` read cannot
+be photographed offscreen. Its entrance is the map card, beside the memorial branch that screen 01's
+own caption draws, and it is composed entirely from C1, C10, C11 and C14 — no new component, and no
+variant of one.
+
+**What it says, in four blocks.** A C1 header titled `Site`, which is 14's `Tree` with the noun
+corrected. An identity block whose H1 is the street address, because a site has no species and no
+name and the address is the only thing that identifies it, over an italic line reading
+`Vacant planting site · SF city inventory`. A C14 **dashed** callout — the design's own vocabulary
+for absence, which is what 14's empty well, C15 and 06's disclosure all use — saying `No tree at this
+site.` and then that Cypress keeps the record of what is planted and does not plant. A C11 grid of
+what the city actually recorded: the `qSiteInfo` string verbatim, the citable `SF #` reference, and
+the neighbourhood when the payload carries one. No `StatusBadge`: C13 has three kinds, and the only
+one that could fire here is `PLANTED <year>`, which would assert a planting on an empty basin.
+
+**What it offers is one row, and the finding underneath that is the entry.** Every contribution this
+app can express asserts a tree. A visit is a photograph of one, an observation carries a vitality
+rating of one, a measurement measures a trunk, a care event waters something living, and the private
+reminder — the one write that is neither public nor a contribution in RULINGS R3's sense — requires a
+`HazardCategory`, whose four values are a hanging limb, an uprooting, a vehicle strike and a blocked
+sightline. There is no vocabulary in the schema for a statement about a *site*. So the screen offers
+no write at all, and that is not a degraded memorial: it is the honest shape of a record this app's
+own vocabulary has nothing true to say about. What it offers instead is a C10 row naming **the
+nearest standing tree** and its distance, which pushes screen 03. That is a true statement about the
+site made out of facts the record already holds, it promises nothing, and it turns the one screen in
+the app with nothing to do into a place you can leave in the direction of a real tree. The claim
+`the nearest tree` survives the query's `LIMIT` because `TreeQueries.nearest` returns rows in
+ascending distance: a standing tree the limit dropped is farther than every row it kept.
+
+**Two affordances were considered and declined.** The favourite would work — `FavoriteTests` already
+records deliberately that a vacant site can be favourited — and it is the only writable statement
+left that asserts nothing about a tree. It is not offered because the only control that would carry
+it here is C7, which has no selected appearance, and a heart that cannot show that it is on is the
+defect RULINGS R2 has just closed on C8. Reopening it on a brand-new screen to gain one control is a
+bad trade. A link to the almanac was the more tempting one, since E11's own question is whether a
+site is the coverage gap D1 points at; it is not offered because `Route.almanac` carries no
+coordinate and `AlmanacView` reads the *reader's* fix, so the link would silently change subject on a
+site the reader is nowhere near.
+
+**Three things were found on the way and are not fixed here.** `AlmanacQueries` excludes vacant sites
+by construction — its `JOIN` to species is inner, which is what drops them — so the surface E11
+nominates as the one that should be pointing at these 12,518 rows is currently the surface that
+cannot see them; that is a query change in a file this task did not own, and it is the first thing to
+look at if the coverage-gap reading is the one design wants. C19 has no pin for a site, and the map
+therefore still draws one as `removed`, a grey dot with a bar struck through it, which says *was and
+is no longer* about a basin that never held a tree; a new pin is a drawn decision and was not
+invented, so the distinction is carried by the card and by the VoiceOver label instead — the card now
+titles itself `Planting site`, drops the badge that would have said `PLANTED`, and leads its meta
+line with `no tree at this site`, and the pin announces itself as a planting site rather than as a
+memorial. Entrances other than the map — the visit flow's nearest-candidate list, a stale link — still
+land a vacant site on the degraded profile, because `TreeProfileView` is where that redirect belongs
+and it was being edited elsewhere.
+
+**What a designer overrules to change this.** The copy is all in `SiteCopy`; the layout is
+`SiteScreen`; whether the nearest-tree row exists at all is `SitePresentation.neighbour`; and the
+decision to route the map card here rather than at screen 14 is three lines in `MapHomeView`. If the
+answer is that a site should be able to say something about itself, that is a new outbox payload, a
+new table and a moderation path — a schema decision (DECISIONS constraint 20), not a screen's.
+
+### E108 — the caption ramp is retinted under R1, and five of E106's failures close
+
+E106 swept every drawn pair for WCAG AA and found seven failing, and it fixed none of them, because
+every light hex it found was transcribed from SCREENS.md §1.2 and E8's rule for a transcribed value
+is that it may not be changed. RULINGS R1 changes five of them anyway, under the delegation recorded
+at the top of that file, and **R1a** extends that to three more grounds R1 was written without —
+E106's sweep never measured them, so they were missing from the ruling rather than declined by it.
+This entry is what moved and what it now measures.
+
+**Seven values carry a new claim.** E8 established a vocabulary — a value is *transcribed*, or it is
+*derived* — and R1 needs a third word. `CypressColor.overruled(light:dark:)` sits beside `dynamic`,
+`derived`, `escalated` and `lightOnly`, and it means: this hex is in the document, and it is being
+replaced anyway. There are seven after R1a, they are listed in `CypressColor.overruledTokens`, and `TokenGallery`
+renders them as a third review section between the derived rows and the escalated ones — the only
+section on that screen where a designer is being shown their own value substituted for rather than
+a gap filled in. Reversing one is two lines and brings E106's failure back with it.
+
+**The retint moves lightness in OKLCh and holds chroma and hue**, which is E8's machinery run for a
+different purpose: E8 fitted a light→dark transform, this fits nothing and solves for one coordinate.
+`Tools/retint_ramp.py` is the derivation, so every number below is reproducible rather than a value
+that appeared in a diff. Across the five tokens chroma moves by at most 0.0013 and hue by at most
+0.7°, both of which are under a single 8-bit step; the palette is the same palette with three of its
+greys and two of its ambers set darker.
+
+| Token | Light was | Light now | Dark was | Dark now |
+|---|---|---|---|---|
+| `text.faint` | `#8B9482` | **`#697260`** | `#5F6F61` | **`#7E8F80`** |
+| `text.faintAlt` | `#77836F` | **`#5D6855`** | `#5F6F61` | **`#7E8F80`** |
+| `text.muted` | `#66735F` | **`#535F4C`** | `#94A496` | `#94A496` — unmoved |
+| `est.` badge text | `#8A6A2A` | **`#836324`** | `#D99A4E` | `#D99A4E` — unmoved |
+| C24 attention card border | `#D9A05B` | **`#B8803A`** | `#D99A4E` | `#D99A4E` — unmoved |
+| `searchGlyph` (R1a) | `#77836F` | **`#6C7764`** | `#94A496` | `#94A496` — unmoved |
+| `Dark.textFaint` (R1a) | — | — | `#5F6F61` | **`#7E8F80`** |
+
+`Dark.textFaint` has one value and no pair, because screen 04 is dark in both appearances; it is in
+the review sheet on those terms. One further value moved and is **not** an overrule —
+`surfaceEmptyThumb`'s derived dark, corrected from `#1F2E22` to `#18251D` under E8's own rule. See
+item 3 below.
+
+**Measured, on every ground each token is drawn on, in both appearances.** Nothing here is inferred
+from the other half. E106's sharpest observation was that `text.faint` on a card was *worse* after
+dark (2.98) than in light (3.16) — the one place E8's transform moved a ratio the wrong way — and
+the reason it could happen is that the two appearances do not share a binding surface: in light the
+screen is the hard ground and in dark the card is, because the dark card is a *raised* plane and
+therefore lighter than the screen while the light card is white and therefore darker than it.
+
+| Pair | Light before | Light after | Dark before | Dark after |
+|---|---|---|---|---|
+| `text.faint` on `surface.screen` | 2.90 | **4.62** | 3.42 | **5.33** |
+| `text.faint` on `surface.card` | 3.16 | **5.03** | 2.98 | **4.64** |
+| `text.faint` on `surface.sheet` | 3.09 | **4.93** | 2.98 | **4.64** |
+| `text.faintAlt` on `surface.screen` | 3.67 | **5.40** | 3.42 | **5.33** |
+| `text.faintAlt` on `surface.card` | 3.99 | **5.87** | 2.98 | **4.64** |
+| `text.muted` on `surface.screen` | 4.62 | **6.21** | 6.97 | 6.97 |
+| `text.muted` on `surface.card` | 5.02 | **6.75** | 6.06 | 6.06 |
+| `est.` badge text on its fill (C12) | 4.19 | **4.64** | 6.11 | 6.11 |
+| C24 border on the card it identifies | 2.30 | **3.39** | 6.57 | 6.57 |
+| C24 border against the page behind it | 2.12 | **3.12** | 7.55 | 7.55 |
+
+`text.body` (8.6–9.4 light, 7.9–9.1 dark) and `text.ink` (13.8–15.0 / 13.1–15.0) do not move, and
+the ramp now reads 4.6 / 6.2 / 8.6 / 13.8 on the light screen and 5.3 / 7.0 / 9.1 / 15.0 on the dark
+one — roughly even in perceived lightness, as R1 asks, and monotonic on all three grounds in both
+appearances.
+
+**Three of the ten halves were not overruled, and that is deliberate.** `text.muted` after dark
+already read 6.97 on the screen and 6.06 on a card, so it clears R1's 6.0 floor without a change;
+the dark `est.` badge reads 6.11 and the dark C24 border 6.57. An overrule is spent where it is
+needed and nowhere else, and there is a second reason in the muted case: `#94A496` is
+`dark.text.muted` by name, and three derived badge labels point at it. Moving it to buy 0.1 would
+have desynchronised four tokens for nothing.
+
+**Two placements needed a rule rather than a floor.**
+
+- `text.faintAlt` solved against 4.5 alone lands 0.03 from `text.faint` — which is R1's own objection
+  to E106's proposed fix, reappearing one rung lower. So it instead keeps the fraction of the
+  faint→muted lightness interval §1.2 gave it (0.52, near enough the midpoint) reapplied to the two
+  retinted ends. The three-way spacing the designer drew survives the move, and the two footnote
+  colours stay one colour after dark exactly as D3 wrote them.
+- The C24 border is solved against `surface.card` **and** `surface.screen`. A boundary is adjacent to
+  a surface on each side of it, the page is the harder of the two by 0.27, and C24 is the one place
+  in this palette where WCAG 1.4.11 genuinely binds — the card is `surface.card` on `surface.screen`
+  at 1.09:1, so the border is the only thing saying this card is different.
+
+**What is still failing, and it is the list R1 named plus one.** The 311 panel border stays at 1.82
+in light: the panel has its own fill and its own amber body copy, so the border is not what identifies
+it, and that is house style rather than a defect. The default card edge stays at 1.15 for the same
+reason. The C10 locked glyph (1.84 / 2.12) and the C23 chart series on a dark card (2.53 / 2.27) stay
+exactly where E8 left them; both are drawn decisions — a glyph and a data encoding — rather than a
+text ramp, and R1 leaves them as the first thing on a designer's list. All of them stay pinned to
+±0.05 in `ContrastTests`, as do the ten retinted ratios above, because a number that quietly gets
+*better* means somebody changed a token without reading this and is as much a failure as one that
+gets worse.
+
+**Five things R1 did not anticipate, found by measuring rather than assuming — and R1a, which
+picked up three of them.** R1 was written from E106's table, and E106's sweep did not reach three of
+the grounds below, so they were absent from the ruling rather than declined by it. RULINGS R1a
+extends R1 to cover them; the other two are decisions to leave them alone, recorded here so they are
+decisions rather than oversights.
+
+**1 · The forced-dark palette did not move with the ramp — R1a, fixed.** `CypressColor.Dark.textFaint`
+is the transcribed `dark.text.faint` `#5F6F61`, and screen 04 draws its note-field prompt and
+micro-labels in it directly. 04 is dark whether or not the phone is, so R1's retint of the resolving
+token never reached it: the same label was legible when the phone was in dark mode and illegible when
+the *screen* was dark, which is R1's own argument — that the ramp is every micro-label in the app and
+not one badge — failing on its own terms. Overruled to **`#7E8F80`**, which is `textFaint`'s retinted
+dark half exactly, so it mints nothing and the two halves of the ramp are one colour again.
+
+| Screen 04 pair | Before | After |
+|---|---|---|
+| `Dark.textFaint` prompt on `Dark.surfaceCardAlt` | 2.99 | **4.66** |
+| `Dark.textFaint` on `Dark.bgCameraTray` | 3.23 | **5.03** |
+| `Dark.textFaint` on `Dark.bgCamera` | 3.44 | **5.36** |
+| `Dark.textMuted` offline line on the tray | 6.57 | 6.57 — unmoved |
+
+`Dark.textMuted` `#94A496` already read 6.09 / 6.57 / 7.00 on those three grounds, so the rung above
+faint does not collapse and does not need an overrule to avoid it. One ground was deliberately left
+out of the solve: 04's disabled `Log visit` label rides this token on `Dark.surfaceThumb` and reads
+4.16 — see 4 below.
+
+**2 · The search placeholder wore a hex R1 retired — R1a, fixed.** C20's placeholder and magnifier
+were `#77836F`, `text.faintAlt`'s light value, held by coincidence rather than by alias; after R1 it
+was the only thing left in the app wearing it. It is placeholder text, which is text, on screen 01,
+which is the default screen. Overruled to **`#6C7764`**: **3.93 → 4.63**. Measured on the ground it
+sits on rather than on the token — the search fill is `rgba(255,255,255,.94)`, so the ratio is
+against that fill composited over the map paper (`#FEFDFC`), which costs 0.06 against measuring it
+opaque. The dark half `#94A496` reads 6.06 on the composited dark fill and is not touched.
+
+**3 · `text.faint` was drawn on a fourth ground, and there it still failed — R1a, fixed from the
+other side.** 14's empty photo well sets a 13 pt sentence on `surfaceEmptyThumb`. The R1 retint took
+it from 3.03 to 4.83 in light and from 2.67 to only 4.16 in dark, and it was **not** fixable in the
+token: lifting `text.faint` far enough to clear 4.5 on that ground would put it 0.042 from
+`text.muted` in OKLCh lightness, inside the 0.075 step of the documented dark ladder (E8), which is
+the rung collapse R1 re-spaced the ramp to prevent. So the ground moved instead, and that required no
+overrule at all — **`surfaceEmptyThumb`'s dark value was derived, and E8's rule is that a derived
+value may be corrected.** It is now a *corrected derivation*, `#1F2E22` → `dark.surface.card`
+`#18251D`: E8 had read the well as a recess inside a card, which is what `dark.surface.thumb` is for,
+but 14's well is not in a card — it is a dashed well on the screen, and its light value `#FAFBF4` is a
+card-level plane. The near-identical `surfaceShareCard` `#FAF8EF` was derived onto `dark.surface.card`
+on exactly that reading. `text.faint` on it now reads **4.83 / 4.64** and `text.muted` **6.49 / 6.06**,
+where it was 5.44 after dark.
+
+**4 · The disabled labels are under 4.5 on purpose, and stay there.** `ctaDisabledLabel` is an alias
+of `text.faint`, so 09's disabled `Done` moved with it, from 2.63 to **4.19** in light and 2.98 to
+**4.64** after dark; 04's disabled `Log visit` rides `Dark.textFaint` on `Dark.surfaceThumb` and moved
+from 2.67 to **4.16**. Neither is solved for and neither is a failure: WCAG 1.4.3 exempts "text that
+is part of an inactive user interface component", and a disabled control that reads exactly as
+strongly as an enabled one is a different defect — the one this app would actually ship, since its
+camera CTA is gated on having taken a photo. Both are pinned two-sided in `ContrastTests` as exempt
+rather than as failures, so the number moving is still loud.
+
+**5 · The three light amber border weights have come apart, and that is design's to reconcile.** E8
+recorded that `borderAmberSoft`, `borderAmberMid` and `borderAmberStrong` collapse onto one value
+*after dark*. R1 has now split them in *light*, at the other end: C24's attention-card border left
+`#D9A05B` for `#B8803A`, and `borderAmberMid` and `amberChipSelectedBorder` — which were the same hex
+and the same 1.5 pt weight — did not follow it. **The attention card's border is now visibly darker
+than the selected amber chip's, where before this pass they were one colour.** That is correct under
+1.4.11, which asks for 3:1 only where a boundary is required to identify a component: a selected chip
+is identified by its fill and its label, and the attention card is identified by nothing else. R1a's
+line is that an accessibility floor justifies an overrule and a matching set does not, so no further
+transcribed hex is moved for consistency alone. **The specific question for design is whether the two
+chip borders should now follow C24 down to `#B8803A`** — which would restore the set at the cost of a
+darker amber on a chip that does not need one — or whether the attention card is meant to read as the
+heavier of the two. Nothing in SCREENS.md answers it, because nothing in SCREENS.md anticipated one
+of the three moving.
+
+Verified by `CypressTests/ContrastTests.swift`, which gained the assertions that could not exist
+before the retint: every rung of the ramp against all three surfaces in both appearances, the
+monotonicity of the ramp so that no future edit can collapse two rungs into each other silently,
+`text.faintAlt` held between the two bottom rungs, `text.muted` held at 6.0 rather than merely above
+the floor, and — after R1a — the four grounds that are not one of the three surfaces, including
+screen 04's forced-dark palette and C20's fill measured as it is actually composited. The lesson
+underneath all three R1a items is the suite's own: **a pair that is never measured is a pair that
+never fails.** `Tools/retint_ramp.py --check` covers every value above, so the derivation stays
+reproducible rather than becoming a number in a diff. E106 is amended to point here.
+
+### E109 — §3.12 anonymizes and the exclusive-ownership CHECK forbids it, so account deletion had to choose; R3 chose, and the tombstone trigger had to be widened to let it
+
+The conflict E23 and E89 each recorded as OPEN and handed to whoever built account deletion is now
+closed by RULINGS **R3**, and this entry records what closing it cost.
+
+**The conflict, stated once more because it is the reason for everything below.** DECISIONS §3.12
+says account deletion anonymizes attributed rows — "user_id nulled, device link severed" — rather
+than deleting them, and it ships from day one. `AppSchema` v3 and v5 then gave `private_reminders`
+and `favorites` a `CHECK ((user_id IS NULL) <> (device_id IS NULL))`, so exactly one of the two owner
+columns is ever non-null. An account-owned row cannot satisfy both sentences. Nulling its `user_id`
+leaves it owned by nobody, which the engine refuses outright; re-homing it onto the device satisfies
+the CHECK and hands one person's private records to whoever picks the phone up next. There was no
+third answer available in the schema and no document said which of the two to take.
+
+**R3's answer, which is the one implemented: these rows are deleted.** §3.12 anonymizes
+*contributions*, and the word carries the argument. A photograph, a measurement, a check-in have
+value to the forest independent of who made them, which is the entire reason for keeping them past
+the account. A private reminder and a favourite have no such value: nobody but their owner could ever
+read them, and after anonymization nobody at all can, so what survives is not a preserved
+contribution but an unreachable row that no query returns and no person can remove. Anonymize what
+the forest keeps; delete what only one person could ever see.
+
+**The tombstone trigger had to gain a second exception, `AppSchema` v6.** v5's trigger refuses every
+`DELETE FROM favorites` except the adoption merge, and its leading arm is `OLD.device_id IS NULL` —
+which is exactly the shape of an account-owned row. So the erasure R3 orders was unwritable against
+the shipped schema, the same class of bug E89 fixed in the other direction. v6 drops and recreates
+the trigger with a second permitted case: a row whose `user_id` matches the account named in an
+`app_state` sentinel that `AccountDeletion` writes, uses and clears inside one transaction. The
+permission therefore exists only for the statements that need it, only for one named account, and
+cannot outlive the transaction — a rollback takes the sentinel with it, so an interrupted deletion
+cannot leave a standing hole. A `temp` table would have been the tidier scratch space and is not
+available: SQLite forbids a trigger from referencing a table in another database.
+
+**The `WHEN` clause is written with `EXISTS`, and the natural spelling is a hole.**
+`OLD.user_id = (SELECT value FROM app_state WHERE key = …)` reads correctly and is wrong: with no
+sentinel row the subquery is NULL, the comparison is NULL, `NOT (0 OR NULL)` is NULL, and a `WHEN`
+clause that evaluates to NULL does not fire. That form permits every hard delete of every
+account-owned favourite on every database where nobody is being deleted at all — the trigger would
+have looked present in the DDL while doing none of its job, which is the same failure mode E89
+recorded for `UNIQUE (user_id, device_id, tree_uuid)` and the reason that warning was worth carrying
+forward. It was verified rather than reasoned about: the naive form leaves zero rows where the
+shipped `EXISTS` form leaves them all. `DataGates` and `AccountDeletionTests` both assert the
+no-sentinel case, which is the assertion that catches it.
+
+**What happens to the outbox, and why.** A mutation lives in the queue between being written and
+being applied, and that gap can straddle a deletion exactly as it can straddle a sign-in — the gap
+`LocalAPI.adoptRowsWrittenAfterTheClaim` already documents in the other direction. Straddling a
+deletion is worse, because an item that drains afterwards re-creates, under the name of an account
+that no longer exists, precisely what the deletion just removed. The two kinds of queued row take the
+two answers R3 gives:
+
+- **A queued favourite toggle or private reminder belonging to the account is deleted from the
+  outbox.** Its only possible destination is a row that may not exist: an ownerless one fails the
+  CHECK, and a device-owned one is the re-homing R3 refused. There is nothing left for the mutation
+  to mean, so the row goes rather than failing in the queue for ever where screen 17 would keep
+  reporting a record the person was told was gone.
+- **A queued visit, check-in, measurement or care event stays, with `userID` removed from its
+  payload.** The contribution survives deletion — that is §3.12 — but it has to arrive anonymous, and
+  an untouched payload would re-attribute it on drain, silently undoing the anonymization for exactly
+  the rows that were in flight. `json_remove` leaves the payload byte-identical to one written before
+  sign-in, because `JSONEncoder` omits a nil optional rather than writing a null; the `client_uuid`,
+  the photo list, the retry state and the FIFO position are untouched, so nothing about the queue's
+  guarantees moves.
+
+Both statements run over every state, not only the pending ones. A `done` row is screen 17's receipt
+and its payload is a second copy of the attribution sitting on disk, so anonymizing the table and
+leaving the receipt would leave the account's id on the device; a `done` favourite's receipt is worse
+still, because it names a tree this person kept, which is the record R3 says nobody else could read.
+
+**What happens to the tombstones, and why.** A favourite un-favourites through `deleted_at` rather
+than a `DELETE` because a stray delete loses the un-favourite *event*, so the row returns on the next
+sync from another device (v1, restated in E89). That reason does not survive an account deletion.
+There is no next sync: the account those other devices would sync as no longer exists, and the same
+transaction removes the account's queued toggles. A tombstone is also exactly as exclusively owned
+as a live row and exactly as unreadable once its owner is gone — it is a sentence about a person
+("this account stopped keeping this tree") that no query can return and nobody can remove. So the
+tombstones are deleted on the same argument as the rows they are tombstones for, and the v6 exception
+is keyed on the row's owner rather than on its `deleted_at` so that it covers both without a second
+clause.
+
+**A device's own reminders and favourites are not touched.** They were written before there was an
+account and were never the account's; `claimDevice` moves such a row *onto* an account and nothing
+has moved these. Deleting them would delete the next person's records, or the same person's
+pre-sign-in work, on the strength of a shared installation id.
+
+**Three things R3 did not anticipate, found while implementing it.**
+
+1. **There is no account-deletion surface anywhere in the app, and there was no deletion path at
+   all.** `CypressAPI` omits `DELETE /me` by name, `AppSchema` has no `users` table, and nothing in
+   `Features` draws a confirmation. So this is the path's first existence rather than a change to it.
+   The local half is not a stub and is not on the protocol: the rows are on this device and
+   `LocalAPI.deleteAccount()` is the only code that can reach them, so it sits beside
+   `privateReminders` and `curatedSpecies` until a server makes the endpoint real. The copy R3
+   requires is written as `AccountDeletionCopy` in `Core` and is presented nowhere — inventing the
+   screen would be inventing (DECISIONS constraint 21), and copy that does not exist cannot be
+   reviewed by whoever eventually draws it.
+2. **`community_notes.user_id` is `NOT NULL`, so a public note cannot be anonymized either.** It is
+   the same conflict with §3.12 as the two exclusive-ownership tables and it wants the *opposite*
+   answer — a community note is a public contribution, exactly the thing §3.12 exists to keep — but
+   the column that stops it being kept ownerless predates the decision and no migration has made it
+   nullable. Nothing in the app writes a community note today, so no such row can exist, and
+   rebuilding the table for zero rows would ripple `CommunityNote.userID` into an optional across
+   `Core` for no present gain. `AccountDeletion.Outcome.communityNotesLeftAttributed` counts what the
+   path could not anonymize and is zero on every database the app can produce, so the day something
+   writes one this is a number somebody can see rather than a silence. **OPEN**, and it is the next
+   thing to settle if community notes are ever built.
+3. **`FavoriteTests` pinned the migration list as a literal `[5]`** — the exact mistake that test's
+   neighbours (`PrivateReminderTests`, `DataGates.outboxPhotoShotTypes`) each carry a comment
+   warning against, written by the entry that added v5. Adding v6 failed it. It now filters
+   `$0 > 4` like the others.
+
+Proven by `CypressTests/AccountDeletionTests.swift`: a contribution of each of the four kinds
+survives with its `user_id` nulled and its device id and its place on the tree intact, and so do the
+two nullable attributions (`tree_names.given_by`, `review_flags.raised_by`); the device link and the
+signed-in state are severed and a second deletion is refused; a reminder, a favourite and a favourite
+tombstone do not survive, and are not re-homed onto the device; the device's own rows and a second
+account's are untouched; a failure injected part-way through — an aborting trigger on
+`private_reminders`, which fires after the anonymization has already run — leaves every row, the
+signed-in state and the sentinel exactly as they were, and the same call succeeds once the failure is
+removed; a queued toggle does not re-create the deleted favourite when the queue is drained
+afterwards and a queued visit lands anonymous with its idempotency key unmoved; the trigger still
+refuses a hard delete when no erasure is in progress and after one has finished; a v5 database
+migrates with its live rows and its tombstones intact and replays as a no-op; and the copy names the
+reminders and the favourites in the one sentence that tells a person their observations stay.
+`DataGates` adds the schema invariants: the erasure exception is refused with no sentinel set,
+refused when the sentinel names a different account, and accepted for the account it names, and the
+sentinel does not outlive the transaction that wrote it.
+
+### E110 — screen 01 was drawing a system navigation bar, and it is the one screen that must not have one
+
+`RootView` wraps every tab root in a `NavigationStack`, and a root that does not opt out inherits an
+empty navigation bar. **Sixteen screens opt out** — grep `toolbar(.hidden, for: .navigationBar)` and
+it is in TreeProfile, Memorial, Grove, Almanac, Activity, Outbox, Measure, Report, Species,
+GrowthHistory, CheckIn, the Journal and You tab roots, and in the site screen E107 adds. `MapHomeView`
+was the only screen missing it, and it is the app's default screen and the one SCREENS.md 01
+explicitly describes as full-bleed: "no 62px status padding — content is absolutely positioned below
+the notch".
+
+Photographed on an iPhone 16e rather than reasoned about: **an opaque 91pt band above the map** — a
+47pt status area plus a 44pt bar — with the map beginning under it and the search bar 8pt below that.
+
+**The second half is the interesting one, and it was checked rather than assumed.** `MapHomeView`
+positions the search bar at `proxy.safeAreaInsets.top + MapLayout.searchTopInset`, and
+`searchTopInset` is 8 with a note reading "on a device the bar hangs off the top safe area instead,
+which is the same 8pt gap below the status bar". With the navigation bar present that inset reads
+**0** — the bar has already consumed it — so the arithmetic was not compensating for the bar, it was
+being starved by it. Measured off the two screenshots: the search bar's top edge was at 99pt with the
+bar and is at 55pt without it, which is 47 + 8 exactly. Hiding the bar restores the number the code
+was written for; it does not overshoot.
+
+The bottom was checked at the same time and is not doing this. C16 is pinned to the bottom with its
+own 30pt padding over the home indicator, and the before and after screenshots of the tab bar are
+identical.
+
+The finding worth keeping is the shape of the defect rather than the defect: **it built green and
+passed the whole suite for the entire run of M1 through M4 while the app's default screen was wrong**,
+because nothing in a unit test can see a navigation bar and no snapshot test exists (ARCHITECTURE §7:
+"Snapshot-testing the screens against the mocks is explicitly *not* set up yet"). The fix is one
+modifier that sixteen other files already carry. What a suite of 375 tests cannot tell you is what
+the screen looks like, and the only thing that found this was somebody photographing it.

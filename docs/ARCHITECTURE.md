@@ -176,6 +176,18 @@ was never flaky.
 So: **a red test result observed while another agent is working is not evidence.** Re-run it once
 the tree is quiet before you believe it, and never "fix" a test that fails only under concurrency.
 
+**Two agents appending to `ERRATA.md` will both take the same number.** "Find the highest E-number
+and use the next one" is a read-then-write against a file someone else is also writing, and it fails
+exactly the way that phrasing suggests once you say it out loud. Three concurrent agents produced two
+E107s and two E108s in a single round, each correct in isolation and each cross-referenced from code
+by the time anyone noticed.
+
+Renumbering afterwards is cheap but not free: the number is cited from doc comments, test names and
+other entries, so a collision has to be untangled everywhere at once or it silently rots into a
+reference that points at somebody else's finding. **The coordinator assigns E-numbers when it hands
+out the work**, or agents write their entry to a per-task file and the coordinator merges. Do not ask
+two writers to agree on a counter neither of them owns.
+
 **If you need to look at the app while others are working, boot your own device.** The simulator list
 holds several; taking an idle one costs nothing, and it converts "I cannot verify this until the tree
 is quiet" into a screenshot. `xcrun simctl boot <udid>`, `install`, `launch`, `io <udid> screenshot`.
