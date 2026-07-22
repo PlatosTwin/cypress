@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!--
+    Cypress · app icon.
+
+    A Monterey cypress, not a generic tree. The species is the one San Francisco reads as its own —
+    Land's End, the Presidio, every wind-flagged ridge on the western edge.
+
+    What makes the silhouette that species and not a lollipop is that the foliage rides in flat
+    horizontal *plates* with sky between them, on a bare leaning trunk, the whole crown sheared off
+    level and pushed downwind. A first attempt drew the canopy as one soft mass and produced a
+    baobab; the gaps are the tree.
+
+    Ground is Cypress Deep (#1D4634), the primary brand hue. Tree is Fog (#F5F6EF), which is
+    surface.screen — so the mark is the app's own paper standing on the app's own ink. Two colours,
+    no text, nothing that needs a colour profile to survive.
+  -->
+
+  <defs>
+    <linearGradient id="ground" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#245740"/>
+      <stop offset="1" stop-color="#13301F"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#ground)"/>
+
+  <!-- The mark is drawn where it fell out of the geometry and then centred once, here, rather than
+       by nudging thirty coordinates. Its own bounding box is x 190–872, y 239–838. -->
+  <g transform="translate(-19,-27)">
+
+    <g fill="#F5F6EF">
+      <!-- Trunk: narrow, tapering, leaning very slightly downwind. -->
+      <path d="M 492 838
+               C 498 762 506 690 512 620
+               C 517 560 519 502 520 454
+               L 546 454
+               C 547 504 550 562 555 620
+               C 561 692 568 762 574 838
+               Z"/>
+    </g>
+
+    <!-- Bare limbs reaching out to carry each plate. Stroked rather than filled: a limb is a line,
+         and a filled taper at this scale turns into a wedge. -->
+    <g stroke="#F5F6EF" stroke-width="15" stroke-linecap="round" fill="none">
+      <path d="M 526 566 C 472 548 424 512 392 466"/>
+      <path d="M 540 546 C 602 528 654 496 694 458"/>
+      <path d="M 534 478 C 562 428 602 366 646 314"/>
+      <path d="M 516 520 C 470 500 432 488 384 492"/>
+    </g>
+
+    <g fill="#F5F6EF">
+      <!-- The crown, sheared level and weighted downwind (right). Five plates, none of them
+           touching on all sides — the sky showing through is what says cypress.
+           Each plate is two overlapping ellipses rather than one, because a single ellipse reads as
+           a disc and five discs read as a stack of lily pads. -->
+      <ellipse cx="540" cy="332" rx="292" ry="38"/>
+      <ellipse cx="470" cy="318" rx="182" ry="30"/>
+
+      <ellipse cx="404" cy="430" rx="208" ry="31"/>
+      <ellipse cx="470" cy="420" rx="126" ry="24"/>
+
+      <ellipse cx="684" cy="452" rx="188" ry="29"/>
+      <ellipse cx="628" cy="442" rx="112" ry="23"/>
+
+      <ellipse cx="662" cy="264" rx="132" ry="25"/>
+      <ellipse cx="620" cy="274" rx="86" ry="20"/>
+
+      <ellipse cx="310" cy="496" rx="104" ry="20"/>
+    </g>
+  </g>
+</svg>

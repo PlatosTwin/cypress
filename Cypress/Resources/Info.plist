@@ -27,5 +27,19 @@
 	</array>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<!--
+	  The launch screen is the app's own paper and nothing else: `LaunchBackground` is
+	  `surface.screen`, #F5F6EF light and #0E1712 dark, so the first frame after the icon is the same
+	  ground the map draws on rather than a white flash.
+
+	  No logo and no imitation of the first screen. Screen 01 is a full-bleed map that cannot exist
+	  before data loads, and a launch image that pretends otherwise is a screenshot of a state the
+	  app is not in yet.
+	-->
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string>LaunchBackground</string>
+	</dict>
 </dict>
 </plist>
