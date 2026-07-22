@@ -73,8 +73,9 @@ struct TreeProfileView: View {
                 if presentation.isCold {
                     coldHeader
                     // The well says "No photos of this tree yet"; a vacant site has no tree to
-                    // photograph, so it does not get the invitation. See `isVacantSite`.
-                    if !presentation.isVacantSite {
+                    // photograph and a memorial no longer has one, so neither gets the invitation.
+                    // See `acceptsContributions`.
+                    if presentation.acceptsContributions {
                         emptyPhotoWell
                     }
                 } else {
@@ -99,7 +100,7 @@ struct TreeProfileView: View {
                     .padding(.top, TreeProfileMetrics.blockGap)
                 }
 
-                if !presentation.isVacantSite {
+                if presentation.acceptsContributions {
                     PrimaryButton(presentation.ctaTitle) { onVisit(model.treeID) }
                         .padding(.horizontal, CypressSpacing.gutter)
                         .padding(

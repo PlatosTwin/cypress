@@ -502,7 +502,35 @@ public actor LocalAPI: CypressAPI {
                 results.append(SyncResult(clientUUID: item.clientUUID, status: .failed, error: .validationFailed))
             }
         }
+
+        try await adoptRowsWrittenAfterTheClaim(hadItems: !items.isEmpty)
         return results
+    }
+
+    /// Re-runs the device claim once per batch, for rows that were queued before sign-in and applied
+    /// after it.
+    ///
+    /// `claimDevice` sweeps what is in the tables when it runs. A mutation lives in the outbox
+    /// between being written and being applied, and that gap can straddle a sign-in: queued in a
+    /// dead zone on Tuesday, account linked on Wednesday, drained on Thursday. The payload carries
+    /// the anonymous `Attribution` it was built with — payloads are immutable, and rewriting one
+    /// after the fact would change a mutation the outbox has already promised to send verbatim — so
+    /// the row lands with `user_id IS NULL` and the sweep that would have adopted it has already
+    /// run. The contributor was told their work came with them, and the tail of their queue did not.
+    ///
+    /// So the claim is re-applied after every batch that had anything to apply. It is the same
+    /// statement set, whose WHERE clauses stop matching once they have run: nothing inserts, nothing
+    /// deletes, and rows belonging to a different account are not touched. When the device has never
+    /// been claimed this is one indexed SELECT and no writes.
+    private func adoptRowsWrittenAfterTheClaim(hadItems: Bool) async throws {
+        guard hadItems else { return }
+        let moment = now()
+        let device = deviceID
+        try await store.queue.write { connection in
+            guard let user = try contributions.claimedUser(forDevice: device, connection: connection)
+            else { return }
+            try contributions.claimDevice(deviceUUID: device, userID: user, at: moment, connection: connection)
+        }
     }
 
     private func apply(_ payload: OutboxPayload) async throws -> ContributionStore.WriteOutcome {
@@ -778,6 +806,18 @@ public actor LocalAPI: CypressAPI {
         }
         self.userID = userID
         try await store.setAppState(.currentUserID, to: userID.uuidString)
+    }
+
+    /// What this device is holding under its own id, for screen 15's one sentence with a number in
+    /// it. See `DeviceContributions` for why this is a read rather than the ledger's save counter.
+    ///
+    /// It counts only rows that are still unattributed, so after `claimDevice` it goes to zero —
+    /// which is correct: there is then nothing left on the phone that an account would rescue.
+    public func deviceContributions() async throws -> DeviceContributions {
+        let device = deviceID
+        return try await store.queue.read { connection in
+            try contributions.deviceContributions(deviceUUID: device, connection: connection)
+        }
     }
 
     // MARK: - Reports and export

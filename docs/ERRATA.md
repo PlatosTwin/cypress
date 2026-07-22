@@ -1845,3 +1845,546 @@ bordered `this week`. A strip holding only the current week's photograph would d
 under a heading that is false, so the block needs at least one prior year before it renders at all,
 and it never fills the row out with a tile for a week nobody photographed. The mock's third tile is
 also the answer to what the border means: it marks now, without printing a word.
+
+### E74 — nothing opens screen 16, and the one place it could open from is a screen whose parts are enumerated
+
+SCREENS.md 16 is named as a destination nowhere. Screen 03's affordance list ends at
+`DBH/Height cards → 11`; screen 11 draws a chart, a legend and a measurement log and no control at
+all (its one footnote promises a destination that does not exist and is deliberately unrendered,
+E64); the clickable prototype's `screen` enum is `map | identify | profile | camera | saved | grove`
+and never held 16; BUILD-PLAN §9 lists no entry for it.
+
+So the count is now six: 05 (E24), 11 (E63, whose entrance exists but can never fire on the shipped
+seed), 12 (E57), 13 (E66), and now 16 and 17 (E75). Their exits are drawn and their entrances are
+not.
+
+The least-invented candidate is an "add a reading" control under 11's measurement log, and it is a
+design decision rather than a gap: 11's parts are enumerated in SCREENS.md and adding a control to
+them is adding a control (DECISIONS constraint 21). It is also not obviously the right place — the
+measure sheet is a field surface and 11 is a history surface, and the tree profile is where every
+other field action on this app starts.
+
+`Route.measure(UUID)` exists and `RootView` resolves it, because the route has to exist before the
+affordance can be designed, because the screen has to answer for a tree with no previous reading
+(which is every tree in the shipped seed), and because until it is reachable **nothing in the app can
+write a measurement at all** — which is why screen 11 has never had a chart on any device.
+
+### E75 — screen 17's entrance is named in BUILD-PLAN §9 and sits on a screen that does not exist
+
+Unlike 16, screen 17's entrance is written down. BUILD-PLAN §9's M2 list includes "the You tab
+(profile, settings, **outbox entry point**, privacy toggles)". That is a specification, not an
+invention, and it outranks the fact that no mocked screen reaches 17.
+
+It is also not buildable yet. The You tab has no mock — no drawn layout, no copy, no settings
+inventory — and `RootView` renders it as `NotBuiltYetView(label: "you")`. Adding an outbox row to a
+placeholder would mean designing the first row of an undesigned screen in order to reach a built one,
+which is the same trade DECISIONS constraint 21 refuses.
+
+So `Route.outbox` is wired and the affordance waits for the screen it belongs on. The consequence is
+worth stating plainly: today the outbox is invisible to a contributor, and the outbox is the one
+subsystem whose whole promise ("nothing here disappears silently") is a promise about being visible.
+
+### E76 — 16's "sure about that?" is a dialog in the copy, and a dialog is the one thing it must not be
+
+SCREENS.md §5 gap 10 lists "the 'sure about that?' anomaly confirmation on 16 — described in copy
+only". §7's footnote is the description: `A shrinking trunk gets a “sure about that?” before it
+saves.`
+
+Built as drawn — a modal that intercepts the save — it would contradict two rules at once. DECISIONS
+§2.5 resolves Open Question 3 with "accept both, always; record which per field via a mandatory
+method flag; **never block submission**", and §3.5 repeats it: "Submission is otherwise never blocked
+for lack of rigor". `TreeMeasurement.isPlausible` already documents itself as "warn the user, never
+reject". A gate in front of the save is exactly the thing those sentences forbid, and it is worse
+here than elsewhere: the person holding the tape is the only one who knows whether the trunk really
+did shrink, and a dialog asks them to argue with the app before their reading is allowed through.
+
+So the confirmation is a **line above the CTA**, in Signal Amber, and the CTA stays live. Two cases
+raise it, and both are the rule DECISIONS §3.6 already states ("range validation on entry"):
+
+- the reading is smaller than the last one of the same kind (`MeasureCopy.anomalyShrunkTrunk`);
+- the reading falls outside `MeasurementKind.plausibleSIRange` (`MeasureCopy.anomalyOutOfRange`).
+
+The footnote is kept **verbatim**, because what it describes is what happens: a shrinking trunk does
+get a "sure about that?" before it saves. Only its form is different from the one a reader might
+imagine, and the form was never drawn.
+
+### E77 — three states 16's readout needs and SCREENS.md does not draw
+
+Recorded together because each is a decision inside `MeasureDraft` that would otherwise be invisible.
+
+**The empty readout.** §3 draws `64` and no empty state. A blank space where a 56pt number goes
+reads as a broken screen; a plain `0` reads as a measurement of zero. The readout draws
+`MeasureCopy.readoutPlaceholder` — a `0` in `text.faint` rather than `text.ink` — and the CTA is
+disabled until a key is pressed. `MeasureDraft.value` also refuses a typed `0`, for the reason
+`CareLogModel.save` refuses an empty care event: an empty keypad is not an imprecise reading, it is
+no reading.
+
+**Switching the unit clears the entry.** §3's `switch to inches` has no stated behaviour. Keeping the
+digits and swapping the label turns `64 cm` into `64 in`, a 2.5× error written to an append-only
+record with nothing on screen to catch it. Converting them makes `Quantity.value` — "the number as
+the human typed it… never silently converted" — false in the other direction. So the entry is
+cleared: the number was an answer in the old unit, and the new unit needs a new one. Four digits is
+the cheap half of that trade.
+
+**Height's unit pair.** §3 draws only the trunk's `cm ⇄ in`. A height in centimetres is nobody's
+reading, so the pair is `m ⇄ ft`, chosen per kind in `MeasureMetrics.alternateUnit`. Changing what is
+being measured therefore also changes the unit, and clears the entry for the same reason.
+
+### E78 — 16's sanity pill has no anchor on any tree in the shipped app, and the city's DBH is not one
+
+16's caption is "the previous value sits under the readout as a sanity check", and §3 draws
+`Last recorded 62 cm, Jun 2024 · +2 cm in a year sounds right`.
+
+**There is no previous value.** The seed carries `trees`, `species`, `neighborhoods`,
+`species_assertions`, `species_map`, `seed_meta` and the R*Tree, and no `measurements` at all — and
+screen 16 is the only thing in the app that can write one (E74). So on launch day the pill is absent
+on every tree, which is `ARCHITECTURE §5.6` applied to a surface with nothing behind it.
+
+**The city's DBH is deliberately not used to fill it.** `trees.dbh_city_cm_range` exists on every
+imported row and would make the pill render everywhere. It is a 5 cm bucket — "seed data is a range,
+never a point" (BUILD-PLAN §4), which is why `TreeProfilePresentation` renders it through
+`StatCard.Value.cityRecord` and not as a `Quantity`. Subtracting an entered number from a bucket
+manufactures a delta nobody measured, and printing `+2 cm` off it would be a measured claim built
+from an unmeasured one. The pill anchors on a real reading or it does not draw.
+
+**The verdict clause is written only when the record supports it.** `+2 cm in a year sounds right` is
+three claims: a direction, a span, and a judgement. It is written only when the reading went up, at
+least `MeasureMetrics.minimumVerdictMonths` have passed (two readings a fortnight apart say nothing
+about a rate), and the annualised change is inside `MeasureMetrics.maxAnnualGrowthM` — 10 cm a year
+for a trunk, which is far outside anything ordinary for an SF street tree while staying clear of
+calling an unusual but real year a mistake. **That ceiling is a judgment call and is not in any
+document.** Outside it the pill states the previous reading and stops; nothing is blocked and no
+alarm is raised, because "grew faster than expected" is not an anomaly the way "shrank" is.
+
+The pill also carries the previous reading's C12 method badge, which §3 does not draw. D7 is that a
+number carries how it was obtained wherever it appears, and a `62 cm` that turns out to have been an
+estimate is a different sanity check from one that was taped.
+
+### E79 — 16 has no state for a fix D6 will not chart, and that silence is how E65 hides
+
+D6 excludes readings with GPS accuracy worse than 15 m from growth charting, and
+`FieldCaptured.isEligibleForGrowthCharting` also excludes a reading whose accuracy was never
+recorded. `GPSAccuracy.growthChartingLimitM` is 15 and `VisitShortlist.assumedAccuracyM` is 25, so a
+fix CoreLocation could not measure is excluded by arithmetic rather than by a special case
+(`LocationAccuracyTests`).
+
+SCREENS.md 16 says nothing about any of this. Saving in an urban canyon would therefore write a
+reading that can never appear on screen 11, and screen 11 would draw its designed empty state (E63)
+with nothing anywhere saying why — which is precisely the failure mode E65 describes: "the failure
+would look exactly like the designed empty state, which is how E37 went unnoticed for as long as it
+did."
+
+So the sheet says it before the save, in one sentence above the footnote:
+
+- a real fix outside the limit — `This fix is good to about 40 m, so the reading is saved but stays
+  off the growth chart.`
+- no fix at all — `Without a location fix the reading is saved but stays off the growth chart.`
+
+**The save is not blocked and the reading is not discarded.** Screen 11 settled that side already:
+its measurement log shows every non-deleted reading including the ones D6 keeps off the chart,
+because "hiding somebody's own contribution because the GPS was poor when they made it would be worse
+than showing it" (`GrowthLogRow`). Screen 16 is the same principle one step earlier. **NOT SPECIFIED**
+by SCREENS.md; recorded here rather than treated as a gap to leave open.
+
+### E80 — the count behind "N photos are waiting for wi-fi" counts items, and the sentence says photos
+
+`OutboxSnapshot.awaitingWifiCount` is the number E32 rebuilt clause by clause, and it is a count of
+**rows**: "Items whose JSON went and whose photos are queued behind the wi-fi toggle."
+
+`OutboxFailureReason.awaitingWifi(photoCount:)` writes `The note is saved. N photos are waiting for
+wi-fi.` Per item, `OutboxQueue.drain` passes that item's own `photos.count`, so the sentence on a row
+was always right. Screen 17 also says it once for the whole queue, and there the only number to hand
+was the item count: two visits carrying two photographs each would have said `2 photos` with four
+sitting on the device.
+
+E32's own standard is the fix — "every clause of it has to be true before the count claims it" — and
+`photos` is a clause. `OutboxSnapshot` now carries `awaitingWifiPhotoCount` beside the item count,
+summed across exactly the same filtered rows, and the screen's sentence reads that one.
+`awaitingWifiCount` keeps its meaning and its tests.
+
+### E81 — 17's header pill claims a connectivity state the app has no way to know
+
+SCREENS.md 17 §1 draws the trailing amber pill as `3 waiting · offline`.
+
+Nothing in this app knows whether it is offline. There is no reachability monitor, no
+`NWPathMonitor`, and no plan for one in BUILD-PLAN; the closest thing available is a failure sentence
+reading `No connection.`, which is a record of what happened at the last attempt and not a statement
+about now. A pill reading `offline` beside a live connection is the same class of untrue label as
+"sent to the city" (ARCHITECTURE §5.4) — small, and still a claim the app cannot support.
+
+So the pill renders `3 waiting` and stops, and it is absent entirely at zero, because `0 waiting` is
+the zero ARCHITECTURE §5.6 does not draw. The dropped clause is a real design question — a
+volunteer in a dead zone genuinely wants to know it is the dead zone and not the app — and it needs a
+reachability source before it can be answered.
+
+### E82 — 17's summary line names a week the store keeps for a day, and links to a screen that does not exist
+
+§5 draws `this week · 14 synced · 0 lost`, with a trailing `full history` link.
+
+**The week is not available.** `OutboxQueue.completedRetention` is 24 hours and `pruneCompleted`
+deletes `done` rows past it — deliberately, because §4's own section is headed `Synced earlier
+today`. A week's figure would have to come from somewhere that does not exist, so the line says
+`today · 14 synced · 0 lost`: the window the store can actually answer for. `0 lost` is computed from
+the rows rather than hard-coded, which is the only reason it is worth printing at all.
+
+The line is absent when nothing has synced today, because `0 synced` is a zero (§5.6).
+
+**`full history` is not rendered.** There is no history screen, no `Route` case for one, and the
+Journal tab that would host it is an unbuilt M2 requirement. This is the same subtraction E64 made to
+screen 11's footnote: printing a control that goes nowhere is a small promise the app does not keep.
+
+### E83 — `failed` is two terminal states and SCREENS.md draws one
+
+`OutboxRetryPolicy.nextState` produces `.failed` for two different reasons: the 48 h cap ran out, or
+the API returned a taxonomy code that is not retryable (`validation_failed`, `conflict`,
+`moderation_rejected`, `forbidden`). `OutboxFailureReason.describe` already writes two different
+sentences for them — `Tried for 48 hours without getting through. Tap retry when you have a
+connection.` against `<cause> This one will not go through on its own.`
+
+SCREENS.md 17 §2 draws one treatment: an amber C24 card with the mono word `retry`. BUILD-PLAN §4 is
+where the control comes from — "cap 48 h then state failed with **a visible retry button** (screen
+17)" — and it attaches that button to the cap, not to the taxonomy.
+
+Offering `retry` on a row whose own sentence says it will not go through on its own is a promise
+BUILD-PLAN §6's taxonomy says will not be kept. So the terminal state renders in two forms:
+
+- **`retry`** — the drawn one. Amber card, amber mono word, and the word is a real control with a
+  44pt hit area (BUILD-PLAN §4's "visible retry button", which the mock draws only as a label).
+- **`stopped`** — **NOT SPECIFIED**. Same amber card and the same sentence, no control.
+
+Both are clearly separated from `waiting`, which is the state an item keeps however many times it has
+failed while it is still inside its window. That separation is the point: a row that has failed four
+times and will try again in an hour is not the same fact as a row that has stopped, and the mock's
+single amber treatment cannot say which.
+
+### E84 — 17's rows draw what is inside an item, and the snapshot threw it away
+
+SCREENS.md 17 §2's three rows read `2 photos · 11:42 am`, `vitality 3, thinning · 11:18 am` and
+`DBH 31 cm, tape · upload failed twice`. None of that is recoverable from a kind and a timestamp, and
+`OutboxItemSnapshot` carried only those.
+
+`OutboxSnapshot.init` was already decoding each row's payload — to find `treeID` — and discarding
+everything else. It now keeps it (`OutboxItemSnapshot.payload`), which costs nothing and is what lets
+the third row render its reading through `MeasuredValue`, with the C12 badge D7 requires rather than
+the mock's spelled-out `, tape`. Screen 17 is the last surface a queued number passes before it
+reaches the record, so it is the last place a method could go missing.
+
+Two smaller corrections came with it:
+
+- **`updatedAt` was missing.** §4's receipts read `✓ 9:56 am`, which is when the item *went*, and the
+  snapshot only carried `createdAt`. On an item that waited out a dead zone those are different
+  hours, and the capture time is the wrong one to stamp a receipt with.
+- **`OutboxPayload` is now `Hashable`**, which is what carrying it on a `Hashable` snapshot needs.
+  Every associated value already was, through `CoreEntity`.
+
+Two of §2's three leading glyphs are **not built**: the camera and the check-in ring are drawn in
+SCREENS.md 17 and are not in the C1–C30 catalogue, and adding two icons to the design system to draw
+one screen is not this round's work. Every non-measurement row takes C21's leaf, which is the app's
+only bespoke mark; the measurement row draws its reading in mono inside the tile, as the mock does.
+The tile's amber fill follows the *terminal state* rather than the kind, because Signal Amber is
+reserved for "this tree needs something" (§1.1) and the mock's amber tile is on its failed row.
+
+### E85 — screens 16 and 17 have no dark row
+
+SCREENS.md §3's dark section is D1 (map), D2 (profile) and D3 (check-in). Screens 09, 10 and 11
+(E61), 12 (E56), 13 (E72) and now 16 and 17 have none, which is the same finding E8 recorded about
+the token layer: dark is specified for four screens and the app has more than four.
+
+Both screens are built entirely from `dynamic` and `derived` token pairs, so both resolve in dark
+without a line of screen-specific code, and both carry a dark preview as evidence of what that
+resolution looks like rather than as a design. Two things are worth a designer's eye before M4:
+
+- **16's readout.** A 56pt mono number in `text.ink` over `surface.screen` is the largest single piece
+  of type in the app, and the dark pair (`#E4EBE2` on `#0E1712`) has not been looked at at that size.
+- **17's amber.** The terminal row is `border.amberMid` on `surface.card` with `signal.amber` text,
+  and in dark all three of those collapse toward the single `#D99A4E` the palette gives dark amber.
+  The card, its word and its tile glyph are then the same hue at three different weights, which is
+  exactly the collapse E72 recorded for 13's three chart series.
+
+### E86 — screen 15 asks for an account the app has no way to create
+
+Screen 15 draws three sign-in routes. None of them can work in this build, and the reason is written
+into `CypressAPI`'s own header: "`POST /auth/*`, `POST /auth/refresh`, `POST /auth/logout`,
+`DELETE /me` — there is no auth server and no local equivalent of a token exchange. Adding throwing
+stubs would suggest a sign-in flow exists."
+
+Nor can any of the three be made to work from inside the app:
+
+- **Apple** needs the Sign in with Apple entitlement, which is a project-file change, and a server to
+  verify the identity token against.
+- **Google** needs a third-party SDK, and the project has zero external dependencies by decision
+  (BUILD-PLAN §3).
+- **Email** is magic link only (DECISIONS §3.9, A10), which needs somewhere to send the link from.
+
+A fourth option was considered and rejected: minting a local user id and calling `claimDevice`, which
+would make the screen "work" end to end today. It is rejected because the sheet's own second sentence
+is `An account backs them up and lets them join each tree's public timeline`, and a local id backs
+nothing up and joins nothing. That is the same class of untruth ARCHITECTURE §5.4 forbids about the
+city, applied to an account, and it would be worse than the city case because it is irreversible in
+the contributor's head: they would believe their photographs were somewhere else.
+
+So the screen presents, is drawn as specified, and its three buttons are wired to an injected action
+(`AccountAskLink`) that the composition root does not supply — the shape screen 06's reminder used
+before E23 settled it. A tap therefore claims nothing.
+
+**Two sentences of new copy, and SCREENS.md has none.** 15 draws the buttons and nothing after them.
+E23 already made this call once in the other direction: "a control that acts and says nothing is the
+same dishonesty in the other direction, so this is the smallest answer that is not silence." Both
+sentences end on the screen's own §7 promise:
+
+- `Accounts are not ready yet. Everything you have saved stays on this phone.`
+- `That did not go through. Everything you have saved stays on this phone.`
+
+**What a decision-owner has to settle:** whether an ask that cannot be honoured should be presented
+at all. The argument for presenting it is that the decline path is real, it works, and the ledger's
+resolution is what stops the ask returning for ever (E34). The argument against is §5.6's principle —
+a surface that cannot state its own truth does not render — and that interrupting the third save to
+offer three buttons that do not work spends D9's one interruption on nothing. The interruption is
+currently spent; suppressing the sheet until an auth service exists is a two-line change in
+`VisitSavedView` and would need the ledger to stop counting the presentation, which is the part that
+needs the decision rather than the code.
+
+### E87 — `Keep your three visits` needed a count that nothing in the app could prove
+
+Screen 15 §1's headline carries a number about the person reading it. Three candidate sources
+existed and all three were wrong:
+
+1. **`VisitSaveLedger`'s save counter.** It is a `UserDefaults` funnel value, and the ledger's own
+   comment refuses to expose it: "this number is **never rendered**… it is deliberately not exposed
+   as a string anywhere", citing ARCHITECTURE §5.1. It is also wrong on the second offer — E34 lets
+   the ask return on the fourth save, when the counter says four and the phone holds four.
+2. **`journal(cursor:limit:)`.** Returns a `Page`, and a page's size is not a total (E38).
+3. **`grove()`.** Returns trees, not visits, and a contributor who visited one tree three times has
+   one grove entry.
+
+So the protocol grew a method, as ARCHITECTURE §4 requires when a screen needs data: `CypressAPI
+.deviceContributions()`, returning a `DeviceContributions` of the five record kinds `claimDevice`
+moves. A `COUNT(*)` is a total in a way a page never is, so it may be rendered.
+
+**Whether this is the count D1 forbids was the real question.** D1 kills "streaks, points, ranks,
+badges, or **public** counts of user actions" and DECISIONS §3.1 adds "recency and identity phrasing
+only". This count is not public — the rows exist on one phone and are attributed to nobody — it is
+never compared or ordered, and it is not a reward: it is the inventory of what somebody would lose,
+stated once, in the one moment the app asks for anything. The judgment is recorded here rather than
+only in the type's doc comment because a second caller of `deviceContributions()` is the moment to
+re-read D1, and this is where a reviewer will look.
+
+The headline drops its number rather than saying nought (`Keep your visits`), and reads `Keep your
+visit` at one. Pinned in `AccountAskSheetTests`.
+
+### E88 — a contribution queued before sign-in and applied after it stayed the device's
+
+`claimDevice` sweeps the rows that are in the tables when it runs. The outbox means a mutation exists
+for a while before it is in a table at all: written on Tuesday in a dead zone, drained on Thursday.
+If sign-in happens on the Wednesday, the row lands on Thursday carrying the anonymous `Attribution`
+it was built with — payloads are immutable, and rewriting one after the fact would change a mutation
+the outbox has already promised to send verbatim — and the sweep that would have adopted it has been
+and gone.
+
+The contributor is told, by screen 15, that their work comes with them. The tail of their queue
+silently does not. It is the worst-shaped bug this feature could have: invisible, permanent, and
+proportional to how bad the signal was when they were working.
+
+**RESOLVED.** The claim is a fact with a lifetime, not an event, and the `device` row `claimDevice`
+already writes is where that fact is durable. `ContributionStore.claimedUser(forDevice:)` reads it,
+and `LocalAPI.sync` re-runs the claim once after any non-empty batch. It is the same statement set,
+whose WHERE clauses stop matching once they have run — nothing inserts, nothing deletes, and rows
+belonging to another account are not touched — so re-running it is free of consequence when there is
+nothing to adopt, and one indexed SELECT when the device was never claimed.
+
+Two tests in `DeviceClaimTests` hold it: a visit and a private reminder, each queued before the claim
+and drained after it.
+
+### E89 — an anonymous device cannot favourite a tree, so sign-in carries no favourites — OPEN
+
+`favorites` is the one contribution table with a `NOT NULL user_id` and no `device_id` column
+(`AppSchema`), and `ContributionStore.groveTreeIDs` only reads favourites when a user is present. So
+on every device the app currently runs on, the heart on screen 03's quad-action row has nowhere to
+write to. `RootView` says as much at the call site — `onFavorite: { _ in /* outbox mutation — wired
+with the grove, M2 */ }` — so nothing is lost today, because nothing is written.
+
+It matters here because "everything you have already done survives signing in" is screen 15's
+promise, and favourites are the one thing on that list which survives by being impossible rather than
+by being adopted. `DeviceContributions` says so in a named constant rather than by omission.
+
+This is the same decision E23 settled for private reminders — give the row a device owner, with a
+`CHECK` making ownership exclusive so adoption is a move — and it should be taken the same way,
+deliberately, rather than by a second quiet precedent. It also has a wrinkle E23 did not: favourites
+are tombstone toggles with a `UNIQUE (user_id, tree_uuid)`, so the pair becomes
+`(owner, tree_uuid)` and the uniqueness has to survive the move.
+
+### E90 — 15's consent box has no unchecked state, and no rule for what refusing it means — OPEN
+
+SCREENS.md 15 says "**States:** checkbox drawn checked. **NOT SPECIFIED:** unchecked styling,
+dismissal gesture." Two gaps, and only one of them is visual.
+
+**The styling** is answered with the smallest possible thing: the same 20pt box, without the glyph.
+Nothing else moves.
+
+**What refusing the licence means is not answered, and is not this screen's to answer.** The three
+sign-in buttons stay live when the box is unchecked, because 15 states no rule that they should not
+and a disabled primary CTA would be inventing one. The answer travels on `AccountLinkRequest
+.acceptsLicense`, so an account can record honestly that nothing was agreed to — `User
+.licenseVersion` is optional and `hasAcceptedLicense(version:)` already returns false for a nil.
+
+What nobody has decided is what a contribution carrying no licence consent may then be used for. D12
+pins `verification_state` into the export and BUILD-PLAN §5 pins the export's headers, and neither
+says anything about a row whose contributor declined the ODbL. The plausible answers — exclude those
+rows from the export, or refuse the sign-in until the box is ticked — are a licence decision and a
+product decision respectively, and both belong to whoever owns the licence declaration.
+
+### E91 — 15's logo is not in the bundle, and its map backdrop is drawn with the pins the app has
+
+Two small substitutions on screen 15, both recorded because they are visible and neither is worth a
+resource or a component to fix:
+
+- §1 specifies "40×40 Cypress logo PNG". There is no logo in `Cypress/Resources` and no asset
+  catalogue; `mocks/assets/logo-192.png` exists in the repo but is not a build input. The mark is C21
+  `LeafGlyph` — "the app's only bespoke mark" — at 40pt. Swapping in the artwork is one line at the
+  call site.
+- The frame's three pins are specified as 16×16 in `#4E8F6A`. `MapPin.cityTree` is 18pt in Canopy
+  `#2F6B4F`. The backdrop is decorative — C18's own header calls the stylised grid the replaceable
+  half of the seam — so the component that means "a tree on the map" was used rather than adding a
+  fourth pin kind for a layer that is behind a scrim.
+
+### E92 — `trees` records that a tree was removed and nothing about when or why — OPEN
+
+Screen 19 draws four claims that need a removal date, and one that needs a removal reason:
+
+| SCREENS.md 19 | needs |
+|---|---|
+| §2 `Removed by the city, May 2026.` | the date |
+| §3 `… · 2003–2026` | the year |
+| §6 `On record · 23 years` | the year |
+| §4 `City record · marked removed · storm damage` · `May 2026` | the date **and** a reason |
+
+BUILD-PLAN §4's `trees` carries `status`, `created_at` and `updated_at`, and nothing else that could
+answer either. `updated_at` is not the date: it moves on any write, so reading it as a removal month
+would put a date on screen that a later species correction could silently change.
+
+So all five clauses are withheld. The banner reads `Removed by the city.`, the identity line stops
+after the scientific name, the `On record` card does not render, and the timeline has no city-record
+row. `MemorialFacts` is the seam — one optional date, `nil` today, threaded through the presentation
+so every one of those sentences already knows how to be written both ways, and both ways are
+previewed.
+
+**What a decision-owner has to settle** is which of two sources fills it, because both are schema
+work (DECISIONS constraint 20):
+
+1. **`trees.removed_at`**, set by the weekly diff (BUILD-PLAN §7). Direct, exportable, and answers
+   for every removed row including the ones nobody ever visited.
+2. **The confirmed `review_flags` row.** §7 opens `removed_but_active` for exactly the trees with a
+   timeline worth memorialising, and the moment a moderator confirms it *is* the moment the status
+   changed. It needs no new column, but it answers only for trees that had community activity, and
+   it needs `TreeProfile` to carry the flag.
+
+The reason has no candidate at all. `review_flags` has a `kind` and no free text, and DataSF publishes
+no removal cause, so `storm damage` is a sentence the mock can say and the record cannot. It is not
+written, on the same principle that keeps invented botany out of the species pages (BUILD-PLAN §15).
+
+### E93 — no tree in the shipped seed is removed, so screen 19 cannot be reached
+
+The seed holds 182,791 `alive` rows and 12,518 `vacant_site` rows. There are **no `removed` rows at
+all**, and there is no path in the app that can create one: a tree becomes removed either through the
+weekly city diff (BUILD-PLAN §7, not built) or through a moderator confirming a review flag
+(DECISIONS §3.7, a web surface that is out of scope for iOS per ARCHITECTURE §8).
+
+Two consequences worth stating plainly:
+
+- **Screen 01's memorial pins have nothing behind them.** The caption promises "removed trees draw as
+  gray dash-marked pins, memorials, tappable to screen 19", `MapPin.removed` is built and correct,
+  and no pin on any device will ever take that kind today.
+- **Screen 19 is verifiable only from fixtures.** Its previews build SCREENS.md's own Judah Street
+  Gum by hand out of real record types. That is not a shortcut around a missing screen; it is the
+  only way to see the drawn state, and it is worth knowing when reading the previews.
+
+This is the same shape as E63 (nothing routes to screen 11 because the seed carries no measurements)
+and E24 (nothing opens screen 05). The screen is built because the record type demands an answer for
+the state, not because the state is reachable.
+
+### E94 — 19's timeline is four kinds of moment, and the spec gives one instance and no rule
+
+SCREENS.md 19 §4 draws four rows: a first photo, a visit, a check-in, a city-record sync. It does not
+say what selects them, and the obvious reading — "the four most recent rows, as on screen 03" — is
+contradicted by its own first row, which is the *oldest* thing on the tree, and by its ordering,
+which runs Mar 2019 → Jan 2026 → Mar 2026 → May 2026 while 03's feed runs newest first.
+
+What was built is the reading that needs the least invention: four **kinds** of moment rather than
+four slots in a feed — the beginning, the last time somebody came, the last time anybody looked
+closely, and the end — each present only when it happened. A memorial reads as a life, which is also
+why it is chronological. This is a judgment call and is recorded as one.
+
+Two smaller decisions inside it:
+
+- **A8's 24-month window is not applied here.** A8 wrote it for a living tree, where "who knows this
+  tree" is a question about now. A tree removed in 2026 would score zero caretakers within two months
+  of its own memorial being read, and §4's clause (`six people came to know it`) is past tense and
+  about the whole life. The window is the tree's life; the floor of three is kept exactly.
+- **A8's rule now exists in two presentations**, `TreeProfilePresentation.caretakers` and
+  `MemorialPresentation.caretakerCount`. One feature's presentation type reaching into another's is
+  the sibling dependency ARCHITECTURE §3 keeps out of `Features/`, so the rule is stated twice rather
+  than shared badly. If a third screen needs it, it should move — `Core` is the obvious home, since
+  A8 is a product rule rather than a screen's.
+
+### E95 — screen 19 has no route, and the only surface that knows a tree is removed is the map
+
+`Route.treeProfile(UUID)` is annotated "03 (14 when the tree is cold, 19 when removed)", so the
+original intent was one destination resolving all three. That works for 14, whose variant is decided
+*inside* `TreeProfileView` after the read. It does not work for 19, because 19 is a different screen
+with different copy, a different hero and no affordances — deciding between them after the read would
+put one feature in charge of constructing another's view.
+
+The entrance SCREENS.md actually draws is a map pin, and the map already holds the fact: `TreePin
+.status` travels on every pin, `MapPinKind` already renders `.removed` as the gray dash-marked
+memorial, and `MapHomeView`'s selected-tree card is one `router.push` away from either destination.
+So the wiring is three small changes, in two files this task does not own:
+
+1. **`AppRouter.swift`** — add `case memorial(UUID) // 19` to `Route`.
+2. **`RootView.swift`**, in `destination(for:)` — add
+   `case .memorial(let id): MemorialView(treeID: id, api: data.api, onBack: { router.pop() })`.
+3. **`MapHomeView.swift`**, in `bottomSlot` — push `.memorial(subject.pin.id)` when
+   `subject.pin.status == .removed`, and `.treeProfile` otherwise.
+
+`MemorialView` needs no router of its own; it takes `onBack` as a closure, the way `AlmanacView`
+does.
+
+**The residual, which the above does not close:** other paths into `.treeProfile` — the almanac's
+elder and bloom rows, the visit flow's "open tree" — can reach a removed tree, and `TreeProfileView`
+will draw it as a profile with a `REMOVED` badge and a live `Visit · say hello with a photo` CTA.
+That is a read-only tree offering a write, which is the one thing 19's "read-only enforcement" note
+exists to prevent. Closing it means either routing on status at every push site, or having
+`TreeProfileView` refuse a memorial tree the way `MemorialModel` refuses a living one. The second is
+one line and one screen's decision; it is not made here because it belongs with whoever applies the
+routing above. Nothing is currently reachable through those paths on the shipped seed (E93), so this
+is latent rather than live.
+
+### E96 — a memorial link can arrive at a tree that is still standing
+
+`trees.status` can move in both directions: a moderator confirms a review flag, and a moderator can
+dismiss one. A link, a pushed route, or a stale map read can therefore arrive at screen 19 for a tree
+that is not removed.
+
+**NOT SPECIFIED**, and it cannot be silently redirected to screen 03 — that would be this feature
+constructing another's view (ARCHITECTURE §3), and would leave a memorial link opening a living
+profile with nothing to explain it. `MemorialModel.Phase.notMemorial` is its own case, distinct from
+`.failed`, and the screen says `This tree is still standing.` and offers nothing.
+
+It is a case rather than an error on purpose: "this tree is not removed" and "this profile could not
+be loaded" are different facts, and this is the screen where conflating them would be worst.
+
+### E97 — screen 16 has no state after the save, and screen 18 is not it
+
+SCREENS.md 16 ends at its CTA. Nothing says what the sheet does once `Save measurement` is tapped,
+and the obvious neighbour is not a candidate: screen 18's success block reads `Check-in saved` and
+its whole content is "which tree is next" on a route, which is a different flow from standing at one
+trunk with a tape.
+
+So the sheet stays open, the entry clears, and the reading it just wrote becomes the sanity pill's
+anchor: after saving `64 cm` the pill reads `Last recorded 64 cm, <this month>`. That is a real
+receipt — the number is visibly on the record now — and it is what a second reading on the same
+standing needs, because DBH and height are two separate saves and a volunteer taking both would
+otherwise have to re-enter the screen between them.
+
+It is also thin. There is no confirmation, no toast and no exit, and a contributor who taps once and
+looks away has only a changed pill to tell them it worked. A designed post-save state for 16 is a
+real gap; inventing one, or borrowing 18's, is what DECISIONS constraint 21 forbids. **OPEN.**

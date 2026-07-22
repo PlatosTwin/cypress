@@ -18,6 +18,10 @@ enum Route: Hashable {
     case report(UUID)           // 06
     case almanac                // 12
     case activity(UUID)         // 13
+    /// 19. Separate from `treeProfile` rather than a variant of it: 14 is a *cold* profile, whose
+    /// variant the view picks internally, but a memorial is a different screen — different copy,
+    /// and deliberately nothing to press.
+    case memorial(UUID)         // 19
     case measure(UUID)          // 16
     case outbox                 // 17
 }

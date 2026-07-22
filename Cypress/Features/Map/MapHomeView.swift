@@ -129,7 +129,14 @@ struct MapHomeView: View {
     private var bottomSlot: some View {
         if let subject = model.selection {
             MapTreeCard(subject: subject, userCoordinate: location.availability.coordinate) {
-                router.push(.treeProfile(subject.pin.id))
+                // Screen 01's own caption: "gray dash-marked pins are removed trees—memorials,
+                // tappable to screen 19". A memorial is a different screen from the profile, not a
+                // variant of it, so the branch belongs here rather than inside TreeProfileView.
+                router.push(
+                    subject.pin.status.isMemorial
+                        ? .memorial(subject.pin.id)
+                        : .treeProfile(subject.pin.id)
+                )
             }
         } else if location.availability.isRefused {
             MapLocationNotice(availability: location.availability) {

@@ -13,6 +13,11 @@ struct VisitSavedView: View {
 
     @State private var model: VisitSavedModel
 
+    /// Held beside the model because screen 15 does its own read (`deviceContributions()`), and the
+    /// boundary rule is that a feature gets its data through `CypressAPI` rather than through
+    /// another feature's model (ARCHITECTURE §4).
+    private let api: any CypressAPI
+
     /// Advance to the next tree — straight to its camera, per PROTOTYPE-FLOW's `nextAction`.
     let onNextTree: (VisitCandidate) -> Void
     /// "Route done · see your grove". The grove is screen 08 and not this feature's; the container
@@ -43,6 +48,7 @@ struct VisitSavedView: View {
             api: api,
             ledger: ledger
         ))
+        self.api = api
         self.onNextTree = onNextTree
         self.onRouteComplete = onRouteComplete
         self.onDone = onDone
@@ -68,16 +74,25 @@ struct VisitSavedView: View {
         // `model.shouldPresentAccountAsk` is true from the **third** save (DESIGN v3 / D9 beat
         // SPEC-PHASE1's "first"; see `VisitSaveLedger`), and at most twice in total — once, plus one
         // second chance if the first went unanswered because the app died with the sheet up
-        // (ERRATA E34). Screen 15 is not this feature's to build, so nothing is presented yet.
+        // (ERRATA E34).
         //
-        // Present it from `model.accountAskPresentation`, not from the flag: that binding resolves
-        // the ask on every way of closing the sheet, including a swipe-away that never reaches an
-        // `onFinish`.
+        // Presented from `model.accountAskPresentation`, not from the flag: that binding resolves
+        // the ask on every way of closing the sheet, so a dismissal that never reaches `onFinish`
+        // cannot leave the ask owed. Both halves of E34's fix are load-bearing and neither carries
+        // it alone.
         //
-        //     .sheet(isPresented: model.accountAskPresentation) {
-        //         AccountAskSheet(onFinish: { model.resolveAccountAsk() })   // screen 15
-        //     }
+        // `fullScreenCover` rather than `.sheet`, for the reason `RootView` gives screens 09 and 10:
+        // 15 draws its *own* scrim over its own map backdrop (C17 `.account`, scrim `.3`), and a
+        // system sheet would impose a second card and a second dimming over the top of it.
+        //
+        // No sign-in action is passed. `CypressAPI` states why in its own header — there is no auth
+        // server and no local equivalent of a token exchange — and a stub that minted an account on
+        // device would have this screen claim a backup that does not exist (ARCHITECTURE §5.4's
+        // principle, applied to an account rather than to the city). The screen says so instead.
         // ══════════════════════════════════════════════════════════════════════════════════════
+        .fullScreenCover(isPresented: model.accountAskPresentation) {
+            AccountAskView(api: api, onFinish: { model.resolveAccountAsk() })
+        }
     }
 
     // MARK: - Success

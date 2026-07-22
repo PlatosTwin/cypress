@@ -629,6 +629,66 @@ public struct ContributionStore {
         _ = try device.reset()
     }
 
+    /// The account this device has already been claimed by, if any — the `device` row `claimDevice`
+    /// wrote.
+    ///
+    /// It exists because a claim is a fact with a lifetime, not an event. `claimDevice` sweeps the
+    /// rows that are in the tables *at the moment it runs*, and the outbox means a mutation can be
+    /// written before sign-in and applied after it: queued offline on Tuesday, signed in on
+    /// Wednesday, drained on Thursday. That row arrives carrying the anonymous attribution it was
+    /// built with, lands with `user_id IS NULL`, and the sweep that would have adopted it has
+    /// already been and gone — so the contributor signs in, is told their work is kept, and the last
+    /// items in the queue quietly stay the device's for ever.
+    ///
+    /// `LocalAPI.sync` reads this after a batch and re-runs the claim when it is non-nil, which is
+    /// idempotent by the same argument as above. The device row is the durable half of the claim,
+    /// which is what makes this answerable at all.
+    public func claimedUser(forDevice deviceUUID: UUID, connection: SQLiteConnection) throws -> UUID? {
+        let statement = try connection.cachedStatement("""
+            SELECT user_id FROM device WHERE device_uuid = :uuid COLLATE NOCASE
+            """)
+        _ = try statement.bind([":uuid": deviceUUID.uuidString])
+        return try statement.fetchOne { try $0.uuidIfPresent("user_id") } ?? nil
+    }
+
+    // MARK: - What the device is holding (D9, screen 15)
+
+    /// The five record kinds `claimDevice` moves, counted for this device while they are still
+    /// unattributed.
+    ///
+    /// `COUNT(*)` rather than a page's size: this is the whole predicate answered by the engine, so
+    /// it is a total and may be rendered as one (contrast `Series.totalCount`, and ERRATA E38 for
+    /// what happens when a page is read as a total).
+    ///
+    /// Tombstoned rows are excluded — `deleted_at IS NULL` — because the sentence this feeds is
+    /// about what a person would keep, and a deleted row is not something they have.
+    public func deviceContributions(
+        deviceUUID: UUID,
+        connection: SQLiteConnection
+    ) throws -> DeviceContributions {
+        func count(_ table: String, deviceColumn: String = "device_id") throws -> Int {
+            let statement = try connection.cachedStatement("""
+                SELECT COUNT(*) AS n FROM \(table)
+                 WHERE \(deviceColumn) = :device COLLATE NOCASE
+                   AND user_id IS NULL
+                   AND deleted_at IS NULL
+                """)
+            _ = try statement.bind([":device": deviceUUID.uuidString])
+            defer { _ = try? statement.reset() }
+            return try statement.fetchOne { try $0.int("n") } ?? 0
+        }
+
+        return DeviceContributions(
+            visits: try count("visits"),
+            checkIns: try count("observations"),
+            measurements: try count("measurements"),
+            careEvents: try count("care_events"),
+            // Exclusive ownership (E23): a device-owned reminder has `user_id IS NULL` and a
+            // `device_id`, so the same predicate reads it correctly.
+            privateReminders: try count("private_reminders")
+        )
+    }
+
     // MARK: - Paging
 
     /// How many rows to ask SQLite for, given what the caller wants.

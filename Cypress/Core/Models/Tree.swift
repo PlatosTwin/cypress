@@ -18,6 +18,25 @@ public enum TreeStatus: String, Codable, Sendable, Hashable, CaseIterable {
     /// A removed tree's profile becomes a read-only memorial record, not a 404
     /// (PRODUCT §3, DECISIONS §3.17).
     public var isMemorial: Bool { self == .removed }
+
+    /// Whether a record in this state can take a new contribution.
+    ///
+    /// Two states cannot, for opposite reasons: a vacant site has no tree yet, and a memorial had
+    /// one and no longer does. Neither may be offered a visit, a photo or a check-in.
+    ///
+    /// This lives here rather than in a presentation because it is a fact about the tree, not about
+    /// a screen — and because it was previously two separate checks in one view, which is how a
+    /// removed tree came to draw a REMOVED badge beside a live "say hello with a photo" button.
+    /// Written as an exhaustive switch so that adding a status is a compile error rather than a
+    /// silent "yes, offer a write". See ERRATA (E95).
+    public var acceptsNewContributions: Bool {
+        switch self {
+        case .alive, .declining, .deadReported:
+            return true
+        case .removed, .vacantSite:
+            return false
+        }
+    }
 }
 
 /// `trees.source` (BUILD-PLAN §4).

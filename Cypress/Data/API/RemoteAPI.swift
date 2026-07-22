@@ -130,6 +130,15 @@ public struct RemoteAPI: CypressAPI {
         throw unimplemented
     }
 
+    /// Will not call anything. What a device is holding unattributed is a local fact by definition —
+    /// the rows have not been sent — so the offline cache answers it and the server never does.
+    ///
+    /// The protocol's `.none` default is therefore left in place rather than overridden to throw,
+    /// which is the opposite call from `groveSpecies()` and `almanac()`: those are the server's
+    /// answers and it has none, whereas this one is never the server's answer at all.
+    ///
+    /// When `LocalAPI` becomes the cache behind this, it is the one that keeps answering it.
+
     // MARK: - Reports and export
 
     /// Will call `POST /reports/hazard-redirect`.

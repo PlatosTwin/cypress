@@ -513,6 +513,22 @@ enum CypressColor {
     /// Label riding on `ctaFill` — `text.onDark` `#FFFFFF` ↔ `dark.bg.screen` `#0E1712`,
     /// because the dark CTA is a light mint fill.
     static let ctaLabel = dynamic(light: 0xFFFFFF, dark: 0x0E1712)
+    /// Account sheet primary fill `#1C2A21` ↔ **derived** `#E4EBE2` — 15's `Continue with Apple`.
+    ///
+    /// Screen 15 is the one primary button in the app that is not `ctaFill`: SCREENS.md 15 §3 gives
+    /// it `#1C2A21`, which is `text.ink`'s light value used as a fill, not Cypress Deep. Ink's
+    /// documented dark counterpart is `#E4EBE2`, so the fill inverts — which is exactly what it has
+    /// to do to remain a fill at all, since `#1C2A21` against the dark sheet (`#18251D`) is 1.1:1
+    /// and would vanish.
+    static let accountPrimaryFill = derived(light: 0x1C2A21, dark: 0xE4EBE2)
+
+    /// Label riding on `accountPrimaryFill` — `#FFFFFF` ↔ **derived** `dark.bg.screen` `#0E1712`.
+    ///
+    /// `ctaLabel`'s documented move, for the same reason: the fill inverts, so the label inverts
+    /// with it and lands on the ground colour. `#FFFFFF` has three documented dark counterparts
+    /// (see `textOnDark`); this is the one that applies when the fill beneath goes light.
+    static let accountPrimaryLabel = derived(light: 0xFFFFFF, dark: 0x0E1712)
+
     /// Map pin fill — Canopy `#2F6B4F` ("pins") ↔ `dark.accent.pin` `#6FAE8C` ("map pins").
     static let pinFill = dynamic(light: 0x2F6B4F, dark: 0x6FAE8C)
     /// Attention accent — Signal Amber `#B4711F` ↔ `dark.accent.amber` `#D99A4E`.
@@ -1230,6 +1246,12 @@ extension CypressColor {
               basis: "border rule → dark.border.alt (ΔE 0.014)", color: borderSheetGrabber),
         .init("borderAccount", .derived, light: 0xD8DECB, dark: 0x2B3A2C,
               basis: "border rule → dark.border.alt (ΔE 0.012)", color: borderAccount),
+        .init("accountPrimaryFill", .derived, light: 0x1C2A21, dark: 0xE4EBE2,
+              basis: "ink as a fill → text.ink's documented dark; it inverts or it vanishes",
+              color: accountPrimaryFill),
+        .init("accountPrimaryLabel", .derived, light: 0xFFFFFF, dark: 0x0E1712,
+              basis: "ctaLabel's move: the fill inverts, the label follows to the ground",
+              color: accountPrimaryLabel),
         .init("borderShareCard", .derived, light: 0xE0DDC9, dark: 0x2B3A2C,
               basis: "border rule → dark.border.alt (ΔE 0.011)", color: borderShareCard),
         .init("borderMemorial", .derived, light: 0xC4C8B8, dark: 0x39423A,

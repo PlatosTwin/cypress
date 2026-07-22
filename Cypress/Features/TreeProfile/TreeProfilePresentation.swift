@@ -108,6 +108,17 @@ struct TreeProfilePresentation {
     /// What is left is the city's own record of the site, which is all anybody knows about it.
     var isVacantSite: Bool { tree.status == .vacantSite }
 
+    /// Whether this record can take a new contribution at all.
+    ///
+    /// Two statuses cannot, for opposite reasons: a vacant site has no tree yet, and a memorial had
+    /// one and no longer does. Both were previously gated separately — the site here, the memorial
+    /// not at all — which left a removed tree drawing a `REMOVED` badge beside a live
+    /// "say hello with a photo" button. A read-only record offering a write is exactly what screen
+    /// 19 exists to prevent, and the profile is reachable with a removed tree from the almanac's
+    /// elder row and the visit flow, not only from the map. Gating on one property means a third
+    /// such status cannot be added without answering the question. See ERRATA (E95).
+    var acceptsContributions: Bool { tree.status.acceptsNewContributions }
+
     // MARK: - Identity
 
     /// The H1. A given name wins (D15); the species common name is the fallback display

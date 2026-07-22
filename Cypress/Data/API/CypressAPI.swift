@@ -106,6 +106,18 @@ public protocol CypressAPI: Sendable {
     /// `POST /devices/claim` — attach an anonymous device's contributions to the signed-in user (D9).
     func claimDevice(deviceUUID: UUID, userID: UUID) async throws
 
+    /// What this device is holding that `claimDevice` would carry onto an account (D9).
+    ///
+    /// Not a BUILD-PLAN §6 endpoint. §6 has no read of a device's own unattributed rows because it
+    /// was written for a server, where the device is the thing asking and already knows. On a
+    /// local-first client the screen that has to say `Keep your three visits` is the one place the
+    /// number is needed and the only honest source is the store — see `DeviceContributions` for why
+    /// the ledger's save counter is not it, and why this is not the count D1 forbids.
+    ///
+    /// Defaulted in `DeviceContributions.swift` to `.none`, which is what an implementation with no
+    /// contribution store truthfully holds.
+    func deviceContributions() async throws -> DeviceContributions
+
     // MARK: - Reports and export
 
     /// `POST /reports/hazard-redirect` — logs that a 311 redirect was shown. Analytics only, no

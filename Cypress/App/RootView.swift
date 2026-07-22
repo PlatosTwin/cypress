@@ -240,6 +240,18 @@ struct RootView: View {
             // shipped seed is in. See ERRATA (E66).
             ActivityView(treeID: id, api: data.api)
 
+        case .memorial(let id):
+            // Screen 19, and the rare one whose entrance the design actually draws: screen 01's
+            // caption says the gray dash-marked pins are "memorials, tappable to screen 19", so
+            // `MapHomeView` branches on `pin.status.isMemorial` before pushing.
+            //
+            // Other paths still reach `.treeProfile` with a removed tree — the almanac's elder row,
+            // the visit flow's open-tree — where the profile draws a REMOVED badge beside a live
+            // "say hello with a photo" CTA. A read-only record offering a write is the thing 19
+            // exists to prevent, so `TreeProfileView` redirects rather than trusting every caller
+            // to remember. See ERRATA (E95).
+            MemorialView(treeID: id, api: data.api, onBack: { router.pop() })
+
         case .almanac:
             // Screen 12. Like 05 and unlike 07, **nothing opens it**: it is not one of C16's four
             // tabs, no mocked screen carries an affordance reaching it, the clickable prototype's
@@ -258,6 +270,44 @@ struct RootView: View {
                 onWalk: { id in router.push(.treeProfile(id)) }
             )
 
+        case .measure(let id):
+            // Screen 16. **Nothing opens it** — the fifth time that is true in this file. 03's
+            // affordance list sends its DBH and Height stat cards to 11 and stops there, 11 draws no
+            // control of its own (its one footnote is unrendered, ERRATA E64), the clickable
+            // prototype's `screen` enum has no measure state, and BUILD-PLAN §9 lists no entry. The
+            // least-invented candidate — an "add a reading" control under 11's measurement log — is
+            // a design decision on a screen whose parts are enumerated, so it was not added
+            // (DECISIONS constraint 21). See ERRATA (E74).
+            //
+            // The accuracy is the load-bearing argument here. D6 stores per-contribution GPS
+            // accuracy and excludes readings worse than 15 m from growth charting, and
+            // `isEligibleForGrowthCharting` treats a missing accuracy as unusable rather than good —
+            // so a measure sheet handed `nil` would write measurements that can never be charted,
+            // and screen 11 would look permanently empty on a tree somebody had just measured. That
+            // is exactly the failure ERRATA E65 was recorded to prevent, and the provider now
+            // carries the number it needs.
+            MeasureView(
+                treeID: id,
+                api: data.api,
+                outbox: data.outbox,
+                // Anonymous under the device id until the account ask ships (D9); the composition
+                // root owns that choice, not the feature.
+                attribution: .anonymous(deviceID: data.deviceID),
+                gpsAccuracyM: location.availability.accuracyM
+            )
+
+        case .outbox:
+            // Screen 17. Its entrance is *named* — BUILD-PLAN §9 lists "the You tab (profile,
+            // settings, **outbox entry point**, privacy toggles)" as an M2 build requirement — but
+            // the screen carrying it has no mock and is not built, so the row waits for the screen
+            // it belongs on rather than being bolted onto `NotBuiltYetView`. No mocked screen
+            // reaches 17 either, and the prototype's `screen` enum omits it. See ERRATA (E75).
+            //
+            // The queue and the store both come from the composition root: `OutboxViewState` owns
+            // the wi-fi preference and persists it through `CypressStore`, and it is the same queue
+            // every writer in the app enqueues into, so the screen follows a drain without polling.
+            OutboxView(state: data.makeOutboxViewState())
+
         // 09 and 10 are presented as sheets rather than pushed (see `fullScreenCover` above), so a
         // *pushed* care-log or share route is a programming error rather than a screen. They stay
         // named here so that adding a `router.push(.share(id))` somewhere is visible in review
@@ -267,7 +317,7 @@ struct RootView: View {
 
         // Every remaining route has a mocked screen but no built feature yet. Naming them here
         // rather than defaulting means adding one is a compile error, not a silent no-op.
-        case .identify, .measure, .outbox:
+        case .identify:
             NotBuiltYetView(route: route)
         }
     }
