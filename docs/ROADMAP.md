@@ -8,6 +8,41 @@ document, it cites the entry in `docs/ERRATA.md` that records the conflict.
 
 ---
 
+## Status
+
+**M0, M1 and M2 are complete.** Screens 01–14 and 18 are built, tested and committed; M3's
+remaining four (15, 16, 17, 19) are in progress. 208 tests, stable across repeated runs.
+
+Three things learned along the way that outrank anything in the sequencing below.
+
+**Confident comments are where bugs live.** Four defects survived because documentation asserted the
+behaviour: `SQLiteError.code` described as a primary result code when the connection returns extended
+ones, `Photo` documented as EXIF-stripped when nothing stripped it, `awaitingWifiCount` describing a
+predicate it did not implement, and `RootView` explaining that the location provider carried no
+accuracy an hour after it started to. Each read as verified. None was. **When auditing, start with
+the most confident comment in the file.**
+
+**Fix the representation, not the instance.** The changes that will still be true in a year made the
+bug unrepresentable: `Series` with no `count`, so a page cannot be printed as a total;
+`ReportSelection` as one enum, so a hazard and a note cannot be held at once; `OutboxPhoto` with no
+`[String]` overload left behind; `MonthRange.spanning`, so authoring order stops mattering;
+`VitalityRow` with no initializer that accepts copy.
+
+**A red test seen during concurrent work is not evidence.** See ARCHITECTURE §7. This produced one
+wrong diagnosis already.
+
+### The handoff is a set of screens, not an app
+
+Five of thirteen built screens have no way in: **05, 11, 12, 13 have no entrance at all, and 07 has
+exactly one.** Their exits are drawn — screen 18 says "Check-in saved", screen 14's footnote calls
+the coverage list "the almanac's 'walk the nine' list" — while nothing opens them. Every route is
+wired, every destination is tested, and each affordance is a design decision that neither an agent
+nor I should invent (DECISIONS constraint 21).
+
+This is the single largest thing blocking a coherent app, and it is not a code problem.
+
+---
+
 ## Ordering principle
 
 Build outward from the loop a contributor actually walks, not inward from the data model. The
