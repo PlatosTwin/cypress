@@ -26,8 +26,14 @@ final class MapLocationProvider {
         case notAsked
         /// Asked, awaiting the first fix. Still "map without location" as far as drawing goes.
         case waitingForFix
-        /// A fix. The GPS dot draws and the tree card can carry a distance.
-        case located(Coordinate)
+        /// A fix, with how much to trust it. The GPS dot draws and the tree card carries a distance.
+        ///
+        /// The accuracy rides along even though nothing on the map reads it, because a fix that
+        /// arrives without one cannot be recovered later. D6 excludes readings worse than 15m from
+        /// growth charting and treats a missing accuracy as unusable, so a provider that drops the
+        /// number silently empties every chart built on top of it — a failure that would present as
+        /// a charting bug and be hunted in the wrong file entirely.
+        case located(Coordinate, accuracyM: Double)
         /// The user said no, or a profile/parental restriction said no for them (BUILD-PLAN §9).
         case denied
         /// Location Services are off device-wide. Same drawing as `denied`, different copy.
@@ -37,7 +43,12 @@ final class MapLocationProvider {
         var isRefused: Bool { self == .denied || self == .servicesOff }
 
         var coordinate: Coordinate? {
-            if case let .located(coordinate) = self { return coordinate }
+            if case let .located(coordinate, _) = self { return coordinate }
+            return nil
+        }
+
+        var accuracyM: Double? {
+            if case let .located(_, accuracy) = self { return accuracy }
             return nil
         }
     }
@@ -55,8 +66,8 @@ final class MapLocationProvider {
         delegate.onAuthorizationChange = { [weak self] status in
             self?.apply(authorization: status)
         }
-        delegate.onLocation = { [weak self] coordinate in
-            self?.availability = .located(coordinate)
+        delegate.onLocation = { [weak self] coordinate, accuracyM in
+            self?.availability = .located(coordinate, accuracyM: accuracyM)
         }
         self.delegate = delegate
         manager.delegate = delegate
@@ -112,7 +123,7 @@ final class MapLocationProvider {
     /// Keeping the delegate separate is cheaper than fighting either constraint.
     private final class Delegate: NSObject, CLLocationManagerDelegate {
         var onAuthorizationChange: (@MainActor (CLAuthorizationStatus) -> Void)?
-        var onLocation: (@MainActor (Coordinate) -> Void)?
+        var onLocation: (@MainActor (Coordinate, Double) -> Void)?
 
         func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
             let status = manager.authorizationStatus
@@ -122,7 +133,14 @@ final class MapLocationProvider {
         func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
             guard let last = locations.last else { return }
             let coordinate = Coordinate(last.coordinate)
-            MainActor.assumeIsolated { onLocation?(coordinate) }
+            // A negative horizontalAccuracy means CoreLocation could not work one out. Substituting
+            // the pessimistic constant rather than nil is the rule VisitLocationProvider already
+            // follows, and one rule in the codebase beats two: at 25m it sits the wrong side of
+            // D6's 15m gate, so an unknown fix is excluded from charting by arithmetic instead of
+            // by a special case someone has to remember.
+            let accuracy = last.horizontalAccuracy
+            let effective = accuracy >= 0 ? accuracy : VisitShortlist.assumedAccuracyM
+            MainActor.assumeIsolated { onLocation?(coordinate, effective) }
         }
 
         func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
