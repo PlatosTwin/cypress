@@ -19,6 +19,7 @@
 //
 //      dynamic(light:dark:)   the pair is transcribed from SCREENS.md — SPECIFIED.
 //      derived(light:dark:)   the dark value was computed from the documented pairs — DERIVED.
+//      overruled(light:dark:) the value was transcribed and is changed anyway — RULINGS R1.
 //      escalated(_:)          the transform was run and rejected; still light-only, reason inline.
 //      lightOnly(_:)          the token has no second appearance by definition (see below).
 //
@@ -119,6 +120,30 @@ enum CypressColor {
         Color(cypressHex: hex, alpha: alpha)
     }
 
+    /// A value that was **transcribed from SCREENS.md and is changed anyway**, under the written
+    /// delegation recorded in `docs/RULINGS.md`. Behaviourally identical to `dynamic`; the claim
+    /// is the difference, and it is the strongest claim in this file.
+    ///
+    /// E8 drew the line between a *transcribed* value, which may not be changed, and a *derived*
+    /// one, which may be corrected. R1 adds the third case: a hex the designer wrote, replaced
+    /// because it fails WCAG AA and the alternative was editing 61 call sites to route around it.
+    /// Every one of these carries `RULINGS R1` and its measured before/after in the comment above
+    /// it, so a designer can find every place their intent was substituted for and reverse it in
+    /// one pass. There are five, they are listed in `overruledTokens`, and there should never be
+    /// a sixth without another ruling.
+    ///
+    /// The retint itself is `Tools/retint_ramp.py` — lightness moves in OKLCh, chroma and hue are
+    /// held, and each half is measured on every ground it is drawn on rather than assumed from
+    /// the other half. Run it to reproduce any number below.
+    static func overruled(
+        light: UInt32,
+        dark: UInt32,
+        lightAlpha: Double = 1,
+        darkAlpha: Double = 1
+    ) -> Color {
+        dynamic(light: light, dark: dark, lightAlpha: lightAlpha, darkAlpha: darkAlpha)
+    }
+
     // MARK: - §1.1 Brand palette ("Palette · from the tree itself")
     //
     // Six named brand hues. SCREENS.md gives no dark counterpart for the hues themselves, and
@@ -200,11 +225,22 @@ enum CypressColor {
     /// `surface.routeMap` grid `#F4F1E2` ↔ **derived** `dark.map.grid` `#1C2A1F`.
     static let surfaceRouteMapGrid = derived(light: 0xF4F1E2, dark: 0x1C2A1F)
 
-    /// `surface.emptyThumb` `#FAFBF4` ↔ **derived** `#1F2E22` — cold-start empty photo well (14).
+    /// `surface.emptyThumb` `#FAFBF4` ↔ **derived** `dark.surface.card` `#18251D` — cold-start
+    /// empty photo well (14).
     ///
-    /// A recess inside a card, which is what `dark.surface.thumb` is for: D2 puts the activity
-    /// thumb base there.
-    static let surfaceEmptyThumb = derived(light: 0xFAFBF4, dark: 0x1F2E22)
+    /// **Corrected derivation** (RULINGS R1a, ERRATA E108), from `dark.surface.thumb` `#1F2E22`.
+    /// Not an overrule and it needs none: E8's own rule is that a transcribed value may not be
+    /// changed and a *derived* one may be corrected, and only the assignment was ever derived here.
+    ///
+    /// The original read this as a recess inside a card, which is what `dark.surface.thumb` is for
+    /// — D2 puts the activity thumb base there. But 14's well is not inside a card; it is a dashed
+    /// well sitting directly on the screen, and its light value `#FAFBF4` is a card-level plane,
+    /// paler than `surface.screen` rather than darker. `surfaceShareCard` `#FAF8EF` is the same
+    /// light value to within a step and E8 derived *it* onto `dark.surface.card` on exactly that
+    /// reading. The thumb rung is lighter than the card rung, so the old value made this the one
+    /// ground in the app where the R1 caption ramp still failed: `text.faint` on it read 2.67
+    /// before R1, 4.16 after, and **4.64** here. `text.muted` goes 5.44 → 6.06 with it.
+    static let surfaceEmptyThumb = derived(light: 0xFAFBF4, dark: 0x18251D)
 
     /// `surface.skeleton` `#E3E8D9` ↔ **derived** `#27352B` — skeleton blocks behind sheets (09, 10).
     ///
@@ -319,18 +355,56 @@ enum CypressColor {
     /// `text.body` `#3C4A3E` ↔ `dark.text.secondary` `#AEBBAB` — secondary body, unselected chips.
     static let textBody = dynamic(light: 0x3C4A3E, dark: 0xAEBBAB)
 
-    /// `text.muted` `#66735F` ↔ `dark.text.muted` `#94A496` — captions, Latin names, sublabels.
-    static let textMuted = dynamic(light: 0x66735F, dark: 0x94A496)
+    /// `text.muted` — **overruled** to `#535F4C`, from §1.2's `#66735F`. Dark keeps the documented
+    /// `dark.text.muted` `#94A496`. Captions, Latin names, sublabels.
+    ///
+    /// **RULINGS R1** (ERRATA E108). This is the rung above `text.faint`, and it moves because
+    /// `text.faint` moves: at §1.2's value it read 4.62:1 on the screen, which is 0.12 above the
+    /// AA floor a retinted `text.faint` now sits on, and two rungs 0.12 apart are one rung with
+    /// two names. R1 puts it at 6.0 so the ramp reads 4.5 / 6.0 / 8 / 14.
+    ///
+    /// Measured: **4.62 → 6.21** on the screen and **5.02 → 6.75** on a card, in light. The dark
+    /// half is not touched — `#94A496` already reads 6.97 on the dark screen and 6.06 on a dark
+    /// card, so it clears R1's 6.0 without an overrule, and three derived badge labels point at
+    /// `dark.text.muted` by name. An overrule is spent where it is needed and nowhere else.
+    static let textMuted = overruled(light: 0x535F4C, dark: 0x94A496)
 
-    /// `text.faint` `#8B9482` ↔ `dark.text.faint` `#5F6F61` — micro-labels, timestamps, mono meta.
-    static let textFaint = dynamic(light: 0x8B9482, dark: 0x5F6F61)
+    /// `text.faint` — **overruled** to `#697260` ↔ `#7E8F80`, from §1.2's `#8B9482` ↔ `#5F6F61`.
+    /// Micro-labels, timestamps, mono meta.
+    ///
+    /// **RULINGS R1** (ERRATA E108). The finding E106 reported and did not fix: this token is 61
+    /// call sites across 24 files — every mono micro-label, every timestamp, every meta line —
+    /// and it failed AA in *both* appearances. R1 rules that the token moves rather than the call
+    /// sites, so that the failure becomes unrepresentable instead of merely absent.
+    ///
+    /// Measured, on the two surfaces it is drawn on, in both appearances:
+    ///
+    ///     light   screen 2.90 → 4.62    card 3.16 → 5.03
+    ///     dark    screen 3.42 → 5.33    card 2.98 → 4.64
+    ///
+    /// The dark half is measured, not inferred from the light one. E106's sharpest observation is
+    /// that this token on a card was *worse* after dark (2.98) than in light (3.16) — the one
+    /// place E8's transform moved a ratio the wrong way — and the two appearances do not even
+    /// share a binding surface: the screen is the hard ground in light, the card in dark.
+    static let textFaint = overruled(light: 0x697260, dark: 0x7E8F80)
 
-    /// `text.faintAlt` `#77836F` ↔ `#5F6F61` — footnote lines under screens.
+    /// `text.faintAlt` — **overruled** to `#5D6855` ↔ `#7E8F80`, from §1.2's `#77836F` ↔ `#5F6F61`.
+    /// Footnote lines under screens.
     ///
     /// §1.2 gives no dark counterpart, but D3's delta list does, in prose: "Footnote `#5F6F61`" —
     /// the same `dark.text.faint` value `textFaint` already carries. Transcribed as light-only
     /// originally, which is the same miss as the taped badge below. See ERRATA (E27).
-    static let textFaintAlt = dynamic(light: 0x77836F, dark: 0x5F6F61)
+    ///
+    /// **RULINGS R1** (ERRATA E108). Measured **3.67 → 5.40** on the screen and 3.99 → 5.87 on a
+    /// card in light; the dark half follows `textFaint` to `#7E8F80` and reads 5.33 / 4.64, so the
+    /// two remain one colour after dark exactly as D3 wrote them.
+    ///
+    /// Its light value is not solved against the 4.5 floor. Solved that way it lands 0.03 from
+    /// `textFaint` — R1's own objection to E106's fix, reappearing one rung lower — so instead it
+    /// keeps the fraction of the faint→muted lightness interval §1.2 gave it (0.52, near enough
+    /// the midpoint), reapplied to the two retinted ends. The three-rung spacing the designer drew
+    /// survives the move.
+    static let textFaintAlt = overruled(light: 0x5D6855, dark: 0x7E8F80)
 
     /// `text.onDark` `#FFFFFF` — on Cypress Deep / Canopy fills.
     ///
@@ -379,8 +453,15 @@ enum CypressColor {
 
     /// `est.` / `estimated` badge fill `#F1EAD8` ↔ `dark.accent.amberBg` `#2E271A`.
     static let estimatedBadgeFill = dynamic(light: 0xF1EAD8, dark: 0x2E271A)
-    /// `est.` / `estimated` badge text `#8A6A2A` ↔ `dark.accent.amber` `#D99A4E`.
-    static let estimatedBadgeText = dynamic(light: 0x8A6A2A, dark: 0xD99A4E)
+    /// `est.` / `estimated` badge text — **overruled** to `#836324` in light, from §1.2's
+    /// `#8A6A2A`. Dark keeps `dark.accent.amber` `#D99A4E`.
+    ///
+    /// **RULINGS R1** (ERRATA E108). It missed AA by a third of a point — **4.19 → 4.64** on
+    /// `estimatedBadgeFill`, against a 4.5 floor — and it is the pair with meaning hanging off it:
+    /// D7 makes "estimated" the whole difference between a reading and a guess, and this is the
+    /// half of the pair that was harder to read. Its partner `taped` reads 6.08. The dark half is
+    /// 6.11 on the derived amber ground and is not touched.
+    static let estimatedBadgeText = overruled(light: 0x836324, dark: 0xD99A4E)
 
     /// `city record` badge fill `#EAF0E2` ↔ **derived** `#1F3A2C` (14).
     ///
@@ -448,8 +529,23 @@ enum CypressColor {
 
     /// Amber attention card fill `#FFFFFF` (12, 17) — the `surface.card` token.
     static let amberAttentionCardFill = surfaceCard
-    /// Amber attention card border `#D9A05B` ↔ **derived** `#D99A4E` (`1.5px`).
-    static let amberAttentionCardBorder = derived(light: 0xD9A05B, dark: 0xD99A4E)
+    /// Amber attention card border — **overruled** to `#B8803A` in light, from §1.2's `#D9A05B`.
+    /// Dark keeps the derived `#D99A4E` (`1.5px`).
+    ///
+    /// **RULINGS R1** (ERRATA E108). C24 is `surface.card` on `surface.screen` at 1.09:1, so this
+    /// 1.5 pt border is the only thing saying the card is different — which is exactly the case
+    /// WCAG 1.4.11 is written for, and the one place in the palette where a border genuinely is
+    /// required to identify a component. It read 2.30 against the card it bounds and 2.12 against
+    /// the page behind it, against a 3.0 floor.
+    ///
+    /// Measured **2.30 → 3.39** on the card and **2.12 → 3.12** on the screen. Both grounds on
+    /// purpose: a boundary is adjacent to a surface on each side, and the page is the harder of
+    /// the two. Dark is 6.57 / 7.55 and is not touched.
+    ///
+    /// This is the one place the three light amber border weights come apart. `borderAmberMid`
+    /// and `amberChipSelectedBorder` are the same `#D9A05B` and stay there: a selected chip is
+    /// identified by its fill and its label, not by its edge, so 1.4.11 does not bind on them.
+    static let amberAttentionCardBorder = overruled(light: 0xB8803A, dark: 0xD99A4E)
 
     /// 311 hazard panel fill `#F8EFDF` ↔ **derived** `#2E271A` (06).
     static let hazardPanelFill = derived(light: 0xF8EFDF, dark: 0x2E271A)
@@ -728,10 +824,31 @@ enum CypressColor {
         static let textStrong = Color(cypressHex: 0xD6E0CE)
         /// `dark.text.secondary` `#AEBBAB` — unselected chip labels.
         static let textSecondary = Color(cypressHex: 0xAEBBAB)
-        /// `dark.text.muted` `#94A496` — sublabels.
+        /// `dark.text.muted` `#94A496` — sublabels. Unchanged by R1a: 04's offline line reads
+        /// 6.57 on the tray, 6.09 on the note field and 7.00 on the shell, so it already clears
+        /// the 6.0 R1 holds the rung above faint to, and a value that clears its floor is not
+        /// overruled.
         static let textMuted = Color(cypressHex: 0x94A496)
-        /// `dark.text.faint` `#5F6F61` — micro-labels, inactive tabs.
-        static let textFaint = Color(cypressHex: 0x5F6F61)
+        /// `dark.text.faint` — **overruled** to `#7E8F80`, from SCREENS.md's `dark.text.faint`
+        /// `#5F6F61`. Micro-labels, the note-field prompt, inactive tabs.
+        ///
+        /// **RULINGS R1a** (ERRATA E108). Screen 04 is dark whether or not the phone is, so this
+        /// is the half of the caption ramp that R1 could not reach: it retinted the resolving
+        /// token and left the forced-dark palette transcribed, which made the same micro-label
+        /// legible when the phone was in dark mode and illegible when the *screen* was dark. R1's
+        /// argument was that the ramp is not one badge but every micro-label in the app, and that
+        /// argument fails on its own terms if this value stays.
+        ///
+        /// Measured on the grounds 04 draws it on: the note-field prompt **2.99 → 4.66**, the
+        /// tray **3.23 → 5.03**, the shell **3.44 → 5.36**.
+        ///
+        /// The value is `textFaint`'s retinted dark half exactly, so it mints nothing and the two
+        /// halves of the ramp are one colour again. One ground is deliberately excluded from the
+        /// solve: the disabled `Log visit` label rides this token on `surfaceThumb` and reads
+        /// 4.16, because WCAG 1.4.3 exempts text that is part of an inactive component and
+        /// solving against it would make a disabled control read exactly as strongly as an
+        /// enabled one. Same call `ctaDisabledLabel` gets.
+        static let textFaint = Color(cypressHex: 0x7E8F80)
 
         /// `dark.accent.mint` `#8EC3A5` — primary CTA fill, selection, active tab.
         static let accentMint = Color(cypressHex: 0x8EC3A5)
@@ -860,7 +977,12 @@ extension CypressColor {
     /// The dark half is derived on the same rule `speciesTileLockedFill` takes, whose light hex is
     /// the identical `#E9ECDE`: a card-level plane lands on `dark.surface.card`.
     static let ctaDisabledFill = derived(light: 0xE9ECDE, dark: 0x18251D)
-    /// Disabled CTA label — `#8B9482`, which is `text.faint` and already a documented pair.
+    /// Disabled CTA label — the prototype's `#8B9482`, which is `text.faint`, so it follows that
+    /// token's RULINGS R1 retint to `#697260` ↔ `#7E8F80` and now reads 4.19 on the disabled fill
+    /// in light and 4.64 in dark, against 2.66 / 2.98 before. It is still the one text pair in the
+    /// app deliberately left under 4.5 in light: WCAG 1.4.3 exempts "text that is part of an
+    /// inactive user interface component", and a disabled `Done` that reads as enabled is the
+    /// worse defect. It moved because the token moved, not because this pair was being fixed.
     static let ctaDisabledLabel = textFaint
 
     // MARK: 10 · Share sheet
@@ -989,8 +1111,8 @@ extension CypressColor {
     static let tabBarTopBorder = dynamic(
         light: 0x1D4634, dark: 0x26332A, lightAlpha: 0.08, darkAlpha: 1
     )
-    /// Active tab tint — `#1D4634` ↔ `#8EC3A5`. (Inactive is `textFaint`, which already pairs
-    /// `#8B9482` ↔ `#5F6F61`.)
+    /// Active tab tint — `#1D4634` ↔ `#8EC3A5`. (Inactive is `textFaint`, which since RULINGS R1
+    /// pairs `#697260` ↔ `#7E8F80` — the inactive tab label darkened with the rest of the ramp.)
     static let tabActive = dynamic(light: 0x1D4634, dark: 0x8EC3A5)
     /// "You" avatar letter — `#FFFFFF` ↔ D1 `#DFE8D6`.
     static let tabAvatarLetter = dynamic(light: 0xFFFFFF, dark: 0xDFE8D6)
@@ -1045,8 +1167,21 @@ extension CypressColor {
     static let searchBorder = dynamic(
         light: 0x1D4634, dark: 0x2B3A2C, lightAlpha: 0.10, darkAlpha: 1
     )
-    /// Search glyph + placeholder — `#77836F` ↔ D1 `#94A496`.
-    static let searchGlyph = dynamic(light: 0x77836F, dark: 0x94A496)
+    /// Search glyph + placeholder — **overruled** to `#6C7764` in light, from §1.2's `#77836F`.
+    /// Dark keeps D1's `#94A496`.
+    ///
+    /// **RULINGS R1a** (ERRATA E108). This is C20's placeholder, which is text, on screen 01,
+    /// which is the default screen. It wore `text.faintAlt`'s light hex by coincidence rather than
+    /// by alias, so R1 retired that value everywhere except here and left this the only thing in
+    /// the app still wearing it. E106's sweep never reached the search bar.
+    ///
+    /// Measured **3.93 → 4.63**, on the ground it actually sits on: the search fill is
+    /// `rgba(255,255,255,.94)`, so the placeholder sits on that fill composited over the map paper
+    /// (`#FEFDFC`) and not on the token. That costs 0.06 against measuring the token opaque —
+    /// small, and the same class of mistake as measuring a caption on the wrong surface. After
+    /// dark the composite rounds back onto `#18251D` and `#94A496` reads 6.06, so the dark half
+    /// clears without an overrule and does not get one.
+    static let searchGlyph = overruled(light: 0x6C7764, dark: 0x94A496)
 
     // MARK: C23 · ChartCard
 
@@ -1163,6 +1298,8 @@ struct CypressReviewToken: Identifiable {
         case derived
         /// The transform was run and rejected; the token is still light-only. Answer it.
         case escalated
+        /// The value was transcribed and changed anyway, under RULINGS R1. Reverse it or keep it.
+        case overruled
     }
 
     let name: String
@@ -1201,8 +1338,9 @@ struct CypressReviewToken: Identifiable {
 
 extension CypressColor {
 
-    /// The 47 derived tokens and the 17 escalated ones. See ERRATA E8 for the transform itself.
-    static let reviewTokens: [CypressReviewToken] = derivedTokens + escalatedTokens
+    /// The derived tokens, the five overruled ones, and the escalated ones. See ERRATA E8 for the
+    /// transform and E108 for the overrule.
+    static let reviewTokens: [CypressReviewToken] = derivedTokens + overruledTokens + escalatedTokens
 
     // MARK: Derived — check these
 
@@ -1211,8 +1349,9 @@ extension CypressColor {
         // `#18251D` in the documented pairs, so these snap to a rung rather than mint a value.
         .init("surfaceSheet", .derived, light: 0xFDFDF8, dark: 0x18251D,
               basis: "raised plane → dark.surface.card", color: surfaceSheet),
-        .init("surfaceEmptyThumb", .derived, light: 0xFAFBF4, dark: 0x1F2E22,
-              basis: "recess in a card → dark.surface.thumb", color: surfaceEmptyThumb),
+        .init("surfaceEmptyThumb", .derived, light: 0xFAFBF4, dark: 0x18251D,
+              basis: "corrected (R1a): a well on the screen is a card-level plane → dark.surface.card, was dark.surface.thumb #1F2E22",
+              color: surfaceEmptyThumb),
         .init("surfaceSkeleton", .derived, light: 0xE3E8D9, dark: 0x27352B,
               basis: "same light hex as border.cool, whose dark is documented", color: surfaceSkeleton),
         .init("surfaceRouteMap", .derived, light: 0xE4E9D3, dark: 0x141E16,
@@ -1274,8 +1413,6 @@ extension CypressColor {
               basis: "already the dark amber (ΔE 0.016)", color: amberChipSelectedBorder),
         .init("amberChipSelectedText", .derived, light: 0x8A5A17, dark: 0xD99A4E,
               basis: "amber mark → dark.accent.amber", color: amberChipSelectedText),
-        .init("amberAttentionCardBorder", .derived, light: 0xD9A05B, dark: 0xD99A4E,
-              basis: "already the dark amber (ΔE 0.016)", color: amberAttentionCardBorder),
         .init("borderAmberSoft", .derived, light: 0xEBD3A8, dark: 0xD99A4E,
               basis: "amber mark; three light weights collapse to one", color: borderAmberSoft),
         .init("borderAmberMid", .derived, light: 0xD9A05B, dark: 0xD99A4E,
@@ -1336,6 +1473,41 @@ extension CypressColor {
         .init("compositionTrack", .derived, light: 0xEDEFE3, dark: 0x27352B,
               basis: "the same faint neutral rule chartGridline is; border rule → dark.border",
               color: compositionTrack),
+    ]
+
+    // MARK: Overruled — reverse these or keep them
+
+    /// The five values RULINGS R1 changed after they had been transcribed from SCREENS.md. Every
+    /// other row in this sheet is a value the document never gave; these five are values it gave
+    /// and that were replaced anyway, so they are the only rows where a designer is being told
+    /// their own hex was substituted for rather than filled in. `light` is the shipped value; the
+    /// hex the designer wrote is in the basis line, so review is a two-column read.
+    ///
+    /// Reversing one is one line here and one line on the token. What comes back with it is the
+    /// AA failure in ERRATA E106, so the reversal wants an answer to that in the same pass.
+    static let overruledTokens: [CypressReviewToken] = [
+        .init("textFaint", .overruled, light: 0x697260, dark: 0x7E8F80,
+              basis: "R1 · was #8B9482 ↔ #5F6F61; 2.90/3.16 light and 3.42/2.98 dark → 4.62/5.03 and 5.33/4.64",
+              color: textFaint),
+        .init("textFaintAlt", .overruled, light: 0x5D6855, dark: 0x7E8F80,
+              basis: "R1 · was #77836F ↔ #5F6F61; 3.67 → 5.40 on the screen, keeping its place between faint and muted",
+              color: textFaintAlt),
+        .init("textMuted", .overruled, light: 0x535F4C, dark: 0x94A496,
+              basis: "R1 · was #66735F in light; 4.62 → 6.21, so the rung above faint is visibly above it. Dark is untouched.",
+              color: textMuted),
+        .init("estimatedBadgeText", .overruled, light: 0x836324, dark: 0xD99A4E,
+              basis: "R1 · was #8A6A2A in light; 4.19 → 4.64 on its fill. D7 meaning. Dark is untouched.",
+              color: estimatedBadgeText),
+        .init("amberAttentionCardBorder", .overruled, light: 0xB8803A, dark: 0xD99A4E,
+              basis: "R1 · was #D9A05B in light; 2.30 → 3.39 on the card and 2.12 → 3.12 on the page. Dark is the derived amber, untouched.",
+              color: amberAttentionCardBorder),
+        .init("searchGlyph", .overruled, light: 0x6C7764, dark: 0x94A496,
+              basis: "R1a · was #77836F in light; 3.93 → 4.63 on the search fill composited over the map paper. Dark is D1's #94A496 at 6.06, untouched.",
+              color: searchGlyph),
+        // One value and no pair: screen 04 is dark whether or not the phone is.
+        .init("Dark.textFaint", .overruled, light: 0x7E8F80,
+              basis: "R1a · was #5F6F61; 2.99 → 4.66 on 04's note field, 3.23 → 5.03 on the tray, 3.44 → 5.36 on the shell. Now textFaint's dark half exactly.",
+              color: Dark.textFaint),
     ]
 
     // MARK: Escalated — answer these

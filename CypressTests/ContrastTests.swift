@@ -11,14 +11,29 @@ import UIKit
 /// verification on the amber family": the same question asked in *light*, where nothing was
 /// derived and nothing was therefore checked, and asked of every other pair on the way past.
 ///
-/// ── Two things this suite deliberately does not do ─────────────────────────────────────────
+/// ── What changed, and what deliberately did not ────────────────────────────────────────────
+///
+/// **The caption ramp was retinted under RULINGS R1** (ERRATA E108). Five values that E106 found
+/// failing and reported rather than fixed are now fixed in the token: `text.faint`, `text.faintAlt`
+/// and `text.muted` moved in both halves or one, the `est.` badge label moved, and C24's border
+/// moved. Their new ratios are pinned in `retinted` below, to ±0.05, in the same direction as the
+/// known failures were: a number that gets worse fails, and a number that quietly gets *better*
+/// fails too, because either means a token changed without a ruling behind it.
+///
+/// **R1a then extended it to three grounds this sweep had never measured**, which is why they were
+/// missing from the ruling: `searchGlyph` on C20's translucent fill, `CypressColor.Dark.textFaint`
+/// on screen 04 — dark by design in both appearances, and therefore not reached by a retint of the
+/// resolving token — and 14's empty photo well, closed by correcting a *derived* surface rather
+/// than by overruling anything. The lesson is the suite's own: a pair that is never measured is a
+/// pair that never fails.
 ///
 /// **It does not re-tint an escalated token.** `CypressColor.escalated(_:)` means the derivation
 /// was run and rejected, and E8 lists the failures it produced on purpose: the three C23 chart
 /// series read at 2.3–2.5:1 on a dark card, and `speciesTileLockedGlyph` fails in both. Those are
 /// *stated* failures with a design question behind them, and quietly nudging a hex to clear a
-/// threshold would convert a question into a wrong answer. They are asserted here as known and
-/// listed, so the number moving is a test failure either way.
+/// threshold would convert a question into a wrong answer. R1 leaves all three where they are and
+/// says why: they are drawn decisions — a glyph and a data encoding — and not a text ramp. They
+/// are asserted here as known and listed, so the number moving is a test failure either way.
 ///
 /// **It does not lower a floor to fit.** AA is 4.5:1 for body copy, 3:1 for text at 18 pt or 14 pt
 /// bold and for the non-text pairs (borders, glyphs, marks) that WCAG 1.4.11 covers. Which floor a
@@ -36,6 +51,32 @@ struct ContrastTests {
         let byte: (CGFloat) -> UInt32 = { UInt32(min(max(($0 * 255).rounded(), 0), 255)) }
         return byte(r) << 16 | byte(g) << 8 | byte(b)
     }
+
+    /// A translucent fill composited over what is behind it, as a `Color` that resolves in both
+    /// appearances.
+    ///
+    /// `hex(_:_:)` above drops alpha, which is right for every opaque token and wrong for exactly
+    /// one measured pair: C20's search fill is `rgba(255,255,255,.94)` over the map, so the
+    /// placeholder that sits on it sits on the composite. Measuring the token instead would be the
+    /// same class of mistake as measuring a caption on the wrong surface — small here (0.06) and
+    /// only small by luck.
+    static func flatten(_ fill: Color, over ground: Color) -> Color {
+        Color(uiColor: UIColor { traits in
+            var fr: CGFloat = 0, fg: CGFloat = 0, fb: CGFloat = 0, fa: CGFloat = 0
+            var gr: CGFloat = 0, gg: CGFloat = 0, gb: CGFloat = 0, ga: CGFloat = 0
+            UIColor(fill).resolvedColor(with: traits).getRed(&fr, green: &fg, blue: &fb, alpha: &fa)
+            UIColor(ground).resolvedColor(with: traits).getRed(&gr, green: &gg, blue: &gb, alpha: &ga)
+            return UIColor(
+                red: fa * fr + (1 - fa) * gr,
+                green: fa * fg + (1 - fa) * gg,
+                blue: fa * fb + (1 - fa) * gb,
+                alpha: 1
+            )
+        })
+    }
+
+    /// C20's search fill as it is actually drawn on 01 — 94% opaque over the map paper.
+    static let searchFillOverMap = flatten(CypressColor.searchFill, over: CypressColor.surfaceMapPaper)
 
     /// WCAG 2.1 relative luminance contrast.
     static func contrast(_ a: UInt32, _ b: UInt32) -> Double {
@@ -77,11 +118,20 @@ struct ContrastTests {
              foreground: CypressColor.hazardPanelText, background: CypressColor.hazardPanelFill, floor: 4.5),
         Pair(what: "311 CTA label on the CTA (06)",
              foreground: CypressColor.hazardCTAText, background: CypressColor.hazardCTAFill, floor: 4.5),
+        Pair(what: "`est.` badge text on its fill (C12, 03/11/W1)",
+             foreground: CypressColor.estimatedBadgeText, background: CypressColor.estimatedBadgeFill, floor: 4.5),
         // Non-text: borders and the phone glyph are marks, so WCAG 1.4.11's 3:1 applies.
         Pair(what: "311 phone glyph on Signal Amber (06)",
              foreground: CypressColor.hazardPanelGlyph, background: CypressColor.signalAmber, floor: 3.0),
         Pair(what: "amber pin on the map paper (01)",
              foreground: CypressColor.accentAmber, background: CypressColor.surfaceMapPaper, floor: 3.0),
+        // C24 is `surface.card` on `surface.screen` at 1.09:1, so its border is the only thing
+        // identifying the card — the one place in this palette where 1.4.11 genuinely binds, and
+        // therefore measured against the surface on *each* side of it rather than one of them.
+        Pair(what: "C24 attention card border on the card it identifies (12, 17)",
+             foreground: CypressColor.amberAttentionCardBorder, background: CypressColor.surfaceCard, floor: 3.0),
+        Pair(what: "C24 attention card border against the page behind it (12, 17)",
+             foreground: CypressColor.amberAttentionCardBorder, background: CypressColor.surfaceScreen, floor: 3.0),
     ]
 
     @Test("the amber family clears AA in light")
@@ -130,105 +180,346 @@ struct ContrastTests {
     @Test("body text and badges clear AA in dark")
     func bodyInDark() { assertAll(Self.body, Self.dark, "dark") }
 
-    // MARK: - The micro-labels, which are the ones most likely to be wrong
+    // MARK: - The text ramp, every rung against every ground
 
-    /// `text.faint` is the 9–11 pt end of the ramp: mono micro-labels, timestamps, month letters.
-    /// Small text has no large-text exemption, so it takes the 4.5 floor like any other sentence —
-    /// and it is the row most likely to fail, because it is chosen to recede.
-    /// `text.muted` is the bottom of the ramp that clears AA. Everything below it is in the
-    /// known-failure table, and this row is the line those failures are measured against: it is the
-    /// darkest grey a caption can take and still be readable, so it is also the answer if a
-    /// designer decides to fix them.
-    static let micro: [Pair] = [
-        Pair(what: "text.muted caption on the screen", foreground: CypressColor.textMuted, background: CypressColor.surfaceScreen, floor: 4.5),
-        Pair(what: "text.muted caption on a card", foreground: CypressColor.textMuted, background: CypressColor.surfaceCard, floor: 4.5),
+    /// **Every rung of the ramp on every surface it sits on, in both appearances.**
+    ///
+    /// Before RULINGS R1 this section could not exist: the bottom two rungs failed, so the suite
+    /// asserted the one rung that cleared and listed the rest as known failures. R1 retinted them,
+    /// and the assertion that replaces the listing is the strongest form of the same statement —
+    /// *no* rung of the ramp is unreadable on *any* of the three grounds the app draws text on.
+    ///
+    /// `text.faint` is the 9–11 pt end: mono micro-labels, timestamps, month letters. Small text
+    /// has no large-text exemption, so it takes the 4.5 floor like any other sentence, and it is
+    /// still the row most likely to fail because it is chosen to recede.
+    ///
+    /// Three grounds and not two. R1 names the screen and the card, and the sheet is the third
+    /// plane the app puts text on (09, 10, 15) — a rung that clears on the two named surfaces and
+    /// fails on the sheet would be a ramp that fails, so it is measured here too.
+    static let ramp: [Pair] = rungs.flatMap { rung in
+        grounds.map { ground in
+            Pair(
+                what: "\(rung.name) on the \(ground.name)",
+                foreground: rung.color,
+                background: ground.color,
+                floor: 4.5
+            )
+        }
+    }
+
+    /// The four rungs of the ramp, darkest last. The order is the assertion in `rampIsMonotonic`.
+    static let rungs: [(name: String, color: Color)] = [
+        ("text.faint", CypressColor.textFaint),
+        ("text.muted", CypressColor.textMuted),
+        ("text.body", CypressColor.textBody),
+        ("text.ink", CypressColor.textInk),
     ]
 
-    @Test("the readable end of the caption ramp clears AA in light")
-    func microInLight() { assertAll(Self.micro, Self.light, "light") }
+    /// The three surfaces the app sets text on.
+    static let grounds: [(name: String, color: Color)] = [
+        ("screen", CypressColor.surfaceScreen),
+        ("card", CypressColor.surfaceCard),
+        ("sheet", CypressColor.surfaceSheet),
+    ]
 
-    @Test("the readable end of the caption ramp clears AA in dark")
-    func microInDark() { assertAll(Self.micro, Self.dark, "dark") }
+    @Test("every rung of the text ramp clears AA in light")
+    func rampInLight() { assertAll(Self.ramp, Self.light, "light") }
 
-    // MARK: - The failures, measured and pinned
+    @Test("every rung of the text ramp clears AA in dark")
+    func rampInDark() { assertAll(Self.ramp, Self.dark, "dark") }
 
-    /// **Every AA failure this suite found, with its ratio, held to the value it was measured at.**
+    /// The grounds that are not one of the three surfaces, and that R1 was written without —
+    /// E106's sweep did not reach any of them, so RULINGS R1a closed them one at a time.
     ///
-    /// None of them is fixed here, and the reason is the same for all of them: *every light hex in
-    /// this table is transcribed from SCREENS.md §1.2*, not derived and not invented. E8's rule for
-    /// a derived value is that it may be corrected; the rule for a transcribed one is stronger —
-    /// changing it is overruling the designer, and ARCHITECTURE §5.8 says an unanswered question is
-    /// a question for design rather than a value to pick. The brief for this pass says the same
-    /// thing about `escalated` tokens and it is true of specified ones a fortiori.
+    /// Screen 04 is the reason this section exists. It is dark whether or not the phone is, and it
+    /// draws its micro-labels in `CypressColor.Dark.*`, the flat forced-dark palette. R1 retinted
+    /// the resolving token and left that palette transcribed, which made the same label legible
+    /// when the phone was in dark mode and illegible when the *screen* was dark — R1's own
+    /// argument, that the ramp is every micro-label in the app rather than one badge, failing on
+    /// its own terms. Both appearances are asserted because a flat token that starts resolving is
+    /// itself a defect worth catching.
+    static let offSurface: [Pair] = [
+        Pair(what: "C20 search placeholder on the fill it is drawn on (01)",
+             foreground: CypressColor.searchGlyph, background: searchFillOverMap, floor: 4.5),
+        Pair(what: "text.faint in 14's empty photo well",
+             foreground: CypressColor.textFaint, background: CypressColor.surfaceEmptyThumb, floor: 4.5),
+        Pair(what: "text.muted in 14's empty photo well",
+             foreground: CypressColor.textMuted, background: CypressColor.surfaceEmptyThumb, floor: 4.5),
+        Pair(what: "04 · Dark.textFaint note-field prompt on Dark.surfaceCardAlt",
+             foreground: CypressColor.Dark.textFaint, background: CypressColor.Dark.surfaceCardAlt, floor: 4.5),
+        Pair(what: "04 · Dark.textFaint on the camera tray",
+             foreground: CypressColor.Dark.textFaint, background: CypressColor.Dark.bgCameraTray, floor: 4.5),
+        Pair(what: "04 · Dark.textFaint on the camera shell",
+             foreground: CypressColor.Dark.textFaint, background: CypressColor.Dark.bgCamera, floor: 4.5),
+        Pair(what: "04 · Dark.textMuted offline line on the camera tray",
+             foreground: CypressColor.Dark.textMuted, background: CypressColor.Dark.bgCameraTray, floor: 4.5),
+    ]
+
+    @Test("the grounds R1 was written without clear AA in light")
+    func offSurfaceInLight() { assertAll(Self.offSurface, Self.light, "light") }
+
+    @Test("the grounds R1 was written without clear AA in dark")
+    func offSurfaceInDark() { assertAll(Self.offSurface, Self.dark, "dark") }
+
+    /// `text.faintAlt` is not a rung — it is a second footnote colour that sits between `faint`
+    /// and `muted` — but it is text on the same grounds and takes the same floor.
+    @Test("text.faintAlt clears AA on every ground, in both appearances")
+    func faintAltClearsAA() {
+        for (appearance, traits) in [("light", Self.light), ("dark", Self.dark)] {
+            for ground in Self.grounds {
+                let ratio = Self.contrast(
+                    Self.hex(CypressColor.textFaintAlt, traits),
+                    Self.hex(ground.color, traits)
+                )
+                #expect(
+                    ratio >= 4.5,
+                    "text.faintAlt is \(String(format: "%.2f", ratio)):1 on the \(appearance) \(ground.name)"
+                )
+            }
+        }
+    }
+
+    /// **The ramp is a ramp.** Four rungs that each clear 4.5 are not yet a ramp — four rungs at
+    /// 4.6, 4.7, 4.8 and 4.9 would pass every assertion above and be one colour with four names.
+    /// So the ordering is pinned as well as the floors: contrast strictly increases from `faint`
+    /// to `ink` on every ground in both appearances, which is what makes it impossible for a
+    /// future edit to collapse two rungs into each other quietly. R1 re-spaced the ramp precisely
+    /// because lifting `faint` to exactly 4.5 would have left it 0.12 from `muted`.
+    @Test("the ramp is monotonic — faint < muted < body < ink, on every ground")
+    func rampIsMonotonic() {
+        for (appearance, traits) in [("light", Self.light), ("dark", Self.dark)] {
+            for ground in Self.grounds {
+                let measured = Self.rungs.map { rung in
+                    (rung.name, Self.contrast(Self.hex(rung.color, traits), Self.hex(ground.color, traits)))
+                }
+                for (lower, upper) in zip(measured, measured.dropFirst()) {
+                    #expect(
+                        lower.1 < upper.1,
+                        """
+                        \(lower.0) is \(String(format: "%.2f", lower.1)):1 and \(upper.0) is \
+                        \(String(format: "%.2f", upper.1)):1 on the \(appearance) \(ground.name). \
+                        The rung above must read as above: two adjacent rungs at the same contrast \
+                        are one colour with two names, which is what RULINGS R1 re-spaced the ramp \
+                        to prevent.
+                        """
+                    )
+                }
+            }
+        }
+        // …and `faintAlt` keeps the place between the two bottom rungs that §1.2 gave it. Not
+        // strict at both ends: D3 documents one dark faint, so `faint` and `faintAlt` are the same
+        // colour after dark and were before R1 too.
+        for (appearance, traits) in [("light", Self.light), ("dark", Self.dark)] {
+            for ground in Self.grounds {
+                let value = { (color: Color) in
+                    Self.contrast(Self.hex(color, traits), Self.hex(ground.color, traits))
+                }
+                let (faint, alt, muted) = (
+                    value(CypressColor.textFaint), value(CypressColor.textFaintAlt), value(CypressColor.textMuted)
+                )
+                #expect(
+                    faint <= alt && alt < muted,
+                    """
+                    text.faintAlt is \(String(format: "%.2f", alt)):1 on the \(appearance) \
+                    \(ground.name), outside faint \(String(format: "%.2f", faint)) … muted \
+                    \(String(format: "%.2f", muted)). The footnote colour sits between the two \
+                    bottom rungs; a footnote that reads as a caption or as a micro-label is a rung \
+                    the ramp does not have.
+                    """
+                )
+            }
+        }
+    }
+
+    /// R1's re-spacing, as its own assertion: `text.muted` is not merely above the floor, it is at
+    /// 6.0 — a rung visibly above a `text.faint` that now sits at 4.5. Separated from the
+    /// monotonicity check because the two fail for different reasons and want different messages:
+    /// this one fails when someone lifts `faint` without lifting what is above it.
+    @Test("text.muted is a rung above faint, not a hair above it")
+    func mutedIsARungAbove() {
+        for (appearance, traits) in [("light", Self.light), ("dark", Self.dark)] {
+            for ground in Self.grounds {
+                let ratio = Self.contrast(
+                    Self.hex(CypressColor.textMuted, traits),
+                    Self.hex(ground.color, traits)
+                )
+                #expect(
+                    ratio >= 6.0,
+                    """
+                    text.muted is \(String(format: "%.2f", ratio)):1 on the \(appearance) \
+                    \(ground.name); RULINGS R1 puts it at 6.0 so the ramp reads 4.5 / 6.0 / 8 / 14.
+                    """
+                )
+            }
+        }
+    }
+
+    // MARK: - The retint, measured and pinned
+
+    /// **What RULINGS R1 moved, held to the value it now measures at.**
     ///
-    /// So the ratios are pinned to ±0.05 instead. That makes both failure modes loud: the number
-    /// getting worse fails here, and the number quietly getting *better* — somebody nudging a hex
-    /// to clear a threshold without an ERRATA entry — fails here too.
+    /// E106 found these failing and reported them rather than fixing them, on the rule that a hex
+    /// transcribed from SCREENS.md §1.2 may not be changed — changing it overrules the designer,
+    /// and ARCHITECTURE §5.8 says an unanswered question is a question for design rather than a
+    /// value to pick. R1 is that answer, made under a written delegation, and it changes five of
+    /// them. `CypressColor.overruled(light:dark:)` carries the claim; `Tools/retint_ramp.py`
+    /// reproduces the arithmetic; `CypressColor.overruledTokens` puts them in front of a designer
+    /// in one screen.
     ///
-    /// The four groups, and why each is a different question:
-    ///
-    /// 1. **The caption ramp fails in both appearances.** `text.faint` `#8B9482` reads at 2.90:1 on
-    ///    the screen and `text.faintAlt` at 3.67:1; after dark they are 3.42:1 and 3.42:1. This is
-    ///    the single largest finding of the pass, because it is not one badge — it is every mono
-    ///    micro-label, every timestamp, every footnote, on every screen. `text.muted` one rung up
-    ///    clears at 4.62:1, so the palette already contains the fix; taking it is a visual change
-    ///    to nineteen mocked screens.
-    /// 2. **The `est.` badge misses in light by a third of a point** — 4.19:1, against 6.11:1 after
-    ///    dark. This one is load-bearing in a way the others are not: D7 makes "estimated" the
-    ///    difference between a reading and a guess, and it is the half of the pair that is harder
-    ///    to read. Its partner `taped` is 6.08:1.
-    /// 3. **The borders carry no contrast in light, as a house style rather than as a defect.**
-    ///    `border.cool`, the default card edge on every screen, is 1.15:1 against the page. WCAG
-    ///    1.4.11 only asks for 3:1 where a boundary is *required* to identify a component, and for
-    ///    almost all of these it is not — a card is identified by the type in it. The one place it
-    ///    is required is C24: the attention card is `surface.card` on `surface.screen`, 1.09:1, so
-    ///    its 1.5 pt amber border is the only thing that says "this one is different", at 2.30:1.
-    ///    That is the row a designer should look at first.
-    /// 4. **The two E8 already reported**, unchanged and re-measured here so they live in one place.
-    struct KnownFailure {
+    /// They are pinned exactly as the failures below are, and for the same reason: **a number that
+    /// gets better without a ruling is as much a defect as one that gets worse.** The ±0.05 is not
+    /// a tolerance on the retint, it is the mechanism that makes an unannounced token change loud
+    /// in either direction. Both before and after are recorded on every row so the diff that
+    /// changes one has to say what it is undoing.
+    struct Pin {
         let what: String
         let foreground: Color
         let background: Color
+        /// The ratio now, in each appearance, to ±0.05.
         let light: Double
         let dark: Double
-        /// Why this is reported rather than corrected.
+        /// What it read before R1, and why it moved — or, for a known failure, why it did not.
         let because: String
     }
 
-    static let knownFailures: [KnownFailure] = [
-        // 1 · The caption ramp.
-        KnownFailure(
+    static let retinted: [Pin] = [
+        Pin(
             what: "text.faint micro-label on the screen",
             foreground: CypressColor.textFaint, background: CypressColor.surfaceScreen,
-            light: 2.90, dark: 3.42,
-            because: "§1.2 specifies both halves of `text.faint`; raising it re-tones every screen"
+            light: 4.62, dark: 5.33,
+            because: "R1: was 2.90 light / 3.42 dark; #8B9482 ↔ #5F6F61 → #697260 ↔ #7E8F80"
         ),
-        KnownFailure(
+        Pin(
             what: "text.faint micro-label on a card",
             foreground: CypressColor.textFaint, background: CypressColor.surfaceCard,
-            light: 3.16, dark: 2.98,
-            because: "same token, and it is worse on a card after dark than on the screen"
+            light: 5.03, dark: 4.64,
+            because: "R1: was 3.16 light / 2.98 dark — the card was the ground E8's transform moved the wrong way"
         ),
-        KnownFailure(
+        Pin(
             what: "text.faintAlt footnote on the screen",
             foreground: CypressColor.textFaintAlt, background: CypressColor.surfaceScreen,
-            light: 3.67, dark: 3.42,
-            because: "§1.2 specifies it; it is the closest of the three to clearing"
+            light: 5.40, dark: 5.33,
+            because: "R1: was 3.67 light / 3.42 dark; placed between faint and muted rather than on the floor"
         ),
-        // 2 · The `est.` badge.
-        KnownFailure(
+        Pin(
+            what: "text.faintAlt footnote on a card",
+            foreground: CypressColor.textFaintAlt, background: CypressColor.surfaceCard,
+            light: 5.87, dark: 4.64,
+            because: "R1: was 3.99 light / 2.98 dark"
+        ),
+        Pin(
+            what: "text.muted caption on the screen",
+            foreground: CypressColor.textMuted, background: CypressColor.surfaceScreen,
+            light: 6.21, dark: 6.97,
+            because: "R1: was 4.62 light; the dark half already cleared 6.0 and was not overruled"
+        ),
+        Pin(
+            what: "text.muted caption on a card",
+            foreground: CypressColor.textMuted, background: CypressColor.surfaceCard,
+            light: 6.75, dark: 6.06,
+            because: "R1: was 5.02 light; dark is the documented #94A496, untouched"
+        ),
+        Pin(
             what: "estimated badge text on its fill (C12, 03/11/W1)",
             foreground: CypressColor.estimatedBadgeText, background: CypressColor.estimatedBadgeFill,
-            light: 4.19, dark: 6.11,
-            because: "both hexes are §1.2 rows; D7 meaning, so worth a design answer rather than a nudge"
+            light: 4.64, dark: 6.11,
+            because: "R1: was 4.19 light — a third of a point, with D7's meaning hanging off it"
         ),
-        // 3 · The borders.
-        KnownFailure(
+        Pin(
             what: "C24 attention card border on the card it identifies (12, 17)",
             foreground: CypressColor.amberAttentionCardBorder, background: CypressColor.surfaceCard,
-            light: 2.30, dark: 6.57,
-            because: "the border is the only thing distinguishing this card, and §1.2 specifies it"
+            light: 3.39, dark: 6.57,
+            because: "R1: was 2.30 light; the border is the only thing distinguishing this card"
         ),
+        Pin(
+            what: "C24 attention card border against the page behind it (12, 17)",
+            foreground: CypressColor.amberAttentionCardBorder, background: CypressColor.surfaceScreen,
+            light: 3.12, dark: 7.55,
+            because: "R1: was 2.12 light; a boundary is adjacent to a surface on each side of it"
+        ),
+        // R1a · the three grounds R1 was written without, because E106's sweep did not reach them.
+        Pin(
+            what: "C20 search placeholder on the fill it is drawn on (01)",
+            foreground: CypressColor.searchGlyph, background: searchFillOverMap,
+            light: 4.63, dark: 6.06,
+            because: "R1a: was 3.93 light; it wore text.faintAlt's retired hex by coincidence, on the default screen"
+        ),
+        Pin(
+            what: "04 · Dark.textFaint note-field prompt on Dark.surfaceCardAlt",
+            foreground: CypressColor.Dark.textFaint, background: CypressColor.Dark.surfaceCardAlt,
+            light: 4.66, dark: 4.66,
+            because: "R1a: was 2.99; the forced-dark half of the ramp, one value in both appearances because 04 is dark by design"
+        ),
+        Pin(
+            what: "04 · Dark.textFaint on the camera tray",
+            foreground: CypressColor.Dark.textFaint, background: CypressColor.Dark.bgCameraTray,
+            light: 5.03, dark: 5.03,
+            because: "R1a: was 3.23"
+        ),
+        Pin(
+            what: "text.faint in 14's empty photo well",
+            foreground: CypressColor.textFaint, background: CypressColor.surfaceEmptyThumb,
+            light: 4.83, dark: 4.64,
+            because: "R1a: was 3.03 / 2.67, and 4.16 after R1 alone; closed by correcting surfaceEmptyThumb's derived dark to dark.surface.card, which needed no overrule"
+        ),
+        Pin(
+            what: "text.muted in 14's empty photo well",
+            foreground: CypressColor.textMuted, background: CypressColor.surfaceEmptyThumb,
+            light: 6.49, dark: 6.06,
+            because: "R1a: the same correction; 5.44 → 6.06 after dark, so the rung above faint clears 6.0 here too"
+        ),
+        // The two rungs R1 did not move, pinned with the rest so that "does not move" is a fact
+        // the suite checks rather than a sentence in a ruling.
+        Pin(
+            what: "text.body on a card",
+            foreground: CypressColor.textBody, background: CypressColor.surfaceCard,
+            light: 9.37, dark: 7.94,
+            because: "R1: does not move"
+        ),
+        Pin(
+            what: "text.ink on a card",
+            foreground: CypressColor.textInk, background: CypressColor.surfaceCard,
+            light: 14.97, dark: 13.08,
+            because: "R1: does not move"
+        ),
+    ]
+
+    @Test("every ratio RULINGS R1 moved is still exactly where it was left")
+    func retintedRatiosHaveNotMoved() { assertPinned(Self.retinted, "R1 retint") }
+
+    // MARK: - The failures left in place, measured and pinned
+
+    /// **Every AA failure this suite still finds, with its ratio, held to the value it was
+    /// measured at.**
+    ///
+    /// R1 fixed five and left these deliberately, and the reason differs per group. The pinning is
+    /// the same as above: the number getting worse fails here, and the number quietly getting
+    /// *better* — somebody nudging a hex to clear a threshold without an ERRATA entry — fails here
+    /// too.
+    ///
+    /// The three groups, and why each is a different question:
+    ///
+    /// 1. **The borders carry no contrast in light, as a house style rather than as a defect.**
+    ///    `border.cool`, the default card edge on every screen, is 1.15:1 against the page. WCAG
+    ///    1.4.11 only asks for 3:1 where a boundary is *required* to identify a component, and for
+    ///    almost all of these it is not — a card is identified by the type in it. The 311 panel
+    ///    has its own fill and its own amber body copy; the border is not what identifies it. The
+    ///    one place a border *was* required is C24, and that one is fixed above.
+    /// 2. **The two E8 reported**, which R1 leaves to design by name: the C10 locked glyph and the
+    ///    C23 chart series on a dark card. Both are drawn decisions — a glyph and a data encoding
+    ///    — rather than a text ramp, and both are the first thing on a designer's list.
+    ///
+    /// The empty photo well on 14 was a third group here and is not any more. It was the one text
+    /// pair the R1 retint left failing, at 4.16 after dark, and it was not fixable in the token:
+    /// lifting `text.faint` far enough to clear that ground would have put it 0.042 from
+    /// `text.muted` in OKLCh lightness, inside the 0.075 step of the documented dark ladder, which
+    /// is the rung collapse R1 re-spaced the ramp to prevent. R1a closed it from the other side
+    /// instead — `surfaceEmptyThumb`'s dark value was *derived*, and E8's own rule is that a
+    /// derived value may be corrected — so it needed no overrule at all. It is in `retinted`.
+    typealias KnownFailure = Pin
+
+    static let knownFailures: [KnownFailure] = [
+        // 1 · The borders.
         KnownFailure(
             what: "311 hazard panel border against the page (06)",
             foreground: CypressColor.hazardPanelBorder, background: CypressColor.surfaceScreen,
@@ -241,7 +532,7 @@ struct ContrastTests {
             light: 1.15, dark: 1.42,
             because: "house style — no card is identified by its edge alone, so 1.4.11 does not bind"
         ),
-        // 4 · E8's two, re-measured here.
+        // 2 · E8's two, re-measured here.
         KnownFailure(
             what: "C10 species-tile locked glyph on its fill",
             foreground: CypressColor.speciesTileLockedGlyph, background: CypressColor.speciesTileLockedFill,
@@ -263,42 +554,67 @@ struct ContrastTests {
     ]
 
     @Test("every known contrast failure is still exactly the failure that was reported")
-    func knownFailuresHaveNotMoved() {
-        for failure in Self.knownFailures {
-            let light = Self.contrast(Self.hex(failure.foreground, Self.light), Self.hex(failure.background, Self.light))
-            let dark = Self.contrast(Self.hex(failure.foreground, Self.dark), Self.hex(failure.background, Self.dark))
-            #expect(
-                abs(light - failure.light) < 0.05,
-                """
-                \(failure.what) is \(String(format: "%.2f", light)):1 in light; it was reported at \
-                \(failure.light):1. Reason it was not fixed: \(failure.because). If the value is \
-                being changed on purpose, the ERRATA entry comes first.
-                """
-            )
-            #expect(
-                abs(dark - failure.dark) < 0.05,
-                """
-                \(failure.what) is \(String(format: "%.2f", dark)):1 after dark; it was reported at \
-                \(failure.dark):1. \(failure.because)
-                """
-            )
-        }
-    }
+    func knownFailuresHaveNotMoved() { assertPinned(Self.knownFailures, "known failure") }
 
-    /// The fix is already in the palette, which is why the failures above are a design question and
-    /// not a research project: one rung up the ramp clears AA on both grounds.
-    @Test("the caption ramp has a rung that clears AA")
-    func aReadableCaptionExists() {
-        for (appearance, traits) in [("light", Self.light), ("dark", Self.dark)] {
-            let ratio = Self.contrast(
-                Self.hex(CypressColor.textMuted, traits),
-                Self.hex(CypressColor.surfaceScreen, traits)
-            )
-            #expect(ratio >= 4.5, "text.muted is \(String(format: "%.2f", ratio)):1 on the \(appearance) screen")
-        }
-    }
+    // MARK: - The two pairs that are under 4.5 on purpose
+
+    /// **Disabled controls, which WCAG 1.4.3 exempts** — "text or images of text that are part of
+    /// an inactive user interface component" have no contrast requirement. Both of these ride on
+    /// `text.faint` or its forced-dark twin, so both moved when R1 and R1a moved those tokens, and
+    /// both are still under 4.5 on purpose.
+    ///
+    /// They are not in `offSurface` because asserting a floor on them would be asserting the wrong
+    /// thing, and they are not in `knownFailures` because they are not failures. They are pinned,
+    /// two-sided, for the reason everything here is pinned: the number moving in *either*
+    /// direction means a token changed. RULINGS R1a declined to solve for either ground, on the
+    /// ground that a disabled control which reads exactly as strongly as an enabled one is a
+    /// different defect from an unreadable one — and it is the defect that this app, whose primary
+    /// CTA is gated on having taken a photo, would actually ship.
+    static let exemptByInactivity: [Pin] = [
+        Pin(
+            what: "09 · the disabled `Done` label on its fill (ctaDisabledLabel)",
+            foreground: CypressColor.ctaDisabledLabel, background: CypressColor.ctaDisabledFill,
+            light: 4.19, dark: 4.64,
+            because: "1.4.3 exempts inactive components; it was 2.63 / 2.98 and moved because text.faint moved"
+        ),
+        Pin(
+            what: "04 · the disabled `Log visit` label on Dark.surfaceThumb",
+            foreground: CypressColor.Dark.textFaint, background: CypressColor.Dark.surfaceThumb,
+            light: 4.16, dark: 4.16,
+            because: "1.4.3 exempts inactive components; R1a left this ground out of the solve deliberately"
+        ),
+    ]
+
+    @Test("the two deliberately-exempt pairs are where R1a left them")
+    func exemptPairsHaveNotMoved() { assertPinned(Self.exemptByInactivity, "1.4.3-exempt pair") }
 
     // MARK: -
+
+    /// One pinned ratio, both appearances, ±0.05 in **both** directions. The two-sided bound is
+    /// the whole design of this suite: a `>= 4.5` assertion would let a token drift upward without
+    /// anyone noticing, and an unannounced token change is the thing being caught, not an
+    /// unreadable one. Do not loosen this and do not replace a pin with a floor.
+    private func assertPinned(_ pins: [Pin], _ kind: String) {
+        for pin in pins {
+            let light = Self.contrast(Self.hex(pin.foreground, Self.light), Self.hex(pin.background, Self.light))
+            let dark = Self.contrast(Self.hex(pin.foreground, Self.dark), Self.hex(pin.background, Self.dark))
+            #expect(
+                abs(light - pin.light) < 0.05,
+                """
+                \(pin.what) is \(String(format: "%.2f", light)):1 in light; this \(kind) was \
+                recorded at \(pin.light):1. \(pin.because). If the value is being changed on \
+                purpose, the ERRATA entry comes first.
+                """
+            )
+            #expect(
+                abs(dark - pin.dark) < 0.05,
+                """
+                \(pin.what) is \(String(format: "%.2f", dark)):1 after dark; this \(kind) was \
+                recorded at \(pin.dark):1. \(pin.because).
+                """
+            )
+        }
+    }
 
     private func assertAll(_ pairs: [Pair], _ traits: UITraitCollection, _ appearance: String) {
         for pair in pairs {

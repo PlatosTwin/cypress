@@ -7,10 +7,11 @@
 //  is verified before any screen is built — run the two previews below side by side and compare
 //  against SCREENS.md §1.
 //
-//  The first two sections are the ERRATA E8 review sheet, and they are first on purpose: SCREENS.md
+//  The first three sections are the review sheet, and they are first on purpose: SCREENS.md
 //  documents dark for three screens, so a majority of the palette's dark values were derived from
 //  the documented pairs rather than transcribed. Those sections are exactly the values that were
-//  guessed — the derived ones to check, the escalated ones to answer — so reviewing E8 costs one
+//  not read off the document — the derived ones to check (ERRATA E8), the five overruled ones to
+//  reverse or keep (RULINGS R1, ERRATA E108), the escalated ones to answer — so review costs one
 //  screen instead of an audit of the whole palette. Run the Dark preview to review them.
 //
 //  Not shipped in any screen. It imports nothing outside DesignSystem.
@@ -104,6 +105,19 @@ struct TokenGallery: View {
                         wrote rather than minting one.
                         """,
                     tokens: CypressColor.derivedTokens
+                )
+
+                ReviewSection(
+                    title: "Overruled — reverse these or keep them (RULINGS R1)",
+                    blurb: """
+                        Every other row on this screen is a value SCREENS.md never gave. These \
+                        five are values it gave and that were changed anyway, because they fail \
+                        WCAG AA and the alternative was editing 61 call sites to route around \
+                        them. Lightness moved in OKLCh; chroma and hue are where the designer \
+                        put them. The hex under each name is what ships, and the line below it \
+                        says what was written and what the change bought.
+                        """,
+                    tokens: CypressColor.overruledTokens
                 )
 
                 ReviewSection(
@@ -545,7 +559,7 @@ private enum TokenGalleryData {
         Swatch("surfaceMapStreetBand", "FAF7EC ↔ 232F24", CypressColor.surfaceMapStreetBand),
         Swatch("surfaceRouteMap", "E4E9D3 ↔ 141E16", CypressColor.surfaceRouteMap),
         Swatch("surfaceRouteMapGrid", "F4F1E2 ↔ 1C2A1F", CypressColor.surfaceRouteMapGrid),
-        Swatch("surfaceEmptyThumb", "FAFBF4 ↔ 1F2E22", CypressColor.surfaceEmptyThumb),
+        Swatch("surfaceEmptyThumb", "FAFBF4 ↔ 18251D", CypressColor.surfaceEmptyThumb),
         Swatch("surfaceSkeleton", "E3E8D9 ↔ 27352B", CypressColor.surfaceSkeleton),
     ]
 
@@ -575,9 +589,9 @@ private enum TokenGalleryData {
     static let text: [Swatch] = [
         Swatch("textInk", "1C2A21 ↔ E4EBE2", CypressColor.textInk),
         Swatch("textBody", "3C4A3E ↔ AEBBAB", CypressColor.textBody),
-        Swatch("textMuted", "66735F ↔ 94A496", CypressColor.textMuted),
-        Swatch("textFaint", "8B9482 ↔ 5F6F61", CypressColor.textFaint),
-        Swatch("textFaintAlt", "77836F ↔ 5F6F61", CypressColor.textFaintAlt),
+        Swatch("textMuted", "535F4C ↔ 94A496", CypressColor.textMuted),
+        Swatch("textFaint", "697260 ↔ 7E8F80", CypressColor.textFaint),
+        Swatch("textFaintAlt", "5D6855 ↔ 7E8F80", CypressColor.textFaintAlt),
         Swatch("textOnDark", "FFFFFF", CypressColor.textOnDark),
         Swatch("textOnPhoto", "EAF2E6", CypressColor.textOnPhoto),
         Swatch("textOnPhotoSpecies", "F0F5EC", CypressColor.textOnPhotoSpecies),
@@ -594,7 +608,7 @@ private enum TokenGalleryData {
         Swatch("tapedBadgeFill", "E2EFE2 ↔ 1F3A2C", CypressColor.tapedBadgeFill),
         Swatch("tapedBadgeText", "28623F ↔ 8EC3A5", CypressColor.tapedBadgeText),
         Swatch("estimatedBadgeFill", "F1EAD8 ↔ 2E271A", CypressColor.estimatedBadgeFill),
-        Swatch("estimatedBadgeText", "8A6A2A ↔ D99A4E", CypressColor.estimatedBadgeText),
+        Swatch("estimatedBadgeText", "836324 ↔ D99A4E", CypressColor.estimatedBadgeText),
         Swatch("cityRecordBadgeFill", "EAF0E2 ↔ 1F3A2C", CypressColor.cityRecordBadgeFill),
         Swatch("cityRecordBadgeText", "41522F ↔ 8EC3A5", CypressColor.cityRecordBadgeText),
         Swatch("plantedBadgeFill", "EAF0E2 ↔ 1F3A2C", CypressColor.plantedBadgeFill),
@@ -613,7 +627,7 @@ private enum TokenGalleryData {
         Swatch("amberChipSelectedBorder", "D9A05B ↔ D99A4E", CypressColor.amberChipSelectedBorder),
         Swatch("amberChipSelectedText", "8A5A17 ↔ D99A4E", CypressColor.amberChipSelectedText),
         Swatch("amberAttentionCardFill", "FFFFFF ↔ 18251D", CypressColor.amberAttentionCardFill),
-        Swatch("amberAttentionCardBorder", "D9A05B ↔ D99A4E", CypressColor.amberAttentionCardBorder),
+        Swatch("amberAttentionCardBorder", "B8803A ↔ D99A4E", CypressColor.amberAttentionCardBorder),
         Swatch("hazardPanelFill", "F8EFDF ↔ 2E271A", CypressColor.hazardPanelFill),
         Swatch("hazardPanelBorder", "E0B070 ↔ D99A4E", CypressColor.hazardPanelBorder),
         Swatch("hazardPanelText", "6B5122 ↔ BDA680", CypressColor.hazardPanelText),
@@ -657,7 +671,7 @@ private enum TokenGalleryData {
         Swatch("Dark.textStrong", "D6E0CE", CypressColor.Dark.textStrong),
         Swatch("Dark.textSecondary", "AEBBAB", CypressColor.Dark.textSecondary),
         Swatch("Dark.textMuted", "94A496", CypressColor.Dark.textMuted),
-        Swatch("Dark.textFaint", "5F6F61", CypressColor.Dark.textFaint),
+        Swatch("Dark.textFaint", "7E8F80", CypressColor.Dark.textFaint),
         Swatch("Dark.accentMint", "8EC3A5", CypressColor.Dark.accentMint),
         Swatch("Dark.accentPin", "6FAE8C", CypressColor.Dark.accentPin),
         Swatch("Dark.accentAmber", "D99A4E", CypressColor.Dark.accentAmber),
