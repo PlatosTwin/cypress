@@ -2700,7 +2700,7 @@ copies of one preference would agree only until somebody used one of them.
 
 **OPEN**, and the thing that closes it is an account, not a toggle.
 
-### E101 — the heart has an on state and nothing draws it, so the favourite is one-way — OPEN
+### E101 — the heart has an on state and nothing draws it, so the favourite is one-way — RESOLVED by RULINGS R2, built in E112
 
 Falls out of E89, and is a gap in the mock set rather than in the fix. Now that a favourite can be
 written, screen 03 needs an answer to two questions it never had to have one for, and SCREENS.md
@@ -2737,6 +2737,14 @@ Two smaller consequences, recorded so they are not read as bugs:
 
 What a decision-owner owes this screen: a selected appearance for C8's first cell, or a surface that
 lists favourites and can remove one. Either closes it; neither may be invented here.
+
+**RESOLVED — the first of the two, under RULINGS R2, built and recorded in E112.** C8's first cell has
+a selected appearance and a second tap removes the favourite. Read E112 before trusting the two
+"deliberate" notes above: both of them were consequences of this entry's own gap rather than
+independent decisions, and both are reversed. The write is no longer fire-and-forget — the state
+reverts, which reports the failure without needing a drawn error state — and the replayed client UUID
+is retired, because with an on-state the second tap is a different statement and a reused key turns
+un-favouriting into a silent no-op against `applyFavoriteToggle`'s replay guard.
 
 ### E102 — the six named animation curves were in the handoff and not in the spec, and three literals had drifted in their place
 
@@ -3458,3 +3466,173 @@ it only appears once the thing it breaks is turned on. `BetaCapabilityTests` ass
 the reader instead of the writer still fails. The save itself is still counted, because the count is a
 fact about somebody's field work rather than about this build's capabilities — otherwise D9 would
 later be measured from the wrong zero.
+
+### E112 — the heart now comes off where it went on, and three things E101 recorded as forced were consequences of the missing state rather than of the design
+
+E101 recorded a favourite that could be written and not removed, and left the closure to a
+decision-owner: "a selected appearance for C8's first cell, or a surface that lists favourites and can
+remove one." **RULINGS R2 chose the first**, on the grounds that a list is a new screen and the
+authorization that covered inventing entrances (E98) did not cover inventing screens, while a state on
+a drawn component is a variant of something the designer already drew. This entry is what that cost,
+and the interesting part is that every one of E101's three "deliberate" notes turned out to be a
+consequence of the missing state rather than an independent decision. Adding the state retired all
+three at once.
+
+**What the selected cell is, and the one clause of R2 that could not be built.** The fill is
+`callout.green.fill` — the app's existing tinted green surface, which C14 and C4's sanity pill already
+sit on — and the label and border take `cta.fill`, the accent. R2's sentence also says "the heart
+glyph fills", and **there is no heart glyph to fill**: §2 C8 marks the four icons NOT SPECIFIED and §5
+gap 3 repeats it, so this row has drawn text and only text since it was built. Inventing a heart for
+one of four text cells is a drawn decision (DECISIONS constraint 21) on the very component R2 is
+careful to treat as already-drawn, and one iconned cell beside three bare ones is a visual change
+nobody asked for. So the glyph clause is unbuilt and named here rather than quietly satisfied; the day
+design lands the four icons, the filled/outline pair is one line in `QuadActionRow.appearance`. The
+label is `Favorite` in both states, per R2 and for R2's reason.
+
+**The state is not carried by colour, and that is not decoration.** The selected cell also takes a
+`hairlineStrong` border against the idle `hairline`, and 12/800 against 12/600. Those are the two
+channels that survive greyscale, and with no glyph the hue would otherwise be the whole encoding —
+which is E103's finding arriving by a different road. VoiceOver gets the label unchanged and the state
+as a *value*: `Favorite, On, selected, button`, and `Favorite, Off, button`. The off state is spoken
+too, deliberately. A listener who hears only "Favorite, button" has been told nothing about whether
+this tree is already one of theirs, which is the same failure as two cells drawn identically. The
+three cells that open something have no spoken value and no trait, because a `Share` announcing "Off"
+would be describing a state it does not have — `QuadActionRow.Action.hasOnState` is the exhaustive
+switch that says so.
+
+**1. The write stopped being fire-and-forget, and the error did not have to be reported to be
+visible.** E101 dropped the write's error because "there is no drawn state in which the screen could
+honestly report one." There is now, and it is not an alert: `TreeProfileModel` writes the desired
+state through immediately so the control answers the finger, then **re-reads what is stored** and
+shows that. A write that does not land is a heart that goes back where it was. This is stronger than
+propagating the error would have been, because the failure it catches includes the ones that never
+throw — `FavoriteOutboxWriter` swallows a drain failure by design (the row is durable and the outbox
+owns retrying it), so a thrown error is not the same question as a stored favourite.
+
+**2. The double-tap trick is retired, and it had become the bug it was preventing.** The composition
+root kept the client UUID it minted per tree and replayed it, so an impatient double tap on a control
+with no on-state stored one favourite rather than two identical ones. `applyFavoriteToggle`'s replay
+guard is `WHERE favorites.client_uuid <> excluded.client_uuid` — the mechanism that makes a re-sent
+outbox item a no-op — so with an on-state that same reused key makes *un-favouriting* a silent no-op:
+tap, tap, and the row is still live. Each call now mints its own key, and idempotency stays where
+ARCHITECTURE §4 puts it, on the mutation rather than on the control. The write lives in
+`ProfileFavoriteWriter` rather than in a private method of `RootView`, because a rule held privately by
+a view is a rule no test can state.
+
+**Two taps in one run are now ordered rather than absorbed.** With one key per tap, "on" and "off"
+issued before either has been awaited can interleave — two writes and two re-reads, and the cell ends
+up showing whichever read landed last. `TreeProfileModel.toggleFavorite` chains each tap onto the
+previous one, so the last tap is the last word. This is a new failure mode created by the fix, and it
+is the one thing here that the old replayed key genuinely did prevent.
+
+**3. The initial state has to be read, and the read it uses is one E89 left correct and callerless.**
+`grove()` is `GET /me/grove` — favourited and visited trees, both ownership arms — and E89 records that
+nothing in the app called it, because the surface that would (screen 08's `Trees` pill) is drawn inert
+(E46). Screen 03 calls it now. **The tidier read would be a per-tree `isFavorite` on `CypressAPI`**,
+which ARCHITECTURE §4 explicitly sanctions ("if a screen needs data, the protocol grows a method");
+that is a change to the backend boundary rather than to a screen and was not this task's to make, and
+the cost of the substitute is that opening a profile reads the whole grove. On a device holding a
+handful of contributions that is a few rows. It is the first thing to change if the grove ever gets
+large. A read that fails is `false`: "not known to be yours" and "not yours" draw the same way, and the
+drawn way is the state the cell has always had.
+
+**A memorial keeps the heart, and loses the two cells that write.** E89 settled that a removed tree can
+be favourited and the reason is reversibility — gating the write makes the toggle one-way for anyone
+whose favourite tree is later removed, because the gate that refuses the heart also refuses removing
+it. Nothing here changes that. What did change is the rest of the row: `Care` writes a care event and
+`Report` opens screen 06, whose subject is a `HazardCategory` whose four values are all statements
+about a standing tree. Both were being offered on a photographed removed tree — the residual E95 names
+and E89 repeats — while the visit CTA, the check-in button and the empty measurement slot beside them
+were all correctly withheld by `acceptsNewContributions`. The quad row was the last control on the
+screen offering a write to a record that cannot take one. `TreeProfilePresentation.quadActions` is now
+the one property that decides, and it drops `Care` and `Report` while keeping `Favorite` and `Share`.
+`SiteView` reached the same answer from the other side and wrote it down first: "no quad action row,
+because three of its four cells act on a tree."
+
+**What this could not be verified by.** The quad row is drawn only on the warm variant of 03, and per
+D8 every tree in the shipped seed renders the *cold* variant — the city inventory carries no community
+content at all — so there is no tap sequence on a fresh install that puts this row on screen. Launching
+the app cannot photograph R2. `FavoriteAppearanceShots` renders the `#if DEBUG` populated fixture at
+both states in both appearances instead, which is `DynamicTypeScreenshotTests`' own argument for the
+other eighteen screens. Both states were looked at in light and dark before this was called done.
+
+Proven by `CypressTests/FavoriteToggleTests.swift`: a tree the store already holds opens selected and
+one it does not opens idle; a store that cannot be read draws the idle cell without taking the profile
+down with it; the second tap writes `false` and the store takes it; two taps issued together land in
+the order they were made; a write that does not land puts the cell back, in both directions; the label
+is `Favorite` in both states and the state is spoken in both directions; the selected appearance
+differs from the idle one in border weight and font weight as well as in hue, and its label clears
+4.5:1 on its own fill in both appearances; a removed tree keeps `Favorite` and `Share` and loses `Care`
+and `Report`; and `ProfileFavoriteWriter`, driven twice against a real store and a real outbox, leaves
+a tombstoned row, an empty grove and two outbox items under two distinct client UUIDs.
+
+### E113 — a vacant site could still be opened as a tree profile from every entrance except the one that was fixed
+
+E107 gave the vacant planting site its own screen and routed the map card to it, and named what it was
+leaving behind in its own last paragraph: "Entrances other than the map — the visit flow's
+nearest-candidate list, a stale link — still land a vacant site on the degraded profile, because
+`TreeProfileView` is where that redirect belongs and it was being edited elsewhere." That is 12,518
+records, 6.4% of the map, still able to render as screen 14 — an empty photo well captioned `No photos
+of this tree yet` over `Be the first to photograph this tree`, both of which assert a tree that is not
+there.
+
+**The entrances are the finding.** `Route.treeProfile` is pushed from the map's card, the almanac's
+season row, the almanac's "walk the nine" row, the journal tab's rows, the visit flow's open-tree
+callback and — since E107 — the site screen's own nearest-tree row. Six, with no reason to think six is
+the number next month. **None of them knows the status**: it arrives with the payload, one read later,
+in `TreeProfileModel.load()`. So a redirect written at a call site is a redirect written where the
+answer is not yet known, and the second call site to be forgotten looks exactly like the first.
+
+**The chokepoint is the load, and the shape is an exhaustive switch.** `TreeProfileDestination(record:)`
+is asked once, after the read and before any derivation, and switches over `TreeStatus` without a
+`default`, so a sixth status cannot be added without somebody answering for it. A vacant site becomes
+`.elsewhere(.site(id))`, the model's phase carries the route rather than a presentation, and the view
+draws nothing while the router swaps the screen. Nothing about a site is ever computed as a tree
+profile — `model.presentation` is `nil`, which is what the view draws from.
+
+**The stronger version of this fix was tried and rejected, and the reason is worth recording.** Making
+`TreeProfilePresentation.init` failable would make a vacant site unrepresentable at compile time, which
+is this project's preferred shape. It cannot be done here: five feature files construct that type for
+one thing only — `GrowthHistoryPresentation`, `ActivityPresentation`, `CareLogModel`, `MeasureModel` and
+`SharePresentation` all build one to read `.title`. Refusing construction there would mean refusing a
+site a *name*, which is a different and wrong answer, and would push the failure into four screens that
+have nothing to do with this. The gate went where the question is actually asked instead. What did
+come out is `isVacantSite`, a predicate on that presentation that nothing read and that can now only be
+false; it was deleted rather than left standing beside a comment describing a screen the app does not
+draw.
+
+**Replace, not push.** `AppRouter.replace(_:with:)` swaps the route in place, so `Back` from the site
+returns to the entrance rather than to the profile that should never have opened, and no swipe-back
+lands on it. It is targeted at the route being replaced rather than at the top of the stack, because an
+`async` load can return after the reader has gone somewhere else; if the profile is no longer on the
+path at all, it pushes, which is the same destination by a longer road rather than a silent no-op.
+
+**The redirect that was deliberately not built is the one that would have been one more line.** A
+removed tree can reach this screen from the almanac and the visit flow too — E95's own open residual —
+and `Route.memorial` exists, so sending `.removed` to screen 19 from the same switch would close E95
+here. It would also break RULINGS R2 in the place R2 says matters most. Screen 19 is drawn with
+deliberately nothing to press, so a redirect to it takes away the last surface in the app that can take
+a favourite off a tree somebody loved before it was felled — which is E89's deciding argument for not
+gating the heart, arriving by a different road. **A redirect can be a gate wearing a router.** So
+`.removed` stays on the profile, explicitly and with the reasoning at the case, and what the profile
+owes it instead is to offer nothing that writes: see E112 for the two quad-row cells that went.
+
+**The redirect takes nothing away from the site, either.** A vacant site could never be favourited from
+any screen: the quad row is drawn only on the warm variant, and a site is always cold because nothing
+can contribute to it. E107 declined to put a heart on the site screen for its own reason — the only
+control available there is C7, which has no selected appearance, which is the defect R2 has just closed
+on C8. That reasoning is unchanged and this entry does not reopen it.
+
+**What is still open and was not touched.** `AlmanacQueries` excludes vacant sites by construction (an
+inner `JOIN` to species), which E107 flags as the surface that ought to be pointing at these 12,518
+rows being the one that cannot see them; C19 still has no pin for a site, so the map draws one as
+`removed` and the distinction is carried by the card and the VoiceOver label; and E95's residual for
+removed trees stays open by the decision above rather than by omission.
+
+Proven by `CypressTests/VacantSiteRedirectTests.swift`: a vacant site — fixtured *with* a visit, so a
+regression would draw the loud warm variant rather than the quiet cold one — leaves as `.site` and
+derives no presentation; alive, declining and dead-reported records still open the profile; every case
+of `TreeStatus` has an answer and the loop grows with the enum; the replace lands the site where the
+profile was and leaves `Back` pointing at the entrance; a replace against a stack that has moved on
+pushes rather than dropping a screen; and a removed tree keeps its profile, keeps `Favorite` on the
+row, and offers no write.

@@ -20,6 +20,13 @@
 //  screens the app had built and could not reach. Each is decided in `TreeProfilePresentation`,
 //  where the reasoning sits, so a designer can overrule any of them in one file. See ERRATA (E98).
 //
+//  ── Two things this screen now refuses to draw ───────────────────────────────────────────
+//  - **A record with no tree in it.** A vacant planting site leaves for `Route.site` before anything
+//    is derived; the decision is `TreeProfileDestination`, asked once under every entrance rather
+//    than at any of them. See ERRATA (E113).
+//  - **A favourite it cannot confirm.** C8's first cell has an on-state (RULINGS R2), and the state
+//    is what the store holds rather than what the last tap said. See ERRATA (E112).
+//
 //  Not a raw hex or a raw font size in the file (ARCHITECTURE §6: "A literal in `Features/` is a
 //  bug"). Spacing literals are SCREENS.md's own margins, taken from `CypressSpacing`.
 //
@@ -36,21 +43,28 @@ struct TreeProfileView: View {
     /// Screen 04 is a camera, and `Route` has no case for it — the profile therefore hands the
     /// visit action out rather than inventing a destination (DECISIONS constraint 21).
     private let onVisit: (UUID) -> Void
-    /// Favoriting is a mutation through the outbox, not a navigation. Same reason.
-    private let onFavorite: (UUID) -> Void
 
+    /// - Parameter onFavorite: writes the *resulting state* of the heart — `true` for a favourite,
+    ///   `false` for taking it off (RULINGS R2). Favoriting is a mutation through the outbox rather
+    ///   than a navigation, and its owner is the composition root's to resolve (D9), so it is handed
+    ///   in for the same reason the visit is. The screen does not read its result: what the cell
+    ///   shows next is re-read from the store by `TreeProfileModel`.
     init(
         treeID: UUID,
         api: any CypressAPI,
         caretakerInitials: [String] = [],
         onVisit: @escaping (UUID) -> Void = { _ in },
-        onFavorite: @escaping (UUID) -> Void = { _ in }
+        onFavorite: @escaping (UUID, Bool) async -> Void = { _, _ in }
     ) {
         _model = State(
-            wrappedValue: TreeProfileModel(treeID: treeID, api: api, caretakerInitials: caretakerInitials)
+            wrappedValue: TreeProfileModel(
+                treeID: treeID,
+                api: api,
+                caretakerInitials: caretakerInitials,
+                setFavorite: onFavorite
+            )
         )
         self.onVisit = onVisit
-        self.onFavorite = onFavorite
     }
 
     var body: some View {
@@ -75,7 +89,27 @@ struct TreeProfileView: View {
             failure(error)
         case let .loaded(presentation):
             profile(presentation)
+        case let .elsewhere(route):
+            elsewhere(route)
         }
+    }
+
+    /// The record read for this screen belongs to another one (ERRATA E113).
+    ///
+    /// Nothing is drawn, and the router is asked to swap this screen for the right one *in place*,
+    /// so `Back` returns to whatever pushed the profile rather than to the profile that should not
+    /// have opened. A spinner is the honest thing to show for the frame it takes: the screen is
+    /// still resolving where it goes.
+    ///
+    /// This is a routing call, not a feature constructing another feature's view — the distinction
+    /// `MemorialView.notMemorial` and `SiteView.notASite` draw, and the reason they say what is true
+    /// and stay put instead. They cannot redirect: both are *destinations*, reached deliberately by
+    /// somebody who tapped a memorial pin or a site card, and a stale one is news. This screen is
+    /// the opposite case — it is where six entrances land by default, and a vacant site arriving
+    /// here is never news, it is the default being wrong.
+    private func elsewhere(_ route: Route) -> some View {
+        ProgressView()
+            .task { router?.replace(.treeProfile(model.treeID), with: route) }
     }
 
     // MARK: - The screen
@@ -128,7 +162,15 @@ struct TreeProfileView: View {
                 }
 
                 if !presentation.isCold {
-                    QuadActionRow { action in perform(action) }
+                    // C8. Which cells this record may offer is the presentation's call
+                    // (`quadActions`); which of them is *on* is the model's, and it is the store's
+                    // answer rather than the last tap's (RULINGS R2, ERRATA E112).
+                    QuadActionRow(
+                        actions: presentation.quadActions,
+                        selected: model.isFavorite ? [.favorite] : []
+                    ) { action in
+                        perform(action)
+                    }
                     regularsRow(presentation)
                     activityFeed(presentation)
                 }
@@ -446,7 +488,10 @@ struct TreeProfileView: View {
 
     private func perform(_ action: QuadActionRow.Action) {
         switch action {
-        case .favorite: onFavorite(model.treeID)
+        // The only cell of the four that changes this screen rather than opening another one. The
+        // model owns what "the other state" is, because it is the one thing here that knows what is
+        // stored (R2).
+        case .favorite: model.toggleFavorite()
         case .care: router?.present(.careLog(model.treeID))
         case .share: router?.present(.share(model.treeID))
         case .report: router?.push(.report(model.treeID))

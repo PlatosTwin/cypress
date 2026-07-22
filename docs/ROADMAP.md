@@ -144,14 +144,19 @@ contrast verification on the amber family, which is the palette most likely to f
 M4 was the last milestone about screens. M5 is about the difference between nineteen screens and an
 app, which turns out to be short.
 
-| | Work | State |
+| | Work | Where it landed |
 |---|---|---|
-| 1 | **The vacant planting-site state** (E11) — 12,518 pins, 6.4% of the map, still rendering as a stripped-down cold profile | resolved below, being built |
-| 2 | **The caption ramp** (R1) — `text.faint` fails AA in both appearances across 61 call sites | ruled, being built |
-| 3 | **The favourite comes off** (R2, E101) — a tap that can be made and not taken back | ruled, being built |
-| 4 | **Account deletion** (R3) — §3.12 and the exclusive-ownership CHECK cannot both hold | ruled, being built |
-| 5 | **Icon, accent, launch screen** | done |
-| 6 | **Screen 15 gated** (R4) behind `BetaCapability.accountsAvailable` | ruled, to build |
+| 1 | **The vacant planting-site state** — 12,518 pins, 6.4% of the map, had been rendering as a stripped-down cold profile | E11 → **E107** |
+| 2 | **The caption ramp** — `text.faint` failed AA in both appearances across 61 call sites | R1, R1a → **E108** |
+| 3 | **Account deletion** — §3.12 and the exclusive-ownership CHECK could not both hold | R3 → **E109** |
+| 4 | **Screen 01's navigation bar** — an opaque 91pt band on the one screen the spec calls full-bleed | **E110** |
+| 5 | **Screen 15 gated** behind `BetaCapability.accountsAvailable` | R4 → **E111** |
+| 6 | **The favourite comes off** — a tap that could be made and not taken back | R2 → **E112** |
+| 7 | **A vacant site cannot open the tree profile** from any entrance | **E113** |
+| 8 | **Icon, accent, launch screen** | — |
+
+**M5 is complete.** Two of these were not on the list when M5 opened. E110 was found by photographing the
+running app; E113 by noticing that E107 had fixed one entrance out of six.
 
 Bundle identity was already set: `app.cypress.Cypress`, marketing version 0.1, portrait only, iPhone
 only. **A local beta needs no Apple Developer Program membership** — a free Apple ID signs the app for

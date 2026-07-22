@@ -8,7 +8,11 @@ import SwiftUI
 /// BUILD-PLAN §9 entry belong here — per DECISIONS constraint 21, an unmocked destination is a
 /// question for the design, not a case to invent.
 enum Route: Hashable {
-    case treeProfile(UUID)      // 03 (14 when the tree is cold, 19 when removed)
+    /// 03, and 14 when the tree is cold — one view, whose variant `TreeProfilePresentation.isCold`
+    /// picks internally. **Not** a vacant site: that record leaves for `.site` on load and cannot be
+    /// drawn here at all (ERRATA E113). A removed tree does open it, deliberately — see
+    /// `TreeProfileDestination`.
+    case treeProfile(UUID)      // 03 / 14
     case identify               // 02 what tree is this
     case species(UUID)          // 07
     case careLog(UUID)          // 09
@@ -56,6 +60,30 @@ final class AppRouter {
     func present(_ route: Route) { sheet = route }
     func pop() { if !path.isEmpty { path.removeLast() } }
     func popToRoot() { path.removeAll() }
+
+    /// Swaps a pushed route for another one, in place.
+    ///
+    /// For the case where a screen discovers *on load* that the record it was pushed for belongs to
+    /// a different screen — a vacant planting site reached from the almanac, the visit flow or a
+    /// stale link, which has its own screen since E107 and cannot be drawn as a tree profile since
+    /// E113. The status arrives with the payload, one read after the push, so the entrance could not
+    /// have known.
+    ///
+    /// **In place rather than push-then-pop**, for two reasons. `Back` from the site must return to
+    /// the entrance, not to the profile that should never have opened; and a `push` would leave the
+    /// wrong screen sitting under the right one, where a swipe-back lands on it.
+    ///
+    /// Targeted rather than "replace the top": by the time an `async` load returns, the top may no
+    /// longer be the screen that asked. If the route being replaced is not on the path at all — a
+    /// preview, a tab root, a screen already popped — this pushes, which is the same destination by
+    /// a longer road rather than a silent no-op.
+    func replace(_ route: Route, with replacement: Route) {
+        guard let index = path.lastIndex(of: route) else {
+            push(replacement)
+            return
+        }
+        path[index] = replacement
+    }
 }
 
 // MARK: - C16

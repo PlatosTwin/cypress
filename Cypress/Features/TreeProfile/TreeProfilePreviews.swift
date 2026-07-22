@@ -30,6 +30,9 @@ import SwiftUI
 /// Serves one prepared `TreeProfile` and refuses everything else. Previews only.
 struct TreeProfilePreviewAPI: CypressAPI {
     let profile: TreeProfile
+    /// Whether this device already holds the tree as a favourite — the on-state of C8's first cell
+    /// (RULINGS R2). Read through `grove()`, which is where `TreeProfileModel` asks.
+    var isFavorite = false
 
     func treeProfile(id: UUID) async throws -> TreeProfile {
         guard id == profile.tree.id else { throw APIError.notFound }
@@ -47,7 +50,18 @@ struct TreeProfilePreviewAPI: CypressAPI {
     }
     func uploadPhoto(at localPath: String, ticket: PhotoUploadTicket) async throws {}
     func outboxStatus() async throws -> [SyncResult] { [] }
-    func grove() async throws -> [GroveEntry] { [] }
+    func grove() async throws -> [GroveEntry] {
+        guard isFavorite else { return [] }
+        return [
+            GroveEntry(
+                treeID: profile.tree.id,
+                displayName: profile.activeName?.name ?? "",
+                coordinate: profile.tree.coordinate,
+                lastVisitedAt: nil,
+                isFavorite: true
+            ),
+        ]
+    }
     func journal(cursor: String?, limit: Int) async throws -> Page<JournalEntry> { Page(items: []) }
     func claimDevice(deviceUUID: UUID, userID: UUID) async throws {}
     func logHazardRedirect(_ event: HazardRedirectEvent) async throws {}
@@ -329,14 +343,15 @@ enum TreeProfileSeedFixtures {
 // MARK: - Previews
 
 @MainActor
-private func treeProfilePreview(
+func treeProfilePreview(
     _ profile: TreeProfile,
     caretakerInitials: [String] = [],
+    isFavorite: Bool = false,
     scheme: ColorScheme = .light
 ) -> some View {
     TreeProfileView(
         treeID: profile.tree.id,
-        api: TreeProfilePreviewAPI(profile: profile),
+        api: TreeProfilePreviewAPI(profile: profile, isFavorite: isFavorite),
         caretakerInitials: caretakerInitials
     )
     .environment(AppRouter())
@@ -351,7 +366,22 @@ private func treeProfilePreview(
     treeProfilePreview(TreeProfileSeedFixtures.coldStart)
 }
 
-#Preview("14 · Vacant site") {
+/// C8's first cell in its selected state (RULINGS R2). The same profile as the 03 preview above,
+/// on a device that already holds this tree — which is a read of `grove()`, not a flag on the view.
+#Preview("03 · Tree profile, favourited") {
+    treeProfilePreview(
+        TreeProfileSeedFixtures.populated,
+        caretakerInitials: ["N", "M", "J"],
+        isFavorite: true
+    )
+}
+
+/// The vacant planting site no longer renders here at all: it leaves for `Route.site` before
+/// anything is derived (ERRATA E113). This preview shows what that looks like from inside the
+/// profile — a spinner and a routing call — and the screen itself is previewed in `SitePreviews`.
+/// The fixture stays because it is the one thing that proves the redirect fires under a preview's
+/// router as well as under the app's.
+#Preview("14 · Vacant site → redirects to the site screen") {
     treeProfilePreview(TreeProfileSeedFixtures.vacant)
 }
 

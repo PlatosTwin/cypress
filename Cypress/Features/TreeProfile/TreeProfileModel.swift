@@ -7,6 +7,14 @@
 //
 //  It talks to `CypressAPI` and to nothing else — no GRDB, no SQLite, no network (ARCHITECTURE §4).
 //
+//  Two things arrive here that used not to (ERRATA E112, E113):
+//
+//  - **The favourite has a state, and the state is the store's.** The heart's on-state is read on
+//    load and re-read after every write, so what the cell shows is what is stored rather than what
+//    the last tap said. A write that does not land is visible as the control going back.
+//  - **A record that is not a tree does not become a profile.** `TreeProfileDestination` is asked
+//    once, here, under every entrance, and a vacant site leaves as `.elsewhere`.
+//
 
 import Foundation
 import Observation
@@ -20,13 +28,33 @@ final class TreeProfileModel {
         /// Carries the derivation, not the raw payload: everything the view draws is decided in
         /// `TreeProfilePresentation`, which has no SwiftUI in it and can be reasoned about alone.
         case loaded(TreeProfilePresentation)
+        /// This record belongs to another screen (E113). The view hands the route to the router and
+        /// draws nothing — there is no honest half-profile to show while it goes.
+        case elsewhere(Route)
         case failed(APIError)
     }
 
     private(set) var phase: Phase = .loading
 
+    /// Whether **this contributor** currently holds this tree — the on-state of C8's first cell
+    /// (RULINGS R2).
+    ///
+    /// It is a fact about the store, not about the session: it is read on load, written through on
+    /// a tap so the control answers the finger immediately, and then re-read so the control ends up
+    /// agreeing with what is actually stored. `false` is also what an unread or failed read shows,
+    /// which is the honest default — "not known to be yours" and "not yours" draw the same way,
+    /// and the drawn way is the state the cell has always had.
+    private(set) var isFavorite = false
+
     let treeID: UUID
     private let api: any CypressAPI
+
+    /// Performs the favourite write. The composition root owns it, because the owner of a
+    /// contribution (D9) and the outbox are not a view's to resolve — see `ProfileFavoriteWriter`.
+    ///
+    /// It returns nothing on purpose. Whether the write worked is not this closure's word against
+    /// the store's; it is `storedFavorite()`, read afterwards.
+    private let setFavorite: (UUID, Bool) async -> Void
 
     /// Initials for the regulars row (C26).
     ///
@@ -37,10 +65,16 @@ final class TreeProfileModel {
     /// the one line that changes. Empty against `LocalAPI`, which is why the row does not render.
     var caretakerInitials: [String]
 
-    init(treeID: UUID, api: any CypressAPI, caretakerInitials: [String] = []) {
+    init(
+        treeID: UUID,
+        api: any CypressAPI,
+        caretakerInitials: [String] = [],
+        setFavorite: @escaping (UUID, Bool) async -> Void = { _, _ in }
+    ) {
         self.treeID = treeID
         self.api = api
         self.caretakerInitials = caretakerInitials
+        self.setFavorite = setFavorite
     }
 
     var presentation: TreeProfilePresentation? {
@@ -51,6 +85,18 @@ final class TreeProfileModel {
     func load() async {
         do {
             let profile = try await api.treeProfile(id: treeID)
+
+            // The one gate, asked of the record rather than of the caller (E113). It runs before
+            // any derivation, so nothing about a vacant site is ever computed as a tree profile.
+            switch TreeProfileDestination(record: profile.tree) {
+            case let .elsewhere(route):
+                phase = .elsewhere(route)
+                return
+            case .profile:
+                break
+            }
+
+            isFavorite = await storedFavorite()
             phase = .loaded(
                 TreeProfilePresentation(profile: profile, caretakerInitials: caretakerInitials)
             )
@@ -65,5 +111,54 @@ final class TreeProfileModel {
     /// visit that just synced does not blank the profile it was made from.
     func reload() async {
         await load()
+    }
+
+    // MARK: - The favourite (RULINGS R2)
+
+    /// The taps, in the order they were made.
+    ///
+    /// Each tap is a separate statement with its own key now that the heart has an on-state, so two
+    /// quick taps are "on" and then "off" rather than one replayed "on" (E101's trick, retired).
+    /// That makes their *order* load-bearing: run concurrently, two writes and two re-reads can
+    /// interleave and leave the cell showing whichever read happened to land last. Chaining them
+    /// keeps the last tap the last word.
+    private var writes: Task<Void, Never>?
+
+    /// Toggles the favourite. Returns the task so a test can wait for it; the view does not.
+    @discardableResult
+    func toggleFavorite() -> Task<Void, Never> {
+        let previous = writes
+        let task = Task { [weak self] in
+            await previous?.value
+            await self?.write()
+        }
+        writes = task
+        return task
+    }
+
+    private func write() async {
+        let desired = !isFavorite
+        // The control answers the finger immediately…
+        isFavorite = desired
+        await setFavorite(treeID, desired)
+        // …and then answers the store. If the write did not land, this is where the heart goes
+        // back to where it was, which is the state E101 recorded as unavailable and R2 requires.
+        isFavorite = await storedFavorite()
+    }
+
+    /// Whether the store holds this tree for whoever is contributing right now.
+    ///
+    /// Through `grove()`, which is `GET /me/grove` — "favourited and visited trees" — and which E89
+    /// left correct and callerless. It reads both ownership arms (the device's rows and the
+    /// account's), which is exactly the question the heart asks, and it is a read the protocol
+    /// already has: growing `CypressAPI` a per-tree favourite read would be the tidier call and it
+    /// is a change to the backend boundary, not to a screen. If this screen ever needs it to be
+    /// cheaper than "the trees you have contributed to", that is the method to add.
+    ///
+    /// A failed read is `false`: the cell draws its idle state when nothing is known, rather than
+    /// claiming a favourite it could not confirm.
+    private func storedFavorite() async -> Bool {
+        guard let grove = try? await api.grove() else { return false }
+        return grove.first { $0.treeID == treeID }?.isFavorite ?? false
     }
 }

@@ -123,14 +123,11 @@ struct TreeProfilePresentation {
     /// already made the tree somebody's, and the cold-start copy ("be the first…") would be a lie.
     var isCold: Bool { visiblePhotos.items.isEmpty && visibleVisits.items.isEmpty }
 
-    /// A planting site the city lists with no tree standing in it — 12,518 rows of the seed.
-    ///
-    /// **Not drawn in SCREENS.md.** ARCHITECTURE §5.8 says an unmocked state is a question for
-    /// design rather than a screen to invent, so nothing new is drawn for it: it renders as the
-    /// cold variant with the two elements that would be false removed. `No photos of this tree
-    /// yet` and `Be the first to photograph this tree` both assert a tree, and there is not one.
-    /// What is left is the city's own record of the site, which is all anybody knows about it.
-    var isVacantSite: Bool { tree.status == .vacantSite }
+    // `isVacantSite` used to live here, unread by anything, describing screen 14 rendering a site
+    // "with the two elements that would be false removed". That state no longer exists: a vacant
+    // site has its own screen (E107) and cannot become this presentation at all (E113,
+    // `TreeProfileDestination`). A predicate that can only be false, left standing next to a
+    // comment describing a screen the app does not draw, is the next reader's wrong turn.
 
     /// Whether this record can take a new contribution at all.
     ///
@@ -142,6 +139,34 @@ struct TreeProfilePresentation {
     /// elder row and the visit flow, not only from the map. Gating on one property means a third
     /// such status cannot be added without answering the question. See ERRATA (E95).
     var acceptsContributions: Bool { tree.status.acceptsNewContributions }
+
+    // MARK: - Quad action row (C8)
+
+    /// Which of C8's four cells this record may offer.
+    ///
+    /// All four on a tree that can take a contribution, which is every tree screen 03 is drawn for.
+    /// On a record that cannot — a memorial, since a vacant site no longer reaches this screen at
+    /// all (E113) — two of them go, and the two that go are the two that write:
+    ///
+    /// - **`Care`** logs a care event: somebody watered, mulched or staked a tree that is not
+    ///   there. It is a contribution in the plain sense and `acceptsNewContributions` already
+    ///   refuses it everywhere else on this screen (the visit CTA, the check-in button, the empty
+    ///   measurement slot). The quad row was the one control left offering one.
+    /// - **`Report`** opens screen 06, whose subject is a `HazardCategory` — a hanging limb, an
+    ///   uprooting, a vehicle strike, a blocked sightline. All four are statements about a standing
+    ///   tree; E107 makes the same observation about a site from the other direction.
+    ///
+    /// **`Favorite` and `Share` stay, and the first of them is the point.** A favourite observes
+    /// nothing — it writes to the person's grove, not to the tree's record — and E89's deciding
+    /// argument is that gating it makes the toggle one-way for anyone whose favourite tree is later
+    /// removed. R2 restates it: the gate that refuses the heart also refuses taking it off. Share
+    /// is a read of a record that still exists. `SiteView` reaches the same answer from the other
+    /// side, in its own words: "no quad action row, because three of its four cells act on a tree".
+    ///
+    /// One property, so a designer who disagrees changes one line. See ERRATA (E112).
+    var quadActions: [QuadActionRow.Action] {
+        acceptsContributions ? QuadActionRow.Action.allCases : [.favorite, .share]
+    }
 
     // MARK: - Identity
 

@@ -124,11 +124,22 @@ remove one — this is the smaller and the more honest. A list is a new screen, 
 that covered inventing *entrances* does not cover inventing screens. A state on a drawn component is
 a variant of something the designer already drew.
 
-What the selected cell is: the heart glyph fills, glyph and label take `accent`, the card fill takes
-the same tinted surface a selected filter chip takes. **The label does not change.** It says
-`Favorite` in both states because it is a noun naming the thing, not a verb naming the next tap —
-`Unfavorite` would be a different word appearing under the same icon, which is how a control starts
-lying about what it is.
+What the selected cell is: the card fill takes the app's existing tinted green surface, the label and
+border take `accent`, the border goes to the heavier hairline and the label from 600 to 800. **The
+label does not change.** It says `Favorite` in both states because it is a noun naming the thing, not
+a verb naming the next tap — `Unfavorite` would be a different word appearing under the same icon,
+which is how a control starts lying about what it is.
+
+> **Corrected while building this.** The clause above originally read "the heart glyph fills, glyph
+> and label take `accent`". **C8 has no glyph.** Its icons are marked NOT SPECIFIED in §2 and again in
+> §5's gap list, so all four cells are text, and there was nothing to fill. Adding a heart to one of
+> four text cells would have been a drawn decision on the very component this ruling treats as
+> already-drawn — constraint 21, arriving from the direction I was not watching. So the glyph is not
+> built, and it is one line in `QuadActionRow.appearance` the day icons land.
+>
+> That absence is also why the selected state carries in **three** channels rather than one. With no
+> glyph, hue alone would have been the whole encoding, which is E103's finding — a state conveyed only
+> by colour — arriving by another road.
 
 Three consequences, each of which reverses something E101 recorded as forced:
 

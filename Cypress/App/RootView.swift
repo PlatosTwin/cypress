@@ -178,32 +178,9 @@ struct RootView: View {
         )
     }
 
-    /// The client UUID minted for each tree's favourite, kept so a second tap is a replay.
-    ///
-    /// The same trick `PrivateReminderDraft.reminderID` plays for screen 06: the key is minted once
-    /// per thing-being-said rather than once per tap, so `OutboxQueue.enqueue` dedupes the repeat and
-    /// one row is stored. Without it, a heart with no visible on-state — which is what C8 draws —
-    /// would queue one "favorited" event per impatient tap, all of them true and all of them
-    /// pointless.
-    @State private var favoriteToggles: [UUID: UUID] = [:]
-
-    /// Sends the heart through the outbox (ERRATA E89).
-    ///
-    /// Fire-and-forget, and the error is dropped on purpose: `FavoriteOutboxWriter` throws only if
-    /// the row could not be made durable, and screen 03 draws no state in which it could say so.
-    /// Nothing on screen claims the favourite was saved, so nothing on screen can be lying.
-    private func favorite(_ treeID: UUID) {
-        let clientUUID = favoriteToggles[treeID] ?? UUID()
-        favoriteToggles[treeID] = clientUUID
-        Task {
-            try? await FavoriteOutboxWriter.save(
-                treeID: treeID,
-                isFavorite: true,
-                attribution: await data.api.attribution,
-                outbox: data.outbox,
-                clientUUID: clientUUID
-            )
-        }
+    /// Screen 03's heart, as this app performs it (RULINGS R2, ERRATA E112).
+    private var favoriteWriter: ProfileFavoriteWriter {
+        ProfileFavoriteWriter(api: data.api, outbox: data.outbox)
     }
 
     @ViewBuilder
@@ -221,12 +198,12 @@ struct RootView: View {
                 // `claimDevice` moves these favourites onto the account and this line does not
                 // change.
                 //
-                // It writes `isFavorite: true` and never false, because C8 draws no on-state and no
-                // un-favourite affordance exists anywhere in the mock set (ERRATA E101). The
-                // tombstone path is in the store and in the payload, waiting for a control that
-                // means "off"; inventing one here would be inventing a state (DECISIONS
-                // constraint 21).
-                onFavorite: { treeID in favorite(treeID) }
+                // It now writes both states. C8's first cell has a selected appearance under
+                // RULINGS R2, so the control that means "off" exists and the tombstone path that
+                // has been sitting in the store and the payload since E89 has a caller (E112).
+                onFavorite: { treeID, isFavorite in
+                    await favoriteWriter(treeID: treeID, isFavorite: isFavorite)
+                }
             )
 
         case .checkIn(let id):
@@ -314,10 +291,12 @@ struct RootView: View {
             // `MapHomeView` branches on `pin.status.isMemorial` before pushing.
             //
             // Other paths still reach `.treeProfile` with a removed tree — the almanac's elder row,
-            // the visit flow's open-tree — where the profile draws a REMOVED badge beside a live
-            // "say hello with a photo" CTA. A read-only record offering a write is the thing 19
-            // exists to prevent, so `TreeProfileView` redirects rather than trusting every caller
-            // to remember. See ERRATA (E95).
+            // the visit flow's open-tree — and they still do after E113, which redirects a vacant
+            // site from the profile and deliberately leaves a memorial on it. Screen 19 has nothing
+            // to press, so redirecting there would take away the last surface that can lift a
+            // favourite off a felled tree, which is the one-way toggle E89 refused to create. The
+            // profile withholds every write from it instead (`acceptsContributions`, `quadActions`).
+            // See ERRATA (E95, E112, E113).
             MemorialView(treeID: id, api: data.api, onBack: { router.pop() })
 
         case .site(let id):
@@ -399,6 +378,43 @@ struct RootView: View {
         case .identify:
             NotBuiltYetView(route: route)
         }
+    }
+}
+
+/// The composition root's favourite write — screen 03's heart, made durable (E89, E112).
+///
+/// A named type rather than a method on `RootView` because the rule it carries is a rule, and a rule
+/// held privately by a view is a rule no test can state. That rule is **one tap, one key**:
+///
+/// E101 recorded the opposite as forced. `RootView` kept the client UUID it had minted for each tree
+/// and replayed it, so an impatient double tap on a control with no visible on-state stored one
+/// favourite instead of two identical ones — the trick screen 06 plays with
+/// `PrivateReminderDraft.reminderID`. With an on-state that trick becomes the bug: the second tap is
+/// a *different statement*, `applyFavoriteToggle`'s replay guard is `WHERE client_uuid <> excluded
+/// .client_uuid`, and a reused key therefore makes un-favouriting a silent no-op. So every call
+/// mints its own (`FavoriteOutboxWriter.save`'s default), and idempotency stays where ARCHITECTURE
+/// §4 puts it: on the mutation, not on the control.
+///
+/// **What it does not do is report.** The error is still swallowed here, and that is not E101's
+/// fire-and-forget: `FavoriteOutboxWriter` throws only if the row could not be made durable, and
+/// what the cell shows next does not come from this call's return at all. `TreeProfileModel` re-reads
+/// the store afterwards, so a write that did not land shows up as the heart going back to where it
+/// was — which is the state R2 says the screen now has and E101 said it did not.
+struct ProfileFavoriteWriter: Sendable {
+    let api: LocalAPI
+    let outbox: OutboxQueue
+
+    /// - Parameter isFavorite: the resulting state, not a verb. A favourite syncs as a toggle event
+    ///   with a tombstone (BUILD-PLAN §4), so the payload carries where the heart ended up.
+    func callAsFunction(treeID: UUID, isFavorite: Bool) async {
+        try? await FavoriteOutboxWriter.save(
+            treeID: treeID,
+            isFavorite: isFavorite,
+            // D9: the signed-in user when there is one, this device otherwise. Resolved here
+            // because identity is not a view's question to answer.
+            attribution: await api.attribution,
+            outbox: outbox
+        )
     }
 }
 
