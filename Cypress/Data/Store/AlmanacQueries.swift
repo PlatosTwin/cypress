@@ -1,0 +1,271 @@
+import Foundation
+
+/// The reads behind screen 12 — the neighbourhood almanac.
+///
+/// Like `GroveQueries` these straddle the two databases: what a tree *is* lives in the attached
+/// seed, what anybody did to it lives in `main`. That is why they are here rather than in
+/// `TreeQueries` (the seed alone) or `ContributionStore` (`main` alone).
+///
+/// **There is no `COUNT(*)` in this file that counts a contribution.** Every count is over trees —
+/// trees of a species, trees planted in a window, trees nobody has been to — with one exception,
+/// `firstBloom`'s `COUNT(DISTINCT …)` over contributors, which is A8's headcount and is floored at
+/// three before it can be spoken (D1, ARCHITECTURE §5.1). Nothing here can be ordered by
+/// contributor, and nothing here returns a contributor's identity.
+///
+/// Every read is scoped to one neighbourhood id, which the caller resolves once through
+/// `SpeciesQueries.resolveNeighborhood(near:)` — the single seam A4 will move through when its
+/// stated mechanism exists (ERRATA E44).
+public struct AlmanacQueries {
+    private let schema: SeedSchema
+    private let seed = SeedDatabase.schemaName
+
+    public init(schema: SeedSchema) {
+        self.schema = schema
+    }
+
+    /// A tree the almanac is willing to talk about: one the city believes is standing.
+    ///
+    /// Vacant planting sites are 6.4% of the inventory (ERRATA E11) and a basin with nothing in it
+    /// is not an elder, not a newest neighbour and not a young tree anybody can go and look at. The
+    /// dead and removed are excluded for the same reason: this screen is about what is growing.
+    private static let standing = "t.status IN ('alive','declining')"
+
+    // MARK: - This season · the elder
+
+    /// The oldest recorded planting date in the neighbourhood (SCREENS.md 12 §2 row 2).
+    ///
+    /// ```
+    /// SEARCH t USING INDEX idx_trees_neighborhood_planted (neighborhood_id=? AND planted_on>?)
+    /// SEARCH s USING INTEGER PRIMARY KEY (rowid=?)
+    /// ```
+    ///
+    /// The index exists for this read and for `recentPlanting`: without it the elder is a sort of
+    /// every tree in the neighbourhood, which is 16,176 rows in the Mission.
+    ///
+    /// `nil` when no tree here carries a planting date at all. That is a real outcome — DataSF fills
+    /// `PlantDate` on 36% of rows — and it means the row does not draw, rather than drawing a tree
+    /// whose age nobody recorded.
+    public func elder(
+        neighborhoodID: Int,
+        connection: SQLiteConnection
+    ) throws -> (treeID: UUID, speciesCommonName: String?, address: String?, plantedYear: Int)? {
+        let statement = try connection.cachedStatement("""
+            SELECT t.\(schema.treeIdentityColumn) AS tree_uuid,
+                   t.address AS address,
+                   t.planted_year AS planted_year,
+                   COALESCE(s.common_name, s.scientific_name) AS species_name
+              FROM \(seed).trees t
+              LEFT JOIN \(seed).species s ON s.id = t.species_current
+             WHERE t.neighborhood_id = :neighborhood
+               AND t.planted_on IS NOT NULL
+               AND t.deleted_at IS NULL
+               AND \(Self.standing)
+             ORDER BY t.planted_on
+             LIMIT 1
+            """)
+        _ = try statement.bind(neighborhoodID, forName: ":neighborhood")
+        return try statement.fetchOne { row in
+            (
+                treeID: try row.uuid("tree_uuid"),
+                speciesCommonName: try row.stringIfPresent("species_name"),
+                address: try row.stringIfPresent("address"),
+                plantedYear: try row.int("planted_year")
+            )
+        }
+    }
+
+    // MARK: - This season · newest neighbours
+
+    /// The trees planted in the neighbourhood inside a date window, grouped by species
+    /// (SCREENS.md 12 §2 row 3).
+    ///
+    /// Bounds are `YYYY-MM-DD` strings compared against `trees.planted_on`, which is stored at that
+    /// grain. The column exists because this row asks about a *season* and `planted_year` cannot
+    /// answer a question about a season — see the seed schema's note beside it.
+    ///
+    /// Returns one entry per species, most common first, plus the trees whose city label names no
+    /// taxon (312 rows city-wide, ERRATA E14), which arrive with a `nil` name and are counted but
+    /// never named.
+    public func plantings(
+        neighborhoodID: Int,
+        from: String,
+        to: String,
+        connection: SQLiteConnection
+    ) throws -> [(name: String?, treeCount: Int)] {
+        let statement = try connection.cachedStatement("""
+            SELECT COALESCE(s.common_name, s.scientific_name) AS species_name,
+                   COUNT(*) AS tree_count
+              FROM \(seed).trees t
+              LEFT JOIN \(seed).species s ON s.id = t.species_current
+             WHERE t.neighborhood_id = :neighborhood
+               AND t.planted_on BETWEEN :from AND :to
+               AND t.deleted_at IS NULL
+               AND \(Self.standing)
+             GROUP BY t.species_current
+             ORDER BY tree_count DESC, species_name
+            """)
+        _ = try statement.bind([":neighborhood": neighborhoodID, ":from": from, ":to": to])
+        return try statement.fetchAll { row in
+            (name: try row.stringIfPresent("species_name"), treeCount: try row.int("tree_count"))
+        }
+    }
+
+    // MARK: - Who lives here
+
+    /// Every species the city inventory records in the neighbourhood, most common first
+    /// (SCREENS.md 12 §3).
+    ///
+    /// ```
+    /// SEARCH t USING INDEX idx_trees_neighborhood (neighborhood_id=?)
+    /// SEARCH s USING INTEGER PRIMARY KEY (rowid=?)
+    /// ```
+    ///
+    /// Read whole rather than `LIMIT 3`, because the card prints two numbers a page cannot support:
+    /// the header's species count and the "Everyone else" remainder, which is one minus the shares
+    /// above it. A limited read would make the remainder wrong in the flattering direction. The cost
+    /// is the size of a neighbourhood's species list — 215 rows in Sunset/Parkside, the largest in
+    /// the city — which is nothing next to being wrong.
+    ///
+    /// The `JOIN` (not `LEFT JOIN`) is what excludes vacant sites and the non-taxon rows: a mix of
+    /// species is a mix of species, and a tree the city labelled `Shrub` belongs in neither the
+    /// numerator nor the denominator of a share.
+    public func speciesMix(
+        neighborhoodID: Int,
+        connection: SQLiteConnection
+    ) throws -> [SpeciesShare] {
+        let statement = try connection.cachedStatement("""
+            SELECT s.\(schema.speciesIdentityColumn) AS species_uuid,
+                   COALESCE(s.common_name, s.scientific_name) AS species_name,
+                   COUNT(*) AS tree_count
+              FROM \(seed).trees t
+              JOIN \(seed).species s ON s.id = t.species_current
+             WHERE t.neighborhood_id = :neighborhood
+               AND t.deleted_at IS NULL
+               AND \(Self.standing)
+             GROUP BY s.id
+             ORDER BY tree_count DESC, species_name
+            """)
+        _ = try statement.bind(neighborhoodID, forName: ":neighborhood")
+        return try statement.fetchAll { row in
+            SpeciesShare(
+                speciesID: try row.uuid("species_uuid"),
+                name: try row.string("species_name"),
+                treeCount: try row.int("tree_count")
+            )
+        }
+    }
+
+    // MARK: - Where eyes are needed
+
+    /// Young trees in the neighbourhood that carry no visit since they were planted
+    /// (SCREENS.md 12 §4).
+    ///
+    /// `NOT EXISTS` rather than a `LEFT JOIN … IS NULL`, so SQLite stops at the first visit it finds
+    /// for a tree instead of materialising every visit that tree ever had.
+    ///
+    /// **The visit predicate names no contributor.** It asks whether the tree has been visited at
+    /// all, which is the question §4's copy asks; scoping it to the caller would turn the app's one
+    /// directed ask into a private to-do list, and would make two people standing on the same block
+    /// see different trees. `captured_at >= planted_on` is §4's "since planting", literally — an
+    /// ISO-8601 timestamp and a `YYYY-MM-DD` date compare correctly as text because the first is a
+    /// prefix-extension of the second.
+    ///
+    /// Reads one row more than `limit` so the caller can prove whether the series is whole.
+    public func youngTreesWithoutVisits(
+        neighborhoodID: Int,
+        plantedOnOrAfter: String,
+        limit: Int,
+        connection: SQLiteConnection
+    ) throws -> [(treeID: UUID, coordinate: Coordinate)] {
+        let statement = try connection.cachedStatement("""
+            SELECT t.\(schema.treeIdentityColumn) AS tree_uuid,
+                   t.lat AS lat,
+                   t.lon AS lon
+              FROM \(seed).trees t
+             WHERE t.neighborhood_id = :neighborhood
+               AND t.planted_on >= :since
+               AND t.deleted_at IS NULL
+               AND \(Self.standing)
+               AND NOT EXISTS (
+                     SELECT 1 FROM visits v
+                      WHERE v.tree_uuid = t.\(schema.treeIdentityColumn) COLLATE NOCASE
+                        AND v.deleted_at IS NULL
+                        AND v.captured_at >= t.planted_on
+                   )
+             ORDER BY t.planted_on, t.id
+             LIMIT :limit
+            """)
+        _ = try statement.bind([
+            ":neighborhood": neighborhoodID,
+            ":since": plantedOnOrAfter,
+            ":limit": limit
+        ])
+        return try statement.fetchAll { row in
+            (
+                treeID: try row.uuid("tree_uuid"),
+                coordinate: Coordinate(
+                    latitude: try row.double("lat"),
+                    longitude: try row.double("lon")
+                )
+            )
+        }
+    }
+
+    // MARK: - This season · the first bloom
+
+    /// The earliest flowering visit recorded in the neighbourhood this year (SCREENS.md 12 §2 row 1).
+    ///
+    /// `flowering` is `PhenologyTag`'s own raw value and `visits.phenology_tags` is a JSON array of
+    /// them, so the membership test is `json_each` rather than a `LIKE` over the serialised array —
+    /// a `LIKE '%flowering%'` would also match a tag that merely contained the word.
+    ///
+    /// **What this counts, and what it refuses to count.** `MIN(captured_at)` is an event, not an
+    /// activity level. `COUNT(DISTINCT COALESCE(user_id, device_id))` is A8's headcount — distinct
+    /// people, never occasions, so somebody who photographs the same blossom nine times is one
+    /// person here, which is exactly why D1 permits the number at all. Neither value can be turned
+    /// back into who: no identity column is projected.
+    ///
+    /// Which tree wins is the earliest sighting, ties broken on the tree's uuid so the answer does
+    /// not flicker between two trees that bloomed the same second.
+    public func firstBloom(
+        neighborhoodID: Int,
+        since: Date,
+        connection: SQLiteConnection
+    ) throws -> (treeID: UUID, speciesCommonName: String?, address: String?, firstSeenAt: Date, observerCount: Int)? {
+        let statement = try connection.cachedStatement("""
+            SELECT t.\(schema.treeIdentityColumn) AS tree_uuid,
+                   t.address AS address,
+                   COALESCE(s.common_name, s.scientific_name) AS species_name,
+                   MIN(v.captured_at) AS first_seen_at,
+                   COUNT(DISTINCT COALESCE(v.user_id, v.device_id)) AS observer_count
+              FROM visits v
+              JOIN \(seed).trees t ON t.\(schema.treeIdentityColumn) = v.tree_uuid COLLATE NOCASE
+              LEFT JOIN \(seed).species s ON s.id = t.species_current
+             WHERE v.deleted_at IS NULL
+               AND v.captured_at >= :since
+               AND t.neighborhood_id = :neighborhood
+               AND t.deleted_at IS NULL
+               AND EXISTS (
+                     SELECT 1 FROM json_each(v.phenology_tags)
+                      WHERE json_each.value = :flowering
+                   )
+             GROUP BY t.id
+             ORDER BY first_seen_at, tree_uuid
+             LIMIT 1
+            """)
+        _ = try statement.bind([
+            ":neighborhood": neighborhoodID,
+            ":since": since,
+            ":flowering": PhenologyTag.flowering.rawValue
+        ])
+        return try statement.fetchOne { row in
+            (
+                treeID: try row.uuid("tree_uuid"),
+                speciesCommonName: try row.stringIfPresent("species_name"),
+                address: try row.stringIfPresent("address"),
+                firstSeenAt: try row.date("first_seen_at"),
+                observerCount: try row.int("observer_count")
+            )
+        }
+    }
+}

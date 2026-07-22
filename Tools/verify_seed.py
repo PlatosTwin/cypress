@@ -339,6 +339,22 @@ def main() -> int:
     )[0]
     c.check("14. planted_year values are plausible", bad_year == 0, f"{bad_year} offending rows")
 
+    # planted_on is the same fact at DataSF's own grain, and the almanac's
+    # "planted this spring" reads it rather than the year (screen 12). The two
+    # columns are one fact, so they are checked as one: both set or both NULL,
+    # the year agreeing with the date, and the date well formed.
+    bad_planted_on = q(
+        "SELECT COUNT(*) FROM trees WHERE (planted_on IS NULL) <> (planted_year IS NULL) "
+        "OR (planted_on IS NOT NULL AND ("
+        "     planted_on <> date(planted_on) "
+        "  OR CAST(substr(planted_on, 1, 4) AS INTEGER) <> planted_year))"
+    )[0]
+    c.check(
+        "14b. planted_on agrees with planted_year and is a real date",
+        bad_planted_on == 0,
+        f"{bad_planted_on} offending rows",
+    )
+
     # `curated` means "this species has an authored field-guide entry in
     # Fixtures/species/curated.yaml" (BUILD-PLAN 8). The city import never sets
     # it; only the content load does, and only for entries that carry id_tips.

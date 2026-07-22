@@ -107,6 +107,13 @@ CREATE TABLE neighborhoods (
 --                                  contract does not move.
 --   external_ref text           -> INTEGER. Every DataSF TreeID observed is
 --                                  numeric (verified across all 195,309 rows).
+--
+-- planted_year is section 4's column and stays. planted_on is DataSF's PlantDate
+-- kept at its own grain (ISO 'YYYY-MM-DD'), added because the almanac (screen 12)
+-- asks "how many trees were planted this spring" and a year cannot answer a
+-- question about a season. The two are always set together or both NULL, and
+-- planted_year is always planted_on's year -- a pinned invariant rather than a
+-- convention, so the cheap column stays usable and the two can never disagree.
 CREATE TABLE trees (
     id                 INTEGER PRIMARY KEY,     -- internal join key
     uuid               TEXT NOT NULL UNIQUE,    -- stable citable identity
@@ -120,6 +127,7 @@ CREATE TABLE trees (
     status             TEXT NOT NULL,           -- alive | declining | dead_reported | removed | vacant_site
     species_current    INTEGER REFERENCES species(id),
     planted_year       INTEGER,
+    planted_on         TEXT,                    -- ISO date, DataSF PlantDate
     dbh_city_cm_min    INTEGER,
     dbh_city_cm_max    INTEGER,
     site_lineage       INTEGER REFERENCES trees(id),
@@ -131,7 +139,11 @@ CREATE TABLE trees (
     CHECK (status IN ('alive','declining','dead_reported','removed','vacant_site')),
     CHECK (verification_state IN ('unverified','org_verified','city_record')),
     CHECK ((dbh_city_cm_min IS NULL) = (dbh_city_cm_max IS NULL)),
-    CHECK (city_raw IS NULL OR json_valid(city_raw))
+    CHECK (city_raw IS NULL OR json_valid(city_raw)),
+    -- The two planting columns are one fact at two grains; neither may drift
+    -- from the other, and neither may exist without the other.
+    CHECK ((planted_on IS NULL) = (planted_year IS NULL)),
+    CHECK (planted_on IS NULL OR CAST(substr(planted_on, 1, 4) AS INTEGER) = planted_year)
 );
 
 -- Covering index for viewport / nearest queries that do not want the R*Tree.
@@ -139,6 +151,11 @@ CREATE INDEX idx_trees_lat_lon ON trees(lat, lon, id);
 CREATE INDEX idx_trees_species_current ON trees(species_current);
 CREATE INDEX idx_trees_neighborhood ON trees(neighborhood_id);
 CREATE INDEX idx_trees_status ON trees(status);
+-- The almanac's two neighbourhood-scoped planting reads (screen 12): the elder
+-- is a MIN over this within one neighbourhood, and the recent-planting window is
+-- a range scan over it. Both are ordered by date inside one neighbourhood, so the
+-- index leads on the neighbourhood.
+CREATE INDEX idx_trees_neighborhood_planted ON trees(neighborhood_id, planted_on);
 
 -- Spatial index for "trees near a point" and map viewport bbox queries.
 -- Keyed directly on trees.id, which is an INTEGER PRIMARY KEY and therefore a

@@ -353,6 +353,13 @@ CREATE TABLE neighborhoods (
 --                                  contract does not move.
 --   external_ref text           -> INTEGER. Every DataSF TreeID observed is
 --                                  numeric (verified across all 195,309 rows).
+--
+-- planted_year is section 4's column and stays. planted_on is DataSF's PlantDate
+-- kept at its own grain (ISO 'YYYY-MM-DD'), added because the almanac (screen 12)
+-- asks "how many trees were planted this spring" and a year cannot answer a
+-- question about a season. The two are always set together or both NULL, and
+-- planted_year is always planted_on's year -- a pinned invariant rather than a
+-- convention, so the cheap column stays usable and the two can never disagree.
 CREATE TABLE trees (
     id                 INTEGER PRIMARY KEY,     -- internal join key
     uuid               TEXT NOT NULL UNIQUE,    -- stable citable identity
@@ -366,6 +373,7 @@ CREATE TABLE trees (
     status             TEXT NOT NULL,           -- alive | declining | dead_reported | removed | vacant_site
     species_current    INTEGER REFERENCES species(id),
     planted_year       INTEGER,
+    planted_on         TEXT,                    -- ISO date, DataSF PlantDate
     dbh_city_cm_min    INTEGER,
     dbh_city_cm_max    INTEGER,
     site_lineage       INTEGER REFERENCES trees(id),
@@ -377,7 +385,11 @@ CREATE TABLE trees (
     CHECK (status IN ('alive','declining','dead_reported','removed','vacant_site')),
     CHECK (verification_state IN ('unverified','org_verified','city_record')),
     CHECK ((dbh_city_cm_min IS NULL) = (dbh_city_cm_max IS NULL)),
-    CHECK (city_raw IS NULL OR json_valid(city_raw))
+    CHECK (city_raw IS NULL OR json_valid(city_raw)),
+    -- The two planting columns are one fact at two grains; neither may drift
+    -- from the other, and neither may exist without the other.
+    CHECK ((planted_on IS NULL) = (planted_year IS NULL)),
+    CHECK (planted_on IS NULL OR CAST(substr(planted_on, 1, 4) AS INTEGER) = planted_year)
 );
 
 -- Covering index for viewport / nearest queries that do not want the R*Tree.
@@ -385,6 +397,11 @@ CREATE INDEX idx_trees_lat_lon ON trees(lat, lon, id);
 CREATE INDEX idx_trees_species_current ON trees(species_current);
 CREATE INDEX idx_trees_neighborhood ON trees(neighborhood_id);
 CREATE INDEX idx_trees_status ON trees(status);
+-- The almanac's two neighbourhood-scoped planting reads (screen 12): the elder
+-- is a MIN over this within one neighbourhood, and the recent-planting window is
+-- a range scan over it. Both are ordered by date inside one neighbourhood, so the
+-- index leads on the neighbourhood.
+CREATE INDEX idx_trees_neighborhood_planted ON trees(neighborhood_id, planted_on);
 
 -- Spatial index for "trees near a point" and map viewport bbox queries.
 -- Keyed directly on trees.id, which is an INTEGER PRIMARY KEY and therefore a
@@ -491,20 +508,29 @@ def fetch(url: str, dest: str) -> None:
     log(f"  -> {dest} ({os.path.getsize(dest) / 1e6:.1f} MB)")
 
 
-def parse_planted_year(raw: str):
-    """PlantDate -> year int, or None. DataSF ships '03/08/2024 12:00:00 AM'."""
+def parse_planted_date(raw: str):
+    """PlantDate -> a date, or None. DataSF ships '03/08/2024 12:00:00 AM'.
+
+    The sentinel guard's upper bound is SEED_EPOCH's year, not the wall clock's.
+    `datetime.now()` here was harmless in output terms while the two agreed, and
+    it was still a clock reading inside a build the repo declares byte-for-byte
+    reproducible -- the exact shape of the defect ERRATA E13 records. Reading the
+    epoch instead means a rebuild in 2030 from the same CSV still produces the
+    same file.
+    """
     raw = (raw or "").strip()
     if not raw:
         return None
     head = raw.split(" ")[0]
+    horizon = datetime.fromisoformat(NOW).year + 1
     for fmt in ("%m/%d/%Y", "%Y-%m-%d", "%m/%d/%y", "%Y/%m/%d"):
         try:
-            year = datetime.strptime(head, fmt).year
+            parsed = datetime.strptime(head, fmt).date()
         except ValueError:
             continue
         # Guard against sentinel dates.
-        if 1800 <= year <= datetime.now().year + 1:
-            return year
+        if 1800 <= parsed.year <= horizon:
+            return parsed
         return None
     return None
 
@@ -953,7 +979,9 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool) -> in
             else:
                 stats["alive"] += 1
 
-            planted_year = parse_planted_year(row.get("PlantDate"))
+            planted_date = parse_planted_date(row.get("PlantDate"))
+            planted_year = planted_date.year if planted_date else None
+            planted_on = planted_date.isoformat() if planted_date else None
             if planted_year:
                 stats["planted_year_present"] += 1
             dbh_min, dbh_max = parse_dbh_bucket(row.get("DBH"))
@@ -996,6 +1024,7 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool) -> in
                     status,
                     species_id,
                     planted_year,
+                    planted_on,
                     dbh_min,
                     dbh_max,
                     None,
@@ -1169,7 +1198,7 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool) -> in
     print(f"    status=alive         {stats['alive']:,}")
     print(f"    status=vacant_site   {stats['vacant_site']:,}")
     print(f"    alive, no species    {stats['non_taxon_rows']:,}  (qSpecies names no taxon)")
-    print(f"    planted_year set     {stats['planted_year_present']:,}")
+    print(f"    planted date set     {stats['planted_year_present']:,}  (planted_year + planted_on)")
     print(f"    dbh bucket set       {stats['dbh_present']:,}")
     print(f"    no neighborhood      {stats['no_neighborhood']:,}")
     print(f"  species_assertions     {stats['assertions']:,}")
@@ -1210,9 +1239,10 @@ def flush(conn, species_by_key, tree_rows, rtree_rows, assertion_rows) -> None:
     )
     conn.executemany(
         "INSERT INTO trees(id,uuid,external_ref,source,lat,lon,address,site_type,"
-        "neighborhood_id,status,species_current,planted_year,dbh_city_cm_min,"
-        "dbh_city_cm_max,site_lineage,verification_state,city_raw,created_at,"
-        "updated_at,deleted_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "neighborhood_id,status,species_current,planted_year,planted_on,"
+        "dbh_city_cm_min,dbh_city_cm_max,site_lineage,verification_state,city_raw,"
+        "created_at,updated_at,deleted_at) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         tree_rows,
     )
     conn.executemany(
