@@ -55,18 +55,22 @@ public struct DataLayer: Sendable {
     }
 
     /// Screen 17's model, wired to this layer's outbox and name resolution.
+    ///
+    /// Synchronous, because `OutboxView` owns it through `@State` and a view cannot `await` its own
+    /// initializer. Nothing is lost by that: `OutboxViewState.start()` reads the stored wi-fi
+    /// preference and takes the first snapshot itself, and the view calls it from `.task`. The
+    /// default until that read lands is on, because the toggle exists to respect a volunteer's data
+    /// plan (screen 17 §3).
     @MainActor
-    public func makeOutboxViewState() async -> OutboxViewState {
+    public func makeOutboxViewState() -> OutboxViewState {
         let api = api
-        let stored = try? await store.appState(.syncPhotosOnWifiOnly)
-        let state = OutboxViewState(
+        return OutboxViewState(
             queue: outbox,
             store: store,
-            // The default is on: the toggle exists to respect a volunteer's data plan (screen 17).
-            syncPhotosOnWifiOnly: stored.map { ($0 as NSString).boolValue } ?? true,
+            syncPhotosOnWifiOnly: true,
+            // `displayNames` asks for a name and nothing else. Reading a whole profile per queued
+            // tree would pull photo, visit and care series across for a row that renders one string.
             treeNameResolver: { ids in await api.displayNames(for: ids) }
         )
-        await state.start()
-        return state
     }
 }

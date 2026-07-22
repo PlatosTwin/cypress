@@ -91,9 +91,21 @@ public struct OutboxItemSnapshot: Identifiable, Sendable, Hashable {
     /// The tree's active name, or its species common name, resolved by the caller. `nil` renders as
     /// the species fallback in the view; this layer does not author display copy for a tree.
     public let treeName: String?
+    /// The mutation itself, already decoded, or `nil` when the row's JSON could not be read.
+    ///
+    /// SCREENS.md 17 draws what each queued item *says* — `2 photos`, `vitality 3, thinning`,
+    /// `DBH 31 cm, tape` — and none of that is recoverable from a kind and a timestamp. It costs
+    /// nothing to carry: `OutboxSnapshot.init` already decodes the payload to find `treeID`, so
+    /// this is the same decode kept instead of thrown away. The *copy* is still authored in the
+    /// feature, as `treeName` is; this layer only hands over the facts.
+    public let payload: OutboxPayload?
     /// Binaries still on device for this item.
     public let photoCount: Int
     public let createdAt: Date
+    /// When the row last changed state. For a `done` row this is when it went, which is what
+    /// screen 17's `✓ 9:56 am` receipt is a stamp of — the capture time is a different fact and on
+    /// an item that waited out a dead zone it is a different hour.
+    public let updatedAt: Date
     /// When the backoff will let it try again. `nil` when it is not waiting on a timer.
     public let nextAttemptAt: Date?
 
@@ -113,6 +125,15 @@ public struct OutboxSnapshot: Sendable, Equatable {
     public let syncedRecentlyCount: Int
     /// Items whose JSON went and whose photos are queued behind the wi-fi toggle.
     public let awaitingWifiCount: Int
+    /// Binaries across those items, which is a different number from the one above.
+    ///
+    /// The sentence these feed is `OutboxFailureReason.awaitingWifi(photoCount:)` — "The note is
+    /// saved. N photos are waiting for wi-fi." Per item, `OutboxQueue.drain` already passes that
+    /// item's own photo count, so the per-row sentence was right. The screen also says it once for
+    /// the whole queue, and there `awaitingWifiCount` is a count of *items*: two visits carrying two
+    /// photographs each would have said "2 photos" with four on the device. Every clause of that
+    /// sentence has to be true (ERRATA E32), and "photos" is a clause.
+    public let awaitingWifiPhotoCount: Int
     /// Always zero, and that is the claim screen 17's summary line makes. It is computed rather
     /// than hard-coded so that if the invariant ever broke, the screen would say so.
     public let lostCount: Int
@@ -133,8 +154,8 @@ public struct OutboxSnapshot: Sendable, Equatable {
         let dayAgo = now.addingTimeInterval(-OutboxQueue.completedRetention)
 
         items = records.map { record in
-            let payloadTreeID = (try? OutboxPayload.decode(kind: record.item.kind, from: record.item.payload))?.treeID
-            let treeID = payloadTreeID ?? UUID()
+            let payload = try? OutboxPayload.decode(kind: record.item.kind, from: record.item.payload)
+            let treeID = payload?.treeID ?? UUID()
             return OutboxItemSnapshot(
                 id: record.id,
                 kind: record.item.kind,
@@ -144,8 +165,10 @@ public struct OutboxSnapshot: Sendable, Equatable {
                 errorCode: record.item.lastErrorCode,
                 treeID: treeID,
                 treeName: treeNames[treeID],
+                payload: payload,
                 photoCount: record.item.photos.count,
                 createdAt: record.item.createdAt,
+                updatedAt: record.item.updatedAt,
                 nextAttemptAt: record.nextAttemptAt
             )
         }
@@ -161,13 +184,15 @@ public struct OutboxSnapshot: Sendable, Equatable {
         // asserted none of the four and swept up a visit enqueued a moment ago, and a
         // `validation_failed` row that happened to carry a photo, into a sentence that told the
         // contributor the opposite of what had happened (ERRATA E32).
-        awaitingWifiCount = syncPhotosOnWifiOnly
+        let awaitingWifi = syncPhotosOnWifiOnly
             ? records.filter {
                 $0.jsonSynced
                     && !$0.item.photos.isEmpty
                     && ($0.item.state == .pending || $0.item.state == .uploading)
-            }.count
-            : 0
+            }
+            : []
+        awaitingWifiCount = awaitingWifi.count
+        awaitingWifiPhotoCount = awaitingWifi.reduce(0) { $0 + $1.item.photos.count }
         // A row that is neither waiting, failed, nor done has no state left to be in. The outbox's
         // four states are exhaustive, so this is structurally zero; it is here because the screen
         // claims it out loud.

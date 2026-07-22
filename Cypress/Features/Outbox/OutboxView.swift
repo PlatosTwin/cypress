@@ -1,0 +1,410 @@
+//
+//  OutboxView.swift
+//  Cypress — Features/Outbox
+//
+//  Screen 17 · Outbox. SCREENS.md lines 1241–1280.
+//
+//  A pushed screen with its own C1 header and back circle, like 11, 12, 13 and 16.
+//
+//  Composed from C1 (header + amber trailing pill), C24 (the terminal row's amber card), C25 (the
+//  wi-fi toggle), C21 (the leading tile's leaf) and C12 (a queued measurement's method badge). The
+//  row card and the dimmed receipt have no C-number — §2 and §4 describe both inline — so they are
+//  built here from tokens, as 13's photo strip was.
+//
+//  ── The model is `OutboxViewState`, and there is not a second one ─────────────────────────
+//  ARCHITECTURE §3 asks for one `@Observable` model per feature folder. This feature's model already
+//  existed before the screen did, in `Data/Outbox`, because the queue's own view state is what the
+//  drain notifies and what the wi-fi preference is persisted through. Wrapping it in a second
+//  observable object here would give the screen two places to hold the same toggle, and the toggle
+//  is the one piece of state that must not drift: `awaitingWifiCount` is a statement about it
+//  (ERRATA E32). So the view owns `OutboxViewState` directly via `@State`, and this file adds only
+//  the derivation (`OutboxPresentation`) and the drawing.
+//
+//  Not a raw hex or a raw font size in the file (ARCHITECTURE §6).
+//
+
+import SwiftUI
+
+struct OutboxView: View {
+
+    @State private var state: OutboxViewState
+    @Environment(AppRouter.self) private var router: AppRouter?
+
+    private let now: () -> Date
+    private let calendar: Calendar
+
+    /// - Parameter state: built by the composition root (`DataLayer.makeOutboxViewState`), which is
+    ///   where the queue, the preference store and the name resolver are already wired together.
+    ///   The feature does not assemble its own services (ARCHITECTURE §3).
+    init(
+        state: @autoclosure () -> OutboxViewState,
+        now: @escaping () -> Date = { Date() },
+        calendar: Calendar = .current
+    ) {
+        _state = State(wrappedValue: state())
+        self.now = now
+        self.calendar = calendar
+    }
+
+    var body: some View {
+        @Bindable var state = state
+
+        OutboxScreen(
+            presentation: OutboxPresentation(
+                snapshot: state.snapshot,
+                now: now(),
+                calendar: calendar
+            ),
+            syncPhotosOnWifiOnly: $state.syncPhotosOnWifiOnly,
+            refreshError: state.refreshError,
+            onBack: { router?.pop() },
+            onRetry: { id in Task { await self.state.retry(id: id) } }
+        )
+        .task {
+            await state.start()
+        }
+    }
+}
+
+// MARK: - The screen itself
+
+/// Screen 17's layout, given a finished derivation.
+///
+/// Split from `OutboxView` for the reason `ActivityScreen` is split from `ActivityView`: this
+/// screen's states — an empty queue, a failed item, an expired one — arrive from an `async` read,
+/// and a view that only has content after one renders as the loading state in a detached window.
+/// With the split, any state can be handed straight in and looked at.
+struct OutboxScreen: View {
+
+    let presentation: OutboxPresentation
+    @Binding var syncPhotosOnWifiOnly: Bool
+    var refreshError: String?
+    var onBack: (() -> Void)?
+    var onRetry: ((UUID) -> Void)?
+
+    var body: some View {
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    header
+
+                    if let refreshError { readFailure(refreshError) }
+
+                    if presentation.isQueueEmpty {
+                        emptyQueue
+                    } else {
+                        queue
+                    }
+
+                    wifiRow
+                    if let sentence = presentation.awaitingWifiSentence { awaitingWifi(sentence) }
+                    syncedSection
+                    if let summary = presentation.summaryLine { summaryLine(summary) }
+
+                    // §6 carries no `margin-top:auto`, unlike 16's CTA, so the footnote follows the
+                    // content rather than being pinned to the bottom of the frame. On an empty queue
+                    // that keeps the screen's one promise next to its one sentence.
+                    footnote
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(minHeight: proxy.size.height, alignment: .top)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(CypressColor.surfaceScreen)
+        .navigationBarBackButtonHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
+    }
+
+    // MARK: - §1 Header (C1)
+
+    /// `title: Outbox`, trailing amber pill `3 waiting`. No pill when nothing is waiting.
+    @ViewBuilder
+    private var header: some View {
+        if let pill = presentation.headerPill {
+            ScreenHeader(
+                title: OutboxCopy.screenTitle,
+                trailingPill: pill,
+                pillStyle: .amber,
+                onBack: onBack
+            )
+        } else {
+            ScreenHeader(title: OutboxCopy.screenTitle, onBack: onBack)
+        }
+    }
+
+    // MARK: - §2 The queue
+
+    private var queue: some View {
+        VStack(spacing: OutboxMetrics.queueGap) {
+            ForEach(presentation.queue) { row in
+                OutboxQueueRow(row: row, onRetry: { onRetry?(row.id) })
+            }
+        }
+        .padding(.top, OutboxMetrics.queueTop)
+        .padding(.horizontal, CypressSpacing.gutter)
+    }
+
+    /// SCREENS.md §5 gap 5's `outbox with nothing queued`, and the state a contributor sees almost
+    /// every time. See `OutboxCopy.emptyState`.
+    private var emptyQueue: some View {
+        Text(OutboxCopy.emptyState)
+            .cypressBody135(color: CypressColor.textMuted)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, CypressSpacing.labelSectionTop)
+            .padding(.horizontal, CypressSpacing.gutterLabel)
+    }
+
+    // MARK: - §3 The wi-fi setting (C25)
+
+    private var wifiRow: some View {
+        HStack(spacing: OutboxMetrics.rowSpacing) {
+            VStack(alignment: .leading, spacing: OutboxMetrics.rowTextGap) {
+                Text(OutboxCopy.wifiTitle)
+                    .font(CypressFont.body135Bold)
+                    .foregroundStyle(CypressColor.textInk)
+                Text(OutboxCopy.wifiSubtitle)
+                    .font(CypressFont.body115)
+                    .foregroundStyle(CypressColor.textFaint)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+            // Flipping this refreshes the snapshot, because `awaitingWifiCount` is a statement about
+            // the toggle as much as about the rows (`OutboxViewState.syncPhotosOnWifiOnly`, E32).
+            CypressToggle(isOn: $syncPhotosOnWifiOnly, accessibilityLabel: OutboxCopy.wifiTitle)
+        }
+        .padding(.vertical, OutboxMetrics.wifiPaddingV)
+        .padding(.horizontal, OutboxMetrics.wifiPaddingH)
+        .background {
+            RoundedRectangle(cornerRadius: CypressRadius.cardSm, style: .continuous)
+                .fill(CypressColor.surfaceCard)
+        }
+        .cypressBorder(CypressColor.borderCool, radius: CypressRadius.cardSm)
+        .padding(.top, OutboxMetrics.wifiTop)
+        .padding(.horizontal, CypressSpacing.gutter)
+    }
+
+    /// `The note is saved. 2 photos are waiting for wi-fi.` — the sentence the toggle above is
+    /// currently making true.
+    private func awaitingWifi(_ sentence: String) -> some View {
+        Text(sentence)
+            .cypressBody135(color: CypressColor.textMuted)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, CypressSpacing.gapVitality)
+            .padding(.horizontal, CypressSpacing.gutterLabel)
+    }
+
+    // MARK: - §4 Synced earlier today
+
+    @ViewBuilder
+    private var syncedSection: some View {
+        let rows = presentation.syncedRows
+        if !rows.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(OutboxCopy.syncedLabel)
+                    .cypressMicroLabel()
+                    .padding(.bottom, CypressSpacing.gapVitality)
+
+                VStack(spacing: OutboxMetrics.syncedGap) {
+                    ForEach(rows) { row in
+                        OutboxSyncedRow(row: row)
+                    }
+                }
+                .opacity(OutboxMetrics.syncedOpacity)
+            }
+            .padding(.top, CypressSpacing.labelSectionTop)
+            .padding(.horizontal, CypressSpacing.gutter)
+        }
+    }
+
+    // MARK: - §5 Summary
+
+    private func summaryLine(_ text: String) -> some View {
+        Text(text)
+            .font(CypressFont.mono11)
+            .foregroundStyle(CypressColor.textFaint)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, OutboxMetrics.summaryTop)
+            .padding(.horizontal, CypressSpacing.gutter)
+    }
+
+    // MARK: - §6 Footnote
+
+    private var footnote: some View {
+        Text(OutboxCopy.footnote)
+            .cypressBody135(color: CypressColor.textFaintAlt)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, OutboxMetrics.footnoteTop)
+            .padding(.bottom, CypressSpacing.bottomFootnote)
+            .padding(.horizontal, OutboxMetrics.footnoteGutter)
+    }
+
+    // MARK: - The state SCREENS.md does not draw
+
+    /// Failing to *read* the outbox is a different problem from failing to *send* it, and this
+    /// screen is the last place to conflate them (`OutboxViewState.refreshError`).
+    private func readFailure(_ text: String) -> some View {
+        Text(text)
+            .cypressBody135(color: CypressColor.amberChipSelectedText)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, CypressSpacing.labelSectionTop)
+            .padding(.horizontal, CypressSpacing.gutterLabel)
+    }
+}
+
+// MARK: - §2's row
+
+/// One queued item.
+///
+/// A terminal row is a C24 attention card and a live one is a plain card, which is the whole of
+/// "must not look like a transient one": the border, the tile and the state word all change
+/// together, and only the terminal row carries a control.
+struct OutboxQueueRow: View {
+
+    let row: OutboxPresentation.Row
+    var onRetry: (() -> Void)?
+
+    var body: some View {
+        if row.isTerminal {
+            AttentionCard(size: .compact) { content }
+        } else {
+            content
+                .padding(.vertical, OutboxMetrics.rowPaddingV)
+                .padding(.horizontal, OutboxMetrics.rowPaddingH)
+                .background {
+                    RoundedRectangle(cornerRadius: CypressRadius.cardSm, style: .continuous)
+                        .fill(CypressColor.surfaceCard)
+                }
+                .cypressBorder(CypressColor.borderCool, radius: CypressRadius.cardSm)
+        }
+    }
+
+    private var content: some View {
+        HStack(alignment: .top, spacing: OutboxMetrics.rowSpacing) {
+            tile
+            VStack(alignment: .leading, spacing: OutboxMetrics.rowTextGap) {
+                Text(row.title)
+                    .font(CypressFont.body14)
+                    .foregroundStyle(CypressColor.textInk)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                // `DBH` · `31 cm` + `taped` · `11:03 am`, in §2's order. A queued number carries its
+                // method here exactly as it does on 03 and 11 (D7).
+                HStack(spacing: 0) {
+                    if let detail = row.detail {
+                        Text(detail)
+                            .font(CypressFont.body12)
+                            .foregroundStyle(CypressColor.textMuted)
+                    }
+                    if let quantity = row.quantity {
+                        MeasuredValue(quantity: quantity, font: CypressFont.mono12)
+                            .padding(.leading, row.detail == nil ? 0 : CypressSpacing.gapVitality)
+                    }
+                    Text(row.timeText)
+                        .font(CypressFont.body12)
+                        .foregroundStyle(CypressColor.textMuted)
+                }
+
+                // "says so, says why, and waits for you" (§6). The sentence is
+                // `OutboxFailureReason`'s; this file never writes one.
+                if let reason = row.reason {
+                    Text(reason)
+                        .font(CypressFont.body12)
+                        .foregroundStyle(
+                            row.isTerminal ? CypressColor.amberChipSelectedText : CypressColor.textFaint
+                        )
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: 0)
+            stateCorner
+        }
+    }
+
+    /// §2: leading tile 38×38, radius 10. The measurement row draws its reading in mono inside the
+    /// tile, as the mock does; every other kind takes C21's leaf, which is the only mark the
+    /// catalogue carries. §2's camera and ring glyphs are not in C1–C30 and are not invented here.
+    private var tile: some View {
+        RoundedRectangle(cornerRadius: CypressRadius.thumbSmAlt, style: .continuous)
+            .fill(row.isTerminal ? CypressColor.amberPillFill : CypressColor.cityRecordBadgeFill)
+            .frame(width: OutboxMetrics.tile, height: OutboxMetrics.tile)
+            .overlay {
+                switch row.tile {
+                case .leaf:
+                    LeafGlyph(
+                        size: OutboxMetrics.tile / 2,
+                        tint: row.isTerminal ? CypressColor.amberPillText : CypressColor.canopy
+                    )
+                case let .value(text):
+                    Text(text)
+                        .font(CypressFont.mono12SemiBold)
+                        .foregroundStyle(
+                            row.isTerminal ? CypressColor.amberPillText : CypressColor.tapedBadgeText
+                        )
+                        .minimumScaleFactor(0.7)
+                        .padding(.horizontal, CypressSpacing.Component.hairlineStrong)
+                }
+            }
+            .accessibilityHidden(true)
+    }
+
+    /// §2's trailing state word. `retry` is the drawn one and is a control (BUILD-PLAN §4: "cap 48 h
+    /// then state failed with a visible retry button"); `stopped` is not, because retrying a
+    /// non-retryable code promises an outcome the taxonomy says will not change.
+    @ViewBuilder
+    private var stateCorner: some View {
+        switch row.state {
+        case .waiting:
+            Text(row.state.rawValue)
+                .font(CypressFont.mono11SemiBold)
+                .foregroundStyle(CypressColor.textFaint)
+        case .stopped:
+            Text(row.state.rawValue)
+                .font(CypressFont.mono11Bold)
+                .foregroundStyle(CypressColor.accentAmber)
+        case .retry:
+            Button { onRetry?() } label: {
+                Text(row.state.rawValue)
+                    .font(CypressFont.mono11Bold)
+                    .foregroundStyle(CypressColor.accentAmber)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .cypressHitArea()
+            .accessibilityLabel(OutboxCopy.retryAction)
+        }
+    }
+}
+
+// MARK: - §4's receipt
+
+/// One dimmed `Synced earlier today` row: bold title, trailing mono check and time.
+struct OutboxSyncedRow: View {
+
+    let row: OutboxPresentation.SyncedRow
+
+    var body: some View {
+        HStack(spacing: OutboxMetrics.rowSpacing) {
+            Text(row.title)
+                .font(CypressFont.body13Bold)
+                .foregroundStyle(CypressColor.textInk)
+            Spacer(minLength: 0)
+            Text(row.timeText)
+                .font(CypressFont.mono11SemiBold)
+                .foregroundStyle(CypressColor.tapedBadgeText)
+        }
+        .padding(.vertical, OutboxMetrics.syncedRowPaddingV)
+        .padding(.horizontal, OutboxMetrics.syncedRowPaddingH)
+        .background {
+            RoundedRectangle(cornerRadius: CypressRadius.control, style: .continuous)
+                .fill(CypressColor.surfaceCard)
+        }
+        .cypressBorder(CypressColor.borderCool, radius: CypressRadius.control)
+    }
+}

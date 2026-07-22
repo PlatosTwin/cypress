@@ -27,7 +27,11 @@ public struct FavoriteToggle: Codable, Hashable, Sendable {
 /// payload carrying its own `type` field. That mirrors the table as BUILD-PLAN §4 defines it and
 /// keeps the discriminator queryable — screen 17 groups by kind, and a JSON field cannot be indexed
 /// as cheaply as a column.
-public enum OutboxPayload: Sendable {
+/// `Hashable` because screen 17 renders what is *in* an item, not only that one exists: the mock's
+/// third row reads `DBH 31 cm, tape`, and a measurement's method badge (C12) is the one place D7's
+/// provenance shows on that screen. `OutboxItemSnapshot` is `Hashable`, so carrying the decoded
+/// mutation there needs this. Every associated value is already `Hashable` through `CoreEntity`.
+public enum OutboxPayload: Sendable, Hashable {
     case visit(Visit)
     case observation(TreeObservation)
     case measurement(TreeMeasurement)
