@@ -47,6 +47,13 @@ public protocol CypressAPI: Sendable {
     /// `GET /species?query=` — autocomplete over both the scientific and the common name.
     func searchSpecies(query: String, limit: Int) async throws -> [Species]
 
+    /// `GET /species/{id}` as screen 07 needs it: the field-guide entry plus how common the species
+    /// is nearby. `near` is the caller's fix, or nil when there is none.
+    ///
+    /// Defaulted in `SpeciesGuide.swift` to the entry with no population facts attached, which is
+    /// the honest answer for an implementation that has no inventory to count.
+    func speciesGuide(id: UUID, near coordinate: Coordinate?) async throws -> SpeciesGuide
+
     // MARK: - Sync
 
     /// `POST /sync` — the batch endpoint. Takes outbox items carrying their `client_uuid`s and
@@ -71,6 +78,14 @@ public protocol CypressAPI: Sendable {
 
     /// `GET /me/grove`.
     func grove() async throws -> [GroveEntry]
+
+    /// `GET /me/grove`, the Species tab (screen 08).
+    ///
+    /// A second read rather than a wider `GroveEntry` because the two tabs of My Grove are keyed on
+    /// different things — one on the contributor's trees, one on the species they have come to know
+    /// — and because the ring's denominator is a fact about the city's inventory that no list of
+    /// the contributor's own trees contains. See `GroveSpecies`.
+    func groveSpecies() async throws -> GroveSpecies
 
     /// `GET /me/journal`, cursor-paginated (`?cursor`, `?limit` max 100).
     func journal(cursor: String?, limit: Int) async throws -> Page<JournalEntry>

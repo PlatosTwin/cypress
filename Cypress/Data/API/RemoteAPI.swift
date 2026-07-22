@@ -101,6 +101,14 @@ public struct RemoteAPI: CypressAPI {
         throw unimplemented
     }
 
+    /// Will call `GET /me/grove` for the Species tab (screen 08).
+    ///
+    /// Overrides the protocol's `.empty` default deliberately: an unbuilt server has no answer,
+    /// and returning the empty grove would draw a contributor's real collection as a cold start.
+    public func groveSpecies() async throws -> GroveSpecies {
+        throw unimplemented
+    }
+
     /// Will call `GET /me/journal?cursor=&limit=`.
     public func journal(cursor: String?, limit: Int) async throws -> Page<JournalEntry> {
         throw unimplemented

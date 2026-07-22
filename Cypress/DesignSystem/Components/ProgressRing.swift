@@ -21,9 +21,17 @@ struct ProgressRing: View {
         Circle()
             .fill(
                 AngularGradient(
+                    // `selectionFill` and `ctaFill` rather than the raw `canopy` / `cypressDeep`
+                    // hues. The six brand colours are `lightOnly` by design — CypressColor's own
+                    // header says their scheme-dependent roles are carried by the paired role
+                    // tokens — and reaching past them left the ring drawing `#2F6B4F` on `#0E1712`
+                    // in the dark, with its `#1D4634` label all but invisible inside it. Both pairs
+                    // are documented (§1.2 dark table: mint is "primary CTA fill, selection"), so
+                    // the light rendering is unchanged to the byte and nothing here is invented.
+                    // See ERRATA E50.
                     gradient: Gradient(stops: [
-                        .init(color: CypressColor.canopy, location: 0),
-                        .init(color: CypressColor.canopy, location: clamped),
+                        .init(color: CypressColor.selectionFill, location: 0),
+                        .init(color: CypressColor.selectionFill, location: clamped),
                         .init(color: CypressColor.progressRingTrack, location: clamped),
                         .init(color: CypressColor.progressRingTrack, location: 1),
                     ]),
@@ -39,7 +47,7 @@ struct ProgressRing: View {
                         if let label {
                             Text(label)
                                 .font(CypressFont.mono14SemiBold)
-                                .foregroundStyle(CypressColor.cypressDeep)
+                                .foregroundStyle(CypressColor.ctaFill)
                         }
                     }
                     .frame(

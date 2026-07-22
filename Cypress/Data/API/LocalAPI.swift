@@ -12,6 +12,7 @@ public actor LocalAPI: CypressAPI {
     private let speciesQueries: SpeciesQueries?
     private let communityTrees = CommunityTreeStore()
     private let contributions = ContributionStore()
+    private let groveQueries: GroveQueries?
     private let now: @Sendable () -> Date
 
     /// This installation's device id (D9). Contributions made before sign-in are attributed here.
@@ -37,6 +38,7 @@ public actor LocalAPI: CypressAPI {
             TreeQueries(schema: $0, seedHasSoftDeletedTrees: store.seedHasSoftDeletedTrees)
         }
         self.speciesQueries = store.seed.map { SpeciesQueries(schema: $0) }
+        self.groveQueries = store.seed.map { GroveQueries(schema: $0) }
         self.photoDirectory = photoDirectory
             ?? store.databaseURL.deletingLastPathComponent().appendingPathComponent("Photos", isDirectory: true)
     }
@@ -269,6 +271,75 @@ public actor LocalAPI: CypressAPI {
         }
     }
 
+    /// Screen 07's payload: the field-guide entry, plus how common the species is nearby.
+    ///
+    /// Read in one `readConsistently` block for the same reason `treeProfile` is — the counts, the
+    /// neighbourhood they are scoped to and the individuals listed under them are one statement
+    /// about the inventory, and three separate reads could straddle a write and disagree.
+    ///
+    /// **Every population fact here is a whole read.** `cityTreeCount` is a `COUNT(*)`, not the size
+    /// of a page; each nearby tree's photo count comes from `photos(treeID:)` with no limit, so
+    /// `Series.totalCount` is non-nil and the screen may print it (ERRATA E38). The nearby list
+    /// itself *is* limited, and says so — it is the one series on this screen nothing counts.
+    ///
+    /// Without a fix there is no "your area" and no distance to draw, so `nearYou` and `nearby` are
+    /// simply absent. That is not a degraded state to apologise for on screen; it is two surfaces
+    /// whose subject does not exist.
+    public func speciesGuide(id: UUID, near coordinate: Coordinate?) async throws -> SpeciesGuide {
+        try await store.queue.readConsistently { connection -> SpeciesGuide in
+            guard let speciesQueries, let species = try speciesQueries.species(id: id, connection: connection) else {
+                throw APIError.notFound
+            }
+
+            let cityCount = try speciesQueries.cityTreeCount(speciesID: id, connection: connection)
+
+            guard let coordinate else {
+                return SpeciesGuide(species: species, cityTreeCount: cityCount)
+            }
+
+            let neighborhood = try speciesQueries.resolveNeighborhood(near: coordinate, connection: connection)
+            let nearYou = try neighborhood.map { area in
+                SpeciesNeighborhoodCount(
+                    neighborhoodName: area.name,
+                    count: try speciesQueries.neighborhoodTreeCount(
+                        speciesID: id,
+                        neighborhoodID: area.id,
+                        connection: connection
+                    )
+                )
+            }
+
+            let candidates = try treeQueries?.nearest(
+                to: coordinate,
+                radiusM: SpeciesGuideLimits.nearbyRadiusM,
+                limit: SpeciesGuideLimits.nearbyRowLimit + 1,
+                speciesID: id,
+                connection: connection
+            ) ?? []
+
+            // One row more than the screen draws was asked for, so `isComplete` is a fact about the
+            // read rather than a guess — the same proof `ContributionStore` uses.
+            let isComplete = candidates.count <= SpeciesGuideLimits.nearbyRowLimit
+            let rows = try candidates.prefix(SpeciesGuideLimits.nearbyRowLimit).map { candidate in
+                NearbySpeciesTree(
+                    treeID: candidate.tree.id,
+                    title: try contributions.activeName(treeID: candidate.tree.id, connection: connection)?.name
+                        ?? candidate.tree.address,
+                    distanceM: candidate.distanceM,
+                    photoCount: try contributions.photos(treeID: candidate.tree.id, connection: connection).totalCount,
+                    vitality: try contributions.latestObservation(treeID: candidate.tree.id, connection: connection)?.vitality
+                )
+            }
+
+            return SpeciesGuide(
+                species: species,
+                cityTreeCount: cityCount,
+                nearYou: nearYou,
+                nearby: Series(items: rows, isComplete: isComplete)
+            )
+        }
+    }
+
     /// The curated field-guide list (BUILD-PLAN §8). Not a §6 endpoint; screen 08 needs it and it
     /// is a filter on `GET /species?` in every meaningful sense.
     public func curatedSpecies(limit: Int = 100) async throws -> [Species] {
@@ -492,6 +563,45 @@ public actor LocalAPI: CypressAPI {
             )
         }
         return entries
+    }
+
+    /// `GET /me/grove`, Species tab — screen 08.
+    ///
+    /// Both reads run with no limit, on purpose. Screen 08 prints the size of each of them, so a
+    /// page would be printed as a total the moment one was taken (ERRATA E38); `GroveQueries` still
+    /// accepts a limit so the incomplete case stays representable and testable, and this is the
+    /// caller that must not pass one.
+    ///
+    /// A device with no seed attached has no city inventory to compare against and no tree to
+    /// resolve a species from, so it has an empty grove rather than a wrong one.
+    public func groveSpecies() async throws -> GroveSpecies {
+        guard let groveQueries else { return .empty }
+        let userID = userID
+        let deviceID = deviceID
+        return try await store.queue.read { connection -> GroveSpecies in
+            let known = try groveQueries.knownSpecies(
+                userID: userID,
+                deviceID: deviceID,
+                connection: connection
+            )
+            // A4's inference reads the same contributions, so a contributor with none has no
+            // neighbourhood and the ring has nothing to be a fraction of.
+            guard let resident = try groveQueries.residentNeighborhood(
+                userID: userID,
+                deviceID: deviceID,
+                connection: connection
+            ) else {
+                return GroveSpecies(neighborhood: nil, known: known)
+            }
+            let species = try groveQueries.neighborhoodSpeciesIDs(
+                neighborhoodID: resident.id,
+                connection: connection
+            )
+            return GroveSpecies(
+                neighborhood: GroveNeighborhood(name: resident.name, species: species),
+                known: known
+            )
+        }
     }
 
     public func journal(cursor: String?, limit: Int) async throws -> Page<JournalEntry> {

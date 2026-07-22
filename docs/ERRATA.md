@@ -1013,3 +1013,274 @@ the model and are exercised, so the day a surface genuinely needs a photo locati
 is stored (`Photo.init` does it unconditionally); until then nothing writes one. Screen 10 (share) is
 where this will be re-opened, and it should be re-opened as a product decision rather than as
 plumbing.
+
+### E43 — screen 07 draws four things the record cannot carry, and no state for the 529 species that carry almost nothing
+
+`SCREENS.md` 07 is transcribed from a single drawn page for a single species. Building against it
+turned up four values with no field behind them and three states with no drawing.
+
+**Values.**
+
+- **`Evergreen conifer`** (07 §2). The habit half comes from `species.leaf_retention`; `conifer` is a
+  growth form, and BUILD-PLAN §4's `species` table has no column for one. The chip is built as
+  `Evergreen` alone.
+- **`Coastal`** (07 §2). A habitat. Same: no column, no curated field, and `Fixtures/species/curated.yaml`
+  authors none. No chip is drawn. Inferring it from the family would be inventing botany
+  (DECISIONS constraint 15).
+- **`Hesperocyparis macrocarpa`** (07 §1). The seed carries `Cupressus macrocarpa` for the Monterey
+  Cypress, which is what GBIF resolved and what `sf_species_map.csv` maps the DataSF string to. Both
+  names are current in the literature; the page shows the record's, because the alternative is the
+  screen and the database disagreeing about what the tree is called.
+- **`In July: look for closed gray cones …`** (07 §4). This is per-species, per-month authored copy,
+  and the only field that could hold it is `care_notes[].month_range`. **20 of the 21 seeded care
+  notes have `{start: 1, end: 12}`**, which `curated.yaml`'s own header defines as "the source
+  attaches no month restriction" — printing one of those under `In July:` would turn a year-round
+  note into a claim about July. Exactly one seeded note is genuinely month-restricted (Jacaranda,
+  March–May). So the callout draws for one species in three months of the year and is otherwise
+  absent. The flagship the mock draws it *on* — Monterey Cypress — has `care_notes: []` and an
+  entirely empty seasonal calendar, so the sentence in the mock has no source anywhere in the repo.
+
+**States.** SCREENS.md draws none of these and none was invented (DECISIONS constraint 21):
+
+- **The long tail.** 529 of 569 species carry no `id_tips`, no care notes and no seasonal calendar.
+  Their page is the hero, the chips that have facts behind them, and the population cards. That is
+  BUILD-PLAN §8's own rule for the long tail — "name, family, and a generic silhouette" — rendered
+  rather than apologised for. There is no "we don't have this yet" copy, because a page that says so
+  is a page about the app rather than about the tree.
+- **The failed read.** `SpeciesCopy.loadFailed` / `loadRetry` say what happened and nothing about the
+  species, since nothing about the species was read.
+- **`Nearby individuals`' query.** 07 §6 is drawn as a finished list with no radius and no row count.
+  `SpeciesGuideLimits` takes the narrowest reading of the drawing — two rows, 500 m, which clears the
+  `400 m` row it draws. Both are guesses at a query, not a design.
+
+Finally, 07 §6 declares `margin-top:auto`, pinning the list to the bottom of an 874 px frame. The
+built screen lets it follow the content instead: the section's height depends on how many
+individuals are actually nearby, and a spacer sized to the difference would open a gap that grows
+with the device. SCREENS.md's own closing note already flags several screens as exceeding one
+viewport in a real build.
+
+### E44 — A4 fixes the *unit* of "your area" and not the mechanism, and the mechanism it does name does not exist
+
+A4 (BUILD-PLAN §11) resolves "your area" as "SF Analysis Neighborhoods polygons, resident
+neighborhood inferred from most-visited, overridable in settings". Screen 07 §5's `Near you` card is
+the first surface that needs it.
+
+Neither half of the mechanism is buildable today: there is no visit history to infer a resident
+neighbourhood from on a fresh install — which is every install — and there is no settings screen to
+override it in. The *unit* is available: the seed carries all 41 neighbourhoods and the city's own
+assignment of every one of the 195,309 trees to one, in `trees.neighborhood_id`.
+
+**`Near you` therefore counts the species inside the neighbourhood the caller is standing in, and
+that neighbourhood is resolved through the nearest inventoried tree rather than through a
+point-in-polygon test.** `neighborhoods.geom_geojson` is present, so the polygon test is available
+in principle; what it would add is a *second* answer to a question the ingest already answered
+195,309 times, and a ray-cast that disagreed with `neighborhood_id` on a boundary block would put
+the count card and the map in different neighbourhoods for no gain. In SF the nearest inventoried
+tree is metres away.
+
+This is a derivation, not the resolution A4 states, and it is recorded rather than assumed. When a
+visit history and a settings screen exist, `SpeciesQueries.resolveNeighborhood(near:)` is the one
+place that changes.
+
+Two consequences worth naming. Without a location fix there is no area, so the card does not draw at
+all — "we could not tell" and "none near you" are different facts and only one of them is true.
+And outside SF, or in the middle of the bay, no tree is within the search radius and the same
+absence applies.
+
+### E45 — screen 07 has no dark row, and two of its tokens are light-only by design rather than by oversight
+
+E8 records that dark is documented for D1–D3 and screen 04 only. Screen 07 is one of the surfaces
+that inherits nothing, and running it in dark turned up two specific things a designer has to rule
+on rather than a general "it looks fine":
+
+- **The hero has no dark counterpart.** `CypressGradient` carries `heroProfile` *and*
+  `heroProfileDark` — D2 specifies a different radial stack and a deeper scrim for the tree profile
+  in dark — but `heroSpecies` is alone. So 07's top 190 pt stays the light gradient against a
+  `#0E1712` page. It is defensible, because the hero is a placeholder for a photograph and a
+  photograph has no dark mode; it is also the single brightest thing in the app at night, and D2's
+  existence shows the designer did not think that was acceptable for the other hero.
+- **The recognize-it glyph tints are light-only and one of them nearly vanishes.** SCREENS.md 07 §3
+  names `#2F6B4F`, `#4E8F6A` and `#7A4F33` for the three 10 pt leaf glyphs. All three are brand
+  palette entries and all three are `lightOnly` tokens, correctly — they are the brand's colours,
+  not surface colours. Against the light card they read clearly. Against `dark.surface.card`
+  (`#18251D`) the Canopy glyph is very close to its own background, and it is the *first* bullet, so
+  the card reads as though its top row lost its mark.
+
+Neither was invented around. No literal was written and no token was re-tinted; both are recorded
+here because inventing a dark value for a documented brand colour is precisely the failure the
+`derived` / `escalated` labelling exists to prevent (ROADMAP, "Dark mode for the 59 unspecified
+tokens").
+
+### E46 — 08's tab row is not C5, and two of its three pills have nowhere to go
+
+SCREENS.md §2's C5 (`SegmentedControl`) lists its users: "05 Status, 05 Foliage, 16
+What-are-you-measuring, 16 Method, D3 Status". Screen 08 is not among them, and its own §2 describes
+something else: three `flex:1` pills with `gap:8px` between them, each `padding:9px 2px` at radius
+**11px**, each carrying its own border. C5 is one bordered container at radius 12px with
+`border-left` dividers and no gap. They are different controls that look alike at a glance, and
+building 08's as a C5 variant would have meant widening a shared component to hold something it is
+not. It is built in `Features/Grove` from tokens (`CypressRadius.grovePill`, which §1.4 already
+carries for exactly this).
+
+The second half is behavioural. The three pills read `Trees`, `Journal`, `Species`, and only
+`Species` — screen 08 itself — has been built or mocked. `Trees` corresponds to the grove screen in
+the clickable prototype (PROTOTYPE-FLOW §1.7 "Grove fixtures": a `Your trees` list, a neighbourhood
+callout and a steward card), which is a *different screen* from SCREENS.md 08 and is not in the
+mock set; `Journal` is a BUILD-PLAN §9 M2 build requirement with no mock at all. The prototype's own
+answer for this screen is explicit — PROTOTYPE-FLOW §1.5, `grove`: "Progress card, neighborhood
+callout, steward card, tabs My Grove / Journal / You — **inert**".
+
+**They are drawn and inert, and they are not buttons.** A pill that looks pressable and does nothing
+is worse than a label, so no `Button` is constructed for them and nothing highlights on touch. What
+they are *for* is a question for design, not for a view file (DECISIONS constraint 21).
+
+### E47 — screen 08's own numbers do not agree, and the real denominator is 215, not 40
+
+Three separate problems, all in SCREENS.md 08 §3's one sentence `12 of 40 species` /
+`you can recognize in the Outer Sunset`.
+
+**The mock does not add up.** The ring says twelve species are known. The grid immediately beneath
+it (§5) draws **seven** known tiles and two locked. Both numbers are in the same figure, and nothing
+reconciles them. The build derives both from one series, so they cannot disagree; the previews use
+seven, because seven is what is drawn.
+
+**San Francisco has no "Outer Sunset".** A4 fixes neighbourhood names to the SF Analysis
+Neighborhoods polygons, and the seed carries all 41 of them. The Sunset is **two** of those
+polygons, named `Sunset/Parkside` and `Inner Sunset`. "Outer Sunset" is the colloquial name for the
+western half of `Sunset/Parkside` and is not a row in the dataset the product committed to. The
+caption therefore renders the seed's own name, and the screen reads `you can recognize in the
+Sunset/Parkside` — which is correct, and reads worse than the mock. Whether the app should carry a
+display-name layer over SF's polygon names is a design question that reaches beyond 08 (07's
+`Near you` card and 12's almanac need the same answer). Recorded, not invented around.
+
+**Forty is a fixture; the real number is 215.** Counting distinct `species_current` over the
+city-inventory trees the seed places in `Sunset/Parkside`:
+
+```sql
+SELECT COUNT(DISTINCT t.species_current) FROM trees t
+  JOIN neighborhoods n ON n.id = t.neighborhood_id
+ WHERE n.name = 'Sunset/Parkside' AND t.deleted_at IS NULL AND t.species_current IS NOT NULL;
+-- 215
+```
+
+Fifty-six of those 215 are represented by a single tree in the whole neighbourhood, and the
+distribution has a very long tail (1,561 New Zealand Xmas Trees at the head). The consequence on
+screen is that a contributor who has met seven species sees **`7 of 215 species`** and a ring at
+**3%** — a correct fraction that will read as near-empty for a very long time, where the mock's
+`12 of 40` reads as a third of the way home.
+
+The build renders the true number. Making the denominator smaller would mean choosing which species
+"count", and every available rule for that (curated species only, species above some abundance
+floor) is a botanical claim the record does not carry. **But the ring's readability at 3% is a real
+design problem, not a rendering bug**, and it is the one thing on this screen that a designer should
+look at before it ships.
+
+### E48 — the empty grove is a BUILD-PLAN §9 requirement, and no copy exists for it
+
+BUILD-PLAN §9 lists, under M2, "sign-in decline path; **empty grove, journal, collections**; …". So
+the state is a sanctioned build requirement rather than something invented (ARCHITECTURE §5.8 admits
+exactly two sources, SCREENS.md and BUILD-PLAN §9). What §9 does not give — and what no mock gives —
+is a single word of copy for it.
+
+This matters more here than it would elsewhere, because the empty grove is not an edge case. There
+is no account (D9), contributions are device-scoped, and every screen on this list is empty on a
+fresh install. **The empty grove is the state every new device is in.**
+
+What was built is the restrained reading: the ring, the celebration callout and the tile grid are
+each derived from contributions, so a device that has made none renders none of them
+(ARCHITECTURE §5.6). What remains is the screen's specified chrome — the title, the three pills, and
+§6's footnote, which `margin-top:auto` puts at the bottom of an otherwise empty column:
+
+> Quiet collecting. There are no streaks and no leaderboards.
+
+No sentence was written for the empty state. The alternative — one line of new copy explaining what
+will appear here — is small, defensible, and still invented, and the sentence a product says to
+somebody on their first launch is exactly the kind of thing that should come from the people who
+wrote the other sentences. A screenshot of the state as built is attached to the build record.
+
+**Flagged for design.** The honest minimum is what shipped; it is not a design.
+
+### E49 — three rules screen 08 needs and SCREENS.md does not state
+
+Recorded together because each is a small decision taken inside `GrovePresentation`, and each would
+otherwise be invisible.
+
+**Tile order.** §5 lists nine cells in a fixed order and states no rule. The mock is not
+recency-ordered — its own "New species!" (Victorian Box) sits fourth — and it is not alphabetical.
+The build draws them **oldest first**, so the grid reads in the order the collection was built and a
+new find appends rather than reshuffling everything above it.
+
+**How many locked tiles.** §5 draws two, at positions 7 and 9, interleaved among the known ones
+under no stated pattern, and gives no rule for how many there are. Under the real denominator the
+question becomes sharp: 208 remaining species cannot be 208 tiles. The build **pads the last row to
+a multiple of three** — a layout rule, not a claim — and caps the padding at the number of species
+actually left to meet, so a contributor one species short of the whole neighbourhood sees one locked
+tile rather than two. A grid read from an incomplete page is never padded at all, because the last
+row of a page is not the last row of the series.
+
+**How new a "new species" is.** The caption promises "a new find gets a small celebration" and §4
+draws one instance, reading `spotted yesterday`. No window is stated and no other relative phrasing
+for this callout exists anywhere in the sources. Rather than invent a ramp ("3 days ago", "last
+week") and a window to go with it, **the callout renders for exactly the two days the drawn copy can
+describe** — today and yesterday — and says one of those two words. Nothing is generated for a day
+the mock has no word for.
+
+One smaller thing, in the same callout: §4 writes `on Noriega`, dropping both the house number and
+the street type from an address the seed stores as `1450 Noriega St`. The build drops **only** the
+leading house number, because stripping a street *type* means deciding which trailing words are
+types, and getting that wrong renames a street. So it reads `on Noriega St`.
+
+### E50 — 08 in dark, and one place the brand hues were being read directly
+
+E8 records that dark is documented for D1–D3 and screen 04 only; 08 inherits nothing, and E45 makes
+the same observation for 07. Running 08 in dark turned up one defect and one judgement call.
+
+**The defect: C27 was reaching past the role tokens to the raw brand hues.** `ProgressRing` filled
+its arc with `CypressColor.canopy` and drew its label in `CypressColor.cypressDeep`. Both are
+`lightOnly`, correctly — they are two of the six brand colours, and `CypressColor`'s own header says
+so, adding that "the scheme-dependent roles are carried by the paired role tokens further down
+(`ctaFill`, `pinFill`, `selectionFill`, `accentAmber`), which is where a caller belongs". Reading the
+hue directly meant that in dark the ring drew `#2F6B4F` against `#0E1712` and its `#1D4634` label was
+very nearly invisible inside a `#0E1712` disc — the one number on the screen, unreadable.
+
+Fixed by using the paired role tokens the design system already carries: `selectionFill`
+(`#2F6B4F` ↔ `#8EC3A5`, §1.2's dark row says mint is "primary CTA fill, **selection**, active tab")
+for the arc and `ctaFill` for the label. **No value was invented and the light rendering is
+unchanged to the byte** — both pairs are documented, and both light halves are the hexes C27 already
+drew. Verified by screenshot in both schemes.
+
+**The judgement call, left alone: the celebration callout stays light.** C14's gradient fill,
+its border and its ink are all `escalated` — the transform was run against them and rejected, and
+§1.2 documents no dark counterpart for `linear-gradient(120deg,#EAF2E6,#F6F2DF)` anywhere. On 08
+that is a full-width cream block on a near-black screen, and it is the brightest thing on the page
+at night. It is the intended behaviour of an escalated token and it is not re-tinted here. It is
+also, in practice, a glare, and 07's "In July" callout has the same problem. One designer decision
+covers both.
+
+### E51 — C29 wrote the *artwork's* species name onto the tile, not the species'
+
+Found by running 08 against the real seed rather than against the mock's seven species.
+
+`SpeciesTile.Content.known` took a `CypressGradient.SpeciesTileArt`, and the tile's label was
+`art.label` — the name of the species the *gradient* was authored for. On the mock that is invisible,
+because §2 authors artwork for exactly the seven species §5 draws and the label and the gradient are
+the same species. The seed carries 569. Artwork is chosen by genus, with a stable hash for the rest
+(`SpeciesTileArtwork`, the same approach `MapModel` already uses for C22's four thumbnails), so on
+any real grove the two come apart immediately:
+
+| The tree the contributor visited | Tile said | Should say |
+|---|---|---|
+| `Ginkgo biloba` | `Ginkgo` | `Maidenhair Tree` |
+| `Platanus x hispanica` | `London Plane` | `Sycamore: London Plane` |
+| `Metrosideros excelsa` | `Pōhutukawa` | `New Zealand Xmas Tree` |
+
+Those three are same-genus renamings and merely wrong. The failure mode that matters is the hashed
+fall-through: a species with no authored art gets whichever of the seven gradients the hash lands
+on, and it was being **labelled with that gradient's species name**. A Silver Maple drawn with the
+Pōhutukawa gradient read `Pōhutukawa`. That is fabricated botany on screen, which BUILD-PLAN §15
+forbids, arriving through a component's default rather than through anything a feature wrote.
+
+`SpeciesTile` now takes an optional `label` that overrides the artwork's, and 08 always passes the
+species' own common name (falling back to the scientific name for the 11 seeded species that have
+none, exactly as `SpeciesQueries` does). The gradient remains a placeholder that claims nothing; the
+name is now the record's.

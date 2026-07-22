@@ -20,6 +20,16 @@ struct SpeciesTile: View {
     }
 
     let content: Content
+    /// The name written on the tile, when it is not the artwork's own.
+    ///
+    /// SCREENS.md 08 §5 draws seven tiles whose label and whose gradient are the same species, so
+    /// `SpeciesTileArt.label` was doing both jobs. The seed carries 569 species and §2 authors art
+    /// for seven, so on any real grove the two come apart: the art is chosen by genus or by a stable
+    /// hash (`SpeciesTileArtwork`) while the name has to be the species' own. Left unset the tile
+    /// printed the *artwork's* name — a Maidenhair Tree drawn with the Ginkgo gradient was labelled
+    /// `Ginkgo`, and a species with no genus match was labelled with whatever the hash landed on.
+    /// That is fabricated botany on screen (BUILD-PLAN §15). See ERRATA E51.
+    var label: String?
     var action: (() -> Void)?
 
     var body: some View {
@@ -34,7 +44,7 @@ struct SpeciesTile: View {
     private var tile: some View {
         background
             .aspectRatio(1, contentMode: .fit)
-            .overlay(alignment: .bottomLeading) { label }
+            .overlay(alignment: .bottomLeading) { labelOverlay }
             .cypressCornerRadius(CypressRadius.thumbMd)
             .contentShape(Rectangle())
             .accessibilityLabel(accessibilityLabel)
@@ -51,10 +61,10 @@ struct SpeciesTile: View {
     }
 
     @ViewBuilder
-    private var label: some View {
+    private var labelOverlay: some View {
         switch content {
         case let .known(art):
-            Text(art.label)
+            Text(label ?? art.label)
                 .font(CypressFont.body11Bold)
                 .foregroundStyle(CypressColor.textOnDark)
                 .lineSpacing(0)
@@ -70,7 +80,7 @@ struct SpeciesTile: View {
 
     private var accessibilityLabel: String {
         switch content {
-        case let .known(art): return art.label
+        case let .known(art): return label ?? art.label
         case .locked: return "Species not yet learned"
         }
     }
