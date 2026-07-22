@@ -576,9 +576,16 @@ public actor LocalAPI: CypressAPI {
                 return try contributions.insert(reminder, connection: connection)
 
             case let .favoriteToggle(toggle):
+                // Not gated on `TreeStatus.acceptsNewContributions`, unlike a visit or a check-in: a
+                // favourite asserts nothing about the tree, and gating it would make the toggle
+                // one-way for anyone whose favourite tree is later removed — they could no longer
+                // take the heart off. See ERRATA E89.
                 try requireTree(toggle.treeID, connection: connection)
+                // The owner arrives on the payload and is written as it stands. Nothing here
+                // upgrades a device-owned favourite to a user: that happens only at
+                // `POST /devices/claim` (D9, E23's mechanism).
                 return try contributions.applyFavoriteToggle(
-                    userID: toggle.userID,
+                    owner: toggle.owner,
                     treeID: toggle.treeID,
                     clientUUID: toggle.clientUUID,
                     isFavorite: toggle.isFavorite,

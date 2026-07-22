@@ -67,14 +67,102 @@ public struct CareEvent: FieldCaptured {
     public var attribution: Attribution { Attribution(userID: userID, deviceID: deviceID) }
 }
 
+/// Who a favourite belongs to: an account, or the device that saved it.
+///
+/// **Exactly one of the two, never neither** — the same rule, and the same reason, as
+/// `ReminderOwner` (ERRATA E23). An ownerless favourite is in nobody's grove, and a doubly-owned one
+/// has to be resolved by precedence somewhere a query can get it wrong. Neither state is
+/// representable here, and `favorites`' CHECK says the same thing to SQLite (`AppSchema` v5).
+///
+/// Device ownership exists because D9 keeps the device anonymous until the account ask at the third
+/// save, and screen 15 is where that ask lives — so until it does, *every* device is anonymous and a
+/// favourite that required an account could not be saved at all (ERRATA E89).
+///
+/// **Why this is not `ReminderOwner` under a wider name.** The two enums have the same shape and
+/// carry different invariants. A reminder's owner is a privacy boundary: D4 says the record is never
+/// public, and the owner is what keeps it that way. A favourite's owner is half of a uniqueness key,
+/// and it has a merge rule at sign-in that a reminder does not have (see
+/// `ContributionStore.claimDevice`). One type carrying both stories would have to document a rule
+/// that is true of one of its users and not the other. If a third owner-bearing record appears, that
+/// is the moment to generalise all three rather than the moment to have generalised two.
+public enum FavoriteOwner: Hashable, Sendable, Codable {
+    case user(UUID)
+    case device(UUID)
+
+    /// The D9 rule in one place: a contribution belongs to the signed-in user when there is one and
+    /// to this device otherwise. Every favourite written anywhere in the app resolves its owner
+    /// here, so the answer cannot differ between two call sites.
+    public init(_ attribution: Attribution) {
+        if let userID = attribution.userID {
+            self = .user(userID)
+        } else {
+            self = .device(attribution.deviceID)
+        }
+    }
+
+    public var userID: UUID? {
+        if case let .user(id) = self { return id }
+        return nil
+    }
+
+    public var deviceID: UUID? {
+        if case let .device(id) = self { return id }
+        return nil
+    }
+
+    /// What `POST /devices/claim` does to a favourite (D9). One already owned by a user is left
+    /// alone: adoption happens once, and claiming twice must not move an account's record onto a
+    /// different account.
+    public func adopted(by userID: UUID) -> FavoriteOwner {
+        switch self {
+        case .user: return self
+        case .device: return .user(userID)
+        }
+    }
+
+    // Encoded as `{"user": "…"}` or `{"device": "…"}` — one key, so the outbox payload carries the
+    // same "exactly one owner" guarantee the type and the schema do. Written out rather than
+    // synthesized for the reason `ReminderOwner` gives: the synthesized form for an enum with
+    // associated values is `{"user":{"_0":"…"}}`, and a payload shape that survives on disk should
+    // not be an artifact of the compiler's naming.
+    private enum CodingKeys: String, CodingKey {
+        case user
+        case device
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if let userID = try container.decodeIfPresent(UUID.self, forKey: .user) {
+            self = .user(userID)
+        } else if let deviceID = try container.decodeIfPresent(UUID.self, forKey: .device) {
+            self = .device(deviceID)
+        } else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .user,
+                in: container,
+                debugDescription: "a favourite carries exactly one owner, and this one carries none"
+            )
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case let .user(id): try container.encode(id, forKey: .user)
+        case let .device(id): try container.encode(id, forKey: .device)
+        }
+    }
+}
+
 /// `favorites` (BUILD-PLAN §4).
 ///
-/// The unique pair is (userID, treeID). Deletion is a tombstone, never a hard delete: sync needs
-/// the tombstone, and favorites are the one non-append-only contribution — they sync as toggle
-/// events (BUILD-PLAN §4 and §6, DECISIONS §3.7).
+/// The unique pair is (owner, treeID) — one account or one device may hold a tree once, and two
+/// different owners may each hold the same tree (`AppSchema` v5, ERRATA E89). Deletion is a
+/// tombstone, never a hard delete: sync needs the tombstone, and favorites are the one
+/// non-append-only contribution — they sync as toggle events (BUILD-PLAN §4 and §6, DECISIONS §3.7).
 public struct Favorite: CoreEntity, SoftDeletable, SyncableMutation {
     public let id: UUID
-    public let userID: UUID
+    public let owner: FavoriteOwner
     public let treeID: UUID
     public let clientUUID: UUID
     public let createdAt: Date
@@ -84,7 +172,7 @@ public struct Favorite: CoreEntity, SoftDeletable, SyncableMutation {
 
     public init(
         id: UUID = UUID(),
-        userID: UUID,
+        owner: FavoriteOwner,
         treeID: UUID,
         clientUUID: UUID = UUID(),
         createdAt: Date = Date(),
@@ -92,7 +180,7 @@ public struct Favorite: CoreEntity, SoftDeletable, SyncableMutation {
         deletedAt: Date? = nil
     ) {
         self.id = id
-        self.userID = userID
+        self.owner = owner
         self.treeID = treeID
         self.clientUUID = clientUUID
         self.createdAt = createdAt

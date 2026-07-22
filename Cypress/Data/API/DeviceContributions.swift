@@ -26,13 +26,11 @@ import Foundation
 /// The one screen that reads it renders a single element of it and nothing else. If a second caller
 /// ever appears, that is the moment to re-read D1 rather than this comment.
 ///
-/// ── The five kinds ────────────────────────────────────────────────────────────────────────
+/// ── The six kinds ─────────────────────────────────────────────────────────────────────────
 /// These are exactly the record kinds `claimDevice(deviceUUID:userID:)` moves onto the account —
-/// the four contribution tables plus D4's private reminder (ERRATA E23). Photos are deliberately
-/// absent: a photo carries no owner of its own, it hangs off the visit that took it, so it survives
-/// sign-in because its visit does. Favourites are absent for a different reason —
-/// `favorites.user_id` is `NOT NULL` with no device column, so an anonymous device cannot write one
-/// at all (see `DeviceContributions.favouritesAreAccountOnly`).
+/// the four contribution tables, D4's private reminder (ERRATA E23) and, since `AppSchema` v5, the
+/// favourite (ERRATA E89). Photos are deliberately absent: a photo carries no owner of its own, it
+/// hangs off the visit that took it, so it survives sign-in because its visit does.
 public struct DeviceContributions: Hashable, Sendable {
 
     /// Ten-second visits (screen 04 → 18).
@@ -45,42 +43,36 @@ public struct DeviceContributions: Hashable, Sendable {
     public let careEvents: Int
     /// D4's private hazard reminders (screen 06, ERRATA E23).
     public let privateReminders: Int
+    /// Trees hearted on screen 03's quad row and still held by this device (ERRATA E89). Tombstoned
+    /// toggles are excluded: an un-favourited tree is not something anybody would say they have.
+    public let favorites: Int
 
     public init(
         visits: Int = 0,
         checkIns: Int = 0,
         measurements: Int = 0,
         careEvents: Int = 0,
-        privateReminders: Int = 0
+        privateReminders: Int = 0,
+        favorites: Int = 0
     ) {
         self.visits = visits
         self.checkIns = checkIns
         self.measurements = measurements
         self.careEvents = careEvents
         self.privateReminders = privateReminders
+        self.favorites = favorites
     }
 
     /// A device that has contributed nothing yet — and the honest answer for an implementation
     /// with no contribution store behind it.
     public static let none = DeviceContributions()
 
-    /// Everything the device is holding, across the five kinds.
+    /// Everything the device is holding, across the six kinds.
     public var total: Int {
-        visits + checkIns + measurements + careEvents + privateReminders
+        visits + checkIns + measurements + careEvents + privateReminders + favorites
     }
 
     public var isEmpty: Bool { total == 0 }
-
-    /// Why favourites are not on this type, stated where somebody looking for them will find it.
-    ///
-    /// `favorites` has a `NOT NULL user_id` and no `device_id` (`AppSchema`), so a favourite cannot
-    /// be written before there is an account, and `groveTreeIDs` only reads them when a user is
-    /// present. Nothing is lost at sign-in because nothing was ever written — but that also means
-    /// the heart on screen 03 cannot work for an anonymous contributor, which is the state every
-    /// device the app currently runs on is in. Recorded in ERRATA; not fixed here, because giving
-    /// favourites a device owner is the same schema decision E23 settled for reminders and it wants
-    /// the same explicit call rather than a quiet second precedent.
-    public static let favouritesAreAccountOnly = true
 }
 
 // MARK: - Default

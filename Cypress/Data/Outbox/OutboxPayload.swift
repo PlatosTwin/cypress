@@ -5,15 +5,31 @@ import Foundation
 /// Favourites are the one non-append-only contribution: they sync as toggle events with tombstones
 /// (BUILD-PLAN §4 and §6). The event therefore carries the resulting *state*, not a verb, so
 /// replaying it is idempotent — applying "favourited" twice leaves one favourite.
+///
+/// It carries a `FavoriteOwner` rather than a `userID` because the heart is tapped on a device that
+/// D9 keeps anonymous until the third save, so requiring an account made the record unwritable on
+/// every device the app runs on (ERRATA E89). Ownership moves to the account at
+/// `POST /devices/claim`, which is the mechanism D9 already relies on for every other first save.
+///
+/// **Changing the payload's shape was free**, which is worth stating once because it will not be
+/// free again: no build has ever enqueued one of these. `RootView` no-opped the heart precisely
+/// because there was nowhere to write it, so there are no `favorite_toggle` rows on any disk to
+/// decode under the old key.
 public struct FavoriteToggle: Codable, Hashable, Sendable {
-    public let userID: UUID
+    public let owner: FavoriteOwner
     public let treeID: UUID
     public let clientUUID: UUID
     public let isFavorite: Bool
     public let occurredAt: Date
 
-    public init(userID: UUID, treeID: UUID, clientUUID: UUID = UUID(), isFavorite: Bool, occurredAt: Date = Date()) {
-        self.userID = userID
+    public init(
+        owner: FavoriteOwner,
+        treeID: UUID,
+        clientUUID: UUID = UUID(),
+        isFavorite: Bool,
+        occurredAt: Date = Date()
+    ) {
+        self.owner = owner
         self.treeID = treeID
         self.clientUUID = clientUUID
         self.isFavorite = isFavorite

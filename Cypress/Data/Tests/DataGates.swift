@@ -217,10 +217,23 @@ public enum DataGates {
                     '\(now)','\(now)','\(now)')
                 """)
 
+            // A favourite always has exactly one owner too (ERRATA E89), by the same CHECK and for
+            // the same reasons as a private reminder. Never none…
+            await rejects("favorite with no owner", """
+                INSERT INTO favorites (id, tree_uuid, client_uuid, created_at, updated_at)
+                VALUES ('\(UUID().uuidString)','\(tree)','\(UUID().uuidString)','\(now)','\(now)')
+                """)
+            // …and never two, which is what would make "whose favourite is this" a precedence rule.
+            await rejects("favorite owned by both a user and a device", """
+                INSERT INTO favorites (id, user_id, device_id, tree_uuid, client_uuid, created_at, updated_at)
+                VALUES ('\(UUID().uuidString)','\(UUID().uuidString)','\(device)','\(tree)',
+                    '\(UUID().uuidString)','\(now)','\(now)')
+                """)
+
             // Favourites are tombstoned, never hard-deleted.
             try await store.queue.write { connection in
                 try ContributionStore().applyFavoriteToggle(
-                    userID: OutboxTestSupport.userID,
+                    owner: .user(OutboxTestSupport.userID),
                     treeID: UUID(uuidString: tree)!,
                     clientUUID: UUID(),
                     isFavorite: true,
@@ -229,6 +242,64 @@ public enum DataGates {
                 )
             }
             await rejects("hard delete of a favorite", "DELETE FROM favorites")
+
+            // The uniqueness pair moved from (user, tree) to (owner, tree). One owner may not hold a
+            // tree twice — and the device arm has to be checked separately, because a single
+            // three-column UNIQUE would have enforced nothing for it (NULLs compare distinct).
+            let deviceOwned = UUID()
+            try await store.queue.write { connection in
+                try ContributionStore().applyFavoriteToggle(
+                    owner: .device(deviceOwned),
+                    treeID: UUID(uuidString: tree)!,
+                    clientUUID: UUID(),
+                    isFavorite: true,
+                    at: Date(),
+                    connection: connection
+                )
+            }
+            await rejects("a second row for one account and one tree", """
+                INSERT INTO favorites (id, user_id, tree_uuid, client_uuid, created_at, updated_at)
+                VALUES ('\(UUID().uuidString)','\(OutboxTestSupport.userID.uuidString)','\(tree)',
+                    '\(UUID().uuidString)','\(now)','\(now)')
+                """)
+            await rejects("a second row for one device and one tree", """
+                INSERT INTO favorites (id, device_id, tree_uuid, client_uuid, created_at, updated_at)
+                VALUES ('\(UUID().uuidString)','\(deviceOwned.uuidString)','\(tree)',
+                    '\(UUID().uuidString)','\(now)','\(now)')
+                """)
+            // …while two different owners holding the same tree is the state adoption has to merge,
+            // so it must be storable. The two writes above already made it; this is the assertion.
+            let bothOwners = try await store.queue.read { connection -> Int in
+                let statement = try connection.prepare(
+                    "SELECT COUNT(*) AS n FROM favorites WHERE tree_uuid = '\(tree)'"
+                )
+                defer { statement.finalize() }
+                return try statement.fetchOne { try $0.int("n") } ?? -1
+            }
+            expect(
+                bothOwners == 2,
+                "uniqueness: a device and an account cannot both favourite one tree (\(bothOwners) rows)",
+                into: &failures
+            )
+
+            // The trigger's adoption exception is exactly one row wide. A device-owned favourite
+            // with no account row beside it is still undeletable — otherwise the exception would be
+            // a hole rather than a merge (see `AppSchema` v5).
+            let lonely = UUID()
+            try await store.queue.write { connection in
+                try ContributionStore().applyFavoriteToggle(
+                    owner: .device(deviceOwned),
+                    treeID: lonely,
+                    clientUUID: UUID(),
+                    isFavorite: true,
+                    at: Date(),
+                    connection: connection
+                )
+            }
+            await rejects(
+                "hard delete of a device-owned favorite nobody is adopting",
+                "DELETE FROM favorites WHERE tree_uuid = '\(lonely.uuidString)'"
+            )
 
             // D15: one active name per tree.
             let named = UUID()

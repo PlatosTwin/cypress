@@ -209,7 +209,7 @@ public enum OutboxTestSupport {
             default:
                 result.append((
                     .favoriteToggle(FavoriteToggle(
-                        userID: userID,
+                        owner: .user(userID),
                         treeID: treeID,
                         clientUUID: clientUUID,
                         isFavorite: true,

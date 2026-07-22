@@ -225,34 +225,39 @@ public struct ContributionStore {
 
     /// Applies a favourite toggle.
     ///
-    /// One row per (user, tree) whose `deleted_at` carries the current state, so an un-favourite is
+    /// One row per (owner, tree) whose `deleted_at` carries the current state, so an un-favourite is
     /// a tombstone rather than a hard delete and syncs as an event (BUILD-PLAN §4). A `DELETE`
-    /// against this table raises, by trigger.
+    /// against this table raises, by trigger, everywhere except the adoption case `claimDevice`
+    /// documents.
     ///
     /// Idempotency here is on `client_uuid`, not on the pair: the same toggle replayed twice must
     /// not flip the state back. The `WHERE client_uuid <> :client` guard is what makes the replay a
     /// no-op.
+    ///
+    /// Two statements rather than one because uniqueness is two partial indexes, and an upsert names
+    /// exactly one conflict target (`AppSchema` v5). Which one applies is not a guess — the owner is
+    /// known at the call site, which is what exclusive ownership buys.
     @discardableResult
     public func applyFavoriteToggle(
-        userID: UUID,
+        owner: FavoriteOwner,
         treeID: UUID,
         clientUUID: UUID,
         isFavorite: Bool,
         at date: Date,
         connection: SQLiteConnection
     ) throws -> WriteOutcome {
-        let statement = try connection.cachedStatement("""
-            INSERT INTO favorites (id, user_id, tree_uuid, client_uuid, created_at, updated_at, deleted_at)
-            VALUES (:id, :user, :tree, :client, :now, :now, :deleted)
-            ON CONFLICT(user_id, tree_uuid) DO UPDATE
-               SET deleted_at = excluded.deleted_at,
-                   updated_at = excluded.updated_at,
-                   client_uuid = excluded.client_uuid
-             WHERE favorites.client_uuid <> excluded.client_uuid
-            """)
+        // `Core` does not know column names (ARCHITECTURE §2's import discipline), so the mapping
+        // from owner to column lives here, as a switch that a third case would break loudly.
+        let ownerColumn: String
+        switch owner {
+        case .user: ownerColumn = "user_id"
+        case .device: ownerColumn = "device_id"
+        }
+        let statement = try connection.cachedStatement(Self.favoriteUpsert(ownerColumn: ownerColumn))
         _ = try statement.bind([
             ":id": UUID(),
-            ":user": userID,
+            ":user": owner.userID,
+            ":device": owner.deviceID,
             ":tree": treeID,
             ":client": clientUUID,
             ":now": date,
@@ -261,12 +266,39 @@ public struct ContributionStore {
         return try run(statement, on: connection)
     }
 
-    public func isFavorite(userID: UUID, treeID: UUID, connection: SQLiteConnection) throws -> Bool {
+    /// The upsert, written once and pointed at whichever partial index the owner lives under. The
+    /// column name is one of two literals from `FavoriteOwner`, never a caller's string.
+    private static func favoriteUpsert(ownerColumn: String) -> String {
+        """
+        INSERT INTO favorites
+            (id, user_id, device_id, tree_uuid, client_uuid, created_at, updated_at, deleted_at)
+        VALUES (:id, :user, :device, :tree, :client, :now, :now, :deleted)
+        ON CONFLICT(\(ownerColumn), tree_uuid) WHERE \(ownerColumn) IS NOT NULL DO UPDATE
+           SET deleted_at = excluded.deleted_at,
+               updated_at = excluded.updated_at,
+               client_uuid = excluded.client_uuid
+         WHERE favorites.client_uuid <> excluded.client_uuid
+        """
+    }
+
+    /// Whether this owner currently holds this tree.
+    ///
+    /// One owner, stated by the caller — there is no "is anybody's favourite" query and no way to
+    /// ask for another owner's, because a favourite is a private bookmark and D1 killed the version
+    /// of it that was a public vote. A signed-in contributor who has not claimed this device still
+    /// wrote its device-owned rows, so a caller that wants both asks twice.
+    public func isFavorite(owner: FavoriteOwner, treeID: UUID, connection: SQLiteConnection) throws -> Bool {
         let statement = try connection.cachedStatement("""
             SELECT deleted_at IS NULL AS active FROM favorites
-             WHERE user_id = :user COLLATE NOCASE AND tree_uuid = :tree COLLATE NOCASE
+             WHERE ((:user IS NOT NULL AND user_id = :user COLLATE NOCASE)
+                    OR (:device IS NOT NULL AND device_id = :device COLLATE NOCASE))
+               AND tree_uuid = :tree COLLATE NOCASE
             """)
-        _ = try statement.bind([":user": userID.uuidString, ":tree": treeID.uuidString])
+        _ = try statement.bind([
+            ":user": owner.userID?.uuidString,
+            ":device": owner.deviceID?.uuidString,
+            ":tree": treeID.uuidString
+        ])
         return try statement.fetchOne { try $0.bool("active") } ?? false
     }
 
@@ -516,9 +548,15 @@ public struct ContributionStore {
                             OR (:user IS NOT NULL AND user_id = :user COLLATE NOCASE))
                      GROUP BY tree_uuid
                     UNION ALL
+                    -- Both owners, for the reason the visits arm above reads both: a favourite saved
+                    -- before sign-in is the device's until a claim moves it, and nothing forces a
+                    -- claim to have happened (E89, and the same argument as `privateReminders`).
+                    -- Reading only the user's arm is what made the heart's absence invisible.
                     SELECT tree_uuid, NULL AS last_visited, 1 AS is_favorite
                       FROM favorites
-                     WHERE deleted_at IS NULL AND :user IS NOT NULL AND user_id = :user COLLATE NOCASE
+                     WHERE deleted_at IS NULL
+                       AND (device_id = :device COLLATE NOCASE
+                            OR (:user IS NOT NULL AND user_id = :user COLLATE NOCASE))
                    )
              GROUP BY tree_uuid
              ORDER BY last_visited DESC NULLS LAST
@@ -619,6 +657,8 @@ public struct ContributionStore {
         try reminders.run()
         _ = try reminders.reset()
 
+        try claimFavorites(deviceUUID: deviceUUID, userID: userID, at: date, connection: connection)
+
         let device = try connection.cachedStatement("""
             INSERT INTO device (id, device_uuid, user_id, created_at, updated_at)
             VALUES (:id, :uuid, :user, :now, :now)
@@ -627,6 +667,88 @@ public struct ContributionStore {
         _ = try device.bind([":id": UUID(), ":uuid": deviceUUID, ":user": userID, ":now": date])
         try device.run()
         _ = try device.reset()
+    }
+
+    /// The favourites half of `POST /devices/claim`, which is the half with a collision in it
+    /// (ERRATA E89).
+    ///
+    /// A reminder's adoption is one UPDATE because two reminders are never the same record. Two
+    /// favourites can be: the device favourited a tree that the account it is now claiming had
+    /// *already* favourited from somewhere else. Both rows then say one thing — "this tree is mine" —
+    /// and after the claim only one owner exists, so one row has to carry both histories. Left
+    /// alone, the plain UPDATE would hit `idx_favorites_user_tree` and abort the whole claim, which
+    /// would mean sign-in fails for the contributor whose grove overlaps most.
+    ///
+    /// Three statements, in this order, each an UPDATE or a narrowly-predicated DELETE whose WHERE
+    /// stops matching once it has run:
+    ///
+    /// 1. **The later statement wins.** Where both owners hold a tree and the device's row is the
+    ///    more recent, its state, its `client_uuid` and its timestamp move onto the account's row.
+    ///    A favourite is a toggle event with a tombstone (BUILD-PLAN §4 and §6), and a toggle
+    ///    resolves by time: whichever the person said last is what they meant. Timestamps compare as
+    ///    strings because `SQLiteTimestamp` writes fixed-width UTC ISO-8601 — lexicographic order is
+    ///    chronological order.
+    /// 2. **The superseded device row goes.** It is the one row the tombstone trigger permits
+    ///    deleting, and only because its event has just been folded onto the surviving row for the
+    ///    same tree, in this transaction — which is the loss the trigger exists to prevent. Keeping
+    ///    it instead would leave the account and the device each holding a row for one tree, which
+    ///    is the permanent device↔account link exclusive ownership exists to avoid.
+    ///    The device row is the one dropped rather than the account's because the account's may have
+    ///    an identity beyond this phone; the device's has never left it.
+    /// 3. **Everything else moves**, exactly as a reminder does: `user_id` set, `device_id` cleared,
+    ///    with a `user_id IS NULL` guard so a claim by a different account cannot steal an
+    ///    already-attributed row.
+    ///
+    /// Nothing is inserted, so nothing can duplicate; the only delete is the merge above, so nothing
+    /// is orphaned. A second claim matches nothing at all.
+    private func claimFavorites(
+        deviceUUID: UUID,
+        userID: UUID,
+        at date: Date,
+        connection: SQLiteConnection
+    ) throws {
+        // 1 — the device's later word overwrites the account's earlier one.
+        let merge = try connection.cachedStatement("""
+            UPDATE favorites
+               SET deleted_at  = (SELECT d.deleted_at FROM favorites d
+                                   WHERE d.tree_uuid = favorites.tree_uuid
+                                     AND d.user_id IS NULL AND d.device_id = :device COLLATE NOCASE),
+                   client_uuid = (SELECT d.client_uuid FROM favorites d
+                                   WHERE d.tree_uuid = favorites.tree_uuid
+                                     AND d.user_id IS NULL AND d.device_id = :device COLLATE NOCASE),
+                   updated_at  = (SELECT d.updated_at FROM favorites d
+                                   WHERE d.tree_uuid = favorites.tree_uuid
+                                     AND d.user_id IS NULL AND d.device_id = :device COLLATE NOCASE)
+             WHERE favorites.user_id = :user COLLATE NOCASE
+               AND EXISTS (SELECT 1 FROM favorites d
+                            WHERE d.tree_uuid = favorites.tree_uuid
+                              AND d.user_id IS NULL AND d.device_id = :device COLLATE NOCASE
+                              AND d.updated_at > favorites.updated_at)
+            """)
+        _ = try merge.bind([":user": userID, ":device": deviceUUID.uuidString])
+        try merge.run()
+        _ = try merge.reset()
+
+        // 2 — the folded-away row, which is the trigger's one permitted delete.
+        let drop = try connection.cachedStatement("""
+            DELETE FROM favorites
+             WHERE user_id IS NULL AND device_id = :device COLLATE NOCASE
+               AND EXISTS (SELECT 1 FROM favorites mine
+                            WHERE mine.tree_uuid = favorites.tree_uuid
+                              AND mine.user_id = :user COLLATE NOCASE)
+            """)
+        _ = try drop.bind([":user": userID, ":device": deviceUUID.uuidString])
+        try drop.run()
+        _ = try drop.reset()
+
+        // 3 — and the ones with nothing to collide with simply move.
+        let adopt = try connection.cachedStatement("""
+            UPDATE favorites SET user_id = :user, device_id = NULL, updated_at = :now
+             WHERE device_id = :device COLLATE NOCASE AND user_id IS NULL
+            """)
+        _ = try adopt.bind([":user": userID, ":now": date, ":device": deviceUUID.uuidString])
+        try adopt.run()
+        _ = try adopt.reset()
     }
 
     /// The account this device has already been claimed by, if any — the `device` row `claimDevice`
@@ -685,7 +807,11 @@ public struct ContributionStore {
             careEvents: try count("care_events"),
             // Exclusive ownership (E23): a device-owned reminder has `user_id IS NULL` and a
             // `device_id`, so the same predicate reads it correctly.
-            privateReminders: try count("private_reminders")
+            privateReminders: try count("private_reminders"),
+            // And a favourite, on the same terms, since v5 (E89). `deleted_at IS NULL` matters more
+            // here than anywhere else on this type: a favourite that was turned off is a tombstone,
+            // and a tombstone is not something a person would say they have.
+            favorites: try count("favorites")
         )
     }
 

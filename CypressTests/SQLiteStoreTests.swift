@@ -100,19 +100,19 @@ struct SQLiteStoreTests {
 
         try await store.queue.write { connection in
             try contributions.applyFavoriteToggle(
-                userID: userID, treeID: treeID, clientUUID: UUID(),
+                owner: .user(userID), treeID: treeID, clientUUID: UUID(),
                 isFavorite: true, at: Date(), connection: connection
             )
         }
-        #expect(try await store.queue.read { try contributions.isFavorite(userID: userID, treeID: treeID, connection: $0) })
+        #expect(try await store.queue.read { try contributions.isFavorite(owner: .user(userID), treeID: treeID, connection: $0) })
 
         try await store.queue.write { connection in
             try contributions.applyFavoriteToggle(
-                userID: userID, treeID: treeID, clientUUID: UUID(),
+                owner: .user(userID), treeID: treeID, clientUUID: UUID(),
                 isFavorite: false, at: Date(), connection: connection
             )
         }
-        #expect(try await !store.queue.read { try contributions.isFavorite(userID: userID, treeID: treeID, connection: $0) })
+        #expect(try await !store.queue.read { try contributions.isFavorite(owner: .user(userID), treeID: treeID, connection: $0) })
 
         // The row survives as a tombstone, which is what sync needs.
         let rowCount = try await store.queue.read { connection -> Int in

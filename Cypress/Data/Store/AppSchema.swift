@@ -21,7 +21,9 @@ import Foundation
 /// - hazard categories cannot be stored as public community notes (D4) — `community_notes` CHECK;
 /// - private reminders can only hold hazard categories, carry no `stale_at` at all, and have
 ///   exactly one owner — a user or a device, never both, never neither (v3);
-/// - favorites are tombstoned, never hard-deleted — a `BEFORE DELETE` trigger that raises;
+/// - favorites have exactly one owner too (v5), and are tombstoned rather than hard-deleted — a
+///   `BEFORE DELETE` trigger that raises everywhere except the one adoption case it exists to
+///   protect (v5 again);
 /// - one active name per tree (D15) — a partial unique index;
 /// - an outbox row can only be `done` once its JSON *and* its photos have gone.
 public enum AppSchema {
@@ -31,7 +33,8 @@ public enum AppSchema {
         Migration(version: 1, name: "contributions and outbox", sql: v1),
         Migration(version: 2, name: "outbox photos carry their shot type", sql: v2),
         Migration(version: 3, name: "a private reminder can be owned by a device", migrate: applyV3),
-        Migration(version: 4, name: "the outbox carries private reminders", migrate: applyV4)
+        Migration(version: 4, name: "the outbox carries private reminders", migrate: applyV4),
+        Migration(version: 5, name: "a favourite can be owned by a device", migrate: applyV5)
     ]
 
     /// The version a freshly migrated database reports.
@@ -40,8 +43,9 @@ public enum AppSchema {
     // MARK: - v1
 
     // Historical, and not edited: this is the schema as it shipped, comments included. Where a later
-    // step changed it, that step says so — `private_reminders`' owner rule below, and the `outbox`
-    // `kind` vocabulary, were both superseded (v3 and v4).
+    // step changed it, that step says so — `private_reminders`' owner rule below, the `outbox`
+    // `kind` vocabulary, and `favorites`' owner and uniqueness rules were all superseded (v3, v4
+    // and v5).
     private static let v1 = """
     -- ------------------------------------------------------------------ device --
     -- BUILD-PLAN §4 `devices`. One row. Anonymous contributions attach here and
@@ -557,6 +561,99 @@ public enum AppSchema {
 
             CREATE INDEX IF NOT EXISTS idx_outbox_drain ON outbox(state, next_attempt_at, seq);
             CREATE INDEX IF NOT EXISTS idx_outbox_created ON outbox(created_at);
+            """)
+    }
+
+    // MARK: - v5
+
+    /// `favorites` gains a device owner, so the heart on screen 03 has somewhere to write (E89).
+    ///
+    /// **The same decision E23 took for private reminders, taken deliberately a second time rather
+    /// than by precedent.** v1 made `favorites.user_id` NOT NULL with no device column, and D9 keeps
+    /// every device anonymous until the account ask at the third save — so the row was unwritable on
+    /// every device the app runs on, and `RootView` no-opped the heart because there was nothing
+    /// honest for it to do. PRODUCT §Conflicts 22 names this exact hole: "offline favorites are
+    /// listed as outbox mutations, but favoriting is also the account-gate trigger — behavior for an
+    /// anonymous offline favorite is undefined". D9 defines it: the device holds it until an account
+    /// arrives.
+    ///
+    /// **The shape**, identical to v3's: `user_id` becomes nullable, `device_id` appears beside it,
+    /// and `CHECK ((user_id IS NULL) <> (device_id IS NULL))` makes exactly one of them non-null.
+    /// Nullable user beside a NOT NULL device was rejected there for reasons that hold here too — it
+    /// leaves both columns populated after sign-in, so the owner becomes whichever column a query
+    /// coalesces first, and it keeps a permanent device↔account link. Exclusive ownership makes
+    /// adoption a *move*: the row carries strictly less about the device afterwards than before.
+    ///
+    /// **What the UNIQUE constraint became, which is the part v3 did not have to answer.** v1 carried
+    /// `UNIQUE (user_id, tree_uuid)`, and the pair has to survive becoming an ownership pair. Two
+    /// partial unique indexes replace it:
+    ///
+    /// ```sql
+    /// CREATE UNIQUE INDEX … ON favorites(user_id, tree_uuid)   WHERE user_id   IS NOT NULL;
+    /// CREATE UNIQUE INDEX … ON favorites(device_id, tree_uuid) WHERE device_id IS NOT NULL;
+    /// ```
+    ///
+    /// One owner cannot favourite a tree twice; two different owners can each favourite it. A single
+    /// `UNIQUE (user_id, device_id, tree_uuid)` would have enforced *nothing* for device rows: SQL
+    /// treats NULLs as distinct inside a unique index, so `(NULL, this device, this tree)` would be
+    /// storable any number of times. A single expression index over `COALESCE(user_id, device_id)`
+    /// would work, but it puts two id spaces in one comparison and re-introduces the coalesced owner
+    /// v3 refused; two indexes say the two sentences separately.
+    ///
+    /// **The trigger keeps its job and gains one exception.** Its reason is stated in v1: a stray
+    /// `DELETE` loses the un-favourite *event*, so the row comes back on the next sync from another
+    /// device. Adoption is the one delete that loses no event, because the event has already been
+    /// folded onto the surviving row for the same tree in the same transaction (see
+    /// `ContributionStore.claimDevice`). The `WHEN` clause permits exactly that case — a device-owned
+    /// row for a tree an account already holds — and refuses everything else, including a
+    /// device-owned row with no account row beside it.
+    ///
+    /// **Existing rows survive.** Every row in a v1–v4 database is user-owned by construction, so the
+    /// copy carries `user_id` across and leaves `device_id` NULL, which the new CHECK accepts; and
+    /// the old `UNIQUE (user_id, tree_uuid)` already guaranteed what the new user index requires, so
+    /// the copy cannot collide. SQLite cannot drop a NOT NULL or replace a UNIQUE in place, so this
+    /// is the documented table rebuild; nothing references `favorites`, and dropping the table drops
+    /// its trigger, which is recreated below in its new form.
+    ///
+    /// Idempotent by guard rather than by `IF NOT EXISTS`, for the reason v3 gives.
+    private static func applyV5(_ connection: SQLiteConnection) throws {
+        guard try !connection.columnNames(ofTable: "favorites").contains("device_id") else { return }
+        try connection.execute("""
+            CREATE TABLE favorites_owned (
+                id          TEXT PRIMARY KEY,
+                user_id     TEXT,
+                device_id   TEXT,
+                tree_uuid   TEXT NOT NULL,
+                client_uuid TEXT NOT NULL,
+                created_at  TEXT NOT NULL,
+                updated_at  TEXT NOT NULL,
+                deleted_at  TEXT,
+                -- Exactly one owner, always. A favourite nobody owns is in nobody's grove, and one
+                -- owned twice needs a precedence rule somewhere a query can get wrong.
+                CHECK ((user_id IS NULL) <> (device_id IS NULL))
+            );
+
+            INSERT INTO favorites_owned
+                (id, user_id, device_id, tree_uuid, client_uuid, created_at, updated_at, deleted_at)
+            SELECT id, user_id, NULL, tree_uuid, client_uuid, created_at, updated_at, deleted_at
+              FROM favorites;
+
+            DROP TABLE favorites;
+            ALTER TABLE favorites_owned RENAME TO favorites;
+
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_favorites_user_tree
+                ON favorites(user_id, tree_uuid) WHERE user_id IS NOT NULL;
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_favorites_device_tree
+                ON favorites(device_id, tree_uuid) WHERE device_id IS NOT NULL;
+
+            CREATE TRIGGER IF NOT EXISTS favorites_are_tombstoned
+            BEFORE DELETE ON favorites
+            WHEN OLD.device_id IS NULL
+              OR NOT EXISTS (SELECT 1 FROM favorites other
+                              WHERE other.tree_uuid = OLD.tree_uuid AND other.user_id IS NOT NULL)
+            BEGIN
+                SELECT RAISE(ABORT, 'favorites are tombstoned via deleted_at, never hard-deleted');
+            END;
             """)
     }
 
