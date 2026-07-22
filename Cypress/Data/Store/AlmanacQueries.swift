@@ -28,6 +28,15 @@ public struct AlmanacQueries {
     /// Vacant planting sites are 6.4% of the inventory (ERRATA E11) and a basin with nothing in it
     /// is not an elder, not a newest neighbour and not a young tree anybody can go and look at. The
     /// dead and removed are excluded for the same reason: this screen is about what is growing.
+    ///
+    /// **This predicate, and not the species `JOIN`, is what keeps a vacant site off screen 12.**
+    /// E107 and E113 both record the exclusion as a consequence of `speciesMix`'s inner join; it is
+    /// not, and the difference decides what happens to somebody who "widens the join" on their
+    /// advice. See ERRATA E115, and the note on `speciesMix` below.
+    ///
+    /// It is applied by **every** read in this file. `firstBloom` was the exception until E115 —
+    /// it filtered `deleted_at` and nothing else — which left the one row on screen 12 that names a
+    /// tree by address able to name a basin.
     private static let standing = "t.status IN ('alive','declining')"
 
     // MARK: - This season · the elder
@@ -126,9 +135,21 @@ public struct AlmanacQueries {
     /// is the size of a neighbourhood's species list — 215 rows in Sunset/Parkside, the largest in
     /// the city — which is nothing next to being wrong.
     ///
-    /// The `JOIN` (not `LEFT JOIN`) is what excludes vacant sites and the non-taxon rows: a mix of
-    /// species is a mix of species, and a tree the city labelled `Shrub` belongs in neither the
-    /// numerator nor the denominator of a share.
+    /// The `JOIN` (not `LEFT JOIN`) excludes **the non-taxon rows**: a mix of species is a mix of
+    /// species, and a tree the city labelled `Shrub` belongs in neither the numerator nor the
+    /// denominator of a share.
+    ///
+    /// **It does not exclude vacant sites, and widening it would not admit one** (ERRATA E115).
+    /// `Self.standing` is what excludes them, one line below; `species_current` is NULL on all
+    /// 12,518 of them, and `s.id = t.species_current` is NULL rather than true for a NULL, so a
+    /// site cannot survive the inner join in the first place. Measured on the shipped seed in
+    /// Sunset/Parkside, replacing this join with a `LEFT JOIN` admits **zero** vacant sites and
+    /// **52** non-taxon trees: 215 species rows become 216, the last of them nameless, and the
+    /// denominator every share is divided by moves from 11,026 to 11,078. That last number is
+    /// RULINGS **R5**, which fixed screen 08's denominator at 215 and ruled it stays there. It
+    /// would also throw before it drew: `row.uuid("species_uuid")` on the nameless group raises
+    /// `unexpectedNull`, `AlmanacModel.load()` catches it as `.failed`, and screen 12 renders its
+    /// header and its footnote and nothing between them.
     public func speciesMix(
         neighborhoodID: Int,
         connection: SQLiteConnection
@@ -227,6 +248,17 @@ public struct AlmanacQueries {
     ///
     /// Which tree wins is the earliest sighting, ties broken on the tree's uuid so the answer does
     /// not flicker between two trees that bloomed the same second.
+    ///
+    /// **`Self.standing` applies here too, and did not until ERRATA E115.** This is the only read
+    /// in the file that starts from a contribution rather than from the inventory, and it was the
+    /// only one that filtered nothing but `deleted_at`. A `flowering` visit recorded against a
+    /// vacant site therefore drew `First bloom of the year` over a planting basin, named by its
+    /// street, tappable — the one row on screen 12 that names a specific record was the one that
+    /// could name a record with no tree in it. Nothing in the app can create that visit today, but
+    /// only because E113 redirects a site away from the profile the camera opens from: the almanac
+    /// was relying on a guard in another feature to keep its own rule. The same predicate also
+    /// drops a bloom recorded on a tree since removed, which is the rule saying what it always
+    /// said — the row invites you to go and look at the tree.
     public func firstBloom(
         neighborhoodID: Int,
         since: Date,
@@ -245,6 +277,7 @@ public struct AlmanacQueries {
                AND v.captured_at >= :since
                AND t.neighborhood_id = :neighborhood
                AND t.deleted_at IS NULL
+               AND \(Self.standing)
                AND EXISTS (
                      SELECT 1 FROM json_each(v.phenology_tags)
                       WHERE json_each.value = :flowering

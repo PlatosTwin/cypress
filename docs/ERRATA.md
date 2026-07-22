@@ -3084,7 +3084,13 @@ site the reader is nowhere near.
 by construction — its `JOIN` to species is inner, which is what drops them — so the surface E11
 nominates as the one that should be pointing at these 12,518 rows is currently the surface that
 cannot see them; that is a query change in a file this task did not own, and it is the first thing to
-look at if the coverage-gap reading is the one design wants. C19 has no pin for a site, and the map
+look at if the coverage-gap reading is the one design wants. **The mechanism in that sentence is
+wrong and the conclusion it invites does not survive checking: see E115.** The inner join is not what
+drops a site — `AlmanacQueries.standing` is, deliberately — widening it admits no site at all and
+empties the screen, and D1's coverage panel turns out to be about gaps in *observation* rather than
+gaps in the canopy. E115 fixes the one read that really was wrong (`firstBloom`, which applied no
+status filter at all) and proposes the block screen 12 would need, rather than inventing it.
+C19 has no pin for a site, and the map
 therefore still draws one as `removed`, a grey dot with a bar struck through it, which says *was and
 is no longer* about a basin that never held a tree; a new pin is a drawn decision and was not
 invented, so the distinction is carried by the card and by the VoiceOver label instead — the card now
@@ -3625,7 +3631,9 @@ on C8. That reasoning is unchanged and this entry does not reopen it.
 
 **What is still open and was not touched.** `AlmanacQueries` excludes vacant sites by construction (an
 inner `JOIN` to species), which E107 flags as the surface that ought to be pointing at these 12,518
-rows being the one that cannot see them; C19 still has no pin for a site, so the map draws one as
+rows being the one that cannot see them — **repeated here from E107 and wrong in both places; E115
+has the mechanism (a status predicate, not the join), what widening the join actually does, and the
+one read that was genuinely missing it**; C19 still has no pin for a site, so the map draws one as
 `removed` and the distinction is carried by the card and the VoiceOver label; and E95's residual for
 removed trees stays open by the decision above rather than by omission.
 
@@ -3636,3 +3644,94 @@ of `TreeStatus` has an answer and the loop grows with the enum; the replace land
 profile was and leaves `Back` pointing at the entrance; a replace against a stack that has moved on
 pushes rather than dropping a screen; and a removed tree keeps its profile, keeps `Favorite` on the
 row, and offers no write.
+
+### E115 — the almanac's blindness to vacant sites is a status predicate doing its job, and the coverage gap D1 names is not the gap a basin is
+
+E107 recorded, and E113 repeated, that `AlmanacQueries` "excludes vacant sites by construction (an
+inner `JOIN` to species)" — and both entries name it as the first thing to look at if the almanac is
+meant to be the surface pointing at these 12,518 rows. The diagnosis is wrong in its mechanism and
+the conclusion it invites is wrong in its product reading. Both matter, and the mechanism matters
+first, because it is the one somebody would act on.
+
+**The join is not the gate.** Four of the five reads in the file join species with a `LEFT JOIN` or
+do not join species at all, and every one of them still returns no vacant site. What returns none is
+`AlmanacQueries.standing` — `t.status IN ('alive','declining')` — which is applied by every read and
+whose own doc comment has said since it was written that "a basin with nothing in it is not an elder,
+not a newest neighbour and not a young tree anybody can go and look at". The inner join in
+`speciesMix` excludes something else entirely: the 312 city rows whose label names no taxon (E14).
+
+**Widening it admits no site, moves two numbers that are load-bearing, and takes the screen down.**
+Measured on the shipped seed in Sunset/Parkside, replacing that `JOIN` with a `LEFT JOIN` admits
+**zero** vacant sites — `species_current` is NULL on all 12,518 of them and `s.id = t.species_current`
+evaluates to NULL rather than to true, so a site cannot reach the join condition at all, never mind
+survive it — and admits **52** non-taxon trees. `Who lives here · 215 species` becomes 216, the last
+of them nameless, and the denominator every share is divided by moves from **11,026 to 11,078**.
+11,026 is the population behind RULINGS **R5**, which fixed screen 08's denominator at 215 and ruled
+it stays there; a join widened on screen 12's behalf reopens a ruling taken about screen 08. It never
+gets that far in practice: `SpeciesShare.name` is not optional, `row.uuid("species_uuid")` on the
+nameless group raises `unexpectedNull`, `AlmanacModel.load()` catches it as `.failed`, and screen 12
+draws its header and its footnote with nothing between them. The recommendation in two entries, taken
+literally, empties the screen it was trying to fill.
+
+**The one read that really was wrong is `firstBloom`, and it is fixed here.** It is the only read in
+the file that starts from a contribution rather than from the inventory, and it filtered `deleted_at`
+and nothing else — no status at all. A `flowering` visit recorded against a vacant site therefore
+produced `First bloom of the year` over a planting basin, named by its street and tappable: the one
+row on screen 12 that names a specific record was the only one that could name a record with no tree
+in it. Reproduced against the real seed at `2501 Lincoln Way`. That the app cannot write such a visit
+today is not a defence — it cannot only because E113 redirects a site away from the tree profile the
+camera opens from, which is the almanac's own rule being enforced in another feature's router, one
+release after the almanac was written. `Self.standing` now applies to all five reads. The same
+predicate also drops a bloom recorded on a tree since removed, which is the rule saying what it
+always said: the row invites you to go and look at the tree.
+
+**And the product reading, which is the part E11 guessed at and nobody has checked.** E11 wrote that
+"a vacant site is exactly the 'coverage gap' the almanac (D1) is supposed to direct attention
+toward", hedged with a *may*. It is not, and the two senses of the word are worth separating. D1's
+coverage panel is enumerated in D1 itself — "young trees unvisited since planting, blocks unseen for
+months" — and both are gaps in **observation**: places the record has no recent eyes on. The
+justification D1 gives is "chasing coverage produces exactly the data you want". A vacant basin is a
+gap in the **canopy**, and chasing it produces no data at all, because E107 established that this
+app's vocabulary has nothing true to say about a site: no visit, no observation, no measurement, no
+care event, and a private reminder that requires a `HazardCategory`. `Where eyes are needed` is an
+ask, and an ask with no receiver is the same defect as "sent to the city" — the honest copy problem
+D4 exists to prevent. So a site does not belong in §4, and a `Walk to it` that ends at a hole in the
+pavement is not a smaller version of `Walk the nine`; it is a different kind of sentence.
+
+**What screen 12 should say about them, and why this entry proposes it rather than building it.**
+There is one honest statement — *N planting sites in this neighbourhood have no tree in them* — and
+one honest destination, the nearest of them on `Route.site`. That is one number and one row, and it
+has nowhere on screen 12 to go. §2 is `This season`, and 1,474 basins are not seasonal and are not a
+first, an elder or a newcomer, which is what the screen's own caption says that block holds. §3 is
+`Who lives here · 215 species`, whose rows are species shares over a denominator that admitting sites
+would move. §4 is the ask, above. A fourth C10 row under `This season` would cost four inventions at
+once — a title, a subtitle, a tile accent SCREENS.md has not assigned to this screen, and a fourth
+row where the mock draws three — and a new micro-label with its own row is a **block SCREENS.md does
+not draw**. DECISIONS constraint 21, and RULINGS' closing note that the one-time exception to it is
+spent, put that with design. **Proposed: a block titled for the canopy rather than for attention —
+`Where a tree could go` is ROADMAP §1's own phrase for these rows — carrying one C10 row reading
+`1,474 planting sites with no tree in them`, tapping through to the nearest site.** It needs a title,
+a subtitle rule, a tile accent and a position relative to §4; all four are drawn decisions.
+
+Two facts a designer answering this will want. The count itself is D1-legal without qualification: it
+counts *records the city holds*, not anything anybody did, so ARCHITECTURE §5.1's trap — a number
+that is a count of user actions wearing a different noun — does not apply, and unlike §2's headcount
+it needs no A8 floor. And it never renders as a zero: every one of the 41 neighbourhoods carries
+between 4 and 1,474 sites, so ARCHITECTURE §5.6 would never suppress this block anywhere in the city.
+No query was added for it, because a read nothing draws is the thing E113 deleted `isVacantSite` for;
+the destination it would need already exists as `TreeQueries.nearest` filtered on status, which is
+how `SiteModel` finds its neighbour today.
+
+Proven by `CypressTests/AlmanacVacantSiteTests.swift`, all of it against the shipped 195,309-row seed
+rather than a fixture: the population (12,518, every one inside a neighbourhood, none with a species,
+none in a neighbourhood that has no others, 1,474 in Sunset/Parkside); the join arithmetic above,
+including the NULL comparison proved by query rather than reasoned about, per E89 and E109; that the
+live mix is still 215 species over 11,026 trees and every row can name itself; that the elder, the
+plantings and the coverage read return no site even though **9,294 of the 12,518 carry a planting
+date** and would otherwise qualify for two of them; and that a flowering visit on a basin is no
+longer the first bloom while the same visit on a standing tree still is.
+
+**Not fixed, and not this entry's.** C19 still has no pin for a site, so the map draws one as
+`removed` (E107, E113). `firstBloom` remains the only read here that could name a tree the reader
+cannot reach in the state the row implies — it now excludes the removed, but a bloom row is still a
+claim about a tree made out of one visit, which is A9's floor of one working as specified.
