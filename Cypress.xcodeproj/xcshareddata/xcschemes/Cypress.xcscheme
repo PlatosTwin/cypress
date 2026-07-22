@@ -38,6 +38,16 @@
                ReferencedContainer = "container:Cypress.xcodeproj">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "CY0000000000000000000043"
+               BuildableName = "CypressUITests.xctest"
+               BlueprintName = "CypressUITests"
+               ReferencedContainer = "container:Cypress.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction

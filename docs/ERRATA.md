@@ -3803,3 +3803,36 @@ defect rate on fifteen never-before-photographed screens was zero, which says th
 component catalogue are carrying dark and AX5 correctly on their own, and that the two defects that were
 found by eye earlier were failures of *coverage* — screens nobody had looked at — rather than of a
 class of screen that keeps going wrong.
+
+### E116 — the accessibility tree was never checked as a tree, only one label at a time
+
+Every accessibility fix in this project — E103's labels on bare `Shape`s that reached nobody, E104's
+component announcing an empty row, the VoiceOver values on the favourite toggle (E112) — was verified
+against `CypressTests`, which is a **unit** suite. A unit test can assert that a modifier is present
+on a value. It cannot assert that the element the modifier is on is in the accessibility tree at all,
+that a screen's elements are reachable in the order a VoiceOver user hears them, or that an
+interactive control is actually hittable by an assistive technology. **SwiftUI builds no in-process
+accessibility tree**, so nothing in a unit test can see one. The whole class of "the label exists in
+the source and the element is not in the tree" was unfalsifiable.
+
+`CypressUITests` is the net under that. It is a third target — `com.apple.product-type.bundle.ui-testing`,
+`TEST_TARGET_NAME = Cypress`, added to the shared scheme's test action so `xcodebuild test` runs it —
+and it is black-box on purpose: it imports nothing from `Cypress` and sees the app the way VoiceOver
+does, as a tree of elements with traits, labels and an order. `AccessibilityTreeTests` pins that the
+four C16 tabs are present *and hittable* (a tab that is drawn and labelled but not activatable by an
+assistive technology is the failure a screenshot cannot show), that the map's search field is exposed
+as a field rather than as anonymous pixels, and that no hittable control on launch has an empty label.
+
+**The target was verified to be able to fail, not merely to pass.** A UI test green against correct
+code proves nothing, so one tab's label was hidden as a negative control: the tab test reported "the
+My Grove tab is not in the accessibility tree" and went red, then the control was reverted. That is
+the same discipline every behavioural fix in this file was held to — prove the failure against the
+broken code before trusting the pass — applied to the tool itself.
+
+**What this does not yet cover, and is the next work.** Three screens, all reachable without a
+contribution: the map and its chrome. The nineteen feature screens sit behind navigations XCUITest
+must *drive* to reach, and driving them needs either accessibility identifiers as stable anchors or a
+launch argument that deep-links a screen for test — neither of which exists yet. Until it does, this
+is a spine check, not a full audit: it proves the app's front door is navigable and leaves the rooms
+for a later pass. Structural VoiceOver on every screen is still owed; what changed is that there is
+now somewhere to write it.
