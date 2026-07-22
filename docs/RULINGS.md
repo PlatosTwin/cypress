@@ -72,6 +72,45 @@ getting better** both fail. A silent improvement means someone changed a token w
 
 ---
 
+## R1a — The same ruling, applied where E106 had not looked
+
+R1 was written from E106's table, and E106's sweep did not cover everything the caption ramp is drawn
+on. Implementing R1 turned up five residual failures. This amendment says what happens to each, so
+that none of them is settled by silence.
+
+**The line R1a draws: an accessibility floor justifies an overrule; a matching set does not.**
+
+**Overruled, because they are the same failure R1 already ruled on.**
+
+- **The forced-dark palette.** `Dark.textFaint` reads 3.44 / 2.99 on screen 04, which is dark by
+  design in both appearances. `Dark.*` is verbatim transcription and was outside R1's list; it is
+  inside R1a's. R1's argument was that the caption ramp is not one badge but every micro-label in the
+  app — and a label legible when the *phone* is dark and illegible when the *screen* is dark is that
+  argument failing on its own terms. Derived the same way, against the grounds screen 04 draws on.
+- **The search placeholder.** `searchGlyph` at 3.95 on the search fill. It kept `faintAlt`'s retired
+  hex through an alias, which made it the last thing in the app still wearing a value R1 withdrew —
+  on screen 01, the default screen.
+
+**Corrected, not overruled — which is a different thing and must stay labelled as one.**
+
+- **The empty photo well** (screen 14). `text.faint` lands at 4.16 dark on `surfaceEmptyThumb`, and
+  closing it *in the token* would put faint 0.042 from muted in OKLCh lightness — inside E8's own
+  0.075 ladder step, which is the ramp collapse R1 refused. But `surfaceEmptyThumb`'s dark value is
+  **derived**, and E8's standing rule is that a derived value may be corrected. So it is corrected,
+  and it belongs with the derived tokens rather than the overruled ones. No designer is overruled
+  here; a guess is improved.
+
+**Left failing, on the record.**
+
+- **`ctaDisabledLabel`**, an alias of faint, at 4.19 / 4.64. WCAG 1.4.3 exempts inactive components,
+  and a disabled control that reads as strongly as an enabled one is a different defect.
+- **The three light amber border weights have come apart.** C24's border is now darker than
+  `borderAmberMid` and `amberChipSelectedBorder`, which were one hex with it before. This is correct
+  under 1.4.11 and it is a visual change nobody drew. Design's to reconcile, and the likely answer is
+  that the two chip borders follow C24 down.
+
+---
+
 ## R2 — The heart comes off where it went on (closes E101)
 
 **The finding.** A favourite can be written and cannot be removed. C8's `Favorite` cell is drawn once,
