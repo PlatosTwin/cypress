@@ -643,6 +643,20 @@ Screen 18 is also not wired as 05's confirmation, for a smaller reason: `VisitSa
 contribution kinds is real work in another feature's folder, and until an entry point exists there
 is no flow to put it in. The check-in pops back to wherever it was pushed from.
 
+**RESOLVED — the entrances round.** Screen 03 now carries a **C7 secondary outline button under its
+primary CTA**, reading `Check in · under a minute`. Neither candidate above was taken: the quad row
+still has exactly four cells and the screen still has exactly one primary button. C7 is the
+component whose entire job is the quieter thing beside the loud one, which is the honest
+relationship between a photograph and ninety seconds with no camera.
+
+**Invented under a one-time, explicit authorization from the project owner** covering the entrances
+of the six unreachable screens, and marked as invented in `TreeProfilePresentation.checkInCTATitle`
+so a designer can delete or move it from one place. The copy is assembled from words screen 05
+already uses — its own title and its `under a minute` header pill — in the `X · Y` shape the primary
+CTA above it is drawn in. It is gated on `TreeStatus.acceptsNewContributions`, so a memorial and a
+vacant site are not offered it. See E98.
+
+Screen 18 is still not wired as 05's confirmation, for the reason given above; that is unchanged.
 ### E25 — 05's optional well has no editor behind it
 
 SCREENS.md 05 §6 draws C15 with the copy `Add photos · notes (optional)` and specifies nothing that
@@ -1472,6 +1486,15 @@ nearest-first and the CTA opens the nearest.
 The two season rows that are *about* a specific tree — the elder and the first bloom — take an
 optional handler and are inert without one, because SCREENS.md 12 states no affordance for either.
 
+**RESOLVED — the entrances round.** The **Journal tab renders screen 12 as its root.** BUILD-PLAN
+§12 groups "collections, almanac, journal, share cards, phenology notifications" as one layer and
+names the almanac and the journal in one M4 acceptance line, so the pairing is the plan's own; what
+is invented is making the almanac the tab's *content*, under the one-time authorization (E98). The
+tab was a `NotBuiltYetView` before it, so nothing was displaced.
+
+`Route.almanac` stays wired and now has no caller, which is recorded rather than tidied away: the
+route is the app's name for the screen, and a future second entrance would push it. Its header draws
+no back circle, because a tab root has nothing to go back to. See E98 and E99.
 ### E58 — `CareAction` has five values and screen 09 draws four
 
 BUILD-PLAN §4's `care_events.actions text[]` vocabulary is `watered, mulched, weeded,
@@ -1604,6 +1627,20 @@ what the record supports and drop the rest of the screen:
 Both strings are **NOT SPECIFIED** and are written to state a fact and no more. They are the two
 places on this screen where copy was invented, and they are the two questions for design.
 
+**RESOLVED — the entrances round**, and the resolution is a *pair*. The stat card on 03 now has two
+destinations rather than one:
+
+- a card **with** a reading opens 11, which is the drawn affordance and was never invented;
+- a card **without** one opens 16, the measure sheet, which is (E74's half of this, and invented).
+
+So the entrance that could not fire now can, because the thing it needed — a way to write a
+measurement at all — is reachable from the card beside it. Verified on device: a DBH reading saved
+through the outbox flipped the seeded tree's DBH card from the city's `5–10 cm city record` bucket
+to `31 cm taped`, and that card opened screen 11 with a chart on it, which no device had ever
+rendered before.
+
+The three empty states above are unchanged and still carry invented copy; they are still questions
+for design. What changed is only that the app can now reach them. See E98.
 ### E64 — screen 11's footnote promises an affordance that does not exist, so it is not rendered
 
 SCREENS.md 11 §6 ends the screen with `Tap any point to open the observation behind it.` There is
@@ -1670,6 +1707,14 @@ constraint 21):
 affordance can be designed and because the screen has to answer for its empty state — which, per E67,
 is the state every tree in the shipped app is in.
 
+**RESOLVED — the entrances round.** The first candidate above was built: a **`See the whole year`
+link under 03's activity feed**, invented under the one-time authorization (E98) and marked as such
+in `TreeProfilePresentation.activityLinkTitle`. The second candidate — a tap on the foliage strip —
+stays rejected for the reason given: two different years of two different things.
+
+The link draws **only where the feed draws**, which is the same threshold rule ARCHITECTURE §5.6
+states: on the shipped seed no tree has any activity, so no tree offers a door onto the empty state
+E67 describes.
 ### E67 — screen 13 has no empty state, and the empty state is the whole shipped app
 
 SCREENS.md 13 draws one state: a full chart card, three moments, a three-up photo strip and a
@@ -1869,6 +1914,20 @@ affordance can be designed, because the screen has to answer for a tree with no 
 (which is every tree in the shipped seed), and because until it is reachable **nothing in the app can
 write a measurement at all** — which is why screen 11 has never had a chart on any device.
 
+**RESOLVED — the entrances round**, and not with the candidate above. The control is on **screen 03,
+not screen 11**: an *empty* measurement stat card, reading `Add a reading` in the faint mono of
+screen 16's own empty readout (E77), which opens the measure sheet. 11 keeps its enumerated parts and
+gains no control.
+
+The argument for the profile over the history screen is the one this entry already makes — "the tree
+profile is where every other field action in this app starts", and a contributor holding a tape has
+no reason to have opened a history screen first. The copy is this entry's own phrase.
+
+**Invented under the one-time authorization** (E98) and gated on
+`TreeStatus.acceptsNewContributions`, so a memorial and a vacant site draw no slot at all: verified
+on device, a vacant site's stat grid is `Site` and `City record` and nothing else. Note that the
+city's DBH *bucket* is still not a door — where the city published a range, that card renders as
+`.cityRecord` and is inert, and the Height slot beside it is the entrance.
 ### E75 — screen 17's entrance is named in BUILD-PLAN §9 and sits on a screen that does not exist
 
 Unlike 16, screen 17's entrance is written down. BUILD-PLAN §9's M2 list includes "the You tab
@@ -1884,6 +1943,17 @@ So `Route.outbox` is wired and the affordance waits for the screen it belongs on
 worth stating plainly: today the outbox is invisible to a contributor, and the outbox is the one
 subsystem whose whole promise ("nothing here disappears silently") is a promise about being visible.
 
+**RESOLVED — the entrances round.** The You tab exists, and the row is on it. This entry's own
+sentence is what built it: BUILD-PLAN §9's "the You tab (profile, settings, outbox entry point,
+privacy toggles)" is a specification, so **the outbox row is specified, not invented** — what was
+invented is only the tab's layout, which no document draws.
+
+The tab is deliberately thin, and each absence has a reason: no profile block and no sign-in entry
+point, because there is no account on any device this app runs on (E86) and a header over a person
+who does not exist is worse than no header; no counts of anything, because a "You" tab is the single
+most likely place in this app to drift into a profile-with-stats, which D1 forbids. What it carries
+is the outbox row, the wi-fi preference (the only setting `AppStateKey` persists, shared with screen
+17 so the two surfaces cannot disagree), and a stated privacy position. See E98 and E100.
 ### E76 — 16's "sure about that?" is a dialog in the copy, and a dialog is the one thing it must not be
 
 SCREENS.md §5 gap 10 lists "the 'sure about that?' anomaly confirmation on 16 — described in copy
@@ -2388,3 +2458,115 @@ otherwise have to re-enter the screen between them.
 It is also thin. There is no confirmation, no toast and no exit, and a contributor who taps once and
 looks away has only a changed pill to tell them it worked. A designed post-save state for 16 is a
 real gap; inventing one, or borrowing 18's, is what DECISIONS constraint 21 forbids. **OPEN.**
+
+### E98 — six screens had no entrance, and the entrances were invented under a one-time authorization
+
+**This entry is the authorization and its boundary. Read it before overruling anything it covers.**
+
+Six built, tested, routed screens had no affordance anywhere in the app that opened them: **05**
+(E24), **11** (E63, whose entrance existed and could never fire), **12** (E57), **13** (E66), **16**
+(E74) and **17** (E75). Every one of them was recorded rather than fixed, and correctly so —
+DECISIONS constraint 21 says an unmocked affordance is a question for design, not a case to invent,
+and six entries in this file say exactly that.
+
+**The project owner granted a one-time, explicit exception covering these six entrances and nothing
+else.** It does not cover new screens, new states, new data, new copy beyond a short label, or an
+affordance for anything else. Everything invented under it is marked in code and listed here, so any
+of it can be overruled without archaeology.
+
+**What was invented, and where the decision lives:**
+
+| Screen | Entrance | Decided in |
+|---|---|---|
+| 05 · Check-in | C7 outline button under 03's primary CTA, `Check in · under a minute` | `TreeProfilePresentation.checkInCTATitle` |
+| 13 · Activity | `See the whole year` link under 03's activity feed | `TreeProfilePresentation.activityLinkTitle` |
+| 16 · Measure | an *empty* measurement stat card on 03, `Add a reading` | `TreeProfilePresentation.StatDestination` |
+| 12 · Almanac | the Journal tab renders it as the tab's root | `JournalTabView` |
+
+**What was specified and only looked invented:**
+
+- **11 · Growth history.** `DBH/Height cards → 11` is drawn in SCREENS.md 03's affordance list and
+  was built long before this round. It could not fire because nothing in the app could write a
+  measurement (E63, E74). One control now carries both directions — a reading opens its history, an
+  empty slot opens the sheet that writes one.
+- **17 · Outbox.** BUILD-PLAN §9's M2 list names "the You tab (profile, settings, **outbox entry
+  point**, privacy toggles)". The row is that sentence. Only the tab's layout is new (E100).
+- **12's placement in the Journal tab.** BUILD-PLAN §12 groups the almanac and the journal in one
+  layer and one acceptance line; making the almanac the tab's *content* is the invented half.
+
+**Three rules constrained every one of them, and each was checked:**
+
+1. **A read-only record gains no write.** `TreeStatus.acceptsNewContributions` is false for a
+   memorial and a vacant site, so neither is offered the check-in button or the empty measurement
+   slot. Tested for every non-contributing status at once, and confirmed on device: a vacant site's
+   stat grid is `Site` and `City record`, with no invitation to fill anything.
+2. **§5.6 — a surface below its threshold renders nothing.** The activity link draws only where the
+   feed draws, so no tree in the shipped seed offers a door onto screen 13's empty state (E67).
+3. **§5.1 — no counts of user actions.** Nothing added here counts anything. The You tab in
+   particular carries no visit count, no species tally and no queue count; screen 17's own header
+   pill says how many items are waiting, on the screen that can also say why.
+
+**One new component case was needed.** `StatCard.Value.placeholder(String)` renders an empty
+measurement slot in `text.faint` rather than `text.ink`, exactly as screen 16's empty readout does
+and for the same reason (E77): a value drawn in ink reads as a reading. It is the only change to
+`DesignSystem` in this round.
+
+**Visual verification.** Every entrance and every newly reachable screen was photographed in the
+simulator against the bundled seed. Synthetic touch input was unavailable in the environment the
+round ran in — the process was denied accessibility, so no click could be posted to the Simulator —
+so the walk was driven through the same `AppRouter` the buttons drive, with the affordances
+themselves photographed as they render. That is weaker than a finger and is recorded as such: what
+was proved is that each affordance draws where it should and each destination renders behind it, on
+real seed rows. The one full loop that was exercised end to end was the measurement: a DBH reading
+written through the outbox turned the seeded tree's DBH card from the city's bucket into
+`31 cm taped` and put a chart on screen 11 for the first time on any device.
+
+### E99 — the Journal tab hosts the almanac and not the journal, and the journal list is still unbuilt
+
+`CypressAPI.journal(cursor:limit:)` exists, returns `Page<JournalEntry>`, and is not called by any
+screen. The Journal tab renders screen 12 (E57, E98) and nothing else.
+
+**The list was not built, deliberately.** SCREENS.md draws no journal list — no layout, no row, no
+empty state, no copy — and BUILD-PLAN §9 asks only for an "empty journal". Building one would be
+inventing a screen, and the authorization in E98 covers entrances, not screens. The name of the tab
+promising something it does not yet contain is the honest cost of that, and it is smaller than the
+cost of guessing.
+
+Two things whoever builds it will need, recorded now:
+
+- **A page is not a series.** `journal` returns a `Page`, which carries `nextCursor` and no total.
+  Nothing on that screen may print a count off it — E38 is the entry that explains what happens when
+  something does.
+- **D1 applies with unusual force.** A personal list of your own contributions, ordered by time, is
+  one design decision away from a streak. `JournalEntry` carries no counts by construction; keep it
+  that way.
+
+**OPEN.**
+
+### E100 — D11's privacy toggle is modelled, unstorable, and therefore stated rather than switched
+
+BUILD-PLAN §9 asks the You tab for "privacy toggles". There is exactly one privacy toggle in the
+data model — `User.publicAttribution`, D11's "contribution feeds private by default with opt-in
+public attribution" — and **nothing can set it**:
+
+- `AppSchema` has no `users` table. The local store carries `device`, `app_state`,
+  `community_trees`, `visits`, `photos`, `observations`, `measurements`, `care_events`, `favorites`,
+  `private_reminders`, `community_notes`, `review_flags`, `tree_names`, `outbox` and
+  `hazard_redirects`, and no row anywhere that could hold the flag.
+- `CypressAPI` has no method that reads or writes it.
+- There is no account on any device the app runs on, because screen 15 cannot create one (E86).
+
+A switch on the You tab would therefore be a control that forgets what it was told — worse than no
+control, and the exact failure the outbox screen's footnote is written against. So the tab **states
+the position instead**: `Private by default: everything you save stays on this phone. Public
+attribution is opt-in, it is off, and there is nothing in the app yet that can turn it on.` Every
+clause is checkable — the default is `false`, `LocalAPI` writes only to this device, and no code
+path flips it.
+
+The one setting that *is* persisted, `AppStateKey.syncPhotosOnWifiOnly`, is on the tab under
+`Settings` and labelled as what it is. **It is not a privacy setting** — it decides when photo
+binaries leave the phone, not who may see them — and it is deliberately not filed under the privacy
+heading. It is the same `OutboxViewState` screen 17 binds, held once in `RootView`, because two
+copies of one preference would agree only until somebody used one of them.
+
+**OPEN**, and the thing that closes it is an account, not a toggle.

@@ -48,6 +48,9 @@ struct MemorialView: View {
         content
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(CypressColor.surfaceScreen)
+            // 19 draws its own back circle over the desaturated hero. See TreeProfileView.
+            .navigationBarBackButtonHidden(true)
+            .toolbar(.hidden, for: .navigationBar)
             .task { if model.presentation == nil { await model.load() } }
     }
 

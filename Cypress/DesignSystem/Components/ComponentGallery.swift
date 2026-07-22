@@ -614,6 +614,15 @@ private struct GalleryC11: View {
                         StatCard(label: "Watch for", value: .prose("First-summer thirst"))
                     }
                 }
+                // NOT SPECIFIED, and the one thing on this screen a designer is being asked to rule
+                // on: the empty measurement slot that opens screen 16 (ERRATA E98). Faint rather
+                // than ink so it cannot read as a reading, exactly as 16's own empty readout (E77).
+                Variant("empty measurement slot · invented (03)") {
+                    StatGrid {
+                        StatCard(label: "Height", value: .placeholder("Add a reading"))
+                        StatCard(label: "DBH", value: .cityRecord("8 cm"))
+                    }
+                }
                 Variant("large variant · mono 17 (07)") {
                     HStack(spacing: CypressSpacing.gapRows) {
                         StatCard(label: "In San Francisco", value: .text("1,204"), size: .large)

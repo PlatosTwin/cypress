@@ -52,6 +52,15 @@ struct StatCard: View {
         case text(String)
         /// 14's `Watch for` row — **13px/700 sans, not mono**, per §2.
         case prose(String)
+        /// A card whose fact the record does not carry yet, standing open for one.
+        ///
+        /// **NOT SPECIFIED.** SCREENS.md draws C11 with a value in every card. The empty
+        /// measurement slot on screen 03 needs a value slot that cannot be mistaken for a reading,
+        /// and screen 16 already answered the same question the same way: its empty readout draws
+        /// `MeasureCopy.readoutPlaceholder` in `text.faint` rather than `text.ink`, because a plain
+        /// `0` in ink reads as a measurement of zero (ERRATA E77). Same geometry, same mono ramp,
+        /// the faint colour carrying the difference. See ERRATA (E98).
+        case placeholder(String)
     }
 
     let label: String
@@ -94,6 +103,10 @@ struct StatCard: View {
                 .font(CypressFont.body13Bold)
                 .foregroundStyle(CypressColor.textInk)
                 .padding(.top, 1)
+        case let .placeholder(text):
+            Text(text)
+                .font(size.valueFont)
+                .foregroundStyle(CypressColor.textFaint)
         }
     }
 }

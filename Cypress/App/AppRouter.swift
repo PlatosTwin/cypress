@@ -50,3 +50,37 @@ final class AppRouter {
     func pop() { if !path.isEmpty { path.removeLast() } }
     func popToRoot() { path.removeAll() }
 }
+
+// MARK: - C16
+
+extension AppRouter {
+
+    /// The bottom bar's selection, translated.
+    ///
+    /// C16 speaks `Map / My Grove / Journal / You` (its labels are verbatim from SCREENS.md §2) and
+    /// this router speaks `map / grove / journal / you`. Every tab root has to do that translation,
+    /// and there are four of them now that `Journal` and `You` are built — `MapHomeView` and
+    /// `GroveView` each wrote their own before there was a third. One copy here means a fifth tab
+    /// root cannot get it subtly wrong in a way that only shows up as a bar highlighting the wrong
+    /// icon.
+    var bottomTabSelection: Binding<BottomTabBar.Tab> {
+        Binding(
+            get: {
+                switch self.tab {
+                case .map: return .map
+                case .grove: return .myGrove
+                case .journal: return .journal
+                case .you: return .you
+                }
+            },
+            set: { selection in
+                switch selection {
+                case .map: self.tab = .map
+                case .myGrove: self.tab = .grove
+                case .journal: self.tab = .journal
+                case .you: self.tab = .you
+                }
+            }
+        )
+    }
+}

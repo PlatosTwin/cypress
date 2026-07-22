@@ -173,27 +173,10 @@ struct GroveView: View {
 
     // MARK: - Bottom bar
 
-    /// The same translation `MapHomeView` does, in the other direction: C16 speaks `Map / My Grove /
-    /// Journal / You` and `AppRouter` speaks `map / grove / journal / you`.
+    /// C16 speaks `Map / My Grove / Journal / You` and `AppRouter` speaks `map / grove / journal /
+    /// you`. One translation for all four tab roots, in `AppRouter.bottomTabSelection`.
     private var tabBinding: Binding<BottomTabBar.Tab> {
-        Binding(
-            get: {
-                switch router?.tab ?? .grove {
-                case .map: return .map
-                case .grove: return .myGrove
-                case .journal: return .journal
-                case .you: return .you
-                }
-            },
-            set: { tab in
-                switch tab {
-                case .map: router?.tab = .map
-                case .myGrove: router?.tab = .grove
-                case .journal: router?.tab = .journal
-                case .you: router?.tab = .you
-                }
-            }
-        )
+        router?.bottomTabSelection ?? .constant(.myGrove)
     }
 }
 

@@ -46,19 +46,43 @@ struct TreeProfilePresentation {
         let timestamp: String
     }
 
+    /// Where a stat card leads, when it leads anywhere.
+    ///
+    /// One control, two destinations, decided by whether the record carries the reading:
+    ///
+    /// - **A reading exists** → screen 11, the growth history. Specified: SCREENS.md 03's affordance
+    ///   list says `DBH/Height cards → 11`, and 11's own caption says it "lives under Details on the
+    ///   tree profile". This was never reachable, because nothing in the app could write a
+    ///   measurement (ERRATA E63) — not because it was undesigned.
+    /// - **No reading exists** → screen 16, the measure sheet. **Invented under the project owner's
+    ///   one-time authorization** to give these six screens an entrance; see ERRATA (E98). An empty
+    ///   measurement slot standing open for the number that belongs in it is the smallest thing that
+    ///   makes 16 reachable, and E74 already named "add a reading" as the least-invented candidate —
+    ///   this puts that control on the profile, where every other field action in the app starts,
+    ///   rather than on 11, which is a history surface a contributor with a tape has no reason to
+    ///   have opened.
+    ///
+    /// A designer may overrule either arm without archaeology: both are decided here, and the view
+    /// only asks where a card goes.
+    enum StatDestination: Hashable {
+        case growthHistory
+        case measure
+    }
+
     /// One card of the stat grid (C11).
     struct StatItem: Identifiable {
         let id: String
         let label: String
         let value: StatCard.Value
-        /// Measurement cards open the growth history (screen 11); the rest are inert.
-        let opensGrowthHistory: Bool
+        /// Where tapping the card goes. `nil` for the cards that are facts and not doors — the
+        /// city's DBH bucket among them, deliberately (D7, ERRATA E63).
+        let destination: StatDestination?
 
-        init(id: String, label: String, value: StatCard.Value, opensGrowthHistory: Bool = false) {
+        init(id: String, label: String, value: StatCard.Value, destination: StatDestination? = nil) {
             self.id = id
             self.label = label
             self.value = value
-            self.opensGrowthHistory = opensGrowthHistory
+            self.destination = destination
         }
     }
 
@@ -279,6 +303,45 @@ struct TreeProfilePresentation {
         isCold ? "Be the first to photograph this tree" : "Visit · say hello with a photo"
     }
 
+    // MARK: - Secondary action (screen 05)
+
+    /// The C7 outline button under the primary CTA, which is the app's only door to screen 05.
+    ///
+    /// **Invented under the project owner's one-time authorization** (ERRATA E98). E24 laid out the
+    /// two candidates it would not choose between — a fifth cell in C8's quad row, which is drawn
+    /// with exactly four, and a second primary CTA, which is drawn with exactly one. This is
+    /// neither: C7 is the component whose whole job is "the quieter thing beside the loud one", and
+    /// that is the honest relationship between the two contributions. The visit is a photograph; the
+    /// check-in is ninety seconds and no camera.
+    ///
+    /// The copy is assembled from words screen 05 already uses — its own title and its header pill,
+    /// `under a minute` — in the `X · Y` shape the primary CTA above it is drawn in. Nothing new is
+    /// claimed by it: 05 really is optional throughout and really does fit the minute it promises.
+    static let checkInCTATitle = "Check in · under a minute"
+
+    /// Whether to draw it. A memorial and a vacant site take no contribution of any kind, and a
+    /// check-in is a contribution (ERRATA E95).
+    var offersCheckIn: Bool { acceptsContributions }
+
+    // MARK: - Activity link (screen 13)
+
+    /// The link under the activity feed, which is the app's only door to screen 13.
+    ///
+    /// **Invented under the project owner's one-time authorization** (ERRATA E98), and it is E66's
+    /// own first candidate — "a 'see the whole year' link under 03's activity feed" — down to the
+    /// words. E66's second candidate, a tap on the foliage strip, stays rejected for the reason it
+    /// gives: the strip is a year of photo coverage and 13 is a year of activity, and making one
+    /// open the other asserts a relationship nothing states.
+    static let activityLinkTitle = "See the whole year"
+
+    /// Whether to draw it.
+    ///
+    /// Only where the feed itself drew, which is where there is a year to see. E67 records that
+    /// screen 13's shipped state is a header and one line, because no tree in the seed carries any
+    /// activity at all; a link that led there from a profile with nothing on it would be a door onto
+    /// the empty state, which is ARCHITECTURE §5.6's argument in link form.
+    var offersActivityLink: Bool { !activity.isEmpty }
+
     // MARK: - Regulars row (A8, D1)
 
     /// A8: "distinct users with 2 or more care_events or observations on the tree in 24 months;
@@ -409,7 +472,8 @@ struct TreeProfilePresentation {
     // MARK: - Stat grid (D7)
 
     /// The cards, in the order SCREENS.md draws them across 03 and 14: measurements first, then the
-    /// city's own facts. A card whose fact the record does not carry is absent rather than blank.
+    /// city's own facts. A card whose fact the record does not carry is absent rather than blank —
+    /// with the two measurement slots as the deliberate exception, see `emptyMeasurementSlot`.
     var stats: [StatItem] {
         var items: [StatItem] = []
 
@@ -419,20 +483,29 @@ struct TreeProfilePresentation {
                     id: "height",
                     label: "Height",
                     value: .quantity(height.quantity),
-                    opensGrowthHistory: true
+                    destination: .growthHistory
                 )
             )
+        } else if offersMeasurement {
+            items.append(emptyMeasurementSlot(id: "height", label: "Height"))
         }
 
         if let dbh = latestMeasurement(.dbh) {
             items.append(
-                StatItem(id: "dbh", label: "DBH", value: .quantity(dbh.quantity), opensGrowthHistory: true)
+                StatItem(id: "dbh", label: "DBH", value: .quantity(dbh.quantity), destination: .growthHistory)
             )
         } else if let cityDBH = cityDBHRangeText {
             // D7, the whole point of this row: the city publishes a 5 cm *bucket*, not a number
             // anybody taped. `.cityRecord` is not a `Quantity`, carries the `city record` badge,
             // and cannot be mistaken downstream for a measurement.
+            //
+            // It stays inert, which E63 records as deliberate: a bucket is not a reading, so it
+            // opens no chart. It is not turned into the measure entrance either — the invitation
+            // this screen now carries is an *empty* slot, and a card already showing the city's
+            // number is not empty. The Height slot beside it is the door on a city tree.
             items.append(StatItem(id: "dbh", label: "DBH", value: .cityRecord(cityDBH)))
+        } else if offersMeasurement {
+            items.append(emptyMeasurementSlot(id: "dbh", label: "DBH"))
         }
 
         // The planted year is either the badge or a card, never both — 03 badges `THRIVING` and
@@ -459,6 +532,36 @@ struct TreeProfilePresentation {
 
         return items
     }
+
+    /// A measurement card with nothing in it, which is the app's only door to screen 16.
+    ///
+    /// **Invented under the project owner's one-time authorization** (ERRATA E98). Two things about
+    /// it are decided here rather than in the view:
+    ///
+    /// - It is drawn on the cold variant too, which SCREENS.md 14 does not list among its cards.
+    ///   The alternative was to show it only on 03, and that would have left 16 unreachable on the
+    ///   shipped app, because per D8 every tree in the city inventory renders the cold variant on
+    ///   launch day — the same shape of failure E63 records for screen 11.
+    /// - Its copy is `Add a reading`, which is E74's own phrase for the control it declined to
+    ///   invent. Borrowing the words already written down beats authoring new ones.
+    private func emptyMeasurementSlot(id: String, label: String) -> StatItem {
+        StatItem(
+            id: id,
+            label: label,
+            value: .placeholder(TreeProfilePresentation.emptyMeasurementValue),
+            destination: .measure
+        )
+    }
+
+    /// The empty slot's value copy. **NOT SPECIFIED**; see `emptyMeasurementSlot`.
+    static let emptyMeasurementValue = "Add a reading"
+
+    /// Whether this screen may offer to write a measurement.
+    ///
+    /// `TreeStatus.acceptsNewContributions`, and nothing else: a memorial and a vacant site are
+    /// read-only records, and an entrance added to this screen must not be the thing that hands one
+    /// of them a write (ERRATA E95).
+    private var offersMeasurement: Bool { acceptsContributions }
 
     private var badgeCarriesPlantedYear: Bool {
         if case .planted = badge { return true }

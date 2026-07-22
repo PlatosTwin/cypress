@@ -11,6 +11,24 @@ struct RootView: View {
 
     @State private var router = AppRouter()
 
+    /// Screen 17's model, owned here because **two screens now show the same preference**.
+    ///
+    /// The You tab draws the wi-fi toggle beside the outbox row, and screen 17 draws it in its own
+    /// §3. Each building its own `OutboxViewState` would give the app two copies of one setting,
+    /// each reading the store when its screen appeared and neither hearing the other change it — so
+    /// the toggle would agree with itself only until you used it. One instance, from the composition
+    /// root, is ARCHITECTURE §3's answer to exactly this ("shared services are passed through the
+    /// SwiftUI environment from a single composition root; no singletons").
+    @State private var outbox: OutboxViewState
+
+    /// `@MainActor` because `makeOutboxViewState()` is: the model is a `@MainActor @Observable`, and
+    /// building it in `init` is what lets both screens receive the same one.
+    @MainActor
+    init(data: DataLayer) {
+        self.data = data
+        _outbox = State(wrappedValue: data.makeOutboxViewState())
+    }
+
     /// The one shared location provider (ARCHITECTURE §3: "Shared services (`CypressAPI`, `Outbox`,
     /// `LocationProvider`) are passed through the SwiftUI environment from a single composition
     /// root").
@@ -109,14 +127,16 @@ struct RootView: View {
     ///
     /// A `switch` on `router.tab` rather than a `TabView`, because C16 is a drawn component with its
     /// own hand-made icons and paddings (SCREENS.md §2) and every screen that carries it draws it
-    /// itself — screen 01 already did, and 08's variant differs from 01's (no backdrop blur). The
-    /// bar was already flipping `router.tab` before this; nothing was reading it, so the two built
-    /// tabs are now wired and the two unbuilt ones say so.
+    /// itself — screen 01 already did, and 08's variant differs from 01's (no backdrop blur). All
+    /// four now translate through `AppRouter.bottomTabSelection` rather than each writing the
+    /// mapping out again.
     ///
-    /// `Journal` and `You` are BUILD-PLAN §9 M2 build requirements with no mock — "empty grove,
-    /// journal, collections" and "the You tab (profile, settings, outbox entry point, privacy
-    /// toggles)". They get the same plain placeholder every unbuilt destination in this file gets
-    /// rather than an invented screen (DECISIONS constraint 21).
+    /// `Journal` and `You` were BUILD-PLAN §9 M2 build requirements with no mock, and both rendered
+    /// `NotBuiltYetView` until the entrances round. They are built now, minimally, because they are
+    /// the last two doors: screen 12 had no entrance anywhere in the app (ERRATA E57) and screen
+    /// 17's entrance was *named* by BUILD-PLAN §9 and sat on a screen that did not exist (E75).
+    /// What each contains, and which parts of it are invented, is documented in the two feature
+    /// files rather than restated here.
     @ViewBuilder
     private var tabRoot: some View {
         switch router.tab {
@@ -130,9 +150,18 @@ struct RootView: View {
                 onOpenSpecies: { id in router.push(.species(id)) }
             )
         case .journal:
-            NotBuiltYetView(label: "journal")
+            // Screen 12 lives here. The elder and first-bloom rows name a specific tree, and
+            // screen 14's own footnote calls the coverage list "the almanac's 'walk the nine' list,
+            // one tree at a time" — screen 14 is `treeProfile` in its cold-start form, so both land
+            // on a profile.
+            JournalTabView(
+                api: data.api,
+                coordinate: location.availability.coordinate,
+                onOpenTree: { id in router.push(.treeProfile(id)) },
+                onWalk: { id in router.push(.treeProfile(id)) }
+            )
         case .you:
-            NotBuiltYetView(label: "you")
+            YouTabView(outbox: outbox)
         }
     }
 
@@ -164,12 +193,12 @@ struct RootView: View {
             // Screen 05. Anonymous under the device id until the account ask ships (D9); the
             // composition root owns that choice, not the feature.
             //
-            // **Nothing pushes this route yet.** No mocked screen carries an affordance that opens
-            // the check-in: 03's quad row is Favorite / Care / Share / Report, its one primary CTA
-            // is the visit, and the prototype never reaches 05 at all. Screen 18's success block
-            // reads `Check-in saved`, so 05's *exit* is drawn while its entrance is not. Inventing
-            // the button is exactly what DECISIONS constraint 21 forbids, so the destination is
-            // wired and the affordance is a question for design. See ERRATA (E24).
+            // **Reached from the C7 outline button under screen 03's primary CTA**, which is
+            // invented under the project owner's one-time authorization and marked as such where it
+            // is built (`TreeProfilePresentation.checkInCTATitle`). No mocked screen carries an
+            // affordance that opens the check-in — 03's quad row is drawn with exactly four cells
+            // and its primary CTA with exactly one button — so E24 stood open until that
+            // authorization existed. See ERRATA (E24, E98).
             CheckInView(
                 treeID: id,
                 api: data.api,
@@ -221,23 +250,22 @@ struct RootView: View {
 
         case .growthHistory(let id):
             // Screen 11. Its one drawn entrance is a measurement stat card on 03
-            // (`TreeProfilePresentation.StatItem.opensGrowthHistory`), which exists only when a
-            // measurement does — so on the shipped seed, which carries no measurements at all,
-            // nothing routes here yet. The destination is wired because the route exists and the
-            // screen has to answer for the empty case; see ERRATA (E63).
+            // (`StatDestination.growthHistory`), which exists only when a measurement does. That is
+            // **specified** and was never invented; it simply could not fire, because until screen
+            // 16 became reachable nothing in the app could write a measurement (ERRATA E63, E74).
+            // Now that it can, the same card carries both directions: a reading opens its history,
+            // an empty slot opens the sheet that writes one.
             GrowthHistoryView(treeID: id, api: data.api)
 
         case .activity(let id):
-            // Screen 13. **Nothing opens it**, and that is the fourth time this has been true in
-            // this file — 05, 11 and 12 are the others. 03's affordance list ends at
-            // `activity row → the observation behind it`, which is not this screen and is not a
-            // screen at all (ERRATA E64); SCREENS.md 13 is named as a destination nowhere; the
-            // clickable prototype's `screen` enum omits it; and BUILD-PLAN §9 lists no entry. The
-            // two least-invented candidates — a "see the whole year" link under 03's activity feed,
-            // or a tap on 03's foliage strip — are both design decisions, so neither was added
-            // (DECISIONS constraint 21). The destination is wired because the route exists and the
-            // screen has to answer for its empty state, which is the state every tree in the
-            // shipped seed is in. See ERRATA (E66).
+            // Screen 13. **Reached from the "see the whole year" link under screen 03's activity
+            // feed** — E66's own first candidate, now built under the one-time authorization and
+            // marked where it lives (`TreeProfilePresentation.activityLinkTitle`). E66's second
+            // candidate, a tap on the foliage strip, stays rejected: the strip is a year of photo
+            // coverage and 13 is a year of activity, and making one open the other asserts a
+            // relationship nothing states. The link draws only where the feed does, so nobody is
+            // routed to the empty state every tree in the shipped seed is in (E67). See ERRATA
+            // (E66, E98).
             ActivityView(treeID: id, api: data.api)
 
         case .memorial(let id):
@@ -253,15 +281,12 @@ struct RootView: View {
             MemorialView(treeID: id, api: data.api, onBack: { router.pop() })
 
         case .almanac:
-            // Screen 12. Like 05 and unlike 07, **nothing opens it**: it is not one of C16's four
-            // tabs, no mocked screen carries an affordance reaching it, the clickable prototype's
-            // `screen` enum omits it, and BUILD-PLAN §9 lists no entry. The two least-invented
-            // candidates — a link from the Journal tab, or a row on 01's map chrome — are both
-            // design decisions, so neither was added (DECISIONS constraint 21). See ERRATA (E57).
-            //
-            // The elder and first-bloom rows name a specific tree, and §14's footnote calls the
-            // coverage list "the almanac's 'walk the nine' list, one tree at a time" — screen 14 is
-            // `treeProfile` in its cold-start form, so both land on a profile.
+            // Screen 12, **pushed**. Its entrance is the Journal tab, which renders the almanac as
+            // the tab's content rather than pushing this route (see `tabRoot`), so this arm has no
+            // caller today. It stays because the route is the app's name for the screen and a push
+            // is what a future entrance — a row on 01's map chrome, a link from somewhere else —
+            // would use. Removing it would make adding that entrance a change to this file's
+            // `Route` enum rather than one line at the call site. See ERRATA (E57, E98).
             AlmanacView(
                 api: data.api,
                 coordinate: location.availability.coordinate,
@@ -271,13 +296,12 @@ struct RootView: View {
             )
 
         case .measure(let id):
-            // Screen 16. **Nothing opens it** — the fifth time that is true in this file. 03's
-            // affordance list sends its DBH and Height stat cards to 11 and stops there, 11 draws no
-            // control of its own (its one footnote is unrendered, ERRATA E64), the clickable
-            // prototype's `screen` enum has no measure state, and BUILD-PLAN §9 lists no entry. The
-            // least-invented candidate — an "add a reading" control under 11's measurement log — is
-            // a design decision on a screen whose parts are enumerated, so it was not added
-            // (DECISIONS constraint 21). See ERRATA (E74).
+            // Screen 16. **Reached from an empty measurement stat card on screen 03** — the same
+            // control that opens 11 when the card has a reading in it. Invented under the one-time
+            // authorization and decided in `TreeProfilePresentation.StatDestination`, which is also
+            // where the argument for putting it on the profile rather than on 11 (E74's own
+            // candidate) is written down. The card is absent on a memorial and on a vacant site,
+            // because neither takes a contribution. See ERRATA (E74, E98).
             //
             // The accuracy is the load-bearing argument here. D6 stores per-contribution GPS
             // accuracy and excludes readings worse than 15 m from growth charting, and
@@ -297,16 +321,14 @@ struct RootView: View {
             )
 
         case .outbox:
-            // Screen 17. Its entrance is *named* — BUILD-PLAN §9 lists "the You tab (profile,
-            // settings, **outbox entry point**, privacy toggles)" as an M2 build requirement — but
-            // the screen carrying it has no mock and is not built, so the row waits for the screen
-            // it belongs on rather than being bolted onto `NotBuiltYetView`. No mocked screen
-            // reaches 17 either, and the prototype's `screen` enum omits it. See ERRATA (E75).
+            // Screen 17. Its entrance is *specified*, not invented: BUILD-PLAN §9's M2 list is "the
+            // You tab (profile, settings, **outbox entry point**, privacy toggles)". What did not
+            // exist was the You tab, which is why the row could not be added (E75). It exists now,
+            // and the row is on it.
             //
-            // The queue and the store both come from the composition root: `OutboxViewState` owns
-            // the wi-fi preference and persists it through `CypressStore`, and it is the same queue
-            // every writer in the app enqueues into, so the screen follows a drain without polling.
-            OutboxView(state: data.makeOutboxViewState())
+            // The state comes from this view rather than from a fresh `makeOutboxViewState()`
+            // because the You tab shows the same wi-fi preference; see the `outbox` property.
+            OutboxView(state: outbox)
 
         // 09 and 10 are presented as sheets rather than pushed (see `fullScreenCover` above), so a
         // *pushed* care-log or share route is a programming error rather than a screen. They stay

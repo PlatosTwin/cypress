@@ -1,0 +1,210 @@
+//
+//  YouTabView.swift
+//  Cypress — Features/You
+//
+//  The `You` tab of C16, which until now rendered `NotBuiltYetView`.
+//
+//  ── This screen's contents are specified; its layout is not ───────────────────────────────
+//  BUILD-PLAN §9's M2 list names it outright: "the You tab (profile, settings, **outbox entry
+//  point**, privacy toggles)". That sentence is why screen 17 has an entrance at all (ERRATA E75) —
+//  the outbox row here is **specified**, not invented. What has no mock is the *drawing*: no layout,
+//  no copy, no row design anywhere in SCREENS.md or the prototype.
+//
+//  So it is built minimally, out of C-components that already exist, saying only what the app can
+//  actually back up:
+//
+//  - **Profile** — nothing. There is no account on any device this app runs on: screen 15 cannot
+//    sign anyone in (ERRATA E86), and a profile block would be a header over a person who does not
+//    exist. A sign-in entry point is deliberately absent for the same reason.
+//  - **Outbox entry point** — one C10 row, pushing `Route.outbox`. Specified.
+//  - **Settings** — the wi-fi preference, which is the only persisted setting the data layer has
+//    (`AppStateKey`). It is shared with screen 17 rather than copied; see `RootView`.
+//  - **Privacy** — stated, not switched. See `YouCopy.privacyBody`.
+//
+//  ── The one rule this screen is most likely to break ──────────────────────────────────────
+//  ARCHITECTURE §5.1: no streaks, points, ranks, badges, or **public counts of user actions**. A
+//  "You" tab is the natural home for exactly those, and it carries none — no visit count, no species
+//  tally, no dates, no ring. Everything here is either a door or a preference.
+//
+//  Not a raw hex or a raw font size in the file (ARCHITECTURE §6).
+//
+
+import SwiftUI
+
+struct YouTabView: View {
+
+    /// Screen 17's model, shared with screen 17 itself rather than rebuilt here.
+    ///
+    /// Two instances would mean two copies of one preference, each reading the store when its own
+    /// screen appeared and neither hearing the other change it — a toggle that disagrees with itself
+    /// between two surfaces. The composition root owns the single instance (ARCHITECTURE §3).
+    @Bindable var outbox: OutboxViewState
+
+    @Environment(AppRouter.self) private var router: AppRouter?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            GeometryReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        // C1 with no back circle: a tab root has nothing to go back to.
+                        ScreenHeader(title: YouCopy.screenTitle)
+
+                        contributionsSection
+                        settingsSection
+                        privacySection
+
+                        Spacer(minLength: 0)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(minHeight: proxy.size.height, alignment: .top)
+                }
+                .scrollBounceBehavior(.basedOnSize)
+            }
+
+            BottomTabBar(selection: router?.bottomTabSelection ?? .constant(.you))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(CypressColor.surfaceScreen)
+        // C16 absorbs the home indicator with its own 30pt bottom padding (SCREENS.md §1.6).
+        .ignoresSafeArea(.container, edges: .bottom)
+        .navigationBarBackButtonHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
+        // The outbox row shows no count, so nothing here needs the queue to have been read — but
+        // the toggle below does, and `start()` is what reads the stored preference. It guards its
+        // own observer, so screen 17 calling it too costs nothing.
+        .task { await outbox.start() }
+    }
+
+    // MARK: - The outbox entry point (BUILD-PLAN §9)
+
+    /// One C10 row. C10 is the app's existing tappable row (screen 12's season rows), which is what
+    /// this is: a label, a line saying what is behind it, and a destination.
+    ///
+    /// **It carries no count.** "3 waiting" would be true and useful, and it is also the first step
+    /// onto a tab of numbers about the person using it; screen 17's own header pill says it where it
+    /// belongs, on the screen that can also say what each item is and why it is stuck.
+    private var contributionsSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(YouCopy.contributionsLabel)
+                .cypressMicroLabel()
+                .padding(.bottom, CypressSpacing.gapVitality)
+
+            IconTextRow(
+                accent: .water,
+                title: YouCopy.outboxRowTitle,
+                subtitle: YouCopy.outboxRowSubtitle,
+                action: { router?.push(.outbox) }
+            )
+        }
+        .padding(.top, CypressSpacing.labelSectionTop)
+        .padding(.horizontal, CypressSpacing.gutter)
+    }
+
+    // MARK: - Settings
+
+    /// The wi-fi preference (C25), the one setting `AppStateKey` persists.
+    ///
+    /// It is a *sync* setting and not a privacy one — it decides when photo binaries leave the
+    /// phone, not who may see them — and it is labelled as what it is. Screen 17 §3 draws the same
+    /// control; both read and write the one `OutboxViewState`, so they cannot disagree.
+    private var settingsSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(YouCopy.settingsLabel)
+                .cypressMicroLabel()
+                .padding(.bottom, CypressSpacing.gapVitality)
+
+            HStack(spacing: YouMetrics.rowSpacing) {
+                VStack(alignment: .leading, spacing: YouMetrics.rowTextGap) {
+                    Text(OutboxCopy.wifiTitle)
+                        .font(CypressFont.body135Bold)
+                        .foregroundStyle(CypressColor.textInk)
+                    Text(OutboxCopy.wifiSubtitle)
+                        .font(CypressFont.body115)
+                        .foregroundStyle(CypressColor.textFaint)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+                CypressToggle(
+                    isOn: $outbox.syncPhotosOnWifiOnly,
+                    accessibilityLabel: OutboxCopy.wifiTitle
+                )
+            }
+            .padding(.vertical, YouMetrics.settingPaddingV)
+            .padding(.horizontal, YouMetrics.settingPaddingH)
+            .background {
+                RoundedRectangle(cornerRadius: CypressRadius.cardSm, style: .continuous)
+                    .fill(CypressColor.surfaceCard)
+            }
+            .cypressBorder(CypressColor.borderCool, radius: CypressRadius.cardSm)
+        }
+        .padding(.top, CypressSpacing.labelSectionTop)
+        .padding(.horizontal, CypressSpacing.gutter)
+    }
+
+    // MARK: - Privacy
+
+    /// C14's dashed disclosure — the style screen 06 uses to state a fact about what the app does
+    /// and does not do with what you give it. See `YouCopy.privacyBody` for why this is a sentence
+    /// and not a switch.
+    private var privacySection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(YouCopy.privacyLabel)
+                .cypressMicroLabel()
+                .padding(.bottom, CypressSpacing.gapVitality)
+
+            Callout(YouCopy.privacyBody, style: .dashed, leadIn: YouCopy.privacyLeadIn)
+        }
+        .padding(.top, CypressSpacing.labelSectionTop)
+        .padding(.horizontal, CypressSpacing.gutter)
+        .padding(.bottom, CypressSpacing.bottomFootnote)
+    }
+}
+
+// MARK: - Copy
+
+/// **Every string here is NOT SPECIFIED.** The You tab has no mock and no copy anywhere in the
+/// source documents; only its *contents* are named, by BUILD-PLAN §9. Each is written to state a
+/// fact and stop, which is the shape every other unspecified string in this app uses
+/// (`OutboxCopy.emptyState`, `GrowthHistoryCopy.emptyState`, `TreeProfilePresentation
+/// .coldStartFootnote`). Sentence case, no spaces around em dashes (ARCHITECTURE §5.7).
+enum YouCopy {
+
+    static let screenTitle = "You"
+
+    static let contributionsLabel = "Your contributions"
+    static let outboxRowTitle = "Outbox"
+    /// Screen 17's footnote is the promise this row is a door to; this is that promise in one line.
+    static let outboxRowSubtitle = "What is waiting to send, and what has gone"
+
+    static let settingsLabel = "Settings"
+
+    static let privacyLabel = "Privacy"
+    static let privacyLeadIn = "Private by default:"
+
+    /// **Stated rather than switched, and that is the finding this screen exists to surface.**
+    ///
+    /// D11's privacy toggle is `User.publicAttribution` — "contribution feeds private by default
+    /// with opt-in public attribution". It is modelled in `Core` and it is not settable anywhere:
+    /// there is no `users` table in `AppSchema`, no `CypressAPI` method that reads or writes it, and
+    /// no account on any device the app currently runs on (ERRATA E86). A switch here would be a
+    /// control that forgets what it was told, which is worse than no control at all.
+    ///
+    /// So the screen says what is true today. Every clause is checkable: `publicAttribution`
+    /// defaults to `false`, `LocalAPI` writes only to this device, and nothing in the app can flip
+    /// it. See ERRATA (E100).
+    static let privacyBody =
+        " everything you save stays on this phone. Public attribution is opt-in, it is off, and "
+        + "there is nothing in the app yet that can turn it on."
+}
+
+// MARK: - Screen metrics
+
+/// **Not spec values.** The You tab has no drawn geometry, so these follow screen 17's wi-fi row,
+/// which is the nearest thing in the app to the control they size.
+enum YouMetrics {
+    static let rowSpacing: CGFloat = 12
+    static let rowTextGap: CGFloat = 2
+    static let settingPaddingV: CGFloat = 12
+    static let settingPaddingH: CGFloat = 14
+}

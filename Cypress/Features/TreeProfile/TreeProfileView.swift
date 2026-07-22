@@ -9,9 +9,16 @@
 //  its own deltas as "differences from 03 to encode as a variant", and per D8 the cold variant is
 //  what every tree in the shipped city inventory renders on launch day.
 //
-//  Everything visual is a C-component (C1, C2, C3, C6, C8, C9, C11, C12, C13, C14, C26) composed
-//  here. The only shape drawn in this folder is 14's camera glyph, which SCREENS.md specifies by
-//  path and which no other screen uses.
+//  Everything visual is a C-component (C1, C2, C3, C6, C7, C8, C9, C11, C12, C13, C14, C26)
+//  composed here. The only shape drawn in this folder is 14's camera glyph, which SCREENS.md
+//  specifies by path and which no other screen uses.
+//
+//  ── Three affordances on this screen are invented, and are marked ─────────────────────────
+//  The check-in button (C7), the "see the whole year" link under the activity feed, and the empty
+//  measurement slot in the stat grid are not in SCREENS.md. They exist under a one-time, explicit
+//  authorization from the project owner to give screens 05, 13 and 16 an entrance — four of the six
+//  screens the app had built and could not reach. Each is decided in `TreeProfilePresentation`,
+//  where the reasoning sits, so a designer can overrule any of them in one file. See ERRATA (E98).
 //
 //  Not a raw hex or a raw font size in the file (ARCHITECTURE §6: "A literal in `Features/` is a
 //  bug"). Spacing literals are SCREENS.md's own margins, taken from `CypressSpacing`.
@@ -49,6 +56,12 @@ struct TreeProfileView: View {
         content
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(CypressColor.surfaceScreen)
+            // Every screen here draws its own back control — C1's circle, or the hero's on 03 — so
+            // the system bar would put a second `‹ Back` above it. Every other pushed destination
+            // already hid it; this one and 19 were the two that did not, which is why a pushed
+            // profile showed two ways back and the mocks show one.
+            .navigationBarBackButtonHidden(true)
+            .toolbar(.hidden, for: .navigationBar)
             .task { if model.presentation == nil { await model.load() } }
     }
 
@@ -107,6 +120,10 @@ struct TreeProfileView: View {
                             .top,
                             presentation.isCold ? TreeProfileMetrics.coldBlockGap : TreeProfileMetrics.blockGap
                         )
+                }
+
+                if presentation.offersCheckIn {
+                    checkInButton
                 }
 
                 if !presentation.isCold {
@@ -257,6 +274,21 @@ struct TreeProfileView: View {
         return remaining > 0 ? "+\(remaining)" : nil
     }
 
+    // MARK: - 5b · Check-in (C7, screen 05)
+
+    /// The check-in entrance. C7 at its compact size, which is what 06 uses for the same
+    /// relationship — one loud thing, one quiet one under it.
+    ///
+    /// See `TreeProfilePresentation.checkInCTATitle` for why this control exists at all and under
+    /// whose authority; it is invented, and it is marked so a designer can delete it in one place.
+    private var checkInButton: some View {
+        SecondaryOutlineButton(TreeProfilePresentation.checkInCTATitle, style: .compact) {
+            router?.push(.checkIn(model.treeID))
+        }
+        .padding(.horizontal, CypressSpacing.gutter)
+        .padding(.top, CypressSpacing.gapRows)
+    }
+
     // MARK: - 8 · Activity feed (C9)
 
     @ViewBuilder
@@ -274,7 +306,35 @@ struct TreeProfileView: View {
             }
             .padding(.horizontal, CypressSpacing.gutter)
             .padding(.top, CypressSpacing.gapRows)
+
+            if presentation.offersActivityLink {
+                activityLink
+            }
         }
+    }
+
+    /// The activity entrance (screen 13). See `TreeProfilePresentation.activityLinkTitle`.
+    ///
+    /// A text link rather than a C-component: C1–C30 is a closed catalogue and none of it is a link.
+    /// Building a small screen-local control from tokens is what this codebase already does where
+    /// the catalogue has no entry — screen 08's three-pill row and screen 13's photo strip are both
+    /// built that way (ERRATA E46). It takes its colour and weight from the tokens C7 uses, so it
+    /// reads as the same family of control at a quieter volume, and `.cypressHitArea()` gives a
+    /// one-line label the 44pt target ARCHITECTURE §6 requires.
+    private var activityLink: some View {
+        Button {
+            router?.push(.activity(model.treeID))
+        } label: {
+            Text(TreeProfilePresentation.activityLinkTitle)
+                .font(CypressFont.body13Bold)
+                .foregroundStyle(CypressColor.ctaFill)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .cypressHitArea()
+        .padding(.horizontal, CypressSpacing.gutter)
+        .padding(.top, TreeProfileMetrics.activityLinkTop)
     }
 
     private func leading(for item: TreeProfilePresentation.ActivityItem) -> ActivityRow.Leading {
@@ -291,9 +351,12 @@ struct TreeProfileView: View {
     private func statGrid(_ presentation: TreeProfilePresentation) -> some View {
         StatGrid {
             ForEach(presentation.stats) { stat in
-                if stat.opensGrowthHistory {
+                if let destination = stat.destination {
+                    // One control, two destinations: a card with a reading opens the history of it
+                    // (11), a card without one opens the sheet that writes it (16). Which is which
+                    // is `TreeProfilePresentation.StatDestination`'s decision, not this view's.
                     Button {
-                        router?.push(.growthHistory(model.treeID))
+                        router?.push(route(for: destination))
                     } label: {
                         // The city's site vocabulary is free text (BUILD-PLAN §7) and can run to
                         // three lines; `maxHeight` keeps the two cards of a row the same height
@@ -344,6 +407,13 @@ struct TreeProfileView: View {
 
     // MARK: - Affordances
 
+    private func route(for destination: TreeProfilePresentation.StatDestination) -> Route {
+        switch destination {
+        case .growthHistory: return .growthHistory(model.treeID)
+        case .measure: return .measure(model.treeID)
+        }
+    }
+
     private func perform(_ action: QuadActionRow.Action) {
         switch action {
         case .favorite: onFavorite(model.treeID)
@@ -376,6 +446,9 @@ enum TreeProfileMetrics {
     static let regularsPaddingH: CGFloat = 13
     /// C26 draws three initials plus an overflow bubble.
     static let avatarsShown = 3
+    /// Not a spec value — the gap above the invented "see the whole year" link, matched to the
+    /// spacing between the C9 rows it follows so it reads as part of the same block.
+    static let activityLinkTop: CGFloat = 8
     /// 03 §9: `padding:10px 16px 30px`.
     static let statGridTop: CGFloat = 10
     /// 14 §7: `padding:14px 24px 36px`.

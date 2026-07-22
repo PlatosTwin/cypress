@@ -31,15 +31,20 @@ bug unrepresentable: `Series` with no `count`, so a page cannot be printed as a 
 **A red test seen during concurrent work is not evidence.** See ARCHITECTURE §7. This produced one
 wrong diagnosis already.
 
-### The handoff is a set of screens, not an app
+### The handoff is a set of screens, not an app — resolved, under an exception
 
-Five of thirteen built screens have no way in: **05, 11, 12, 13 have no entrance at all, and 07 has
-exactly one.** Their exits are drawn — screen 18 says "Check-in saved", screen 14's footnote calls
-the coverage list "the almanac's 'walk the nine' list" — while nothing opens them. Every route is
-wired, every destination is tested, and each affordance is a design decision that neither an agent
-nor I should invent (DECISIONS constraint 21).
+It used to read: five of thirteen built screens have no way in — **05, 11, 12, 13 have no entrance
+at all, and 07 has exactly one** — their exits drawn while nothing opens them, every route wired,
+every destination tested, and each affordance a design decision that neither an agent nor I should
+invent (DECISIONS constraint 21). By the time 16 and 17 landed the count was six.
 
-This is the single largest thing blocking a coherent app, and it is not a code problem.
+**All six are reachable now.** I granted a one-time, explicit exception to constraint 21 covering
+exactly these six entrances and nothing else. What was invented under it, what turned out to have
+been specified all along, and what each of it can be overruled from is `docs/ERRATA.md` **E98**;
+E24, E57, E63, E66, E74 and E75 each carry their own resolution. The `Journal` and `You` tabs were
+built to hold two of them, minimally — E99 and E100 record what they deliberately do not contain.
+
+The exception is spent. Constraint 21 stands for everything else.
 
 ---
 
