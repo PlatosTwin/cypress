@@ -126,7 +126,16 @@ struct MethodBadge: View {
         }
     }
 
-    private var accessibilityLabel: String {
+    /// What the badge means, said in words rather than in the token.
+    ///
+    /// D7's whole point is that "taped" and "estimated" are not decoration on a number — they are
+    /// the difference between a reading and a guess, and the reason the two never share a series.
+    /// A badge that read out its own four letters would hand a listener the abbreviation and keep
+    /// the meaning, so `taped` speaks as "measured with a tape" and `est.` as "estimated".
+    ///
+    /// Internal rather than private because C23 speaks a series by naming its method, and it has to
+    /// name it the same way the badge does.
+    var accessibilityLabel: String {
         switch source {
         case .cityRecord: return "from the city record"
         case let .quantity(quantity):

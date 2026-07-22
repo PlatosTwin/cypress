@@ -16,6 +16,8 @@ import SwiftUI
 
 struct Chip: View {
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     /// The eighteen documented renderings of §2's C4 table.
     enum Style: String, CaseIterable, Identifiable {
         /// Filter chip, selected (01) — `#1D4634` / `#fff` / 700, `shadow.chipActive`.
@@ -261,14 +263,32 @@ struct Chip: View {
         }
         .padding(.vertical, style.paddingV)
         .padding(.horizontal, style.paddingH)
-        .background { Capsule().fill(style.fill) }
+        .background { chipShape.fill(style.fill) }
         .overlay {
             if let border = style.border {
-                Capsule().strokeBorder(border.color, lineWidth: border.width)
+                chipShape.strokeBorder(border.color, lineWidth: border.width)
             }
         }
         .cypressShadow(style.shadow)
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// A capsule while the label is one line, a rounded panel once it is not.
+    ///
+    /// `Capsule` rounds by half the *shorter* side, so a chip whose label has wrapped to four lines
+    /// is drawn as a circle with the text spilling out of both ends of it — which is what 16's
+    /// sanity pill looked like at AX5. `radius.pill` on a `RoundedRectangle` does the same thing
+    /// for the same reason. Above the accessibility sizes the shape becomes `radius.card.sm`, which
+    /// is the corner every other multi-line container in the app already uses.
+    ///
+    /// This is a shape change to a mocked component and it is deliberate: SCREENS.md draws these at
+    /// one line, and there is no drawn state for a chip that has wrapped. The alternative — holding
+    /// the capsule and letting the label overflow it — is the drawn shape and the wrong picture.
+    private var chipShape: some InsettableShape {
+        RoundedRectangle(
+            cornerRadius: dynamicTypeSize.isAccessibilitySize ? CypressRadius.cardSm : CypressRadius.pill,
+            style: .continuous
+        )
     }
 
     @ViewBuilder

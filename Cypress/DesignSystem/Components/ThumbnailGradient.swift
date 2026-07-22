@@ -62,6 +62,9 @@ struct ThumbnailGradient<Content: View>: View {
 
     let size: Size
     var action: (() -> Void)?
+    /// Only reached when there is an `action`. A tappable thumb is a control and needs a name;
+    /// a static one is hidden instead — see `body`.
+    var accessibilityLabel: String = "Photo"
     @ViewBuilder var content: Content
 
     var body: some View {
@@ -69,8 +72,19 @@ struct ThumbnailGradient<Content: View>: View {
             Button(action: action) { thumb }
                 .buttonStyle(.plain)
                 .cypressHitArea()
+                .accessibilityLabel(accessibilityLabel)
         } else {
-            thumb
+            // A gradient standing in for a photograph is decoration and nothing else.
+            //
+            // SCREENS.md §5 gap 13 is blunt about what these are: "every image here is a CSS
+            // gradient placeholder". There is no photograph behind them yet, so there is nothing
+            // to describe — and every shipping call site draws one beside the name of the thing it
+            // depicts (`MapTreeCard`, the 02 candidate cards, the 07 nearby row, the 10 share
+            // preview). Read aloud, an unhidden thumb is a stop that says either nothing or the
+            // name again.
+            //
+            // When real photography lands this becomes a caption, not a hidden view.
+            thumb.accessibilityHidden(true)
         }
     }
 

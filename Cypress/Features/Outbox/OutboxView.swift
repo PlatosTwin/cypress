@@ -270,6 +270,8 @@ struct OutboxQueueRow: View {
     let row: OutboxPresentation.Row
     var onRetry: (() -> Void)?
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     var body: some View {
         if row.isTerminal {
             AttentionCard(size: .compact) { content }
@@ -286,44 +288,87 @@ struct OutboxQueueRow: View {
     }
 
     private var content: some View {
-        HStack(alignment: .top, spacing: OutboxMetrics.rowSpacing) {
-            tile
-            VStack(alignment: .leading, spacing: OutboxMetrics.rowTextGap) {
-                Text(row.title)
-                    .font(CypressFont.body14)
-                    .foregroundStyle(CypressColor.textInk)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                // `DBH` · `31 cm` + `taped` · `11:03 am`, in §2's order. A queued number carries its
-                // method here exactly as it does on 03 and 11 (D7).
-                HStack(spacing: 0) {
-                    if let detail = row.detail {
-                        Text(detail)
-                            .font(CypressFont.body12)
-                            .foregroundStyle(CypressColor.textMuted)
+        // §2 draws the row as `[tile] [title / detail / reason] [state]`, three columns. That holds
+        // while the middle column has room. At AX5 the state word takes most of the width on its
+        // own — `waiting` in mono is wider than the phone's text column — and the title is left
+        // wrapping two or three characters at a time down a 180 pt gutter.
+        //
+        // So above the accessibility sizes the state moves under the row it describes rather than
+        // beside it. It is still the last thing in reading order, which is what §2's placement was
+        // saying.
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: OutboxMetrics.rowTextGap) {
+                    HStack(alignment: .top, spacing: OutboxMetrics.rowSpacing) {
+                        tile
+                        textColumn
+                        Spacer(minLength: 0)
                     }
-                    if let quantity = row.quantity {
-                        MeasuredValue(quantity: quantity, font: CypressFont.mono12)
-                            .padding(.leading, row.detail == nil ? 0 : CypressSpacing.gapVitality)
-                    }
-                    Text(row.timeText)
-                        .font(CypressFont.body12)
-                        .foregroundStyle(CypressColor.textMuted)
+                    stateCorner
                 }
-
-                // "says so, says why, and waits for you" (§6). The sentence is
-                // `OutboxFailureReason`'s; this file never writes one.
-                if let reason = row.reason {
-                    Text(reason)
-                        .font(CypressFont.body12)
-                        .foregroundStyle(
-                            row.isTerminal ? CypressColor.amberChipSelectedText : CypressColor.textFaint
-                        )
-                        .fixedSize(horizontal: false, vertical: true)
+            } else {
+                HStack(alignment: .top, spacing: OutboxMetrics.rowSpacing) {
+                    tile
+                    textColumn
+                    Spacer(minLength: 0)
+                    stateCorner
                 }
             }
-            Spacer(minLength: 0)
-            stateCorner
+        }
+    }
+
+    private var textColumn: some View {
+        VStack(alignment: .leading, spacing: OutboxMetrics.rowTextGap) {
+            Text(row.title)
+                .font(CypressFont.body14)
+                .foregroundStyle(CypressColor.textInk)
+                .fixedSize(horizontal: false, vertical: true)
+
+            // `DBH` · `31 cm` + `taped` · `11:03 am`, in §2's order. A queued number carries its
+            // method here exactly as it does on 03 and 11 (D7).
+            //
+            // Three text pieces across a row that is already inset by a 38 pt tile and a state
+            // word. At AX5 they were interleaving into each other — `2 phot / os, a / note`
+            // running down the left with `11:42 am` overprinting it — because an `HStack` with
+            // no wrapping and no spacer divides whatever is left between them. Stacked, each
+            // piece keeps its own line. The `MeasuredValue` stays intact either way, which is
+            // the part D7 cares about.
+            detailLine
+
+            // "says so, says why, and waits for you" (§6). The sentence is
+            // `OutboxFailureReason`'s; this file never writes one.
+            if let reason = row.reason {
+                Text(reason)
+                    .font(CypressFont.body12)
+                    .foregroundStyle(
+                        row.isTerminal ? CypressColor.amberChipSelectedText : CypressColor.textFaint
+                    )
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var detailLine: some View {
+        let detail = Group {
+            if let detail = row.detail {
+                Text(detail)
+                    .font(CypressFont.body12)
+                    .foregroundStyle(CypressColor.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let quantity = row.quantity {
+                MeasuredValue(quantity: quantity, font: CypressFont.mono12)
+            }
+            Text(row.timeText)
+                .font(CypressFont.body12)
+                .foregroundStyle(CypressColor.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: OutboxMetrics.rowTextGap) { detail }
+        } else {
+            HStack(spacing: CypressSpacing.gapVitality) { detail }
         }
     }
 
@@ -347,6 +392,13 @@ struct OutboxQueueRow: View {
                         .foregroundStyle(
                             row.isTerminal ? CypressColor.amberPillText : CypressColor.tapedBadgeText
                         )
+                        // The reading inside a 38 pt tile is a mark, not a sentence, and the tile
+                        // is sized by §2 rather than by its contents. `minimumScaleFactor` alone
+                        // was not enough: without a line limit the text wraps to two lines inside
+                        // 38 pt *before* it ever tries to scale, and two lines do not fit either.
+                        // The row's own detail line carries the same value in full, unclamped, so
+                        // nothing is lost by holding this one to the tile.
+                        .lineLimit(1)
                         .minimumScaleFactor(0.7)
                         .padding(.horizontal, CypressSpacing.Component.hairlineStrong)
                 }
@@ -357,8 +409,18 @@ struct OutboxQueueRow: View {
     /// §2's trailing state word. `retry` is the drawn one and is a control (BUILD-PLAN §4: "cap 48 h
     /// then state failed with a visible retry button"); `stopped` is not, because retrying a
     /// non-retryable code promises an outcome the taxonomy says will not change.
+    /// The state word is one short mono token — `waiting`, `stopped`, `retry` — and it belongs at
+    /// the end of the row, not wrapped down the side of it. At AX5 `waiting` broke to `waiti / ng`
+    /// in the corner while the title wrapped underneath it, so it is held to one line: it is a
+    /// status token in the row's furniture, and the row's own reason sentence below says the same
+    /// thing in prose when there is more to say.
     @ViewBuilder
     private var stateCorner: some View {
+        stateWord.lineLimit(1).fixedSize()
+    }
+
+    @ViewBuilder
+    private var stateWord: some View {
         switch row.state {
         case .waiting:
             Text(row.state.rawValue)

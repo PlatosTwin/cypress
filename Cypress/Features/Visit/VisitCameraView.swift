@@ -17,6 +17,9 @@ struct VisitCameraView: View {
 
     @State private var model: VisitCameraModel
     @State private var libraryItem: PhotosPickerItem?
+    /// czFlash's second keyframe. See `shutterFlash`.
+    @State private var flashHasFaded = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let onSaved: (VisitSaveReceipt) -> Void
     let onClose: () -> Void
@@ -89,6 +92,33 @@ struct VisitCameraView: View {
         .overlay(alignment: .bottom) { shotTypeChips }
         .overlay(alignment: .bottom) { shutter }
         .overlay(alignment: .bottomLeading) { ghostCaption }
+        .overlay { shutterFlash }
+    }
+
+    /// czFlash — a sheet of white at `.9` alpha falling to nothing over `.35s`, fired when the
+    /// frame is taken. `CypressMotion.flash`.
+    ///
+    /// The flash is the only feedback that a photo was captured that arrives *before* the snapshot
+    /// replaces the viewfinder, and on a simulator or a library fallback the snapshot is the only
+    /// other signal there is. It is also the clearest case in the app for Reduce Motion: a
+    /// full-screen luminance change is exactly what the setting exists to suppress, so under it
+    /// the flash does not draw at all and the snapshot arriving is the confirmation.
+    @ViewBuilder
+    private var shutterFlash: some View {
+        if !reduceMotion {
+            Color.white
+                .opacity(model.hasSnapped && !flashHasFaded ? CypressMotionOffset.flashOpacity : 0)
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+                .onChange(of: model.hasSnapped) { _, snapped in
+                    guard snapped else {
+                        flashHasFaded = false
+                        return
+                    }
+                    withAnimation(CypressMotion.flash) { flashHasFaded = true }
+                }
+        }
     }
 
     @ViewBuilder

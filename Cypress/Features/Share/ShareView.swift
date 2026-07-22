@@ -31,6 +31,8 @@ import UIKit
 
 struct ShareView: View {
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     @State private var model: ShareModel
 
     /// Dismissal is the composition root's, not the sheet's (PROTOTYPE-FLOW §1.3 `closeShare`).
@@ -202,9 +204,14 @@ struct ShareView: View {
             Text(destination.label)
                 .font(CypressFont.body105)
                 .foregroundStyle(CypressColor.textMuted)
-                .lineLimit(1)
+                // "Copy link" already fills the mock's 58 pt column at the drawn size. Past the
+                // point where one line will not hold it, the row stops being three fixed columns
+                // and each label takes the width it needs: the destination *is* the content here,
+                // and a truncated one is a destination you cannot read.
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                .multilineTextAlignment(.center)
         }
-        .frame(width: ShareMetrics.targetWidth)
+        .frame(width: dynamicTypeSize.isAccessibilitySize ? nil : ShareMetrics.targetWidth)
         .contentShape(Rectangle())
         .accessibilityLabel(destination.label)
     }

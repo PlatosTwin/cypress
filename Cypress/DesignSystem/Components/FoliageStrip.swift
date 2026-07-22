@@ -148,14 +148,26 @@ struct FoliageStrip: View {
             }
 
             HStack(spacing: variant.gap) {
-                ForEach(Array(densities.enumerated()), id: \.offset) { index, density in
+                ForEach(Array(densities.enumerated()), id: \.offset) { _, density in
                     RoundedRectangle(cornerRadius: variant.radius, style: .continuous)
                         .fill(CypressColor.foliage(density.level))
                         .frame(maxWidth: .infinity)
                         .frame(height: variant.height)
-                        .accessibilityLabel(Self.accessibilityLabel(month: index, density: density))
                 }
             }
+            // The strip is one element saying what the year looks like, not twelve saying what
+            // each square looks like. Two reasons, and the second is the one that was broken.
+            //
+            // A `.accessibilityLabel` on a bare `RoundedRectangle` never reaches VoiceOver — a
+            // `Shape` is not an accessibility element, so there is nothing for the label to attach
+            // to. Twelve cells labelled that way are twelve *silent* cells, which reads on device
+            // exactly like a strip that was never labelled at all.
+            //
+            // And even working, twelve stops is the wrong shape for the information. The strip is
+            // a visual encoding of one sentence — when this tree carries leaves — and a spoken
+            // equivalent has to say that sentence, not describe the drawing square by square.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(accessibilityLabel)
 
             if showsMonthRow, variant == .profile {
                 HStack(spacing: CypressSpacing.Component.foliageMonthGap) {
@@ -168,22 +180,62 @@ struct FoliageStrip: View {
                 }
                 .padding(.top, CypressSpacing.Component.foliageMonthTop)
                 .accessibilityHidden(true)
+                // Twelve letters that have to stay lined up with the twelve cells above them.
+                // See `cypressTypographicFurniture()`.
+                .cypressTypographicFurniture()
             }
         }
     }
 
-    private static let monthNames = [
+    static let monthNames = [
         "January", "February", "March", "April", "May", "June",
         "July", "August", "September", "October", "November", "December",
     ]
 
-    private static func accessibilityLabel(month: Int, density: Density) -> String {
-        let name = monthNames[min(month, monthNames.count - 1)]
-        switch density {
-        case .full: return "\(name): full canopy"
-        case .partial: return "\(name): partial canopy"
-        case .thin: return "\(name): thin canopy"
-        case .bare: return "\(name): bare"
+    /// What the strip says out loud. See the note beside `.accessibilityElement` in `body`.
+    var accessibilityLabel: String {
+        Self.accessibilityLabel(for: densities)
+    }
+
+    /// The twelve cells, collapsed to their runs: `full, full, partial` becomes "full canopy
+    /// January to February, then partial canopy in March".
+    ///
+    /// Runs rather than months because the strip's meaning is the *shape* of the year — where it
+    /// changes and how long each state lasts. A listener who has to hold twelve month-and-state
+    /// pairs in their head to notice that a tree thins in April has been given the drawing rather
+    /// than the information in it.
+    static func accessibilityLabel(for densities: [Density]) -> String {
+        guard !densities.isEmpty else { return eyebrowText }
+
+        var runs: [(density: Density, start: Int, end: Int)] = []
+        for (index, density) in densities.enumerated() {
+            if var last = runs.last, last.density == density {
+                last.end = index
+                runs[runs.count - 1] = last
+            } else {
+                runs.append((density, index, index))
+            }
+        }
+
+        let phrases = runs.map { run -> String in
+            let span = run.start == run.end
+                ? monthNames[run.start]
+                : "\(monthNames[run.start]) to \(monthNames[run.end])"
+            return "\(run.density.spokenName) \(span)"
+        }
+        return "\(eyebrowText): " + phrases.joined(separator: ", ") + "."
+    }
+}
+
+extension FoliageStrip.Density {
+    /// How a ramp step is said. The visual vocabulary is three greens; the spoken one is the thing
+    /// the greens stand for, which is how much leaf the tree is carrying.
+    var spokenName: String {
+        switch self {
+        case .full: return "full canopy"
+        case .partial: return "partial canopy"
+        case .thin: return "thin canopy"
+        case .bare: return "bare"
         }
     }
 }

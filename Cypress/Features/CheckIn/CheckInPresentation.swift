@@ -250,6 +250,12 @@ enum CheckInMetrics {
     static let swatchHeight: CGFloat = 30
     /// The selected row's trailing 20×20 check circle.
     static let checkCircle: CGFloat = 20
+    /// The check inside `checkCircle`, drawn as `CypressCheckmark` rather than as a `Text` glyph
+    /// so it stays inside its 20 pt dot at every Dynamic Type size. Proportions taken from the
+    /// route-done pin, which draws the same mark in a circle of the same order.
+    static let checkGlyphWidth: CGFloat = 10
+    static let checkGlyphHeight: CGFloat = 8
+    static let checkGlyphStroke: CGFloat = 2.2
     /// `border:2px solid` on the selected row, against `1px` on the rest.
     static let rowBorderSelected: CGFloat = 2
 

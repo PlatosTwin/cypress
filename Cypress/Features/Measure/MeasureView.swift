@@ -160,7 +160,14 @@ struct MeasureScreen: View {
     private var readoutSection: some View {
         VStack(spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 0) {
+                // 56 pt is past the width of the display before AX5, and the unit suffix beside
+                // it goes off the edge first. One line with a floor lets the readout grow until it
+                // stops fitting and then stop — the same number is on the keypad above it, and a
+                // readout whose unit has been pushed off the screen is a `Quantity` missing half
+                // of itself (D7).
                 Text(presentation.readout)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.4)
                     .cypressMonoReadout(
                         // A dimmed placeholder, so "nothing entered" cannot be mistaken for
                         // somebody having typed a zero. See `MeasureCopy.readoutPlaceholder`.

@@ -116,6 +116,12 @@ struct VisitSavedView: View {
                     )
             }
             .frame(width: VisitMetrics.Saved.successCircle, height: VisitMetrics.Saved.successCircle)
+            // czPop — the prototype puts it on exactly this circle (18's success mark) and on the
+            // "Link copied" pill, which SCREENS.md does not draw and this app therefore does not
+            // build. `CypressMotion.pop`. The check is decoration over the word "Visit saved"
+            // directly under it, so it carries no label of its own.
+            .accessibilityHidden(true)
+            .cypressPop(on: model.receipt.visit.id)
 
             // SCREENS 18 draws `Check-in saved`. Nothing was checked in — the structured health
             // observation is screen 05 and it did not run. The one-word change keeps the
@@ -250,11 +256,24 @@ struct VisitRouteMap: View {
                 ZStack(alignment: .topLeading) {
                     water(in: proxy.size)
 
-                    ForEach(route) { candidate in
+                    // czPinDrop, staggered down the route. This is the one map in the app the
+                    // prototype's stagger actually fits: a handful of pins in a fixed box that is
+                    // drawn once and does not pan. Screen 01's pins are `Annotation`s inside a
+                    // live `Map` that recycles them on every camera change, so a per-pin appearance
+                    // animation there would fire continuously during a pan — the same class of
+                    // problem `MapHomeView.bottomSlot` documents, and it is left alone for the same
+                    // reason.
+                    ForEach(Array(route.enumerated()), id: \.element.id) { index, candidate in
                         let point = position(of: candidate, in: proxy.size)
-                        MapPin(candidate.id == activeTreeID
+                        let isActive = candidate.id == activeTreeID
+                        MapPin(isActive
                             ? .routeActive
                             : (visitedTreeIDs.contains(candidate.id) ? .routeDone : .cityTree))
+                            // czPulse on the amber pin only — "this tree needs something" is what
+                            // amber is reserved for, and on 18 the active pin is the one being
+                            // pointed at.
+                            .cypressPulse(CypressColor.accentAmber, isActive: isActive)
+                            .cypressPinDrop(index: index)
                             .position(x: point.x, y: point.y)
                     }
 

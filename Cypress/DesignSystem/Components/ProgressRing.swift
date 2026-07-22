@@ -16,6 +16,14 @@ struct ProgressRing: View {
     let fraction: Double
     /// The label inside the disc. `30%` on 08.
     var label: String?
+    /// What the ring says instead of what it looks like.
+    ///
+    /// A ring is a visual encoding of one number, and the number is already inside it — so the
+    /// default spoken form is that number as a sentence rather than as a glyph. The parameter
+    /// exists because the ring on 08 sits beside prose that says the same thing better ("12 of 40
+    /// species you can recognize in the Outer Sunset"), and a caller that has that sentence should
+    /// hand it over or hide the ring rather than have VoiceOver read the fraction twice.
+    var spokenLabel: String?
 
     var body: some View {
         Circle()
@@ -60,7 +68,11 @@ struct ProgressRing: View {
                 height: CypressSpacing.Component.progressRing
             )
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(label ?? "\(Int(clamped * 100)) percent")
+            // One phrasing for both paths. It used to be `label ?? "N percent"`, which read the
+            // glyph `30%` when a label was supplied and the sentence "30 percent" when it was not
+            // — the same ring saying the same number two different ways depending on whether a
+            // caller happened to pass a string.
+            .accessibilityLabel(spokenLabel ?? "\(Int((clamped * 100).rounded())) percent")
     }
 
     private var clamped: Double { min(max(fraction, 0), 1) }
@@ -73,6 +85,19 @@ struct ProgressRing: View {
 struct ConfidenceBar: View {
     /// 0…1. `88%` on the drawn card.
     let fraction: Double
+
+    /// What the track says out loud.
+    ///
+    /// **Not "confidence".** `VisitShortlist.confidence(topDistanceM:runnerUpDistanceM:accuracyM:)`
+    /// is explicit that this is a GPS-geometry confidence — how much clear air there is between the
+    /// nearest tree and the next one, relative to the fix's own error — and not a confidence that
+    /// the species is right. Sighted users get that qualification from the screen around the bar:
+    /// it is drawn under the top card, beside "CONFIRM BY EYE" and a distinguishing trait. A
+    /// listener gets no such surroundings from a bare percentage, so the qualification is in the
+    /// words.
+    var accessibilityLabel: String {
+        "Nearest tree match, \(Int((min(max(fraction, 0), 1) * 100).rounded())) percent, from GPS distance alone"
+    }
 
     var body: some View {
         GeometryReader { proxy in
@@ -97,6 +122,12 @@ struct ConfidenceBar: View {
         )
         .frame(height: CypressSpacing.Component.confidenceHeight)
         .padding(.top, CypressSpacing.Component.confidenceTop)
-        .accessibilityLabel("Confidence \(Int(min(max(fraction, 0), 1) * 100)) percent")
+        // `.accessibilityElement` first, and it is the whole fix. The label used to sit on a
+        // `GeometryReader` full of `RoundedRectangle`s — no text, no element — so it attached to
+        // nothing and the bar was silent. It was then silent twice over, because the candidate row
+        // that hosts it applies `children: .combine`, which walks a subtree that had no element in
+        // it to collect.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel)
     }
 }

@@ -47,12 +47,27 @@ struct BottomSheet<Content: View>: View {
     var onScrimTap: (() -> Void)?
     @ViewBuilder var content: Content
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// False for exactly one frame — the first — so `czSheet` has a keyframe at 0 % to move from.
+    @State private var hasRisen = false
+
     var body: some View {
         ZStack(alignment: .bottom) {
             style.scrim
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
                 .onTapGesture { onScrimTap?() }
+                // The scrim is the ground the sheet arrives over, so it fades on `czFade` while
+                // the sheet itself rises on `czSheet` — the prototype's own pairing (its 09/10/15
+                // scrims carry `czFade`, its sheets `czSheet`).
+                .opacity(settled ? 1 : 0)
+                // The scrim is the only way out of 09 and 10 — neither draws a close button — so
+                // it is a control, not decoration, and it says what tapping it does. A plain
+                // `onTapGesture` on a `Color` gives VoiceOver a focusable region with no name.
+                .accessibilityElement()
+                .accessibilityHidden(onScrimTap == nil)
+                .accessibilityLabel("Dismiss")
+                .accessibilityAddTraits(.isButton)
 
             VStack(spacing: 0) {
                 if style.showsGrabber {
@@ -82,8 +97,22 @@ struct BottomSheet<Content: View>: View {
                     .ignoresSafeArea(edges: .bottom)
             }
             .cypressShadow(CypressShadow.sheet)
+            // czSheet — the sheet rises 90 pt on the overshoot curve. `CypressMotion.sheet`.
+            .offset(y: settled ? 0 : CypressMotionOffset.sheetRise)
+            .opacity(settled ? 1 : 0)
+        }
+        .onAppear {
+            // One `withAnimation` drives both the scrim's fade and the sheet's rise off the same
+            // flag, so they cannot drift apart. Under Reduce Motion `resolved` returns nil and the
+            // sheet is simply drawn where it belongs — which is the whole state change; the
+            // animation was never carrying any of it.
+            withAnimation(CypressMotion.resolved(CypressMotion.sheet, reduceMotion: reduceMotion)) {
+                hasRisen = true
+            }
         }
     }
+
+    private var settled: Bool { hasRisen || reduceMotion }
 }
 
 /// The skeleton the 09/10 sheets sit on: `padding:62px 16px 0`, `gap:10px`; a 150pt gradient hero,

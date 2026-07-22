@@ -142,11 +142,10 @@ struct ActivityScreen: View {
                             )
                             BarChart(
                                 heights: row.heights,
+                                accessibilityLabel: accessibilityLabel(for: row),
                                 tint: tint(for: row.kind),
                                 emptyMonths: row.emptyMonths
                             )
-                            .accessibilityElement(children: .ignore)
-                            .accessibilityLabel(accessibilityLabel(for: row))
                         }
                     }
 

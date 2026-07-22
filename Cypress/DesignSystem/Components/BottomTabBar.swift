@@ -64,13 +64,26 @@ struct BottomTabBar: View {
                 .fill(CypressColor.tabBarTopBorder)
                 .frame(height: CypressSpacing.Component.hairline)
         }
+        // Four labels across the bottom of a phone, each already at 11 pt with
+        // `minimumScaleFactor(0.8)` under it. Unclamped, `My Grove` and `Journal` at AX5 need more
+        // width than the bar has and the scale floor turns them into unreadable specks rather than
+        // letting them overflow — the bar breaks either way.
+        //
+        // This is the same call Apple's own tab bar makes, and it is only defensible because the
+        // bar is not where anything is read: it is four destinations, each of which opens a screen
+        // that scales the whole way. See `cypressTypographicFurniture()`.
+        .cypressTypographicFurniture()
     }
 
     private func tabContent(_ tab: Tab) -> some View {
         let isActive = tab == selection
         let tint = isActive ? CypressColor.tabActive : CypressColor.textFaint
         return VStack(spacing: CypressSpacing.Component.tabIconLabelGap) {
+            // The icons are hand-drawn shapes that repeat the label directly under them, so they
+            // are decoration in the same sense C3's swatches are: a second element saying what the
+            // adjacent text already says.
             icon(tab, tint: tint)
+                .accessibilityHidden(true)
             Text(tab.label)
                 .font(isActive ? CypressFont.body11ExtraBold : CypressFont.body11SemiBold)
                 .foregroundStyle(tint)

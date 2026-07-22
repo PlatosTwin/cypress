@@ -132,6 +132,14 @@ struct VisitIdentifyView: View {
                             distinguishingValue: distinguishingValue(at: index),
                             action: { pick(candidate) }
                         )
+                        // czFade, staggered — the prototype's screen 02 fades its three candidate
+                        // cards in at .08 s apart. `CypressMotion.fade`, `Duration.stagger`.
+                        //
+                        // Screen 02 is where the shortlist *arrives*: the list is empty while the
+                        // fix is being taken and fills in when it lands, so there is a real
+                        // appearance to animate. That is why the token is applied here and not to
+                        // screen roots in general — see `CypressMotion.fade`.
+                        .cypressFadeIn(index: index)
                     }
 
                     if let error = model.loadError {

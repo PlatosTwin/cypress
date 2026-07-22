@@ -44,11 +44,36 @@ struct SegmentedControl<Option: Hashable>: View {
     var size: Size = .standard
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        HStack(spacing: 0) {
-            ForEach(Array(options.enumerated()), id: \.offset) { index, option in
-                segment(option, isFirst: index == 0)
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        // Across at the drawn sizes, down once the labels stop fitting across.
+        //
+        // 05's status control is four segments — `Alive · Declining · Appears dead · Removed?` —
+        // and at AX5 on a 393 pt phone each gets under 90 pt. `lineLimit(1)` with a 0.8 scale floor
+        // does not come close: the control rendered `Alive | Decli… | Appe… | Rem…`, which turns a
+        // four-way choice into one legible option and three guesses. "Appears dead" and "Removed?"
+        // are different claims about a tree and truncating them to `Appe…` and `Rem…` is worse than
+        // any layout change.
+        //
+        // Stacked, every label is whole and the 1 pt divider becomes a horizontal rule between
+        // rows rather than a vertical one between columns. Nothing about the control's behaviour
+        // changes — same options, same selection, same 44 pt targets.
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(spacing: 0) {
+                    ForEach(Array(options.enumerated()), id: \.offset) { index, option in
+                        segment(option, isFirst: index == 0)
+                    }
+                }
+            } else {
+                HStack(spacing: 0) {
+                    ForEach(Array(options.enumerated()), id: \.offset) { index, option in
+                        segment(option, isFirst: index == 0)
+                    }
+                }
             }
         }
         .background {
@@ -69,18 +94,27 @@ struct SegmentedControl<Option: Hashable>: View {
                 .foregroundStyle(
                     isSelected ? CypressColor.onSelectionFill : CypressColor.textBody
                 )
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.8)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, size.paddingV)
                 .padding(.horizontal, CypressSpacing.Component.segmentPaddingH)
                 .background(isSelected ? CypressColor.selectionFill : Color.clear)
-                .overlay(alignment: .leading) {
-                    // `border-left:1px solid #E3E8D9` on every segment except the first.
+                .overlay(alignment: dynamicTypeSize.isAccessibilitySize ? .top : .leading) {
+                    // `border-left:1px solid #E3E8D9` on every segment except the first — a top
+                    // rule instead once the segments are stacked, which is the same divider seen
+                    // along the other axis.
                     if !isFirst {
                         Rectangle()
                             .fill(CypressColor.borderCool)
-                            .frame(width: CypressSpacing.Component.hairline)
+                            .frame(
+                                width: dynamicTypeSize.isAccessibilitySize
+                                    ? nil : CypressSpacing.Component.hairline,
+                                height: dynamicTypeSize.isAccessibilitySize
+                                    ? CypressSpacing.Component.hairline : nil
+                            )
                     }
                 }
                 .contentShape(Rectangle())

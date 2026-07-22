@@ -28,8 +28,36 @@ struct AvatarStack: View {
                 bubble(overflow, fill: fill(at: initials.count))
             }
         }
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        // A stack with nothing in it is not an element.
+        //
+        // This used to be an unconditional `children: .ignore` plus the word "Regulars", which
+        // meant that on a stack with no bubbles — the shipping case, because E71 records that the
+        // API carries caretakers as bare UUIDs and there are no initials to draw — VoiceOver
+        // stopped on an empty box and said "Regulars". A drawn-nothing that speaks is worse than
+        // either: sighted users see no row, listeners are told there is one.
+        //
+        // The same rule as ARCHITECTURE §5.6 for below-threshold surfaces, applied one level down:
+        // if it renders nothing, it announces nothing.
+        // ══════════════════════════════════════════════════════════════════════════════════════
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Regulars")
+        .accessibilityHidden(isEmpty)
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    private var isEmpty: Bool { initials.isEmpty && overflow == nil }
+
+    /// What the bubbles are, said as the thing they stand for. `+3` alone is a glyph; "3 more
+    /// regulars" is what a sighted reader takes from it.
+    var accessibilityLabel: String {
+        guard !isEmpty else { return "" }
+        var parts: [String] = []
+        if !initials.isEmpty { parts.append(initials.joined(separator: ", ")) }
+        if let overflow {
+            let more = overflow.hasPrefix("+") ? String(overflow.dropFirst()) : overflow
+            parts.append(initials.isEmpty ? "\(more) regulars" : "\(more) more")
+        }
+        return "Regulars: " + parts.joined(separator: ", ")
     }
 
     private func fill(at index: Int) -> Color {

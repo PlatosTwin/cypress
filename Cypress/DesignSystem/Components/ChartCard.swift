@@ -125,6 +125,25 @@ struct LineChart: View {
                 }
             }
             .frame(height: viewBox.height)
+            // ══════════════════════════════════════════════════════════════════════════════════
+            // The plot speaks as one element per series, and never as one across both.
+            //
+            // D7 is not only a drawing rule. "One connecting line across estimated + taped values
+            // manufactures a trend that is not there" is a statement about what a reader is
+            // allowed to conclude, and a spoken summary that ran from the oldest estimate to the
+            // newest tape reading would manufacture exactly the same trend with words instead of
+            // a polyline. So each series says its own first and last value, with its own method,
+            // and the listener joins them or does not — the same choice the two polylines leave a
+            // sighted reader.
+            //
+            // The per-point dots are deliberately not elements. They were labelled before this
+            // pass, on bare `Circle()` shapes with no `.accessibilityElement`, so they were silent
+            // anyway; and screen 11 lists every reading underneath in its measurement log, where
+            // each row is one stop carrying the value and its badge. Twenty dots would be the
+            // same twenty numbers a second time, in an order the plot chose.
+            // ══════════════════════════════════════════════════════════════════════════════════
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(accessibilityLabel)
 
             if !axisLabels.isEmpty {
                 HStack {
@@ -206,10 +225,31 @@ struct LineChart: View {
             }
             .frame(width: radius * 2, height: radius * 2)
             .position(position)
-            .accessibilityLabel(
-                "\(MeasuredValue.formatted(chartPoint.quantity)), \(MethodBadge(chartPoint.quantity).label)"
-            )
         }
+    }
+
+    /// What the plot says out loud. See the note in `body`.
+    ///
+    /// Each series contributes one clause naming how many readings it holds, its method, and the
+    /// two ends of it. A series with one reading says the reading rather than "47 to 47"; a plot
+    /// with no points at all says so, because an empty chart that announces nothing is a chart a
+    /// listener cannot tell from one that failed to load.
+    var accessibilityLabel: String {
+        let clauses = MeasurementSeries.allCases.compactMap { series -> String? in
+            let ordered = points.filter { $0.series == series }.sorted { $0.x < $1.x }
+            guard let first = ordered.first, let last = ordered.last else { return nil }
+
+            // The method comes off the quantity, so a series cannot be spoken without it (D7).
+            let method = MethodBadge(first.quantity).accessibilityLabel
+            let reading = ordered.count == 1 ? "1 reading" : "\(ordered.count) readings"
+            guard ordered.count > 1 else {
+                return "\(reading) \(method): \(MeasuredValue.formatted(first.quantity))"
+            }
+            return "\(reading) \(method): "
+                + "\(MeasuredValue.formatted(first.quantity)) to \(MeasuredValue.formatted(last.quantity))"
+        }
+        guard !clauses.isEmpty else { return "Growth plot with no readings." }
+        return "Growth plot. " + clauses.joined(separator: ". ") + "."
     }
 
     @ViewBuilder
@@ -242,9 +282,31 @@ struct LineChart: View {
 struct BarChart: View {
     /// Twelve heights in the source's 0…34 scale, January first.
     let heights: [CGFloat]
+    /// What the twelve bars say out loud. **Required**, and the only required label in the
+    /// catalogue besides C25's.
+    ///
+    /// The component cannot write this one for itself and must not try. `heights` are drawing
+    /// units in the mock's 0…34 viewBox — the bars have already been scaled against whatever
+    /// maximum the caller chose, and on 13 that maximum is *shared across three series* so the
+    /// rows can be compared (D2, one scale for a small-multiple set). Reading a height back out
+    /// would announce a number that is a fraction of someone else's maximum, which is a wrong
+    /// count rather than no count. The caller holds the real counts; it hands over the sentence.
+    let accessibilityLabel: String
     var tint: Color = CypressColor.chartSeriesPrimary
     /// Months whose bar is drawn empty (`#EAEDDF`) because nothing happened.
     var emptyMonths: Set<Int> = []
+
+    init(
+        heights: [CGFloat],
+        accessibilityLabel: String,
+        tint: Color = CypressColor.chartSeriesPrimary,
+        emptyMonths: Set<Int> = []
+    ) {
+        self.heights = heights
+        self.accessibilityLabel = accessibilityLabel
+        self.tint = tint
+        self.emptyMonths = emptyMonths
+    }
 
     private let viewBox = CGSize(
         width: CypressSpacing.Component.chartBarViewWidth,
@@ -271,6 +333,8 @@ struct BarChart: View {
             }
         }
         .frame(height: viewBox.height)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel)
     }
 
     /// `rx` 2 at h=4, 2.5 at h≥8, 3 at h=34 — §2, verbatim.
@@ -293,6 +357,8 @@ struct ChartMonthAxis: View {
             }
         }
         .accessibilityHidden(true)
+        // Twelve letters under twelve bars, and the alignment is the whole point of the axis.
+        .cypressTypographicFurniture()
     }
 }
 
@@ -310,6 +376,9 @@ struct ChartSeriesLegend: View {
                     width: CypressSpacing.Component.chipLegendDot,
                     height: CypressSpacing.Component.chipLegendDot
                 )
+                // The swatch is the colour key for the row directly beneath it, and the row names
+                // itself in the same breath. Spoken, it is a duplicate of the adjacent text.
+                .accessibilityHidden(true)
             Text(name)
                 .font(CypressFont.body125Bold)
                 .foregroundStyle(CypressColor.textInk)

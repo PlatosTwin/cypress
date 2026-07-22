@@ -178,6 +178,34 @@ struct RootView: View {
         )
     }
 
+    /// The client UUID minted for each tree's favourite, kept so a second tap is a replay.
+    ///
+    /// The same trick `PrivateReminderDraft.reminderID` plays for screen 06: the key is minted once
+    /// per thing-being-said rather than once per tap, so `OutboxQueue.enqueue` dedupes the repeat and
+    /// one row is stored. Without it, a heart with no visible on-state — which is what C8 draws —
+    /// would queue one "favorited" event per impatient tap, all of them true and all of them
+    /// pointless.
+    @State private var favoriteToggles: [UUID: UUID] = [:]
+
+    /// Sends the heart through the outbox (ERRATA E89).
+    ///
+    /// Fire-and-forget, and the error is dropped on purpose: `FavoriteOutboxWriter` throws only if
+    /// the row could not be made durable, and screen 03 draws no state in which it could say so.
+    /// Nothing on screen claims the favourite was saved, so nothing on screen can be lying.
+    private func favorite(_ treeID: UUID) {
+        let clientUUID = favoriteToggles[treeID] ?? UUID()
+        favoriteToggles[treeID] = clientUUID
+        Task {
+            try? await FavoriteOutboxWriter.save(
+                treeID: treeID,
+                isFavorite: true,
+                attribution: await data.api.attribution,
+                outbox: data.outbox,
+                clientUUID: clientUUID
+            )
+        }
+    }
+
     @ViewBuilder
     private func destination(for route: Route) -> some View {
         switch route {
@@ -186,7 +214,19 @@ struct RootView: View {
                 treeID: id,
                 api: data.api,
                 onVisit: { _ in router.present(.identify) },
-                onFavorite: { _ in /* outbox mutation — wired with the grove, M2 */ }
+                // Screen 03's quad row. The favourite is device-owned until an account exists, so
+                // the heart works on a device that has never seen the account sheet — which is every
+                // device the app currently runs on (D9, ERRATA E89). The owner comes from
+                // `LocalAPI.attribution` and never from the screen. When screen 15 lands,
+                // `claimDevice` moves these favourites onto the account and this line does not
+                // change.
+                //
+                // It writes `isFavorite: true` and never false, because C8 draws no on-state and no
+                // un-favourite affordance exists anywhere in the mock set (ERRATA E101). The
+                // tombstone path is in the store and in the payload, waiting for a control that
+                // means "off"; inventing one here would be inventing a state (DECISIONS
+                // constraint 21).
+                onFavorite: { treeID in favorite(treeID) }
             )
 
         case .checkIn(let id):

@@ -75,6 +75,8 @@ struct HeroPhotoHeader<Background: View, BottomLeading: View>: View {
         }
     }
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     let style: Style
     /// Bottom-right pill, e.g. `214 photos · since 2019`.
     var metaPill: String?
@@ -87,14 +89,54 @@ struct HeroPhotoHeader<Background: View, BottomLeading: View>: View {
     @ViewBuilder var bottomLeading: BottomLeading
 
     var body: some View {
-        background
-            .frame(height: style.height)
-            .frame(maxWidth: .infinity)
-            .clipped()
-            .overlay { style.scrim }
-            .overlay(alignment: .topLeading) { backButton }
-            .overlay(alignment: .bottomLeading) { bottomLeadingContent }
-            .overlay(alignment: .bottomTrailing) { pill }
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        // A ZStack, not four `.overlay`s on a fixed-height photo.
+        //
+        // §2 C2 gives the hero a `height` — 224 pt on 03, 190 on 07, 200 on 19 — and the drawn
+        // size is unchanged at the mock's type size. What changed is what happens above it. An
+        // overlay does not contribute to its parent's size, so the eyebrow, the 07 name block and
+        // the meta pill were laid out inside a box that could not grow for them: at AX sizes the
+        // 25 pt serif species name simply drew past the bottom edge and over the strip below it,
+        // and the `.clipped()` on the photo did not catch it because the overlays are added after.
+        //
+        // In a ZStack the content is a real child, so the header is `max(drawn height, what the
+        // text needs)`. The photo takes `minHeight` and stretches to match; nothing moves at the
+        // sizes the mock was drawn at.
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        ZStack(alignment: .bottomLeading) {
+            background
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipped()
+                // The photo (today a gradient — SCREENS.md §5 gap 13) and the scrim over it are
+                // the ground the text sits on. Neither says anything a listener does not get from
+                // the eyebrow, the name block and the pill drawn on top of them.
+                .accessibilityHidden(true)
+                .overlay { style.scrim.accessibilityHidden(true) }
+
+            // Eyebrow and meta pill sit at opposite ends of one line in the mock. At AX5 the pill
+            // alone is wider than the phone, so across becomes down — and the block gets clear of
+            // the back circle, which the eyebrow was otherwise growing up into.
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: CypressSpacing.gapDense) {
+                        bottomLeadingContent
+                        // The pill carries its own trailing inset for the mock's right-aligned
+                        // placement; stacked at the leading edge it needs the eyebrow's.
+                        pill.padding(.leading, CypressSpacing.Component.heroEyebrowLeading)
+                    }
+                    .padding(.top, CypressSpacing.Component.heroBackTop + CypressSpacing.Component.backCircle)
+                } else {
+                    HStack(alignment: .bottom, spacing: CypressSpacing.gapDense) {
+                        bottomLeadingContent
+                        Spacer(minLength: 0)
+                        pill
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(minHeight: style.height)
+        .overlay(alignment: .topLeading) { backButton }
     }
 
     @ViewBuilder
@@ -153,6 +195,7 @@ struct HeroPhotoHeader<Background: View, BottomLeading: View>: View {
     private var pill: some View {
         if let metaPill {
             Text(metaPill)
+                .fixedSize(horizontal: false, vertical: true)
                 .font(CypressFont.mono105)
                 .foregroundStyle(style.onPhoto)
                 .padding(.vertical, CypressSpacing.Component.heroPillPaddingV)

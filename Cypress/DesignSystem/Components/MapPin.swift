@@ -134,8 +134,11 @@ struct MapPin: View {
                 .buttonStyle(.plain)
                 .cypressHitArea()
                 .accessibilityLabel(kind.accessibilityLabel)
+                .cypressTypographicFurniture()
         } else {
-            pin.accessibilityLabel(kind.accessibilityLabel)
+            pin
+                .accessibilityLabel(kind.accessibilityLabel)
+                .cypressTypographicFurniture()
         }
     }
 
@@ -143,6 +146,15 @@ struct MapPin: View {
         shape
             .frame(height: kind.diameter)
             .opacity(kind.opacity)
+            // czPulse, on the amber pin and nothing else. The prototype loops it at 2.4 s on its
+            // one `#B4711F` pin, and Signal Amber is "reserved solely for 'this tree needs
+            // something'" (SCREENS.md §1.1) — so the pulse is the mark of that one meaning rather
+            // than a decoration available to any pin.
+            //
+            // It lives on the component so screen 01's live MapKit layer gets it for free: unlike
+            // a pin-drop, a continuous loop does not care that annotations are recycled during a
+            // pan, because there is no "first appearance" for a recycle to re-fire.
+            .cypressPulse(CypressColor.accentAmber, isActive: kind == .needsCare)
             .cypressShadow(kind.shadow)
             .background(alignment: .center) {
                 if let halo = kind.halo {

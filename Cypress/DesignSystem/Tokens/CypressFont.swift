@@ -342,6 +342,38 @@ enum CypressFont {
 
 extension View {
 
+    /// The ceiling for typographic furniture — see `cypressTypographicFurniture()`.
+    ///
+    /// `.accessibility1` and not `.large`: the point is to keep a mono micro-label legible for
+    /// someone who needs larger type, not to freeze it at the mock's size and call that a
+    /// decision. Between `.large` and `.accessibility1` a 9.5 pt label roughly doubles, which is
+    /// most of the benefit; past it the tracking stops making sense (below) and twelve of them in
+    /// a row stop fitting on any phone.
+    ///
+    /// Deliberately *not* applied to prose. Every sentence in the app scales the whole way.
+
+    /// Caps Dynamic Type for a label that is furniture rather than content.
+    ///
+    /// Three kinds of thing in this app are drawn *as type* and read as *structure*: the uppercase
+    /// mono micro-labels with wide letter-spacing (`FOLIAGE THROUGH THE YEAR`), the twelve single
+    /// letters under a month axis or a season strip, and the count inside a map pin. None of them
+    /// is a sentence. A reader who needs larger type needs the sentence larger; the rule above the
+    /// sentence is a divider that happens to be made of letters.
+    ///
+    /// There is a concrete failure behind this rather than a preference. `CypressFont.Tracking` is
+    /// in points, fixed at the mock's size, and its own note says so: "tracking is intentionally
+    /// NOT scaled with Dynamic Type". So an unclamped 9.5 pt label at AX5 renders at roughly 3×
+    /// with the *same* 1.33 pt of letter-spacing — the wide tracking that makes it read as a rule
+    /// is gone, and what is left is large cramped uppercase. Twelve month letters at AX5 need more
+    /// width than any iPhone has, at which point the strip they label stops lining up with them,
+    /// which is the entire information in a season strip.
+    ///
+    /// ARCHITECTURE §6 says to verify the field screens at AX1; this is the answer for the one
+    /// class of label where scaling past that makes the screen worse rather than better.
+    func cypressTypographicFurniture() -> some View {
+        dynamicTypeSize(...DynamicTypeSize.accessibility1)
+    }
+
     /// `micro.label` — 11 / 800 Alegreya Sans, tracking .08em, UPPERCASE, `text.faint`.
     /// Section headers inside screens.
     func cypressMicroLabel(color: Color = CypressColor.textFaint) -> some View {
@@ -349,6 +381,7 @@ extension View {
             .tracking(CypressFont.Tracking.microLabel)
             .textCase(.uppercase)
             .foregroundStyle(color)
+            .cypressTypographicFurniture()
     }
 
     /// `micro.label.10` — 10 / 700 Alegreya Sans, tracking .08em, UPPERCASE, `text.faint`.
@@ -358,6 +391,7 @@ extension View {
             .tracking(CypressFont.Tracking.microLabel10)
             .textCase(.uppercase)
             .foregroundStyle(color)
+            .cypressTypographicFurniture()
     }
 
     /// `badge` — 11 / 700 Alegreya Sans, tracking .02em, UPPERCASE.
@@ -376,6 +410,7 @@ extension View {
             .tracking(CypressFont.Tracking.monoSectionLabel)
             .textCase(.uppercase)
             .foregroundStyle(color)
+            .cypressTypographicFurniture()
     }
 
     /// `mono.9` — 9 / 600 Spline Sans Mono, tracking .16em (`wide: true` → .18em).
@@ -384,6 +419,9 @@ extension View {
         font(CypressFont.mono9)
             .tracking(wide ? CypressFont.Tracking.mapLabelWide : CypressFont.Tracking.mapLabel)
             .foregroundStyle(color)
+            // A street name printed across a map is positioned by geography, not by a layout that
+            // can reflow around it. See `cypressTypographicFurniture()`.
+            .cypressTypographicFurniture()
     }
 
     /// `mono.readout` — 56 / 600 Spline Sans Mono, tracking −.02em, `text.ink`.

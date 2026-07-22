@@ -28,23 +28,64 @@ struct ScreenHeader<Trailing: View>: View {
     var onBack: (() -> Void)?
     @ViewBuilder var trailing: Trailing
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     var body: some View {
-        HStack(spacing: CypressSpacing.Component.headerSpacing) {
-            if let onBack {
-                Button(action: onBack) { BackCircle() }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Back")
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        // One row at the drawn sizes, two once the title cannot share one.
+        //
+        // This was the worst Dynamic Type failure in the app and it is worth describing, because
+        // the symptom looks nothing like the cause. §2 C1 is `[back circle] [title] [pill]` on one
+        // line, and `HeaderPill` ends in `.fixedSize()` so the pill always takes its intrinsic
+        // width. At AX5 on a 393 pt phone the circle takes 44, the pill's "under a minute" takes
+        // ~300, and the 22 pt serif title is left with about 60 pt — into which it wraps *one
+        // letter per line*. Screen 05 rendered as a vertical column spelling C-h-e-c-k-–-i down
+        // the whole viewport with the card pushed off the bottom.
+        //
+        // Two lines rather than a truncated pill or a scaled title: the pill is real information
+        // on every screen that has one (`under a minute` on 05, `Outer Sunset` on 12, the tree's
+        // name on 11 and 13, `3 waiting · offline` on 17) and the title is what the screen is. At
+        // a size where both cannot fit across, the honest layout is one under the other.
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: CypressSpacing.Component.headerSpacing) {
+                    HStack(spacing: CypressSpacing.Component.headerSpacing) {
+                        backButton
+                        titleText
+                        Spacer(minLength: 0)
+                    }
+                    trailing
+                }
+            } else {
+                HStack(spacing: CypressSpacing.Component.headerSpacing) {
+                    backButton
+                    titleText
+                    Spacer(minLength: 0)
+                    trailing
+                }
             }
-            Text(title)
-                .font(CypressFont.screenTitle)
-                .foregroundStyle(CypressColor.textInk)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
-            trailing
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, CypressSpacing.headerPaddingTop)
         .padding(.horizontal, CypressSpacing.headerPaddingHorizontal)
         .padding(.bottom, bottomInset.value)
+    }
+
+    @ViewBuilder
+    private var backButton: some View {
+        if let onBack {
+            Button(action: onBack) { BackCircle() }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Back")
+        }
+    }
+
+    private var titleText: some View {
+        Text(title)
+            .font(CypressFont.screenTitle)
+            .foregroundStyle(CypressColor.textInk)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -114,6 +155,8 @@ struct HeaderPill: View {
     let text: String
     var style: Style = .neutral
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     init(_ text: String, style: Style = .neutral) {
         self.text = text
         self.style = style
@@ -135,6 +178,9 @@ struct HeaderPill: View {
             .cypressPillBorder(
                 style == .amber ? CypressColor.amberPillBorder : CypressColor.borderCool
             )
-            .fixedSize()
+            // Intrinsic width while the pill shares a row with the title, so it never compresses to
+            // an ellipsis beside it. Once C1 has moved it onto its own line there is no competition
+            // and a long pill may wrap — `3 waiting · offline` at AX5 needs two lines and has one.
+            .fixedSize(horizontal: !dynamicTypeSize.isAccessibilitySize, vertical: true)
     }
 }

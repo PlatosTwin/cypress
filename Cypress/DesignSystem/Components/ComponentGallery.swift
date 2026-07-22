@@ -1072,7 +1072,10 @@ private struct GalleryC23: View {
                     ChartCard(title: "This year at a glance", range: "2026", size: .bars) {
                         VStack(alignment: .leading, spacing: CypressSpacing.gapDense) {
                             ChartSeriesLegend(name: "Photos", total: "41")
-                            BarChart(heights: [8, 4, 10, 13, 17, 34, 17, 10, 8, 8, 4, 4])
+                            BarChart(
+                                heights: [8, 4, 10, 13, 17, 34, 17, 10, 8, 8, 4, 4],
+                                accessibilityLabel: "Photos by month. June is the tallest."
+                            )
                             ChartSeriesLegend(
                                 name: "Check-ins",
                                 total: "18",
@@ -1080,6 +1083,7 @@ private struct GalleryC23: View {
                             )
                             BarChart(
                                 heights: [4, 4, 8, 8, 10, 8, 8, 4, 4, 4, 4, 4],
+                                accessibilityLabel: "Check-ins by month. May is the tallest.",
                                 tint: CypressColor.chartSeriesSecondary
                             )
                             ChartSeriesLegend(
@@ -1089,6 +1093,7 @@ private struct GalleryC23: View {
                             )
                             BarChart(
                                 heights: [4, 4, 4, 8, 4, 4, 4, 8, 4, 4, 4, 4],
+                                accessibilityLabel: "Care by month. April and August only.",
                                 tint: CypressColor.chartSeriesTertiary,
                                 emptyMonths: [0, 1, 6, 10, 11]
                             )

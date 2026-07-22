@@ -29,6 +29,7 @@ struct MapHomeView: View {
     let api: any CypressAPI
 
     @Environment(AppRouter.self) private var router
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var model: MapModel
     @State private var location = MapLocationProvider()
     @State private var position: MapCameraPosition = .region(MapLayout.region(around: MapLayout.defaultCentre))
@@ -61,7 +62,7 @@ struct MapHomeView: View {
         .onChange(of: location.availability) { _, availability in
             guard !hasCentredOnUser, let coordinate = availability.coordinate else { return }
             hasCentredOnUser = true
-            withAnimation(.easeInOut(duration: 0.4)) {
+            withAnimation(CypressMotion.resolved(CypressMotion.camera, reduceMotion: reduceMotion)) {
                 position = .region(MapLayout.region(around: coordinate))
             }
         }
@@ -149,7 +150,9 @@ struct MapHomeView: View {
 
     /// Tapping a cluster zooms in, which is what the badge means (`TreeCluster`'s own note).
     private func zoom(into cluster: TreeCluster) {
-        withAnimation(.easeInOut(duration: 0.35)) {
+        // Reduce Motion snaps the camera instead of flying it. The zoom is the answer to the tap,
+        // not the way the answer is delivered.
+        withAnimation(CypressMotion.resolved(CypressMotion.camera, reduceMotion: reduceMotion)) {
             position = .region(MapLayout.zoomedIn(on: cluster, from: region))
         }
     }

@@ -65,7 +65,7 @@ struct MapKitBasemap: View {
                     Annotation("", coordinate: pin.coordinate.clLocationCoordinate, anchor: .center) {
                         MapPin(MapPinKind.kind(for: pin)) { onSelectPin(pin) }
                             .scaleEffect(pin.id == selectedPinID ? MapLayout.selectedPinScale : 1)
-                            .animation(.snappy(duration: 0.18), value: selectedPinID)
+                            .cypressAnimation(CypressMotion.selection, value: selectedPinID)
                     }
                     .annotationTitles(.hidden)
                 }

@@ -190,16 +190,38 @@ struct CheckInView: View {
     }
 
     /// The trailing 20×20 check circle on the selected row.
+    ///
+    /// czPop, keyed on which row is selected: the prototype puts `czPop .4s` on 05's selected
+    /// rows, and the check is the part of the row that actually arrives. Moving the *selection*
+    /// rather than the row means tapping a second row pops the new check rather than re-running
+    /// the whole list. `CypressMotion.pop`.
     private var checkCircle: some View {
         Circle()
             .fill(CypressColor.selectionFill)
             .overlay {
-                Text(verbatim: "✓")
-                    .font(CypressFont.microLabel)
-                    .foregroundStyle(CypressColor.onSelectionFill)
+                // `CypressCheckmark`, not `Text("✓")`. The circle is 20 pt by SCREENS.md and does
+                // not grow, so a scaling glyph inside it outgrew its own dot at AX sizes and was
+                // clipped to a stub. The shape is the same mark the 18 success circle and the
+                // route-done pin already draw, and being a `Shape` it is sized by its frame rather
+                // than by the type ramp — which is right here, because the row's *title* and its
+                // anchor sentence are what a reader is meant to grow, and they do.
+                CypressCheckmark()
+                    .stroke(
+                        CypressColor.onSelectionFill,
+                        style: StrokeStyle(
+                            lineWidth: CheckInMetrics.checkGlyphStroke,
+                            lineCap: .round,
+                            lineJoin: .round
+                        )
+                    )
+                    .frame(
+                        width: CheckInMetrics.checkGlyphWidth,
+                        height: CheckInMetrics.checkGlyphHeight
+                    )
             }
             .frame(width: CheckInMetrics.checkCircle, height: CheckInMetrics.checkCircle)
             .accessibilityHidden(true)
+            .cypressPop(on: model.draft.vitality)
     }
 
     /// D3 lifts unselected row titles to `dark.text.strong` and leaves the selected one at

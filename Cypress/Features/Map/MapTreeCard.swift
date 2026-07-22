@@ -17,6 +17,8 @@ import SwiftUI
 
 struct MapTreeCard: View {
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     let subject: MapCardSubject
     /// The user's fix, when there is one. Its absence is the "map without location" state, and it
     /// costs the card exactly one clause.
@@ -34,7 +36,11 @@ struct MapTreeCard: View {
                         Text(subject.title)
                             .font(CypressFont.listNameSerif)
                             .foregroundStyle(CypressColor.textInk)
-                            .lineLimit(1)
+                            // One line at the mock's size, two once the type is large enough that
+                            // one will not hold a street-tree name. A truncated name is the one
+                            // thing this card exists to give — 01's caption is "tap any pin" and
+                            // the answer to the tap is the name.
+                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
                         if let badge = subject.badge {
                             StatusBadge(badge, size: .compact)
                         }

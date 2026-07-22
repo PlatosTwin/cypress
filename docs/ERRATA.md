@@ -2265,7 +2265,7 @@ nothing to adopt, and one indexed SELECT when the device was never claimed.
 Two tests in `DeviceClaimTests` hold it: a visit and a private reminder, each queued before the claim
 and drained after it.
 
-### E89 — an anonymous device cannot favourite a tree, so sign-in carries no favourites — OPEN
+### E89 — an anonymous device cannot favourite a tree, so sign-in carries no favourites
 
 `favorites` is the one contribution table with a `NOT NULL user_id` and no `device_id` column
 (`AppSchema`), and `ContributionStore.groveTreeIDs` only reads favourites when a user is present. So
@@ -2282,6 +2282,130 @@ This is the same decision E23 settled for private reminders — give the row a d
 deliberately, rather than by a second quiet precedent. It also has a wrinkle E23 did not: favourites
 are tombstone toggles with a `UNIQUE (user_id, tree_uuid)`, so the pair becomes
 `(owner, tree_uuid)` and the uniqueness has to survive the move.
+
+**RESOLVED — favourites are device-scoped, on E23's terms.** The decision was taken the same way and
+for the same reason: D9 is what makes every device anonymous, and a first save that cannot be made
+is not a deferred account ask, it is a missing feature. PRODUCT §Conflicts 22 had already named the
+hole — "offline favorites are listed as outbox mutations, but favoriting is also the account-gate
+trigger — behavior for an anonymous offline favorite is undefined" — and D9 defines it: the device
+holds it until an account arrives, exactly as it holds a visit.
+
+**The schema, `AppSchema` v5.** `favorites.user_id` becomes nullable, `device_id` appears beside it,
+and `CHECK ((user_id IS NULL) <> (device_id IS NULL))` makes exactly one of them non-null. Not
+"nullable user plus a NOT NULL device", for E23's reasons restated: that shape leaves both columns
+populated after sign-in, so the owner is whichever column a query coalesces first, and it keeps a
+permanent device↔account link. Exclusive ownership makes adoption a *move*, so the row carries
+strictly less about the device afterwards than before. `FavoriteOwner` is the same rule in Swift —
+two cases, no third state — and it is a separate type from `ReminderOwner` on purpose: the two have
+the same shape and different invariants, since a reminder's owner is a privacy boundary and a
+favourite's owner is half of a uniqueness key with a merge rule attached.
+
+**What the UNIQUE constraint became, which is the part E23 never had to answer.** Two partial unique
+indexes:
+
+```sql
+CREATE UNIQUE INDEX idx_favorites_user_tree   ON favorites(user_id, tree_uuid)   WHERE user_id   IS NOT NULL;
+CREATE UNIQUE INDEX idx_favorites_device_tree ON favorites(device_id, tree_uuid) WHERE device_id IS NOT NULL;
+```
+
+One owner cannot favourite a tree twice; two different owners can each favourite it. The obvious
+one-line alternative, `UNIQUE (user_id, device_id, tree_uuid)`, enforces **nothing** on the device
+arm: SQL compares NULLs as distinct inside a unique index, so `(NULL, this device, this tree)` would
+be storable any number of times, and the constraint would look present in the DDL while doing half
+its job. A single expression index over `COALESCE(user_id, device_id)` does work, and was rejected
+because it puts two id spaces into one comparison and re-introduces the coalesced owner v3 refused;
+two indexes state the two sentences separately. The cost is that an upsert names one conflict target,
+so `applyFavoriteToggle` prepares one of two statements — which is not a guess, because the owner is
+known at the call site. That is what exclusive ownership buys.
+
+**The collision at sign-in, which is real and is now a merge.** A device favourites a tree that the
+account it is about to claim had *already* favourited. Two rows then say one thing, and after the
+claim only one owner exists — so the plain `UPDATE` would hit the user index and abort the whole
+claim, meaning sign-in fails for the contributor whose grove overlaps most. `claimDevice` runs three
+statements instead, each an UPDATE or a narrowly-predicated DELETE whose WHERE stops matching once
+it has run:
+
+1. **The later statement wins.** Where both hold a tree and the device's row is the more recent, its
+   state, its `client_uuid` and its timestamp move onto the account's row. A favourite is a toggle
+   event with a tombstone (BUILD-PLAN §4 and §6) and a toggle resolves by time: whichever the person
+   said last is what they meant. So a device that un-favourited in June overrides an account that
+   favourited in January, and an account that un-favourited in June overrides a device that
+   favourited in January. Timestamps compare as strings because `SQLiteTimestamp` writes fixed-width
+   UTC ISO-8601, where lexicographic order is chronological order.
+2. **The superseded device row is deleted** — the one delete this table permits. Keeping it would
+   leave the account and the device each holding a row for one tree, which is the permanent
+   device↔account link exclusive ownership exists to prevent. The device's row is the one dropped
+   rather than the account's because the account's may have an identity beyond this phone; the
+   device's has never left it.
+3. **Everything else moves**, as a reminder does: `user_id` set, `device_id` cleared, `user_id IS
+   NULL` guarding against a claim by a different account stealing an attributed row.
+
+**The tombstone trigger keeps its job and gains exactly one exception.** Its stated reason is that a
+stray `DELETE` loses the un-favourite *event*, so the row comes back on the next sync from another
+device. Step 2 above loses no event: it has just been folded onto the surviving row for the same
+tree, in the same transaction. The trigger's `WHEN` clause permits precisely that case — a
+device-owned row for a tree an account already holds — and refuses everything else, including a
+device-owned row with no account row beside it, which `DataGates` now asserts so the exception cannot
+quietly widen into a hole.
+
+**Whether a memorial or a vacant site can be favourited: yes, and it is not gated.**
+`TreeStatus.acceptsNewContributions` gates the visit, the photo, the check-in and the measure sheet,
+and the property says why: those are observations of a tree that has to exist. A favourite observes
+nothing — it writes to the person's grove, not to the tree's record, which is exactly why it is the
+one non-append-only row in the model (DECISIONS §3.7) and why D1 had to kill the version of it that
+was a public vote. The deciding argument is reversibility: **gating the write would make the toggle
+one-way for anyone whose favourite tree is later removed**, since the same gate that refuses the
+heart refuses taking it off. A rule that turns a reversible thing into an irreversible one is worse
+than what it was preventing. It also costs nothing to allow, because a favourite adds no row anyone
+else can read: the grove that lists it is the person's own.
+
+Where the affordance actually is, stated exactly rather than reassuringly: 03 draws the quad row only
+on the **warm** variant, so a vacant site — which renders cold, every one of the 12,518 in the seed
+(E11) — never shows it, and the map sends a removed pin to screen 19 rather than to the profile
+(E95). What E95 leaves open is that the almanac's rows and the visit flow can still reach
+`.treeProfile` with a removed tree, and a *photographed* removed tree would then draw the quad row
+with a live `Favorite` cell. That residual is E95's to close and is latent either way — no tree in
+the shipped seed is removed (E93) — and under the reasoning above the heart is the one cell in that
+row it would be safe to leave standing there anyway.
+
+**The write path.** `FavoriteToggle` carries a `FavoriteOwner` instead of a `userID`, and
+`RootView.onFavorite` hands the mutation to `FavoriteOutboxWriter`: durable in the outbox first,
+attempted after, keyed on a client-generated UUID (ARCHITECTURE §4). Changing the payload's shape
+cost nothing, which is worth stating once because it will not be free again — no build has ever
+enqueued a `favorite_toggle`, precisely because this entry's bug meant there was nowhere to write it,
+so there are no rows on any disk in the old shape. `outbox.kind` already carried `favorite_toggle`
+from v1, so no outbox rebuild was needed.
+
+**What else now reads a device-owned favourite.** `groveTreeIDs` read favourites only when a user was
+present, which is what made the absence invisible; it now reads both arms, like its own visits arm
+and like `privateReminders`. `DeviceContributions` gains `favorites` and loses
+`favouritesAreAccountOnly` — screen 15's headline still counts visits only, so no drawn sentence
+changes, but the type's claim that these are "exactly the record kinds `claimDevice` moves" is true
+again.
+
+**Where favourites are still not visible, and why nothing was built for it.** Screen 08 is the
+*Species* tab of My Grove: a progress ring and species tiles, and it never shows a favourited tree.
+The surface that would is the `Trees` pill beside it, which E46 records as drawn and inert because
+the screen behind it belongs to the clickable prototype and is not in the mock set. `CypressAPI
+.grove()` — the read that returns favourited and visited trees, and which now returns the device's —
+still has no caller anywhere in the app. Building the Trees list would be inventing a screen
+(DECISIONS constraint 21), so it was not built; the read is correct for the day somebody draws it.
+
+Proven by `CypressTests/FavoriteTests.swift`: a favourite saves with no user present and is owned by
+the device, and reaches the grove and the device holdings; two taps of one heart save one favourite;
+migrating a v4 database preserves live rows and tombstones alike and the migration replays as a
+no-op; `claimDevice` adopts device-owned favourites, claiming twice changes nothing and nobody else's
+moves; the sign-in collision merges in both directions and leaves one row per tree; uniqueness holds
+per owner on both arms; a replayed toggle does not flip the state and an un-favourite tombstones
+rather than deletes; a removed tree can be favourited and, more to the point, un-favourited.
+`DataGates` adds the schema invariants: an ownerless or doubly-owned favourite is rejected by the
+engine, a second row for one owner and one tree is rejected on both arms, two owners holding one tree
+is accepted, and the tombstone trigger still refuses every delete except the adoption merge.
+
+**One thing this hands to whoever builds account deletion**, unchanged from E23 and now true of a
+second table: DECISIONS §3.12 anonymizes attributed rows — "user_id nulled, device link severed" —
+and an exclusively-owned row cannot survive both. That path has to choose, for reminders and
+favourites alike, between deleting them with the account and re-homing them onto the device. **OPEN.**
 
 ### E90 — 15's consent box has no unchecked state, and no rule for what refusing it means — OPEN
 
@@ -2570,3 +2694,320 @@ heading. It is the same `OutboxViewState` screen 17 binds, held once in `RootVie
 copies of one preference would agree only until somebody used one of them.
 
 **OPEN**, and the thing that closes it is an account, not a toggle.
+
+### E101 — the heart has an on state and nothing draws it, so the favourite is one-way — OPEN
+
+Falls out of E89, and is a gap in the mock set rather than in the fix. Now that a favourite can be
+written, screen 03 needs an answer to two questions it never had to have one for, and SCREENS.md
+gives neither:
+
+- **What a favourited tree looks like.** C8's four cells are drawn once each — `Favorite` · `Care` ·
+  `Share` · `Report`, 12px semibold on a card fill — and §2 C8's own NOT SPECIFIED note is about the
+  *icons*, not about state. No selected variant, no filled heart, no colour change, no label change.
+  Care, Share and Report open something, so a cell that changes nothing on the screen is the right
+  drawing for them; a favourite changes only itself.
+- **Where the heart comes off.** Nothing in the mock set un-favourites a tree. The `Trees` pill on 08
+  that would list favourites is drawn inert (E46), 13 cut the favourites series outright (D2), and
+  the profile draws one cell whose label is a noun.
+
+So `RootView` writes `isFavorite: true` and never `false`. The tombstone path is real and tested —
+the payload carries the resulting state rather than a verb, the store toggles through `deleted_at`,
+and `claimDevice` merges an un-favourite across sign-in — but no drawn control produces one. **A tap
+is a statement that can be made and not taken back**, which is the shape of thing DECISIONS §3.7 went
+out of its way to avoid for exactly this record: favourites are the one contribution the model allows
+to be reversed.
+
+Two smaller consequences, recorded so they are not read as bugs:
+
+- **The tap says nothing back.** E23's answer for screen 06 was one line of copy after the save, on
+  the argument that a control which acts and says nothing is dishonest in the other direction. The
+  same answer here would be a state on a mocked component, which is a design change rather than a
+  view file's decision (DECISIONS constraint 21). `RootView` therefore claims nothing: the write is
+  fire-and-forget and its error is dropped, because there is no drawn state in which the screen could
+  honestly report one.
+- **A second tap is deliberately not a second event.** The composition root keeps the client UUID it
+  minted for each tree, so an impatient double tap replays one key and stores one favourite — the
+  trick screen 06 plays with `PrivateReminderDraft.reminderID`. Without it a control with no visible
+  on-state would queue one "favorited" event per tap, all true and all pointless.
+
+What a decision-owner owes this screen: a selected appearance for C8's first cell, or a surface that
+lists favourites and can remove one. Either closes it; neither may be invented here.
+
+### E102 — the six named animation curves were in the handoff and not in the spec, and three literals had drifted in their place
+
+SCREENS.md §5 gap 1 lists animation as **NOT SPECIFIED** and then names six curves it does not
+define: `czFade` .32s, `czSheet`, `czPinDrop`, `czPulse` 2.4s, `czFlash`, `czPop`, easing
+`cubic-bezier(.22,.9,.3,1)`. ARCHITECTURE §1 cites "six named animation curves" as part of the
+written reason for building native. Nothing in `docs/` carried their definitions.
+
+They are in the handoff. `_unzipped/design_handoff_cypress/Cypress Prototype.dc.html` lines 17–22
+hold the `@keyframes`, and `README.md` line 119 holds the names, the durations and the instruction
+"Keep them subtle." Two easings appear in the `animation:` shorthands and nowhere else — the house
+deceleration `cubic-bezier(.22,.9,.3,1)` and an overshoot `cubic-bezier(.22,1.18,.36,1)` whose
+second control point sits above 1. Both transcribe onto `Animation.timingCurve`, which takes the
+same four numbers, so nothing here is a fit or a guess.
+
+**What existed before this pass:** three animations, all literals in `Features/`, none matching each
+other. `MapHomeView` recentred on a fix with `easeInOut(0.4)` and zoomed into a cluster with
+`easeInOut(0.35)`; `MapKitBasemap` scaled a selected pin with `snappy(0.18)`. ARCHITECTURE §6 bans a
+raw hex or font size inside a feature and a duration is the same kind of literal — with more force,
+because six curves used in eleven places drift apart the moment each place owns its own number.
+
+`Cypress/DesignSystem/Tokens/CypressMotion.swift` is the transcription, and it carries the keyframe
+*offsets* beside the curves (`CypressMotionOffset`) so a caller cannot animate the right duration
+through the wrong distance.
+
+**Where each applies, and the two that deliberately do not.**
+
+| Curve | Applied to |
+|---|---|
+| `czFade` | 02's candidate cards, staggered 0.07 s apart as they arrive; the scrim under C17 |
+| `czSheet` | C17 `BottomSheet` — 09, 10, 15 — rising 90 pt |
+| `czPinDrop` | 18's `VisitRouteMap` pins, staggered down the route |
+| `czPulse` | C19's `needsCare` pin, everywhere it is drawn, including 01's live MapKit layer |
+| `czFlash` | 04's shutter |
+| `czPop` | 18's success check; 05's selection check, keyed on which row is selected |
+
+`czFade` is **not** applied to screen roots, which is where the prototype puts it. A static HTML
+prototype draws a navigation push that way; `NavigationStack` already animates the push, and a
+second fade over the system transition is two animations for one event. SCREENS.md §5 gap 1 lists
+navigation transitions as NOT SPECIFIED and nothing is invented for them.
+
+`czPinDrop` is **not** applied to screen 01's pins. They are `Annotation`s inside a live `Map` that
+recycles them on every camera change, so a per-pin appearance animation fires continuously during a
+pan — the same class of problem `MapHomeView.bottomSlot` already documents, and left alone for the
+same reason. `czPulse` *is* safe there and is applied: a continuous loop has no "first appearance"
+for a recycle to re-fire. `bottomSlot` itself is unchanged and still has no transition.
+
+**Two tokens that are not among the six.** `CypressMotion.camera` and `.selection` replace the three
+literals above. A camera move is the same gesture as `czFade` — a thing settling into place — so
+both take the house easing rather than a seventh curve being invented for them.
+
+**Reduce Motion.** Every curve resolves through `CypressMotion.resolved(_:reduceMotion:)`, which
+returns `nil` rather than a shorter curve: `Animation` has no "off", and `nil` is how SwiftUI is told
+to apply a state change without one. A faster animation is still an animation. What Reduce Motion
+does *not* remove is a final state — a pin that drops is at rest in the same place either way, and
+the amber pulse still draws its ring at a resting radius, because the meaning is in the colour and
+the motion was only emphasis. `AccessibilityTests` pins that every named curve can be switched off.
+
+### E103 — every label on a bare `Shape` was silent, and three of them were the app's visual encodings
+
+Three components carried `.accessibilityLabel` on a view that is not an accessibility element, so
+the label attached to nothing and VoiceOver read past it. A `Shape` — `RoundedRectangle`, `Circle`,
+a `GeometryReader` containing only fills — is not focusable, and a label on one is not an error at
+compile time or at run time. It is invisible in both directions: the source says the component is
+labelled, and the device says nothing.
+
+- **C3 `FoliageStrip`** (`FoliageStrip.swift:156`) labelled each of twelve `RoundedRectangle` cells.
+- **C23 `LineChart`** (`ChartCard.swift:209`) labelled each data dot, which is a `Circle` in a
+  `Group`.
+- **C28 `ConfidenceBar`** (`ProgressRing.swift:100`) labelled a `GeometryReader` of two fills — and
+  was then silent twice over, because the 02 candidate row that hosts it applies
+  `children: .combine`, which walks a subtree that had no element in it to collect.
+
+All three now take `.accessibilityElement(children: .ignore)` before the label. What changed with
+them is what the label *says*, because a working per-cell label would still have been the wrong
+shape for the information:
+
+- **C3 speaks the year in runs, not months.** `full canopy January to February, partial canopy
+  March, thin canopy April to May, …` — five clauses where there were twelve stops. The strip is a
+  picture of one sentence (when this tree carries leaves) and a spoken equivalent has to be that
+  sentence. D5's clamp reaches the spoken form because the label is built from the clamped
+  densities: an evergreen cannot announce a bare month any more than it can draw one.
+- **C23 speaks one clause per series and never one across both.** `2 readings measured with a tape:
+  58 cm to 64 cm. 2 readings estimated: 47 cm to 52 cm.` D7 is not only a drawing rule — a summary
+  running from the oldest estimate to the newest tape reading manufactures the same trend the
+  forbidden polyline would, in words. The per-point dots are deliberately not elements: screen 11
+  lists every reading underneath in its measurement log, one stop each, carrying the value and its
+  badge.
+- **C28 speaks its qualification.** `Nearest tree match, 88 percent, from GPS distance alone.`
+  `VisitShortlist.confidence` is explicit that this is distance geometry against the fix's own
+  error, not a species certainty. A sighted user reads that off the screen around the bar, which is
+  drawn under a card headed `CONFIRM BY EYE` beside a distinguishing trait; a listener had a bare
+  "Confidence 88 percent".
+- **C27 `ProgressRing`** was not silent but said the same number two ways: `label ?? "N percent"`
+  read the glyph `30%` when a caller passed one and the sentence "30 percent" when it did not. One
+  phrasing now, and the 08 call site hides the ring outright — it sits beside "12 of 40 species you
+  can recognize in the Outer Sunset", which is the same fact in better words.
+
+**C23's `BarChart` took the opposite fix: its label is a required initialiser parameter.** The
+component cannot write this one and must not try. `heights` are drawing units in the mock's 0…34
+viewBox, already scaled against a maximum the caller chose — and on screen 13 that maximum is shared
+across three series so the rows can be compared (D2). Reading a height back out would announce a
+fraction of someone else's maximum, which is a wrong count rather than no count. C25 `CypressToggle`
+was already the only component in the catalogue that forces a label at the call site; C23's bar row
+is now the second.
+
+**C12 was already right and is worth saying so.** `taped` speaks as "measured with a tape" and
+`est.` as "estimated", and `MeasuredValue` combines the number with its badge into one element so no
+navigation order can put a bare value in a listener's ear. That is D7 surviving into a modality it
+was not written for. The generator is now internal rather than private, because C23 names a series'
+method and has to name it the same way.
+
+### E104 — a component that renders nothing was announcing itself, which is §5.6 inverted
+
+ARCHITECTURE §5.6 and DECISIONS constraint 1: an aggregate surface below its cold-start threshold
+does not render at all. The rule was being kept at the presentation layer — `TreeProfilePresentation`
+returns no `Caretakers` below three, so screen 03's regulars row does not exist — and broken one
+level down.
+
+**C26 `AvatarStack` carried an unconditional `.accessibilityElement(children: .ignore)` plus the
+literal "Regulars".** With no bubbles in it that is a focusable empty box that says a row exists.
+And no bubbles is the shipping case: E71 records that the API hands caretakers over as bare UUIDs
+with no initials to draw, so the stack renders one `+6` overflow bubble at most and frequently
+nothing. Sighted users saw no row; listeners were told there was one.
+
+Two changes. The stack is `accessibilityHidden` when it has nothing in it, and when it does have
+something it says what it drew — `Regulars: N, M, J, 3 more` rather than the noun, and `+6` speaks as
+"6 regulars" rather than as a glyph. Separately, screen 03 hides it at the call site: the bubbles and
+the headline are the same fact twice, and "Six people know this tree" is the better half.
+
+The same principle produced the rest of the decoration pass, which is one rule applied consistently:
+**an element that duplicates adjacent text is not an element.** C2's hero photograph and its scrim
+(the eyebrow, the name block and the pill on top of them are the content); C22's thumbnail gradients
+when they are not tappable, because SCREENS.md §5 gap 13 says outright that every image in the spec
+is a CSS gradient placeholder and every shipping call site draws one beside the name of the thing it
+stands for; C16's hand-drawn tab icons, which sit directly above their own labels; C23's legend
+swatches, which are the colour key for the row that names itself in the same breath. `AccessibilityTests`
+pins the empty case, the §5.6 threshold and `Series.totalCount`'s nil.
+
+### E105 — Dynamic Type: the ramp scaled and six layouts did not
+
+Every font already used `.custom(_:size:relativeTo:)`, so the type scaled correctly everywhere. What
+had never been looked at is what the type scales *into*. Rendered at `.xSmall` and
+`.accessibility5` through `UIHostingController` (see the note below), six layouts broke, and the two
+worst were not the fixed frames the audit expected.
+
+**The two structural ones, both the same bug in two places.** A row of `[thing] [growing text]
+[`.fixedSize()` thing]` gives the text whatever is left, and at AX5 that is nothing.
+
+- `ScreenHeader.swift` (C1) — `[back circle] [title] [pill]`. At AX5 the circle takes 44 pt, `under
+  a minute` takes ~300, and the 22 pt serif title gets ~60 — into which it wrapped **one letter per
+  line**. Screen 05 rendered as a vertical column spelling `C-h-e-c-k-–-i` down the whole viewport
+  with the card pushed off the bottom. This is C1, so it was every screen with a header pill: 02, 05,
+  06, 11, 12, 13, 14, 16, 17 and D3.
+- `TreeProfileView.swift` identity block — `[27 pt tree name] [StatusBadge]`, same cause, and
+  `Grandmother Cypress` wrapped three characters at a time.
+
+Both now stack above the accessibility sizes. Neither truncates and neither scales down: the pill is
+real information on every screen that has one and the title is what the screen *is*, so at a size
+where both will not fit across, one goes under the other.
+
+**The other four.**
+
+- `SegmentedControl.swift` (C5) — four segments across 393 pt at AX5 rendered `Alive | Decli… |
+  Appe… | Rem…`. "Appears dead" and "Removed?" are different claims about a tree and a 0.8 scale
+  floor does not save them. Stacked above the accessibility sizes; the 1 pt divider becomes a
+  horizontal rule.
+- `OutboxView.swift` — the row is `[38 pt tile] [title/detail/reason] [state]` and the detail line is
+  three text pieces in an `HStack(spacing: 0)`. At AX5 they interleaved: `2 phot / os, a / note`
+  running down the left with `11:42 am` overprinting it. Detail line stacks; the state word moves
+  under the row rather than beside it; the 38 pt tile's mono reading gains the `lineLimit(1)` it
+  needed for `minimumScaleFactor` to do anything at all.
+- `Chip.swift` (C4) — the background is a `Capsule`, which rounds by half the *shorter* side, so 16's
+  sanity pill wrapped to four lines was drawn as a circle with the text spilling out of both ends.
+  Above the accessibility sizes the shape becomes `radius.card.sm`. This is a shape change to a
+  mocked component, taken deliberately: SCREENS.md draws these at one line and has no state for a
+  chip that has wrapped, and holding the capsule means keeping the drawn shape and the wrong picture.
+- `TreeProfileView.swift:179` — 14's empty photo well was `height: 170`, a hard cap around a sentence
+  that needs four lines at AX5. Now `minHeight`, which renders identically at the drawn size.
+  `HeroPhotoHeader.swift` had the same shape of problem with a different mechanism: the eyebrow, the
+  07 name block and the meta pill were `.overlay`s on a fixed-height photo, and an overlay does not
+  contribute to its parent's height, so at AX5 the 25 pt serif species name simply drew past the
+  bottom edge onto the strip below. A `ZStack` with the photo on `minHeight` makes the content a real
+  child; nothing moves at the drawn sizes.
+
+**What deliberately does not scale, and why.** `cypressTypographicFurniture()` caps Dynamic Type at
+`.accessibility1` — not at `.large`, because the point is to keep these legible for someone who needs
+larger type rather than to freeze them at the mock's size. It is applied to four things and to
+nothing that is a sentence:
+
+1. **The mono micro-labels with wide letter-spacing** (`cypressMicroLabel`, `cypressMicroLabel10`,
+   `cypressMonoSectionLabel`, `cypressMapLabel`). There is a concrete failure behind this and not a
+   preference: `CypressFont.Tracking` is in *points*, fixed at the mock's size, and its own note says
+   tracking is intentionally not scaled. So an unclamped 9.5 pt label at AX5 renders ~3× with the
+   same 1.33 pt of letter-spacing — the wide tracking that makes it read as a rule is gone and what
+   is left is large cramped uppercase.
+2. **The twelve month letters** under C3's strip and C23's axis. Twelve letters at AX5 need more
+   width than any iPhone has, at which point they stop lining up with the twelve cells above them —
+   and that alignment is the entire information in a season strip.
+3. **The count inside a map pin** (C19). A pin is positioned by coordinate on a map that cannot
+   reflow around it.
+4. **C16's four tab labels.** `My Grove` and `Journal` at AX5 need more width than the bar has, and
+   the 0.8 scale floor turns them into specks rather than letting them overflow. This is the call
+   Apple's own tab bar makes and it is only defensible because the bar is not where anything is
+   read: four destinations, each opening a screen that scales the whole way.
+
+A tap target is the fifth thing that does not scale, and it was already right — `cypressHitArea()`
+grows the hit area to 44 pt without moving the drawn size, which is ARCHITECTURE §6's rule, and 44 pt
+is 44 pt at every text size.
+
+**05 at the extremes, measured rather than guessed.** At `.xSmall` the whole card — five anchor rows,
+both segmented controls, the chip row and the optional well — fits above the fold with room to spare.
+At `.accessibility5` the card is 3,114 pt against a 852 pt viewport: one anchor row and part of a
+second are visible, and the optional well is roughly two and a half screens down. The long rubric
+anchors are D3 content and are not shortened (E30). What the number says is that 05's known
+tightness is a scroll depth, not a clipped layout — nothing on it is cut off at either end.
+
+**A note on how the screenshots were taken, because the obvious way is wrong.** `ImageRenderer` lays
+a `ScrollView` out to whatever height is asked for and then draws *nothing inside it*, so 05 came
+back as 3,114 pt of empty page with the sticky CTA at the bottom — which reads as "the card vanished
+at AX5" rather than as "the renderer does not do scroll views". It also renders synchronously, so
+every screen that loads through `.task` was captured mid-`ProgressView`. `DynamicTypeScreenshotTests`
+uses a `UIHostingController` in an off-screen window and `await`s between layout passes;
+`RunLoop.run(until:)` is not enough, because it does not drain the cooperative executor a `.task` is
+suspended on.
+
+### E106 — the contrast sweep: the caption ramp fails AA in both appearances, and nothing here re-tints it
+
+ROADMAP M4 asks for "contrast verification on the amber family, which is the palette most likely to
+fail". E8 already measured the amber family *after dark* and found it improves. This is the same
+question asked in light — where nothing was derived and nothing was therefore checked — and asked of
+every other drawn pair on the way past. `CypressTests/ContrastTests.swift` holds the sweep.
+
+**The amber family clears AA in both appearances.** Pill text 5.18:1 light / 6.11:1 dark; selected
+chip the same; 311 panel body 6.51 / 6.28; 311 CTA label 5.00 / 7.55; the phone glyph on Signal Amber
+3.59 / 7.55. E8's finding stands and the light half is fine too.
+
+**The rest of the palette clears it comfortably.** `text.ink` 13.8–15.0:1, `text.body` 7.9–9.4:1,
+`text.muted` 4.6–7.0:1, the CTA label 9.1–10.6:1, every badge 4.8–7.3:1, the memorial banner 6.4–6.9,
+and every map mark against the paper at 3.1:1 or better.
+
+**Seven pairs fail, and they are reported rather than fixed.** Every light hex below is transcribed
+from SCREENS.md §1.2 — not derived and not invented. E8's rule for a *derived* value is that it may
+be corrected; the rule for a transcribed one is stronger, because changing it is overruling the
+designer, and ARCHITECTURE §5.8 says an unanswered question is a question for design rather than a
+value to pick. The ratios are pinned to ±0.05 in the test instead, so that a number getting worse and
+a number quietly getting *better* both fail.
+
+| Pair | Light | Dark | Floor |
+|---|---|---|---|
+| `text.faint` micro-label on the screen | **2.90** | **3.42** | 4.5 |
+| `text.faint` micro-label on a card | **3.16** | **2.98** | 4.5 |
+| `text.faintAlt` footnote on the screen | **3.67** | **3.42** | 4.5 |
+| `est.` badge text on its fill (C12) | **4.19** | 6.11 | 4.5 |
+| C24 attention card border on the card it identifies | **2.30** | 6.57 | 3.0 |
+| 311 hazard panel border against the page | **1.82** | 7.55 | 3.0 |
+| C10 species-tile locked glyph (E8, unchanged) | **1.84** | **2.12** | 3.0 |
+| C23 series 1 / series 3 on a dark card (E8, unchanged) | 6.29 / 7.01 | **2.53 / 2.27** | 3.0 |
+
+**The caption ramp is the finding.** It is not one badge — `text.faint` is every mono micro-label,
+every timestamp and every meta line in the app, and it fails in *both* appearances. It is also the
+easiest to answer: `text.muted`, one rung up, clears at 4.62:1 light and 6.97:1 dark, so the palette
+already contains the fix and taking it is a visual change to nineteen mocked screens rather than a
+new colour. That is a designer's call.
+
+**The `est.` badge misses by a third of a point and is the one with meaning attached.** D7 makes
+"estimated" the difference between a reading and a guess, and it is the half of the pair that is
+harder to read — its partner `taped` is 6.08:1.
+
+**The borders carry no contrast in light as a house style, not as a defect.** `border.cool`, the
+default card edge on every screen, is 1.15:1 against the page; the amber panel fills are 1.05:1.
+WCAG 1.4.11 asks for 3:1 only where a boundary is *required* to identify a component, and for almost
+all of these it is not — a card is identified by the type in it. The exception is C24: the attention
+card is `surface.card` on `surface.screen`, 1.09:1, so its 1.5 pt amber border is the only thing
+saying "this one is different", at 2.30:1. That is the row to look at first.
+
+Nothing in this pass changed a colour token. **Dark mode was not re-opened** — E8's derivation stands
+and the only dark-mode observation to add is that `text.faint` on a card is *worse* after dark
+(2.98:1) than in light (3.16:1), which is the one place the transform moved a ratio the wrong way.

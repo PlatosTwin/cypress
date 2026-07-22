@@ -30,6 +30,7 @@ struct TreeProfileView: View {
 
     @State private var model: TreeProfileModel
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(AppRouter.self) private var router: AppRouter?
 
     /// Screen 04 is a camera, and `Route` has no case for it — the profile therefore hands the
@@ -174,9 +175,19 @@ struct TreeProfileView: View {
             Text(TreeProfilePresentation.emptyPhotoWellText)
                 .font(CypressFont.body13)
                 .foregroundStyle(CypressColor.textFaint)
+                .multilineTextAlignment(.center)
+                // The sentence is 40-odd characters and fits on one line at the mock's size. At
+                // AX1 it needs two and at AX5 four, and without this it would keep trying to take
+                // the width it wants and be cut off by the well instead of wrapping inside it.
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, CypressSpacing.gapCandidates)
         }
         .frame(maxWidth: .infinity)
-        .frame(height: TreeProfileMetrics.emptyWellHeight)
+        // `minHeight`, not `height`. 14 §2 draws `height:170px` and at the mock's type size that
+        // is exactly what this renders; the difference only shows once the copy inside needs more
+        // than 170 pt, at which point a fixed height clips the sentence and pushes the glyph
+        // through the dashed border. The drawn size is a floor, not a cap.
+        .frame(minHeight: TreeProfileMetrics.emptyWellHeight)
         .background {
             RoundedRectangle(cornerRadius: CypressRadius.cardLg, style: .continuous)
                 .fill(CypressColor.surfaceEmptyThumb)
@@ -213,16 +224,31 @@ struct TreeProfileView: View {
     // MARK: - 3 · Identity block
 
     private func identityBlock(_ presentation: TreeProfilePresentation) -> some View {
-        VStack(alignment: .leading, spacing: TreeProfileMetrics.latinTop) {
-            HStack(alignment: .firstTextBaseline, spacing: CypressSpacing.gapCandidates) {
-                Text(presentation.title)
-                    .font(presentation.isCold ? CypressFont.treeNameColdStart : CypressFont.treeNameHero)
-                    .foregroundStyle(CypressColor.textInk)
-                    .fixedSize(horizontal: false, vertical: true)
-                if let badge = presentation.badge {
-                    StatusBadge(badge)
+        // The tree's name is a 27 pt serif and `StatusBadge` ends in `.fixedSize()`, so at AX5 the
+        // badge took most of the row and `Grandmother Cypress` wrapped three characters at a time
+        // down the left edge — the same failure C1's header had, from the same cause. The name is
+        // the subject of the screen; below the size where both fit across, the badge goes under it.
+        let name = Text(presentation.title)
+            .font(presentation.isCold ? CypressFont.treeNameColdStart : CypressFont.treeNameHero)
+            .foregroundStyle(CypressColor.textInk)
+            .fixedSize(horizontal: false, vertical: true)
+
+        return VStack(alignment: .leading, spacing: TreeProfileMetrics.latinTop) {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: CypressSpacing.gapVitality) {
+                    name.frame(maxWidth: .infinity, alignment: .leading)
+                    if let badge = presentation.badge {
+                        StatusBadge(badge)
+                    }
                 }
-                Spacer(minLength: 0)
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: CypressSpacing.gapCandidates) {
+                    name
+                    if let badge = presentation.badge {
+                        StatusBadge(badge)
+                    }
+                    Spacer(minLength: 0)
+                }
             }
             Text(presentation.subtitle)
                 .cypressLatinName(presentation.isCold ? CypressFont.latinName145 : CypressFont.latinName)
@@ -246,6 +272,10 @@ struct TreeProfileView: View {
                     initials: Array(caretakers.initials.prefix(TreeProfileMetrics.avatarsShown)),
                     overflow: overflowLabel(for: caretakers)
                 )
+                // The bubbles and the headline are the same fact twice — with no initials to draw
+                // (E71) the stack is one `+6` bubble beside the words "Six people know this tree".
+                // The sentence wins; the bubbles are the picture of it.
+                .accessibilityHidden(true)
                 Text(headline)
                     .font(CypressFont.body13Bold)
                     .foregroundStyle(CypressColor.textBody)
