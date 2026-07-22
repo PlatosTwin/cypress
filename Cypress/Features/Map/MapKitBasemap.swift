@@ -64,6 +64,14 @@ struct MapKitBasemap: View {
                 ForEach(pins) { pin in
                     Annotation("", coordinate: pin.coordinate.clLocationCoordinate, anchor: .center) {
                         MapPin(MapPinKind.kind(for: pin)) { onSelectPin(pin) }
+                            // C19 has no pin for a vacant site, so one is drawn as `removed` — a
+                            // grey dot with a bar struck through it, whose own label reads "Removed
+                            // tree, memorial". That is a sentence about a tree that was, said of
+                            // 12,518 basins that never held one. Inventing a drawn pin is a design
+                            // decision and was not taken (ERRATA E107); the label is the half of the
+                            // distinction that could be made honestly, and it wins by being applied
+                            // outside the component's own.
+                            .accessibilityLabel(MapPinKind.accessibilityLabel(for: pin))
                             .scaleEffect(pin.id == selectedPinID ? MapLayout.selectedPinScale : 1)
                             .cypressAnimation(CypressMotion.selection, value: selectedPinID)
                     }

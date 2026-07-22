@@ -320,6 +320,23 @@ struct RootView: View {
             // to remember. See ERRATA (E95).
             MemorialView(treeID: id, api: data.api, onBack: { router.pop() })
 
+        case .site(let id):
+            // The vacant planting site (ERRATA E107, closing E11). Its entrance is the map card,
+            // beside the memorial branch, because the map is where 12,518 of these records are and
+            // `TreePin.status` is the only thing in the app that knows a pin has no tree behind it.
+            //
+            // It hands out no write of any kind — a site takes no contribution — and the one thing
+            // on it to press is a row naming the nearest tree that is actually standing, which
+            // lands on that tree's profile. The filter that guarantees the target is standing is
+            // `SiteModel.isStanding`, so this arm cannot be the thing that routes somebody from one
+            // empty basin to another.
+            SiteView(
+                treeID: id,
+                api: data.api,
+                onBack: { router.pop() },
+                onOpenTree: { treeID in router.push(.treeProfile(treeID)) }
+            )
+
         case .almanac:
             // Screen 12, **pushed**. Its entrance is the Journal tab, which renders the almanac as
             // the tab's content rather than pushing this route (see `tabRoot`), so this arm has no

@@ -86,12 +86,19 @@ struct MapTreeCard: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(subject.title)
-        .accessibilityHint("Opens this tree's profile")
+        .accessibilityHint(
+            subject.isVacantSite ? SiteCopy.cardAccessibilityHint : "Opens this tree's profile"
+        )
     }
 
     /// `Maidenhair tree · 6 m NE · visited 3 d ago`, minus whatever is unknown.
     private var meta: String? {
         var clauses: [String] = []
+        // A site leads with what it is. Every other clause this line can carry — a species, a last
+        // visit — is a fact about a tree and is empty here by construction, so without this the
+        // card's meta line would be a bare distance and the two kinds of pin would read alike
+        // (ERRATA E107).
+        if subject.isVacantSite { clauses.append(SiteCopy.cardMeta) }
         if let latin = subject.scientificName { clauses.append(latin) }
         if let userCoordinate {
             let metres = userCoordinate.distance(to: subject.pin.coordinate)

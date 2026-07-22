@@ -303,6 +303,20 @@ enum MapPinKind {
     }
 
     static func needsCare(status: TreeStatus) -> Bool { status == .declining }
+
+    /// What a pin announces to VoiceOver.
+    ///
+    /// C19's own labels, except on a vacant site: the grey pin is shared with a memorial, and its
+    /// label — `Removed tree, memorial` — is a claim that a tree was here. A site never had one. The
+    /// *drawn* pin is still shared, because a new pin is a design decision and C1–C30 is a closed
+    /// catalogue; this is the part of the distinction that could be made without inventing one
+    /// (ERRATA E107).
+    static func accessibilityLabel(for pin: TreePin) -> String {
+        guard pin.status == .vacantSite, kind(for: pin) == .removed else {
+            return kind(for: pin).accessibilityLabel
+        }
+        return SiteCopy.pinAccessibilityLabel
+    }
 }
 
 // MARK: - The bottom card's subject
@@ -315,9 +329,21 @@ struct MapCardSubject: Identifiable, Equatable {
 
     var id: UUID { pin.id }
 
+    /// Whether this pin has no tree behind it at all (ERRATA E107, closing E11).
+    ///
+    /// Read off the *pin*, not off the profile, so it is true from the instant the card appears —
+    /// the card is drawn before the profile read lands, and a card that said "Unidentified" for
+    /// half a second and then corrected itself would be the wrong answer shown first.
+    var isVacantSite: Bool { pin.status == .vacantSite }
+
     /// The active name if the tree has one, else the species common name — "the species common name
     /// is the fallback display everywhere" (D15).
+    ///
+    /// A vacant site takes neither, and it must not fall through to `Unidentified`: that word means
+    /// "a tree whose species nobody has resolved", and 12,518 pins used to carry it while having no
+    /// tree to identify. It is named for what it is instead.
     var title: String {
+        if isVacantSite { return SiteCopy.cardTitle }
         if let name = profile?.activeName, name.isDisplayable { return name.name }
         if let common = profile?.species?.commonName, !common.isEmpty { return common }
         return "Unidentified"
@@ -328,8 +354,14 @@ struct MapCardSubject: Identifiable, Equatable {
         return latin
     }
 
+    /// C13's mapping, except on a site.
+    ///
+    /// `StatusBadge.kind` badges a tree with no check-in and a planted year as `PLANTED <year>`, and
+    /// DataSF hands plant dates to rows that are now empty basins — so a vacant site could draw a
+    /// badge asserting that something was planted in it. The badge is suppressed here rather than in
+    /// the component, because C13's mapping is the *tree* vocabulary and is shared with screen 03.
     var badge: StatusBadge.Kind? {
-        guard let profile else { return nil }
+        guard let profile, !isVacantSite else { return nil }
         return StatusBadge.kind(
             status: profile.tree.status,
             vitality: profile.latestObservation?.vitality,

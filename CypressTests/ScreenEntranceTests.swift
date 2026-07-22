@@ -152,6 +152,8 @@ struct ScreenEntranceTests {
             return "03 · a measurement stat card with no reading in it (invented, E98)"
         case .outbox:
             return "the You tab · the outbox row (specified, BUILD-PLAN §9)"
+        case .site:
+            return "01 map · a pin with no tree behind it (invented, E107)"
         }
     }
 
@@ -169,6 +171,7 @@ struct ScreenEntranceTests {
         .memorial(treeID),
         .measure(treeID),
         .outbox,
+        .site(treeID),
     ]
 
     @Test("every route names a real affordance, not a plan for one")

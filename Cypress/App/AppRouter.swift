@@ -24,6 +24,13 @@ enum Route: Hashable {
     case memorial(UUID)         // 19
     case measure(UUID)          // 16
     case outbox                 // 17
+    /// The vacant planting site. **No mocked screen** — decided in ERRATA E107, which closes E11.
+    ///
+    /// Separate from `treeProfile` for the reason `.memorial` is, and more strongly: 14 is a *cold*
+    /// tree, whose variant the profile picks internally, but a site is not a tree with fields
+    /// missing. A tree profile with fields missing still asserts a tree, and 12,518 of these records
+    /// have no tree in them.
+    case site(UUID)
 }
 
 /// The four root destinations of the bottom bar (C16 / screen 01).

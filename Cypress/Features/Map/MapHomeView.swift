@@ -55,6 +55,20 @@ struct MapHomeView: View {
             .ignoresSafeArea()
         }
         .background(CypressColor.surfaceScreen)
+        // **01 is full-bleed and was not.** `RootView` wraps every tab root in a `NavigationStack`,
+        // so a root that does not opt out inherits an empty navigation bar — here an opaque 44pt
+        // band under a 47pt status area, 91pt of nothing above a screen whose own spec says "no
+        // 62px status padding — content is absolutely positioned below the notch". Sixteen other
+        // screens carry this modifier; this one, the app's default screen, did not, and it built
+        // green and passed the whole suite that way (ERRATA E110).
+        //
+        // It is load-bearing twice over: with the bar present `proxy.safeAreaInsets.top` reads **0**
+        // — measured on device, not assumed — so `topInset + searchTopInset` put the search bar 8pt
+        // below the *bar* instead of 8pt below the status bar, which is what `searchTopInset`'s own
+        // note says it is for. Hiding the bar restores the inset the arithmetic was written for
+        // rather than adding to a number that was compensating for anything.
+        .navigationBarBackButtonHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
         .task {
             location.start()
             await model.fetch()
@@ -130,14 +144,7 @@ struct MapHomeView: View {
     private var bottomSlot: some View {
         if let subject = model.selection {
             MapTreeCard(subject: subject, userCoordinate: location.availability.coordinate) {
-                // Screen 01's own caption: "gray dash-marked pins are removed trees—memorials,
-                // tappable to screen 19". A memorial is a different screen from the profile, not a
-                // variant of it, so the branch belongs here rather than inside TreeProfileView.
-                router.push(
-                    subject.pin.status.isMemorial
-                        ? .memorial(subject.pin.id)
-                        : .treeProfile(subject.pin.id)
-                )
+                router.push(MapHomeView.route(for: subject.pin))
             }
         } else if location.availability.isRefused {
             MapLocationNotice(availability: location.availability) {
@@ -147,6 +154,28 @@ struct MapHomeView: View {
     }
 
     // MARK: - Behaviour
+
+    /// What a tap on the bottom card opens.
+    ///
+    /// Three destinations, and the branch belongs here rather than inside `TreeProfileView` because
+    /// two of the three are different screens rather than variants of the profile:
+    ///
+    /// - **A removed tree opens 19.** Screen 01's own caption draws this entrance: "gray
+    ///   dash-marked pins are removed trees—memorials, tappable to screen 19".
+    /// - **A vacant site opens the site screen.** No mock draws it; ERRATA E107 decides it, closing
+    ///   E11. This is the same reasoning one step further — a memorial is a tree that is gone, and a
+    ///   site never had one, so it is not a profile with fields missing either. `TreePin.status` is
+    ///   known the instant the pin is drawn, so the branch costs no read.
+    /// - **Everything else opens 03**, which picks its own cold variant.
+    ///
+    /// A `static` function on the view rather than a property on `MapCardSubject`: the subject is
+    /// what the card *draws*, and `Route` is the app's navigation vocabulary — keeping them apart is
+    /// what lets the presentation type stay free of the router.
+    static func route(for pin: TreePin) -> Route {
+        if pin.status == .vacantSite { return .site(pin.id) }
+        if pin.status.isMemorial { return .memorial(pin.id) }
+        return .treeProfile(pin.id)
+    }
 
     /// Tapping a cluster zooms in, which is what the badge means (`TreeCluster`'s own note).
     private func zoom(into cluster: TreeCluster) {

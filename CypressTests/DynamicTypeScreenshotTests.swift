@@ -147,6 +147,19 @@ struct DynamicTypeScreenshotTests {
                     )
                 )
             }
+            // The vacant planting site (ERRATA E107). No screen number, because SCREENS.md draws
+            // none — it sorts beside 14, which is the profile it replaces for 12,518 records. Every
+            // block on it is prose that has to wrap rather than truncate, and one of them is the
+            // city's free-text site vocabulary, which is the longest string on the screen and not
+            // ours to shorten.
+            await shoot("14b-site") {
+                SiteScreen(
+                    presentation: SitePresentation(
+                        profile: SiteFixtures.profile,
+                        nearest: SiteFixtures.nearby.last
+                    )
+                )
+            }
             await shoot("17-outbox") {
                 OutboxScreen(
                     presentation: OutboxPreviewFixtures.presentation([
