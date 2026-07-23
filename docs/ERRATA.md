@@ -3913,3 +3913,47 @@ FavoriteOutboxWriter.save(...)` bare. `save` is `@discardableResult`, but `try?`
 in an `Optional` that is not, so the app target had been building with a "result of 'try?' is unused"
 warning since E112. It is `_ = try? await` now. The zero-warning line this project holds had been
 verified on the test targets and not on the app.
+
+### E118 — a caption read twice; and a reading-order test that invented a defect out of an API's match order
+
+E117 closed by naming what it had not checked: "**reading order and grouping** — that the elements come
+in the sequence a person expects." Going after that found one real defect and one imaginary one, and
+the imaginary one is the more useful entry.
+
+**Real: a caption announced twice, on screen 03 / 14.** The empty photo well is a decorative circle, a
+camera glyph and the sentence `No photos of this tree yet`. SwiftUI exposed the *container* carrying
+that sentence as its synthesized label **and** the caption inside it carrying the same words, so
+VoiceOver read the sentence and then read it again. This is E104's failure mode, and it survived E104,
+the M4 VoiceOver pass, E116 and E117 — because every one of those asked whether a label *exists*, and
+none asked whether the same words appear twice on one screen. Fixed with
+`.accessibilityElement(children: .ignore)` and an explicit label: `.ignore` drops the descendants
+rather than merging them, which is right because the glyph is decoration in the sense C16's tab icons
+are — it repeats the sentence directly beneath it.
+
+The check is written as **containment, not repetition**. Two different rows may legitimately say the
+same words; one element drawn *inside* another saying them is the defect. Written as adjacency it
+would have fired on the species-share rows, which are correct.
+
+**Imaginary: `XCUIElementQuery.allElementsBoundByIndex` is not reading order.** A companion test
+asserted that every pushed screen leads with `Back` and its own title, and it reported that screen 05
+leads with `Save check-in` and its intro sentence instead. That was written up as a real defect and
+pinned with `XCTExpectFailure` — and it was wrong. The accessibility hierarchy has `Back` at position
+19 and `Save check-in` at position 65; geometrically Back is at y=69 and Save is pinned at y=710. A
+direct probe confirmed `Back` is `exists=true hittable=true` and that the query nonetheless returns
+`Save check-in` first. **The sequence of `allElementsBoundByIndex` is the query engine's match order,
+and it agrees with neither the element tree nor the screen.** Any reading-order assertion built on it
+manufactures defects.
+
+The test was deleted rather than repaired, because a sound version needs VoiceOver's actual traversal —
+a recursion over the element tree — and inventing one under a budget is how the first mistake happened.
+`testNothingIsAnnouncedTwice` still calls `allElementsBoundByIndex`, but only as a **set**; the
+restriction is written at the call site so the next person does not re-derive this the expensive way.
+
+**What almost happened is the point.** An `XCTExpectFailure` is a durable claim that a defect exists: it
+sits in the suite, prints its message every run, and tells every future reader that screen 05 is broken.
+Shipping one for a defect that does not exist is worse than having no test, because it corrupts the
+record rather than merely failing to improve it — and it would have looked *especially* trustworthy,
+since the suite stays green and the log carries a confident explanation. It survived a full green run
+(434 tests, 433 passed, 1 expected failure) before the dump was re-read and the claim collapsed. The
+thing that caught it was not a test: it was noticing that two artifacts disagreed and refusing to
+believe the newer one just because it was mine.

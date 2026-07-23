@@ -85,6 +85,51 @@ final class DeepLinkVoiceOverTests: XCTestCase {
         }
     }
 
+    // MARK: - Duplication
+
+    /// Nothing may be announced twice.
+    ///
+    /// The E104 failure mode as a rule rather than a component: a container that carries a label *and*
+    /// exposes a child carrying the same one is two stops on the same words, and a screen full of them
+    /// is a screen that takes twice as long to hear. Checked as containment rather than adjacency,
+    /// because that is the shape the defect actually takes — a labelled wrapper around a labelled leaf.
+    ///
+    /// **`allElementsBoundByIndex` is used here as a set, never as an order, and that restriction is
+    /// load-bearing (ERRATA E118).** Its sequence is the query engine's match order, which is neither
+    /// the accessibility hierarchy's nor the screen's geometry: on screen 05 it returns the pinned
+    /// `Save check-in` at y=710 *before* the `Back` at y=69, while the hierarchy has Back nine
+    /// positions earlier. A reading-order assertion built on it reports defects that do not exist. If
+    /// VoiceOver's order is ever tested here, it has to come from recursing the element tree.
+    func testNothingIsAnnouncedTwice() {
+        continueAfterFailure = true
+        defer { continueAfterFailure = false }
+
+        for (screen, anchor) in [
+            ("treeProfile", "Tree"), ("site", "No tree at this site"), ("species", "Field guide"),
+            ("growthHistory", "Growth"), ("activity", "Activity"), ("outbox", "Outbox"),
+        ] {
+            let app = launch(screen)
+            guard arrive(app, screen: screen, anchor: anchor) else { continue }
+
+            let texts = app.staticTexts.allElementsBoundByIndex.filter { $0.isHittable }
+            for (index, outer) in texts.enumerated() {
+                let label = outer.label.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !label.isEmpty else { continue }
+                for inner in texts[(index + 1)...] where inner.label
+                    .trimmingCharacters(in: .whitespacesAndNewlines) == label {
+                    // Containment, not mere repetition: two different rows may legitimately say the
+                    // same words. One element drawn inside another saying them is the defect.
+                    XCTAssertFalse(
+                        outer.frame.contains(inner.frame),
+                        "\(screen): '\(label)' is announced by an element at \(outer.frame) and again "
+                            + "by one inside it at \(inner.frame), so it is heard twice"
+                    )
+                }
+            }
+            app.terminate()
+        }
+    }
+
     // MARK: - Harness
 
     private func launch(_ screen: String) -> XCUIApplication {

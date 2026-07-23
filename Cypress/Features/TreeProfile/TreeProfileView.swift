@@ -225,6 +225,14 @@ struct TreeProfileView: View {
                 .padding(.horizontal, CypressSpacing.gapCandidates)
         }
         .frame(maxWidth: .infinity)
+        // One stop, not two (ERRATA E118). The well is a decorative circle, a camera glyph and a
+        // caption; left alone, SwiftUI exposed the container *and* the caption inside it, both
+        // carrying the same words, so VoiceOver read "No photos of this tree yet" and then read it
+        // again. `.ignore` drops the descendants rather than merging them, which is right here
+        // because the glyph is decoration in the same sense C16's tab icons are — it repeats the
+        // sentence directly beneath it. Found by `testNothingIsAnnouncedTwice`.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(TreeProfilePresentation.emptyPhotoWellText)
         // `minHeight`, not `height`. 14 §2 draws `height:170px` and at the mock's type size that
         // is exactly what this renders; the difference only shows once the copy inside needs more
         // than 170 pt, at which point a fixed height clips the sentence and pushes the glyph
