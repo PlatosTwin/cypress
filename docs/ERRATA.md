@@ -3836,3 +3836,80 @@ launch argument that deep-links a screen for test — neither of which exists ye
 is a spine check, not a full audit: it proves the app's front door is navigable and leaves the rooms
 for a later pass. Structural VoiceOver on every screen is still owed; what changed is that there is
 now somewhere to write it.
+
+### E117 — the fourteen rooms behind the front door, read at last; and the seed has no dead tree in it
+
+E116 closed with a debt written into its own last paragraph: `CypressUITests` could reach the map and
+nothing else, "and driving them needs either accessibility identifiers as stable anchors or a launch
+argument that deep-links a screen for test — neither of which exists yet." This is that, and the
+fourteen screens behind the map have now had their accessibility tree read for the first time.
+
+**The door is an environment variable, deliberately.** `DebugDeepLink` reads `CYPRESS_SCREEN` out of
+`ProcessInfo.processInfo.environment` and drives `AppRouter`. Three alternatives were rejected. A
+registered **URL scheme** is product surface — it ships in `Info.plist`, and every other app on the
+phone can then drive this one; a test seam must not be a public entrance. A **launch argument** of the
+form `-name value` is also consumed by `NSUserDefaults` as a registered default, so the seam would be
+writing to the user's preferences as a side effect of being read. **Accessibility identifiers** would
+have meant scattering test anchors through nineteen production views, which is the tax E116 was
+already trying not to pay. `CYPRESS_SEED_PATH` and `CYPRESS_SHOT_DIR` had already established the
+environment convention in this codebase; this follows it.
+
+**It resolves real records, not fixtures.** The requested screen gets a tree pulled out of the shipped
+195,309-row seed, nearest `MapLayout.defaultCentre` — the map's own opening camera — so the trees these
+tests read are the trees a beta tester sees on launch. `ScreenSweepShots` already photographs the
+preview fixtures; a UI test that also used them would prove the fixtures are accessible. Ordering is
+`TreeQueries.nearest`'s, by distance from a fixed point, so the same record is chosen every launch and
+a failing test names a tree somebody can go and look at.
+
+**A failure draws itself.** This is the part that matters most and is easiest to get wrong. The
+obvious behaviour when resolution finds no record is to do nothing and leave the app on screen 01 —
+at which point all fourteen tests pass, because screen 01 *is* accessible, while each reports the name
+of a screen it never visited. So `DebugDeepLink.Failure` is rendered over the app in words, and the
+test reads the banner: a typo'd screen name produced
+`DEEP LINK FAILED · activityy · no screen by that name` rather than a green run. `RootView` applies
+the link exactly once per launch, because `.task` re-fires on reappearance and a re-fired deep link
+pushes a second copy of the screen under the first — which also looks exactly like a passing test.
+
+**What the fourteen tests found: nothing unlabelled, anywhere.** The accessibility tree of each screen
+was dumped and read before a single assertion was written — 188 interactive elements across the
+fourteen, every one of them labelled. (188 is the count in the dumped trees; the tests assert over the
+*hittable* subset of that, which excludes what is scrolled off or behind a cover.) The M4 VoiceOver
+pass and E103/E104 held. Two things were confirmed rather than fixed, and both are worth naming
+because the suite now pins them: the `fullScreenCover` behind 09 and 10 **does** take the map out of
+reach of assistive technology (`testAModalIsolatesTheScreenBehindIt` — the map's chrome stays in the
+hierarchy by design, but nothing behind the cover is hittable), and every pushed screen carries a
+Back control that is both present and activatable, so no screen is a trap for a user who cannot
+perform a swipe-back gesture.
+
+**Screen 19 could not be tested, and the reason is the data.** The shipped seed holds exactly two
+statuses — 182,791 `alive` and 12,518 `vacant_site`. There is no `removed` tree in it and therefore no
+record on any device that `MemorialView` could honestly be opened with. Resolving a memorial against a
+living tree would draw a REMOVED record over a standing tree, which is a lie of precisely the kind
+this suite exists to catch, so the harness has no `memorial` case at all. Screen 19 stays covered by
+`ScreenSweepShots`' fixture and by its unit tests, and it is **unreachable from real data until a
+status transition can occur** — which needs the moderation path (DECISIONS §3.7), not a test. Screen
+04 is absent for a different reason: presenting the camera raises a system permission alert, and what
+the test would then read is Springboard's accessibility tree rather than Cypress's. Screen 15 is
+absent because `BetaCapability.accountsAvailable` is false (R4) and a harness that opened it would be
+reaching past the gate the build ships behind.
+
+**Three negative controls, because a UI suite green against correct code proves nothing.** Each was
+run, seen red with its intended message, and reverted: a typo'd screen name (the failure banner, as
+above); the modal test pointed at a tab root, where the bar *is* reachable, reporting "the Map tab
+behind the cover can still be activated"; and `ScreenHeader`'s Back label blanked in the app itself,
+reporting "a button at (18.0, 69.0, 44.0, 44.0) has no accessibility label". That third one is the
+E103 failure mode reproduced deliberately, and the suite named the offending frame.
+
+**Proved compiled out of Release.** The whole of `DebugDeepLink.swift` and its `RootView` call site
+are `#if DEBUG`. Xcode 16 puts Debug app code in `Cypress.debug.dylib` beside a 57 KB stub, so an
+early check that grepped the Debug *stub* found zero occurrences and looked like a pass while
+measuring nothing — the control string was absent too, which is what caught it. Against the right
+artifacts: the Debug dylib carries `CYPRESS_SCREEN` (1), `DEEP LINK FAILED` (1) and 169
+`DebugDeepLink` symbols; the Release binary carries zero of all three while carrying the control
+string. A comparison whose control does not fire is not a comparison.
+
+**One pre-existing warning fixed in passing.** `ProfileFavoriteWriter` called `try? await
+FavoriteOutboxWriter.save(...)` bare. `save` is `@discardableResult`, but `try?` re-wraps its receipt
+in an `Optional` that is not, so the app target had been building with a "result of 'try?' is unused"
+warning since E112. It is `_ = try? await` now. The zero-warning line this project holds had been
+verified on the test targets and not on the app.

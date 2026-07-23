@@ -252,10 +252,16 @@ roads darker and exposes no way to recolour them independently. `MapCanvas(basem
 kept as the seam for a vector basemap. Not scheduled — it is a real visual departure from the mock,
 and worth doing only if the map's look is judged to matter more than the work.
 
-**Structural VoiceOver is not machine-checked.** SwiftUI builds no in-process accessibility tree, so
-the unit suite can assert that a label exists on a value and cannot assert that a screen's elements
-are ordered, grouped and reachable in the order a person hears them. That needs XCUITest, which needs
-a UI-test target, which is a project-file change. Worth doing; not blocking the beta.
+*(The "structural VoiceOver is not machine-checked" entry that stood here is resolved. `CypressUITests`
+is a black-box XCUITest target (E116), and `DebugDeepLink`'s `CYPRESS_SCREEN` environment variable
+opens any screen for it (E117), so fifteen structural tests now read the accessibility tree of the map
+plus fourteen screens behind it. Every one of the 188 interactive elements found was labelled; the
+suite additionally pins that no modal leaks the screen behind it to assistive technology, and that
+every pushed screen has a reachable Back. **Screen 19 remains unread, and the reason is the data**: the
+seed holds only `alive` and `vacant_site`, so no `removed` tree exists to open a memorial with, and
+faking one would be the exact class of lie the suite exists to catch. What is still not machine-checked
+is **reading order and grouping** — that the elements come in the sequence a person expects — which
+XCUITest exposes but no test here asserts yet.)
 
 **Two contrast pairs are still failing and are design's** — the C10 locked glyph and the C23 chart
 series on a dark card, both under 3:1. R1 fixed the text ramp and deliberately left these, because a

@@ -143,6 +143,22 @@ accident while writing UI code. The full list is binding; these are the ones tha
   no evergreen species carrying `fallColorMonths`.
 - Snapshot-testing the screens against the mocks is explicitly *not* set up yet. Visual verification
   is by running the app in the simulator and comparing to `SCREENS.md`.
+- **`CypressUITests` is black-box and stays that way.** It imports nothing from `Cypress`, because a
+  UI test that reaches into the app's types is a slower, flakier unit test. It exists for the one
+  thing the unit suite structurally cannot do: SwiftUI builds no in-process accessibility tree, so
+  only a launched app can be asked what it actually exposes (E116).
+- **Screens are reached by `CYPRESS_SCREEN`, not by driving the UI.** `DebugDeepLink` — `#if DEBUG`,
+  and proved absent from Release binaries — opens any screen named in the launch environment,
+  resolving a real record out of the shipped seed (E117). Tapping a MapKit annotation is not a thing
+  a test can do reliably, and accessibility identifiers scattered through production views are a tax
+  this project declined to pay. A **URL scheme is specifically forbidden** for this: it would ship in
+  `Info.plist` and let any app on the phone drive this one. Anything added to that harness must fail
+  *loudly and visibly* when it cannot resolve — a deep link that quietly no-ops leaves every test
+  asserting the accessibility of screen 01 while reporting other screens' names.
+- **A test seam is only proved absent against the right artifact.** Xcode 16 puts Debug app code in
+  `Cypress.debug.dylib` beside a ~57 KB launcher stub, so grepping `Cypress.app/Cypress` for a
+  DEBUG-only string finds nothing in *both* configurations and reads as a pass. Always grep a control
+  string that must be present; if the control does not fire, the comparison measured nothing.
 
 ### Building while others are building
 

@@ -63,7 +63,51 @@ struct RootView: View {
         .fullScreenCover(isPresented: presentingSheet) {
             presentedSheet
         }
+        #if DEBUG
+        // The UI test target's door into the screens behind the map (ERRATA E117). `#if DEBUG` here
+        // as well as around `DebugDeepLink` itself, so the call site goes with the type rather than
+        // referring to something that no longer exists in a Release build.
+        //
+        // A failure draws over everything rather than logging: a deep link that quietly did nothing
+        // would leave every one of these tests asserting the accessibility of screen 01 while
+        // reporting the name of some other screen. See `DebugDeepLink.Failure`.
+        .task { await openDebugDeepLink() }
+        .overlay {
+            if let deepLinkFailure {
+                Text(deepLinkFailure)
+                    .font(.footnote.monospaced())
+                    .multilineTextAlignment(.center)
+                    .padding()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(CypressColor.surfaceScreen)
+            }
+        }
+        #endif
     }
+
+    #if DEBUG
+    @State private var deepLinkFailure: String? = nil
+    @State private var deepLinkAttempted = false
+
+    /// Applies the requested screen once per launch.
+    ///
+    /// Once, because `.task` runs again on every reappearance of the view it is attached to, and a
+    /// deep link that re-fired would push a second copy of the screen under the first one — which
+    /// looks exactly like a passing test until somebody presses Back.
+    @MainActor
+    private func openDebugDeepLink() async {
+        guard !deepLinkAttempted, let request = DebugDeepLink.requested() else { return }
+        deepLinkAttempted = true
+        switch request {
+        case let .success(screen):
+            if let failure = await DebugDeepLink.open(screen, api: data.api, router: router) {
+                deepLinkFailure = failure.message
+            }
+        case let .failure(failure):
+            deepLinkFailure = failure.message
+        }
+    }
+    #endif
 
     @ViewBuilder
     private var presentedSheet: some View {
@@ -407,7 +451,10 @@ struct ProfileFavoriteWriter: Sendable {
     /// - Parameter isFavorite: the resulting state, not a verb. A favourite syncs as a toggle event
     ///   with a tombstone (BUILD-PLAN §4), so the payload carries where the heart ended up.
     func callAsFunction(treeID: UUID, isFavorite: Bool) async {
-        try? await FavoriteOutboxWriter.save(
+        // `_ =` rather than a bare `try?`: `save` is `@discardableResult`, but `try?` wraps its
+        // receipt in an `Optional` that is not, so the bare form warns. Discarding it is the
+        // intent — see the type's doc comment for why the error is swallowed here.
+        _ = try? await FavoriteOutboxWriter.save(
             treeID: treeID,
             isFavorite: isFavorite,
             // D9: the signed-in user when there is one, this device otherwise. Resolved here
