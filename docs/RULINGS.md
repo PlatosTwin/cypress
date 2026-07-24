@@ -222,11 +222,6 @@ If this reads as discouraging in the beta, the fix is copy around the ring, not 
 
 ---
 
-## What is still design's, and was not delegated
-
-- The C10 locked glyph and the C23 chart series (R1, above). Drawn decisions, both failing 3:1.
-- The rubric wording on screen 05 — whether `PRODUCT.md` or `SCREENS.md` holds the anchor sentences.
-- Everything constraint 21 covers. The one-time exception for the six entrances (E98) is spent.
 ## R6–R12 — the second delegation
 
 The project owner delegated the six design questions left open after M5, and chose the moderation
