@@ -27,6 +27,21 @@ struct MapPin: View {
         case community
         /// 16pt gray circle at 85 % opacity with a centred bar — a removed tree's memorial.
         case removed
+        /// A planting basin with nothing in it: the same 16pt footprint as a memorial, drawn as an
+        /// **empty ring with no fill** (RULINGS R7, closing the half of ERRATA E107 that was deferred).
+        ///
+        /// Until now a vacant site borrowed `.removed`, which is the map asserting that a tree was
+        /// here and is gone — the same lie E107 and E113 removed from the profile and the almanac, left
+        /// standing on the one surface where 12,518 of these records actually live. E107 fixed what the
+        /// pin *says* and explicitly deferred what it *draws*, because "a new pin is a design decision
+        /// and C1–C30 is a closed catalogue". That decision is now made.
+        ///
+        /// Hollow rather than a second grey: an absence of fill reads as an absence of tree without
+        /// anyone having to learn a colour, and it cannot be confused with a filled dot at any size —
+        /// which a second grey could. Solid rather than dashed, because dashes already mean the
+        /// community layer (DECISIONS §3.16) and a dashed hollow ring would read as an unverified
+        /// community tree.
+        case vacantSite
         /// A cluster badge carrying its count. 32pt at the large size, 30pt at the small.
         case cluster(count: Int, large: Bool = true)
         /// The blue GPS dot with its 8pt halo.
@@ -40,7 +55,7 @@ struct MapPin: View {
             switch self {
             case .cityTree, .needsCare, .community, .gps:
                 return CypressSpacing.Component.pinStandard
-            case .removed:
+            case .removed, .vacantSite:
                 return CypressSpacing.Component.pinRemoved
             case let .cluster(_, large):
                 return large
@@ -59,6 +74,8 @@ struct MapPin: View {
             case .needsCare, .routeActive: return CypressColor.accentAmber
             case .community: return CypressColor.pinCommunityFill
             case .removed: return CypressColor.pinRemovedFill
+            // No fill at all. This is the whole distinction.
+            case .vacantSite: return .clear
             case .cluster: return CypressColor.ctaFill
             case .gps: return CypressColor.gpsDot
             case .routeDone: return CypressColor.pinRouteDone
@@ -70,6 +87,11 @@ struct MapPin: View {
             switch self {
             case .cityTree, .needsCare, .removed, .cluster, .gps, .routeActive:
                 return (CypressColor.pinRingStroke, CypressSpacing.Component.pinRing, false)
+            case .vacantSite:
+                // `borderDashedStrong` is the token the vacant-site screen and the empty photo well
+                // already speak, so the basin keeps one voice across the app. Nothing is added to the
+                // palette.
+                return (CypressColor.borderDashedStrong, CypressSpacing.Component.pinRing, false)
             case .community:
                 return (CypressColor.pinFill, CypressSpacing.Component.pinRingCommunity, true)
             case .routeDone:
@@ -80,7 +102,7 @@ struct MapPin: View {
         var shadow: CypressShadowStyle? {
             switch self {
             case .cityTree, .needsCare: return CypressShadow.pin
-            case .removed: return CypressShadow.pinMuted
+            case .removed, .vacantSite: return CypressShadow.pinMuted
             case .community: return CypressShadow.pinMutedStrong
             case .cluster: return CypressShadow.cluster
             case .gps, .routeDone, .routeActive: return nil
@@ -112,6 +134,9 @@ struct MapPin: View {
             case .needsCare: return "Tree that needs something"
             case .community: return "Community-added tree"
             case .removed: return "Removed tree, memorial"
+            // `MapPinKind.accessibilityLabel` overrides this with `SiteCopy`'s wording for a real
+            // pin; this is the catalogue's own default, and it must never say a tree was here.
+            case .vacantSite: return "Planting site, no tree"
             case let .cluster(count, _): return "\(count) trees"
             case .gps: return "Your location"
             case .routeDone: return "Visited"

@@ -293,10 +293,15 @@ enum MapPinKind {
         switch pin.status {
         case .alive:
             return .cityTree
-        case .deadReported, .removed, .vacantSite:
-            // The gray pin means "no living tree at this site". A `vacant_site` is exactly that,
-            // and it routes to the same profile, which decides between 03 and 19.
+        case .deadReported, .removed:
+            // The gray pin means "no living tree at this site".
             return .removed
+        case .vacantSite:
+            // Its own pin since RULINGS R7. It used to borrow `.removed`, and that made the map the
+            // last surface still claiming a tree had been here — E107 and E113 removed exactly that
+            // claim from the profile and the almanac, and E107 deferred this one because a new pin
+            // was a design decision it had no standing to make.
+            return .vacantSite
         case .declining:
             return .needsCare
         }
@@ -306,13 +311,21 @@ enum MapPinKind {
 
     /// What a pin announces to VoiceOver.
     ///
-    /// C19's own labels, except on a vacant site: the grey pin is shared with a memorial, and its
-    /// label — `Removed tree, memorial` — is a claim that a tree was here. A site never had one. The
-    /// *drawn* pin is still shared, because a new pin is a design decision and C1–C30 is a closed
-    /// catalogue; this is the part of the distinction that could be made without inventing one
-    /// (ERRATA E107).
+    /// C19's own labels, except on a vacant site, which speaks `SiteCopy`'s words.
+    ///
+    /// E107 wrote this override because the grey pin was shared with a memorial and its label —
+    /// `Removed tree, memorial` — claimed a tree had been here; a site never had one. It noted that
+    /// only the *spoken* half of the distinction could be made then, since a new pin was a design
+    /// decision against a closed catalogue. R7 made that decision, so the pin is now `.vacantSite`
+    /// and the drawn half is fixed too.
+    ///
+    /// **The override survives anyway**, deliberately. `MapPin.Kind.vacantSite` carries a sane default
+    /// of its own, but the words a basin says belong to the feature that owns basins — one place to
+    /// change them, and `SiteCopy` is where the screen's own copy already lives. A component in
+    /// `DesignSystem` must not reach into `Features` for a string, so the default stays where it is
+    /// and this keeps overriding it.
     static func accessibilityLabel(for pin: TreePin) -> String {
-        guard pin.status == .vacantSite, kind(for: pin) == .removed else {
+        guard kind(for: pin) == .vacantSite else {
             return kind(for: pin).accessibilityLabel
         }
         return SiteCopy.pinAccessibilityLabel

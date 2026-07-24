@@ -230,9 +230,13 @@ struct SiteTests {
         #expect(living.badge == .planted(year: 2024))
     }
 
-    /// C19 has no pin for a site, so the drawn pin is still the memorial's grey dot — and its label
-    /// said `Removed tree, memorial` on 12,518 basins that never held a tree.
-    @Test("a site pin does not announce itself as a memorial")
+    /// A site is neither drawn nor announced as a memorial (RULINGS R7).
+    ///
+    /// E107 fixed the label and left the pin: C19 had no pin for a site, so 12,518 basins drew as the
+    /// memorial's grey dot while saying they were not one. R7 made the design decision E107 had no
+    /// standing to make, so both halves now agree — which is what the `kind` expectations below pin,
+    /// and what this test could not say before.
+    @Test("a site pin is neither drawn nor announced as a memorial")
     func sitePinAnnouncesItself() {
         let site = MapPinKind.accessibilityLabel(for: SiteTests.pin(status: .vacantSite))
         let memorial = MapPinKind.accessibilityLabel(for: SiteTests.pin(status: .removed))
@@ -240,6 +244,15 @@ struct SiteTests {
         #expect(site == SiteCopy.pinAccessibilityLabel)
         #expect(site != memorial)
         #expect(memorial == MapPin.Kind.removed.accessibilityLabel)
+
+        // The drawn half, which is what R7 added.
+        #expect(MapPinKind.kind(for: SiteTests.pin(status: .vacantSite)) == .vacantSite)
+        #expect(MapPinKind.kind(for: SiteTests.pin(status: .removed)) == .removed)
+
+        // A basin has no fill, and that absence is the whole distinction — so it is asserted rather
+        // than left to a screenshot nobody diffs.
+        #expect(MapPin.Kind.vacantSite.fill == .clear)
+        #expect(MapPin.Kind.vacantSite.fill != MapPin.Kind.removed.fill)
     }
 
     /// A community-added site keeps the dashed community pin and its own label: the override is

@@ -4010,3 +4010,43 @@ would have failed before the change.
 given label. It cannot prove an element is *not a VoiceOver stop*, because the tree lists elements the
 accessibility runtime merges away. Every assertion here must therefore be phrased as the presence of
 something correct, never as the absence of something wrong.
+
+### E119 — the map was the last surface still calling a planting basin a dead tree (R7)
+
+E107 gave the vacant planting site its own screen; E113 stopped the tree profile from opening one;
+E115 stopped the almanac from naming one as a tree. Each of those removed the same claim — that a tree
+had been here and was gone — from a surface that was making it about 12,518 records that never held
+one. The map kept making it, and the map is where those records actually live.
+
+`MapPinKind.kind(for:)` returned `.removed` for `.vacantSite`, so a basin drew as the memorial's grey
+dot. **E107 fixed only half of this and said so**: it wrote the `accessibilityLabel` override, so the
+pin *said* `Planting site, no tree` while *drawing* a memorial, and recorded why it stopped there — "a
+new pin is a design decision and C1–C30 is a closed catalogue". That is a constraint-21 refusal, and
+it was the right call at the time. The decision has since been delegated (RULINGS R7), so the drawn
+half is now fixed and the two halves agree.
+
+**Hollow, not a second grey.** `MapPin.Kind.vacantSite` keeps the memorial's 16pt footprint and its
+muted shadow, and draws with **no fill at all** — a ring in `borderDashedStrong`, the token the
+vacant-site screen and the empty photo well already speak, so nothing is added to the palette. An
+absence of fill reads as an absence of tree without anyone having to learn a colour, and it cannot be
+confused with a filled dot at any size, which a second grey could.
+
+**Solid ring, not dashed**, even though the ruling reached for the dashed *family*. Dashes already mean
+the community layer (DECISIONS §3.16), and a dashed hollow ring would read as an unverified community
+tree — trading one wrong claim for another. `borderDashedStrong` is used here as a colour, not as a
+stroke style.
+
+**The label override survives on purpose.** With a dedicated kind it looks redundant, and
+`MapPin.Kind.vacantSite` does carry a sane default. But the words a basin says belong to the feature
+that owns basins, and a `DesignSystem` component must not reach into `Features` for a string — so the
+catalogue keeps a default that must never claim a tree was here, and `MapPinKind` keeps overriding it
+with `SiteCopy`'s wording. The override's guard changed from `pin.status == .vacantSite, kind == .removed`
+to `kind(for:) == .vacantSite`, which preserves the case E107 was careful about: a *community-added*
+vacant site still resolves to `.community` first, keeps the dashed pin, and keeps the community label.
+
+**The test now pins both halves.** `sitePinAnnouncesItself` asserted only the spoken label, and its
+doc comment still said the drawn pin "is still the memorial's grey dot" — true when written, false
+after this change, and the kind of stale comment that outlives the thing it describes. It now asserts
+the kind as well, and that `vacantSite.fill` is `.clear` and differs from `.removed`'s — because the
+absence of fill *is* the distinction, and an absence is exactly what a screenshot nobody diffs will
+not catch.
