@@ -240,6 +240,16 @@ misread, needs no legend, costs nothing at AX5, and is the only version of this 
 for someone who cannot see the tile. A glyph may be added later *beside* the word; it may not replace
 it.
 
+> **Already satisfied — no build needed.** Checked against the code before building, and the remedy is
+> in place: `OutboxCopy.title` renders `"\(kindLabel(kind)) · \(treeName)"`, so the rows read `Visit ·
+> Southern Magnolia` and `Check-in · Southern Magnolia`, and `kindLabel` names all six kinds. The
+> shared `LeafGlyph` beside them is `.accessibilityHidden(true)`, so it reaches no assistive
+> technology and adds no stop.
+>
+> The note this ruling came from — "visit and check-in indistinguishable" — was true only of the
+> *glyph*, and the glyph is decoration the text already outranks. Giving each kind its own is exactly
+> what the ruling above rejects. **R6 therefore stands as a rule for future rows rather than as work.**
+
 ### R7 — a vacant planting site gets a hollow ring, not the grey dot that means "removed"
 
 C19 has no vacant-site pin, so 12,518 basins currently draw as the grey dot for a removed tree. That
@@ -263,12 +273,28 @@ apart, **the series carry a dash pattern as well as a colour**. A chart that dis
 only by hue is unreadable to a colour-blind reader at *any* contrast ratio, so the redundant encoding
 is owed regardless — and it is what makes the lightness moves affordable.
 
-### R9 — one amber border weight
+### R9 — one amber border colour
 
-Three amber borders drawn at three near-identical weights is drift, not design: no document assigns
-the differences a meaning, and nothing reads them as distinct. **They collapse to the middle weight.**
-A border weight is not a semantic; where emphasis is genuinely meant, it is carried by the token that
-already exists for it.
+> **Corrected while building this.** The ruling above was written from a note saying "three amber
+> border *weights* come apart". `CypressColor` says something more precise, and the correction
+> strengthens the case rather than weakening it. They are three near-identical *colours* —
+> `borderAmberSoft #EBD3A8`, `borderAmberStrong #E0B070`, `borderAmberMid #D9A05B` — not three line
+> widths; the widths are a separate matter (1px, except 1.5px on the two hazard surfaces). The naming
+> is itself drift: "mid" is the darkest of the three and "strong" sits between.
+
+**Dark has already run this experiment.** All three derive to the single `#D99A4E`, because the dark
+palette contains exactly two ambers (E8), so the amber pill, the selected amber chip and the 311 panel
+are *already* indistinguishable by border in dark — and no entry in ERRATA records anyone missing the
+distinction. If one amber is enough in dark, three in light is drift rather than design.
+
+**They collapse to `borderAmberMid #D9A05B`**, which is 0.016 from the dark amber in OKLab. That makes
+the light and dark borders very nearly the same colour, so the component stops changing character
+between appearances as well.
+
+**Not built yet, and deliberately last.** This is the only one of R6–R11 that is purely visual: it
+fixes no lie and unblocks nothing, while changing the look of three components at once. Everything
+else here earns its build first, and this wants the screens photographed after it — which is what
+found E110 and E106.
 
 ### R10 — screen 12 gains the vacant-site block E115 proposed
 
