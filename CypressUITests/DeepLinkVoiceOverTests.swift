@@ -85,6 +85,135 @@ final class DeepLinkVoiceOverTests: XCTestCase {
         }
     }
 
+    // MARK: - Order
+
+    /// Every pushed screen says where it is before it says anything else.
+    ///
+    /// A VoiceOver user meets a screen from the top of its element tree. If the first control is not
+    /// the way out, or the first words are content rather than the screen's name, they are told what
+    /// is here before they are told where here is — and nine screens deep that is the difference
+    /// between navigating and guessing.
+    ///
+    /// **The order comes from `debugDescription`, and that choice is the whole lesson of E118.** The
+    /// obvious API, `allElementsBoundByIndex`, returns the query engine's match order: on screen 05 it
+    /// puts the pinned `Save check-in` at y=710 ahead of the `Back` at y=69, and a test built on it
+    /// reported a defect that does not exist. `debugDescription` is a depth-first rendering of the
+    /// actual element tree — the same artifact E117's screen dumps were read from — and one call gets
+    /// all of it, which matters because recursing `children(matching:)` is one IPC round trip per node.
+    ///
+    /// The cost is that this parses a debugging format that Apple does not version. That failure is at
+    /// least loud rather than silent: a format change yields no parsed elements and the count assertion
+    /// fails, rather than the test quietly passing on an empty list.
+    func testEveryPushedScreenSaysWhereItIsFirst() {
+        continueAfterFailure = true
+        defer { continueAfterFailure = false }
+
+        let screens: [(screen: String, anchor: String, title: String)] = [
+            ("treeProfile", "Tree", "Tree"),
+            ("site", "No tree at this site", "Site"),
+            ("species", "Field guide", "Field guide"),
+            ("checkIn", "Check-in", "Check-in"),
+            ("report", "Report an issue", "Report an issue"),
+            ("growthHistory", "Growth", "Growth"),
+            ("activity", "Activity", "Activity"),
+            ("measure", "Measure", "Measure"),
+            ("outbox", "Outbox", "Outbox"),
+        ]
+
+        for case let (screen, anchor, title) in screens {
+            let app = launch(screen)
+            guard arrive(app, screen: screen, anchor: anchor) else { continue }
+
+            let ordered = Self.treeOrder(app.debugDescription)
+            XCTAssertGreaterThan(
+                ordered.count, 3,
+                "\(screen): the element tree could not be parsed — `debugDescription`'s format has "
+                    + "probably changed, and this test is no longer reading an order at all"
+            )
+
+            XCTAssertEqual(
+                ordered.first(where: { $0.kind == "Button" })?.label, "Back",
+                "\(screen): the first control in the element tree is "
+                    + "'\(ordered.first(where: { $0.kind == "Button" })?.label ?? "nothing")' rather "
+                    + "than Back, so the way out is not the first thing offered"
+            )
+            XCTAssertEqual(
+                ordered.first(where: { $0.kind == "StaticText" })?.label, title,
+                "\(screen): the first words read are "
+                    + "'\(ordered.first(where: { $0.kind == "StaticText" })?.label ?? "nothing")' "
+                    + "rather than the screen's own name"
+            )
+
+            app.terminate()
+        }
+    }
+
+    /// Depth-first `(kind, label)` pairs, in the order the element tree declares them.
+    ///
+    /// Lines look like `    Button, 0x105d18ac0, {{18.0, 69.0}, {44.0, 44.0}}, label: 'Back'`. Only
+    /// the subtree is wanted: `debugDescription` repeats a "Path to element" and "Query chain" section
+    /// afterwards, and parsing those would count some elements twice.
+    static func treeOrder(_ description: String) -> [(kind: String, label: String)] {
+        var result: [(kind: String, label: String)] = []
+        for line in description.split(separator: "\n", omittingEmptySubsequences: false) {
+            if line.hasPrefix("Path to element") || line.hasPrefix("Query chain") { break }
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard let comma = trimmed.firstIndex(of: ","),
+                  let labelRange = trimmed.range(of: "label: '"),
+                  let close = trimmed.lastIndex(of: "'"),
+                  labelRange.upperBound < close
+            else { continue }
+            result.append((String(trimmed[trimmed.startIndex..<comma]),
+                           String(trimmed[labelRange.upperBound..<close])))
+        }
+        return result
+    }
+
+    /// The parser, pinned against a tree whose order is deliberately wrong.
+    ///
+    /// `testEveryPushedScreenSaysWhereItIsFirst` passes on every screen, which on its own is exactly
+    /// as reassuring as the test E118 deleted — that one passed too, on a premise that was false. This
+    /// is the control: a synthetic `debugDescription` in which the save button precedes Back and a
+    /// caption precedes the title, asserting that the parser reports the inversion rather than
+    /// smoothing it over. It needs no simulator, so the order logic stays verified even when nobody is
+    /// spending three minutes launching screens.
+    ///
+    /// It also pins the format itself. The awkward cases are real ones lifted from live output: a
+    /// trailing `, Selected` trait after the closing quote, a `, value: 0%` suffix, an apostrophe
+    /// inside a species cultivar name, and the `Path to element` footer that must not be parsed.
+    func testTreeOrderParserReportsAnInvertedTree() {
+        let inverted = """
+        Attributes: Application, 0x105e24fe0, pid: 21188, label: 'Cypress'
+        Element subtree:
+         →Application, 0x105e24fe0, pid: 21188, label: 'Cypress'
+            Other, 0x105d18760, {{0.0, 0.0}, {393.0, 852.0}}
+              Button, 0x105a2f840, {{18.0, 710.0}, {357.0, 49.3}}, label: 'Save check-in'
+              StaticText, 0x105d22ea0, {{291.7, 83.7}, {71.3, 14.7}}, label: 'under a minute'
+              Button, 0x105d22b40, {{18.0, 69.0}, {44.0, 44.0}}, label: 'Back'
+              StaticText, 0x105d22d80, {{74.0, 75.8}, {88.7, 30.3}}, label: 'Check-in'
+              Button, 0x105d230e0, {{18.0, 142.3}, {89.3, 44.0}}, label: 'Alive', Selected
+              StaticText, 0x102f2a060, {{51.0, 268.0}, {133.0, 17.0}}, label: 'Indian Laurel Fig Tree 'Green Gem''
+              Other, 0x105929dd0, {{360.0, 49.0}, {30.0, 753.7}}, label: 'Vertical scroll bar, 2 pages', value: 0%
+        Path to element:
+         →Application, 0x105e24fe0, pid: 21188, label: 'Never parsed'
+        """
+
+        let ordered = Self.treeOrder(inverted)
+
+        // The inversion is seen, not smoothed over.
+        XCTAssertEqual(ordered.first(where: { $0.kind == "Button" })?.label, "Save check-in")
+        XCTAssertEqual(ordered.first(where: { $0.kind == "StaticText" })?.label, "under a minute")
+
+        // Traits and values after the label do not swallow it; the footer is not parsed.
+        XCTAssertTrue(ordered.contains { $0.label == "Alive" })
+        XCTAssertTrue(ordered.contains { $0.label == "Vertical scroll bar, 2 pages" })
+        XCTAssertTrue(ordered.contains { $0.label == "Indian Laurel Fig Tree 'Green Gem'" })
+        XCTAssertFalse(
+            ordered.contains { $0.label == "Never parsed" },
+            "the `Path to element` footer was parsed, so elements are being counted twice"
+        )
+    }
+
     // MARK: - Duplication
 
     /// Nothing may be announced twice.

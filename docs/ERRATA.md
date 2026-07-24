@@ -3957,3 +3957,26 @@ since the suite stays green and the log carries a confident explanation. It surv
 (434 tests, 433 passed, 1 expected failure) before the dump was re-read and the claim collapsed. The
 thing that caught it was not a test: it was noticing that two artifacts disagreed and refusing to
 believe the newer one just because it was mine.
+
+**Resolved, in the same session.** The sound version of the deleted test now exists, and the fix was
+the *source of the order* rather than the assertion. `XCUIApplication.debugDescription` is a depth-first
+rendering of the real element tree — the same artifact E117's screen dumps were read from — and one
+call returns all of it, which matters because recursing `children(matching:)` costs an IPC round trip
+per node.
+
+The method was validated **before** it was trusted, against the fourteen dumps already on disk: the
+parser was run over them offline and predicted `Back` first and the correct title on all nine pushed
+screens. The live run then agreed. That is the ordering of operations E118 got wrong the first time —
+predict from an independent artifact, then run — rather than run, believe, and write it up.
+
+Two costs are accepted and written at the call site. `debugDescription` is a debugging format Apple
+does not version, so an Xcode upgrade can change it; the failure is at least loud, because a format
+change parses to nothing and trips a count assertion rather than passing vacuously on an empty list.
+And a green order test is worth exactly what the deleted one was worth unless something proves it can
+see a *wrong* order — so `testTreeOrderParserReportsAnInvertedTree` feeds the parser a synthetic tree
+in which the save button precedes Back, and asserts the inversion is reported. It needs no simulator
+and runs in 0.16 s, so the logic stays verified without a three-minute launch, and it pins the awkward
+real cases too: a trailing `, Selected` trait, a `, value: 0%` suffix, an apostrophe inside a cultivar
+name, and the `Path to element` footer that must not be counted twice.
+
+**Screen 05 is confirmed correct** by the method that replaced the one that accused it.
