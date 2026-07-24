@@ -3980,3 +3980,33 @@ real cases too: a trailing `, Selected` trait, a `, value: 0%` suffix, an apostr
 name, and the `Path to element` footer that must not be counted twice.
 
 **Screen 05 is confirmed correct** by the method that replaced the one that accused it.
+
+**Grouping, the third and last structural question — and the same trap a second time.** E116 and E117
+asked whether elements are *labelled*; the duplication check above asked whether anything is said
+*twice*; grouping asks whether things that belong together arrive together.
+
+Screen 03's stat grid did not. Its one **interactive** card read as a single element — a `Button` forms
+one out of its content — while the four beside it, drawn identically, read as two and three: `DBH`,
+then `30–35 cm`, then `from the city record`, three unrelated fragments with the number severed from
+the word that says what it measures. Two cards that look the same behaved differently, and the
+difference was invisible to everyone who could see them. `StatCard` now carries
+`.accessibilityElement(children: .combine)` — `.combine` and not `.ignore`, because the value is the
+point rather than decoration.
+
+**The first version of the test failed on correct code, for E118's exact reason.** It asserted the
+*absence* of the bare caption: after combining, `DBH` should survive only inside a longer label. That
+can never hold, and the evidence was already on disk before the test was written — E117's dump shows
+`Button 'Height, Add a reading'` listing `StaticText 'Height'` and `StaticText 'Add a reading'` as its
+children, and a `Button` unquestionably forms one accessibility element. **XCUITest enumerates the
+children of combined elements too.** Its tree is not VoiceOver's stop list, which is the same fact that
+invalidated the reading-order test, met from a different direction.
+
+So the assertion is positive: an element reading `DBH, 30–35 cm, …` exists only if the caption and its
+value were merged, so the test asserts the *whole is present* rather than that the parts are gone. Its
+negative control needs no run — the pre-fix dump contains zero labels of the form `DBH, `, so the test
+would have failed before the change.
+
+**The generalisable rule, now twice paid for:** XCUITest can prove an element *is* in the tree with a
+given label. It cannot prove an element is *not a VoiceOver stop*, because the tree lists elements the
+accessibility runtime merges away. Every assertion here must therefore be phrased as the presence of
+something correct, never as the absence of something wrong.

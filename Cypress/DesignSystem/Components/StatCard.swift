@@ -80,6 +80,17 @@ struct StatCard: View {
                 .fill(CypressColor.surfaceCard)
         }
         .cypressBorder(CypressColor.borderCool, radius: CypressRadius.control)
+        // One card, one stop (ERRATA E118). A stat is a caption and its value, and left alone each
+        // was its own element: screen 03's grid read "DBH", then "30–35 cm", then "from the city
+        // record" as three unrelated fragments, with the number severed from the word that says what
+        // it measures. The card beside it that *is* interactive already read as one thing, because a
+        // `Button` forms an accessibility element out of its content — so two cards drawn identically
+        // behaved differently, and the difference was invisible to everyone who could see them.
+        //
+        // `.combine` rather than `.ignore`: the value is not decoration to be dropped, it is the
+        // point. Combining concatenates the descendants into one label — "DBH, 30–35 cm, from the
+        // city record" — which is what the interactive card was already doing.
+        .accessibilityElement(children: .combine)
     }
 
     @ViewBuilder

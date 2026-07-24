@@ -214,6 +214,49 @@ final class DeepLinkVoiceOverTests: XCTestCase {
         )
     }
 
+    // MARK: - Grouping
+
+    /// A stat is one thing, so it is one stop.
+    ///
+    /// The last of the three structural questions. E116 and E117 asked whether elements are *labelled*;
+    /// E118's duplication check asked whether anything is said *twice*; this asks whether things that
+    /// belong together arrive together. A caption and the number it describes, split into two stops,
+    /// hands a VoiceOver user "DBH", a swipe, and then "30–35 cm" — a value severed from the word that
+    /// says what it measures, and no way to tell from inside either fragment that they are one fact.
+    ///
+    /// Screen 03's grid is where this showed: its one *interactive* card already read as a single
+    /// element, because a `Button` forms one out of its content, while the four beside it drawn
+    /// identically read as two and three. `StatCard` combines its children now.
+    ///
+    /// **Asserted positively, and the reason is E118's lesson a second time.** The obvious form —
+    /// "the bare caption `DBH` must no longer be its own element" — cannot work, and the evidence was
+    /// already on disk before it was written: E117's dump shows `Button 'Height, Add a reading'`
+    /// listing `StaticText 'Height'` and `StaticText 'Add a reading'` as children, and a `Button`
+    /// unquestionably forms a single accessibility element. **XCUITest enumerates the children of
+    /// combined elements too**, so absence-of-fragment can never hold, even for content that is
+    /// correctly grouped. Written that way the test fails on correct code, which is how it was caught.
+    ///
+    /// What *is* observable is the joint label: an element reading `DBH, 30–35 cm, …` exists only if
+    /// the caption and its value were actually merged. So the assertion is that the whole is present,
+    /// not that the parts are gone.
+    func testAStatCardIsOneStop() {
+        let app = launch("treeProfile")
+        guard arrive(app, screen: "treeProfile", anchor: "Tree") else { return }
+
+        for caption in ["DBH", "Site", "City record", "Watch for"] {
+            let joined = app.staticTexts
+                .matching(NSPredicate(format: "label BEGINSWITH %@", "\(caption), "))
+                .firstMatch
+            XCTAssertTrue(
+                joined.exists,
+                "treeProfile: nothing reads '\(caption)' together with its value, so the caption and "
+                    + "the thing it describes are announced as separate fragments"
+            )
+        }
+
+        app.terminate()
+    }
+
     // MARK: - Duplication
 
     /// Nothing may be announced twice.
