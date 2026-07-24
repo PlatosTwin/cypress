@@ -4050,3 +4050,48 @@ after this change, and the kind of stale comment that outlives the thing it desc
 the kind as well, and that `vacantSite.fill` is `.clear` and differs from `.removed`'s — because the
 absence of fill *is* the distinction, and an absence is exactly what a screenshot nobody diffs will
 not catch.
+
+### E120 — the C10 exemption rested on a label nobody can see; C23 is deferred on a measurement, not on taste
+
+R8 delegated the two contrast pairs R1 left to design — the C10 locked glyph and the C23 chart series
+on a dark card, both under 3:1. One turned out to be a mislabelled defect and the other turned out to
+be a genuinely harder problem than the ruling assumed.
+
+**C10: the exemption was wrong.** E8 recorded the `?` at 1.84:1 light and 2.12:1 dark and exempted it
+because "the `?` is decorative, the tile's meaning is in its label". Checking that sentence against
+`SpeciesTile` is what reopened it: the `.locked` case draws the `?` **and nothing else**. The label the
+exemption means is `accessibilityLabel`, which returns `Species not yet learned` to VoiceOver and is
+invisible to a sighted reader. So the glyph is not decoration sitting beside a caption — it is the
+entire visible content of the tile, and the only thing that distinguishes a locked tile from a blank
+plane. WCAG 1.4.11 binds, and a low-vision user was being asked to find a 1.84:1 mark with nothing else
+to go on.
+
+Fixed by **lightness only**, holding chroma and hue in OKLCh — R1's method, so the glyph stays the grey
+green it always was. `#A8B29C ↔ #4C584B` → `#7F8974 ↔ #647062`, landing at 3.06:1 and 3.05:1. The tile
+fill does not move. The pair left `knownFailures` for `retinted`, where the suite pins the exact
+ratios — which is what independently confirmed the arithmetic, rather than the arithmetic confirming
+itself.
+
+**C23: deferred, and the reason is a number.** The ruling assumed a lightness move would do, with a
+dash pattern as an optional extra. Measured, the move is not free: taking series 1 (Canopy `#2F6B4F`)
+to 3.05:1 on the dark card means `#3C785B`, which costs **38% of its OKLab separation from series 2**
+— 0.117 down to 0.073, and both are greens. `ActivityView` draws all three series at once (photos,
+check-ins, care), so that separation is load-bearing rather than theoretical.
+
+R8 pre-authorised the compensator: a non-colour encoding, which is owed anyway because a chart
+separated only by hue is unreadable to a colour-blind reader at *any* ratio. But a dash belongs to a
+**stroked** mark, `ChartCard`'s `LineChart` strokes polylines while 13's three series are drawn through
+a different path, and applying a stroke dash to the wrong mark type is a design change made by
+guessing. **Shipping the lightness move alone would trade one failure for another** — better contrast,
+worse discrimination — so neither half ships until both can.
+
+The `knownFailures` entries now carry that reasoning and the measurement instead of E8's original
+"escalated as a set", so the next person picks it up knowing what it costs rather than re-deriving it.
+
+**A note on how this went, because it is the fourth time today.** Four premises were checked against
+the code before building and three were wrong: R6's defect was already fixed, R9's "weights" were
+colours, and C10's exemption was backwards. The one that nearly slipped through was the opposite —
+a grep suggested `chartSeriesSecondary` and `chartSeriesTertiary` were drawn nowhere, which would have
+made the separation question moot and the whole C23 fix trivial. That conclusion was written down
+before the output was read properly: `ActivityView` uses both, on screen 13. **The check is worth
+nothing if its result is announced before it is read.**

@@ -384,6 +384,13 @@ struct ContrastTests {
 
     static let retinted: [Pin] = [
         Pin(
+            what: "C10 species-tile locked glyph on its fill",
+            foreground: CypressColor.speciesTileLockedGlyph, background: CypressColor.speciesTileLockedFill,
+            light: 3.06, dark: 3.05,
+            because: "R8: was 1.84 / 2.12; #A8B29C ↔ #4C584B → #7F8974 ↔ #647062 — E8 called the `?` "
+                + "decorative, but it is the locked tile's only visible content"
+        ),
+        Pin(
             what: "text.faint micro-label on the screen",
             foreground: CypressColor.textFaint, background: CypressColor.surfaceScreen,
             light: 4.62, dark: 5.33,
@@ -505,9 +512,19 @@ struct ContrastTests {
     ///    almost all of these it is not — a card is identified by the type in it. The 311 panel
     ///    has its own fill and its own amber body copy; the border is not what identifies it. The
     ///    one place a border *was* required is C24, and that one is fixed above.
-    /// 2. **The two E8 reported**, which R1 leaves to design by name: the C10 locked glyph and the
-    ///    C23 chart series on a dark card. Both are drawn decisions — a glyph and a data encoding
-    ///    — rather than a text ramp, and both are the first thing on a designer's list.
+    /// 2. **The C23 chart series on a dark card.** R1 left this to design and R8 took it up, then
+    ///    deferred it on measurement rather than on taste: the lightness-only move that clears 3:1
+    ///    also costs 38% of series 1's OKLab separation from series 2 (0.117 → 0.073, and both are
+    ///    greens), while `ActivityView` draws all three series at once. R8 pre-authorised a second,
+    ///    non-colour encoding as the compensator — which is owed anyway, since a chart separated only
+    ///    by hue is unreadable to a colour-blind reader at *any* ratio — but a dash belongs to a
+    ///    stroked mark, and whether 13's series are strokes is a design question rather than a token
+    ///    edit. It moves when the encoding does, with the screens photographed after.
+    ///
+    ///    **The C10 locked glyph left this list** and is in `retinted`. E8 exempted it as decorative
+    ///    — "the tile's meaning is in its label" — and that was wrong: `SpeciesTile`'s locked case
+    ///    draws the `?` and nothing else, and the label meant is `accessibilityLabel`, invisible to a
+    ///    sighted reader. See ERRATA E120.
     ///
     /// The empty photo well on 14 was a third group here and is not any more. It was the one text
     /// pair the R1 retint left failing, at 4.16 after dark, and it was not fixable in the token:
@@ -534,22 +551,18 @@ struct ContrastTests {
         ),
         // 2 · E8's two, re-measured here.
         KnownFailure(
-            what: "C10 species-tile locked glyph on its fill",
-            foreground: CypressColor.speciesTileLockedGlyph, background: CypressColor.speciesTileLockedFill,
-            light: 1.84, dark: 2.12,
-            because: "ERRATA E8: the `?` is decorative, the tile's meaning is in its label"
-        ),
-        KnownFailure(
             what: "C23 series 1 (Canopy) on a dark card",
             foreground: CypressColor.chartSeriesPrimary, background: CypressColor.surfaceCard,
             light: 6.29, dark: 2.53,
-            because: "ERRATA E8: escalated — a series palette is chosen for separation between its members"
+            because: "R8 deferred: lightness-only to 3.05 costs 38% of its OKLab separation from "
+                + "series 2 (0.117 → 0.073) and 13 draws all three at once — needs the second encoding, "
+                + "not a token edit"
         ),
         KnownFailure(
             what: "C23 series 3 (Bark) on a dark card",
             foreground: CypressColor.chartSeriesTertiary, background: CypressColor.surfaceCard,
             light: 7.01, dark: 2.27,
-            because: "ERRATA E8, same reason"
+            because: "R8 deferred, same pass as series 1"
         ),
     ]
 

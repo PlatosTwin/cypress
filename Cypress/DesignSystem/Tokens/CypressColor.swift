@@ -1257,13 +1257,25 @@ extension CypressColor {
     /// Locked tile fill — `#E9ECDE` ↔ **derived** `dark.surface.card` `#18251D`.
     /// A locked tile is a card-level plane in a grid of photo tiles.
     static let speciesTileLockedFill = derived(light: 0xE9ECDE, dark: 0x18251D)
-    /// Locked tile `?` glyph — `#A8B29C` ↔ **derived** `#4C584B`. Text rule.
+    /// Locked tile `?` glyph — **overruled** to `#7F8974` ↔ `#647062` (RULINGS R8, ERRATA E120).
     ///
     /// It stays a deliberately quiet mark: 2.1:1 on the derived fill against 1.8:1 in light. Both
     /// fail WCAG and the glyph is decorative in both — the tile's meaning is carried by its label,
     /// not by the `?`. Flagged in ERRATA E8 rather than fixed here, because raising it is a design
     /// change to a mocked screen and not a dark-mode question.
-    static let speciesTileLockedGlyph = derived(light: 0xA8B29C, dark: 0x4C584B)
+    ///
+    /// E8 recorded this pair failing 1.4.11 at 1.84:1 light and 2.12:1 dark, and exempted it because
+    /// "the `?` is decorative, the tile's meaning is in its label". **That justification was wrong,
+    /// and checking it is what reopened this.** `SpeciesTile`'s locked case draws the `?` and nothing
+    /// else — the label it refers to is `accessibilityLabel`, which returns "Species not yet learned"
+    /// to VoiceOver and is invisible to a sighted reader. So the glyph is not decoration beside a
+    /// caption; it is the entire visible content of the tile, and the only thing distinguishing a
+    /// locked tile from an empty plane.
+    ///
+    /// Both halves move by **lightness only**, holding chroma and hue in OKLCh — R1's method, so the
+    /// glyph stays the same grey-green it always was. Light darkens to 3.06:1, dark lightens to
+    /// 3.05:1. Nothing else in C10 moves, and the tile fill is untouched.
+    static let speciesTileLockedGlyph = overruled(light: 0x7F8974, dark: 0x647062)
     /// Species tile label shadow — `0 1px 3px rgba(10,22,15,.5)`.
     static let speciesTileLabelShadow = lightOnly(0x0A160F, alpha: 0.5)
 
@@ -1454,8 +1466,9 @@ extension CypressColor {
         .init("memorialBannerText", .derived, light: 0x4A5344, dark: 0xAEBBAB,
               basis: "→ dark.text.secondary; 6.4:1", color: memorialBannerText),
 
-        .init("speciesTileLockedGlyph", .derived, light: 0xA8B29C, dark: 0x4C584B,
-              basis: "text rule; 1.8:1 → 2.1:1, decorative in both", color: speciesTileLockedGlyph),
+        .init("speciesTileLockedGlyph", .overruled, light: 0x7F8974, dark: 0x647062,
+              basis: "R8: lightness-only to 3.06:1 / 3.05:1 — it is the tile's only visible content",
+              color: speciesTileLockedGlyph),
 
         // C10 tile bases (12, 13) — each keeps its own accent's hue so the five stay told apart.
         .init("TileAccent.bloom.base", .derived, light: 0xF6E8E4, dark: 0x38292B,
