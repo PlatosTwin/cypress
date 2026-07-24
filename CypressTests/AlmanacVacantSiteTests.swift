@@ -375,6 +375,86 @@ struct AlmanacVacantSiteTests {
         #expect(bloom?.treeID == tree)
     }
 
+    // MARK: - Where a tree could go (R10, ERRATA E121)
+
+    /// The query behind screen 12's new block, checked against the number E115 measured.
+    ///
+    /// 1,474 is the Sunset/Parkside site count E115 recorded, and the block reports exactly that — no
+    /// A8 floor, because it counts city records rather than user actions. The nearest is scoped to the
+    /// same neighbourhood, so the tap can never send the reader from one basin to a basin in the next
+    /// neighbourhood over: subject and destination are one set.
+    @Test("the vacant-sites read counts the neighbourhood's basins and its nearest is one of them")
+    func vacantSitesQuery() async throws {
+        let store = try await Self.store()
+        let schema = try #require(store.seed)
+        let queries = AlmanacQueries(schema: schema)
+        let sunset = try await Self.neighborhoodID(named: "Sunset/Parkside", on: store)
+
+        // A fix inside Sunset/Parkside.
+        let here = Coordinate(latitude: 37.7530, longitude: -122.4850)
+        let result = try await store.queue.read { connection in
+            try queries.vacantSites(neighborhoodID: sunset, near: here, connection: connection)
+        }
+
+        #expect(result.count == 1_474)
+        let nearest = try #require(result.nearestID)
+
+        // The nearest is a vacant site, and it is in this neighbourhood — not merely the nearest
+        // basin in the city.
+        let ownStatusAndArea = try await store.queue.read { connection -> (String, Int) in
+            let statement = try connection.prepare(
+                "SELECT status, neighborhood_id AS nid FROM \(Self.seed).trees WHERE uuid = '\(nearest.uuidString)' COLLATE NOCASE"
+            )
+            defer { statement.finalize() }
+            return try statement.fetchOne { (try $0.string("status"), try $0.int("nid")) } ?? ("", -1)
+        }
+        #expect(ownStatusAndArea.0 == "vacant_site")
+        #expect(ownStatusAndArea.1 == sunset)
+    }
+
+    /// The presentation turns the read into the drawn block, and refuses to draw a statement the
+    /// reader cannot act on.
+    @Test("the block states the count and inherits the site screen's line, or is absent")
+    func vacantSitesPresentation() throws {
+        // A real count with a destination draws the row.
+        let siteID = UUID()
+        let drawn = AlmanacPresentation(almanac: Almanac(
+            neighborhood: AlmanacNeighborhood(name: "Sunset/Parkside",
+                vacantSites: VacantSites(count: 1_474, nearestID: siteID))
+        ))
+        let block = try #require(drawn.vacantSites)
+        #expect(block.label == "Where a tree could go")
+        #expect(block.title == "1,474 empty planting sites")
+        #expect(block.nearestID == siteID)
+        // Inherits SitePresentation's line and crosses none of it: no "yet", no ask, no notification.
+        #expect(!block.subtitle.lowercased().contains("yet"))
+        #expect(!block.subtitle.lowercased().contains("plant a"))
+        #expect(!block.subtitle.lowercased().contains("notif"))
+
+        // A count with no destination is not a statement the reader can act on, so it does not draw.
+        let noDestination = AlmanacPresentation(almanac: Almanac(
+            neighborhood: AlmanacNeighborhood(name: "X",
+                vacantSites: VacantSites(count: 9, nearestID: nil))
+        ))
+        #expect(noDestination.vacantSites == nil)
+
+        // A neighbourhood with no basins draws nothing, even though E115 found none like it today.
+        let none = AlmanacPresentation(almanac: Almanac(
+            neighborhood: AlmanacNeighborhood(name: "X", vacantSites: nil)
+        ))
+        #expect(none.vacantSites == nil)
+    }
+
+    /// Singular, for the general case E115's floor of 4 does not actually guarantee in a rebuilt seed.
+    @Test("one empty site reads in the singular")
+    func vacantSingular() throws {
+        let one = AlmanacPresentation(almanac: Almanac(
+            neighborhood: AlmanacNeighborhood(name: "X",
+                vacantSites: VacantSites(count: 1, nearestID: UUID()))
+        ))
+        #expect(one.vacantSites?.title == "1 empty planting site")
+    }
+
     private static func recordFloweringVisit(
         on treeUUID: UUID,
         at capturedAt: String,

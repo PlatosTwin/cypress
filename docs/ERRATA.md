@@ -4095,3 +4095,74 @@ a grep suggested `chartSeriesSecondary` and `chartSeriesTertiary` were drawn now
 made the separation question moot and the whole C23 fix trivial. That conclusion was written down
 before the output was read properly: `ActivityView` uses both, on screen 13. **The check is worth
 nothing if its result is announced before it is read.**
+
+### E121 — screen 12 now says the one true thing it can about the 12,518 basins (R10)
+
+E115 proposed a block and did not build it, listing exactly what a designer would have to decide: a
+title, a subtitle rule, a tile accent SCREENS.md never assigned, and a position relative to §4. R10
+made those calls and this builds it.
+
+**What it says.** A micro-label `Where a tree could go` — ROADMAP §1's own phrase for these rows,
+chosen over anything with `needed` or `gap` in it — over one C10 row: `1,474 empty planting sites`,
+subtitle `The city has mapped them. Nothing is growing there.`, tapping to the nearest site on
+`Route.site`. The subtitle inherits `SitePresentation`'s two-part line and stops where it does: no
+`yet`, no ask to plant, no implication anyone has been told (ARCHITECTURE §5.4). Cypress keeps the
+record of what is planted; it does not plant.
+
+**Where it sits, and why not in §4.** After §3, before §4. §3 says what lives in the neighbourhood;
+this says where nothing does — two readings of the same canopy, kept adjacent. §4 stays the screen's
+one *directed ask*, the last thing before the footnote, and a plain row before its amber card reads as
+the statement it is rather than as a second ask. E115 drew this line first: a vacant site takes no
+visit, observation, measurement or care event, so an ask pointed at one is a `Walk to it` ending at
+bare pavement — the "sent to the city" defect. This block only counts and offers to show the nearest.
+
+**The query is the one read in `AlmanacQueries` that inverts `standing`.** Every other read asks for a
+tree the city believes is standing; `vacantSites` asks for the basins that are its opposite, counting
+`status = 'vacant_site'` in the neighbourhood and returning the nearest by squared distance from one
+scan. The nearest is scoped to the *same* neighbourhood, so the tap can never route the reader from
+one basin to a basin in the next neighbourhood over — subject and destination are one set. Because it
+counts city records rather than user actions, ARCHITECTURE §5.1's "a count of actions wearing a
+different noun" trap does not apply and it needs no A8 floor; it draws on a fresh install exactly as
+the species mix does.
+
+**The tile accent adds no hue.** `TileAccent.vacantSite` is composed from tokens the vacant-site
+family already owns — `surfaceEmptyThumb` as its ground, `borderDashedStrong` as its mark — the same
+dashed-ring vocabulary R7 gave the map pin, the site screen and the empty photo well (E119). Reusing
+`elder` or `newGrowth` would paint a hole in the pavement in a living tree's colour, the exact
+category error R7 removed from the map.
+
+**Proven, all against the shipped seed.** `AlmanacVacantSiteTests` gains: the count is 1,474 in
+Sunset/Parkside (E115's own measurement, now the query's), the nearest really is a `vacant_site` and
+really is in that neighbourhood, the presentation states the count and inherits the site line, a count
+with no destination does not draw (no statement the reader cannot act on), a neighbourhood with no
+basins does not draw (§5.6, though E115 found none like it), and one basin reads in the singular.
+
+**A note on a self-inflicted near-miss.** A grep for `chartSeriesSecondary` in the previous entry
+looked empty and I wrote the conclusion before reading the output — it was not empty. Here the same
+discipline was applied correctly the other way: the first cut of the query test failed not because the
+query was wrong (the count was already 1,474) but because the verification lookup compared an
+uppercase `uuidString` against the seed's lowercase ids without `COLLATE NOCASE`. The failing
+assertion named which side was empty, so the test's own bug was visible rather than the code's. A test
+that fails loudly about itself is worth more than one that passes quietly about nothing.
+
+**Looked at, on a real device against real data.** Verified not from a fixture but by deep-linking the
+running app (`CYPRESS_SCREEN=journal`, E117's own harness, with the simulator's location set inside
+Sunset/Parkside): the block draws `1,474 empty planting sites` — the seed's true count, the same number
+the query test pins — sitting between `Who lives here · 215 species` and the amber `Where eyes are
+needed`, exactly where R10 placed it.
+
+**One observation the screenshot made that no test would have.** The tile is *very* faint: its ground
+is `surfaceEmptyThumb` on a `surfaceCard`, about 1.05:1, so it reads as an almost-blank square with a
+pale smudge in it. Semantically that is the point — it is the empty photo well's vocabulary, and a hole
+in the pavement should not glow — but it sits close to reading as a failed image load rather than as a
+deliberate absence. It is left as drawn, and recorded here as the one part of this block a designer
+should look at with fresh eyes. The alternative (lifting the ground toward the other five accents)
+would buy legibility by making a basin look like a living thing, which is the trade R7 and E119 both
+refused.
+
+**The screenshot suites did not run in this verification, and were not made to.** Four tests failed in
+the full run — `01–19 …`, `18–21 …`, `the cold and empty states`, `every screen renders at both ends of
+the ramp` — every one of them killed with `signal term` rather than failing an assertion, after the
+machine throttled far enough that single sweep tests were taking 600–2,950 s. They assert nothing (they
+write PNGs), the other **435 tests passed**, and the visual claim above rests on the live render rather
+than on them. Recorded so that a later reader does not mistake a green count for a suite that ran whole.

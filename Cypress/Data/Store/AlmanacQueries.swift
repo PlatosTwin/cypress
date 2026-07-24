@@ -301,4 +301,65 @@ public struct AlmanacQueries {
             )
         }
     }
+
+    // MARK: - Where a tree could go · the vacant planting sites
+
+    /// How many planting sites in the neighbourhood have no tree in them, and the nearest one to the
+    /// reader (RULINGS R10, closing the proposal ERRATA E115 made and did not build).
+    ///
+    /// **This is the one read in the file that inverts `Self.standing`.** Every other read asks for a
+    /// tree the city believes is standing; this asks for the basins that are the opposite — a
+    /// `vacant_site` is exactly a mapped hole with nothing growing in it, and screen 12's
+    /// `Where a tree could go` block is the one honest thing the almanac can say about the 12,518 rows
+    /// the rest of the screen excludes by design. It counts *records the city holds*, not anything
+    /// anybody did, so ARCHITECTURE §5.1's "a count of user actions wearing a different noun" trap
+    /// does not apply and it needs no A8 floor.
+    ///
+    /// The count and the nearest come from one scan of `idx_trees_neighborhood`: `COUNT(*)` over the
+    /// filtered set and, from the same set, the id with the smallest squared distance. E115 measured
+    /// every one of the 41 neighbourhoods carrying between 4 and 1,474 sites, so `count` is never zero
+    /// where a neighbourhood resolved — but the caller still treats zero as "no block", because §5.6
+    /// is a rule about the general case rather than about today's seed.
+    ///
+    /// `nearestID` is `nil` only if `count` is zero. The tap destination is a `vacant_site` in *this*
+    /// neighbourhood, so it can never route the reader from one basin to a basin in the next
+    /// neighbourhood over — the block's subject and its destination are the same set.
+    public func vacantSites(
+        neighborhoodID: Int,
+        near coordinate: Coordinate,
+        connection: SQLiteConnection
+    ) throws -> (count: Int, nearestID: UUID?) {
+        // Longitude degrees are shorter than latitude degrees by cos(lat); squaring the ratio makes
+        // the two terms comparable, exactly as `TreeQueries.nearest` does it.
+        let longitudeWeight = pow(cos(coordinate.latitude * .pi / 180), 2)
+        let statement = try connection.cachedStatement("""
+            SELECT COUNT(*) AS site_count,
+                   (
+                     SELECT n.\(schema.treeIdentityColumn)
+                       FROM \(seed).trees n
+                      WHERE n.neighborhood_id = :neighborhood
+                        AND n.status = 'vacant_site'
+                        AND n.deleted_at IS NULL
+                      ORDER BY (n.lat - :lat) * (n.lat - :lat)
+                             + (n.lon - :lon) * (n.lon - :lon) * :lonWeight
+                      LIMIT 1
+                   ) AS nearest_uuid
+              FROM \(seed).trees t
+             WHERE t.neighborhood_id = :neighborhood
+               AND t.status = 'vacant_site'
+               AND t.deleted_at IS NULL
+            """)
+        _ = try statement.bind([
+            ":neighborhood": neighborhoodID,
+            ":lat": coordinate.latitude,
+            ":lon": coordinate.longitude,
+            ":lonWeight": longitudeWeight
+        ])
+        return try statement.fetchOne { row in
+            (
+                count: try row.int("site_count"),
+                nearestID: try row.uuidIfPresent("nearest_uuid")
+            )
+        } ?? (count: 0, nearestID: nil)
+    }
 }

@@ -124,7 +124,8 @@ private enum AlmanacFixtures {
             elder: elder,
             newestNeighbors: RecentPlanting(treeCount: 23, leadingSpecies: ["Ginkgo", "NZ tea tree"]),
             composition: composition,
-            coverage: coverage(9, farthestM: 900)
+            coverage: coverage(9, farthestM: 900),
+            vacantSites: VacantSites(count: 1_474, nearestID: UUID())
         )
     )
 
@@ -140,7 +141,9 @@ private enum AlmanacFixtures {
             elder: elder,
             newestNeighbors: nil,
             composition: composition,
-            coverage: coverage(17, farthestM: 4_100)
+            coverage: coverage(17, farthestM: 4_100),
+            // The block draws on a fresh install: it counts city records, not contributions (R10).
+            vacantSites: VacantSites(count: 1_474, nearestID: UUID())
         )
     )
 

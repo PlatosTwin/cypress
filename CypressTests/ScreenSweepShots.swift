@@ -599,7 +599,8 @@ enum SweepFixtures {
             ),
             coverage: CoverageGap(trees: Series(complete: (0..<9).map {
                 CoverageTree(id: id(920 + $0), distanceM: Double(120 + $0 * 60))
-            }))
+            })),
+            vacantSites: VacantSites(count: 1_474, nearestID: id(930))
         ))
     }
 
@@ -625,7 +626,8 @@ enum SweepFixtures {
             ),
             coverage: CoverageGap(trees: Series(complete: (0..<9).map {
                 CoverageTree(id: id(920 + $0), distanceM: Double(120 + $0 * 60))
-            }))
+            })),
+            vacantSites: VacantSites(count: 1_474, nearestID: id(930))
         ))
     }
 

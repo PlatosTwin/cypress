@@ -67,6 +67,21 @@ struct AlmanacPresentation: Equatable {
         let rows: [CompositionRow]
     }
 
+    /// Screen 12's `Where a tree could go` block (RULINGS R10). One C10 row, a plain statement of
+    /// how many basins are empty, tapping through to the nearest.
+    struct VacantBlock: Equatable {
+        /// `Where a tree could go` — the micro-label, ROADMAP §1's own phrase for these rows.
+        let label: String
+        /// `1,474 empty planting sites`.
+        let title: String
+        /// Inherits `SitePresentation`'s line and may not cross it: the city mapped them, nothing is
+        /// growing, and Cypress does not plant.
+        let subtitle: String
+        /// The nearest of them — a `Route.site`. The row is inert when this is nil, which only
+        /// happens if the block should not have drawn at all.
+        let nearestID: UUID?
+    }
+
     /// §4's amber card.
     struct Coverage: Equatable {
         /// `9 young trees with no visits since planting`.
@@ -85,6 +100,7 @@ struct AlmanacPresentation: Equatable {
     let seasonRows: [SeasonRow]
     let composition: Composition?
     let coverage: Coverage?
+    let vacantSites: VacantBlock?
 
     /// §5, always drawn. It is the sentence that makes the screen honest whatever else is on it,
     /// and on a device with no location it is the only thing on it.
@@ -98,7 +114,7 @@ struct AlmanacPresentation: Equatable {
     /// with no location fix has no neighbourhood at all. What was built is the restrained reading —
     /// each block derives from data and a block with no data behind it is absent (§5.6) — leaving
     /// the screen's own chrome. See ERRATA.
-    var isEmpty: Bool { seasonRows.isEmpty && composition == nil && coverage == nil }
+    var isEmpty: Bool { seasonRows.isEmpty && composition == nil && coverage == nil && vacantSites == nil }
 
     // MARK: - Derivation
 
@@ -108,6 +124,7 @@ struct AlmanacPresentation: Equatable {
             self.seasonRows = []
             self.composition = nil
             self.coverage = nil
+            self.vacantSites = nil
             return
         }
 
@@ -115,6 +132,7 @@ struct AlmanacPresentation: Equatable {
         self.seasonRows = Self.seasonRows(area, now: now, calendar: calendar, locale: locale)
         self.composition = Self.composition(area.composition, locale: locale)
         self.coverage = Self.coverage(area.coverage, locale: locale)
+        self.vacantSites = Self.vacantSites(area.vacantSites, locale: locale)
     }
 
     // MARK: - §2 This season
@@ -272,6 +290,21 @@ struct AlmanacPresentation: Equatable {
             firstTreeID: nearest.id
         )
     }
+
+    /// §-new: `Where a tree could go` (RULINGS R10). A count and a destination, or nothing.
+    ///
+    /// Absent when the neighbourhood holds no sites — which E115 measured as nowhere in the city, but
+    /// §5.6 is a rule about the general case — and absent when there is nowhere to send the tap, so
+    /// the row is never a statement the reader cannot act on.
+    private static func vacantSites(_ sites: VacantSites?, locale: Locale) -> VacantBlock? {
+        guard let sites, sites.count > 0, let nearestID = sites.nearestID else { return nil }
+        return VacantBlock(
+            label: AlmanacCopy.vacantLabel,
+            title: AlmanacCopy.vacantTitle(count: sites.count, locale: locale),
+            subtitle: AlmanacCopy.vacantSubtitle,
+            nearestID: nearestID
+        )
+    }
 }
 
 // MARK: - Thresholds
@@ -326,6 +359,25 @@ enum AlmanacCopy {
 
     /// §4's micro-label, verbatim. Drawn in amber, which is the whole point of C24.
     static let coverageLabel = "Where eyes are needed"
+
+    // MARK: Where a tree could go (R10, ERRATA E121)
+
+    /// The block's micro-label — ROADMAP §1's own phrase for these rows, chosen over anything with
+    /// `needed` or `gap` in it because this is a statement, not the §4 ask.
+    static let vacantLabel = "Where a tree could go"
+
+    /// `1,474 empty planting sites`. Counts city records, so no A8 floor and no `at least` hedge.
+    static func vacantTitle(count: Int, locale: Locale) -> String {
+        count == 1
+            ? "1 empty planting site"
+            : "\(grouped(count, locale: locale)) empty planting sites"
+    }
+
+    /// Inherits `SitePresentation`'s two-part line — the city holds the record, nothing is growing —
+    /// and stops exactly where the site screen does. It does not say `yet`, does not ask anyone to
+    /// plant, and does not imply anyone has been told (ARCHITECTURE §5.4). Cypress keeps the record
+    /// of what is planted; it does not plant.
+    static let vacantSubtitle = "The city has mapped them. Nothing is growing there."
 
     // MARK: §2 row 1 — the first bloom
 

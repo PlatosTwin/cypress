@@ -69,13 +69,18 @@ public struct AlmanacNeighborhood: Hashable, Sendable {
     /// §4 — the coverage gap, the only directed ask in the app (D1).
     public let coverage: CoverageGap?
 
+    /// The vacant planting sites (RULINGS R10). A statement, not an ask — see `VacantSites`. `nil`
+    /// only where the neighbourhood holds none, which E115 measured as nowhere in the city.
+    public let vacantSites: VacantSites?
+
     public init(
         name: String,
         firstBloom: BloomFirst? = nil,
         elder: ElderTree? = nil,
         newestNeighbors: RecentPlanting? = nil,
         composition: NeighborhoodComposition? = nil,
-        coverage: CoverageGap? = nil
+        coverage: CoverageGap? = nil,
+        vacantSites: VacantSites? = nil
     ) {
         self.name = name
         self.firstBloom = firstBloom
@@ -83,6 +88,29 @@ public struct AlmanacNeighborhood: Hashable, Sendable {
         self.newestNeighbors = newestNeighbors
         self.composition = composition
         self.coverage = coverage
+        self.vacantSites = vacantSites
+    }
+}
+
+/// Screen 12's `Where a tree could go` block (RULINGS R10, ERRATA E121).
+///
+/// **A statement, deliberately not the §4 ask.** E115 drew the line: the coverage gap (§4) is "the
+/// only directed ask in the app" and its subject is a tree somebody can go and observe. A vacant site
+/// takes no visit, no observation, no measurement and no care event — the app's whole vocabulary has
+/// nothing true to say about a hole — so an ask pointed at one would be a `Walk to it` that ends at
+/// bare pavement, the same defect as "sent to the city". This block only says how many there are and
+/// offers to show the nearest, which is the one honest sentence available.
+public struct VacantSites: Hashable, Sendable {
+    /// How many planting sites in the neighbourhood have no tree in them. Counts city records, not
+    /// user actions, so it carries no A8 floor (ARCHITECTURE §5.1).
+    public let count: Int
+    /// The nearest of them, the block's only affordance — a `Route.site`. Never `nil` when `count`
+    /// is positive.
+    public let nearestID: UUID?
+
+    public init(count: Int, nearestID: UUID?) {
+        self.count = count
+        self.nearestID = nearestID
     }
 }
 

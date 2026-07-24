@@ -28,6 +28,11 @@ struct AlmanacView: View {
     /// "the almanac's 'walk the nine' list, one tree at a time".
     private let onWalk: ((UUID) -> Void)?
 
+    /// Tapping the `Where a tree could go` row opens the nearest vacant site — a `Route.site`
+    /// (RULINGS R10). Handed in for the same reason `onWalk` is: this folder does not build another
+    /// feature's view, and the composition root owns the routing.
+    private let onOpenSite: ((UUID) -> Void)?
+
     /// Tapping a season row opens the tree it is about. The elder and the first bloom are each a
     /// specific tree; SCREENS.md 12 states no affordance for either, so this is nil unless the
     /// composition root supplies one and the rows are inert without it (DECISIONS constraint 21).
@@ -41,12 +46,14 @@ struct AlmanacView: View {
         now: @escaping @Sendable () -> Date = { Date() },
         onBack: (() -> Void)? = nil,
         onOpenTree: ((UUID) -> Void)? = nil,
-        onWalk: ((UUID) -> Void)? = nil
+        onWalk: ((UUID) -> Void)? = nil,
+        onOpenSite: ((UUID) -> Void)? = nil
     ) {
         _model = State(wrappedValue: AlmanacModel(api: api, coordinate: coordinate, now: now))
         self.onBack = onBack
         self.onOpenTree = onOpenTree
         self.onWalk = onWalk
+        self.onOpenSite = onOpenSite
     }
 
     var body: some View {
@@ -54,7 +61,8 @@ struct AlmanacView: View {
             presentation: model.presentation,
             onBack: onBack,
             onOpenTree: onOpenTree,
-            onWalk: onWalk
+            onWalk: onWalk,
+            onOpenSite: onOpenSite
         )
         .task { await model.load() }
     }
@@ -75,6 +83,7 @@ struct AlmanacScreen: View {
     var onBack: (() -> Void)?
     var onOpenTree: ((UUID) -> Void)?
     var onWalk: ((UUID) -> Void)?
+    var onOpenSite: ((UUID) -> Void)?
 
     var body: some View {
         GeometryReader { proxy in
@@ -85,6 +94,7 @@ struct AlmanacScreen: View {
                     if let presentation {
                         seasonBlock(presentation)
                         compositionBlock(presentation)
+                        vacantSitesBlock(presentation)
                         coverageBlock(presentation)
                     }
 
@@ -145,6 +155,34 @@ struct AlmanacScreen: View {
                         )
                     }
                 }
+            }
+            .padding(.top, CypressSpacing.labelSectionTop)
+            .padding(.horizontal, CypressSpacing.gutter)
+        }
+    }
+
+    // MARK: - Where a tree could go (R10) — one C10 row, a statement between §3 and §4
+
+    /// A single C10 row: the count of empty basins, tapping to the nearest.
+    ///
+    /// Placed after §3 and before §4 on purpose. §3 says what lives in the neighbourhood; this says
+    /// where nothing does — two readings of the same canopy — while §4 stays the screen's one
+    /// directed ask, the last thing the reader is left with before the footnote. A plain row before
+    /// §4's amber card also reads as the statement it is rather than as a second ask.
+    @ViewBuilder
+    private func vacantSitesBlock(_ presentation: AlmanacPresentation) -> some View {
+        if let block = presentation.vacantSites {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(block.label)
+                    .cypressMicroLabel()
+                    .padding(.bottom, CypressSpacing.gapVitality)
+
+                IconTextRow(
+                    accent: .vacantSite,
+                    title: block.title,
+                    subtitle: block.subtitle,
+                    action: block.nearestID.flatMap { id in onOpenSite.map { open in { open(id) } } }
+                )
             }
             .padding(.top, CypressSpacing.labelSectionTop)
             .padding(.horizontal, CypressSpacing.gutter)

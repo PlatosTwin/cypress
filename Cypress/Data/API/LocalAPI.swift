@@ -460,6 +460,14 @@ public actor LocalAPI: CypressAPI {
                 )
             )
 
+            // --- Where a tree could go. The one block that inverts `standing`: the planting sites
+            // with no tree in them. A count of city records, so it draws on a fresh install like the
+            // species mix does — no contribution needed (R10, ERRATA E121).
+            let sites = try almanacQueries.vacantSites(neighborhoodID: area.id, near: coordinate, connection: connection)
+            let vacantSites = sites.count > 0
+                ? VacantSites(count: sites.count, nearestID: sites.nearestID)
+                : nil
+
             return Almanac(
                 neighborhood: AlmanacNeighborhood(
                     name: area.name,
@@ -467,7 +475,8 @@ public actor LocalAPI: CypressAPI {
                     elder: elder,
                     newestNeighbors: newestNeighbors,
                     composition: composition,
-                    coverage: coverage
+                    coverage: coverage,
+                    vacantSites: vacantSites
                 )
             )
         }

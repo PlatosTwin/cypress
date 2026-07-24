@@ -1017,6 +1017,14 @@ extension CypressColor {
         case water
         /// `#C9B44A` over `#F4F0DE` — "Seven years on record" (13).
         case record
+        /// The empty planting basin — screen 12's `Where a tree could go` row (RULINGS R10).
+        ///
+        /// **Composed from tokens the vacant-site family already owns, so no hue enters the palette**
+        /// (R7's discipline). Its ground is `surfaceEmptyThumb`, the empty photo well's fill, and its
+        /// mark is `borderDashedStrong`, the dashed ring R7 gave the map pin and the site screen and
+        /// the well all speak. Reusing `elder` or `newGrowth` would paint a hole in the pavement in a
+        /// living tree's colour, which is the exact category error R7 removed from the map (E119).
+        case vacantSite
 
         var id: String { rawValue }
 
@@ -1032,6 +1040,9 @@ extension CypressColor {
             case .newGrowth: return CypressColor.escalated(0x8FB573)
             case .water: return CypressColor.escalated(0x7FA8C4)
             case .record: return CypressColor.escalated(0xC9B44A)
+            // Not a life hue: the dashed-ring token, muted, the same mark a vacant site draws
+            // everywhere else. Nothing new (R10, E121).
+            case .vacantSite: return CypressColor.borderDashedStrong
             }
         }
 
@@ -1047,6 +1058,7 @@ extension CypressColor {
             case .newGrowth: return CypressColor.derived(light: 0xEDF2E0, dark: 0x1F2E22)
             case .water: return CypressColor.derived(light: 0xE8EEF2, dark: 0x282F34)
             case .record: return CypressColor.derived(light: 0xF4F0DE, dark: 0x322E1A)
+            case .vacantSite: return CypressColor.surfaceEmptyThumb
             }
         }
     }
@@ -1477,6 +1489,9 @@ extension CypressColor {
               basis: "tinted-fill rule at the elder hue", color: TileAccent.elder.base),
         .init("TileAccent.newGrowth.base", .derived, light: 0xEDF2E0, dark: 0x1F2E22,
               basis: "tinted-fill rule at the new-growth hue", color: TileAccent.newGrowth.base),
+        .init("TileAccent.vacantSite.base", .derived, light: 0xFAFBF4, dark: 0x18251D,
+              basis: "R10: surfaceEmptyThumb — no new hue, the empty-well ground",
+              color: TileAccent.vacantSite.base),
         .init("TileAccent.water.base", .derived, light: 0xE8EEF2, dark: 0x282F34,
               basis: "tinted-fill rule at the water hue", color: TileAccent.water.base),
         .init("TileAccent.record.base", .derived, light: 0xF4F0DE, dark: 0x322E1A,

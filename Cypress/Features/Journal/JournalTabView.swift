@@ -37,6 +37,7 @@ struct JournalTabView: View {
     /// does not construct another feature's view (ARCHITECTURE §3).
     var onOpenTree: ((UUID) -> Void)?
     var onWalk: ((UUID) -> Void)?
+    var onOpenSite: ((UUID) -> Void)?
 
     @Environment(AppRouter.self) private var router: AppRouter?
 
@@ -48,7 +49,8 @@ struct JournalTabView: View {
                 api: api,
                 coordinate: coordinate,
                 onOpenTree: onOpenTree,
-                onWalk: onWalk
+                onWalk: onWalk,
+                onOpenSite: onOpenSite
             )
 
             BottomTabBar(selection: router?.bottomTabSelection ?? .constant(.journal))
