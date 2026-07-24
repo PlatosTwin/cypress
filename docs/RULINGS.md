@@ -227,3 +227,98 @@ If this reads as discouraging in the beta, the fix is copy around the ring, not 
 - The C10 locked glyph and the C23 chart series (R1, above). Drawn decisions, both failing 3:1.
 - The rubric wording on screen 05 — whether `PRODUCT.md` or `SCREENS.md` holds the anchor sentences.
 - Everything constraint 21 covers. The one-time exception for the six entrances (E98) is spent.
+## R6–R12 — the second delegation
+
+The project owner delegated the six design questions left open after M5, and chose the moderation
+route for screen 19. Same standing as R1–R5: made because nothing in the documents said anything, not
+because the documents conflicted. That is the ERRATA/RULINGS split.
+
+### R6 — screen 17's queue tiles name the kind in words, not in a new glyph
+
+Visit and check-in draw the same tile, so a queue of four items says nothing about what is in it. The
+tempting fix is a glyph per kind, and it is the wrong one twice over: SCREENS.md draws no such glyphs,
+so inventing four is exactly what constraint 21 forbids, and a glyph that repeats a word is what E116
+found the tab bar already doing — decoration a VoiceOver user has to be shielded from.
+
+**The kind is written, using the mono section label the screen already uses.** Text cannot be
+misread, needs no legend, costs nothing at AX5, and is the only version of this that is also correct
+for someone who cannot see the tile. A glyph may be added later *beside* the word; it may not replace
+it.
+
+### R7 — a vacant planting site gets a hollow ring, not the grey dot that means "removed"
+
+C19 has no vacant-site pin, so 12,518 basins currently draw as the grey dot for a removed tree. That
+is not a styling gap, it is the map asserting that something was there and is gone — the same lie
+E107 and E113 spent two entries removing everywhere else. It is the last surface still telling it.
+
+**A hollow ring: the existing pin geometry, outline only, no fill**, in the dashed-border family the
+vacant-site screen and the empty photo well already speak (`borderDashedStrong`). Nothing is added to
+the palette. An empty outline reads as "nothing here" without needing a colour to be learned, and it
+cannot be confused with a filled dot at any size — which a second grey could.
+
+### R8 — the two failing contrast pairs are fixed by lightness, and C23 gains a non-colour encoding
+
+R1 fixed the text ramp and deliberately left the C10 locked glyph and the C23 chart series, both under
+3:1, because a glyph and a data encoding are drawn decisions rather than a ramp. Delegated now, the
+answer is R1's method: **lightness-only moves in OKLCh, holding chroma and hue**, so the marks stay
+recognisably themselves.
+
+C23 gets one thing more. If the series cannot all reach 3:1 by lightness without becoming hard to tell
+apart, **the series carry a dash pattern as well as a colour**. A chart that distinguishes its lines
+only by hue is unreadable to a colour-blind reader at *any* contrast ratio, so the redundant encoding
+is owed regardless — and it is what makes the lightness moves affordable.
+
+### R9 — one amber border weight
+
+Three amber borders drawn at three near-identical weights is drift, not design: no document assigns
+the differences a meaning, and nothing reads them as distinct. **They collapse to the middle weight.**
+A border weight is not a semantic; where emphasis is genuinely meant, it is carried by the token that
+already exists for it.
+
+### R10 — screen 12 gains the vacant-site block E115 proposed
+
+The almanac can see 195,309 records and speaks about 182,791 of them. **It should say how many
+planting sites in the neighbourhood are empty**, because that is the one true and useful thing the app
+can say about the 12,518 it otherwise hides — and E115 established that hiding them is a status
+predicate doing its job rather than a bug to widen away.
+
+The copy inherits `SitePresentation`'s line and may not cross it: Cypress keeps the record of what is
+planted, it does not plant. The block reports a count. It does not call for volunteers, promise a
+replanting, or imply anyone has been told.
+
+### R11 — every empty state names what would fill it, and who fills it
+
+"No data" is a dead end. The screens that already do this do it well — `No measurements on this tree
+yet.`, `Nothing has been recorded on this tree yet.` — and the ruling is that **this is the pattern,
+extended to every screen lacking one**: say what the space is for and whose action puts something in
+it. Where nothing the user can do would fill it, say that instead of implying they failed.
+
+### R12 — screen 19 unblocks through moderation, and moderation is Phase 2
+
+The owner chose the moderation route: designated community leads verify removals. That is the right
+call and it is already the shape the data expects — an `appears_removed` observation raises a
+`review_flags` row and deliberately does not mutate `trees.status` (BUILD-PLAN §6, DECISIONS §3.7),
+and `VerificationState.orgVerified` is already defined as "confirmed by an org member with the steward
+or coordinator role". The mechanism is built. What is missing is the confirming step and anyone with
+standing to take it.
+
+**It cannot ship in the local beta, and the blocker is R4.** A community lead has to *be someone*, and
+`BetaCapability.accountsAvailable` is `false` — there is no sign-in, so there is no role to hold and no
+identity to attribute a confirmation to. Building the confirm path now would produce a moderation
+queue that nobody can be a moderator of.
+
+So the order is: **accounts (R4 reversed) → roles → the confirm step → screen 19 becomes reachable.**
+Until then screen 19 keeps the coverage it has (unit tests and a `ScreenSweepShots` fixture) and the
+deep-link harness keeps no `memorial` case, for the reason E117 gives: the seed holds only `alive` and
+`vacant_site`, and opening a memorial over a standing tree is the class of lie that suite exists to
+catch.
+
+**One consequence worth stating plainly.** Every `Removed?` check-in a beta tester makes raises a flag
+that no one will ever action, and the app currently says nothing about that. Whatever acknowledgement
+it grows must not overclaim — ARCHITECTURE §5.4 — and screen 06 already shows the standard to meet: it
+says `the city has not been notified` in as many words.
+
+## What is still design's, and was not delegated
+
+- The rubric wording on screen 05 — whether `PRODUCT.md` or `SCREENS.md` holds the anchor sentences.
+- Everything constraint 21 covers. The one-time exception for the six entrances (E98) is spent.
