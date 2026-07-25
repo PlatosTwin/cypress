@@ -65,7 +65,7 @@ struct YouTabView: View {
     /// `treeNameResolver`: this screen needs one operation, not a whole boundary, and handing it one
     /// keeps every state of the tab drawable in a preview without a database. Nil draws no export
     /// block at all, which is what a surface with nothing behind it should do.
-    var export: (@Sendable (ExportFormat) async throws -> Data)?
+    var export: JournalExportBytes?
 
     @Environment(AppRouter.self) private var router: AppRouter?
 

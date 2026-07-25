@@ -212,7 +212,7 @@ enum JournalFixtures {
 /// The export rows, which had no button anywhere in the app until this round.
 #Preview("journal · export rows") {
     ScrollView {
-        JournalExportRows(export: { _ in Data() })
+        JournalExportRows(export: JournalExportBytes { _ in Data() })
     }
     .background(CypressColor.surfaceScreen)
 }

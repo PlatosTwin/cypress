@@ -283,7 +283,7 @@ struct RootView: View {
                 outbox: outbox,
                 moderation: moderation,
                 account: account,
-                export: { [api = data.api] format in try await api.exportLatest(format) }
+                export: JournalExportBytes { [api = data.api] format in try await api.exportLatest(format) }
             )
         }
     }

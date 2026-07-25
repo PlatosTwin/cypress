@@ -76,11 +76,37 @@ struct JournalGeoJSONExport: Transferable {
 /// already the app's way of handing something to the system — so neither half of this is a new
 /// pattern. The `record` accent is the one screen 13 gives to a measurement, which is the nearest
 /// thing in the palette to "a written-down fact about a tree".
+/// The one operation this section needs from the boundary: bytes, per format.
+///
+/// **A struct rather than a bare closure, and the reason is the compiler rather than taste.** Held as
+/// `(@Sendable (ExportFormat) async throws -> Data)?`, the `@Sendable` does not survive the trip
+/// through the `Optional` under `SWIFT_APPROACHABLE_CONCURRENCY`: unwrapping it yields a value the
+/// compiler no longer believes is sendable, and handing that to a parameter which requires one is
+/// `warning: converting non-sendable function value … may introduce data races` — the only warning in
+/// the whole build, and an error under Swift 6's language mode. A typealias does not fix it, because
+/// the attribute is lost at the unwrap and not at the declaration. Wrapping the closure in an
+/// explicitly `Sendable` struct does, because what travels through the `Optional` is then a nominal
+/// type that states its own sendability, and the function comes back out by stored property rather
+/// than by rebinding.
+struct JournalExportBytes: Sendable {
+
+    private let bytes: @Sendable (ExportFormat) async throws -> Data
+
+    init(_ bytes: @escaping @Sendable (ExportFormat) async throws -> Data) {
+        self.bytes = bytes
+    }
+
+    /// So call sites read `export(.csv)`, exactly as they did when this was a bare closure.
+    func callAsFunction(_ format: ExportFormat) async throws -> Data {
+        try await bytes(format)
+    }
+}
+
 struct JournalExportRows: View {
 
     /// The bytes, per format. A closure rather than the API itself so the section can be drawn — and
     /// photographed — without one.
-    let export: @Sendable (ExportFormat) async throws -> Data
+    let export: JournalExportBytes
 
     /// The two payloads the body hands its two `ShareLink`s.
     ///
@@ -91,8 +117,17 @@ struct JournalExportRows: View {
     /// nobody doubted; it says nothing about which format the button asks for. Swapping the two
     /// arguments here left every export assertion green, so this is the seam that makes the mistake
     /// the file comment warns about a catchable one.
+    /// The closure form, so a caller with a bare closure — every test here, and every preview — reads
+    /// as it did before `JournalExportBytes` existed. The wrapper is there to survive an `Optional`,
+    /// which is a problem only the You tab has.
     static func payloads(
         _ export: @escaping @Sendable (ExportFormat) async throws -> Data
+    ) -> (csv: JournalCSVExport, geoJSON: JournalGeoJSONExport) {
+        payloads(JournalExportBytes(export))
+    }
+
+    static func payloads(
+        _ export: JournalExportBytes
     ) -> (csv: JournalCSVExport, geoJSON: JournalGeoJSONExport) {
         (
             JournalCSVExport { try await export(.csv) },
