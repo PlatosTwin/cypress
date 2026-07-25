@@ -295,13 +295,21 @@ private struct CypressPulseModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content.background(alignment: .center) {
-            Circle()
-                .fill(color.opacity(ringOpacity))
-                .padding(-ringSpread)
-                // The ring is decoration on a pin whose own label already says what it means
-                // (C19 `MapPin.Kind.accessibilityLabel`), so it is never its own element.
-                .accessibilityHidden(true)
-                .allowsHitTesting(false)
+            // **The ring exists only when it is switched on.** It used to be built either way and
+            // then hidden by a zero spread and a zero opacity, which is one `Circle` and one shape
+            // fill per host — and `MapPin` applies this modifier to *every* pin on screen 01, of
+            // which only the amber one is ever active. That was hundreds of invisible circles on the
+            // map's critical path (ERRATA E130). Nothing drawn changes: the inactive branch was
+            // already a fully transparent circle at zero padding.
+            if isActive {
+                Circle()
+                    .fill(color.opacity(ringOpacity))
+                    .padding(-ringSpread)
+                    // The ring is decoration on a pin whose own label already says what it means
+                    // (C19 `MapPin.Kind.accessibilityLabel`), so it is never its own element.
+                    .accessibilityHidden(true)
+                    .allowsHitTesting(false)
+            }
         }
         .onAppear {
             guard isActive, !reduceMotion else { return }

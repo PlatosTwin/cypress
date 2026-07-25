@@ -63,7 +63,9 @@ final class MapModel {
     }
 
     private(set) var viewport: MapViewport?
-    private(set) var content: MapContent = .pins([])
+    private(set) var content: MapContent = .pins([]) {
+        didSet { recomputeAdmittedPins() }
+    }
     private(set) var isLoading = false
     /// A read that failed. Deliberately not drawn: SCREENS.md 01 lists no error state and
     /// ARCHITECTURE §5.8 says not to invent one. What it buys is that a failed read leaves the last
@@ -76,7 +78,9 @@ final class MapModel {
 
     /// Species resolved for the bloom filter, keyed by id. Populated lazily and only for species
     /// that are actually on screen — the catalogue is 569 rows and the map does not need it.
-    private var species: [UUID: Species] = [:]
+    private var species: [UUID: Species] = [:] {
+        didSet { if filter.needsSeasonalData { recomputeAdmittedPins() } }
+    }
     private var speciesMisses: Set<UUID> = []
 
     private var fetchTask: Task<Void, Never>?
@@ -87,28 +91,94 @@ final class MapModel {
     /// and short enough that letting go feels like the map answered immediately.
     static let cameraDebounce: Duration = .milliseconds(200)
 
-    // MARK: The pin budget, and why it is spent in bands
-    //
-    // `TreeQueries.pins` answers from `idx_trees_lat_lon`, so `LIMIT` truncates in **latitude
-    // order**: the rows it keeps are the southernmost ones in the box, never a spread across it.
-    // A cap that actually bites therefore does not thin the map — it clips the top of the screen
-    // off and piles every pin into a strip along the bottom edge, which is exactly what it did
-    // the first time this screen ran against real data.
-    //
-    // And it does bite. `TreeQueries` measures a zoom-16 viewport at 1,321 pins; a zoom-16
-    // viewport over the densest part of the Sunset is roughly twice that. A1 puts individual pins
-    // at zoom ≥ 16, so this is the normal case, not the edge.
-    //
-    // So the viewport is read as `pinBands` horizontal strips, each with its own share of the
-    // budget. When the budget runs out it now runs out evenly, top to bottom, and the map thins
-    // instead of losing its northern half. Five reads of an index range cost single-digit
-    // milliseconds together, which is the price.
+    /// The floor under the clustering-threshold read, which does not wait out the full debounce
+    /// because crossing it changes the *shape* of the answer rather than its contents.
+    static let thresholdDebounce: Duration = .milliseconds(16)
 
-    /// Horizontal strips the viewport is read in.
-    static let pinBands = 5
-    /// Per-strip cap. Five of these is ~1,300 — one zoom-16 screenful by `TreeQueries`' own
-    /// measurement, and about as many annotation views as MapKit draws without complaint.
-    static let pinsPerBand = 260
+    // MARK: The pin budget, and why it is a grid
+    //
+    // ── What was here before, and what it did ──────────────────────────────────────────────────
+    // `TreeQueries.pins` answers from `idx_trees_lat_lon`, so a bare `LIMIT` truncates in **latitude
+    // order**: the rows it keeps are the southernmost ones in the box, never a spread across it. A
+    // cap that bites therefore does not thin the map — it clips the top of the screen off and piles
+    // every pin into a strip along the bottom edge. The answer to that was to read the viewport as
+    // five horizontal bands with 260 of the budget each, so the cap ran out evenly.
+    //
+    // It made the truncation even and it left the real defect untouched: **nothing bounded the drawn
+    // pins by anything but the viewport's area.** 5 × 260 = 1,300 annotation views, each a
+    // SwiftUI-hosted `Button`, and the ceiling was reached. Measured on the iPhone 16 Pro simulator
+    // by a `CADisplayLink` counting main-thread frames (`MapFrameProbe`), over Dolores Park and the
+    // Mission — before this round:
+    //
+    //     idle at zoom 18, 10 markers          60.0 fps   worst frame    16.7 ms
+    //     the pinch out from 18 to 16          38.0 fps   worst frame   325.0 ms
+    //     arriving at zoom 16, 1,300 markers   14.3 fps   worst frame   753.5 ms
+    //     the window after that                 0.5 fps   worst frame 2,060.8 ms
+    //     one pan at zoom 16                   18.7 fps   worst frame 1,286.0 ms
+    //
+    // Two pinches out is sixteen times the ground and was sixteen times the annotations. Further out
+    // still it goes *fast again*, because zoom ≤ 15 clusters and clustering caps the badges — which
+    // is why the report was "SUPER slow when you zoom out **a bit**", and why the SQL was never the
+    // cause: the queries get more expensive in the direction the map gets faster.
+    //
+    // ── The rule now ──────────────────────────────────────────────────────────────────────────────
+    // A budget, and a grid to spend it on. `TreeQueries.pins` grids the viewport into cells that are
+    // `markerCellPoints` square on screen and takes one tree per occupied cell — in SQL, on the
+    // covering index, so it reads a few hundred rows instead of thousands. The drawn count is then
+    // bounded by screen area ÷ cell area, which does not change with zoom: pulling the camera back
+    // stops adding annotations and starts making each pin stand for more ground.
+    //
+    // The grid is a *ceiling* rather than a rule. The same query counts what is in the box while it
+    // groups it, so a viewport whose trees already fit inside `pinLimit` is answered un-thinned and
+    // nothing is lost where nothing was wrong.
+    //
+    // And the bands are gone. A query that returns one row per cell has nothing left to truncate, so
+    // there is no strip to spread evenly, and one read does what five did — which also ends the ten
+    // redundant round-trips the other four were making through `LocalAPI`'s community and
+    // status-override reads.
+
+    /// How much screen one drawn pin is allowed to stand for, once the budget is exceeded.
+    ///
+    /// **44 points, because that is this app's own hit target.** `.cypressHitArea()` gives every
+    /// interactive control ≥ 44 pt (ARCHITECTURE §6, SCREENS.md §5 gap 12), and a pin is a control —
+    /// so two pins closer together than 44 pt cannot both be reliably tapped. The second one is not a
+    /// pin the user can use; it is paint. One per 44 pt is therefore the *most* pins that are all
+    /// still individually reachable, which makes it the honest cell for a budget that has to bite
+    /// somewhere. `MapPin` itself already says this: "two pins closer than ~44pt have overlapping
+    /// targets, which is precisely what clustering is for".
+    ///
+    /// What it comes to: on an iPhone 16 Pro the map is 402 × 874 pt and the fetched box is that with
+    /// 8 % added on every side, so the grid touches **264 to 288 cells** — and it is the same 264 to
+    /// 288 at zoom 16, 17, 18 and 21, because the screen does not change size when the camera pulls
+    /// back. That is the whole property. Counted against the shipped seed over the densest zoom-16
+    /// screenful in it (37.7788, −122.4247, in the Mission), cells that actually hold a tree:
+    ///
+    ///     zoom · trees in the fetched box · cells · occupied · drawn
+    ///       21  ·                       6 ·   288 ·        6 ·     6
+    ///       20  ·                      15 ·   288 ·       15 ·    15   ← under budget, un-thinned
+    ///       19  ·                     109 ·   264 ·       54 ·   109   ← under budget, un-thinned
+    ///       18  ·                     543 ·   288 ·      136 ·   136
+    ///       17  ·                   2,072 ·   288 ·      220 ·   220
+    ///       16  ·                   8,150 ·   288 ·      277 ·   277
+    ///
+    /// The pins do not fuse at that spacing either: C19 draws an 18 pt pin, so a full grid covers
+    /// 15 % of the screen in pins, against the unbroken mat of green 1,300 of them drew.
+    static let markerCellPoints: Double = 44
+
+    /// How many individual pins one screenful may draw before the grid takes over.
+    ///
+    /// **It is the cell rule stated the other way round, not a second knob.** The fetched box on this
+    /// phone is 472,000 pt²; divided by a 44 pt cell that is ~250 cells, and 400 trees spread over it
+    /// is a mean spacing of 34 pt — already inside the 44 pt tap target, so past 400 the extra pins
+    /// are paint rather than controls. Which means 400 sits *above* the grid's own ceiling on every
+    /// current iPhone (264–288 cells here, at most ~350 on a 16 Pro Max) and far below the 1,300 that took the
+    /// map to 14 fps. So the un-thinned query runs exactly where the un-thinned answer was already
+    /// inside the grid's budget, and the grid runs everywhere else, and neither one is a cliff.
+    ///
+    /// It is the same `pinLimit` the API always took, doing the job its own comment claimed: "hard
+    /// cap on individual pins returned in one response". What changed is that exceeding it now costs
+    /// the densest pins rather than the northern half of the screen.
+    static let pinLimit = 400
 
     // MARK: - Derived content
 
@@ -118,13 +188,24 @@ final class MapModel {
     }
 
     /// The pins the current filter admits.
-    var pins: [TreePin] {
-        guard case let .pins(pins) = content else { return [] }
+    ///
+    /// **Stored rather than computed.** It was a computed property that re-ran the filter on every
+    /// read, and it is read from `MapKitBasemap`'s body — which MapKit invalidates on every frame of
+    /// a pan and on every GPS fix, so a filtered map re-filtered its whole pin set sixty times a
+    /// second to arrive at the same array (ERRATA E130). Exactly three things can change the answer,
+    /// and all three recompute it: `content`, `filter`, and the species the bloom chip reads.
+    private(set) var pins: [TreePin] = []
+
+    private func recomputeAdmittedPins() {
+        guard case let .pins(fetched) = content else {
+            if !pins.isEmpty { pins = [] }
+            return
+        }
         switch filter {
         case .all:
-            return pins
+            pins = fetched
         case .needsCare:
-            return pins.filter { MapPinKind.needsCare(status: $0.status) }
+            pins = fetched.filter { MapPinKind.needsCare(status: $0.status) }
         case .inBloom:
             // Answered from `species.seasonal.bloom_months` and from nothing else. The curated
             // species pipeline (BUILD-PLAN §8) has not landed, so every `seasonal` in the shipped
@@ -132,7 +213,7 @@ final class MapModel {
             // answer to the question the chip asks; inventing bloom months so it looks alive is
             // precisely what BUILD-PLAN §15 and DECISIONS §3.15 forbid.
             let month = calendar.component(.month, from: now())
-            return pins.filter { pin in
+            pins = fetched.filter { pin in
                 guard let id = pin.speciesID, let species = species[id] else { return false }
                 return species.seasonal.bloomMonths.contains(month)
             }
@@ -152,10 +233,17 @@ final class MapModel {
         if let viewport, viewport.zoom == zoom, viewport.bounds.contains(bounds) { return }
         // A little more than the screen, so a short pan does not blank the edge it is heading for.
         // Kept small: every point of it is budget spent on pins the user cannot see.
-        let next = MapViewport(bounds: bounds.expanded(by: 0.08), zoom: zoom, pinLimit: Self.pinsPerBand)
+        let next = MapViewport(
+            bounds: bounds.expanded(by: 0.08),
+            zoom: zoom,
+            pinLimit: Self.pinLimit,
+            // Only the pin half of the answer has a level of detail to choose. A clustered viewport
+            // is already one badge per 64 pt cell, which is the same rule with a count on it.
+            markerCellPoints: zoom <= MapViewport.highestClusteringZoom ? nil : Self.markerCellPoints
+        )
         guard next != viewport else { return }
         // The clustering threshold is the one boundary where the *shape* of the answer changes, so
-        // it never waits behind a debounce that a slow pan could keep re-arming.
+        // it does not wait out the full debounce that a slow pan could keep re-arming.
         let crossedClusteringThreshold = next.shouldCluster != viewport?.shouldCluster
         viewport = next
         scheduleFetch(immediate: crossedClusteringThreshold)
@@ -164,62 +252,48 @@ final class MapModel {
     private func scheduleFetch(immediate: Bool) {
         fetchTask?.cancel()
         fetchTask = Task { [weak self] in
-            if !immediate {
-                try? await Task.sleep(for: Self.cameraDebounce)
-                if Task.isCancelled { return }
-            }
+            // `immediate` used to mean no sleep at all, which made a pinch held across the zoom-15/16
+            // boundary the one gesture in the app that could issue an unbounded number of reads: the
+            // shape flips on every crossing and each crossing fired at once, and the read on the
+            // clustered side is the whole-city aggregate. A floor of one frame coalesces an
+            // oscillating pinch into a single read and is not a wait anybody can feel — it is a
+            // twelfth of the pan debounce (ERRATA E130).
+            try? await Task.sleep(for: immediate ? Self.thresholdDebounce : Self.cameraDebounce)
+            if Task.isCancelled { return }
             await self?.fetch()
         }
     }
 
     /// The one read. Bounded by the viewport, never by anything else.
+    ///
+    /// Every `await` is followed by a cancellation check, because a pan supersedes its own reads
+    /// constantly: `scheduleFetch` cancels the outstanding task on each camera change that matters,
+    /// and a task that ignored that would publish a viewport the camera has already left and then
+    /// spend a species lookup per pin resolving it.
     func fetch() async {
-        guard let viewport else { return }
+        guard let viewport, !Task.isCancelled else { return }
         isLoading = true
         defer { isLoading = false }
         do {
-            let content = try await load(viewport)
+            let content = try await api.mapContent(in: viewport)
             guard !Task.isCancelled else { return }
             self.content = content
             loadFailure = nil
             if filter.needsSeasonalData { resolveSpeciesForVisiblePins() }
         } catch let error as APIError {
+            guard !Task.isCancelled else { return }
             loadFailure = error
         } catch {
+            guard !Task.isCancelled else { return }
             loadFailure = .serverError
         }
-    }
-
-    /// One viewport, one answer — but the pin half of it is read in bands. See the budget note above.
-    private func load(_ viewport: MapViewport) async throws -> MapContent {
-        // Clustering aggregates in SQL with no `LIMIT` at all, so a clustered viewport is one read
-        // and the banding would buy nothing.
-        guard !viewport.shouldCluster else { return try await api.mapContent(in: viewport) }
-
-        let bounds = viewport.bounds
-        let step = (bounds.maxLatitude - bounds.minLatitude) / Double(Self.pinBands)
-        var pins: [TreePin] = []
-        var seen: Set<UUID> = []
-        for band in 0..<Self.pinBands {
-            let strip = BoundingBox(
-                minLatitude: bounds.minLatitude + step * Double(band),
-                maxLatitude: bounds.minLatitude + step * Double(band + 1),
-                minLongitude: bounds.minLongitude,
-                maxLongitude: bounds.maxLongitude
-            )
-            let read = MapViewport(bounds: strip, zoom: viewport.zoom, pinLimit: Self.pinsPerBand)
-            guard case let .pins(found) = try await api.mapContent(in: read) else { continue }
-            // Band edges are inclusive on both sides, so a tree sitting exactly on one would come
-            // back twice and `ForEach` would rightly complain.
-            for pin in found where seen.insert(pin.id).inserted { pins.append(pin) }
-        }
-        return .pins(pins)
     }
 
     // MARK: - Filters
 
     private func filterDidChange() {
         clearSelection()
+        recomputeAdmittedPins()
         if filter.needsSeasonalData { resolveSpeciesForVisiblePins() }
     }
 

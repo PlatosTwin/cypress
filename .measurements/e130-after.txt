@@ -1,0 +1,25 @@
+2026-07-25 09:58:57.735 Cypress[9714:45886808] CAMetalLayer ignoring invalid setDrawableSize width=0.000000 height=0.000000
+[probe] armed
+[probe] z18 markers=10 frames=39 fps=38.4 p50=16.7ms p95=52.0ms worst=288.7ms dropped=30
+[probe] z18 markers=10 frames=59 fps=59.0 p50=16.7ms p95=16.7ms worst=33.3ms dropped=1
+[probe] z18 markers=10 frames=57 fps=57.0 p50=16.7ms p95=18.3ms worst=48.3ms dropped=9
+[probe] z16 markers=101 frames=50 fps=44.6 p50=16.7ms p95=43.6ms worst=138.3ms dropped=26
+[probe] z16 markers=101 frames=60 fps=59.3 p50=16.7ms p95=16.7ms worst=28.4ms dropped=1
+[probe] z16 markers=101 frames=58 fps=58.0 p50=16.7ms p95=16.7ms worst=38.9ms dropped=2
+[probe] z16 markers=98 frames=57 fps=57.0 p50=16.7ms p95=16.7ms worst=54.2ms dropped=3
+[probe] z15 markers=60 frames=53 fps=52.1 p50=16.7ms p95=34.2ms worst=96.5ms dropped=11
+[probe] z13 markers=76 frames=39 fps=39.0 p50=16.7ms p95=88.4ms worst=150.3ms dropped=35
+[probe] z13 markers=76 frames=59 fps=59.0 p50=16.7ms p95=16.7ms worst=33.3ms dropped=1
+[probe] z13 markers=76 frames=50 fps=50.0 p50=16.7ms p95=40.0ms worst=57.0ms dropped=10
+[probe] z13 markers=76 frames=42 fps=42.0 p50=16.7ms p95=45.6ms worst=49.9ms dropped=18
+[probe] z13 markers=76 frames=37 fps=36.5 p50=22.7ms p95=45.3ms worst=46.6ms dropped=33
+[probe] z13 markers=76 frames=53 fps=52.8 p50=16.7ms p95=37.4ms worst=60.8ms dropped=10
+[probe] z15 markers=136 frames=44 fps=40.4 p50=16.7ms p95=42.1ms worst=239.0ms dropped=38
+[probe] z15 markers=136 frames=60 fps=59.3 p50=16.7ms p95=16.7ms worst=27.6ms dropped=1
+[probe] z16 markers=214 frames=43 fps=36.1 p50=16.7ms p95=34.5ms worst=441.0ms dropped=34
+[probe] z17 markers=112 frames=55 fps=54.5 p50=16.7ms p95=33.3ms worst=59.8ms dropped=6
+[probe] z17 markers=112 frames=47 fps=47.0 p50=16.7ms p95=28.7ms worst=148.6ms dropped=13
+[probe] z17 markers=112 frames=54 fps=54.0 p50=16.7ms p95=16.7ms worst=115.5ms dropped=6
+[probe] z17 markers=112 frames=58 fps=58.0 p50=16.7ms p95=16.7ms worst=44.0ms dropped=2
+[probe] z17 markers=112 frames=54 fps=54.0 p50=16.7ms p95=16.7ms worst=115.5ms dropped=6
+[probe] z17 markers=112 frames=55 fps=55.0 p50=16.7ms p95=16.7ms worst=99.0ms dropped=5

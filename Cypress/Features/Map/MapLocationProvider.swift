@@ -74,6 +74,14 @@ final class MapLocationProvider {
         // A street tree is a doorstep-scale target; anything coarser than `best` cannot tell two
         // trees on the same block apart, which is what screen 02 needs from the same fix.
         manager.desiredAccuracy = kCLLocationAccuracyBest
+        // Every fix writes `availability`, and `availability` is read by screen 01's basemap — so a
+        // walk re-runs the map's whole `MapContent` builder every 5 m. Coarsening this was looked at
+        // as part of ERRATA E130's performance work and **declined twice over**: the pin layer is now
+        // a few hundred annotations rather than 1,300 and re-running the builder over an array that
+        // has not changed costs nothing SwiftUI cannot diff away, and the thing being traded is the
+        // freshness of the one fix screen 02 identifies a tree from, where 5 m is the difference
+        // between two trees on the same block. If the invalidation ever does cost something, the fix
+        // is to move the dot out of the pin layer, not to make the fix worse.
         manager.distanceFilter = 5
         apply(authorization: manager.authorizationStatus)
     }
