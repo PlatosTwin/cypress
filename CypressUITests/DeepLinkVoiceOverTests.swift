@@ -74,6 +74,142 @@ final class DeepLinkVoiceOverTests: XCTestCase {
     /// opens: the hero draws a photograph and becomes the control that opens screen 20.
     func testPhotoHero()     { check("photoHero",     anchor: "Best photo",      pushed: true) }
 
+    // MARK: - The hardest screen in the app for VoiceOver
+
+    /// The community add's pin step: a map with a movable pin.
+    ///
+    /// **A pan is a gesture the screen reader owns.** There is no labelling that turns "drag the world
+    /// 30 m north-east" into something a swipe-and-double-tap can perform, so a draggable pin with
+    /// nothing beside it is a control that simply does not exist for a VoiceOver user. The answer is
+    /// four nudge buttons and a pin that says where it is, and this is the test that the answer is
+    /// actually in the tree rather than in a comment.
+    ///
+    /// Presented over the tab root rather than pushed — it is a phase of `VisitAddTreeModel`, not a
+    /// `Route` — so it owes no Back *button* by the pushed-screen rule, and has one anyway, because a
+    /// screen with no navigation bar and no gesture out is a trap.
+    func testPinAdjust() {
+        let app = launch("pinAdjust")
+        guard arrive(app, screen: "pinAdjust", anchor: "Move the pin") else { return }
+
+        assertEveryControlIsLabelled(app, screen: "pinAdjust")
+
+        for direction in ["north", "east", "south", "west"] {
+            let nudge = app.buttons["Move the pin \(direction)"]
+            XCTAssertTrue(
+                nudge.exists,
+                "pinAdjust: there is no '\(direction)' nudge control, so the pin can only be moved by "
+                    + "a gesture a screen reader cannot perform"
+            )
+            XCTAssertTrue(nudge.isHittable, "pinAdjust: the '\(direction)' nudge is in the tree but dead")
+        }
+
+        XCTAssertTrue(
+            app.buttons["Back to where you are standing"].isHittable,
+            "pinAdjust: there is no one-press way back to the fix, so a mis-aimed pin has to be "
+                + "walked back by hand"
+        )
+
+        let back = app.buttons["Back"]
+        XCTAssertTrue(
+            back.exists && back.isHittable,
+            "pinAdjust: there is no reachable way to leave the pin screen without confirming a "
+                + "placement"
+        )
+
+        app.terminate()
+    }
+
+    /// The nudge controls have to *move the pin*, and the pin has to *say so*.
+    ///
+    /// Asserted on the pin's own accessibility value rather than on the existence of the buttons,
+    /// which is this suite's standing lesson (E118, E125): a labelled, hittable control that does
+    /// nothing passes every test written about its presence. Three presses of a 5 m step is 15 m, and
+    /// the pin has to announce exactly that — a value that stayed at "Right where you are standing"
+    /// means the taps reached a button that moves nothing, and a value reading anything other than
+    /// 15 m north means the step or the bearing is wrong.
+    func testTheNudgeControlsActuallyMoveThePin() {
+        let app = launch("pinAdjust")
+        guard arrive(app, screen: "pinAdjust", anchor: "Move the pin") else { return }
+
+        let pin = Self.pinElement(app)
+        XCTAssertTrue(pin.waitForExistence(timeout: 10), "pinAdjust: the pin is not in the accessibility tree at all")
+        XCTAssertEqual(
+            pin.value as? String, "Right where you are standing.",
+            "pinAdjust: the pin does not start on the fix, so this test's arithmetic means nothing"
+        )
+
+        let north = app.buttons["Move the pin north"]
+        for _ in 0..<3 { north.tap() }
+
+        XCTAssertEqual(
+            pin.value as? String, "15 m north of where you are standing.",
+            "pinAdjust: after three 5 m nudges north the pin reads "
+                + "'\(pin.value as? String ?? "nothing")' — the control does not move the pin, or it "
+                + "does not say where it went"
+        )
+
+        // And the way back is one press, not fifteen.
+        app.buttons["Back to where you are standing"].tap()
+        XCTAssertEqual(pin.value as? String, "Right where you are standing.")
+
+        app.terminate()
+    }
+
+    /// **The bound has to be visible when it is reached.**
+    ///
+    /// A pin that silently stops moving is a bug report; a screen that says why it stopped is a rule.
+    /// Fifteen 5 m nudges is exactly the 75 m limit and all fifteen must be accepted — an off-by-one
+    /// here would be a limit that refuses a spot the screen is calling 75 m — and the sixteenth must
+    /// be refused *out loud*, in the persistent line under the pin's position rather than only in a
+    /// spoken announcement that a sighted reader never hears.
+    func testThePinSaysWhenItHasGoneAsFarAsItGoes() {
+        let app = launch("pinAdjust")
+        guard arrive(app, screen: "pinAdjust", anchor: "Move the pin") else { return }
+
+        let pin = Self.pinElement(app)
+        XCTAssertTrue(pin.waitForExistence(timeout: 10), "pinAdjust: the pin is not in the accessibility tree at all")
+
+        let north = app.buttons["Move the pin north"]
+        for _ in 0..<15 { north.tap() }
+
+        XCTAssertEqual(
+            pin.value as? String, "75 m north of where you are standing.",
+            "pinAdjust: fifteen 5 m nudges left the pin at '\(pin.value as? String ?? "nothing")' "
+                + "rather than at the 75 m limit, so a nudge inside the circle is being refused"
+        )
+        XCTAssertTrue(
+            app.buttons["Use this spot"].isEnabled,
+            "pinAdjust: a pin exactly at the limit cannot be confirmed, so the limit is off by one"
+        )
+
+        let stopped = app.staticTexts
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "That is as far as the pin goes"))
+            .firstMatch
+        XCTAssertFalse(stopped.exists, "pinAdjust: the screen says the pin has stopped before it has")
+
+        north.tap()
+
+        XCTAssertTrue(
+            stopped.waitForExistence(timeout: 5),
+            "pinAdjust: the sixteenth nudge did nothing and the screen said nothing about it — the "
+                + "pin stops silently, which is exactly the bug report this bound would generate"
+        )
+        XCTAssertEqual(
+            pin.value as? String, "75 m north of where you are standing.",
+            "pinAdjust: the refused nudge moved the pin anyway"
+        )
+
+        app.terminate()
+    }
+
+    /// The pin, found by the words it says rather than by its type — the reticle is a drawn shape and
+    /// XCUITest's opinion of what kind of element that is has changed between OS releases.
+    private static func pinElement(_ app: XCUIApplication) -> XCUIElement {
+        app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == %@", "This tree's pin"))
+            .firstMatch
+    }
+
     // MARK: - A control that is in the tree, labelled, hittable — and dead
 
     /// Tapping a thumb on screen 20 has to *do* something (ERRATA E125).

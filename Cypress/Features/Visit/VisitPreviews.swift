@@ -291,4 +291,30 @@ enum VisitPreviewFixtures {
 #Preview("04 · visit camera") {
     VisitPreviewFixtures.camera()
 }
+
+/// The community add's pin step, on a fix as poor as a street canyon really produces.
+///
+/// **NOT SPECIFIED** — see `VisitPinAdjustPresentation`. Standalone rather than through the add
+/// screen, because it takes a coordinate and two closures and owns no draft, which is also what
+/// makes it deep-linkable for the accessibility suite.
+#Preview("pin · right where you are standing") {
+    VisitPinAdjustView(
+        anchor: VisitPreviewFixtures.origin,
+        accuracyM: 24,
+        onConfirm: { _ in },
+        onCancel: {}
+    )
+}
+
+/// The same screen re-opened on a pin that has already been moved most of the way to the limit — the
+/// state a correction starts from.
+#Preview("pin · already moved") {
+    VisitPinAdjustView(
+        anchor: VisitPreviewFixtures.origin,
+        accuracyM: 24,
+        start: VisitPinAdjust.offset(VisitPreviewFixtures.origin, northM: 40, eastM: 25),
+        onConfirm: { _ in },
+        onCancel: {}
+    )
+}
 #endif

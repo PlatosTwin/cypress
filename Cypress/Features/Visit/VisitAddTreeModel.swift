@@ -29,6 +29,16 @@
 //     calls `addTree` and renders `ProximityConflict`'s own candidate list, so the warning can never
 //     disagree with the refusal — which is the failure mode a client-side copy of the rule has.
 //
+//  ── The pin the reader places ─────────────────────────────────────────────────────────────
+//  The coordinate used to be `location.fix.coordinate` verbatim, and rule 2 was read as though it
+//  said the fix *is* the tree. It does not, and it never did: it says a tree without a coordinate is
+//  not a record. So a fix is still required to start — nothing here adds a tree from a phone that
+//  does not know where it is — and where the pin *ends* is now the reader's, inside a bound argued in
+//  `VisitPinAdjust.radiusM`. The default is still the fix, so stand-shoot-save is still one tap and
+//  nobody is walked through a map they did not need.
+//
+//  What the record cannot yet say is *which* of the two it got. See `Placement`.
+//
 //  No SwiftUI in this file.
 //
 
@@ -44,6 +54,11 @@ final class VisitAddTreeModel {
     enum Phase: Equatable {
         /// Collecting a photo and waiting for a fix.
         case composing
+        /// The map is up and the reader is placing the pin. A *phase* rather than a step in
+        /// `VisitFlowView`, because the flow builds a fresh `VisitAddTreeModel` for each of its steps
+        /// and a step would therefore throw away the photograph on the way to the map and back.
+        /// This is the same screen, in a different state, holding the same draft.
+        case placingPin
         /// `addTree` is running.
         case adding
         /// BUILD-PLAN §9 M2's "duplicate-proximity warning on add-a-tree". The candidates are the
@@ -52,6 +67,34 @@ final class VisitAddTreeModel {
         case duplicate([NearbyTree])
         /// The add failed for a reason that is not a duplicate.
         case failed(String)
+    }
+
+    /// Where the coordinate on the record came from.
+    ///
+    /// ── This distinction is not persisted, and that is a boundary rather than an oversight ────
+    /// `main.community_trees` has columns for `lat` and `lon` and nothing that could carry the
+    /// provenance of the pair. Nothing else in the table could carry it honestly either: `address` is
+    /// a street address, `external_ref` is the city's own identifier for an inventory row, and
+    /// `site_type` is where a tree is planted. Writing a flag into any of them would make the column
+    /// mean two things and the next reader would find out the hard way.
+    ///
+    /// So it needs a migration — a `placement TEXT NOT NULL DEFAULT 'gps'` on `community_trees`, an
+    /// AppSchema v9, and `CommunityTreeStore.insert`/`decode` and `Tree` carrying it — and a
+    /// migration is a decision about the shape of the record that is not this screen's to take alone
+    /// (`Migration`'s own note: "checked in, never edited after shipping"). It is written up in the
+    /// round's report instead.
+    ///
+    /// The type exists anyway, because the screen genuinely has the two states and says which one it
+    /// is on: the reader is told whether the tree is going down where they stand or 23 m north-east
+    /// of it, and that sentence is the honest part of the distinction that could be delivered without
+    /// deciding the schema.
+    enum Placement: Equatable {
+        /// The phone's fix, verbatim. The default, and what every community tree added before this
+        /// screen existed was.
+        case gps
+        /// The reader moved the pin, and this is where they put it. Carries the fix it was placed
+        /// against, so the offset can be stated without asking the provider where the phone is *now*.
+        case reader(Coordinate, from: Coordinate)
     }
 
     private let api: any CypressAPI
@@ -69,6 +112,9 @@ final class VisitAddTreeModel {
     /// as `VisitPhotoStaging` names a visit's capture after the visit.
     private let captureID = UUID()
 
+    /// Where this tree is going down. `.gps` until the reader says otherwise.
+    private(set) var placement: Placement = .gps
+
     init(api: any CypressAPI, location: VisitLocationProvider, attribution: Attribution) {
         self.api = api
         self.location = location
@@ -79,13 +125,48 @@ final class VisitAddTreeModel {
 
     var fix: VisitLocationProvider.Fix { location.fix }
 
-    var coordinate: Coordinate? { location.fix.coordinate }
+    /// Where the tree goes.
+    ///
+    /// The fix while the placement is `.gps` — and *live*, so a draft composed while the first fix is
+    /// still settling records the fix as it finally stood rather than as it first arrived. Once the
+    /// reader has placed a pin it is that pin and it stops moving: the whole point of placing one is
+    /// that the phone's opinion of where it is has been overruled.
+    var coordinate: Coordinate? {
+        if case let .reader(placed, _) = placement { return placed }
+        return location.fix.coordinate
+    }
 
     var hasPhoto: Bool { photoPath != nil }
 
+    /// Whether the reader has moved the pin.
+    var isReaderPlaced: Bool {
+        if case .reader = placement { return true }
+        return false
+    }
+
+    /// How far the pin was moved from the fix it was placed against, or nil when it was not moved.
+    var pinOffsetM: Double? {
+        guard case let .reader(placed, anchor) = placement else { return nil }
+        return placed.distance(to: anchor)
+    }
+
+    /// Gate 2, on its own: there has to be a fix before there is anything to move the pin away from.
+    ///
+    /// This is what keeps the pin from becoming a way to add a tree with no GPS at all. A reader with
+    /// a refused or pending fix gets no map, because a map with no anchor has no centre, no bound and
+    /// nothing to measure a displacement against — and a coordinate typed onto a map from a sofa is
+    /// exactly the record `VisitAddTreeModel`'s rule 2 exists to refuse.
+    var canAdjustPin: Bool {
+        location.fix.coordinate != nil || isReaderPlaced
+    }
+
     /// Gates 1 and 2, together. The button is disabled for exactly the reasons the API would refuse.
+    ///
+    /// `.placingPin` disables it too, and not only because the CTA is off screen while the map is up:
+    /// the model is one object and a phase that could still add would let a stale reference to the
+    /// footer write a tree at the coordinate the reader is in the middle of changing.
     var canAdd: Bool {
-        hasPhoto && coordinate != nil && phase != .adding
+        hasPhoto && coordinate != nil && phase != .adding && phase != .placingPin
     }
 
     /// `GPS ±8 m`, in screen 02's own words so the two screens of one flow say it the same way.
@@ -101,6 +182,9 @@ final class VisitAddTreeModel {
     /// that tells somebody to take a photo when the real obstacle is that the phone does not know
     /// where it is.
     var blockingReason: String? {
+        // A placed pin satisfies gate 2 by itself: the fix that anchored it was real when it was
+        // taken, and a reader who walks into a doorway and loses the signal has not stopped knowing
+        // where the tree is.
         if coordinate == nil {
             return location.fix == .denied
                 ? VisitAddTreeCopy.noLocationDenied
@@ -152,6 +236,53 @@ final class VisitAddTreeModel {
         }
     }
 
+    // MARK: - The pin
+
+    /// The fix the map is anchored on, frozen for as long as the pin screen is up.
+    ///
+    /// Set when the map opens and kept afterwards, so re-opening the screen puts the reader back on
+    /// the same circle rather than on a new one centred wherever they have since wandered. See
+    /// `VisitPinAdjustView.anchor` for why a live anchor would be wrong.
+    private(set) var pinAnchor: Coordinate?
+
+    /// Opens the map. A no-op without a fix, which is `canAdjustPin`'s rule enforced rather than
+    /// merely displayed — the control that calls this is hidden in that state, and a model whose
+    /// method disagreed with its own predicate is a bug waiting for a second call site.
+    func beginPlacingPin() {
+        guard let anchor = pinAnchor ?? location.fix.coordinate else { return }
+        pinAnchor = anchor
+        phase = .placingPin
+    }
+
+    /// Left the map without confirming. The placement is untouched, which includes staying untouched
+    /// when there already was one.
+    func cancelPlacingPin() {
+        guard phase == .placingPin else { return }
+        phase = .composing
+    }
+
+    /// The reader pressed `Use this spot`.
+    ///
+    /// Two rules, both of them refusals, and both of them here rather than in the view so they hold
+    /// however the coordinate arrived.
+    ///
+    /// **Out of range is dropped.** The screen disables its own confirm past the limit, but the bound
+    /// is a rule about the record and not a rule about a button, and a rule enforced only by a
+    /// disabled control is a rule that survives exactly until somebody adds a second way in.
+    ///
+    /// **A pin left at the fix is the fix.** A reader who opens the map, looks around and confirms
+    /// without moving anything has not placed a coordinate, and recording that as reader-placed would
+    /// claim a judgement nobody made. Below `VisitPinAdjust.fixToleranceM` the placement goes back to
+    /// `.gps`, which also puts the coordinate back on the live fix — the honest state for somebody
+    /// who is standing at the tree after all.
+    func confirmPin(_ coordinate: Coordinate) {
+        guard let anchor = pinAnchor, VisitPinAdjust.isWithinBound(coordinate, of: anchor) else { return }
+        placement = coordinate.distance(to: anchor) < VisitPinAdjust.fixToleranceM
+            ? .gps
+            : .reader(coordinate, from: anchor)
+        phase = .composing
+    }
+
     // MARK: - The add
 
     /// Calls `POST /trees` and reports what came back.
@@ -172,12 +303,21 @@ final class VisitAddTreeModel {
     /// what stops a second tap from writing a second tree 0 m from the first. The 10 m dedupe would
     /// refuse that one, so the consequence would be a duplicate warning naming the tree the reader
     /// had themselves just added, which is the most confusing sentence this screen could produce.
+    ///
+    /// The coordinate is `coordinate`, which is the fix unless the reader placed a pin — and the 10 m
+    /// dedupe therefore runs against wherever the pin ended up, not against the phone. That is the
+    /// behaviour the row-of-trees case needs in both directions: five trees photographed from one spot
+    /// no longer collide with each other, and a pin dragged onto a tree that is already on record is
+    /// still refused, by the same rule, with the same candidate list.
     func add() async -> UUID? {
         guard canAdd, let coordinate, let photoPath else { return nil }
         phase = .adding
         do {
             let tree = try await api.addTree(
                 TreeDraft(
+                    // `placement` is deliberately not on the draft: there is nowhere in
+                    // `community_trees` for it to land, and a field the boundary accepts and discards
+                    // is a lie told to the caller. See `Placement`.
                     coordinate: coordinate,
                     // Species is optional on the endpoint, and the screen asks for none: a species
                     // this app cannot confirm would be fabricated botany (BUILD-PLAN §15), and the

@@ -481,6 +481,54 @@ struct ScreenEntranceTests {
         #expect(subject.displayName == TreeProfilePresentation(profile: profile).title)
     }
 
+    // MARK: - The pin step on the community add
+
+    /// **A screen that is not a `Route` still has to have a way in**, and this one is two screens
+    /// deep: the map's FAB opens the visit flow, "None of these? Add this tree" opens the community
+    /// add, and a control on the add screen opens the map that moves the pin. None of those three is
+    /// a `Route` — `.identify` names the whole flow and the flow decides which of its screens it
+    /// opens on (DECISIONS constraint 21) — so the entrance table above cannot hold this one and a
+    /// row in it would be a string nothing checks.
+    ///
+    /// What is checkable is the thing the table exists to prove: that the affordance is really on the
+    /// screen a person can be standing on, and that pressing it really arrives. Asserted on the model
+    /// rather than on a renderer, which is where every other decision about *whether* something draws
+    /// on that screen already lives.
+    @MainActor
+    @Test("the pin screen's entrance is a control on the add screen that really opens it")
+    func thePinStepHasAnEntrance() {
+        let located = VisitAddTreeModel(
+            api: VisitPreviewAPI(),
+            location: VisitLocationProvider(pinnedFix: .located(
+                Coordinate(latitude: 37.7599, longitude: -122.4148), accuracyM: 24
+            )),
+            attribution: Self.attribution
+        )
+
+        #expect(located.canAdjustPin, "the add screen offers no way to move the pin")
+        located.beginPlacingPin()
+        #expect(located.phase == .placingPin, "the control is drawn and reaches nothing")
+        // And the way back out, which a screen with no navigation bar owes.
+        located.cancelPlacingPin()
+        #expect(located.phase == .composing, "the pin screen cannot be left")
+    }
+
+    /// The other half of the same rule, and the one that keeps this from becoming a way to add a tree
+    /// from a sofa: with no fix there is no anchor, no circle and no entrance.
+    @MainActor
+    @Test("with no fix the pin screen has no entrance at all")
+    func thePinStepIsGatedOnAFix() {
+        let pending = VisitAddTreeModel(
+            api: VisitPreviewAPI(),
+            location: VisitLocationProvider(pinnedFix: .pending),
+            attribution: Self.attribution
+        )
+
+        #expect(!pending.canAdjustPin)
+        pending.beginPlacingPin()
+        #expect(pending.phase == .composing, "a map opened with nothing to centre it on")
+    }
+
     // MARK: - The activity link
 
     @Test("the activity link draws only where there is a year to see")
