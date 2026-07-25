@@ -87,4 +87,26 @@ struct BundleContractTests {
         #expect(families.contains("Alegreya Sans"))
         #expect(families.contains("Spline Sans Mono"))
     }
+
+    /// **Core Text is never asked to register a face it already has.**
+    ///
+    /// The app registers its fonts twice over: `Info.plist` lists all twelve under `UIAppFonts`, and
+    /// the composition root then calls `registerBundledFonts()`. The second pass is refused once per
+    /// face, and each refusal writes `GSFont: file already registered` to the console — twelve lines
+    /// on every single launch, in a log somebody is reading to find real problems.
+    ///
+    /// This asserts on the *inputs* to Core Text rather than on the count of faces registered,
+    /// because that count is 0 either way: 0 when every call fails as already-registered, and 0 when
+    /// every call is skipped. A test written against the count would have passed against the noisy
+    /// version. Empty here means Core Text is never called at all, which is the only thing that
+    /// actually makes the console quiet.
+    @Test("the registrar asks Core Text for nothing it already has")
+    func theRegistrarSkipsFacesAlreadyPresent() {
+        let pending = CypressFont.unregisteredBundledFonts()
+        let names = pending.map(\.lastPathComponent).sorted().joined(separator: ", ")
+        #expect(
+            pending.isEmpty,
+            "\(pending.count) bundled face(s) would be handed to Core Text a second time, and each one prints 'GSFont: file already registered' on every launch: \(names)"
+        )
+    }
 }
