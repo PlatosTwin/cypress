@@ -296,6 +296,18 @@ fixes no lie and unblocks nothing, while changing the look of three components a
 else here earns its build first, and this wants the screens photographed after it — which is what
 found E110 and E106.
 
+> **Declined on inspection — the collapse is a trap (ERRATA E122).** Checked against the tokens before
+> building, and there is no beneficial collapse to make. The tokens this ruling names — `borderAmberMid`,
+> `borderAmberStrong` — have **zero call-site uses**, so collapsing them changes nothing drawn. The amber
+> borders that *are* drawn include two that must not move: `amberAttentionCardBorder` was deliberately
+> darkened by **R1** for contrast, and `hazardPanelBorder` is the 311 panel's whole boundary (pinned in
+> `ContrastTests.knownFailures`). Collapsing either toward the paler ambers re-breaks what R1 fixed. And
+> **dark is already collapsed** — every amber border derives to `#D99A4E` (E8). Executing R9 as written
+> would trade a cosmetic tidy, invisible on non-adjacent components, for two weakened contrast decisions.
+> So R9 is recorded and not built. The dead `borderAmberMid` / `borderAmberStrong` tokens are left in
+> place rather than deleted, because a token nobody draws is harmless and removing it touches the gallery
+> and the derived-token registry for no user-facing gain.
+
 ### R10 — screen 12 gains the vacant-site block E115 proposed
 
 The almanac can see 195,309 records and speaks about 182,791 of them. **It should say how many
@@ -370,7 +382,22 @@ that no one will ever action, and the app currently says nothing about that. Wha
 it grows must not overclaim — ARCHITECTURE §5.4 — and screen 06 already shows the standard to meet: it
 says `the city has not been notified` in as many words.
 
+### R13 — SCREENS.md holds screen 05's vitality anchor sentences
+
+The open question was which document owns the exact words under each vitality level on screen 05 (`1 ·
+Severe decline · Mostly bare in season; over 50% dieback; survival doubtful`, and its four siblings) —
+`PRODUCT.md`, which describes the rubric as a product concept, or `SCREENS.md`, which draws it.
+
+**`SCREENS.md` holds them, and its wording is what ships.** They are *drawn screen copy* — a string
+rendered on a control on a specific screen — and screen copy is `SCREENS.md`'s domain; `PRODUCT.md`
+describes what the rubric is *for*, not the verbatim sentence a user reads. Where the two diverge, the
+drawn text follows `SCREENS.md`, for the same reason constraint 21 exists: the app's words must be
+traceable to the screen that draws them, not assembled from a higher-tier document that never intended
+to be quoted letter-for-letter. `PRODUCT.md` stays the authority on the rubric's *meaning* — how many
+levels there are, what each signifies — and a conflict there (a level added or redefined) outranks
+`SCREENS.md`, because that is product, not copy. This splits cleanly: **meaning is `PRODUCT.md`'s,
+wording is `SCREENS.md`'s.**
+
 ## What is still design's, and was not delegated
 
-- The rubric wording on screen 05 — whether `PRODUCT.md` or `SCREENS.md` holds the anchor sentences.
 - Everything constraint 21 covers. The one-time exception for the six entrances (E98) is spent.
