@@ -167,6 +167,12 @@ struct ScreenEntranceTests {
             return "01 map · a pin with no tree behind it, or a pin on the group map (E107, E129)"
         case .pinSet:
             return "12 · the 'Walk the nine' CTA and the 'Where a tree could go' row (invented, E129)"
+        case .accountAsk:
+            // Two, and the second is why the route exists at all. D9 puts the ask on the third
+            // visit save, where `VisitSavedView` covers it with no route needed; the You tab needs
+            // one because it can sign you out (ERRATA E131), and a sign-out whose only way back is
+            // three more field visits is a door that locks behind you.
+            return "the third visit save (D9) · the You tab · the account block's Sign in row (E131)"
         }
     }
 
@@ -187,6 +193,7 @@ struct ScreenEntranceTests {
         .outbox,
         .site(treeID),
         .pinSet(pinSet),
+        .accountAsk,
     ]
 
     /// A group of nine, as screen 12's coverage CTA hands one over (ERRATA E129).

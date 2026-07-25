@@ -26,6 +26,10 @@ struct RootView: View {
     /// appearance and draws nothing unless that role is a lead's.
     @State private var moderation: ModerationModel
 
+    /// The You tab's account state and this contributor's own reminders (ERRATA E131), owned here
+    /// for the reason `moderation` is: signing out has to be one fact, not one per surface.
+    @State private var account: AccountModel
+
     /// One decoded-photograph cache for the whole app (ERRATA E125), owned here for the reason
     /// `outbox` and `moderation` are: the profile hero and the photo browser draw the same
     /// photographs, and two caches would decode each of them twice. Read through the environment,
@@ -39,6 +43,7 @@ struct RootView: View {
         self.data = data
         _outbox = State(wrappedValue: data.makeOutboxViewState())
         _moderation = State(wrappedValue: ModerationModel(api: data.api))
+        _account = State(wrappedValue: AccountModel(api: data.api))
         _photoImages = State(wrappedValue: PhotoImageStore(api: data.api))
     }
 
@@ -152,6 +157,17 @@ struct RootView: View {
                 onClose: { router.sheet = nil }
             )
 
+        case .accountAsk:
+            // Screen 15, from the You tab's account block (ERRATA E131). The same view, the same
+            // `onLink`, and the same `fullScreenCover` reasoning `VisitSavedView` writes down: 15
+            // draws its own scrim over its own backdrop, so a system sheet would impose a second
+            // card over the top of it.
+            AccountAskView(
+                api: data.api,
+                onLink: accountLink(),
+                onFinish: { router.sheet = nil }
+            )
+
         case let .identify(treeID):
             // Screen 04 is a camera, so it is presented rather than pushed — and `Route` has no
             // camera case by design (DECISIONS constraint 21). `.identify` is the flow's entry point.
@@ -228,7 +244,7 @@ struct RootView: View {
                 onRequestLocation: { location.start() }
             )
         case .you:
-            YouTabView(outbox: outbox, moderation: moderation)
+            YouTabView(outbox: outbox, moderation: moderation, account: account)
         }
     }
 
@@ -266,13 +282,37 @@ struct RootView: View {
     /// `nonisolated` so the `@Sendable` closure is formed off `RootView`'s `@MainActor` isolation: it
     /// captures only two `Sendable` values (`LocalAPI` is an actor, `UUID` a value) read from the
     /// `Sendable` `data`, so it carries nothing of the view across the boundary it will be called on.
+    /// **What the request carries, and why discarding it was a defect (ERRATA E131).** This closure
+    /// read `_ = request` and threw away both fields screen 15 collects. `AccountAskModel` justifies
+    /// leaving the licence checkbox ungated on the grounds that "the answer travels on the request
+    /// instead, so the account records what was actually agreed to and `User.licenseVersion` stays
+    /// honestly nil when nothing was" — a sentence the shipping handler made false. Unchecking the
+    /// box changed nothing anywhere, and an account created by somebody who declined the open
+    /// database licence was indistinguishable from one created by somebody who accepted it. Both
+    /// fields now land in `app_state` through `LocalAPI.linkAccount`, where `accountLink()` reads
+    /// them back and the You tab renders which answer was given.
+    ///
+    /// **The account resumed rather than re-minted.** `resumableUserID()` is the account this device
+    /// signed out of. Without it, signing back in would mint a rival id and leave the first
+    /// account's reminders, favourites and votes owned by an id no query asks for and no deletion
+    /// can reach — see `LocalAPI.signOut()`.
     nonisolated func accountLink() -> AccountAskLink {
         let api = data.api
         let deviceID = data.deviceID
         return { request in
-            _ = request
-            let existing = await api.userID
-            try await api.claimDevice(deviceUUID: deviceID, userID: existing ?? UUID())
+            // The account already on this device, else the one it signed out of, else a new one.
+            let existing: UUID?
+            if let current = await api.userID {
+                existing = current
+            } else {
+                existing = try await api.resumableUserID()
+            }
+            try await api.linkAccount(
+                deviceUUID: deviceID,
+                userID: existing ?? UUID(),
+                provider: request.provider.rawValue,
+                acceptsLicense: request.acceptsLicense
+            )
         }
     }
 
@@ -472,7 +512,21 @@ struct RootView: View {
                 // Anonymous under the device id until the account ask ships (D9); the composition
                 // root owns that choice, not the feature.
                 attribution: .anonymous(deviceID: data.deviceID),
-                gpsAccuracyM: location.availability.accuracyM
+                gpsAccuracyM: location.availability.accuracyM,
+                // **Saving used to acknowledge nothing and go nowhere (ERRATA E131).** This call
+                // omitted `onSaved`, so `MeasureView`'s `{ _ in }` default applied: the screen has a
+                // failure line and no success line, and the model clears `draft.entry` on the way
+                // out — so the only visible consequence of a reading that reached the disk was
+                // identical to the keypad clearing, which is also what a *failed* save looks like
+                // for the instant before the amber line appears. Screen 05 was already wired this
+                // way (`checkIn`'s `onSaved`), and 16 was the odd one out.
+                //
+                // Popping rather than drawing a confirmation, and this is why 16 does not need one:
+                // the profile it returns to re-reads itself on appearance (ERRATA E127) and carries
+                // a `See every reading` link, so the reading is on screen — in the stat card and one
+                // tap from screen 11 — the moment the keypad leaves. A toast would say the same
+                // thing less durably and leave the person on a screen with nothing further to do.
+                onSaved: { _ in router.pop() }
             )
 
         case .outbox:
@@ -485,11 +539,11 @@ struct RootView: View {
             // because the You tab shows the same wi-fi preference; see the `outbox` property.
             OutboxView(state: outbox)
 
-        // 09 and 10 are presented as sheets rather than pushed (see `fullScreenCover` above), so a
-        // *pushed* care-log or share route is a programming error rather than a screen. They stay
-        // named here so that adding a `router.push(.share(id))` somewhere is visible in review
-        // rather than silently pushing a scrim over the navigation stack.
-        case .careLog, .share:
+        // 09, 10 and 15 are presented as sheets rather than pushed (see `fullScreenCover` above), so
+        // a *pushed* care-log, share or account-ask route is a programming error rather than a
+        // screen. They stay named here so that adding a `router.push(.share(id))` somewhere is
+        // visible in review rather than silently pushing a scrim over the navigation stack.
+        case .careLog, .share, .accountAsk:
             NotBuiltYetView(route: route)
 
         // Every remaining route has a mocked screen but no built feature yet. Naming them here

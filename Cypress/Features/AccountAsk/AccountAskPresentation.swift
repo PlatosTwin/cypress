@@ -18,9 +18,11 @@
 //    a bucket is a one-bit answer to "did you say you are over 18", not a date. See
 //    `AccountAskCopy.whyThereIsNoAgeQuestion`.
 //  - **§3.11 — contribution feeds are private by default.** `User.publicAttribution` defaults to
-//    false and nothing on this screen turns it on. The body copy's "join each tree's public
-//    timeline" is about the *tree's* timeline, where an un-opted-in contributor reads as
-//    "a visitor" (BUILD-PLAN §10).
+//    false and nothing on this screen turns it on. The drawn body copy read that as the *tree's*
+//    timeline, where an un-opted-in contributor shows as "a visitor" (BUILD-PLAN §10) — a reading
+//    that survived only while nobody could sign in. It is no longer used: ERRATA **E131** replaced
+//    it with `AccountAskCopy.bodyLocalAccount` because a local account joins no timeline at all and
+//    backs nothing up, and the You tab was already saying so on the same build.
 //  - **§3.12 — deletion anonymizes rather than deletes**, and this screen says nothing about
 //    deletion, which is the only truthful thing it can say today: ERRATA E23 leaves an open
 //    contradiction between §3.12's "null the user_id and sever the device link" and the private
@@ -132,7 +134,9 @@ struct AccountAskPresentation: Equatable {
         locale: Locale = .current
     ) {
         self.headline = AccountAskCopy.headline(visits: contributions.visits, locale: locale)
-        self.body = AccountAskCopy.body
+        // The drawn sentence, or the one that is true of the account this build creates (ERRATA
+        // E131). See `AccountAskCopy.bodyLocalAccount`.
+        self.body = BetaCapability.accountsAreLocalOnly ? AccountAskCopy.bodyLocalAccount : AccountAskCopy.body
         self.providers = AccountAskProvider.allCases.map(ProviderButton.init(provider:))
         self.consentText = AccountAskCopy.consentText
         self.consentLinkTitle = AccountAskCopy.consentLink
@@ -148,8 +152,36 @@ struct AccountAskPresentation: Equatable {
 /// Screen 15's strings, verbatim from SCREENS.md including its typographic characters.
 enum AccountAskCopy {
 
-    /// §2, verbatim — curly apostrophe and all.
+    /// §2, verbatim — curly apostrophe and all. Drawn when there is a service behind the screen; see
+    /// `bodyLocalAccount` for why this build does not use it.
     static let body = "They live on this phone right now. An account backs them up and lets them join each tree’s public timeline."
+
+    /// **NOT SPECIFIED — §2 rewritten for the account this build actually creates (ERRATA E131).**
+    ///
+    /// The drawn sentence makes two promises and a local account keeps neither. "Backs them up" is
+    /// false by construction: `accountLink` mints a `UUID` and calls `claimDevice`, nothing leaves
+    /// the phone, and `BetaCapability`'s own header says so in as many words — "a local account is
+    /// an identity, not a backup". "Lets them join each tree's public timeline" is false a second
+    /// way: a public timeline needs `User.publicAttribution`, which defaults to false and cannot be
+    /// turned on anywhere in the app (ERRATA E100) — the You tab says exactly that
+    /// (`YouCopy.privacyBody`), so the two screens contradicted each other about the same flag.
+    ///
+    /// **The register is `noticeUnavailable`'s**, which is this screen's existing answer to the same
+    /// problem: name the thing that is true today, then end on §7's own promise about this phone.
+    /// The first clause is §2's own opening, kept verbatim, because it was already true.
+    ///
+    /// **The last clause is about the three buttons underneath it, and it is the reason they stay
+    /// three.** All three reach the same local sign-in — no Apple sheet appears, no Google sheet,
+    /// no email is sent or stored — and a person who taps "Continue with Apple" could reasonably
+    /// conclude their Apple ID is now attached to their visits. Redrawing a mocked screen down to
+    /// one button is a design decision (DECISIONS constraint 21) rather than an engineer's, and it
+    /// would also throw away the one field ERRATA E131 just made persistent: which route somebody
+    /// chose, ready for the exchange that will honour it. So the copy says what the buttons do not —
+    /// that none of those services has been contacted — one paragraph above the first of them.
+    static let bodyLocalAccount = """
+        They live on this phone right now. An account gathers them under one name here—it is made \
+        on this phone, nothing is uploaded, and none of the services below has been contacted.
+        """
 
     /// §6, up to the bold run. The trailing space is in the source.
     static let consentText = "Share my tree records under the open database license. In plain words: anyone may use the data, and your name rides along only if you opt in. "
