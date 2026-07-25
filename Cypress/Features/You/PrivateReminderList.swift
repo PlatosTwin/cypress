@@ -2,7 +2,7 @@
 //  PrivateReminderList.swift
 //  Cypress — Features/You
 //
-//  Where a private reminder can be read again (ERRATA E130, on E23's terms).
+//  Where a private reminder can be read again (ERRATA E131, on E23's terms).
 //
 //  ── The defect ─────────────────────────────────────────────────────────────────────────────
 //  Screen 06 offers `Save a private reminder for yourself` and confirms `Saved. Your reminder stays

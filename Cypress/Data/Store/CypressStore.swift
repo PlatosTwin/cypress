@@ -130,7 +130,7 @@ public final class CypressStore: Sendable {
         }
     }
 
-    /// Removes a key entirely, rather than writing an empty string over it (ERRATA **E130**).
+    /// Removes a key entirely, rather than writing an empty string over it (ERRATA **E131**).
     ///
     /// The distinction is the whole reason this exists. `appState(_:)` returns `String?`, and every
     /// caller reads absence as "no answer" — no account, no role, no recorded consent. A cleared key
@@ -163,7 +163,7 @@ public enum AppStateKey: String, CaseIterable, Sendable {
     /// user id itself — is carried in `app_state` rather than on a user row.
     case currentUserRole = "current_user_role"
 
-    /// The account this device was signed in as before somebody signed out (ERRATA **E130**).
+    /// The account this device was signed in as before somebody signed out (ERRATA **E131**).
     ///
     /// **Why signing out has to remember anything at all.** A local account has no credential: there
     /// is no server, no magic link and nothing to prove you are the same person on the way back in,
@@ -181,7 +181,7 @@ public enum AppStateKey: String, CaseIterable, Sendable {
     case signedOutUserID = "signed_out_user_id"
 
     /// Which of screen 15's three routes was tapped, and the license consent that travelled with it
-    /// (ERRATA **E130**). `AccountAskProvider`'s raw value and `User.licenseVersion`'s shape
+    /// (ERRATA **E131**). `AccountAskProvider`'s raw value and `User.licenseVersion`'s shape
     /// respectively; see `AccountLinkRecord` for why absence is meaningful in both.
     case accountProvider = "account_provider"
     case accountLicenseVersion = "account_license_version"

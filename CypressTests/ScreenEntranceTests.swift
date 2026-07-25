@@ -170,9 +170,9 @@ struct ScreenEntranceTests {
         case .accountAsk:
             // Two, and the second is why the route exists at all. D9 puts the ask on the third
             // visit save, where `VisitSavedView` covers it with no route needed; the You tab needs
-            // one because it can sign you out (ERRATA E130), and a sign-out whose only way back is
+            // one because it can sign you out (ERRATA E131), and a sign-out whose only way back is
             // three more field visits is a door that locks behind you.
-            return "the third visit save (D9) · the You tab · the account block's Sign in row (E130)"
+            return "the third visit save (D9) · the You tab · the account block's Sign in row (E131)"
         }
     }
 

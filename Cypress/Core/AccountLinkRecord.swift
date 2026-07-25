@@ -1,6 +1,6 @@
 import Foundation
 
-/// What a sign-in agreed to, kept where it can be read back (ERRATA **E130**).
+/// What a sign-in agreed to, kept where it can be read back (ERRATA **E131**).
 ///
 /// **The defect this closes.** Screen 15 collects two things and exactly two — which of three
 /// routes was tapped, and whether the open-database-license row was checked — and

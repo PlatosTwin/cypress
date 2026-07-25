@@ -3,7 +3,7 @@
 //  Cypress — Features/You
 //
 //  The You tab's account block: whether there is one, the way out of it, and the way to delete it
-//  (ERRATA E130). Presentation only — a finished state and three callbacks, no `LocalAPI` and no
+//  (ERRATA E131). Presentation only — a finished state and three callbacks, no `LocalAPI` and no
 //  `async` — so every state photographs and previews with static data, the split
 //  `ModerationReviewList` and `AccountAskScreen` use.
 //
@@ -201,7 +201,7 @@ enum AccountCopy {
         AccountDeletionCopy.irreversible
     ].joined(separator: "\n\n")
 
-    /// What the license row on screen 15 was answered with, read back (ERRATA E130).
+    /// What the license row on screen 15 was answered with, read back (ERRATA E131).
     ///
     /// Nil rather than a third sentence when there is no record at all — an account claimed before
     /// this was persisted, or by something other than screen 15. "Not recorded" would be a true

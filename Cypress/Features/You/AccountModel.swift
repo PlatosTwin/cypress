@@ -3,7 +3,7 @@
 //  Cypress — Features/You
 //
 //  The You tab's account state, and the two records only an account or this device can read
-//  (ERRATA E130).
+//  (ERRATA E131).
 //
 //  ── Why this exists ────────────────────────────────────────────────────────────────────────
 //  ERRATA E124 flipped `BetaCapability.accountsAvailable` to true, so sign-in completes locally on
@@ -53,7 +53,7 @@ final class AccountModel {
     /// flag of this model's own — `AccountAskModel` refuses to hold one for the same reason.
     private(set) var isSignedIn = false
 
-    /// What that account agreed to at sign-in (ERRATA E130). Nil when signed out.
+    /// What that account agreed to at sign-in (ERRATA E131). Nil when signed out.
     private(set) var link: AccountLinkRecord?
 
     /// This contributor's own reminders — the account's, plus the ones this device wrote before

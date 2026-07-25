@@ -937,9 +937,9 @@ public actor LocalAPI: CypressAPI {
         try await store.clearAppState(.signedOutUserID)
     }
 
-    // MARK: - The account (local, ERRATA E130)
+    // MARK: - The account (local, ERRATA E131)
 
-    /// Screen 15's sign-in, with the two things the screen collects (ERRATA **E130**).
+    /// Screen 15's sign-in, with the two things the screen collects (ERRATA **E131**).
     ///
     /// `claimDevice` plus the consent record, because the request screen 15 assembles has to land
     /// somewhere a later read can find it: the composition root used to throw the whole
@@ -995,7 +995,7 @@ public actor LocalAPI: CypressAPI {
         return (try await store.appState(.signedOutUserID)).flatMap(UUID.init(uuidString:))
     }
 
-    /// Sign out: stop acting as this account, keep everything it wrote (ERRATA **E130**).
+    /// Sign out: stop acting as this account, keep everything it wrote (ERRATA **E131**).
     ///
     /// **Nothing is deleted here and that is the entire distinction from `deleteAccount`.** The rows
     /// stay exactly as they are, still carrying the account's id; what changes is that this
@@ -1307,7 +1307,7 @@ public actor LocalAPI: CypressAPI {
         // in `AccountDeletion` because it is device state (`app_state`), not one of the account's rows.
         userRole = .member
         try await store.setAppState(.currentUserRole, to: UserRole.member.rawValue)
-        // Device state again, and the same argument one step further (ERRATA E130). A deleted account
+        // Device state again, and the same argument one step further (ERRATA E131). A deleted account
         // must not be resumable: `signedOutUserID` exists so that signing back in returns to the same
         // identity, and an id left here after `AccountDeletion` has emptied it would hand the next
         // sign-in an account whose rows are gone. The consent record goes for the plainer reason —

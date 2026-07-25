@@ -154,7 +154,7 @@ final class ReportModel {
         }
     }
 
-    // There is no `select(note:)` any more, and its absence is the point (ERRATA E130). Screen 06's
+    // There is no `select(note:)` any more, and its absence is the point (ERRATA E131). Screen 06's
     // neighborly chips are drawn and not tappable, because a `.note` selection had no reader
     // anywhere: no outbox kind, no submit CTA (ERRATA E22), and a `community_notes` row that account
     // deletion could not honour (RULINGS R3, ERRATA E109). `ReportView.notePicker` carries the whole

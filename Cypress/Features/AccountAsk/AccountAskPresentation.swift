@@ -20,7 +20,7 @@
 //  - **§3.11 — contribution feeds are private by default.** `User.publicAttribution` defaults to
 //    false and nothing on this screen turns it on. The drawn body copy read that as the *tree's*
 //    timeline, where an un-opted-in contributor shows as "a visitor" (BUILD-PLAN §10) — a reading
-//    that survived only while nobody could sign in. It is no longer used: ERRATA **E130** replaced
+//    that survived only while nobody could sign in. It is no longer used: ERRATA **E131** replaced
 //    it with `AccountAskCopy.bodyLocalAccount` because a local account joins no timeline at all and
 //    backs nothing up, and the You tab was already saying so on the same build.
 //  - **§3.12 — deletion anonymizes rather than deletes**, and this screen says nothing about
@@ -135,7 +135,7 @@ struct AccountAskPresentation: Equatable {
     ) {
         self.headline = AccountAskCopy.headline(visits: contributions.visits, locale: locale)
         // The drawn sentence, or the one that is true of the account this build creates (ERRATA
-        // E130). See `AccountAskCopy.bodyLocalAccount`.
+        // E131). See `AccountAskCopy.bodyLocalAccount`.
         self.body = BetaCapability.accountsAreLocalOnly ? AccountAskCopy.bodyLocalAccount : AccountAskCopy.body
         self.providers = AccountAskProvider.allCases.map(ProviderButton.init(provider:))
         self.consentText = AccountAskCopy.consentText
@@ -156,7 +156,7 @@ enum AccountAskCopy {
     /// `bodyLocalAccount` for why this build does not use it.
     static let body = "They live on this phone right now. An account backs them up and lets them join each tree’s public timeline."
 
-    /// **NOT SPECIFIED — §2 rewritten for the account this build actually creates (ERRATA E130).**
+    /// **NOT SPECIFIED — §2 rewritten for the account this build actually creates (ERRATA E131).**
     ///
     /// The drawn sentence makes two promises and a local account keeps neither. "Backs them up" is
     /// false by construction: `accountLink` mints a `UUID` and calls `claimDevice`, nothing leaves
@@ -175,7 +175,7 @@ enum AccountAskCopy {
     /// no email is sent or stored — and a person who taps "Continue with Apple" could reasonably
     /// conclude their Apple ID is now attached to their visits. Redrawing a mocked screen down to
     /// one button is a design decision (DECISIONS constraint 21) rather than an engineer's, and it
-    /// would also throw away the one field ERRATA E130 just made persistent: which route somebody
+    /// would also throw away the one field ERRATA E131 just made persistent: which route somebody
     /// chose, ready for the exchange that will honour it. So the copy says what the buttons do not —
     /// that none of those services has been contacted — one paragraph above the first of them.
     static let bodyLocalAccount = """

@@ -180,7 +180,7 @@ final class DeepLinkVoiceOverTests: XCTestCase {
 
     // MARK: - A save that acknowledged nothing and went nowhere
 
-    /// Saving a measurement on screen 16 has to have a visible consequence (ERRATA **E130**).
+    /// Saving a measurement on screen 16 has to have a visible consequence (ERRATA **E131**).
     ///
     /// **Why this is a UI test and not a model test.** `MeasureModel.save()` was never wrong, and
     /// `MeasurementAccuracyTests` already drives it and passes. The defect was one line above both:

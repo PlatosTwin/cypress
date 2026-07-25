@@ -2,7 +2,7 @@
 //  AccountSurfaceTests.swift
 //  CypressTests
 //
-//  ERRATA **E130** — the account the app creates and then never mentions again, the consent it
+//  ERRATA **E131** — the account the app creates and then never mentions again, the consent it
 //  collects and throws away, and the private reminder it saves into a drawer with no handle.
 //
 //  ── Why these tests are shaped the way they are ────────────────────────────────────────────
@@ -33,7 +33,7 @@ import UIKit
 @testable import Cypress
 
 @MainActor
-@Suite("The account, and the records only it can read (E130)")
+@Suite("The account, and the records only it can read (E131)")
 struct AccountSurfaceTests {
 
     private static let deviceID = UUID(uuidString: "D0000000-0000-4000-8000-0000000000E1")!

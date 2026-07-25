@@ -32,7 +32,7 @@ public enum BetaCapability {
     /// instead of the device id, which is the move `claimDevice` was written for.
     public static let accountsAvailable = true
 
-    /// Whether an account is created on this phone and nowhere else (ERRATA **E130**).
+    /// Whether an account is created on this phone and nowhere else (ERRATA **E131**).
     ///
     /// **Why a second constant rather than a reading of the first.** `accountsAvailable` answers
     /// "can somebody sign in"; this answers "what did signing in do", and the two stop agreeing the

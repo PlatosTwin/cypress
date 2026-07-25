@@ -26,7 +26,7 @@ struct RootView: View {
     /// appearance and draws nothing unless that role is a lead's.
     @State private var moderation: ModerationModel
 
-    /// The You tab's account state and this contributor's own reminders (ERRATA E130), owned here
+    /// The You tab's account state and this contributor's own reminders (ERRATA E131), owned here
     /// for the reason `moderation` is: signing out has to be one fact, not one per surface.
     @State private var account: AccountModel
 
@@ -158,7 +158,7 @@ struct RootView: View {
             )
 
         case .accountAsk:
-            // Screen 15, from the You tab's account block (ERRATA E130). The same view, the same
+            // Screen 15, from the You tab's account block (ERRATA E131). The same view, the same
             // `onLink`, and the same `fullScreenCover` reasoning `VisitSavedView` writes down: 15
             // draws its own scrim over its own backdrop, so a system sheet would impose a second
             // card over the top of it.
@@ -282,7 +282,7 @@ struct RootView: View {
     /// `nonisolated` so the `@Sendable` closure is formed off `RootView`'s `@MainActor` isolation: it
     /// captures only two `Sendable` values (`LocalAPI` is an actor, `UUID` a value) read from the
     /// `Sendable` `data`, so it carries nothing of the view across the boundary it will be called on.
-    /// **What the request carries, and why discarding it was a defect (ERRATA E130).** This closure
+    /// **What the request carries, and why discarding it was a defect (ERRATA E131).** This closure
     /// read `_ = request` and threw away both fields screen 15 collects. `AccountAskModel` justifies
     /// leaving the licence checkbox ungated on the grounds that "the answer travels on the request
     /// instead, so the account records what was actually agreed to and `User.licenseVersion` stays
@@ -513,7 +513,7 @@ struct RootView: View {
                 // root owns that choice, not the feature.
                 attribution: .anonymous(deviceID: data.deviceID),
                 gpsAccuracyM: location.availability.accuracyM,
-                // **Saving used to acknowledge nothing and go nowhere (ERRATA E130).** This call
+                // **Saving used to acknowledge nothing and go nowhere (ERRATA E131).** This call
                 // omitted `onSaved`, so `MeasureView`'s `{ _ in }` default applied: the screen has a
                 // failure line and no success line, and the model clears `draft.entry` on the way
                 // out — so the only visible consequence of a reading that reached the disk was

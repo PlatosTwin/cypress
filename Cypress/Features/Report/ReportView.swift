@@ -94,7 +94,7 @@ struct ReportView: View {
     }
 
     // ══════════════════════════════════════════════════════════════════════════════════════════
-    // §3's neighborly chips, **drawn and not tappable** (ERRATA E130).
+    // §3's neighborly chips, **drawn and not tappable** (ERRATA E131).
     //
     // ── What was wrong ────────────────────────────────────────────────────────────────────────
     // Every chip was a button with a selected style, under a section label that reads `Neighborly

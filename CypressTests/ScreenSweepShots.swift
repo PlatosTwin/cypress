@@ -427,7 +427,7 @@ struct ScreenSweepShots {
                     moderation: ModerationModel(api: nil),
                     // An inert account model, like the moderation one beside it: no store, so the
                     // account block and the reminder list draw the state of a device nobody has
-                    // signed in on (ERRATA E130).
+                    // signed in on (ERRATA E131).
                     account: AccountModel(api: nil)
                 )
             }

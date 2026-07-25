@@ -38,7 +38,7 @@ final class AccountAskModel {
     /// actually agreed to and `User.licenseVersion` stays honestly nil when nothing was. Recorded
     /// in ERRATA.
     ///
-    /// **That last sentence was false for as long as it stood here (ERRATA E130).** The composition
+    /// **That last sentence was false for as long as it stood here (ERRATA E131).** The composition
     /// root's handler read `_ = request` and discarded both fields, so unchecking this box changed
     /// nothing anywhere and no account recorded anything. It now lands in `app_state` through
     /// `LocalAPI.linkAccount` and is read back by `AccountLinkRecord`, which is what makes leaving

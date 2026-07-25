@@ -13,7 +13,7 @@
 //  So it is built minimally, out of C-components that already exist, saying only what the app can
 //  actually back up:
 //
-//  - **Profile** — the account block (ERRATA **E130**). This entry used to read "nothing. There is
+//  - **Profile** — the account block (ERRATA **E131**). This entry used to read "nothing. There is
 //    no account on any device this app runs on: screen 15 cannot sign anyone in (ERRATA E86)", and
 //    that stopped being true when ERRATA E124 flipped `BetaCapability.accountsAvailable`: sign-in
 //    completes locally on the third visit save, through `claimDevice`. For a while afterwards the
@@ -21,7 +21,7 @@
 //    `LocalAPI.deleteAccount()`, written to RULINGS R3 and complete, with its own test as its only
 //    caller. A stale comment is how that survives review, so this one is corrected rather than
 //    deleted. See `AccountSection`.
-//  - **Your private reminders** — the other half of the same finding (ERRATA **E130**, on E23's
+//  - **Your private reminders** — the other half of the same finding (ERRATA **E131**, on E23's
 //    terms). Screen 06 saves them and confirmed "Saved. Your reminder stays yours alone." with
 //    nowhere in the app to read one back. See `PrivateReminderList`.
 //  - **Outbox entry point** — one C10 row, pushing `Route.outbox`. Specified.
@@ -53,7 +53,7 @@ struct YouTabView: View {
     /// composition root, like `outbox`.
     let moderation: ModerationModel
 
-    /// The account and this contributor's own reminders (ERRATA E130). Owned by the composition
+    /// The account and this contributor's own reminders (ERRATA E131). Owned by the composition
     /// root like the two above, for the reason it owns them: one instance of a signed-in state,
     /// rather than a second quiet copy that disagrees with the store after a sign-out.
     let account: AccountModel
@@ -101,7 +101,7 @@ struct YouTabView: View {
         // Reads the role and, if it is a lead's, the open reviews. Runs on every appearance of the
         // tab, so a removal reported elsewhere shows up the next time a lead looks here.
         .task { await moderation.load() }
-        // The account and the reminders (ERRATA E130).
+        // The account and the reminders (ERRATA E131).
         .task { await account.load() }
         // And again when a sheet closes over this tab, which `.task` does not cover: a
         // `fullScreenCover` leaves the view underneath in place, so dismissing screen 15 fires no
@@ -114,7 +114,7 @@ struct YouTabView: View {
         }
     }
 
-    // MARK: - Account (ERRATA E130)
+    // MARK: - Account (ERRATA E131)
 
     /// Draws nothing until the first read lands, so the tab never says `Sign in` for one frame to
     /// somebody who is signed in (ARCHITECTURE §5.6: no state is claimed before it is known).
@@ -132,7 +132,7 @@ struct YouTabView: View {
         }
     }
 
-    // MARK: - Private reminders (ERRATA E130, on E23's terms)
+    // MARK: - Private reminders (ERRATA E131, on E23's terms)
 
     @ViewBuilder
     private var remindersSection: some View {

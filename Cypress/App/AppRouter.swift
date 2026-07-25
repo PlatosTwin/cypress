@@ -59,7 +59,7 @@ enum Route: Hashable {
     ///
     /// Presented, never pushed. It has no entrance of its own until now: D9 puts the ask on the
     /// third visit save, where `VisitSavedView` covers it directly, and no route was needed. The You
-    /// tab needs one because it can sign you *out* (ERRATA E130), and a sign-out with no way back
+    /// tab needs one because it can sign you *out* (ERRATA E131), and a sign-out with no way back
     /// short of three more field visits is a door that locks behind you.
     case accountAsk             // 15
 }
