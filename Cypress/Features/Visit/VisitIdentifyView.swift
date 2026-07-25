@@ -15,8 +15,14 @@ struct VisitIdentifyView: View {
 
     /// Chosen a tree — open the camera for it.
     let onPick: (VisitCandidate) -> Void
-    /// "None of these? Add this tree." Screen 20 (community add) is not this feature's; the button
-    /// exists because SCREENS 02 draws it, and the destination is the container's to supply.
+    /// "None of these? Add this tree."
+    ///
+    /// It does something now (ERRATA E127). The button has been drawn at full opacity since 02 was
+    /// built, wired to a closure that dismissed the whole flow and recorded nothing — while
+    /// `LocalAPI.addTree` sat complete, dedupe and all, with no caller in the app. PROTOTYPE-FLOW
+    /// §1.5 was honest about the same button ("· not in this prototype", `opacity:.55`); this build
+    /// kept the label and dropped the honesty. The destination is `VisitAddTreeView`, and the flow
+    /// supplies it.
     let onAddTree: () -> Void
     let onBack: () -> Void
 

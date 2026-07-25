@@ -128,8 +128,13 @@ struct ScreenEntranceTests {
         switch route {
         case .treeProfile:
             return "01 map pin · 02 shortlist row · 12 almanac season row and 'walk the nine'"
-        case .identify:
-            return "01 map · the what-tree-is-this FAB"
+        case let .identify(treeID):
+            // Two entrances, because the case now names the flow rather than one of its screens
+            // (ERRATA E127). With no tree it opens 02 and asks; with one it opens 04's camera for
+            // that tree, which is what screen 03's photo CTA means.
+            return treeID == nil
+                ? "01 map · the what-tree-is-this FAB"
+                : "03 · the photo CTA, and the empty photo well above it (E127)"
         case .species:
             return "08 My Grove · a species tile"
         case .careLog:
@@ -161,7 +166,8 @@ struct ScreenEntranceTests {
 
     private static let everyRoute: [Route] = [
         .treeProfile(treeID),
-        .identify,
+        .identify(nil),
+        .identify(treeID),
         .species(treeID),
         .careLog(treeID),
         .share(treeID),
@@ -304,6 +310,122 @@ struct ScreenEntranceTests {
                 "\(status) lost its measurement slot"
             )
         }
+    }
+
+    // MARK: - A tree nobody has touched (ERRATA E127)
+
+    /// The defect the project owner found on their phone: a cold profile drew **no action at all**.
+    ///
+    /// `isCold` is the state every tree in the shipped city inventory is in on launch day (D8), and
+    /// the quad row was inside the view's `if !isCold` because SCREENS.md 14 lists "no quad-action
+    /// row" among its deltas. So the shipped app's answer to "this limb is hanging over the pavement"
+    /// was nothing. The owner ruled: "A tree no one has touched should at least offer a REPORT and
+    /// CARE."
+    @Test("a cold profile offers the quad row, and all four of its cells")
+    func coldProfileOffersActions() {
+        let cold = Self.presentation()
+        #expect(cold.isCold, "the fixture is not the cold variant, so this proves nothing")
+        #expect(cold.offersQuadActionRow, "a tree nobody has touched offers no action at all")
+
+        // The two the owner named, and the two that need nothing from the tree either.
+        #expect(cold.quadActions.contains(.report))
+        #expect(cold.quadActions.contains(.care))
+        #expect(cold.quadActions.contains(.favorite))
+        #expect(cold.quadActions.contains(.share))
+    }
+
+    /// The row's arrival on the cold variant must not be the thing that hands a read-only record a
+    /// write — E95's rule, restated for the one screen state it had never applied to.
+    @Test("a memorial keeps losing the two cells that write, cold or not")
+    func coldMemorialStillWithholdsTheWrites() {
+        for status in TreeStatus.allCases where !status.acceptsNewContributions {
+            let subject = Self.presentation(status: status)
+            #expect(subject.offersQuadActionRow, "\(status) lost the row entirely")
+            #expect(!subject.quadActions.contains(.care), "\(status) was offered Care")
+            #expect(!subject.quadActions.contains(.report), "\(status) was offered Report")
+            #expect(subject.quadActions.contains(.favorite), "\(status) lost the one-way heart (R2)")
+        }
+    }
+
+    // MARK: - The growth history link (ERRATA E127)
+
+    /// Screen 11's second entrance, and the reason it needed one: a stat card is drawn as a fact
+    /// beside `Planted 1898` and `SF #13284`, which are not doors, and it *changes meaning* once a
+    /// reading lands. Nothing said the word "history" anywhere on the profile.
+    @Test("the growth link draws once the tree has a reading on record, and not before")
+    func growthLinkFollowsTheRecord() {
+        #expect(!Self.presentation().offersGrowthLink, "a door onto 'no measurements yet'")
+        #expect(Self.presentation(measurements: [Self.dbhReading()]).offersGrowthLink, "11 has no entrance")
+    }
+
+    /// D6 keeps a reading taken on a poor fix off the chart; screen 11 still lists it in the log
+    /// (`GrowthLogRow`). The person who took it is the last person who should be told it does not
+    /// exist, so the link follows the *record*, not the chart.
+    @Test("a reading D6 will not chart still has a history to open")
+    func growthLinkFollowsTheRecordNotTheChart() {
+        let unchartable = TreeMeasurement.dbh(
+            treeID: Self.treeID,
+            attribution: Self.attribution,
+            capturedAt: Self.date(2026, 6, 1),
+            // Worse than D6's 15 m ceiling, so `isChartable` is false and `charts` is empty.
+            gpsAccuracyM: 40,
+            quantity: Quantity(value: 64, unit: .centimetres, method: .tape)
+        )
+        let subject = Self.presentation(measurements: [unchartable])
+
+        #expect(!unchartable.isChartable, "the fixture is chartable, so this proves nothing")
+        #expect(subject.offersGrowthLink)
+        #expect(
+            !GrowthHistoryPresentation(profile: subject.profile).isEmpty,
+            "the link would open a screen with nothing on it"
+        )
+    }
+
+    /// A tombstone is not a reading. The link must not survive the deletion of the only measurement.
+    @Test("a deleted reading leaves no history to open")
+    func growthLinkIgnoresTombstones() {
+        var deleted = Self.dbhReading()
+        deleted.deletedAt = Self.date(2026, 6, 2)
+        #expect(!Self.presentation(measurements: [deleted]).offersGrowthLink)
+    }
+
+    /// A cold tree can carry a reading — measuring a trunk needs no photograph and no visit — so the
+    /// link cannot be gated on the variant the way the quad row wrongly was.
+    @Test("a cold tree that has been measured still gets the link")
+    func growthLinkOnAColdProfile() {
+        let subject = Self.presentation(measurements: [Self.heightReading()])
+        #expect(subject.isCold)
+        #expect(subject.offersGrowthLink)
+    }
+
+    // MARK: - The photo CTA's destination (ERRATA E127)
+
+    /// The route the profile's photo CTA and its empty well now take.
+    ///
+    /// What this can prove is that the *case can carry the tree at all* — before E127 it could not,
+    /// so `RootView` had nowhere to put the id it was handed and threw it away. That the composition
+    /// root now passes it was verified by opening the running app on a cold tree and pressing the
+    /// button; see the round's report.
+    @Test("the visit flow's route distinguishes 'this tree' from 'which tree is this'")
+    func theVisitRouteCarriesItsTree() {
+        #expect(Route.identify(Self.treeID) != Route.identify(nil))
+        #expect(Route.identify(Self.treeID) == Route.identify(Self.treeID))
+        #expect(Self.entrance(for: .identify(Self.treeID)).contains("03"))
+        #expect(Self.entrance(for: .identify(nil)).contains("01 map"))
+    }
+
+    /// What the camera is opened *with*. Screen 04 puts the tree's name in its header and screen 18
+    /// ranks the next nearest tree from its coordinate, and on this entrance both come from the
+    /// record rather than from a shortlist row that was never built.
+    @Test("a tree's own record is enough to open its camera")
+    func theCameraSubjectComesFromTheRecord() {
+        let profile = Self.presentation().profile
+        let subject = VisitFlowView.Subject(profile)
+
+        #expect(subject.id == Self.treeID)
+        #expect(subject.coordinate == profile.tree.coordinate)
+        // The same name screen 03's own H1 shows, by the same rule (D15).
+        #expect(subject.displayName == TreeProfilePresentation(profile: profile).title)
     }
 
     // MARK: - The activity link

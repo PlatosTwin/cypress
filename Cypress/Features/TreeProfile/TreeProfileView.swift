@@ -36,6 +36,8 @@ import SwiftUI
 struct TreeProfileView: View {
 
     @State private var model: TreeProfileModel
+    /// Whether this screen has been on screen before — see the `onAppear` on `body`.
+    @State private var hasAppeared = false
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(AppRouter.self) private var router: AppRouter?
@@ -78,6 +80,36 @@ struct TreeProfileView: View {
             .navigationBarBackButtonHidden(true)
             .toolbar(.hidden, for: .navigationBar)
             .task { if model.presentation == nil { await model.load() } }
+            // Re-read when this screen comes back to the front (ERRATA E127).
+            //
+            // Every write this screen hands out lands somewhere else and comes back: the measure
+            // sheet (16), the care log (09), the check-in (05), the report (06), the camera (04).
+            // The profile read them all once, on first appearance, and then never again — so a
+            // reading taken on 16 left the stat card still saying `Add a reading`, the growth link
+            // still absent, and the person who had just measured the tree looking at a screen that
+            // did not know it. That is the reachability half of screen 11's defect; the link is the
+            // other half.
+            //
+            // Not the first appearance, which `.task` above already served: `load()` would run twice
+            // on every push. `reload()` keeps what is on screen while the read runs, so coming back
+            // never blanks the profile.
+            .onAppear {
+                guard hasAppeared else {
+                    hasAppeared = true
+                    return
+                }
+                Task { await model.reload() }
+            }
+            // And when a sheet closes over it, which `onAppear` does not cover: a `fullScreenCover`
+            // does not remove the screen underneath, so dismissing one fires no appearance at all.
+            // The three writes that leave this screen that way are the camera (04), the care log (09)
+            // and the share sheet, and the first of them is the loudest — log a visit from the CTA
+            // and the profile it was made from went on saying "Be the first to photograph this tree"
+            // about a tree that now had a photograph on it. Seen on the simulator, not in a test.
+            .onChange(of: router?.sheet == nil) { _, nothingPresented in
+                guard nothingPresented, model.presentation != nil else { return }
+                Task { await model.reload() }
+            }
     }
 
     @ViewBuilder
@@ -161,21 +193,33 @@ struct TreeProfileView: View {
                     checkInButton
                 }
 
-                if !presentation.isCold {
+                if presentation.offersQuadActionRow {
                     // C8. Which cells this record may offer is the presentation's call
                     // (`quadActions`); which of them is *on* is the model's, and it is the store's
                     // answer rather than the last tap's (RULINGS R2, ERRATA E112).
+                    //
+                    // No longer behind `isCold` (ERRATA E127): a tree nobody has touched was
+                    // offering no action at all, which is what SCREENS.md 14's "no quad-action row"
+                    // delta shipped as. See `offersQuadActionRow` for the ruling and for why all
+                    // four cells stay.
                     QuadActionRow(
                         actions: presentation.quadActions,
                         selected: model.isFavorite ? [.favorite] : []
                     ) { action in
                         perform(action)
                     }
+                }
+
+                if !presentation.isCold {
                     regularsRow(presentation)
                     activityFeed(presentation)
                 }
 
                 statGrid(presentation)
+
+                if presentation.offersGrowthLink {
+                    growthLink(presentation)
+                }
 
                 if presentation.isCold {
                     footnote(presentation)
@@ -244,7 +288,23 @@ struct TreeProfileView: View {
     }
 
     /// 14 §2 — the dashed well, `height:170px`, radius 18, `2px dashed`, centred `VStack(spacing:8)`.
+    ///
+    /// **And a control, since ERRATA E127.** `LocationPrompt` (E123) established that a dashed-ring
+    /// card in this vocabulary is tappable when a user action would fill it, and this is the app's
+    /// clearest instance: a camera glyph in a dashed frame, drawn exactly when a photograph could be
+    /// added. It calls the same `onVisit` the CTA beneath it calls, so the two say one thing.
+    ///
+    /// The `Button` wraps the composed well rather than replacing its accessibility work: the
+    /// `.ignore` that fixed the doubled caption (E118) still holds, and the trait and hint are added
+    /// on top of the one element it leaves.
     private var emptyPhotoWell: some View {
+        Button { onVisit(model.treeID) } label: { emptyPhotoWellBody }
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityHint(TreeProfilePresentation.emptyPhotoWellHint)
+    }
+
+    private var emptyPhotoWellBody: some View {
         VStack(spacing: CypressSpacing.gapRows) {
             ZStack {
                 Circle().fill(CypressColor.cityRecordBadgeFill)
@@ -285,9 +345,14 @@ struct TreeProfileView: View {
             radius: CypressRadius.cardLg,
             width: CypressSpacing.Component.outlineWidth
         )
+        // The 170pt card is mostly empty space around a 46pt circle and one line of text, and a
+        // `Button` hit-tests the shape its label *draws*, not the frame the label was given. Without
+        // this the only part of the well that answered a finger would be the glyph and the caption —
+        // ERRATA E114's lesson from the other direction, where drawing and touch disagreed and the
+        // accessibility tree could not tell.
+        .contentShape(RoundedRectangle(cornerRadius: CypressRadius.cardLg, style: .continuous))
         .padding(.horizontal, CypressSpacing.gutter)
         .padding(.top, TreeProfileMetrics.wellTop)
-        .accessibilityElement(children: .combine)
     }
 
     // MARK: - 2 · Foliage strip (C3, A5, D5)
@@ -492,6 +557,34 @@ struct TreeProfileView: View {
         }
         .padding(.horizontal, CypressSpacing.gutter)
         .padding(.top, presentation.isCold ? TreeProfileMetrics.blockGap : TreeProfileMetrics.statGridTop)
+        // 03 §9's trailing `30px` closes the screen, so it moves below whatever is genuinely last:
+        // the growth link when there is one, this grid when there is not.
+        .padding(.bottom, presentation.isCold || presentation.offersGrowthLink ? 0 : CypressSpacing.bottomBar)
+    }
+
+    // MARK: - 9b · Growth history link (screen 11)
+
+    /// Screen 11's entrance, said out loud. See `TreeProfilePresentation.offersGrowthLink` for why a
+    /// stat card carrying a reading was not enough of one (ERRATA E127).
+    ///
+    /// Built exactly like `activityLink`, and for the same reason: C1–C30 is a closed catalogue with
+    /// no link in it, and a screen-local control from tokens is what this codebase does where the
+    /// catalogue has no entry (ERRATA E46). Same font, same colour, same 44pt hit area — it is the
+    /// same kind of thing one block further down the screen, so it reads as one.
+    private func growthLink(_ presentation: TreeProfilePresentation) -> some View {
+        Button {
+            router?.push(.growthHistory(model.treeID))
+        } label: {
+            Text(TreeProfilePresentation.growthLinkTitle)
+                .font(CypressFont.body13Bold)
+                .foregroundStyle(CypressColor.ctaFill)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .cypressHitArea()
+        .padding(.horizontal, CypressSpacing.gutter)
+        .padding(.top, TreeProfileMetrics.activityLinkTop)
         .padding(.bottom, presentation.isCold ? 0 : CypressSpacing.bottomBar)
     }
 

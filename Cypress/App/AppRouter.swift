@@ -13,7 +13,12 @@ enum Route: Hashable {
     /// drawn here at all (ERRATA E113). A removed tree does open it, deliberately — see
     /// `TreeProfileDestination`.
     case treeProfile(UUID)      // 03 / 14
-    case identify               // 02 what tree is this
+    /// The visit flow, and where it is entered. `nil` opens screen 02 and asks which tree this is;
+    /// a tree id skips 02 and opens screen 04's camera for that tree, which is what the profile's own
+    /// photo CTA means — the reader named the tree by being on its page (ERRATA E127). `Route` still
+    /// has no case *for* the camera (DECISIONS constraint 21): this names the flow, and the flow
+    /// decides which of its screens it opens on.
+    case identify(UUID?)        // 02 what tree is this → 04
     case species(UUID)          // 07
     case careLog(UUID)          // 09
     case share(UUID)            // 10
