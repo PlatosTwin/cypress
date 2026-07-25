@@ -148,18 +148,18 @@ final class MapModel {
     /// targets, which is precisely what clustering is for".
     ///
     /// What it comes to: on an iPhone 16 Pro the map is 402 × 874 pt and the fetched box is that with
-    /// 8 % added on every side, so the grid touches **288 to 300 cells** — and it is the same 288 to
-    /// 300 at zoom 16, 17, 18 and 21, because the screen does not change size when the camera pulls
+    /// 8 % added on every side, so the grid touches **264 to 288 cells** — and it is the same 264 to
+    /// 288 at zoom 16, 17, 18 and 21, because the screen does not change size when the camera pulls
     /// back. That is the whole property. Counted against the shipped seed over the densest zoom-16
     /// screenful in it (37.7788, −122.4247, in the Mission), cells that actually hold a tree:
     ///
     ///     zoom · trees in the fetched box · cells · occupied · drawn
     ///       21  ·                       6 ·   288 ·        6 ·     6
-    ///       20  ·                      15 ·   288 ·       13 ·    15   ← under budget, un-thinned
-    ///       19  ·                     109 ·   264 ·       53 ·   109   ← under budget, un-thinned
-    ///       18  ·                     543 ·   288 ·      134 ·   134
-    ///       17  ·                   2,072 ·   288 ·      225 ·   225
-    ///       16  ·                   8,150 ·   300 ·      272 ·   272
+    ///       20  ·                      15 ·   288 ·       15 ·    15   ← under budget, un-thinned
+    ///       19  ·                     109 ·   264 ·       54 ·   109   ← under budget, un-thinned
+    ///       18  ·                     543 ·   288 ·      136 ·   136
+    ///       17  ·                   2,072 ·   288 ·      220 ·   220
+    ///       16  ·                   8,150 ·   288 ·      277 ·   277
     ///
     /// The pins do not fuse at that spacing either: C19 draws an 18 pt pin, so a full grid covers
     /// 15 % of the screen in pins, against the unbroken mat of green 1,300 of them drew.
@@ -171,7 +171,7 @@ final class MapModel {
     /// phone is 472,000 pt²; divided by a 44 pt cell that is ~250 cells, and 400 trees spread over it
     /// is a mean spacing of 34 pt — already inside the 44 pt tap target, so past 400 the extra pins
     /// are paint rather than controls. Which means 400 sits *above* the grid's own ceiling on every
-    /// current iPhone (288–300 cells here, 292 on a 16 Pro Max) and far below the 1,300 that took the
+    /// current iPhone (264–288 cells here, at most ~350 on a 16 Pro Max) and far below the 1,300 that took the
     /// map to 14 fps. So the un-thinned query runs exactly where the un-thinned answer was already
     /// inside the grid's budget, and the grid runs everywhere else, and neither one is a cliff.
     ///

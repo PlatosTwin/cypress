@@ -286,6 +286,28 @@ public struct TreeQueries {
     ///
     /// A web-mercator pixel spans `360 / (256 · 2^zoom)` degrees of longitude everywhere, and
     /// `cos(latitude)` times that in latitude — hence two different cell sizes.
+    ///
+    /// ── Why the latitude is snapped to its degree band, which is not a rounding convenience ────
+    /// The callers grid with `CAST((lat + 90) / latCell AS INTEGER)`: the origin is the **south
+    /// pole**, so at San Francisco a cell index is around 171,000. Feed this the viewport's own
+    /// centre and `latCell` moves a little with every pan — `cos` is continuous — and a relative
+    /// change of one part in five thousand slides an index of 171,000 by more than thirty whole
+    /// cells. The grid is then not absolute at all: it re-lays itself under the camera, and every
+    /// cell hands its pin to a different tree.
+    ///
+    /// It is measurable. `CypressTests/MapQueryPlanTests` pans the box by a quarter of its height and
+    /// compares the interior pin for pin: with the raw centre latitude, **67 of about 190** changed
+    /// identity — a third of the map picking a new tree per refetch, which is the flicker
+    /// `TreeCluster.id`'s own comment promises does not happen. That comment was written about the
+    /// `+90`/`+180` offsets, which do make the grid independent of the *box's corner*; nobody noticed
+    /// that the cell **size** was still a function of the box (ERRATA E130). The cluster badges have
+    /// had it since they were written.
+    ///
+    /// Snapping to the middle of the whole-degree band fixes it, because no pan of a city-sized map
+    /// crosses one: every viewport over San Francisco computes `cos(37.5°)` and gets exactly the same
+    /// grid. `cos` varies 1.4 % across a degree of latitude here, so a cell is 44 × 44.1 pt instead of
+    /// 44 × 44.0 — a difference nothing can see. What is left is one re-keying for a map panned
+    /// across a whole degree of latitude, which this app cannot do.
     static func cellSize(
         zoom: Int,
         centreLatitude: Double,
@@ -294,7 +316,8 @@ public struct TreeQueries {
         let clampedZoom = max(0, min(zoom, 22))
         let degreesPerPoint = 360.0 / (256.0 * pow(2.0, Double(clampedZoom)))
         let longitude = degreesPerPoint * points
-        let latitude = longitude * max(cos(centreLatitude * .pi / 180), 0.05)
+        let band = centreLatitude.rounded(.down) + 0.5
+        let latitude = longitude * max(cos(band * .pi / 180), 0.05)
         return (latitude: latitude, longitude: longitude)
     }
 

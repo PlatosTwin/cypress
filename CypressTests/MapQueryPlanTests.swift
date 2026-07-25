@@ -253,4 +253,44 @@ struct MapQueryPlanTests {
             )
         }
     }
+
+    /// The same property on the other side of A1's threshold, where it had been claimed and was
+    /// **not true**.
+    ///
+    /// `TreeCluster.id` says it is "stable across pans at the same zoom, because the grid is absolute
+    /// rather than relative to the viewport's corner — the same cell keeps the same id as the user
+    /// drags, so the badge does not flicker and re-animate". The `+90`/`+180` offsets do make the
+    /// grid independent of the corner. They do not make it independent of the *box*, because
+    /// `cellSize` took the viewport's own centre latitude and `cos` moved with it — see that method
+    /// for the arithmetic and for how far thirty-odd cells of slide goes. The badge has been
+    /// re-keying on every pan since it was written; this is the assertion that says it does not
+    /// (ERRATA E130).
+    @Test("a cluster cell keeps its id when the box moves")
+    func clusterIDsAreStableUnderAPan() async throws {
+        let store = try await Self.store()
+        let queries = try Self.queries(store)
+
+        let shift = (Self.bounds.maxLatitude - Self.bounds.minLatitude) / 4
+        let panned = BoundingBox(
+            minLatitude: Self.bounds.minLatitude + shift,
+            maxLatitude: Self.bounds.maxLatitude + shift,
+            minLongitude: Self.bounds.minLongitude,
+            maxLongitude: Self.bounds.maxLongitude
+        )
+
+        try await store.queue.read { connection in
+            let before = try queries.clusters(in: MapViewport(bounds: Self.bounds, zoom: 14), connection: connection)
+            let after = try queries.clusters(in: MapViewport(bounds: panned, zoom: 14), connection: connection)
+            try #require(!before.isEmpty && !after.isEmpty, "one of the two boxes produced no badges")
+
+            // Any cell both boxes reached must be *the same cell* — same id — and not merely a badge
+            // at a similar place. Counts and centres are allowed to differ at the box edges, where
+            // each box sees only part of the cell.
+            let shared = Set(before.map(\.id)).intersection(after.map(\.id))
+            #expect(
+                shared.count >= before.count / 2,
+                "only \(shared.count) of \(before.count) cluster cells survived a quarter-box pan with their id"
+            )
+        }
+    }
 }
