@@ -55,28 +55,38 @@ struct JournalTabView: View {
     var onShowGroup: ((PinSet) -> Void)?
     var onRequestLocation: (() -> Void)?
 
-    /// Which segment is showing.
+    /// Which segment is showing, when there is no router to hold it (previews, screenshots).
     ///
     /// **It opens on the journal**, which is the one decision here that needed making. The tab is
     /// called Journal; a tab whose label names one of its two segments and opens on the other is the
     /// same small dishonesty E99 recorded, moved one level down. The almanac is one tap away and its
     /// entrance is what this screen exists to protect — see the file comment — but it is not what the
     /// bar promises when you press it.
-    @State private var segment: JournalSegment = .journal
+    @State private var localSegment: JournalSegment = .journal
 
     @Environment(AppRouter.self) private var router: AppRouter?
+
+    /// The router's copy when there is one, this view's own otherwise.
+    ///
+    /// It lives on `AppRouter` because the segment is addressable — a deep link, and one day a link
+    /// from elsewhere in the app, has to be able to ask for the almanac specifically. See
+    /// `AppRouter.journalSegment` for the failure that proved it.
+    private var segment: Binding<JournalSegment> {
+        guard let router else { return $localSegment }
+        return Binding(get: { router.journalSegment }, set: { router.journalSegment = $0 })
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             SegmentedControl(
                 options: JournalSegment.allCases,
-                selection: $segment,
+                selection: segment,
                 label: \.label
             )
             .padding(.top, CypressSpacing.labelSectionTop)
             .padding(.horizontal, CypressSpacing.gutter)
 
-            switch segment {
+            switch segment.wrappedValue {
             case .journal:
                 journal
             case .almanac:
