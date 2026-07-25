@@ -30,11 +30,21 @@ import Foundation
 
 /// The three pills SCREENS.md 08 §2 draws under the title: `Trees`, `Journal`, `Species`.
 ///
-/// Only `species` has a screen. The prototype makes the other two inert on this screen
-/// (PROTOTYPE-FLOW §1.5 `grove`: "Progress card, neighborhood callout, steward card, tabs My Grove /
-/// Journal / You — **inert**"), and BUILD-PLAN §9 M2 lists the empty journal as a build requirement
-/// that has not been built. So they are drawn, because 08 draws them, and they do nothing, because
-/// there is nowhere for them to go (DECISIONS constraint 21). See ERRATA E46.
+/// **All three lead somewhere now, and none of them did for most of the app's life.** The entry that
+/// used to be here read: "Only `species` has a screen … they are drawn, because 08 draws them, and
+/// they do nothing, because there is nowhere for them to go (DECISIONS constraint 21)." That was the
+/// right call while it was true, and what made it stop being true is that both destinations turned
+/// out to be already built and unreachable rather than unbuilt:
+///
+/// - `Trees` is `CypressAPI.grove()`, which has returned `[GroveEntry]` since the protocol was
+///   written and had no caller. See `GroveTreesPresentation`.
+/// - `Journal` is `CypressAPI.journal(cursor:limit:)`, whose absence of a screen ERRATA E99 recorded
+///   as OPEN rather than guessed at. See `JournalPresentation` for the argument for what it became,
+///   and `JournalListView` for why the same list is also a segment of the Journal tab.
+///
+/// So constraint 21 is satisfied in the direction it points: nothing was invented to fill a pill.
+/// Two finished reads were given the surface the mock had already drawn for them. See ERRATA E46 for
+/// why this row is 08's own geometry and not C5.
 enum GroveTab: String, CaseIterable, Identifiable {
     case trees
     case journal
@@ -51,9 +61,23 @@ enum GroveTab: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Whether tapping the pill leads anywhere. Screen 08 is the Species tab; the other two have no
-    /// built destination and no mocked one.
-    var hasDestination: Bool { self == .species }
+    /// Whether tapping the pill leads anywhere.
+    ///
+    /// Kept, rather than deleted now that it is true of everything: it is the question DECISIONS
+    /// constraint 21 asks of any control, and a fourth pill added without answering it should fail
+    /// rather than ship inert.
+    ///
+    /// **Exhaustive rather than `{ true }`, and the difference is the whole value of the property.**
+    /// Written as a bare `true` it answers yes for cases that do not exist yet, so the two suites
+    /// that read it — `GroveTreesTests.everyPillHasADestination` and
+    /// `ScreenEntranceTests.theSurfacesThatWereNotRoutes` — were asserting a literal and would have
+    /// welcomed a fourth inert pill in silence. A `switch` with no `default` moves the obligation to
+    /// the compiler: a new case does not build until somebody says, here, whether it goes anywhere.
+    var hasDestination: Bool {
+        switch self {
+        case .trees, .journal, .species: return true
+        }
+    }
 }
 
 // MARK: - Presentation

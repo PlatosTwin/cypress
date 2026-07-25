@@ -2,26 +2,37 @@
 //  JournalTabView.swift
 //  Cypress — Features/Journal
 //
-//  The `Journal` tab of C16, which until now rendered `NotBuiltYetView`.
+//  The `Journal` tab of C16.
 //
 //  ── What this screen is, and how much of that is invented ─────────────────────────────────
 //  BUILD-PLAN §9 lists "empty grove, journal, collections" as an M2 build requirement and gives the
 //  tab no mock — no layout, no copy, no inventory of what belongs on it. What *is* specified is the
 //  grouping: BUILD-PLAN §12's enthusiast layer is "collections, almanac, journal, share cards,
 //  phenology notifications", and its M4 acceptance criteria name the almanac and the journal in one
-//  breath. So the almanac belongs in this tab's territory by the plan's own arrangement.
+//  breath. So both belong in this tab's territory by the plan's own arrangement, and now both are
+//  in it.
 //
-//  **Making the almanac the tab's content is invented**, under the project owner's one-time
-//  authorization to give screen 12 an entrance; see ERRATA (E57, E98). It is the smallest thing that
-//  works: screen 12 is a finished, fully specified screen with no way in, and this tab is a finished
-//  entrance with nothing behind it.
+//  ── What changed, and the trap that had to be avoided to change it ────────────────────────
+//  This tab used to render screen 12 and nothing else. ERRATA E99 recorded that as a deliberate
+//  shortfall — "the name of the tab promising something it does not yet contain is the honest cost"
+//  of not inventing a journal — and the journal now exists (`JournalPresentation`), so the cost can
+//  be paid off.
 //
-//  ── What is deliberately not here ─────────────────────────────────────────────────────────
-//  The contributions journal itself. `CypressAPI.journal(cursor:limit:)` exists and returns a
-//  `Page<JournalEntry>`, so the data is one call away — but a page is not a series, and this screen
-//  has no drawn list, no row, no empty state and no copy anywhere in SCREENS.md. Building one would
-//  be inventing a screen, and the authorization covers entrances, not screens. Recorded as
-//  outstanding in ERRATA (E99) rather than guessed at.
+//  **What it must not do is pay it off by displacing the almanac.** `Route.almanac` is resolved in
+//  `RootView` and has no `push` call site anywhere in the app; that arm's own comment says so. This
+//  tab is screen 12's only entrance in the entire product. A journal that simply took the tab would
+//  have deleted a finished, fully specified screen from the app without removing a line of its code,
+//  and every test would still have passed — which is ERRATA E57 exactly, reintroduced by the round
+//  that was supposed to be closing E99. So there are two segments and the almanac is one of them.
+//
+//  ── Why C5, when screen 08's pill row exists ──────────────────────────────────────────────
+//  ERRATA E46 settled that 08's three-pill row is **08's own drawn geometry** and deliberately not
+//  C5: different radius, a gap between separate pills rather than dividers inside one container, and
+//  08 is not among C5's listed users. That reasoning binds this screen in the opposite direction.
+//  This tab has no drawn geometry at all, so rule 8 sends it to the nearest specified thing — and
+//  the nearest specified thing to "pick which of these two views to show" is C5, the segmented
+//  control the app already draws on 05, 16 and D3. Borrowing 08's row would mean copying a geometry
+//  that SCREENS.md attaches to one specific screen onto a screen it never drew.
 //
 
 import SwiftUI
@@ -38,23 +49,57 @@ struct JournalTabView: View {
     ///
     /// There were three and there are two since ERRATA E129: the coverage CTA and the vacant-sites row
     /// used to hand out one id each and now hand out the group they counted, through one closure.
+    /// `onOpenTree` now serves both segments — an almanac season row and a journal row are both "a
+    /// thing that happened to a particular tree", and both open that tree.
     var onOpenTree: ((UUID) -> Void)?
     var onShowGroup: ((PinSet) -> Void)?
     var onRequestLocation: (() -> Void)?
 
+    /// Which segment is showing, when there is no router to hold it (previews, screenshots).
+    ///
+    /// **It opens on the journal**, which is the one decision here that needed making. The tab is
+    /// called Journal; a tab whose label names one of its two segments and opens on the other is the
+    /// same small dishonesty E99 recorded, moved one level down. The almanac is one tap away and its
+    /// entrance is what this screen exists to protect — see the file comment — but it is not what the
+    /// bar promises when you press it.
+    @State private var localSegment: JournalSegment = .journal
+
     @Environment(AppRouter.self) private var router: AppRouter?
+
+    /// The router's copy when there is one, this view's own otherwise.
+    ///
+    /// It lives on `AppRouter` because the segment is addressable — a deep link, and one day a link
+    /// from elsewhere in the app, has to be able to ask for the almanac specifically. See
+    /// `AppRouter.journalSegment` for the failure that proved it.
+    private var segment: Binding<JournalSegment> {
+        guard let router else { return $localSegment }
+        return Binding(get: { router.journalSegment }, set: { router.journalSegment = $0 })
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            // No `onBack`: a tab root has nothing to go back to, and C1 draws no back circle when
-            // it is handed none.
-            AlmanacView(
-                api: api,
-                coordinate: coordinate,
-                onOpenTree: onOpenTree,
-                onShowGroup: onShowGroup,
-                onRequestLocation: onRequestLocation
+            SegmentedControl(
+                options: JournalSegment.allCases,
+                selection: segment,
+                label: \.label
             )
+            .padding(.top, CypressSpacing.labelSectionTop)
+            .padding(.horizontal, CypressSpacing.gutter)
+
+            switch segment.wrappedValue {
+            case .journal:
+                journal
+            case .almanac:
+                // No `onBack`: a tab root has nothing to go back to, and C1 draws no back circle when
+                // it is handed none.
+                AlmanacView(
+                    api: api,
+                    coordinate: coordinate,
+                    onOpenTree: onOpenTree,
+                    onShowGroup: onShowGroup,
+                    onRequestLocation: onRequestLocation
+                )
+            }
 
             BottomTabBar(selection: router?.bottomTabSelection ?? .constant(.journal))
         }
@@ -65,5 +110,35 @@ struct JournalTabView: View {
         .ignoresSafeArea(.container, edges: .bottom)
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
+    }
+
+    /// The contributions journal, and the footnote that governs it.
+    ///
+    /// The list brings no chrome of its own (`JournalListView`), so the scroll view and the footnote
+    /// are this screen's. The footnote is screen 08's, verbatim: "Quiet collecting. There are no
+    /// streaks and no leaderboards." It is on this screen for the reason it is on that one — it is
+    /// the sentence that makes a list of a person's own contributions read as a record rather than a
+    /// scoreboard, and this is the surface most able to break it (D1).
+    private var journal: some View {
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    JournalSection(api: api, onOpenTree: onOpenTree)
+
+                    Spacer(minLength: 0)
+
+                    Text(JournalCopy.footnote)
+                        .font(CypressFont.body12)
+                        .foregroundStyle(CypressColor.textFaintAlt)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, CypressSpacing.labelSectionTop)
+                        .padding(.horizontal, CypressSpacing.gutterLabel)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(minHeight: proxy.size.height, alignment: .top)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+        }
     }
 }

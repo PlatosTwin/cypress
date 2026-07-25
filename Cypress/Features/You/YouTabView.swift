@@ -58,6 +58,15 @@ struct YouTabView: View {
     /// rather than a second quiet copy that disagrees with the store after a sign-out.
     let account: AccountModel
 
+    /// The journal export's bytes, per format — `CypressAPI.exportLatest`, resolved by the
+    /// composition root.
+    ///
+    /// A closure rather than the API itself, for the reason `OutboxViewState` takes a
+    /// `treeNameResolver`: this screen needs one operation, not a whole boundary, and handing it one
+    /// keeps every state of the tab drawable in a preview without a database. Nil draws no export
+    /// block at all, which is what a surface with nothing behind it should do.
+    var export: (@Sendable (ExportFormat) async throws -> Data)?
+
     @Environment(AppRouter.self) private var router: AppRouter?
 
     var body: some View {
@@ -72,6 +81,7 @@ struct YouTabView: View {
                         accountSection
                         remindersSection
                         contributionsSection
+                        exportSection
                         settingsSection
                         privacySection
                         #if DEBUG
@@ -186,6 +196,22 @@ struct YouTabView: View {
         }
         .padding(.top, CypressSpacing.labelSectionTop)
         .padding(.horizontal, CypressSpacing.gutter)
+    }
+
+    // MARK: - Getting your record out
+
+    /// The export, which had no button anywhere in the app until now.
+    ///
+    /// Beside the outbox row because the two are doors out of the same body of work — one is what
+    /// has not left this phone yet, the other is a copy of everything that is on it. See
+    /// `JournalExportRow` for why an implemented-but-unreachable `exportLatest` was a privacy
+    /// commitment the app was not keeping, rather than merely a missing feature.
+    ///
+    @ViewBuilder
+    private var exportSection: some View {
+        if let export {
+            JournalExportRows(export: export)
+        }
     }
 
     // MARK: - Settings
