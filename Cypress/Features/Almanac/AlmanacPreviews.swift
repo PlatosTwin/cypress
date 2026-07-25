@@ -21,8 +21,14 @@ import SwiftUI
 /// Hands back a fixed almanac and refuses everything else. Previews only.
 struct AlmanacPreviewAPI: CypressAPI {
     var payload: Almanac = .empty
+    /// Makes the one read fail, which is the only way to see screen 12's failure arm without a
+    /// broken device (ERRATA E126).
+    var fails = false
 
-    func almanac(near coordinate: Coordinate?) async throws -> Almanac { payload }
+    func almanac(near coordinate: Coordinate?) async throws -> Almanac {
+        if fails { throw APIError.serverError }
+        return payload
+    }
 
     func mapContent(in viewport: MapViewport) async throws -> MapContent { .pins([]) }
     func treesNear(_ coordinate: Coordinate, radiusM: Double, limit: Int) async throws -> [NearbyTree] { [] }
@@ -214,6 +220,20 @@ private enum AlmanacFixtures {
         AlmanacView(
             api: AlmanacPreviewAPI(payload: AlmanacFixtures.noArea),
             coordinate: nil,
+            now: { AlmanacFixtures.now },
+            onBack: {}
+        )
+    }
+}
+
+/// The read that failed. To be looked at beside `12 · no location` above: that one is the screen
+/// saying it does not know where you are, this one is the screen saying it could not ask at all, and
+/// until E126 both drew a header and a footnote with nothing in between.
+#Preview("12 · read failed") {
+    NavigationStack {
+        AlmanacView(
+            api: AlmanacPreviewAPI(fails: true),
+            coordinate: Coordinate(latitude: 37.7533, longitude: -122.4934),
             now: { AlmanacFixtures.now },
             onBack: {}
         )

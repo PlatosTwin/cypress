@@ -499,6 +499,26 @@ struct ScreenSweepShots {
             }
             .environment(AppRouter())
         })
+        // The two reads that can fail with nothing else on the screen to say so (ERRATA E126).
+        // Photographed next to `e08-grove-empty` and `e12-almanac-fresh` above, because until E126
+        // each of these pairs was one image drawn twice.
+        #expect(await Self.pair("e08-grove-read-failed") {
+            NavigationStack {
+                GroveView(api: GrovePreviewAPI(fails: true), now: { SweepFixtures.now })
+            }
+            .environment(AppRouter())
+        })
+        #expect(await Self.pair("e12-almanac-read-failed") {
+            NavigationStack {
+                AlmanacView(
+                    api: AlmanacPreviewAPI(fails: true),
+                    coordinate: SweepFixtures.coordinate,
+                    now: { SweepFixtures.now },
+                    onBack: {}
+                )
+            }
+            .environment(AppRouter())
+        })
         #expect(await Self.pair("e14b-site-nothing-nearby") {
             NavigationStack {
                 SiteScreen(

@@ -47,6 +47,8 @@ struct GroveView: View {
                             progressBlock(presentation)
                             celebration(presentation)
                             grid(presentation)
+                        } else if model.hasFailed {
+                            failure
                         }
 
                         // §6's `margin-top:auto`. The footnote sits at the bottom of the column
@@ -155,6 +157,39 @@ struct GroveView: View {
             .padding(.top, GroveMetrics.gridTop)
             .padding(.horizontal, CypressSpacing.gutter)
         }
+    }
+
+    // MARK: - Failure
+
+    /// **NOT SPECIFIED** by SCREENS.md 08, which draws no error state.
+    ///
+    /// Without this arm a failed read drew the empty grove — title, tab row, footnote, and a column
+    /// of nothing between them. `GroveModel.Phase` had already refused to conflate those two, on the
+    /// grounds that they look identical and mean opposite things; the view then conflated them
+    /// anyway by having only one branch, so the distinction the model paid for was spent nowhere
+    /// (ERRATA E126).
+    ///
+    /// The shape is the one the other failed reads in this app use — one sentence, then a retry that
+    /// re-runs the load — rather than a new one, because a reader meeting a second failure should be
+    /// meeting a screen they already know how to leave.
+    ///
+    /// It sits on §3's gutter, the block it stands in place of, and above §6's footnote, which keeps
+    /// its `margin-top:auto` and stays at the bottom of the column exactly as it does when the grove
+    /// is empty.
+    private var failure: some View {
+        VStack(alignment: .leading, spacing: CypressSpacing.gapRows) {
+            Text(GroveCopy.loadFailed)
+                .cypressBody135()
+                .fixedSize(horizontal: false, vertical: true)
+
+            SecondaryOutlineButton(GroveCopy.loadRetry, style: .compact) {
+                Task { await model.retry() }
+            }
+            .fixedSize()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, CypressSpacing.labelSectionTop)
+        .padding(.horizontal, CypressSpacing.gutterLabel)
     }
 
     // MARK: - Footnote
