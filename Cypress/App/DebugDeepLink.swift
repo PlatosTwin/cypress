@@ -85,7 +85,36 @@ enum DebugDeepLink {
         case journal            // 12
         case you                // 18
         case moderationReview   // the You tab with a lead's open review (ERRATA E124-B)
+        /// The community add's pin step — a map with a movable pin, opened on its own.
+        ///
+        /// It is not a `Route` and never will be: it is a *phase* of `VisitAddTreeModel`, the same
+        /// way screen 04 and screen 18 are steps of `VisitFlowView` rather than destinations
+        /// (DECISIONS constraint 21). What makes it deep-linkable anyway is that the view takes a
+        /// coordinate and two closures and owns no data — see `Standalone`.
+        case pinAdjust
     }
+
+    /// A screen the harness presents directly, because it is not on any router.
+    ///
+    /// **The narrow exception to "not a fixture loader".** Every other case resolves a real record
+    /// out of the real seed, and this one has no record to resolve: its whole input is a GPS fix, and
+    /// the test host has no phone. `VisitLocationProvider(pinnedFix:)` is already this codebase's
+    /// answer to that exact problem, for the same reason, on the screen next door — an offscreen
+    /// renderer reports `notDetermined` and stays there. So the fix is pinned to the map's own
+    /// opening centre, which is a real place with real streets under it.
+    ///
+    /// **It writes nothing**, which is the other half of the rule `photographedTree(_:)` encodes: a
+    /// case that writes persistent state must not write it onto a tree another case reads. This case
+    /// touches no tree, no photograph and no row — it presents a view and takes a coordinate back.
+    /// There is nothing for a later run, or a neighbouring case, to find.
+    enum Standalone: Equatable {
+        case pinAdjust(anchor: Coordinate, accuracyM: Double)
+    }
+
+    /// The fix the pin screen opens on, and a plausible street-canyon accuracy to draw beside it.
+    /// The centre is `MapLayout.defaultCentre` for `centre`'s own reason: what the tests see is what a
+    /// tester sees on launch.
+    static let pinAdjustFix = Standalone.pinAdjust(anchor: centre, accuracyM: 24)
 
     /// Why a requested screen did not open. Rendered on top of the app, in words, by `RootView` —
     /// never swallowed. A silent failure here turns the whole suite into a suite that passes on
@@ -125,8 +154,15 @@ enum DebugDeepLink {
     ///
     /// Ordering is `nearest`'s — by distance from a fixed point — so the same tree is chosen on every
     /// launch and a failing test names a record somebody can go and look at.
+    /// - Parameter present: how the composition root shows a screen that is on no router. Defaults to
+    ///   discarding, so a caller that only cares about routed screens does not have to supply one.
     @MainActor
-    static func open(_ screen: Screen, api: LocalAPI, router: AppRouter) async -> Failure? {
+    static func open(
+        _ screen: Screen,
+        api: LocalAPI,
+        router: AppRouter,
+        present: (Standalone) -> Void = { _ in }
+    ) async -> Failure? {
         do {
             switch screen {
             case .treeProfile:
@@ -184,6 +220,9 @@ enum DebugDeepLink {
                 router.tab = .journal
             case .you:
                 router.tab = .you
+            case .pinAdjust:
+                // No record, no write, no route. See `Standalone`.
+                present(pinAdjustFix)
             }
             return nil
         } catch let failure as Failure {

@@ -94,6 +94,8 @@ struct RootView: View {
                     .padding()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(CypressColor.surfaceScreen)
+            } else if let debugStandalone {
+                debugStandaloneScreen(debugStandalone)
             }
         }
         #endif
@@ -102,6 +104,26 @@ struct RootView: View {
     #if DEBUG
     @State private var deepLinkFailure: String? = nil
     @State private var deepLinkAttempted = false
+    /// A screen the harness asked for that lives on no router — today only the community add's pin
+    /// step, which is a phase of `VisitAddTreeModel` rather than a `Route`. See
+    /// `DebugDeepLink.Standalone`.
+    @State private var debugStandalone: DebugDeepLink.Standalone? = nil
+
+    @ViewBuilder
+    private func debugStandaloneScreen(_ standalone: DebugDeepLink.Standalone) -> some View {
+        switch standalone {
+        case let .pinAdjust(anchor, accuracyM):
+            // Both closures dismiss and nothing is written: on the shipping path the confirmed
+            // coordinate goes back into the draft the add screen is holding, and there is no draft
+            // here. What this entrance exists to expose is the screen's element tree.
+            VisitPinAdjustView(
+                anchor: anchor,
+                accuracyM: accuracyM,
+                onConfirm: { _ in debugStandalone = nil },
+                onCancel: { debugStandalone = nil }
+            )
+        }
+    }
 
     /// Applies the requested screen once per launch.
     ///
@@ -114,9 +136,13 @@ struct RootView: View {
         deepLinkAttempted = true
         switch request {
         case let .success(screen):
-            if let failure = await DebugDeepLink.open(screen, api: data.api, router: router) {
-                deepLinkFailure = failure.message
-            }
+            let failure = await DebugDeepLink.open(
+                screen,
+                api: data.api,
+                router: router,
+                present: { debugStandalone = $0 }
+            )
+            if let failure { deepLinkFailure = failure.message }
         case let .failure(failure):
             deepLinkFailure = failure.message
         }

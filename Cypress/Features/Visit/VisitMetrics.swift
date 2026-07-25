@@ -59,6 +59,38 @@ enum VisitMetrics {
         static let wellHeight: CGFloat = 268
     }
 
+    // MARK: - Moving the pin
+
+    /// The two numbers `VisitPinAdjustView` owns that no component and no rule already names. The
+    /// *rules* — the 75 m radius, the 5 m nudge — are in `VisitPinAdjust`, because they are the
+    /// screen's argument rather than its geometry and the model enforces them without drawing
+    /// anything.
+    enum PinAdjust {
+        /// How much of the city the map opens on, in metres across, when the pin screen appears.
+        ///
+        /// **Not a spec value** — the screen has no mock. 200 m rather than `MapLayout
+        /// .defaultSpanMetres`' 120: the pin may travel 75 m in any direction, which is a 150 m
+        /// circle, and a reader who cannot see the whole area the pin is allowed into has to zoom out
+        /// before they can aim. The 50 m of margin on top is what keeps the boundary off the bezel.
+        static let openingSpanM: Double = 200
+
+        /// The pin's opacity once it is past the limit.
+        ///
+        /// Faded rather than recoloured: Signal Amber means "this tree needs something" (§1.1) and a
+        /// pin that is merely too far from the reader is not that. 0.4 is far enough down to read as
+        /// "this is not live" at a glance without the pin disappearing off a busy basemap — the reader
+        /// still has to be able to find it to bring it back.
+        static let beyondLimitOpacity: Double = 0.4
+
+        /// Below this many metres, the camera has not moved.
+        ///
+        /// `onMapCameraChange(.continuous)` fires on layout, on the settling frames of a
+        /// programmatic move, and on every frame of a pan, and only the last of those means the
+        /// reader is aiming. 10 cm is far under one point at any zoom this screen opens at, so it
+        /// separates a pan from a redraw without needing to know which is which.
+        static let stillnessM: Double = 0.1
+    }
+
     // MARK: - 04 · Visit (dark camera)
 
     enum Camera {

@@ -22,6 +22,13 @@
 //  Every decision about *whether* something draws is `VisitAddTreeModel`'s, and every string is
 //  `VisitAddTreeCopy`'s, so both halves are testable without a renderer.
 //
+//  ── The pin ───────────────────────────────────────────────────────────────────────────────
+//  This screen used to end with a footnote saying the tree is "recorded where you are standing", and
+//  that sentence was the whole of the coordinate story. It is now a statement of the default with the
+//  control that changes it underneath (`placementRow`), and the map it opens is `VisitPinAdjustView`.
+//  Nothing about the fast path moved: with no pin placed the CTA still writes the fix, and the row
+//  above it is one sentence a reader who is standing at the tree scrolls straight past.
+//
 
 import PhotosUI
 import SwiftUI
@@ -54,6 +61,50 @@ struct VisitAddTreeView: View {
     }
 
     var body: some View {
+        // The pin screen replaces this one rather than covering it, and that is the same decision as
+        // `Phase.placingPin` itself: one model, one draft, one screen in two states. A cover would
+        // have put a second `fullScreenCover` inside the one `RootView` already presents this flow
+        // through, and the photograph would be sitting behind a modal that owns the whole screen
+        // anyway.
+        Group {
+            if case .placingPin = model.phase {
+                pinAdjust
+            } else {
+                composer
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(CypressColor.surfaceScreen)
+        .task { await model.load() }
+        .onDisappear { model.stop() }
+        .onChange(of: libraryItem) { _, item in
+            guard let item else { return }
+            Task {
+                if let data = try? await item.loadTransferable(type: Data.self) {
+                    model.useLibraryImage(data)
+                }
+                libraryItem = nil
+            }
+        }
+    }
+
+    /// The map, anchored on the fix this screen would otherwise have used verbatim.
+    @ViewBuilder
+    private var pinAdjust: some View {
+        if let anchor = model.pinAnchor {
+            VisitPinAdjustView(
+                anchor: anchor,
+                accuracyM: model.fix.accuracyM,
+                // Re-opening picks the pin up where it was left, so a second visit is a correction
+                // rather than a restart.
+                start: model.coordinate,
+                onConfirm: { model.confirmPin($0) },
+                onCancel: { model.cancelPlacingPin() }
+            )
+        }
+    }
+
+    private var composer: some View {
         VStack(spacing: 0) {
             ScreenHeader(title: VisitAddTreeCopy.title, bottomInset: .wide, onBack: onBack)
 
@@ -66,6 +117,8 @@ struct VisitAddTreeView: View {
                     photoWell
 
                     photoSources
+
+                    placementRow
 
                     if case let .duplicate(candidates) = model.phase {
                         duplicateWarning(candidates)
@@ -90,18 +143,38 @@ struct VisitAddTreeView: View {
 
             footer
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(CypressColor.surfaceScreen)
-        .task { await model.load() }
-        .onDisappear { model.stop() }
-        .onChange(of: libraryItem) { _, item in
-            guard let item else { return }
-            Task {
-                if let data = try? await item.loadTransferable(type: Data.self) {
-                    model.useLibraryImage(data)
+    }
+
+    // MARK: - Where the tree goes
+
+    /// One sentence about the coordinate that is about to be written, and the way to change it.
+    ///
+    /// **It sits between the photograph and the CTA on purpose.** The reader who is standing at the
+    /// tree scrolls past it and presses `Add this tree`, and the fast path is still the fast path;
+    /// the reader who shot from across the street reads a sentence that is *wrong about them* right
+    /// before they commit, which is the only moment at which they would ever think to fix it. Putting
+    /// it behind the CTA would have been a second screen nobody visits.
+    ///
+    /// It draws only with a fix, because `canAdjustPin` is gate 2: there is no map to open without a
+    /// centre, and the blocking reason above already explains the missing fix in words.
+    @ViewBuilder
+    private var placementRow: some View {
+        if model.canAdjustPin {
+            VStack(alignment: .leading, spacing: CypressSpacing.gapVitality) {
+                Text(VisitAddTreeCopy.placement(offsetM: model.pinOffsetM))
+                    .cypressBody135(color: CypressColor.textBody)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Button { model.beginPlacingPin() } label: {
+                    Text(VisitPinAdjustCopy.openAction)
+                        .font(CypressFont.body13Bold)
+                        .foregroundStyle(CypressColor.ctaFill)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                 }
-                libraryItem = nil
+                .cypressHitArea()
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -264,11 +337,31 @@ enum VisitAddTreeCopy {
 
     static let cta = "Add this tree"
 
+    /// Where the coordinate is coming from, in one sentence, above the CTA.
+    ///
+    /// **The first form used to be the whole story and it was the limitation the owner named.** "The
+    /// tree is recorded where you are standing" was true, unavoidable, and wrong about anybody who
+    /// photographed a tree from the far kerb. It is now a statement of the *default*, sitting next to
+    /// the control that changes it, which is what turns a constraint into a choice.
+    ///
+    /// The moved form gives the distance and stops. No bearing here, unlike the pin screen's own
+    /// sentence: this is a reminder of a decision already taken, and the reader who wants the detail
+    /// back presses the control underneath and gets the map with the bearing on it.
+    static func placement(offsetM: Double?) -> String {
+        guard let offsetM else {
+            return "This tree will be recorded where you are standing."
+        }
+        return "This tree will be recorded \(Int(offsetM.rounded())) m from where you are standing."
+    }
+
     /// What the record will say. Both halves are facts about what `addTree` writes: the source is
     /// `community` and the verification state is `unverified`, which screen 03 prints as
-    /// "community-added, unverified", and the coordinate is the phone's current fix.
+    /// "community-added, unverified".
+    ///
+    /// It no longer says *where*, because the row above the CTA now owns that and says it more
+    /// precisely. One screen must not carry two sentences about the coordinate that can disagree.
     static let footnote =
-        "The tree is recorded where you are standing, as community-added and unverified, on this phone."
+        "Recorded as community-added and unverified, on this phone."
 
     static let noPhoto = "A photo is what makes this a record of a tree rather than a pin."
     static let noLocationPending = "Waiting for a fix. A tree is a place, so it cannot be added without one."
