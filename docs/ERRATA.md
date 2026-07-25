@@ -4856,3 +4856,45 @@ reusable verbatim — the work is entirely the write path. And neighbouring tree
 pin map: they would genuinely help, since they are what the dedupe is about to refuse against, but a
 pin there is a labelled button with nowhere to go, and opening a profile from inside a placement
 abandons a photograph.
+
+### E133 — the rule said "case", and the writer was a test
+
+E125 ended with a rule, written down so the next person would not repeat it: **a case that writes
+persistent state must not write it onto a tree another case reads.** It was repeated today anyway,
+because the rule named the wrong actor.
+
+`DebugDeepLink.measure` opened `standingTree` — the tree nine other cases open — and the case writes
+nothing at all, which is exactly why it looked safe and survived review. The writer is the *test*.
+`testSavingAMeasurementLeavesTheScreen`, added with E131, taps a digit and taps save, and a saved
+reading is a row in the device container that outlives the launch.
+
+**What broke was three screens away from what changed.** Screen 03's DBH card prefers a reading over
+the city's bucket, and a card holding a reading has somewhere to go — screen 11 — so it is wrapped in
+a `Button`. `StatCard` combines its children either way, so the joint label E118 asked for was still
+there and still correct. It had simply moved from `staticTexts` into `buttons`, and
+`testAStatCardIsOneStop` was only looking in the first. Nothing about the app was wrong. The
+assertion had stopped being able to see a correct answer.
+
+**The failure mode is the part worth remembering.** It was not order-dependent and it was not
+intermittent. From the first full suite run onward the test failed on *every* subsequent run, and it
+passed the instant the app was uninstalled. That is the signature of persistent pollution, and it is
+indistinguishable from a flake to anyone whose first instinct is to re-run — which is everyone's
+first instinct. It also survives a single-test run, so the usual isolation check *confirms* the false
+diagnosis rather than refuting it: running the one test alone still failed, because the poison was
+already on disk. Only clearing the container separates the two, and nothing prompts you to try that.
+
+**Two defects, two fixes.** `.measure` now takes the **middle** standing tree: `.memorial` marches in
+from the near end and the photo cases from the far end, so the middle is the one place neither
+reaches. And `testAStatCardIsOneStop` now accepts a `Button` as well as a `StaticText`, because a
+`Button` *is* one stop — arguably more so. Looking only in `staticTexts` had quietly asserted
+something narrower than the test's own name: that a stat card is not interactive. That premise was
+false when it was written; it took a reading on the opened tree to make it visible.
+
+**Verified in the shape that proves it**: the suite twice back to back on one container, 28 tests
+green both times, where the same sequence previously went green then red. And the widened assertion
+still bites — removing `StatCard`'s `.accessibilityElement(children: .combine)` turns it red, so it
+was widened rather than weakened.
+
+**The rule, restated.** A case that writes persistent state must not write it onto a tree another
+case reads — **and the writer includes the test driving the case.** The harness being pure is not
+enough; what matters is what is on disk when the next test launches.
