@@ -129,6 +129,23 @@ public final class CypressStore: Sendable {
             _ = try statement.reset()
         }
     }
+
+    /// Removes a key entirely, rather than writing an empty string over it (ERRATA **E130**).
+    ///
+    /// The distinction is the whole reason this exists. `appState(_:)` returns `String?`, and every
+    /// caller reads absence as "no answer" — no account, no role, no recorded consent. A cleared key
+    /// written as `""` is present and parses to nothing, so a `UUID(uuidString:)` or a
+    /// `UserRole(rawValue:)` of it is nil by accident rather than by record, and the next person to
+    /// read the table cannot tell a setting somebody turned off from one nobody ever set.
+    /// `AccountDeletion` already deletes rows for this reason; sign-out needs the same verb.
+    public func clearAppState(_ key: AppStateKey) async throws {
+        try await queue.write { connection in
+            let statement = try connection.cachedStatement("DELETE FROM app_state WHERE key = :key")
+            _ = try statement.bind(key.rawValue, forName: ":key")
+            try statement.run()
+            _ = try statement.reset()
+        }
+    }
 }
 
 /// The keys `app_state` recognizes. An enum rather than free strings so a typo is a compile error
@@ -145,4 +162,27 @@ public enum AppStateKey: String, CaseIterable, Sendable {
     /// Absent means `member`. There is no `users` table on device (ERRATA E86), so a role — like the
     /// user id itself — is carried in `app_state` rather than on a user row.
     case currentUserRole = "current_user_role"
+
+    /// The account this device was signed in as before somebody signed out (ERRATA **E130**).
+    ///
+    /// **Why signing out has to remember anything at all.** A local account has no credential: there
+    /// is no server, no magic link and nothing to prove you are the same person on the way back in,
+    /// so `accountLink` mints a fresh `UUID` when it finds no account. Sign-out that forgot the id
+    /// would therefore be irreversible in the one way that matters — every reminder, favourite and
+    /// photo vote written under the old id stays in the tables, readable by no query
+    /// (`privateReminders` asks for the *current* user or this device) and removable by no deletion,
+    /// because `deleteAccount` can only delete the account it is signed in as. That is precisely the
+    /// "litter that happens to be unreachable" RULINGS R3 refuses to create, arrived at by a
+    /// different road.
+    ///
+    /// So the id is kept here and `accountLink` resumes it. Signing out stops the app acting as you;
+    /// it does not silently strand your records. `deleteAccount` clears this key along with the rest,
+    /// so a deleted account is never resumable.
+    case signedOutUserID = "signed_out_user_id"
+
+    /// Which of screen 15's three routes was tapped, and the license consent that travelled with it
+    /// (ERRATA **E130**). `AccountAskProvider`'s raw value and `User.licenseVersion`'s shape
+    /// respectively; see `AccountLinkRecord` for why absence is meaningful in both.
+    case accountProvider = "account_provider"
+    case accountLicenseVersion = "account_license_version"
 }
