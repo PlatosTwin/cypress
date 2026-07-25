@@ -4461,3 +4461,72 @@ read: `showsLocationPrompt` is checked first, so a device with no fix sees E123'
 this sentence. That is the right order — without a fix there is no neighbourhood to have failed to
 read — but it means the two cannot be seen at once, and the prompt is the one that has an action
 behind it.
+
+### E127 — a tree nobody had touched offered nothing to press, and the camera kept asking which tree
+
+Three reports from the project owner's phone and one from the audit, all landing on screen 03. Taken
+together they describe a screen that was built for a tree with a history and quietly useless for a
+tree without one — which is every tree in the seed, all 195,309 of them, until somebody arrives.
+
+**The quad row was gated on content.** Favorite, Care, Share and Report only drew once a tree had a
+photograph, so the first person to stand in front of a tree had nothing to press. The owner's ruling
+was "a tree no one has touched should at least offer a REPORT and CARE"; all four ship, and the two
+extra deserve their reasons. Favorite is a private grove write that E89 and R2 already refuse to gate
+on anything. Share renders *identically* on a cold tree: `SharePresentation` takes
+`isPubliclyVisible`, nothing in the app can set `.approved`, so screen 10 draws its C22 gradient
+thumbnail for every tree in the app today — which is what SCREENS.md 10 §3 specifies anyway. This
+overrides SCREENS.md 14's "no quad-action row" delta, deliberately, and the reasoning lives on
+`offersQuadActionRow`, the one property that decides it. The regulars row and the activity feed stay
+behind `isCold`, because they genuinely would draw nothing.
+
+**The measurement history had no entrance for the person most likely to want it** — someone who has
+just taken a tree's first reading. It has one now, as a link under the stat grid rather than by
+making the stat card itself navigate: a stat card is drawn as a *fact*, beside "Planted 1898", and a
+card that silently changes from "Add a reading → 16" to "64 cm → 11" depending on the data is a
+control that cannot be learned. The link follows the *record* and not the chart, so a reading D6 will
+not plot still has a log to open.
+
+**But the load-bearing half was that the profile never re-read itself.** `.onAppear` covers a pushed
+screen; a `fullScreenCover` dismissal fires no appearance event at all. So the camera closed and the
+profile went on saying "Be the first to photograph this tree" about a tree that had, seconds earlier,
+been photographed. Every downstream symptom — the missing hero, the CTA that would not update, the
+history link that appeared only on the next visit — was this. Found by using the app, not by a test.
+
+**The camera kept asking which tree.** The owner, in capitals: *"it's weird to be taken to a screen
+that forces me to select a tree after clicking the take a photo button WHEN I'VE ALREADY SELECTED THE
+TREE."* `Route.identify` now carries an optional id — `nil` opens the identify list, an id opens the
+camera for that tree — and `RootView` turned out to have been handed that id all along and to have
+discarded it. `VisitFlowView` gains a `Subject` value in place of `VisitCandidate`, because a
+candidate carries a distance measured from a GPS fix and this entrance has no shortlist to measure
+against.
+
+**And the way back in was a lie.** The same report insisted the add-a-tree path stay reachable. It was
+worse than unreachable: "None of these? Add this tree" drew at full opacity and was wired to
+`router.sheet = nil`, so it dismissed the whole flow and recorded nothing, while `LocalAPI.addTree`
+sat fully implemented and tested with no caller. PROTOTYPE-FLOW drew that button *inert*, at opacity
+.55, labelled "· not in this prototype"; the build kept the label and dropped the honesty. It is built
+now — BUILD-PLAN §9 M2 names the duplicate-proximity warning as required and §7 specifies the
+endpoint, so this is a deliverable that was skipped rather than a screen invented here, and with no
+mock every part is borrowed from a specified one. The screen never pre-checks the 10 m circle: it
+renders `ProximityConflict`'s own candidates, so the warning cannot disagree with the refusal. Adding
+a second tree on the same spot answers "Something is already on record within 10 m of here", names
+the tree at 0 m, and opens it.
+
+**Nobody could reach any of this from the map.** `MapHomeView`'s "What tree is this?" FAB — the
+largest control on the default screen — called `router.push(.identify)`, and a *pushed* `.identify`
+was answered by `NotBuiltYetView`. The feature was built and presented as a sheet; only the map's
+entrance was wrong, and it had been wrong long enough that the audit found it before any user
+complained about it by name. `ScreenEntranceTests` asserts each route's entrance as a hand-written
+string, which is exactly why the one test built to catch this passed on a lie.
+
+**The recurring lesson, now at four.** Two defects in this entry were found by tapping a running
+build with a green suite over it: the stale profile above, and — on the brand-new add screen — a
+chosen photograph pushing the whole column wider than the phone. That is E125's `scaledToFill`
+measurement bug, reproduced from scratch in code written days after E125 was written down. A rule
+recorded in an ERRATA entry is not a rule the next screen obeys; `PhotoFill` exists so that it is
+unnecessary to remember, and the new screen did not use it. 468 unit tests and 27 UI tests pass.
+
+**Open.** The add screen has no preview fixture, so `ScreenSweepShots` does not photograph it — every
+other feature has one. And screen 16 still gives no confirmation on save; the keypad clears and
+nothing else happens, which is why the measure round-trip still feels broken even with the profile
+now re-reading itself.
