@@ -6,10 +6,10 @@ import Foundation
 /// work. `CypressTests/MapQueryPlanTests` runs every map query through both and asserts set
 /// equality, which is what proves the R*Tree re-check below is correct.
 ///
-/// That test exists as of ERRATA E130. Before it this paragraph named the seed contract test, which
-/// checked no such thing — `SeedContractTests` held one zoom-threshold assertion and nothing else,
-/// and the only place both strategies were compared was `DataGates`, over one viewport, on the pin
-/// query alone.
+/// That test exists as of ERRATA E130, and this paragraph used to overstate what held it. The seed
+/// contract test does reach a strategy comparison — through `DataGates.seedContract` — but it is one
+/// viewport on `pins` alone. `clusters` was never run through both, and neither was anything else.
+/// "The map queries", plural, is true now.
 public enum SpatialIndexStrategy: String, Sendable, CaseIterable {
     /// `idx_trees_lat_lon ON trees(lat, lon, id)`. A plain composite B-tree.
     case coveringIndex

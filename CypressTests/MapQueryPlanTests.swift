@@ -5,18 +5,20 @@ import Testing
 /// **The gates two comments promised and nobody wrote.**
 ///
 /// `SQLiteConnection.queryPlan(for:)` says a plan that degrades to `SCAN trees` is a 195,309-row
-/// table scan on the map's critical path and "must fail CI, not the field", and names the seed
-/// contract test as where that happens. `TreeQueries`' `SpatialIndexStrategy` said the same test ran
-/// the map queries through both strategies and asserted set equality. Neither was true of anything
-/// in this target: `SeedContractTests` holds one zoom-threshold assertion, and the plans were pinned
-/// in `Cypress/Data/Tests/DataGates.swift` against SQL **hand-copied into that file** rather than
-/// against the text `TreeQueries` emits. So the tuning those comments describe — which index answers
-/// the viewport, and which columns may be asked for without turning a covering index walk into a
-/// probe per row — was documented in prose and held by a paraphrase.
+/// table scan on the map's critical path and "must fail CI, not the field". `TreeQueries`'
+/// `SpatialIndexStrategy` said the seed contract test ran the map queries through both strategies
+/// and asserted set equality. Both point at `SeedContractTests`, which reaches
+/// `DataGates.seedContract` — and something is there, which is why this is a gap rather than a hole:
 ///
-/// These are the gates ERRATA E130 installs. They run `EXPLAIN QUERY PLAN` over the real statements,
-/// and they hold both rules `DataGates` states: the plan must name `idx_trees_lat_lon`, and no step
-/// may be a `SCAN` that is neither a covering index walk nor a virtual table.
+/// - The plans **are** explained, but over SQL **hand-copied into `DataGates.swift`**, not the text
+///   `TreeQueries` emits. Change the real query and the gate goes on explaining the paraphrase.
+/// - The strategies **are** compared, but on `pins` alone, over one viewport. `clusters` was never
+///   run through both, and the marker grid did not exist.
+///
+/// So the tuning those comments describe — which index answers the viewport, and which columns may
+/// be asked for without turning a covering index walk into a probe per row — was pinned against a
+/// copy of itself. These are the gates ERRATA E130 installs: the same two rules `DataGates` states,
+/// over the statements the app actually runs.
 @Suite("Map query plans")
 struct MapQueryPlanTests {
 
