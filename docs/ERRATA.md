@@ -4590,3 +4590,111 @@ accessibility tree the way it reads the other sixteen. Its only interactive elem
 but it is a gap in that sweep. Also: `Route` now carries a payload for the first time. `AppRouter`'s
 `replace(_:with:)` uses `path.lastIndex(of:)`, which is fine on a `Hashable` payload, and nothing
 serialises `Route` — noted so the next payload-carrying case is not added blind.
+
+### E130 — screen 01 had no level of detail, and the annotation count tracked the viewport's area
+
+The project owner: *"the map gets SUPER slow when you zoom out a bit; that's bad and we should fix."*
+The phrasing turned out to be the diagnosis. Not *when you zoom out* — *a bit*. At zoom ≤15 the map
+flips to cluster badges and gets fast again, so the stall lives in the narrow band the camera actually
+opens into. That reversal is also the proof it was never the SQL: the clustered query is the *more*
+expensive one, 104 ms for the whole city against a few milliseconds for a viewport, and the map got
+faster the moment it started running it.
+
+What was slow was 1,300 SwiftUI `Annotation`s, each a Button with a 44 pt hit area, a shadow, a
+`contentShape`, a `strokeBorder`, a `scaleEffect` and an animation keyed on the selected pin — so one
+tap armed a transaction on all 1,300 — plus a `cypressPulse` that built a `Circle().fill(...)` per
+pin whether or not it was pulsing. Twelve hundred invisible circles. There was no level-of-detail
+rule anywhere between zoom 16 and zoom 21; the only boundary in the app was
+`highestClusteringZoom = 15`. The camera opens at 120 m ≈ zoom 18 and about 130 trees, and two
+pinches out is sixteen times the ground: 130 → 525 → the 1,300 cap. That is the whole of "a bit".
+
+**The fix is a screen-space grid, expressed in SQL.** `MapViewport` carries an optional
+`markerCellPoints`; `TreeQueries.pins` divides the box into cells that many points square *at that
+zoom* and returns one tree per occupied cell — `MIN(t.rowid), COUNT(*) … GROUP BY cell`, the cluster
+query's own plan, answered out of `idx_trees_lat_lon` as a covering index without touching the table,
+then hydrated by rowid through `json_each` so the statement text stays cacheable. The drawn count is
+then bounded by screen area ÷ cell area, which is 264–288 markers at *every* zoom, because both terms
+scale together. The number the viewport controls is no longer how many markers exist.
+
+**44 pt, because that is the app's own tap target.** Two pins closer together than 44 pt could never
+both be tapped; the second one was never a control, only paint. Choosing the tap target as the cell
+size means the thinning removes exactly what the reader could not have used, which is a different and
+better argument than picking a number that happened to run fast. It is a ceiling and not a rule: the
+same statement counts the box while it groups it, so a viewport already inside the 400-row budget is
+answered un-thinned and nothing is dropped from a zoomed-in map at all.
+
+**Measured, because a passing test says nothing about frames.** A `CADisplayLink` probe
+(`MapFrameProbe`, `#if DEBUG` and off unless `CYPRESS_MAP_PROBE=1`) counts the frames the main run
+loop missed — the same run loop SwiftUI rebuilds the annotation layer on, so the gap it reports *is*
+the stall. Identical scripted pinch, same build config, same device, location declined both times so
+the camera opens the same way. Raw logs are in `.measurements/`.
+
+| window | before | after |
+|---|---|---|
+| idle, zoom 18, 10 markers | 60.0 fps | 60.0 fps |
+| the pinch itself | 38.0 fps, worst 325 ms | 44.6 fps, worst 138 ms |
+| settling at zoom 16 | 14.3 fps, worst 753 ms | 59.3 fps, worst 28 ms |
+| the second after that | 0.5 fps, worst 2,061 ms | 60.0 fps |
+| one drag at zoom 16 | 18.7 fps, worst 1,286 ms | 57.0 fps, worst 54 ms |
+
+Marker counts over the densest zoom-16 screenful in the seed: 1,300 → 277 at zoom 16, 1,300 → 220 at
+17, 543 → 136 at 18. Zoom 19 is 109 both ways, which is the ceiling declining to bite.
+
+**None of this was measured on hardware.** It is a simulator, compositing on a Mac GPU with a desktop
+main thread. A 2,061 ms frozen frame becoming 28 ms is not an ambiguous ratio, but the absolute
+milliseconds are not a claim about an iPhone and should not be quoted as one.
+
+**The grid was not absolute, and its own comment said it was.** This is the part worth remembering.
+The cells are `CAST((lat + 90) / latCell AS INTEGER)` — origin at the south pole, so a San Francisco
+index is around 171,000 — and `cellSize` took the *viewport's own* centre latitude for its `cos()`
+term. `cos` is continuous, so `latCell` moved a little with every pan, and a relative change of one
+part in five thousand slides an index of 171,000 by more than thirty whole cells. The new stability
+test measured the consequence: **67 of about 190 interior pins picked a different tree after a
+quarter-box pan.** `TreeCluster.id`'s comment has promised an absolute grid since it was written, and
+it was half right — the `+90`/`+180` offsets do make the grid independent of the box's *corner*. What
+nobody noticed for the life of the cluster layer is that the cell **size** was still a function of the
+box. The badges have been re-keying on every pan since they shipped. `cellSize` now snaps to the
+middle of the whole-degree band, which no pan of a city-sized map crosses; `cos` varies 1.4 % across a
+degree here, so a cell is 44 × 44.1 pt instead of 44 × 44.0.
+
+Two things follow from finding it this way. It was invisible to the eye — a pin swapping to a
+different tree of the same species half a block away looks like a map, not a bug — and it was
+invisible to every test, because no test had ever asked whether the same ground produces the same
+answer twice. It surfaced only because the fix needed a *stability* property and stability had to be
+written down before it could be checked.
+
+**The bands are gone, and so is their artifact.** The old code split the viewport into five latitude
+strips and gave each 260 rows, and `LIMIT` truncates in latitude order — so the 1,300 pins were five
+stripes bunched at the bottom of each band. That was visible in every screenshot of the map ever
+taken and had never been named.
+
+Seven secondary fixes came along with it: one `queue.read` per viewport instead of fifteen (each
+`mapContent` was doing three, five times over); `tree_status_overrides` — a full-table scan with no
+predicate — cached in the `LocalAPI` actor and invalidated on both writers; `Task.isCancelled` checked
+during a fetch rather than only after it returned; a one-frame floor under the clustering-threshold
+read, which a pinch oscillating across zoom 15/16 used to hammer with unthrottled whole-city queries;
+`MapModel.pins` stored instead of recomputed on every body pass; the selected pin lifted into its own
+`Annotation` so the other N−1 carry no `scaleEffect` and no animation; and `cypressPulse` no longer
+building a circle it will not draw.
+
+**Declined, with reasons, rather than done for completeness.** A spatial LRU: a refetch is now one
+read of ≤300 rows and the measured pan holds 57 fps, and an absolute grid means most annotation ids
+now survive a refetch anyway, which was most of what a cache would have bought. Slimming `MapPin`
+itself: after the count fix the map holds 57–60 fps at every zoom, and `MapPin` is a DesignSystem
+component shared with screens 15 and 18 where its `Button` carries the 44 pt target and the
+accessibility trait — blast radius for no measured gain. `MapLocationProvider`'s 5 m `distanceFilter`:
+5 m is the distance screen 02 identifies a tree from.
+
+**And a correction to this project's own record.** Two comments claimed test coverage that did not
+exist in the shape described — `SQLiteConnection.queryPlan(for:)` calls a degradation to `SCAN trees`
+a regression, and `TreeQueries` claimed the seed contract test ran both spatial strategies and
+asserted set equality. The gap was narrower than it first looked: `SeedContractTests` delegates to
+`DataGates.seedContract`, which does check plans and does compare strategies. But the plans were
+checked over SQL **hand-copied into `DataGates`** rather than over the statements the app actually
+runs, and the strategy comparison covered `pins` alone over one viewport. Both comments have been
+rewritten to say what is true, and the missing gates added. A comment asserting a test exists is not a
+test, and it is worse than silence, because it stops the next person looking.
+
+**Open.** Two of the new budget assertions would also pass under a plain `LIMIT` — they guard the
+budget constant, not the grid. The grid itself is held by the stripe assertion and the cell-bound
+assertion, and that is worth knowing before anyone trusts the budget tests to protect the mechanism.
