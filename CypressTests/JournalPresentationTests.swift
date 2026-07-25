@@ -493,6 +493,13 @@ struct JournalPresentationTests {
         let text = try #require(String(data: bytes, encoding: .utf8))
 
         #expect(!bytes.isEmpty, "the share sheet would have received an empty file")
+        // The CSV's own header, so this asserts a spreadsheet rather than merely "some bytes
+        // mentioning the note". Without it, the GeoJSON document satisfies every line below —
+        // which it did, when the CSV row was made to ask for the other format.
+        #expect(
+            text.contains("kind,tree_id,captured_at,summary,verification_state"),
+            "the row named a spreadsheet and handed over something else"
+        )
         #expect(text.contains("Fog on the crown"), "the contribution this device made is not in its own export")
         #expect(text.contains(tree.id.uuidString), "the export names no tree")
         // D12: the disclaimer and the verification state travel with it.
