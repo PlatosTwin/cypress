@@ -223,12 +223,16 @@ struct JournalPresentationTests {
     /// The store orders by `captured_at DESC` and the cursor is the last row's timestamp, so a
     /// derivation that re-sorted would be a second ordering — and the first time the two disagreed,
     /// `Show earlier` would insert rows into the middle of a list somebody was reading.
+    ///
+    /// The names are distinct and not alphabetical for the reason `GroveTreesTests.orderIsTheStores`
+    /// gives at length: with every fixture on one name, a sort by name is invisible to the
+    /// assertion, and a test that cannot see the mutation it is written against is not a test.
     @Test("the store's order is the screen's order")
     func orderIsTheStores() {
         let entries = [
-            Self.entry(1, at: Self.date(2026, 7, 12)),
-            Self.entry(2, at: Self.date(2026, 1, 3)),
-            Self.entry(3, at: Self.date(2025, 11, 30))
+            Self.entry(1, tree: "Zelkova", at: Self.date(2026, 7, 12)),
+            Self.entry(2, tree: "Almond", at: Self.date(2026, 1, 3)),
+            Self.entry(3, tree: "Magnolia", at: Self.date(2025, 11, 30))
         ]
         let drawn = Self.presentation(entries, nextCursor: nil).rows.map(\.id)
         let read = entries.map(\.id)

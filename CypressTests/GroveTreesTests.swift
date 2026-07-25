@@ -140,12 +140,19 @@ struct GroveTreesTests {
     /// The store orders by `last_visited DESC NULLS LAST` and this derivation must not re-sort:
     /// two orderings is two chances to disagree, and the one in SQL is the one the cursor and the
     /// index are built for.
+    ///
+    /// **The names are distinct and deliberately not alphabetical**, and that is the whole strength
+    /// of this test. It first shipped with all three fixtures on the default name, which made a
+    /// `sorted(by: displayName)` slipped into the derivation completely invisible — the assertion
+    /// passed against a mutant that re-sorted the list. Sorting by *any* of the three fields a row
+    /// carries now changes the answer: by name it is Almond, Magnolia, Zelkova; by date it is the
+    /// reverse of the store's; the store's own order is the one asserted.
     @Test("the store's order is the screen's order")
     func orderIsTheStores() {
         let entries = [
-            Self.entry(1, lastVisitedAt: Self.date(2026, 7, 12)),
-            Self.entry(2, lastVisitedAt: Self.date(2026, 1, 3)),
-            Self.entry(3, lastVisitedAt: nil, isFavorite: true)
+            Self.entry(1, name: "Zelkova", lastVisitedAt: Self.date(2026, 7, 12)),
+            Self.entry(2, name: "Almond", lastVisitedAt: Self.date(2026, 1, 3)),
+            Self.entry(3, name: "Magnolia", lastVisitedAt: nil, isFavorite: true)
         ]
         let drawn = Self.presentation(entries).rows.map(\.treeID)
         let read = entries.map(\.treeID)
