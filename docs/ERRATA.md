@@ -4698,3 +4698,68 @@ test, and it is worse than silence, because it stops the next person looking.
 **Open.** Two of the new budget assertions would also pass under a plain `LIMIT` — they guard the
 budget constant, not the grid. The grid itself is held by the stripe assertion and the cell-bound
 assertion, and that is worth knowing before anyone trusts the budget tests to protect the mechanism.
+
+### E131 — the account existed, and the only screen about you never mentioned it
+
+Part B built a local account: screen 15 could create one, `claimDevice` wrote it, moderation
+depended on it. The You tab — the one screen in this app whose subject is the person using it — said
+nothing about any of it. There was no way to see whether you were signed in, no way to sign out, no
+way to delete, and the private reminders written on screen 06 went into the database and were never
+read back by anything. Every one of those is the same defect in a different place: a thing the app
+does, with no surface saying it does it.
+
+**Sign-out and delete are different promises, and the app now keeps both distinctly.** Sign-out
+records `signed_out_user_id`, so signing in again resumes the same account and everything it wrote
+stays attributed. Delete does not: it clears the id and a later sign-in mints a new one. That was
+verified rather than assumed — the account deleted in testing was `C6C025E1…` and the one that came
+back was `9FED047C…`. A "delete" that quietly behaves like a sign-out is the version of this feature
+that would have been worst to ship, because nothing on screen would ever reveal it.
+
+**The deletion surface was driven by hand against the live database, because R3 is a destructive
+promise and a passing test is not evidence about a destructive promise.** One tap on the row destroys
+nothing — it raises the dialog, and a read of the app's own sqlite immediately afterwards showed the
+reminder, the observation, the two outbox items and `current_user_id` all still present. Cancelling
+changes nothing; dismissing by tapping outside changes nothing; both were checked against the
+database rather than the screen. And what it deletes matches what its copy promises, clause by
+clause: the private reminder went 1 → 0, the observation stayed on its tree with `user_id` NULL and
+`device_id` intact — which is exactly the sentence "stay on the trees they were made about, with
+nothing left on them saying they were yours" — and the queued outbox item for the deleted reminder
+went with it, which is "anything still waiting to sync is included".
+
+**One record kind is deleted without being named.** `AccountDeletion` also removes `photo_votes`
+(schema v8), and `AccountDeletionCopy.whatHappens` lists only reminders and favourites. R3's whole
+rule is that deleting *more* than the person expected is the failure mode, so an unnamed record kind
+is a gap in that defence — narrow, because a vote is invisible to its owner and the aggregate it
+feeds is public either way, but the sentence should probably grow a clause. Left open deliberately
+rather than fixed in passing.
+
+**A string in the app said "screen 06" to the person reading it.** The reminder list's empty state
+read: *"A reminder you keep on screen 06 after a 311 handoff shows up here, and stays yours alone."*
+Every clause of that was true and one word of it was unreadable, because "screen 06" is a coordinate
+in SCREENS.md and not a thing anybody using this app has ever seen. A grep confirmed it was the only
+user-facing string in the app carrying one; every other screen number in this codebase lives in a
+comment, which is where they belong. It had crossed over because the person writing the sentence was
+reading the mock while they wrote it. It now says "after reporting an issue and calling 311" — "Report
+an issue" is screen 06's own C1 title and "Call 311 now" is the button directly above the save this
+list exists to explain, so both halves name something the reader has actually looked at.
+
+Worth recording *how* it was found: by looking at the running screen. The string is asserted nowhere,
+and the screenshot sweep photographs it faithfully every run without ever reading it. That is the
+third defect this week that only a person looking at pixels could have caught, and it is the argument
+for the rule rather than an exception to it.
+
+**A harness fragility that costs an hour if you meet it cold.** `VisitCameraModel.load()` calls
+`AVCaptureDevice.requestAccess` when permission is `.notDetermined`, and in the unit-test host there
+is nobody to answer — so it hangs forever with no timeout, wedging the whole suite. Two full runs were
+lost to it. `xcrun simctl uninstall` is what causes it, because uninstalling resets TCC; `xcrun simctl
+privacy <udid> grant camera app.cypress.Cypress` fixes it and the test then passes in 2.5 s. **This is
+not a defect in the shipping app** — there the system alert appears and is answerable, and a *denied*
+camera is handled properly: `needsLibraryFallback` becomes true and screen 04 offers the photo
+library instead. It is purely that a test host cannot answer a prompt, and the failure mode is an
+indefinite hang rather than an error, which is the part that wastes the time.
+
+**Open.** A favourite was never driven through deletion by hand (there were none in the session);
+`AccountDeletionTests` covers the row, and the reminder and observation paths stand in for the
+behaviour. Screen 06's 311 redirect card showed hanging-limb body text while "Uprooted" was selected —
+the *saved* category was correct on disk, so it is a cosmetic copy-selection bug in the redirect card,
+pre-existing and untouched here.
