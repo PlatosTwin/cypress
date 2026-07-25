@@ -4530,3 +4530,63 @@ unnecessary to remember, and the new screen did not use it. 468 unit tests and 2
 other feature has one. And screen 16 still gives no confirmation on save; the keypad clears and
 nothing else happens, which is why the measure round-trip still feels broken even with the profile
 now re-reading itself.
+
+### E129 — two rows that stated a group and delivered one record, and the test that ratified it
+
+The project owner, on screen 12: *"Where eyes are needed is nice but kind of useless: the button says
+walk the 11 but doesn't tell me where they are or open a map; just takes me right to a tree's page."*
+Correct, and it was true twice. `coverageCTA` said "Walk the nine" and carried `firstTreeID`,
+singular. `vacantTitle(count:)` said "1,474 empty planting sites" and `VacantBlock` carried
+`nearestID`, singular. The second one shipped four commits after the first, under R10/E121 — the
+pattern was repeated rather than noticed, which is the argument for both rows now sharing one
+destination type instead of each owning a single id.
+
+**The destination is a pushed map, `Route.pinSet`.** The question both rows provoke is *where*, both
+are spatial claims — one is literally about walking distance — and a map is the only answer in this
+app's vocabulary. Three decisions inside it are worth recording. Its title is the almanac's *own*
+micro-label for the block that was tapped, "Where eyes are needed" or "Where a tree could go", rather
+than an invented screen name: both are specified strings and both already name the thing the reader
+pressed. Its headline is the row's own sentence, produced by the row's own function, so the two
+screens cannot come to disagree about the number. And it is a plain column rather than screen 01's
+full-bleed frame, because E110: 01's absolute positions are arithmetic against a safe-area inset that
+reads 0 under a navigation bar, and this screen is pushed.
+
+**The group travels on the route rather than being re-read**, which is not an optimisation. The row
+has already printed a count; a read a second later can disagree with the sentence the reader tapped,
+and then the screen contradicts the control that opened it. A consequence worth having: the
+destination never calls `mapContent`, so it costs no query however far it is panned, and the map's
+pin budget is untouched.
+
+**E38 decided the copy.** Coverage is provably whole — `Series.totalCount` is why the card draws at
+all — so its map holds all of it and says "All seventeen are on this map." The vacant group cannot
+be, because E115 measured between 4 and 1,474 basins per neighbourhood, so its map holds the 20
+nearest and says exactly that, while the count above it remains the `COUNT(*)`. The limit of 20 was
+chosen against two measurements rather than taste: the busiest neighbourhood's coverage set is 21
+trees, and the 20 nearest basins in Sunset/Parkside span 197 m × 212 m — close to screen 01's own
+120 m opening view, which E12 measured as the scale where 18 pt pins stop fusing.
+
+**A green test was holding the defect in place, and that is the new thing here.** Every other defect
+this week was something the suite *failed to notice*. This one it had positively ratified:
+`AlmanacPresentationTests` contained `@Test("the CTA opens the nearest of them")`, asserting
+`coverage?.firstTreeID == near.id` — against a button whose visible label reads "Walk the nine". It
+passed every run since the coverage card shipped. A test named after the wrong behaviour is worse
+than no test, because it converts the defect into a requirement and the next person to touch the card
+has to argue with the suite to fix it. It has been rewritten, with a note recording what it used to
+say.
+
+A second trap, caught in review rather than shipped: the first version of `theCameraHoldsEveryPin`
+iterated `block.group.pins`, so a bug that dropped records from the group also dropped them from the
+loop, and the frame trivially contained whatever was left. It passed against the restored defect. It
+now iterates the trees the *card counted* — assert against what the source said, not against what the
+buggy path produced.
+
+**And the data was always there.** `youngTreesWithoutVisits` has selected `lat` and `lon` since it was
+written, because `LocalAPI` needs them to check the "within a 15-minute walk" claim, and discarded
+them one line later. This map could have been drawn at any point since §4 was built.
+
+**Open.** The new screen has no `DebugDeepLink` case, so `DeepLinkVoiceOverTests` does not read its
+accessibility tree the way it reads the other sixteen. Its only interactive elements are
+`ScreenHeader`'s Back circle and `MapPin`s, both covered by components that suite already exercises,
+but it is a gap in that sweep. Also: `Route` now carries a payload for the first time. `AppRouter`'s
+`replace(_:with:)` uses `path.lastIndex(of:)`, which is fine on a `Hashable` payload, and nothing
+serialises `Route` — noted so the next payload-carrying case is not added blind.
