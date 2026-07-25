@@ -234,19 +234,47 @@ public struct MapViewport: Hashable, Sendable {
     /// passes a cell, and `MapModel.markerCellPoints` is why 44.
     public let markerCellPoints: Double?
 
+    /// The species the map has been narrowed to, or `nil` for every species.
+    ///
+    /// **NOT SPECIFIED** — SCREENS.md 01 says "search opens species/street/neighborhood search"
+    /// (:664) and then "NOT SPECIFIED: search results" (:667). The intent is stated; the surface
+    /// never was. This is the narrowing half of it, and `MapSearch` is the reasoning for the rest.
+    ///
+    /// It rides on the viewport rather than arriving as a second argument to `mapContent(in:)`
+    /// deliberately, and for two reasons. The signature does not change, so none of the fifteen
+    /// preview doubles and five test doubles that conform to `CypressAPI` have to be touched. And
+    /// `MapViewport` is `Hashable`, which is what `MapModel`'s fetch debounce dedupes on — so a
+    /// changed query is a *different viewport*, refetched, and an unchanged one coalesces exactly as
+    /// a pan already does. Adding a parameter would have left the debounce unable to see the
+    /// difference between the same box searched two ways.
+    ///
+    /// A tree the city recorded no species for can never be in this set: 12,830 of the 195,309 rows
+    /// carry `species_current IS NULL`, and a narrowed map is expected to empty out over them.
+    public let speciesIDs: Set<UUID>?
+
     /// **A1, resolved**: "pins cluster at zoom 15 and below; individual pins at zoom 16 and above
     /// (the spec sentence was backwards)" — BUILD-PLAN §11. This constant is the only place that
     /// number appears.
     public static let highestClusteringZoom = 15
 
-    public init(bounds: BoundingBox, zoom: Int, pinLimit: Int = 2_000, markerCellPoints: Double? = nil) {
+    public init(
+        bounds: BoundingBox,
+        zoom: Int,
+        pinLimit: Int = 2_000,
+        markerCellPoints: Double? = nil,
+        speciesIDs: Set<UUID>? = nil
+    ) {
         self.bounds = bounds
         self.zoom = zoom
         self.pinLimit = pinLimit
         self.markerCellPoints = markerCellPoints
+        self.speciesIDs = speciesIDs
     }
 
     public var shouldCluster: Bool { zoom <= MapViewport.highestClusteringZoom }
+
+    /// Whether this viewport has been narrowed to a species at all.
+    public var isNarrowed: Bool { speciesIDs != nil }
 }
 
 /// One clustered cell.
@@ -300,15 +328,79 @@ public struct TreePin: Hashable, Sendable, Identifiable {
     }
 }
 
+/// The pin half of a viewport's answer, and whether it is the whole of it.
+///
+/// **It exists because "fewer pins" and "all the pins there are" look identical in an array.** The
+/// marker grid (`MapViewport.markerCellPoints`) returns one tree per 44 pt cell once the budget is
+/// overrun, so a `[TreePin]` of 151 can mean either "there are 151" or "there are 1,458 and these
+/// are the ones that won their cells". Screen 01 could not tell those apart, and neither could
+/// anything downstream — which is the shape of defect ERRATA E38 exists to forbid: a truncated set
+/// presented as a complete one.
+///
+/// Before the search bar did anything the distinction was invisible, because an un-narrowed map is
+/// *about* the neighbourhood rather than about a set the reader named, and nobody counts the trees
+/// out of a window. Ask for London Planes and it is a claim: the reader has named a set and the map
+/// is answering with it. So the count travels.
+///
+/// It is a `RandomAccessCollection` over its own pins so that the fifteen preview doubles and five
+/// test doubles that write `.pins([])` keep compiling untouched — `ExpressibleByArrayLiteral` takes
+/// the literal, and `count`, `map`, `filter`, `prefix` and `for…in` all reach the items directly.
+public struct PinAnswer: Hashable, Sendable, RandomAccessCollection, ExpressibleByArrayLiteral {
+    /// The pins to draw.
+    public let items: [TreePin]
+
+    /// How many trees actually satisfied the request, when that is more than `items` holds.
+    ///
+    /// `nil` means `items` **is** the complete answer — not "unknown". Every path that thins sets
+    /// it, and every path that does not leaves it nil, so a reader may treat nil as a guarantee.
+    public let matchesInView: Int?
+
+    public init(_ items: [TreePin], matchesInView: Int? = nil) {
+        self.items = items
+        // A "sample" that dropped nothing is not a sample. Collapsing it here means no caller has to
+        // remember the special case, and `isSample` cannot be true over a complete answer.
+        self.matchesInView = matchesInView.flatMap { $0 > items.count ? $0 : nil }
+    }
+
+    public init(arrayLiteral elements: TreePin...) {
+        self.init(elements)
+    }
+
+    /// Whether the map is drawing a spatial sample of the matches rather than all of them.
+    public var isSample: Bool { matchesInView != nil }
+
+    /// How many trees this answer stands for — the matches when it is a sample, else the pins drawn.
+    public var treesRepresented: Int { matchesInView ?? items.count }
+
+    public var startIndex: Int { items.startIndex }
+    public var endIndex: Int { items.endIndex }
+    public subscript(position: Int) -> TreePin { items[position] }
+
+    /// The same answer over different pins, keeping what is known about how many matched.
+    ///
+    /// Used where the pins are rewritten but the population behind them is not — the status
+    /// overrides in `LocalAPI.mapContent`, which change what a pin *is* and never which trees the
+    /// query found.
+    public func withItems(_ items: [TreePin]) -> PinAnswer {
+        PinAnswer(items, matchesInView: matchesInView)
+    }
+}
+
 /// What a viewport resolved to. An enum rather than two optional arrays: at any zoom exactly one of
 /// the two is meaningful, and A1 decides which.
 public enum MapContent: Hashable, Sendable {
     case clusters([TreeCluster])
-    case pins([TreePin])
+    case pins(PinAnswer)
 
+    /// How many trees this answer stands for.
+    ///
+    /// For a clustered viewport that is the sum of the badges; for pins it is the pins drawn, unless
+    /// the grid thinned them, in which case it is how many actually matched. Both halves therefore
+    /// answer the same question — "how many trees are we telling the reader about" — which is what
+    /// makes `markerCount` below the *other* question rather than a duplicate of this one.
     public var pinCount: Int {
         switch self {
-        case let .pins(pins): return pins.count
+        case let .pins(pins): return pins.treesRepresented
         case let .clusters(clusters): return clusters.reduce(0) { $0 + $1.count }
         }
     }

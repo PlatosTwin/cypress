@@ -54,9 +54,36 @@ final class MapModel {
 
     // MARK: - State
 
-    /// Search text only. The results surface is **NOT SPECIFIED** (SCREENS.md §5 gap 7 and 01's own
-    /// "NOT SPECIFIED: search results"), so nothing here interprets it — ARCHITECTURE §5.8.
-    var searchText: String = ""
+    /// What the user typed into C20.
+    ///
+    /// **NOT SPECIFIED** — SCREENS.md 01:664 states the intent, "search opens species/street/
+    /// neighborhood search", and 01:667 then says "NOT SPECIFIED: search results". The intent is
+    /// spec; the surface is not, so what is designed here is designed under ARCHITECTURE §8 rule 8
+    /// and reasoned out in `MapSearch`. What it does *not* do is open a results screen: the map is
+    /// the results, narrowed in place, because that is the surface the spec already draws and the one
+    /// the owner asked for — "typing in a tree name brought up all and only those trees".
+    var searchText: String = "" {
+        didSet { if searchText != oldValue { searchDidChange() } }
+    }
+
+    /// The species the current query resolved to, and what the map is able to say about it.
+    private(set) var search: MapSearch = .off
+
+    /// The narrowing itself, as the viewport carries it. `nil` until a query resolves.
+    private var speciesIDs: Set<UUID>? {
+        switch search {
+        case .off: return nil
+        case .noMatch: return []
+        case let .narrowed(narrowed): return narrowed.speciesIDs
+        }
+    }
+
+    private var searchTask: Task<Void, Never>?
+
+    /// Typing is a keystroke stream exactly as a pan is a camera stream, and it is debounced for the
+    /// same reason — every settled query is a catalogue read *and* a refetch of the map. Longer than
+    /// the camera's 200 ms because a word takes longer to finish than a flick.
+    static let searchDebounce: Duration = .milliseconds(300)
 
     var filter: Filter = .all {
         didSet { if filter != oldValue { filterDidChange() } }
@@ -201,11 +228,16 @@ final class MapModel {
             if !pins.isEmpty { pins = [] }
             return
         }
+        // The search is *not* applied here, and that is the point. A chip narrows the pins already
+        // fetched; a search narrows the query itself, so by the time content arrives it holds only
+        // matches — which is what lets it hold *all* of them rather than whichever survived the
+        // budget. Filtering here as well would be a second, redundant pass and would put the
+        // "all and only" guarantee back downstream of the grid where it cannot be kept.
         switch filter {
         case .all:
-            pins = fetched
+            pins = fetched.items
         case .needsCare:
-            pins = fetched.filter { MapPinKind.needsCare(status: $0.status) }
+            pins = fetched.items.filter { MapPinKind.needsCare(status: $0.status) }
         case .inBloom:
             // Answered from `species.seasonal.bloom_months` and from nothing else. The curated
             // species pipeline (BUILD-PLAN §8) has not landed, so every `seasonal` in the shipped
@@ -213,7 +245,7 @@ final class MapModel {
             // answer to the question the chip asks; inventing bloom months so it looks alive is
             // precisely what BUILD-PLAN §15 and DECISIONS §3.15 forbid.
             let month = calendar.component(.month, from: now())
-            pins = fetched.filter { pin in
+            pins = fetched.items.filter { pin in
                 guard let id = pin.speciesID, let species = species[id] else { return false }
                 return species.seasonal.bloomMonths.contains(month)
             }
@@ -233,20 +265,27 @@ final class MapModel {
         if let viewport, viewport.zoom == zoom, viewport.bounds.contains(bounds) { return }
         // A little more than the screen, so a short pan does not blank the edge it is heading for.
         // Kept small: every point of it is budget spent on pins the user cannot see.
-        let next = MapViewport(
-            bounds: bounds.expanded(by: 0.08),
-            zoom: zoom,
-            pinLimit: Self.pinLimit,
-            // Only the pin half of the answer has a level of detail to choose. A clustered viewport
-            // is already one badge per 64 pt cell, which is the same rule with a count on it.
-            markerCellPoints: zoom <= MapViewport.highestClusteringZoom ? nil : Self.markerCellPoints
-        )
+        let next = makeViewport(bounds: bounds.expanded(by: 0.08), zoom: zoom)
         guard next != viewport else { return }
         // The clustering threshold is the one boundary where the *shape* of the answer changes, so
         // it does not wait out the full debounce that a slow pan could keep re-arming.
         let crossedClusteringThreshold = next.shouldCluster != viewport?.shouldCluster
         viewport = next
         scheduleFetch(immediate: crossedClusteringThreshold)
+    }
+
+    /// The one place a `MapViewport` is built, so the camera and the search bar cannot disagree
+    /// about what the map is being asked for.
+    private func makeViewport(bounds: BoundingBox, zoom: Int) -> MapViewport {
+        MapViewport(
+            bounds: bounds,
+            zoom: zoom,
+            pinLimit: Self.pinLimit,
+            // Only the pin half of the answer has a level of detail to choose. A clustered viewport
+            // is already one badge per 64 pt cell, which is the same rule with a count on it.
+            markerCellPoints: zoom <= MapViewport.highestClusteringZoom ? nil : Self.markerCellPoints,
+            speciesIDs: speciesIDs
+        )
     }
 
     private func scheduleFetch(immediate: Bool) {
@@ -278,6 +317,11 @@ final class MapModel {
             let content = try await api.mapContent(in: viewport)
             guard !Task.isCancelled else { return }
             self.content = content
+            // What the reader is told about their search is a fact about the answer that just
+            // arrived, not about the query — "1,458 here, 151 drawn" is only knowable now. A search
+            // whose species did not change still re-reads this on every pan, because panning is
+            // exactly what changes how much of it fits.
+            search = search.reporting(content, budget: viewport.pinLimit)
             loadFailure = nil
             if filter.needsSeasonalData { resolveSpeciesForVisiblePins() }
         } catch let error as APIError {
@@ -287,6 +331,46 @@ final class MapModel {
             guard !Task.isCancelled else { return }
             loadFailure = .serverError
         }
+    }
+
+    // MARK: - Search
+
+    /// Resolves what was typed to a set of species, then refetches the map through it.
+    ///
+    /// The catalogue read and the map read are deliberately two steps rather than one: 569 species
+    /// answer a prefix in 0.1 ms and 195,309 trees do not, so the narrow thing is resolved first and
+    /// the wide query is asked once, already narrowed.
+    private func searchDidChange() {
+        searchTask?.cancel()
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Clearing the field is not a search, and it must not wait out the debounce: the map is
+        // narrowed *now* and the user has asked for it to stop being.
+        guard !query.isEmpty else {
+            searchTask = nil
+            applySearch(.off)
+            return
+        }
+
+        searchTask = Task { [weak self, api] in
+            try? await Task.sleep(for: Self.searchDebounce)
+            if Task.isCancelled { return }
+            let matches = (try? await api.searchSpecies(query: query, limit: MapSearch.speciesLimit)) ?? []
+            guard let self, !Task.isCancelled else { return }
+            self.applySearch(MapSearch(query: query, matches: matches))
+        }
+    }
+
+    private func applySearch(_ next: MapSearch) {
+        guard next != search else { return }
+        search = next
+        clearSelection()
+        // The narrowing lives on the viewport, so changing it is a new viewport — which is exactly
+        // what the fetch path already knows how to answer, and why `MapViewport` had to carry the
+        // species rather than take them as a second argument.
+        guard let current = viewport else { return }
+        viewport = makeViewport(bounds: current.bounds, zoom: current.zoom)
+        scheduleFetch(immediate: true)
     }
 
     // MARK: - Filters

@@ -60,6 +60,16 @@ public struct TreeQueries {
     // MARK: - Viewport
 
     /// Map content for a viewport, clustered or not according to A1.
+    ///
+    /// A narrowed viewport (`MapViewport.speciesIDs`) does **not** change which of the two regimes
+    /// answers it. An earlier design forced the pin regime whenever a search was running, on the
+    /// grounds that a species-filtered cluster badge would need the predicate on the `GROUP BY` at
+    /// the 3.4× a non-index column costs there. Measured, that turned out to be an argument against
+    /// a query nobody has to write: the badge costs 21 ms narrowed, not 355, because the planner
+    /// answers a narrowed cluster through `idx_trees_species_current` instead (see
+    /// `speciesPredicate`). So A1's rule stands unbroken, the shape of the answer never depends on
+    /// what is typed, and a zoomed-out search gets badges that count *the species asked for* rather
+    /// than every tree underneath them.
     public func mapContent(
         in viewport: MapViewport,
         strategy: SpatialIndexStrategy = .default,
@@ -68,6 +78,104 @@ public struct TreeQueries {
         viewport.shouldCluster
             ? .clusters(try clusters(in: viewport, strategy: strategy, connection: connection))
             : .pins(try pins(in: viewport, strategy: strategy, connection: connection))
+    }
+
+    // MARK: - Narrowing to a species
+
+    /// The seed's integer `species.id`s for a set of species uuids, sorted.
+    ///
+    /// `trees.species_current` is an INTEGER foreign key and the app speaks in uuids, so the two have
+    /// to meet somewhere. Here, once per query, off `sqlite_autoindex_species_1` — measured at
+    /// 0.023 ms for the whole step, which is why it is not worth threading resolved ids down from the
+    /// caller and giving the map a second thing to keep in sync.
+    private func speciesRowIDs(for ids: Set<UUID>, connection: SQLiteConnection) throws -> [Int64] {
+        guard !ids.isEmpty else { return [] }
+        let statement = try connection.cachedStatement("""
+        SELECT sp.id AS species_rowid
+          FROM \(seed).species sp
+         WHERE sp.\(schema.speciesIdentityColumn) IN (SELECT value FROM json_each(:uuids)) COLLATE NOCASE
+        """)
+        let json = "[\(ids.map { "\"\($0.uuidString)\"" }.joined(separator: ","))]"
+        _ = try statement.bind(json, forName: ":uuids")
+        return try statement.fetchAll { try $0.int64("species_rowid") }.sorted()
+    }
+
+    /// `AND t.species_current IN (…)`, with the ids written into the statement text.
+    ///
+    /// ── Why the ids are interpolated, when nothing else in this file is ──────────────────────────
+    /// Every other list in these queries travels through `json_each` on a bound parameter, so the
+    /// statement text stays constant and `cachedStatement` holds one prepared copy across every
+    /// camera change. That is the right trade everywhere it is used and the wrong one here, because
+    /// **the planner cannot cost what it cannot see.** `sqlite_stat1` records
+    /// `idx_trees_species_current | 195309 343` — 343 rows per species — which is what lets SQLite
+    /// choose between walking the box and walking the species. Hidden behind `json_each` that
+    /// estimate is unavailable and the box wins by default. Measured over the whole city, one
+    /// species:
+    ///
+    ///     literal `IN (24)`                          18.8 ms   SEARCH … idx_trees_species_current
+    ///     `IN (SELECT value FROM json_each(?))`     399.8 ms   SEARCH … idx_trees_lat_lon
+    ///     `IN (SELECT id FROM species WHERE uuid …)` 400.4 ms   SEARCH … idx_trees_lat_lon
+    ///
+    /// The cost of interpolating is one prepared statement per distinct species set, which is one
+    /// per *query the user types*, not one per pan — the ids are sorted so the same set always spells
+    /// the same text. It is not an injection surface: these are integers this method read out of the
+    /// seed a moment ago, never anything the user typed.
+    ///
+    /// ── And there is deliberately no `+` on the column ───────────────────────────────────────────
+    /// The unary `+` barrier that forbids SQLite an index is the standard move for keeping a hot
+    /// query on the plan it was tuned for, and applying it here — `AND +t.species_current IN (…)` —
+    /// pins the narrowed queries to `idx_trees_lat_lon`, the identical plan to the un-narrowed ones.
+    /// It is the wrong call, and by a lot. Median over the shipped seed:
+    ///
+    ///     | narrowed query                    | with `+` | without |
+    ///     |---|---|---|
+    ///     | whole-city clusters, London Plane |   386 ms |   21 ms |
+    ///     | whole-city marker cells, ditto    |   419 ms |   19 ms |
+    ///     | zoom-16 marker cells, ditto       |    28 ms |   15 ms |
+    ///
+    /// A species predicate is *selective* in a way none of the map's other predicates are, and the
+    /// right index for it is the species one. The fear the `+` answers — that a broad query drags the
+    /// map onto a bad plan — does not survive measurement either: given the hundred densest species
+    /// at once, 85 % of the inventory, the planner picks `idx_trees_lat_lon` **on its own** and lands
+    /// within 3 % of what the `+` would have forced (450 ms vs 463 ms at city zoom, 19 vs 25 at zoom
+    /// 16). The statistics are in the seed, so the planner is choosing rather than guessing, and it
+    /// chooses correctly at both ends. Forcing it can only lose.
+    static func speciesPredicate(_ rowIDs: [Int64]) -> String {
+        guard !rowIDs.isEmpty else { return "" }
+        return "AND t.species_current IN (\(rowIDs.map(String.init).joined(separator: ",")))"
+    }
+
+    /// What a viewport's narrowing resolves to before any map query runs.
+    ///
+    /// Three outcomes, and the middle one is the one worth naming: a viewport narrowed to a species
+    /// that exists resolves to a predicate, a viewport narrowed to *nothing* — a query that matched
+    /// no species at all — resolves to `.matchesNothing` and is answered without touching the trees
+    /// table, and an un-narrowed viewport resolves to no predicate. Letting the empty set fall
+    /// through would build `IN ()`, which is a syntax error, and guarding it at every call site is
+    /// how one of the three would eventually forget.
+    enum Narrowing: Equatable {
+        case none
+        case matchesNothing
+        case species([Int64])
+
+        /// The SQL. Empty for both `.none` and `.matchesNothing` — the latter never reaches a
+        /// statement, because its callers answer it without one.
+        var predicate: String {
+            guard case let .species(ids) = self else { return "" }
+            return TreeQueries.speciesPredicate(ids)
+        }
+
+        var matchesNothing: Bool {
+            if case .matchesNothing = self { return true }
+            return false
+        }
+    }
+
+    func narrowing(for viewport: MapViewport, connection: SQLiteConnection) throws -> Narrowing {
+        guard let ids = viewport.speciesIDs else { return .none }
+        guard !ids.isEmpty else { return .matchesNothing }
+        let rowIDs = try speciesRowIDs(for: ids, connection: connection)
+        return rowIDs.isEmpty ? .matchesNothing : .species(rowIDs)
     }
 
     /// Individual pins, zoom ≥ 16.
@@ -88,28 +196,98 @@ public struct TreeQueries {
     /// at the zooms the app opens at, where the whole problem never existed; the grid takes over
     /// where the count runs away from the screen. Gridding unconditionally was the obvious version
     /// and it is wrong — it pays for a performance problem in the two places that never had one.
+    ///
+    /// ── What a narrowed viewport does to all of that, which is the whole of "all and only" ───────
+    /// The owner asked that typing a name bring up **all and only** those trees, and the grid is
+    /// exactly what makes that hard: it hands each 44 pt cell to whichever tree won `MIN(rowid)`.
+    /// Filter the answer *after* the grid has run and both halves break at once — the winner of a
+    /// cell need not be a London Plane, so "only" fails, and six London Planes in one cell come back
+    /// as at most one, so "all" fails too. That is the same class as ERRATA E36 and E38: a predicate
+    /// applied downstream of a budget that was already spent on the wrong rows.
+    ///
+    /// **So the predicate goes into `markerCells` as well as into the pin query, and that one detail
+    /// is what fixes it.** The number the grid decides on then stops being "trees in view" and
+    /// becomes "trees in view *that match*", which is a far smaller number — so the un-thinned query
+    /// runs in every case where the matches fit, and in that case the answer is exactly all of them
+    /// and only them. Over the shipped seed, the densest zoom-16 screenful of the city holds 7,042
+    /// trees, of which 1,458 are London Planes: unnarrowed it grids to 304 cells and thins, narrowed
+    /// it counts 1,458 and *still* thins — but one zoom in, 632 matches, and by zoom 18 it is 268 and
+    /// the whole viewport comes back whole. Most searches are answered un-thinned at every zoom,
+    /// because 12,830 trees carry no species at all and even the commonest species is 6 % of the
+    /// inventory spread across the city rather than packed into one screen.
+    ///
+    /// **Where it still thins, "only" holds absolutely and "all" does not, and the answer says so.**
+    /// Every pin drawn is a match, because the grid is now grouping matches; there are simply more
+    /// matches than the map can draw as individually tappable pins. `PinAnswer.matchesInView` carries
+    /// how many there were — it is the sum `markerCells` already computed, free — so screen 01 can
+    /// tell the reader it is looking at a sample instead of quietly showing 151 and letting them
+    /// believe that is the lot.
     public func pins(
         in viewport: MapViewport,
         strategy: SpatialIndexStrategy = .default,
         connection: SQLiteConnection
-    ) throws -> [TreePin] {
+    ) throws -> PinAnswer {
+        let narrowing = try narrowing(for: viewport, connection: connection)
+        // A query that matched no species narrows the map to nothing. There is no `IN ()` to write
+        // and no row that could come back, so no statement runs.
+        guard !narrowing.matchesNothing else { return PinAnswer([]) }
+
         if let cellPoints = viewport.markerCellPoints {
             let cells = try markerCells(
                 in: viewport,
                 cellPoints: cellPoints,
                 strategy: strategy,
+                narrowing: narrowing,
                 connection: connection
             )
             let treesInView = cells.reduce(0) { $0 + $1.memberCount }
             if treesInView > viewport.pinLimit {
-                return try pins(rowIDs: cells.map(\.rowID), connection: connection)
+                return PinAnswer(
+                    try pins(rowIDs: cells.map(\.rowID), connection: connection),
+                    matchesInView: treesInView
+                )
             }
         }
 
-        let statement = try connection.cachedStatement(everyPinSQL(strategy))
+        let statement = try connection.cachedStatement(everyPinSQL(strategy, narrowing: narrowing))
         _ = try statement.bind(bindings(for: viewport.bounds))
         _ = try statement.bind(viewport.pinLimit, forName: ":limit")
-        return try statement.fetchAll(Self.decodePin)
+        let found = try statement.fetchAll(Self.decodePin)
+
+        // `PinAnswer`'s contract is that a nil count *guarantees* completeness, and this path has a
+        // `LIMIT` on it. A viewport carrying a cell cannot have truncated here — it only reaches this
+        // statement when the grid already counted the matches at or under the budget — but a viewport
+        // with no cell reaches it cold, and `found.count == pinLimit` is then indistinguishable from
+        // "there were exactly that many". Only a narrowed map has to resolve that, because only a
+        // narrowed map is answering for a set the reader named; so the count runs there and nowhere
+        // else, which also leaves `MapContentBudgetTests` — which reaches its cap deliberately, and
+        // un-narrowed — reading exactly as it did.
+        guard viewport.markerCellPoints == nil,
+              viewport.isNarrowed,
+              found.count == viewport.pinLimit
+        else { return PinAnswer(found) }
+
+        return PinAnswer(
+            found,
+            matchesInView: try matchCount(in: viewport, strategy: strategy, narrowing: narrowing, connection: connection)
+        )
+    }
+
+    /// How many trees in the box satisfy the viewport, narrowing included — the denominator behind
+    /// "showing 151 of 1,458". Only reached where a `LIMIT` may have bitten without the grid's count
+    /// on hand to notice; see `pins(in:strategy:connection:)`.
+    private func matchCount(
+        in viewport: MapViewport,
+        strategy: SpatialIndexStrategy,
+        narrowing: Narrowing,
+        connection: SQLiteConnection
+    ) throws -> Int {
+        let statement = try connection.cachedStatement("""
+        SELECT COUNT(*) AS n
+        \(bboxSource(strategy, joins: "", extraPredicates: "AND t.deleted_at IS NULL \(narrowing.predicate)"))
+        """)
+        _ = try statement.bind(bindings(for: viewport.bounds))
+        return try statement.fetchOne { try $0.int("n") } ?? 0
     }
 
     /// One tree's rowid per occupied grid cell, and how many trees that cell stands for — the whole
@@ -147,16 +325,23 @@ public struct TreeQueries {
     /// this query exists to avoid. The shipped seed carries no `declining` tree at all, so there is
     /// no amber pin to lose today; when the curated pipeline gives it one, the honest fix is a second
     /// query for just those trees, not a column added here.
+    ///
+    /// **`memberCount` counts what the viewport asked for, not what is on the ground.** Narrowed, it
+    /// is the number of *matching* trees in the cell — which is what makes it the right number for
+    /// `pins` to test the budget against, and the right numerator for telling the reader how much of
+    /// their search they are being shown. See `pins(in:strategy:connection:)` for why applying the
+    /// species predicate here rather than to the result is the whole of "all and only".
     func markerCells(
         in viewport: MapViewport,
         cellPoints: Double,
         strategy: SpatialIndexStrategy = .default,
+        narrowing: Narrowing = .none,
         connection: SQLiteConnection
     ) throws -> [(rowID: Int64, memberCount: Int)] {
         let centreLatitude = (viewport.bounds.minLatitude + viewport.bounds.maxLatitude) / 2
         let cell = Self.cellSize(zoom: viewport.zoom, centreLatitude: centreLatitude, points: cellPoints)
 
-        let statement = try connection.cachedStatement(markerCellsSQL(strategy))
+        let statement = try connection.cachedStatement(markerCellsSQL(strategy, narrowing: narrowing))
         _ = try statement.bind(bindings(for: viewport.bounds))
         _ = try statement.bind([":latCell": cell.latitude, ":lonCell": cell.longitude])
         return try statement.fetchAll {
@@ -195,10 +380,10 @@ public struct TreeQueries {
     // which is a gate on a paraphrase (ERRATA E130 — see `CypressTests/MapQueryPlanTests`).
 
     /// Every pin in the box, up to `pinLimit`.
-    func everyPinSQL(_ strategy: SpatialIndexStrategy) -> String {
+    func everyPinSQL(_ strategy: SpatialIndexStrategy, narrowing: Narrowing = .none) -> String {
         """
         SELECT \(pinColumns)
-        \(bboxSource(strategy, joins: speciesJoin, extraPredicates: "AND t.deleted_at IS NULL"))
+        \(bboxSource(strategy, joins: speciesJoin, extraPredicates: "AND t.deleted_at IS NULL \(narrowing.predicate)"))
          LIMIT :limit
         """
     }
@@ -210,10 +395,11 @@ public struct TreeQueries {
     /// points divided by the cell's, at every zoom. A `LIMIT` on this `GROUP BY` would truncate in
     /// cell order, which is latitude order, which is the strip along the bottom edge that this whole
     /// rule exists to stop drawing.
-    func markerCellsSQL(_ strategy: SpatialIndexStrategy) -> String {
-        """
+    func markerCellsSQL(_ strategy: SpatialIndexStrategy, narrowing: Narrowing = .none) -> String {
+        let softDeleted = seedHasSoftDeletedTrees ? "AND t.deleted_at IS NULL" : ""
+        return """
         SELECT MIN(t.rowid) AS marker_rowid, COUNT(*) AS member_count
-        \(bboxSource(strategy, joins: "", extraPredicates: seedHasSoftDeletedTrees ? "AND t.deleted_at IS NULL" : ""))
+        \(bboxSource(strategy, joins: "", extraPredicates: "\(softDeleted) \(narrowing.predicate)"))
          GROUP BY CAST((t.lat + 90.0) / :latCell AS INTEGER),
                   CAST((t.lon + 180.0) / :lonCell AS INTEGER)
         """
@@ -225,14 +411,15 @@ public struct TreeQueries {
     /// `CAST(… AS INTEGER)` truncates toward zero, which is not floor for negative values. The
     /// `+90`/`+180` offsets move every coordinate on Earth into the positive quadrant first, where
     /// truncation *is* floor, so a cell never straddles the equator or the prime meridian.
-    func clustersSQL(_ strategy: SpatialIndexStrategy) -> String {
-        """
+    func clustersSQL(_ strategy: SpatialIndexStrategy, narrowing: Narrowing = .none) -> String {
+        let softDeleted = seedHasSoftDeletedTrees ? "AND t.deleted_at IS NULL" : ""
+        return """
         SELECT CAST((t.lat + 90.0) / :latCell AS INTEGER) AS cell_y,
                CAST((t.lon + 180.0) / :lonCell AS INTEGER) AS cell_x,
                COUNT(*) AS member_count,
                AVG(t.lat) AS centre_lat,
                AVG(t.lon) AS centre_lon
-        \(bboxSource(strategy, joins: "", extraPredicates: seedHasSoftDeletedTrees ? "AND t.deleted_at IS NULL" : ""))
+        \(bboxSource(strategy, joins: "", extraPredicates: "\(softDeleted) \(narrowing.predicate)"))
          GROUP BY cell_y, cell_x
         """
     }
@@ -256,14 +443,26 @@ public struct TreeQueries {
     /// including it costs a table probe for every one of the 195,309 rows and takes the whole-city
     /// cluster query from 104 ms to 427 ms. When no row is soft-deleted the two queries are exactly
     /// equivalent, so the fast one is not an approximation of the slow one.
+    ///
+    /// **Narrowed, the badge counts the species asked for**, and the paragraph above is why that is
+    /// affordable rather than the 3.4× it looks like. `species_current` is indeed not in
+    /// `idx_trees_lat_lon` — but a narrowed cluster query does not walk `idx_trees_lat_lon` at all.
+    /// The planner reads `sqlite_stat1`, sees a species is 343 rows, and answers from
+    /// `idx_trees_species_current` instead: 21 ms over the whole city against 104 ms un-narrowed. The
+    /// covering-index rule this comment states is a rule about *this* query, the one with no
+    /// predicate to be selective about, and it is untouched — see `speciesPredicate` for the numbers
+    /// and for why there is deliberately no `+` barrier holding the plan still.
     public func clusters(
         in viewport: MapViewport,
         strategy: SpatialIndexStrategy = .default,
         connection: SQLiteConnection
     ) throws -> [TreeCluster] {
+        let narrowing = try narrowing(for: viewport, connection: connection)
+        guard !narrowing.matchesNothing else { return [] }
+
         let centreLatitude = (viewport.bounds.minLatitude + viewport.bounds.maxLatitude) / 2
         let cell = Self.cellSize(zoom: viewport.zoom, centreLatitude: centreLatitude)
-        let statement = try connection.cachedStatement(clustersSQL(strategy))
+        let statement = try connection.cachedStatement(clustersSQL(strategy, narrowing: narrowing))
         _ = try statement.bind(bindings(for: viewport.bounds))
         _ = try statement.bind([":latCell": cell.latitude, ":lonCell": cell.longitude])
 
