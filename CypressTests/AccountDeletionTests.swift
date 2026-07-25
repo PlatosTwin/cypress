@@ -633,7 +633,9 @@ struct AccountDeletionTests {
             FileManager.default.fileExists(atPath: fixture.photo.url.path),
             "the default door deleted a photograph's bytes"
         )
-        #expect(try await Self.scalar("SELECT COUNT(*) AS n FROM photos", in: store) == 1)
+        // Two rows: the visit photograph above and the one `addTree` wrote for the tree itself. See
+        // `anUnattributablePhotographSurvivesBothDoors` for why the second one has no owner.
+        #expect(try await Self.scalar("SELECT COUNT(*) AS n FROM photos", in: store) == 2)
 
         // The vote survives and still counts, which is what "leaves them in place" has to mean for a
         // record whose whole purpose is to be aggregated.
@@ -694,11 +696,47 @@ struct AccountDeletionTests {
             !FileManager.default.fileExists(atPath: fixture.photo.url.path),
             "the JPEG survived an erasure and is now unreachable by any query"
         )
-        for table in ["photos", "photo_votes", "visits", "observations", "measurements", "care_events", "tree_names"] {
+        for table in ["photo_votes", "visits", "observations", "measurements", "care_events", "tree_names"] {
             #expect(try await Self.scalar("SELECT COUNT(*) AS n FROM \(table)", in: store) == 0, "\(table)")
         }
+        // The photograph the *visit* carried is gone. The one `addTree` wrote is not, and cannot be
+        // — see `anUnattributablePhotographSurvivesBothDoors`.
+        #expect(try await Self.scalar(
+            "SELECT COUNT(*) AS n FROM photos WHERE id = '\(fixture.photo.id.uuidString)'", in: store
+        ) == 0)
         // The tree is still there. "Everything I have added" is the person's rows, not the forest.
         #expect(try await api.treeProfile(id: fixture.tree.id).tree.id == fixture.tree.id)
+    }
+
+    /// **A known hole, pinned so it stays visible.**
+    ///
+    /// `LocalAPI.addTree` writes a photograph with no `visit_id`, and `community_trees` has no owner
+    /// column at all — an added tree is attributed to nobody in the schema, so the photograph that
+    /// came with it is attributable to nobody either. Neither door can reach it, because there is no
+    /// query that could tell it apart from a photograph somebody else added.
+    ///
+    /// So `eraseEverything` leaves one kind of photograph behind, and the copy's "your photographs
+    /// are removed from this phone" is true of every photograph the app can identify as yours and
+    /// not of this one. Closing it needs an owner on `community_trees`, which is a schema change and
+    /// a write-path change and not something to invent in passing. This test exists so that the gap
+    /// is a failing assertion the day somebody adds that column and forgets this path, rather than a
+    /// silence.
+    @Test("a photograph with no visit belongs to nobody and survives both doors")
+    func anUnattributablePhotographSurvivesBothDoors() async throws {
+        for choice in AccountDeletionChoice.allCases {
+            let (store, api) = try await Self.signedIn(photoDirectory: Self.photoDirectory())
+            let tree = try await Self.makeTree(api: api)
+
+            #expect(try await Self.scalar(
+                "SELECT COUNT(*) AS n FROM photos WHERE visit_id IS NULL", in: store
+            ) == 1, "fixture: \(choice)")
+
+            try await api.deleteAccount(choice)
+
+            #expect(try await Self.scalar(
+                "SELECT COUNT(*) AS n FROM photos WHERE tree_uuid = '\(tree.id.uuidString)'", in: store
+            ) == 1, "\(choice): the unowned photograph's fate changed without this note changing")
+        }
     }
 
     @Test("the destructive door does not touch the device's own rows or a stranger's")

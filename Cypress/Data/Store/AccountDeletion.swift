@@ -160,10 +160,18 @@ public struct AccountDeletion {
     ///    ordering is enforced by construction: this is a read on a separate connection, taken by
     ///    `LocalAPI.deleteAccount` before it opens the write at all.
     ///
-    /// A photograph with no `visit_id` is not reachable from any account and is left alone. Nothing
-    /// in the shipping app produces one — `OutboxQueue` sets it from the visit it is uploading for —
-    /// but the debug photo seeder does, and "delete every photo of a tree you visited" would have
-    /// been a wrong and much larger promise than the one being kept.
+    /// **A photograph with no `visit_id` is not reachable from any account, and that is a real hole
+    /// rather than a hypothetical one.** `LocalAPI.addTree` writes exactly such a row for the tree a
+    /// person adds, and `community_trees` carries no owner column at all — an added tree belongs to
+    /// nobody in this schema, so the photograph that came with it is attributable to nobody either.
+    /// No query here can tell it from a photograph somebody else added, so `eraseEverything` leaves
+    /// it. Widening the predicate to "every photograph of a tree you visited" would delete other
+    /// people's work, which is a much worse answer than leaving one of the person's own.
+    ///
+    /// Closing it properly needs an owner on `community_trees` — a schema change and a write-path
+    /// change, not something to invent inside a deletion path.
+    /// `AccountDeletionTests.anUnattributablePhotographSurvivesBothDoors` pins the current behaviour
+    /// so that the day the column arrives, this path fails loudly instead of quietly staying wrong.
     public func photoBytes(userID: UUID, connection: SQLiteConnection) throws -> PhotoBytes {
         var bytes = PhotoBytes()
 
