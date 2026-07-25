@@ -49,6 +49,16 @@ enum VisitMetrics {
         static let confirmBarTop = CypressSpacing.gapCandidates
     }
 
+    // MARK: - The community add (ERRATA E127)
+
+    enum AddTree {
+        /// **Not a spec value** — the screen has no mock (see `VisitAddTreeView`). Screen 14 §2's
+        /// well is 170pt, which is a caption's height; this one holds a viewfinder and then the
+        /// photograph taken through it, so it is the 4:3 frame that photograph will be, at the
+        /// gutter's width on the drawn 393pt frame.
+        static let wellHeight: CGFloat = 268
+    }
+
     // MARK: - 04 · Visit (dark camera)
 
     enum Camera {

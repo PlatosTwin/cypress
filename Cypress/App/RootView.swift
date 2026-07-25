@@ -152,13 +152,17 @@ struct RootView: View {
                 onClose: { router.sheet = nil }
             )
 
-        case .identify:
+        case let .identify(treeID):
             // Screen 04 is a camera, so it is presented rather than pushed — and `Route` has no
             // camera case by design (DECISIONS constraint 21). `.identify` is the flow's entry point.
             VisitFlowView(
                 api: data.api,
                 outbox: data.outbox,
                 deviceID: data.deviceID,
+                // Which screen the flow opens on. Screen 03's photo CTA passes the tree it is the
+                // profile of, so the camera opens for that tree and nobody is asked to pick it out of
+                // a shortlist they already left (ERRATA E127); the map's FAB passes nil and gets 02.
+                startingTreeID: treeID,
                 // Screen 15's sign-in, wired to complete on-device (E124). Owned here because
                 // identity is the composition root's question, the same rule that puts `attribution`
                 // resolution here rather than in a feature. See `accountLink` for what it does; formed
@@ -166,7 +170,6 @@ struct RootView: View {
                 // only its two `Sendable` captures across the isolation boundary, not this view.
                 onLink: accountLink(),
                 onExit: { router.sheet = nil },
-                onAddTree: { router.sheet = nil },
                 onOpenTree: { id in
                     router.sheet = nil
                     router.push(.treeProfile(id))
@@ -282,7 +285,10 @@ struct RootView: View {
             TreeProfileView(
                 treeID: id,
                 api: data.api,
-                onVisit: { _ in router.present(.identify) },
+                // The tree is already named — this screen is its page — so the flow opens on the
+                // camera for it rather than on the shortlist that asks which tree this is. The id
+                // used to be discarded here, which is the whole of ERRATA E127's third defect.
+                onVisit: { id in router.present(.identify(id)) },
                 // Screen 03's quad row. The favourite is device-owned until an account exists, so
                 // the heart works on a device that has never seen the account sheet — which is every
                 // device the app currently runs on (D9, ERRATA E89). The owner comes from

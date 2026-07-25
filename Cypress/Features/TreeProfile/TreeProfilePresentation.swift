@@ -168,6 +168,38 @@ struct TreeProfilePresentation {
         acceptsContributions ? QuadActionRow.Action.allCases : [.favorite, .share]
     }
 
+    /// Whether C8 is drawn at all — and since ERRATA E127 the answer no longer depends on the
+    /// variant.
+    ///
+    /// **This overrides SCREENS.md 14, on the project owner's ruling.** 14 lists "no quad-action row"
+    /// among its deltas from 03, and the build honoured it literally: the row was inside the view's
+    /// `if !isCold`. Per D8 every tree in the shipped city inventory renders the cold variant on
+    /// launch day, so what that delta actually shipped was a tree nobody had touched offering *no
+    /// action of any kind* — no way to report a hanging limb, no way to log the watering somebody
+    /// had just done, no way to bookmark it. The owner's words: "A tree no one has touched should at
+    /// least offer a REPORT and CARE."
+    ///
+    /// All four cells, not the two that were ruled on, because the other two need nothing from the
+    /// tree either and withholding them would need its own argument:
+    ///
+    /// - **`Favorite`** is a private bookmark written to the person's grove, not to the tree's
+    ///   record. E89 and R2 already refuse to gate it on anything, on the grounds that a gate which
+    ///   refuses the heart also refuses taking it off.
+    /// - **`Share`** is a read of a record that exists, and its card is *unchanged* by the absence of
+    ///   photographs: `SharePresentation` takes `isPubliclyVisible`, nothing in the shipping app can
+    ///   set `.approved`, so screen 10 draws its C22 gradient thumbnail for every tree in the app
+    ///   today — which is what SCREENS.md 10 §3 specifies anyway. A cold tree's share card and a
+    ///   well-photographed tree's share card are the same picture, so there is nothing about a cold
+    ///   tree for Share to render badly.
+    ///
+    /// The two things 14's delta list is still honoured on are the regulars row and the activity
+    /// feed, which the view keeps behind `isCold` — and those are the two that would draw *nothing*
+    /// on a cold record anyway, because there are no caretakers and no activity to draw.
+    ///
+    /// `acceptsContributions` still decides which cells (`quadActions`), so a memorial keeps losing
+    /// the two that write (E95, E112). This is the row's existence, not its contents.
+    var offersQuadActionRow: Bool { !quadActions.isEmpty }
+
     // MARK: - Identity
 
     /// The H1. A given name wins (D15); the species common name is the fallback display
@@ -262,6 +294,19 @@ struct TreeProfilePresentation {
 
     /// 14's dashed well copy, verbatim.
     static let emptyPhotoWellText = "No photos of this tree yet"
+
+    /// The well is a control (ERRATA E127), and this is what it says it does.
+    ///
+    /// It is drawn exactly when a photograph *could* be added — `acceptsContributions` gates it — and
+    /// `LocationPrompt` (E123) already settled that a dashed-ring card in this vocabulary is tappable
+    /// when a user action would fill it. A camera glyph inside a dashed frame, sitting above a button
+    /// that says "Be the first to photograph this tree", is the most photograph-shaped hole in the
+    /// app; leaving it inert made it the one dashed card here that refused the tap.
+    ///
+    /// The hint, not the label: the label is the well's own sentence, which states the fact, and R2's
+    /// argument about `Favorite` applies to it too — a control should be named for what it is rather
+    /// than relabelled with the next tap.
+    static let emptyPhotoWellHint = "Opens the camera for this tree"
 
     /// The hero as a control, and what pressing it does. **NOT SPECIFIED** — screen 20 has no mock
     /// (ERRATA E125). The label names the thing rather than describing the picture: what is under
@@ -592,6 +637,41 @@ struct TreeProfilePresentation {
     /// read-only records, and an entrance added to this screen must not be the thing that hands one
     /// of them a write (ERRATA E95).
     private var offersMeasurement: Bool { acceptsContributions }
+
+    // MARK: - Growth history link (screen 11)
+
+    /// The link under the stat grid, and screen 11's second entrance (ERRATA E127).
+    ///
+    /// ── Why a stat card was not enough ────────────────────────────────────────────────────────
+    /// 11's entrance was *specified* — SCREENS.md 03 lists `DBH/Height cards → 11` and 11's own
+    /// caption says it "lives under Details on the tree profile" — and E63 recorded it as
+    /// unreachable only because nothing could write a measurement. E74/E98 fixed the writing half by
+    /// making the empty slot open 16. What that left is a card whose **meaning changes silently**:
+    /// before the first reading it says `Add a reading` and opens the measure sheet, and afterwards
+    /// it shows `64 cm` and opens a chart. Nothing about a stat card says it is a door in either
+    /// state — it is drawn as a fact, like `Planted 1898` and `SF #13284` beside it, which are not
+    /// doors. So the person who has just taken their first measurement has no way to find the record
+    /// they created except to tap a card that a minute ago meant something else.
+    ///
+    /// This is that entrance said out loud, in the shape screen 13's already has: a quiet text link
+    /// under the block it belongs to, decided here so a designer can delete it in one file. It sits
+    /// under the stat grid because the stat grid *is* 03's `Details`, which is where 11's caption
+    /// puts it.
+    ///
+    /// ── When it draws ─────────────────────────────────────────────────────────────────────────
+    /// Only where there is a record to read, which is E67's rule for the activity link and
+    /// ARCHITECTURE §5.6's for empty blocks: a link onto `No measurements on this tree yet.` would be
+    /// a door onto an empty room. **Any** non-deleted measurement counts, not a chartable one — D6
+    /// keeps a low-accuracy reading off the chart and screen 11 still shows it in the log, and the
+    /// person who took it is the last person who should be told it does not exist.
+    var offersGrowthLink: Bool {
+        profile.measurements.contains { $0.deletedAt == nil }
+    }
+
+    /// **NOT SPECIFIED**; see `offersGrowthLink`. The noun is `emptyMeasurementValue`'s — E74's own
+    /// word for what goes into this record — so the control that writes a reading and the control
+    /// that reads them back call the same thing by the same name.
+    static let growthLinkTitle = "See every reading"
 
     private var badgeCarriesPlantedYear: Bool {
         if case .planted = badge { return true }

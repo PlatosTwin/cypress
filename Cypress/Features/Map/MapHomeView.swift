@@ -17,7 +17,8 @@
 //  once at the root rather than assumed.
 //
 //  This view owns one `@Observable MapModel` (ARCHITECTURE §3) and reads `AppRouter` from the
-//  environment. It pushes `.treeProfile` and `.identify` and constructs no other feature's views.
+//  environment. It pushes `.treeProfile`, presents `.identify`, and constructs no other feature's
+//  views.
 //
 
 import MapKit
@@ -122,7 +123,12 @@ struct MapHomeView: View {
             }
             .overlay(alignment: .bottom) {
                 VStack(alignment: .trailing, spacing: 0) {
-                    IdentifyFAB { router.push(.identify) }
+                    // `present`, not `push` (ERRATA E127). The visit flow is a `fullScreenCover` off
+                    // `AppRouter.sheet` — `RootView.destination(for:)` answers a *pushed* `.identify`
+                    // with `NotBuiltYetView`, because a pushed one is a programming error the way a
+                    // pushed `.share` is. So the app's one specified entrance to screen 02 landed on
+                    // "Not built yet", which is also the only way to reach "add this tree".
+                    IdentifyFAB { router.present(.identify(nil)) }
                         .padding(.horizontal, MapLayout.sideInset - MapLayout.cardInset)
                         .padding(.bottom, MapLayout.fabToCardGap)
                     bottomSlot
