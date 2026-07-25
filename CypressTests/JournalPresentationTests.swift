@@ -1,0 +1,476 @@
+//
+//  JournalPresentationTests.swift
+//  CypressTests
+//
+//  The contributions journal, closing ERRATA E99.
+//
+//  ── What this suite is actually guarding ──────────────────────────────────────────────────
+//  Two rules, and both of them are rules about what the screen may not say.
+//
+//  **ERRATA E38 — a page of results must not be presented as a complete series.** `journal(cursor:
+//  limit:)` is a cursor read: it cannot know a total, and E38 is the entry about a screen that
+//  printed one anyway (`30 photos · since 2024` on a tree with 214 photographs going back to 2019).
+//  What it *can* prove is the opposite — a cursor comes back only when the page came back full — so
+//  every honest sentence this screen has about how much it is showing is derived from that one fact.
+//  The assertions below are on both halves: a page says so, and a series that ended says nothing.
+//
+//  **D1 / ARCHITECTURE §5.1 — nothing counts a person's actions.** A time-ordered list of your own
+//  contributions is, as E99 put it, one design decision away from a streak. The check is blunt and
+//  deliberately so: no string this screen draws may contain a digit.
+//
+//  ── The trap this suite is written around ────────────────────────────────────────────────
+//  The almanac round's lesson: a test that iterates the same collection the bug empties passes
+//  trivially. So the page assertions here are made against **what the read said** — the cursor,
+//  which is the source — rather than against `rows.count`, which is the thing a paging bug changes.
+//  A presentation that dropped every row would still have to answer the cursor question correctly.
+//
+
+import Foundation
+import Testing
+@testable import Cypress
+
+@Suite("The journal list")
+struct JournalPresentationTests {
+
+    // MARK: - Fixtures
+
+    static var calendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/Los_Angeles") ?? .gmt
+        return calendar
+    }
+
+    static let locale = Locale(identifier: "en_US")
+
+    static func date(_ year: Int, _ month: Int, _ day: Int) -> Date {
+        calendar.date(from: DateComponents(year: year, month: month, day: day, hour: 12)) ?? Date()
+    }
+
+    static let now = date(2026, 7, 20)
+
+    static func entry(
+        _ index: Int,
+        kind: JournalEntry.Kind = .visit,
+        tree: String = "Grandmother Cypress",
+        at date: Date = JournalPresentationTests.date(2026, 7, 12),
+        summary: String = "Fog on the crown"
+    ) -> JournalEntry {
+        JournalEntry(
+            id: UUID(uuidString: String(format: "13000000-0000-4000-8000-%012d", index))!,
+            kind: kind,
+            treeID: UUID(uuidString: String(format: "13000000-0000-4000-8000-%012d", 900 + index))!,
+            treeDisplayName: tree,
+            capturedAt: date,
+            summary: summary
+        )
+    }
+
+    static func presentation(
+        _ entries: [JournalEntry],
+        nextCursor: String?
+    ) -> JournalPresentation {
+        JournalPresentation(
+            entries: entries,
+            nextCursor: nextCursor,
+            now: now,
+            calendar: calendar,
+            locale: locale
+        )
+    }
+
+    // MARK: - ERRATA E38 · a page is not a series
+
+    /// The cursor is the source, and the sentence is derived from it. Asserted in both directions in
+    /// one test, because "says so when there is more" and "says nothing when there is not" are the
+    /// same rule and a screen that got one right and the other wrong would be worse than one that
+    /// got both wrong.
+    @Test("a page that came back full says so, and a series that ended says nothing")
+    func theCursorDecidesTheSentence() {
+        let rows = (1...JournalLimits.pageSize).map { Self.entry($0) }
+
+        let page = Self.presentation(rows, nextCursor: "2026-06-01T12:00:00Z")
+        #expect(page.hasOlder, "a cursor came back and the presentation did not carry it")
+        #expect(
+            page.olderNote != nil,
+            "a full page draws no sentence about being a page, which is E38's defect"
+        )
+
+        // The same rows with no cursor. `journal` returns one only when the page came back full, so
+        // this is a read that reached the end — and the end of a list needs no apology.
+        let whole = Self.presentation(rows, nextCursor: nil)
+        #expect(whole.hasOlder == false)
+        #expect(whole.olderNote == nil, "a finished read is being described as a page")
+    }
+
+    /// **The empty page.** E38's own warning is against letting a page's emptiness be phrased as
+    /// "you have done nothing", and the empty state is exactly that sentence. It is therefore gated
+    /// on the cursor rather than on `rows.isEmpty`.
+    @Test("an empty read with more behind it is not phrased as an empty journal")
+    func emptinessIsNotClaimedFromAPage() {
+        let stopped = Self.presentation([], nextCursor: "2026-06-01T12:00:00Z")
+        #expect(
+            stopped.emptyState == nil,
+            "a read that stopped is being reported as a person who has recorded nothing"
+        )
+        #expect(stopped.olderNote != nil, "the reader is told neither that there is more nor that there is not")
+
+        let proved = Self.presentation([], nextCursor: nil)
+        #expect(proved.emptyState != nil, "a read that reached the end of an empty journal says nothing at all")
+    }
+
+    // MARK: - D1 · no counts
+
+    /// Blunt on purpose. Every string this screen can draw, checked for a digit — which catches a
+    /// count, a total, a rank and a streak in one assertion, and would have caught E38's
+    /// `30 photos` too.
+    @Test("nothing the journal draws contains a number")
+    func noCountsAnywhere() {
+        var strings = [
+            JournalCopy.screenTitle,
+            JournalCopy.journalSegment,
+            JournalCopy.almanacSegment,
+            JournalCopy.footnote,
+            JournalCopy.olderNote,
+            JournalCopy.olderAction,
+            JournalCopy.olderFailed,
+            JournalCopy.emptyState,
+            JournalCopy.loadFailed,
+            JournalCopy.loadRetry,
+            JournalCopy.exportLabel,
+            JournalCopy.exportBody
+        ]
+        for format in ExportFormat.allCases {
+            strings.append(JournalCopy.exportAction(format))
+            strings.append(JournalCopy.exportTitle(format))
+            strings.append(JournalCopy.exportFileName(format))
+        }
+
+        for string in strings {
+            #expect(
+                string.rangeOfCharacter(from: .decimalDigits) == nil,
+                "\(string) prints a number on the one screen D1 forbids one on"
+            )
+        }
+    }
+
+    // MARK: - Rows
+
+    @Test("each kind gets its own verb and the accent screen 13 already gives it")
+    func rowsNameWhatWasDone() {
+        let kinds: [JournalEntry.Kind] = [.visit, .observation, .measurement, .careEvent]
+        let rows = Self.presentation(
+            kinds.enumerated().map { Self.entry($0.offset + 1, kind: $0.element, summary: "") },
+            nextCursor: nil
+        ).rows
+
+        #expect(rows[0].subtitle.hasPrefix("Visited"))
+        #expect(rows[1].subtitle.hasPrefix("Observed"))
+        #expect(rows[2].subtitle.hasPrefix("Measured"))
+        #expect(rows[3].subtitle.hasPrefix("Cared for"))
+
+        // Three of the four are screen 13's own assignments, so the same kind of contribution is the
+        // same colour on both screens. The fourth may not be `vacantSite`, which R7 reserves for a
+        // basin with no tree in it (ERRATA E119).
+        #expect(rows[1].accent == .newGrowth)
+        #expect(rows[2].accent == .record)
+        #expect(rows[3].accent == .water)
+        let noVacantSite = rows.allSatisfy { $0.accent != .vacantSite }
+        #expect(noVacantSite)
+    }
+
+    @Test("the summary is a clause that is left out rather than a placeholder")
+    func absentSummaryIsAbsent() {
+        let withNote = Self.presentation([Self.entry(1, summary: "Fog on the crown")], nextCursor: nil)
+        let without = Self.presentation([Self.entry(1, summary: "   ")], nextCursor: nil)
+
+        #expect(withNote.rows[0].subtitle.hasSuffix("Fog on the crown"))
+        #expect(without.rows[0].subtitle == "Visited · Jul 12")
+    }
+
+    @Test("a journal spans years, so a day outside this one carries its year")
+    func datesOutsideTheYearKeepTheirYear() {
+        let thisYear = Self.presentation(
+            [Self.entry(1, at: Self.date(2026, 7, 12), summary: "")],
+            nextCursor: nil
+        )
+        let lastYear = Self.presentation(
+            [Self.entry(2, at: Self.date(2025, 7, 12), summary: "")],
+            nextCursor: nil
+        )
+
+        #expect(thisYear.rows[0].subtitle == "Visited · Jul 12")
+        #expect(
+            lastYear.rows[0].subtitle.contains("2025"),
+            "two different Julys are drawn under the same label"
+        )
+    }
+
+    @Test("a tree the city named neither way is called what its own page calls it")
+    func unnamedTreeUsesTheProfileFallback() {
+        let rows = Self.presentation([Self.entry(1, tree: "")], nextCursor: nil).rows
+        #expect(rows[0].title == TreeProfilePresentation.fallbackTitle)
+    }
+
+    @Test("every row carries the tree it is about, so every row has somewhere to go")
+    func everyRowHasADestination() {
+        let entries = (1...4).map { Self.entry($0) }
+        let rows = Self.presentation(entries, nextCursor: nil).rows
+        let drawn = rows.map(\.treeID)
+        let read = entries.map(\.treeID)
+        #expect(drawn == read)
+    }
+
+    /// The store orders by `captured_at DESC` and the cursor is the last row's timestamp, so a
+    /// derivation that re-sorted would be a second ordering — and the first time the two disagreed,
+    /// `Show earlier` would insert rows into the middle of a list somebody was reading.
+    ///
+    /// The names are distinct and not alphabetical for the reason `GroveTreesTests.orderIsTheStores`
+    /// gives at length: with every fixture on one name, a sort by name is invisible to the
+    /// assertion, and a test that cannot see the mutation it is written against is not a test.
+    @Test("the store's order is the screen's order")
+    func orderIsTheStores() {
+        let entries = [
+            Self.entry(1, tree: "Zelkova", at: Self.date(2026, 7, 12)),
+            Self.entry(2, tree: "Almond", at: Self.date(2026, 1, 3)),
+            Self.entry(3, tree: "Magnolia", at: Self.date(2025, 11, 30))
+        ]
+        let drawn = Self.presentation(entries, nextCursor: nil).rows.map(\.id)
+        let read = entries.map(\.id)
+        #expect(drawn == read)
+    }
+
+    // MARK: - The model
+
+    @Test("a journal that could not be read is not an empty journal")
+    @MainActor
+    func failureIsItsOwnState() async {
+        let failed = JournalModel(api: JournalPreviewAPI(fails: true), now: { Self.now })
+        await failed.load()
+        #expect(failed.hasFailed)
+        #expect(failed.presentation == nil)
+
+        let empty = JournalModel(api: JournalPreviewAPI(), now: { Self.now })
+        await empty.load()
+        #expect(empty.hasFailed == false)
+        #expect(empty.presentation != nil)
+        #expect(empty.presentation?.emptyState != nil)
+    }
+
+    @Test("Show earlier appends the next page and stops when the cursor does")
+    @MainActor
+    func showOlderAppends() async {
+        let first = Page(items: (1...3).map { Self.entry($0) }, nextCursor: "cursor")
+        let second = Page(items: (4...5).map { Self.entry($0) })
+        let model = JournalModel(
+            api: JournalPreviewAPI(page: first, older: second),
+            now: { Self.now }
+        )
+
+        await model.load()
+        #expect(model.presentation?.rows.count == 3)
+        #expect(model.presentation?.hasOlder == true)
+
+        await model.loadOlder()
+        #expect(model.presentation?.rows.count == 5)
+        #expect(model.presentation?.hasOlder == false, "the second page's silence was not believed")
+        #expect(model.presentation?.olderNote == nil)
+    }
+
+    /// Without the cursor guard, `loadOlder` would re-read page one and draw every row twice. The
+    /// assertion is on the read count rather than on the rows, because a duplicate-suppressing list
+    /// would hide the second read while still paying for it.
+    @Test("Show earlier cannot re-read page one")
+    @MainActor
+    func showOlderNeedsACursor() async {
+        let reads = JournalReadCounter()
+        let model = JournalModel(
+            api: JournalPreviewAPI(page: Page(items: [Self.entry(1)]), reads: reads),
+            now: { Self.now }
+        )
+
+        await model.load()
+        #expect(reads.count == 1)
+
+        await model.loadOlder()
+        #expect(reads.count == 1, "a journal with no cursor asked for a page anyway")
+        #expect(model.presentation?.rows.count == 1)
+    }
+
+    @Test("a failed Show earlier leaves the rows that were read successfully on screen")
+    @MainActor
+    func failedOlderKeepsWhatItHas() async {
+        let model = JournalModel(
+            api: JournalPreviewAPI(
+                page: Page(items: (1...3).map { Self.entry($0) }, nextCursor: "cursor"),
+                olderFails: true
+            ),
+            now: { Self.now }
+        )
+
+        await model.load()
+        await model.loadOlder()
+
+        #expect(model.hasFailed == false, "one page failing took the whole screen down with it")
+        #expect(model.presentation?.rows.count == 3)
+        #expect(model.hasFailedOlder)
+    }
+
+    @Test("Try again re-runs the journal read and clears the failure")
+    @MainActor
+    func retryRecovers() async {
+        let reads = JournalReadCounter()
+        let model = JournalModel(
+            api: JournalPreviewAPI(page: Page(items: [Self.entry(1)]), failsOnce: true, reads: reads),
+            now: { Self.now }
+        )
+
+        await model.load()
+        #expect(model.hasFailed)
+
+        await model.retry()
+        #expect(reads.count == 2)
+        #expect(model.hasFailed == false)
+        #expect(model.presentation != nil)
+    }
+
+    /// The `.task` behind this segment fires on every reappearance, so a `load()` that re-read would
+    /// silently discard pages the reader had asked for by pressing `Show earlier`.
+    @Test("switching away and back does not throw away the pages already fetched")
+    @MainActor
+    func loadIsIdempotentOnceLoaded() async {
+        let reads = JournalReadCounter()
+        let model = JournalModel(
+            api: JournalPreviewAPI(
+                page: Page(items: (1...3).map { Self.entry($0) }, nextCursor: "cursor"),
+                older: Page(items: (4...5).map { Self.entry($0) }),
+                reads: reads
+            ),
+            now: { Self.now }
+        )
+
+        await model.load()
+        await model.loadOlder()
+        #expect(model.presentation?.rows.count == 5)
+
+        await model.load()
+        #expect(reads.count == 2, "returning to the segment re-read page one")
+        #expect(model.presentation?.rows.count == 5, "the earlier page the reader asked for was discarded")
+    }
+
+    // MARK: - The export, given an entrance at last
+
+    /// `exportLatest` has been finished, tested and callable since ERRATA E39, and its only caller
+    /// was a test file. Its own doc comment names the **account-data request**, so a subject-access
+    /// export with no surface is a privacy commitment nobody can invoke.
+    ///
+    /// What is asserted here is that each of the two share payloads really carries its own format
+    /// through to the API — the failure this shape is prone to is one control quietly exporting the
+    /// other one's bytes, which is why the two are separate `Transferable` types at all.
+    @Test("each export row hands the share sheet its own format's bytes")
+    func exportsCarryTheirFormat() async throws {
+        let api = JournalPreviewAPI(
+            exportBytes: Data("csv".utf8),
+            geoJSONBytes: Data("geojson".utf8)
+        )
+
+        let csv = JournalCSVExport { try await api.exportLatest(.csv) }
+        let geo = JournalGeoJSONExport { try await api.exportLatest(.geojson) }
+
+        #expect(try await csv.load() == Data("csv".utf8))
+        #expect(try await geo.load() == Data("geojson".utf8))
+    }
+
+    @Test("the two formats are named apart, in the label and in the file that lands")
+    func exportNamesAreDistinct() {
+        #expect(JournalCopy.exportAction(.csv) != JournalCopy.exportAction(.geojson))
+        #expect(JournalCopy.exportFileName(.csv).hasSuffix(".csv"))
+        #expect(JournalCopy.exportFileName(.geojson).hasSuffix(".geojson"))
+        // Every format the API offers has a row. A third format added to `ExportFormat` without a
+        // label would otherwise ship as a control with no name on it.
+        let everyFormatNamed = ExportFormat.allCases.allSatisfy { !JournalCopy.exportAction($0).isEmpty }
+        #expect(everyFormatNamed)
+    }
+
+    /// **The bytes the button hands over are the real export, over a real store.**
+    ///
+    /// The two assertions above use a double, so they prove the wiring and nothing about the
+    /// content. This one goes through `LocalAPI` against an actual database with an actual
+    /// contribution in it, and reads the file the share sheet would receive. A `ShareLink` that
+    /// hands over zero bytes looks exactly like one that works until somebody opens the file.
+    @Test("the export button's bytes are this device's real contributions, not an empty document")
+    func exportPayloadIsReal() async throws {
+        let deviceID = UUID(uuidString: "D0000000-0000-4000-8000-0000000000B1")!
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: deviceID)
+        let tree = try await api.addTree(
+            TreeDraft(
+                coordinate: Coordinate(latitude: 37.7761, longitude: -122.4464),
+                photoLocalPath: "/tmp/cypress-export-row-test.jpg",
+                attribution: Attribution.anonymous(deviceID: deviceID)
+            )
+        )
+        try await store.queue.write { connection in
+            try ContributionStore().insert(
+                Visit(
+                    treeID: tree.id,
+                    attribution: Attribution.anonymous(deviceID: deviceID),
+                    note: "Fog on the crown",
+                    capturedAt: Self.now
+                ),
+                connection: connection
+            )
+        }
+
+        // Exactly the closure `RootView` hands the You tab, wrapped in exactly the payload the
+        // `ShareLink` resolves.
+        let csv = JournalCSVExport { try await api.exportLatest(.csv) }
+        let bytes = try await csv.load()
+        let text = try #require(String(data: bytes, encoding: .utf8))
+
+        #expect(!bytes.isEmpty, "the share sheet would have received an empty file")
+        #expect(text.contains("Fog on the crown"), "the contribution this device made is not in its own export")
+        #expect(text.contains(tree.id.uuidString), "the export names no tree")
+        // D12: the disclaimer and the verification state travel with it.
+        #expect(text.contains(StructureFlag.disclaimer))
+        #expect(text.contains(VerificationState.unverified.rawValue))
+
+        let geo = JournalGeoJSONExport { try await api.exportLatest(.geojson) }
+        let root = try #require(
+            try JSONSerialization.jsonObject(with: try await geo.load()) as? [String: Any]
+        )
+        let features = try #require(root["features"] as? [[String: Any]])
+        #expect(features.count == 1, "the map export carried no features")
+    }
+
+    // MARK: - The failure sentence
+
+    /// The same rule E126 wrote for screens 08 and 12, applied to the third screen of that shape
+    /// before it has a chance to become the fourth defect.
+    @Test("the failure sentence says the read failed and claims nothing about the journal")
+    func failureCopyStatesOneFact() {
+        #expect(JournalCopy.loadFailed.hasSuffix("."))
+        for forbidden in ["yet", "nothing", "empty", "quiet"] {
+            #expect(
+                JournalCopy.loadFailed.lowercased().contains(forbidden) == false,
+                "\(JournalCopy.loadFailed) reads as a statement about the subject, not about the read"
+            )
+        }
+        #expect(JournalCopy.loadRetry == "Try again")
+    }
+
+    // MARK: - The almanac's entrance (ERRATA E57, and not reopening it)
+
+    /// **The one thing this round could have broken silently.**
+    ///
+    /// `Route.almanac` has no `push` call site anywhere in the app; the Journal tab is screen 12's
+    /// only entrance. A journal that took the tab for itself would have removed a finished screen
+    /// from the product without deleting a line of its code, and every other test here would still
+    /// have passed. So the tab's segment list is asserted to still contain the almanac.
+    @Test("the Journal tab still contains the almanac, which has no other way in")
+    func theAlmanacKeepsItsOnlyEntrance() {
+        #expect(JournalSegment.allCases.contains(.almanac))
+        #expect(JournalSegment.allCases.contains(.journal))
+        // Named apart, so neither segment's label is the other's.
+        #expect(JournalSegment.journal.label != JournalSegment.almanac.label)
+    }
+}

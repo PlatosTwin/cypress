@@ -82,7 +82,11 @@ enum DebugDeepLink {
         case share              // 10
         // Tab roots other than the map, which needs no deep link.
         case grove              // 08
-        case journal            // 12
+        case journal            // 12 — the Journal tab's `Neighborhood` segment
+        /// The contributor's own journal — the Journal tab's other segment. It draws from this
+        /// device's contributions, so on a device that has made none it is the empty state, which is
+        /// the state worth photographing anyway.
+        case journalList
         case you                // 18
         case moderationReview   // the You tab with a lead's open review (ERRATA E124-B)
         /// The community add's pin step — a map with a movable pin, opened on its own.
@@ -220,7 +224,16 @@ enum DebugDeepLink {
             case .grove:
                 router.tab = .grove
             case .journal:
+                // **Screen 12, which is now one of the tab's two segments rather than the whole of
+                // it.** Selecting the segment is what keeps this case meaning what its own
+                // declaration says: without the second line the two `AlmanacGroupTapTests` cases land
+                // on the contributor's journal and fail with "the Journal tab did not draw the
+                // almanac" — the deep link having quietly stopped opening the screen it names.
                 router.tab = .journal
+                router.journalSegment = .almanac
+            case .journalList:
+                router.tab = .journal
+                router.journalSegment = .journal
             case .you:
                 router.tab = .you
             case .pinAdjust:

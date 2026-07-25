@@ -152,7 +152,11 @@ struct ScreenEntranceTests {
         case .report:
             return "03 · quad action row, Report"
         case .almanac:
-            return "the Journal tab renders screen 12 as its root (invented, E98)"
+            // Still the Journal tab, and now one segment of it rather than the whole of it. The
+            // wording keeps "Journal tab" because that is what `theSixFormerlyUnreachableRoutes`
+            // checks, and because it is still literally true: `Route.almanac` has no push call site
+            // anywhere, so this tab remains screen 12's only entrance in the app (E99).
+            return "the Journal tab · the Neighborhood segment (invented, E98)"
         case .activity:
             return "03 · the 'see the whole year' link under the activity feed (invented, E98)"
         case .memorial:
@@ -267,6 +271,48 @@ struct ScreenEntranceTests {
         // bar can select them at all. The screens behind them were walked in the simulator.
         #expect(Self.entrance(for: .almanac).contains("Journal tab"))
         #expect(Self.entrance(for: .outbox).contains("You tab"))
+    }
+
+    // MARK: - The surfaces that are not routes
+
+    /// **Three built surfaces had no entrance, and none of them is a `Route`** — which is exactly why
+    /// the table above could not catch them. A tab's segment is not a pushed destination, so the
+    /// mechanism this suite installed for screens 05, 11, 12, 13, 16 and 17 had a blind spot the
+    /// width of every tab root in the app.
+    ///
+    /// The three: `CypressAPI.grove()` and `CypressAPI.journal(cursor:limit:)`, both finished and
+    /// both called by nothing, sitting behind two pills that SCREENS.md 08 §2 draws and that were
+    /// `Text` rather than `Button`; and `CypressAPI.exportLatest(_:)`, whose only caller in the
+    /// repository was a test file.
+    ///
+    /// The export is the one that mattered most, and not because it is the largest. Its own doc
+    /// comment ties it to "what a coordinator's 'export my morning' and the account-data request both
+    /// need", which makes an unreachable implementation a **privacy commitment the app was not
+    /// keeping** rather than a missing convenience.
+    @Test("the three built surfaces that were not routes now have a control each")
+    func theSurfacesThatWereNotRoutes() {
+        // Both pills are controls, and each has a read behind it.
+        #expect(GroveTab.trees.hasDestination, "grove() still has no caller")
+        #expect(GroveTab.journal.hasDestination, "journal() still has no caller")
+
+        // The export has a row per format, and the two are named apart so neither can be mistaken
+        // for the other.
+        let everyFormatNamed = ExportFormat.allCases.allSatisfy { !JournalCopy.exportAction($0).isEmpty }
+        #expect(ExportFormat.allCases.count == 2)
+        #expect(everyFormatNamed)
+        #expect(JournalCopy.exportFileName(.csv) != JournalCopy.exportFileName(.geojson))
+    }
+
+    /// **The almanac's entrance, guarded against this very round.**
+    ///
+    /// The Journal tab was screen 12's only way in, and this round put a journal in that tab. Had it
+    /// replaced the almanac rather than joining it, a finished, fully specified screen would have
+    /// left the product with no code deleted and no test failing — ERRATA E57 reintroduced by the
+    /// change that was closing E99.
+    @Test("putting a journal in the Journal tab did not evict the almanac from it")
+    func theAlmanacWasNotDisplaced() {
+        #expect(JournalSegment.allCases.contains(.almanac), "screen 12 has no entrance again")
+        #expect(JournalSegment.allCases.contains(.journal))
     }
 
     // MARK: - The stat card's two destinations

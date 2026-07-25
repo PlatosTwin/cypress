@@ -21,39 +21,53 @@ struct GroveView: View {
     @State private var model: GroveModel
     @Environment(AppRouter.self) private var router: AppRouter?
 
+    /// Held as well as handed to the model, because the `Journal` pill mounts a view that builds its
+    /// own model out of it (`JournalSection`) — the same arrangement `JournalTabView` uses to host
+    /// the almanac.
+    private let api: any CypressAPI
+
     /// Tapping a species tile opens screen 07 — SCREENS.md 08's caption, verbatim: "Tapping a tile
     /// opens the species page." Handed in rather than pushed here so this folder does not construct
     /// another feature's view (ARCHITECTURE §3); the composition root resolves it.
     private let onOpenSpecies: ((UUID) -> Void)?
 
+    /// Where a row on the other two pills goes. Both the `Trees` list and the `Journal` list are
+    /// lists of things that happened to a tree, so both open that tree's profile.
+    private let onOpenTree: ((UUID) -> Void)?
+
     init(
         api: any CypressAPI,
         now: @escaping @Sendable () -> Date = { Date() },
-        onOpenSpecies: ((UUID) -> Void)? = nil
+        tab: GroveTab = .species,
+        onOpenSpecies: ((UUID) -> Void)? = nil,
+        onOpenTree: ((UUID) -> Void)? = nil
     ) {
-        _model = State(wrappedValue: GroveModel(api: api, now: now))
+        _model = State(wrappedValue: GroveModel(api: api, now: now, tab: tab))
+        self.api = api
         self.onOpenSpecies = onOpenSpecies
+        self.onOpenTree = onOpenTree
     }
 
     var body: some View {
-        VStack(spacing: 0) {
+        @Bindable var model = model
+
+        return VStack(spacing: 0) {
             GeometryReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
                         title
-                        GroveTabRow(selection: model.tab)
+                        GroveTabRow(selection: $model.tab)
 
-                        if let presentation = model.presentation {
-                            progressBlock(presentation)
-                            celebration(presentation)
-                            grid(presentation)
-                        } else if model.hasFailed {
-                            failure
+                        switch model.tab {
+                        case .species: speciesTab
+                        case .trees: treesTab
+                        case .journal: journalTab
                         }
 
                         // §6's `margin-top:auto`. The footnote sits at the bottom of the column
                         // whether the column is full or empty, which is the whole layout of the
-                        // empty grove.
+                        // empty grove — and it is drawn on all three pills, because "there are no
+                        // streaks and no leaderboards" is the specification of every one of them.
                         Spacer(minLength: 0)
                         footnote
                     }
@@ -73,6 +87,59 @@ struct GroveView: View {
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .task { await model.load() }
+        // The trees read is deferred until somebody asks for that pill, and the model makes it run
+        // once — `.task(id:)` fires again on every switch back, so the guard cannot live here.
+        .task(id: model.tab) {
+            guard model.tab == .trees else { return }
+            await model.loadTreesIfNeeded()
+        }
+    }
+
+    // MARK: - The three pills
+
+    /// Screen 08 proper: the ring, the celebration and the grid.
+    @ViewBuilder
+    private var speciesTab: some View {
+        if let presentation = model.presentation {
+            progressBlock(presentation)
+            celebration(presentation)
+            grid(presentation)
+        } else if model.hasFailed {
+            failure
+        }
+    }
+
+    /// The trees this contributor has touched. **NOT SPECIFIED** — see `GroveTreesPresentation`.
+    @ViewBuilder
+    private var treesTab: some View {
+        if model.treesHaveFailed {
+            treesFailure
+        } else if let presentation = model.treesPresentation {
+            if let empty = presentation.emptyState {
+                GroveNote(empty)
+                    .padding(.top, CypressSpacing.labelSectionTop)
+                    .padding(.horizontal, CypressSpacing.gutter)
+            } else {
+                VStack(spacing: CypressSpacing.gapRows) {
+                    ForEach(presentation.rows) { row in
+                        IconTextRow(
+                            accent: .elder,
+                            title: row.title,
+                            subtitle: row.subtitle,
+                            action: onOpenTree.map { open in { open(row.treeID) } }
+                        )
+                    }
+                }
+                .padding(.top, CypressSpacing.labelSectionTop)
+                .padding(.horizontal, CypressSpacing.gutter)
+            }
+        }
+    }
+
+    /// This contributor's own record, which is the same list the Journal tab's `Yours` segment
+    /// draws — one implementation, two doors. See `JournalListView`.
+    private var journalTab: some View {
+        JournalSection(api: api, onOpenTree: onOpenTree)
     }
 
     // MARK: - Title
@@ -192,6 +259,27 @@ struct GroveView: View {
         .padding(.horizontal, CypressSpacing.gutterLabel)
     }
 
+    /// The `Trees` read that did not arrive.
+    ///
+    /// Its own arm rather than a share of the species one, because they are two endpoints: a reader
+    /// whose species read failed must still be able to see their trees, and the reverse. Same shape
+    /// and same words as the arm above it, because it is the same event on a different read.
+    private var treesFailure: some View {
+        VStack(alignment: .leading, spacing: CypressSpacing.gapRows) {
+            Text(GroveCopy.treesLoadFailed)
+                .cypressBody135()
+                .fixedSize(horizontal: false, vertical: true)
+
+            SecondaryOutlineButton(GroveCopy.loadRetry, style: .compact) {
+                Task { await model.retryTrees() }
+            }
+            .fixedSize()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, CypressSpacing.labelSectionTop)
+        .padding(.horizontal, CypressSpacing.gutterLabel)
+    }
+
     // MARK: - Footnote
 
     /// §6: 12px, `text.faintAlt`, centred, `padding:14px 18px`.
@@ -225,12 +313,18 @@ struct GroveView: View {
 /// list 08 among its users. Building it as a C5 variant would have meant widening a shared component
 /// to hold a control it is not (ERRATA E46).
 ///
-/// `Trees` and `Journal` are drawn and inert — there is no built or mocked destination behind
-/// either, and the prototype makes exactly these pills inert on exactly this screen. They are not
-/// buttons: a control that looks pressable and does nothing is worse than a label.
+/// **All three pills are controls now.** This row shipped as three `Text`s, on the stated grounds
+/// that "a control that looks pressable and does nothing is worse than a label" — which was true
+/// while `Trees` and `Journal` had nowhere to go, and is the argument for making them work rather
+/// than for leaving them. Both destinations were already built and merely unreachable; see
+/// `GroveTab`.
+///
+/// The drawn appearance is unchanged. What is added is the `Button`, a ≥44pt hit area (the pill is
+/// ~33pt as drawn, the same shortfall C5 solves the same way), and the `.isSelected` trait, which
+/// was already here and now describes something a reader can change.
 struct GroveTabRow: View {
 
-    let selection: GroveTab
+    @Binding var selection: GroveTab
 
     var body: some View {
         HStack(spacing: GroveMetrics.tabRowGap) {
@@ -244,24 +338,56 @@ struct GroveTabRow: View {
     }
 
     private func pill(_ tab: GroveTab, isSelected: Bool) -> some View {
-        Text(tab.label)
-            // §1.3's face set has no 600: the ramp's own note maps 600 → Bold, so both weights
-            // resolve to the same face and the selected pill is distinguished by its fill.
-            .font(CypressFont.body135Bold)
-            .foregroundStyle(isSelected ? CypressColor.ctaLabel : CypressColor.textMuted)
-            .lineLimit(1)
-            .minimumScaleFactor(0.8)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, GroveMetrics.tabPillPaddingV)
-            .padding(.horizontal, GroveMetrics.tabPillPaddingH)
+        Button {
+            selection = tab
+        } label: {
+            Text(tab.label)
+                // §1.3's face set has no 600: the ramp's own note maps 600 → Bold, so both weights
+                // resolve to the same face and the selected pill is distinguished by its fill.
+                .font(CypressFont.body135Bold)
+                .foregroundStyle(isSelected ? CypressColor.ctaLabel : CypressColor.textMuted)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, GroveMetrics.tabPillPaddingV)
+                .padding(.horizontal, GroveMetrics.tabPillPaddingH)
+                .background {
+                    RoundedRectangle(cornerRadius: CypressRadius.grovePill, style: .continuous)
+                        .fill(isSelected ? CypressColor.ctaFill : CypressColor.surfaceCard)
+                }
+                .cypressBorder(
+                    isSelected ? CypressColor.ctaFill : CypressColor.borderCool,
+                    radius: CypressRadius.grovePill
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .cypressHitArea()
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+    }
+}
+
+// MARK: - A sentence where a list would be
+
+/// The card the empty and failed states sit in — one shape, so the difference between them is in the
+/// words and never in the drawing (ERRATA E126, and `PrivateReminderList`'s `note`).
+struct GroveNote: View {
+    let text: String
+
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text)
+            .font(CypressFont.body13)
+            .foregroundStyle(CypressColor.textMuted)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, YouMetrics.settingPaddingV)
+            .padding(.horizontal, YouMetrics.settingPaddingH)
             .background {
-                RoundedRectangle(cornerRadius: CypressRadius.grovePill, style: .continuous)
-                    .fill(isSelected ? CypressColor.ctaFill : CypressColor.surfaceCard)
+                RoundedRectangle(cornerRadius: CypressRadius.cardSm, style: .continuous)
+                    .fill(CypressColor.surfaceCard)
             }
-            .cypressBorder(
-                isSelected ? CypressColor.ctaFill : CypressColor.borderCool,
-                radius: CypressRadius.grovePill
-            )
-            .accessibilityAddTraits(isSelected ? .isSelected : [])
+            .cypressBorder(CypressColor.borderCool, radius: CypressRadius.cardSm)
     }
 }

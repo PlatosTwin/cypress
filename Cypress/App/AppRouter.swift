@@ -79,6 +79,20 @@ final class AppRouter {
     var tab: Tab = .map
     var path: [Route] = []
 
+    /// Which segment the `Journal` tab is showing.
+    ///
+    /// **Navigation state rather than view state, because it is addressable.** The Journal tab holds
+    /// two screens — this contributor's journal and screen 12 — and the almanac has no other entrance
+    /// in the app, so "the Journal tab" is not by itself a destination any more. Anything that means
+    /// to open the almanac has to be able to say which half it means, and a `@State` private to
+    /// `JournalTabView` cannot be told.
+    ///
+    /// That is not hypothetical: `DebugDeepLink.Screen.journal` is documented as *screen 12*, and
+    /// when this segment lived in the view the two `AlmanacGroupTapTests` cases landed on the journal
+    /// and failed with "the Journal tab did not draw the almanac". The deep link had stopped meaning
+    /// what its own comment said.
+    var journalSegment: JournalSegment = .journal
+
     /// Sheets are modal over the current tab rather than pushed — screens 09, 10 and 15 are drawn
     /// as bottom sheets over a dimmed profile, not as full screens.
     var sheet: Route?
