@@ -25,8 +25,10 @@
 //  A presentation that dropped every row would still have to answer the cursor question correctly.
 //
 
+import CoreTransferable
 import Foundation
 import Testing
+import UniformTypeIdentifiers
 @testable import Cypress
 
 @Suite("The journal list")
@@ -366,18 +368,80 @@ struct JournalPresentationTests {
     /// What is asserted here is that each of the two share payloads really carries its own format
     /// through to the API — the failure this shape is prone to is one control quietly exporting the
     /// other one's bytes, which is why the two are separate `Transferable` types at all.
-    @Test("each export row hands the share sheet its own format's bytes")
+    /// **Built from the row's own payloads, not from payloads the test wrote.**
+    ///
+    /// The version this replaces constructed `JournalCSVExport { try await api.exportLatest(.csv) }`
+    /// in the test body and asserted it came back with CSV. That proves `.csv` returns CSV, which
+    /// nothing threatened. It says nothing about the row, and it was proved to say nothing: swapping
+    /// the two `ShareLink` arguments in `JournalExportRows` — the CSV control quietly handing over the
+    /// map export's bytes, the exact failure that file's comment says the two types exist to prevent —
+    /// left this assertion green. So the payloads now come from `JournalExportRows.payloads`, which is
+    /// what the body itself builds, and the format each one asks for is what is recorded.
+    @Test("each export row asks for its own format, not the other row's")
     func exportsCarryTheirFormat() async throws {
-        let api = JournalPreviewAPI(
-            exportBytes: Data("csv".utf8),
-            geoJSONBytes: Data("geojson".utf8)
-        )
+        let asked = FormatRecorder()
+        let payloads = JournalExportRows.payloads { format in
+            asked.record(format)
+            return Data(format.rawValue.utf8)
+        }
 
-        let csv = JournalCSVExport { try await api.exportLatest(.csv) }
-        let geo = JournalGeoJSONExport { try await api.exportLatest(.geojson) }
+        #expect(try await payloads.csv.load() == Data(ExportFormat.csv.rawValue.utf8))
+        #expect(try await payloads.geoJSON.load() == Data(ExportFormat.geojson.rawValue.utf8))
+        #expect(asked.formats == [.csv, .geojson], "a row asked the API for the other row's format")
+    }
 
-        #expect(try await csv.load() == Data("csv".utf8))
-        #expect(try await geo.load() == Data("geojson".utf8))
+    /// **The bytes as the system fetches them, through the `TransferRepresentation` itself.**
+    ///
+    /// Every other assertion here calls `load()` directly, which is the closure and not the path a
+    /// share sheet takes: the sheet resolves the payload through `transferRepresentation`, and a
+    /// representation whose body returned `Data()` would hand over an empty file while every
+    /// `load()`-based assertion stayed green. `NSItemProvider.register` plus a read of the registered
+    /// type is the same round trip, so this is the one test here that would notice.
+    @Test("the share sheet's own round trip returns the file, not an empty one")
+    func theTransferRepresentationCarriesTheBytes() async throws {
+        let payloads = JournalExportRows.payloads { format in Data("body:\(format.rawValue)".utf8) }
+
+        let csvProvider = NSItemProvider()
+        csvProvider.register(payloads.csv)
+        let csvBytes = try await Self.data(from: csvProvider, ofType: UTType.commaSeparatedText.identifier)
+        #expect(csvBytes == Data("body:csv".utf8), "the share sheet would have received the wrong file")
+
+        let geoProvider = NSItemProvider()
+        geoProvider.register(payloads.geoJSON)
+        let geoBytes = try await Self.data(from: geoProvider, ofType: UTType.json.identifier)
+        #expect(geoBytes == Data("body:geojson".utf8))
+    }
+
+    /// Records which formats the export closure was asked for, in order. A locked class rather than
+    /// an actor for the reason `JournalReadCounter` gives.
+    final class FormatRecorder: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value: [ExportFormat] = []
+
+        var formats: [ExportFormat] {
+            lock.lock()
+            defer { lock.unlock() }
+            return value
+        }
+
+        func record(_ format: ExportFormat) {
+            lock.lock()
+            defer { lock.unlock() }
+            value.append(format)
+        }
+    }
+
+    /// Pulls the registered representation's bytes back out, which is what a share sheet does.
+    static func data(from provider: NSItemProvider, ofType type: String) async throws -> Data {
+        try await withCheckedThrowingContinuation { continuation in
+            _ = provider.loadDataRepresentation(forTypeIdentifier: type) { data, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: data ?? Data())
+                }
+            }
+        }
     }
 
     @Test("the two formats are named apart, in the label and in the file that lands")
@@ -421,10 +485,11 @@ struct JournalPresentationTests {
             )
         }
 
-        // Exactly the closure `RootView` hands the You tab, wrapped in exactly the payload the
-        // `ShareLink` resolves.
-        let csv = JournalCSVExport { try await api.exportLatest(.csv) }
-        let bytes = try await csv.load()
+        // Exactly the closure `RootView` hands the You tab, wrapped in exactly the payloads the
+        // row builds — `payloads`, not a pair the test wrote, so the format each control asks for is
+        // part of what is under test here too.
+        let payloads = JournalExportRows.payloads { [api] format in try await api.exportLatest(format) }
+        let bytes = try await payloads.csv.load()
         let text = try #require(String(data: bytes, encoding: .utf8))
 
         #expect(!bytes.isEmpty, "the share sheet would have received an empty file")
@@ -434,9 +499,8 @@ struct JournalPresentationTests {
         #expect(text.contains(StructureFlag.disclaimer))
         #expect(text.contains(VerificationState.unverified.rawValue))
 
-        let geo = JournalGeoJSONExport { try await api.exportLatest(.geojson) }
         let root = try #require(
-            try JSONSerialization.jsonObject(with: try await geo.load()) as? [String: Any]
+            try JSONSerialization.jsonObject(with: try await payloads.geoJSON.load()) as? [String: Any]
         )
         let features = try #require(root["features"] as? [[String: Any]])
         #expect(features.count == 1, "the map export carried no features")

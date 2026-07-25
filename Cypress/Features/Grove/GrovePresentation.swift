@@ -64,9 +64,20 @@ enum GroveTab: String, CaseIterable, Identifiable {
     /// Whether tapping the pill leads anywhere.
     ///
     /// Kept, rather than deleted now that it is true of everything: it is the question DECISIONS
-    /// constraint 21 asks of any control, and a fourth pill added without answering it should fail a
-    /// test rather than ship inert.
-    var hasDestination: Bool { true }
+    /// constraint 21 asks of any control, and a fourth pill added without answering it should fail
+    /// rather than ship inert.
+    ///
+    /// **Exhaustive rather than `{ true }`, and the difference is the whole value of the property.**
+    /// Written as a bare `true` it answers yes for cases that do not exist yet, so the two suites
+    /// that read it — `GroveTreesTests.everyPillHasADestination` and
+    /// `ScreenEntranceTests.theSurfacesThatWereNotRoutes` — were asserting a literal and would have
+    /// welcomed a fourth inert pill in silence. A `switch` with no `default` moves the obligation to
+    /// the compiler: a new case does not build until somebody says, here, whether it goes anywhere.
+    var hasDestination: Bool {
+        switch self {
+        case .trees, .journal, .species: return true
+        }
+    }
 }
 
 // MARK: - Presentation

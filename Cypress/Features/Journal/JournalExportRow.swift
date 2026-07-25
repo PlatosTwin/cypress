@@ -82,15 +82,35 @@ struct JournalExportRows: View {
     /// photographed — without one.
     let export: @Sendable (ExportFormat) async throws -> Data
 
+    /// The two payloads the body hands its two `ShareLink`s.
+    ///
+    /// **Hoisted out of the body deliberately, and this is not tidying.** Built inline, the one thing
+    /// that can go wrong here — a row asking `export` for the *other* row's format — lived only
+    /// inside a `some View` and could not be reached by a test. A suite that builds its own
+    /// `JournalCSVExport { try await api.exportLatest(.csv) }` proves that `.csv` returns CSV, which
+    /// nobody doubted; it says nothing about which format the button asks for. Swapping the two
+    /// arguments here left every export assertion green, so this is the seam that makes the mistake
+    /// the file comment warns about a catchable one.
+    static func payloads(
+        _ export: @escaping @Sendable (ExportFormat) async throws -> Data
+    ) -> (csv: JournalCSVExport, geoJSON: JournalGeoJSONExport) {
+        (
+            JournalCSVExport { try await export(.csv) },
+            JournalGeoJSONExport { try await export(.geojson) }
+        )
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        let payloads = Self.payloads(export)
+
+        return VStack(alignment: .leading, spacing: 0) {
             Text(JournalCopy.exportLabel)
                 .cypressMicroLabel()
                 .padding(.bottom, CypressSpacing.gapVitality)
 
             VStack(spacing: CypressSpacing.gapRows) {
                 ShareLink(
-                    item: JournalCSVExport { try await export(.csv) },
+                    item: payloads.csv,
                     preview: SharePreview(JournalCopy.exportFileName(.csv))
                 ) {
                     IconTextRow(
@@ -102,7 +122,7 @@ struct JournalExportRows: View {
                 .buttonStyle(.plain)
 
                 ShareLink(
-                    item: JournalGeoJSONExport { try await export(.geojson) },
+                    item: payloads.geoJSON,
                     preview: SharePreview(JournalCopy.exportFileName(.geojson))
                 ) {
                     IconTextRow(
