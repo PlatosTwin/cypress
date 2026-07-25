@@ -344,6 +344,7 @@ public actor LocalAPI: CypressAPI {
             status: .alive,
             speciesCurrentID: draft.speciesID,
             verificationState: .unverified,
+            placement: draft.placement,
             createdAt: moment,
             updatedAt: moment
         )
