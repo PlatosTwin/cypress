@@ -68,7 +68,7 @@ struct AlmanacPresentation: Equatable {
     }
 
     /// Screen 12's `Where a tree could go` block (RULINGS R10). One C10 row, a plain statement of
-    /// how many basins are empty, tapping through to the nearest.
+    /// how many basins are empty, tapping through to a map of the nearest of them.
     struct VacantBlock: Equatable {
         /// `Where a tree could go` — the micro-label, ROADMAP §1's own phrase for these rows.
         let label: String
@@ -77,9 +77,12 @@ struct AlmanacPresentation: Equatable {
         /// Inherits `SitePresentation`'s line and may not cross it: the city mapped them, nothing is
         /// growing, and Cypress does not plant.
         let subtitle: String
-        /// The nearest of them — a `Route.site`. The row is inert when this is nil, which only
-        /// happens if the block should not have drawn at all.
-        let nearestID: UUID?
+        /// The group the row is counting, for a screen that shows them together (ERRATA E129).
+        ///
+        /// It was a single `nearestID` — a `Route.site` — and that is the defect. A row that says
+        /// `1,474 empty planting sites` and opens one basin has answered a question nobody asked;
+        /// the question a count of places raises is *where*.
+        let group: PinSet
     }
 
     /// §4's amber card.
@@ -90,9 +93,16 @@ struct AlmanacPresentation: Equatable {
         let body: String
         /// `Walk the nine`.
         let ctaTitle: String
-        /// Where the CTA goes: the nearest of them. Screen 14's own footnote calls itself "the
-        /// almanac's 'walk the nine' list, one tree at a time", so one tree is the destination.
-        let firstTreeID: UUID
+
+        /// Where the CTA goes: **all nine of them, on a map** (ERRATA E129).
+        ///
+        /// It used to be `firstTreeID`, one tree, and the justification was screen 14's own footnote
+        /// calling itself "the almanac's 'walk the nine' list, one tree at a time". That footnote is
+        /// specified verbatim (SCREENS.md 14 §7) and it stays; what it could not do is stand in for a
+        /// destination. The button says `Walk the nine`, and a walk is a route between places, so a
+        /// screen showing one place was never it. The footnote now describes the road the reader
+        /// actually took — see `TreeProfilePresentation.coldStartFootnote`.
+        let group: PinSet
     }
 
     /// The trailing pill on C1 — the neighbourhood's name, or nil when there is no area.
@@ -131,8 +141,8 @@ struct AlmanacPresentation: Equatable {
         self.neighborhoodName = area.name
         self.seasonRows = Self.seasonRows(area, now: now, calendar: calendar, locale: locale)
         self.composition = Self.composition(area.composition, locale: locale)
-        self.coverage = Self.coverage(area.coverage, locale: locale)
-        self.vacantSites = Self.vacantSites(area.vacantSites, locale: locale)
+        self.coverage = Self.coverage(area.coverage, in: area.name, locale: locale)
+        self.vacantSites = Self.vacantSites(area.vacantSites, in: area.name, locale: locale)
     }
 
     // MARK: - §2 This season
@@ -271,11 +281,11 @@ struct AlmanacPresentation: Equatable {
     ///   `Where eyes are needed` is precisely the zero §5.6 forbids, and the card's job — sending
     ///   somebody to walk somewhere — has nowhere to send them. Recorded in ERRATA, because A9's
     ///   sentence and §5.6 read differently at exactly this value.
-    private static func coverage(_ coverage: CoverageGap?, locale: Locale) -> Coverage? {
+    private static func coverage(_ coverage: CoverageGap?, in area: String, locale: Locale) -> Coverage? {
         guard let coverage,
               let count = coverage.trees.totalCount,
               count > 0,
-              let nearest = coverage.trees.items.first
+              !coverage.trees.items.isEmpty
         else { return nil }
 
         // §4's second sentence is a claim about walking distance, so it is checked rather than
@@ -287,7 +297,15 @@ struct AlmanacPresentation: Equatable {
             title: AlmanacCopy.coverageTitle(count: count, locale: locale),
             body: AlmanacCopy.coverageBody(count: count, allWithinWalk: allWithinWalk, locale: locale),
             ctaTitle: AlmanacCopy.coverageCTA(count: count, locale: locale),
-            firstTreeID: nearest.id
+            // Every tree the card counted, and `count` is `Series.totalCount` — nil unless the read
+            // was whole, which is why this card draws at all. So the map holds the same nine the
+            // title names, and `PinSet.isComplete` is true here by the same proof (ERRATA E38).
+            group: PinSet(
+                subject: .coverageGap,
+                pins: coverage.trees.items.map(\.pin),
+                count: count,
+                neighborhoodName: area
+            )
         )
     }
 
@@ -296,13 +314,21 @@ struct AlmanacPresentation: Equatable {
     /// Absent when the neighbourhood holds no sites — which E115 measured as nowhere in the city, but
     /// §5.6 is a rule about the general case — and absent when there is nowhere to send the tap, so
     /// the row is never a statement the reader cannot act on.
-    private static func vacantSites(_ sites: VacantSites?, locale: Locale) -> VacantBlock? {
-        guard let sites, sites.count > 0, let nearestID = sites.nearestID else { return nil }
+    private static func vacantSites(_ sites: VacantSites?, in area: String, locale: Locale) -> VacantBlock? {
+        guard let sites, sites.count > 0, !sites.nearest.isEmpty else { return nil }
         return VacantBlock(
             label: AlmanacCopy.vacantLabel,
             title: AlmanacCopy.vacantTitle(count: sites.count, locale: locale),
             subtitle: AlmanacCopy.vacantSubtitle,
-            nearestID: nearestID
+            // The count is the neighbourhood's; the pins are the nearest page of it. The two are
+            // different numbers on purpose and the destination prints both, because a map of 1,474
+            // basins is not available at any zoom a person can read (ERRATA E38, E129).
+            group: PinSet(
+                subject: .vacantSites,
+                pins: sites.nearest,
+                count: sites.count,
+                neighborhoodName: area
+            )
         )
     }
 }

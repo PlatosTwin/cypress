@@ -33,11 +33,13 @@ struct JournalTabView: View {
     /// resolves its neighbourhood from it and names no neighbourhood at all without one.
     let coordinate: Coordinate?
 
-    /// Screen 12's own two outbound affordances, resolved by the composition root so this folder
-    /// does not construct another feature's view (ARCHITECTURE §3).
+    /// Screen 12's own outbound affordances, resolved by the composition root so this folder does not
+    /// construct another feature's view (ARCHITECTURE §3).
+    ///
+    /// There were three and there are two since ERRATA E129: the coverage CTA and the vacant-sites row
+    /// used to hand out one id each and now hand out the group they counted, through one closure.
     var onOpenTree: ((UUID) -> Void)?
-    var onWalk: ((UUID) -> Void)?
-    var onOpenSite: ((UUID) -> Void)?
+    var onShowGroup: ((PinSet) -> Void)?
     var onRequestLocation: (() -> Void)?
 
     @Environment(AppRouter.self) private var router: AppRouter?
@@ -50,8 +52,7 @@ struct JournalTabView: View {
                 api: api,
                 coordinate: coordinate,
                 onOpenTree: onOpenTree,
-                onWalk: onWalk,
-                onOpenSite: onOpenSite,
+                onShowGroup: onShowGroup,
                 onRequestLocation: onRequestLocation
             )
 

@@ -22,16 +22,18 @@ struct AlmanacView: View {
 
     @State private var model: AlmanacModel
 
-    /// Where §4's CTA goes. Handed in rather than pushed here, so this folder does not construct
-    /// another feature's view (ARCHITECTURE §3); the composition root resolves it to screen 14 —
-    /// which is `Route.treeProfile` in its cold-start form, and which screen 14's own footnote calls
-    /// "the almanac's 'walk the nine' list, one tree at a time".
-    private let onWalk: ((UUID) -> Void)?
-
-    /// Tapping the `Where a tree could go` row opens the nearest vacant site — a `Route.site`
-    /// (RULINGS R10). Handed in for the same reason `onWalk` is: this folder does not build another
-    /// feature's view, and the composition root owns the routing.
-    private let onOpenSite: ((UUID) -> Void)?
+    /// Where both counted rows go: a screen that shows the group together (ERRATA E129).
+    ///
+    /// **One closure for two rows, replacing `onWalk(UUID)` and `onOpenSite(UUID)`.** Each of those
+    /// handed out one id — §4's CTA opened the nearest young tree, `Where a tree could go` opened the
+    /// nearest basin — so a row that said `Walk the nine` or `1,474 empty planting sites` answered
+    /// with one record and left the question it raised, which is *where*, unanswered. They are one
+    /// destination now because they are one kind of statement, and two would be two chances to answer
+    /// it differently.
+    ///
+    /// Handed in rather than pushed here, so this folder does not construct another feature's view
+    /// (ARCHITECTURE §3); the composition root resolves it to `Route.pinSet`.
+    private let onShowGroup: ((PinSet) -> Void)?
 
     /// Tapping a season row opens the tree it is about. The elder and the first bloom are each a
     /// specific tree; SCREENS.md 12 states no affordance for either, so this is nil unless the
@@ -50,15 +52,13 @@ struct AlmanacView: View {
         now: @escaping @Sendable () -> Date = { Date() },
         onBack: (() -> Void)? = nil,
         onOpenTree: ((UUID) -> Void)? = nil,
-        onWalk: ((UUID) -> Void)? = nil,
-        onOpenSite: ((UUID) -> Void)? = nil,
+        onShowGroup: ((PinSet) -> Void)? = nil,
         onRequestLocation: (() -> Void)? = nil
     ) {
         _model = State(wrappedValue: AlmanacModel(api: api, coordinate: coordinate, now: now))
         self.onBack = onBack
         self.onOpenTree = onOpenTree
-        self.onWalk = onWalk
-        self.onOpenSite = onOpenSite
+        self.onShowGroup = onShowGroup
         // The prompt shows exactly when there is no fix: a nil coordinate yields no neighbourhood and
         // therefore an empty almanac, so this is the same condition as "the screen would be blank".
         self.showsLocationPrompt = coordinate == nil
@@ -70,8 +70,7 @@ struct AlmanacView: View {
             presentation: model.presentation,
             onBack: onBack,
             onOpenTree: onOpenTree,
-            onWalk: onWalk,
-            onOpenSite: onOpenSite,
+            onShowGroup: onShowGroup,
             showsLocationPrompt: showsLocationPrompt,
             onRequestLocation: onRequestLocation,
             // Handed down as a value and a closure rather than read off the model inside the screen,
@@ -98,8 +97,8 @@ struct AlmanacScreen: View {
     let presentation: AlmanacPresentation?
     var onBack: (() -> Void)?
     var onOpenTree: ((UUID) -> Void)?
-    var onWalk: ((UUID) -> Void)?
-    var onOpenSite: ((UUID) -> Void)?
+    /// Both counted rows' one destination (ERRATA E129); see `AlmanacView.onShowGroup`.
+    var onShowGroup: ((PinSet) -> Void)?
     var showsLocationPrompt: Bool = false
     var onRequestLocation: (() -> Void)?
 
@@ -198,7 +197,8 @@ struct AlmanacScreen: View {
 
     // MARK: - Where a tree could go (R10) — one C10 row, a statement between §3 and §4
 
-    /// A single C10 row: the count of empty basins, tapping to the nearest.
+    /// A single C10 row: the count of empty basins, tapping to a map of the nearest of them
+    /// (ERRATA E129).
     ///
     /// Placed after §3 and before §4 on purpose. §3 says what lives in the neighbourhood; this says
     /// where nothing does — two readings of the same canopy — while §4 stays the screen's one
@@ -216,7 +216,7 @@ struct AlmanacScreen: View {
                     accent: .vacantSite,
                     title: block.title,
                     subtitle: block.subtitle,
-                    action: block.nearestID.flatMap { id in onOpenSite.map { open in { open(id) } } }
+                    action: onShowGroup.map { show in { show(block.group) } }
                 )
             }
             .padding(.top, CypressSpacing.labelSectionTop)
@@ -280,7 +280,7 @@ struct AlmanacScreen: View {
                             .padding(.bottom, AlmanacMetrics.coverageBodyBottom)
 
                         PrimaryButton(coverage.ctaTitle, style: .compact) {
-                            onWalk?(coverage.firstTreeID)
+                            onShowGroup?(coverage.group)
                         }
                     }
                 }

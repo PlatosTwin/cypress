@@ -293,7 +293,7 @@ struct AlmanacVacantSiteTests {
                 connection: connection
             )
         }
-        #expect(young.allSatisfy { !vacantIDs.contains($0.treeID) })
+        #expect(young.allSatisfy { !vacantIDs.contains($0.id) })
         #expect(!young.isEmpty, "the control: the coverage read does return trees")
     }
 
@@ -393,11 +393,20 @@ struct AlmanacVacantSiteTests {
         // A fix inside Sunset/Parkside.
         let here = Coordinate(latitude: 37.7530, longitude: -122.4850)
         let result = try await store.queue.read { connection in
-            try queries.vacantSites(neighborhoodID: sunset, near: here, connection: connection)
+            try queries.vacantSites(
+                neighborhoodID: sunset,
+                near: here,
+                limit: AlmanacLimits.vacantSiteRowLimit,
+                connection: connection
+            )
         }
 
+        // The count is the whole set and the rows are a page of it, which is the shape ERRATA E129
+        // needs and ERRATA E38 governs: 1,474 is a `COUNT(*)`, 20 is what a map can hold.
         #expect(result.count == 1_474)
-        let nearest = try #require(result.nearestID)
+        #expect(result.nearest.count == AlmanacLimits.vacantSiteRowLimit)
+        #expect(result.nearest.allSatisfy { $0.status == .vacantSite })
+        let nearest = try #require(result.nearest.first?.id)
 
         // The nearest is a vacant site, and it is in this neighbourhood — not merely the nearest
         // basin in the city.
@@ -417,15 +426,19 @@ struct AlmanacVacantSiteTests {
     @Test("the block states the count and inherits the site screen's line, or is absent")
     func vacantSitesPresentation() throws {
         // A real count with a destination draws the row.
-        let siteID = UUID()
+        let site = AlmanacPresentationTests.pin(930, status: .vacantSite)
         let drawn = AlmanacPresentation(almanac: Almanac(
             neighborhood: AlmanacNeighborhood(name: "Sunset/Parkside",
-                vacantSites: VacantSites(count: 1_474, nearestID: siteID))
+                vacantSites: VacantSites(count: 1_474, nearest: [site]))
         ))
         let block = try #require(drawn.vacantSites)
         #expect(block.label == "Where a tree could go")
         #expect(block.title == "1,474 empty planting sites")
-        #expect(block.nearestID == siteID)
+        // The row hands over the group it counted, not one basin out of it (ERRATA E129).
+        #expect(block.group.subject == .vacantSites)
+        #expect(block.group.pins == [site])
+        #expect(block.group.count == 1_474)
+        #expect(!block.group.isComplete, "20 of 1,474 is a page and must say so")
         // Inherits SitePresentation's line and crosses none of it: no "yet", no ask, no notification.
         #expect(!block.subtitle.lowercased().contains("yet"))
         #expect(!block.subtitle.lowercased().contains("plant a"))
@@ -434,7 +447,7 @@ struct AlmanacVacantSiteTests {
         // A count with no destination is not a statement the reader can act on, so it does not draw.
         let noDestination = AlmanacPresentation(almanac: Almanac(
             neighborhood: AlmanacNeighborhood(name: "X",
-                vacantSites: VacantSites(count: 9, nearestID: nil))
+                vacantSites: VacantSites(count: 9, nearest: []))
         ))
         #expect(noDestination.vacantSites == nil)
 
@@ -450,7 +463,7 @@ struct AlmanacVacantSiteTests {
     func vacantSingular() throws {
         let one = AlmanacPresentation(almanac: Almanac(
             neighborhood: AlmanacNeighborhood(name: "X",
-                vacantSites: VacantSites(count: 1, nearestID: UUID()))
+                vacantSites: VacantSites(count: 1, nearest: [AlmanacPresentationTests.pin(931, status: .vacantSite)]))
         ))
         #expect(one.vacantSites?.title == "1 empty planting site")
     }

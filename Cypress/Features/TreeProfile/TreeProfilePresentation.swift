@@ -640,6 +640,15 @@ struct TreeProfilePresentation {
     /// **Judgment call, not in the spec:** `recentPlantingWindowYears`. SCREENS.md says nothing
     /// about what makes a tree "young"; ten years is a street-tree establishment horizon and is
     /// named here so it can be argued with in one place.
+    ///
+    /// **ERRATA E129 kept this sentence and changed what it describes.** Until E129 the almanac's
+    /// `Walk the nine` button opened one tree's profile, so "one tree at a time" was not a
+    /// description of a list — it was the whole destination, and this footnote was the app explaining
+    /// a missing screen from inside the wrong one. The button now opens a map of all nine and a tap on
+    /// a pin lands here, so the reader arriving at this sentence has seen the list and chosen one tree
+    /// of it. The words are unchanged because they are specified verbatim (SCREENS.md 14 §7) and are
+    /// now simply true; deleting a drawn string because the route around it improved would be a design
+    /// change, and this round had no standing to take one.
     var coldStartFootnote: String {
         guard isCold else { return "" }
         let almanac = "This is the almanac’s “walk the nine” list, one tree at a time."

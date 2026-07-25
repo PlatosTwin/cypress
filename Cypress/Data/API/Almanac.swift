@@ -104,13 +104,26 @@ public struct VacantSites: Hashable, Sendable {
     /// How many planting sites in the neighbourhood have no tree in them. Counts city records, not
     /// user actions, so it carries no A8 floor (ARCHITECTURE §5.1).
     public let count: Int
-    /// The nearest of them, the block's only affordance — a `Route.site`. Never `nil` when `count`
-    /// is positive.
-    public let nearestID: UUID?
 
-    public init(count: Int, nearestID: UUID?) {
+    /// The nearest of them, nearest first, capped at `AlmanacLimits.vacantSiteRowLimit`
+    /// (ERRATA E129).
+    ///
+    /// It was a single `nearestID` until E129, because the block's only affordance opened one basin.
+    /// That is the defect E129 fixed on both of screen 12's counted rows at once: a row that says
+    /// `1,474 empty planting sites` and opens one of them has not answered the question it raised.
+    ///
+    /// **Deliberately not a `Series`, unlike `CoverageGap.trees`.** `Series` exists to stop a page's
+    /// size being read as a total (ERRATA E38), and it proves completeness by reading one row more
+    /// than the caller wanted. Here `count` is a `COUNT(*)` over the same predicate these rows came
+    /// from, so completeness is `nearest.count >= count` — a comparison against a number the data
+    /// already stands behind, which is a stronger proof than the extra row and needs no type to hold
+    /// it. Sunset/Parkside holds 1,474 of these, so this array is almost always a page, and
+    /// `PinSet.isComplete` is what keeps the destination from calling it the whole set.
+    public let nearest: [TreePin]
+
+    public init(count: Int, nearest: [TreePin]) {
         self.count = count
-        self.nearestID = nearestID
+        self.nearest = nearest
     }
 }
 
@@ -272,13 +285,27 @@ public struct CoverageGap: Hashable, Sendable {
 
 /// One tree on the coverage list, and how far the reader is from it.
 public struct CoverageTree: Hashable, Sendable, Identifiable {
-    public let id: UUID
+    public var id: UUID { pin.id }
+
+    /// The tree, as the thing a map can draw (ERRATA E129).
+    ///
+    /// It was a bare `id` until E129, and the coordinate was being read and thrown away:
+    /// `AlmanacQueries.youngTreesWithoutVisits` has always selected `lat`/`lon`, because the card's
+    /// second sentence is a claim about walking distance and `LocalAPI` needed the coordinate to
+    /// check it. So §4 knew where all nine trees were and could only send the reader to one of them.
+    ///
+    /// A `TreePin` rather than a `Coordinate`, so the pin the destination draws is the pin screen 01
+    /// would draw for the same record — `MapPinKind` decides that from `status`, `source` and
+    /// `verificationState`, and a group whose members carried only a coordinate would have to have
+    /// those three invented for it.
+    public let pin: TreePin
+
     /// Great-circle metres from the fix the almanac was resolved against. Present because §4's body
     /// makes a claim about walking distance, and a claim gets checked rather than printed.
     public let distanceM: Double
 
-    public init(id: UUID, distanceM: Double) {
-        self.id = id
+    public init(pin: TreePin, distanceM: Double) {
+        self.pin = pin
         self.distanceM = distanceM
     }
 }
@@ -294,6 +321,26 @@ public enum AlmanacLimits {
     /// 21 young trees — so that in practice the read is whole and the card can print its count.
     /// When it does trip, the count disappears rather than shrinking (ERRATA E38).
     public static let coverageRowLimit = 200
+
+    /// How many vacant planting sites the `Where a tree could go` row carries to its map
+    /// (ERRATA E129).
+    ///
+    /// **This one really is a page, and the destination says so**, which is the whole of E38 applied
+    /// to a group that cannot be shown whole: E115 measured every neighbourhood in the city at
+    /// between 4 and 1,474 sites, so a map of all of them is not available at any zoom a person can
+    /// read. The count on screen stays the `COUNT(*)`; the map shows this many and the sentence over
+    /// it says how many that is.
+    ///
+    /// **NOT SPECIFIED** — no source names a number here — so it is chosen against two things that
+    /// are measured. The busiest neighbourhood in the seed holds 21 coverage-gap trees (see
+    /// `coverageRowLimit`), so 20 puts the two maps at the same density and neither is a density this
+    /// app has not already reasoned about. And the 20 nearest basins to a fix inside Sunset/Parkside
+    /// span 197 m × 212 m — about two blocks, close to screen 01's own opening view of 120 m, which
+    /// `MapLayout.defaultSpanMetres` picked as the scale at which 18 pt pins stop fusing (ERRATA
+    /// E12). A larger cap buys pins the camera would have to pull back to hold, and pulling back is
+    /// exactly what E12 measured as the point where the pin layer starts lying about how many
+    /// records there are.
+    public static let vacantSiteRowLimit = 20
 }
 
 // MARK: - Default

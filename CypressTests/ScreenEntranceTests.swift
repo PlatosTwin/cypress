@@ -127,7 +127,7 @@ struct ScreenEntranceTests {
     private static func entrance(for route: Route) -> String {
         switch route {
         case .treeProfile:
-            return "01 map pin · 02 shortlist row · 12 almanac season row and 'walk the nine'"
+            return "01 map pin · 02 shortlist row · 12 almanac season row · a pin on the group map"
         case .identify:
             return "01 map · the what-tree-is-this FAB"
         case .species:
@@ -155,7 +155,9 @@ struct ScreenEntranceTests {
         case .photos:
             return "03 · a tap on the hero photograph (invented, E125)"
         case .site:
-            return "01 map · a pin with no tree behind it (invented, E107)"
+            return "01 map · a pin with no tree behind it, or a pin on the group map (E107, E129)"
+        case .pinSet:
+            return "12 · the 'Walk the nine' CTA and the 'Where a tree could go' row (invented, E129)"
         }
     }
 
@@ -174,7 +176,47 @@ struct ScreenEntranceTests {
         .measure(treeID),
         .outbox,
         .site(treeID),
+        .pinSet(pinSet),
     ]
+
+    /// A group of nine, as screen 12's coverage CTA hands one over (ERRATA E129).
+    private static let pinSet = PinSet(
+        subject: .coverageGap,
+        pins: (0..<9).map { AlmanacPresentationTests.pin(500 + $0) },
+        count: 9,
+        neighborhoodName: "Sunset/Parkside"
+    )
+
+    /// **The entrance table is a table of strings, and it has passed on a lie once** (this suite's own
+    /// header says so). So the newest row in it is checked against the thing it describes: the two
+    /// affordances it names have to actually be on the presentation, and each has to hand over a group
+    /// rather than a record.
+    ///
+    /// That is exactly the assertion whose absence let ERRATA E129 ship twice. Both rows were wired,
+    /// both destinations rendered, and what nobody had written down was that a row printing a count
+    /// must not resolve to one of the things it counted.
+    @Test("the group map's entrance is two affordances that really hand over a group")
+    func thePinSetEntranceIsReal() throws {
+        #expect(Self.entrance(for: .pinSet(Self.pinSet)).contains("Walk the nine"))
+        #expect(Self.entrance(for: .pinSet(Self.pinSet)).contains("Where a tree could go"))
+
+        let almanac = AlmanacPresentation(almanac: Almanac(neighborhood: AlmanacNeighborhood(
+            name: "Sunset/Parkside",
+            coverage: CoverageGap(trees: Series(complete: (0..<9).map {
+                CoverageTree(pin: AlmanacPresentationTests.pin(600 + $0), distanceM: Double(100 + $0 * 50))
+            })),
+            vacantSites: VacantSites(
+                count: 1_474,
+                nearest: (0..<20).map { AlmanacPresentationTests.pin(700 + $0, status: .vacantSite) }
+            )
+        )))
+
+        let coverage = try #require(almanac.coverage, "§4's card is the CTA's home and it did not draw")
+        let vacant = try #require(almanac.vacantSites, "R10's row did not draw")
+        #expect(coverage.group.pins.count == 9)
+        #expect(vacant.group.pins.count == 20)
+        #expect(vacant.group.count == 1_474)
+    }
 
     @Test("every route names a real affordance, not a plan for one")
     func everyRouteHasANamedEntrance() {

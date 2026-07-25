@@ -214,16 +214,14 @@ struct RootView: View {
                 onOpenSpecies: { id in router.push(.species(id)) }
             )
         case .journal:
-            // Screen 12 lives here. The elder and first-bloom rows name a specific tree, and
-            // screen 14's own footnote calls the coverage list "the almanac's 'walk the nine' list,
-            // one tree at a time" — screen 14 is `treeProfile` in its cold-start form, so both land
-            // on a profile.
+            // Screen 12 lives here. The elder and first-bloom rows each name a specific tree, so they
+            // open a profile. The two *counted* rows do not name one and never did: they hand over the
+            // group they counted, for a map of it (ERRATA E129).
             JournalTabView(
                 api: data.api,
                 coordinate: location.availability.coordinate,
                 onOpenTree: { id in router.push(.treeProfile(id)) },
-                onWalk: { id in router.push(.treeProfile(id)) },
-                onOpenSite: { id in router.push(.site(id)) },
+                onShowGroup: { group in router.push(.pinSet(group)) },
                 onRequestLocation: { location.start() }
             )
         case .you:
@@ -427,9 +425,23 @@ struct RootView: View {
                 coordinate: location.availability.coordinate,
                 onBack: { router.pop() },
                 onOpenTree: { id in router.push(.treeProfile(id)) },
-                onWalk: { id in router.push(.treeProfile(id)) },
-                onOpenSite: { id in router.push(.site(id)) },
+                onShowGroup: { group in router.push(.pinSet(group)) },
                 onRequestLocation: { location.start() }
+            )
+
+        case .pinSet(let group):
+            // Screen 12's two counted rows, answered together (ERRATA E129). **No mocked screen** —
+            // the argument for what it is allowed to be is in `PinSetPresentation`.
+            //
+            // The pin tap routes through `MapHomeView.route(for:)` rather than through a branch of
+            // its own. That mapping — a vacant site to the site screen, a removed tree to 19,
+            // everything else to 03/14 — is E107's and E113's, and a second copy of it here is how
+            // one of them comes to be right and the other stale.
+            PinSetMapView(
+                set: group,
+                userCoordinate: location.availability.coordinate,
+                onBack: { router.pop() },
+                onOpenPin: { pin in router.push(MapHomeView.route(for: pin)) }
             )
 
         case .measure(let id):
