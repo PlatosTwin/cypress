@@ -120,9 +120,18 @@ struct IdentifyFAB: View {
 ///
 /// "map without location" needs no view at all: no GPS dot draws, the map opens on the city instead
 /// of on the user, and the tree card omits its distance clause. That absence *is* the state.
+///
+/// **It draws the sentence it is handed rather than deriving one.** It started out switching on
+/// `Availability` itself, which was right while it answered one question; it now answers two — the
+/// standing "there is no dot on this map" and the recentre control's "that press could not move
+/// anything" (`MapRecentreCopy`) — and those are different sentences about the same permission. The
+/// words live in the `*Copy` enums where they can be asserted without rendering a view.
 struct MapLocationNotice: View {
-    let availability: MapLocationProvider.Availability
-    var onOpenSettings: () -> Void
+    let title: String
+    let message: String
+    /// `nil` for a state Settings cannot fix — waiting for a first fix, say, where a Settings button
+    /// would be advice to change something that is already correct.
+    var onOpenSettings: (() -> Void)?
 
     var body: some View {
         HStack(alignment: .top, spacing: MapLayout.cardSpacing) {
@@ -130,22 +139,24 @@ struct MapLocationNotice: View {
                 Text(title)
                     .font(CypressFont.body145Bold)
                     .foregroundStyle(CypressColor.textInk)
-                Text(Self.message)
+                Text(message)
                     .font(CypressFont.body13)
                     .foregroundStyle(CypressColor.textMuted)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
-            Button(action: onOpenSettings) {
-                Text("Settings")
-                    .font(CypressFont.body13Bold)
-                    .foregroundStyle(CypressColor.ctaLabel)
-                    .padding(.vertical, CypressSpacing.Component.chipPaddingVFilter)
-                    .padding(.horizontal, CypressSpacing.Component.chipPaddingHFilter)
-                    .background { Capsule().fill(CypressColor.ctaFill) }
+            if let onOpenSettings {
+                Button(action: onOpenSettings) {
+                    Text("Settings")
+                        .font(CypressFont.body13Bold)
+                        .foregroundStyle(CypressColor.ctaLabel)
+                        .padding(.vertical, CypressSpacing.Component.chipPaddingVFilter)
+                        .padding(.horizontal, CypressSpacing.Component.chipPaddingHFilter)
+                        .background { Capsule().fill(CypressColor.ctaFill) }
+                }
+                .buttonStyle(.plain)
+                .cypressHitArea()
             }
-            .buttonStyle(.plain)
-            .cypressHitArea()
         }
         .padding(.vertical, MapLayout.cardPaddingV)
         .padding(.horizontal, MapLayout.cardPaddingH)
@@ -156,14 +167,107 @@ struct MapLocationNotice: View {
         .cypressBorder(CypressColor.borderPinRing, radius: CypressRadius.cardLg)
         .cypressShadow(light: CypressShadow.bottomCard, dark: nil)
     }
+}
 
+/// The standing notice's words — what the map says about having no dot on it, unprompted.
+enum MapLocationCopy {
     /// No spaces around em dashes (ARCHITECTURE §5.7).
-    private var title: String {
+    static func title(_ availability: MapLocationProvider.Availability) -> String {
         availability == .servicesOff ? "Location Services are off" : "Location is off"
     }
 
-    private static let message =
+    static let message =
         "The map still works—it just cannot show where you are, or work out which tree you are "
         + "standing in front of."
+}
 
+// MARK: - Recentre
+
+/// The control that puts the camera back on the GPS dot. **NOT SPECIFIED** — the argument for
+/// building it, for building it ourselves rather than using `MapUserLocationButton`, and for what a
+/// press does about the zoom, is all in `MapRecentre`.
+///
+/// It sits directly above the FAB in the bottom-right block, which is the one part of screen 01 whose
+/// position this screen owns — and owning the position is half the reason the system control could
+/// not be used (ERRATA E110's arithmetic).
+///
+/// A 44pt circle, which is `CypressSpacing.minTapTarget` exactly: the control has no label to widen
+/// it, so the drawn shape is the hit target rather than something smaller with padding around it.
+struct MapRecentreButton: View {
+    let engagement: MapRecentre.Engagement
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                Circle()
+                    .fill(engagement == .centred ? CypressColor.ctaFill : CypressColor.surfaceCard)
+                MapLocateGlyph(tint: tint, struckThrough: engagement == .unavailable)
+            }
+            .frame(width: CypressSpacing.minTapTarget, height: CypressSpacing.minTapTarget)
+            .overlay {
+                // Only the unengaged circle carries an edge. Filled, it is the CTA green against the
+                // map and the ring would be a line drawn on top of its own colour.
+                if engagement != .centred {
+                    Circle().strokeBorder(
+                        CypressColor.borderPinRing,
+                        lineWidth: CypressSpacing.Component.hairline
+                    )
+                }
+            }
+            // The FAB's shadow, because this floats off the same map at the same height and a
+            // control that sat flat next to it would read as part of the basemap.
+            .cypressShadow(light: CypressShadow.fab, dark: CypressShadow.Dark.fab)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(MapRecentreCopy.label)
+        .accessibilityValue(MapRecentreCopy.value(engagement))
+        .accessibilityHint(MapRecentreCopy.hint(engagement) ?? "")
+    }
+
+    private var tint: Color {
+        switch engagement {
+        case .centred: return CypressColor.ctaLabel
+        case .away: return CypressColor.ctaFill
+        // Struck through *and* muted. Either alone reads as a disabled control, which this is not —
+        // it is a control that answers with words instead of with the camera.
+        case .unavailable: return CypressColor.textMuted
+        }
+    }
+}
+
+/// The crosshair. Drawn rather than borrowed from SF Symbols, for the reason `LeafGlyph` exists: the
+/// app has two `Image(systemName:)` calls in it and both are inside a photo picker, so a system glyph
+/// on the map's own chrome would be the one place the drawing came from somewhere else.
+///
+/// A ring, a dot, and four ticks on the axes — the mark every map in the world uses for this, which
+/// is the entire argument for it. It is `accessibilityHidden`; the button around it does the talking.
+struct MapLocateGlyph: View {
+    let tint: Color
+    var struckThrough: Bool = false
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .strokeBorder(tint, lineWidth: MapLayout.locateStroke)
+                .frame(width: MapLayout.locateRing, height: MapLayout.locateRing)
+            Circle()
+                .fill(tint)
+                .frame(width: MapLayout.locateDot, height: MapLayout.locateDot)
+            ForEach(0..<4, id: \.self) { quarter in
+                Capsule()
+                    .fill(tint)
+                    .frame(width: MapLayout.locateStroke, height: MapLayout.locateTick)
+                    .offset(y: -(MapLayout.locateRing + MapLayout.locateTick) / 2 - MapLayout.locateTickGap)
+                    .rotationEffect(.degrees(Double(quarter) * 90))
+            }
+            if struckThrough {
+                Capsule()
+                    .fill(tint)
+                    .frame(width: MapLayout.locateStroke, height: MapLayout.locateSlash)
+                    .rotationEffect(.degrees(45))
+            }
+        }
+        .accessibilityHidden(true)
+    }
 }
