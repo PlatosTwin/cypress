@@ -290,4 +290,47 @@ struct MapDetailTests {
         model.filter = .all
         #expect(model.pins.count == all, "going back to All did not restore the pins")
     }
+
+    // MARK: - The status-override cache, and the way it could go wrong
+
+    /// `LocalAPI` now holds `tree_status_overrides` between the writes that can change it, because
+    /// the map re-read that whole table on every camera change (ERRATA E130). A held answer is only
+    /// as good as its invalidation, and this is the failure it would produce: a tree moderated to
+    /// `removed` after the map has already drawn once, still drawing green.
+    ///
+    /// Driven through `debugMarkRemoved` rather than through `confirmRemoval` because the moderation
+    /// gate is `ModerationTests`' subject and not this one's; what is under test is that a write to
+    /// the table reaches the next `mapContent`.
+    @Test("a moderated tree changes its pin on the very next viewport read")
+    func moderationInvalidatesTheHeldOverrides() async throws {
+        let seedURL = try #require(SeedContractTests.seedURL, "no seed database; set CYPRESS_SEED_PATH")
+        let store = try await CypressStore.inMemory(seedURL: seedURL)
+        let api = LocalAPI(store: store, deviceID: UUID())
+
+        // A block small enough that the un-thinned query runs, so the tree that gets moderated is
+        // certain to still be one of the drawn pins afterwards.
+        let block = BoundingBox(
+            minLatitude: 37.7985, maxLatitude: 37.7995,
+            minLongitude: -122.4445, maxLongitude: -122.4430
+        )
+        let viewport = MapViewport(bounds: block, zoom: 16, pinLimit: MapModel.pinLimit)
+
+        guard case let .pins(before) = try await api.mapContent(in: viewport) else {
+            Issue.record("a zoom-16 viewport did not return pins")
+            return
+        }
+        let subject = try #require(before.first { $0.status == .alive })
+
+        try await api.debugMarkRemoved(treeID: subject.id)
+
+        guard case let .pins(after) = try await api.mapContent(in: viewport) else {
+            Issue.record("a zoom-16 viewport did not return pins")
+            return
+        }
+        let redrawn = try #require(after.first { $0.id == subject.id }, "the moderated tree left the viewport")
+        #expect(
+            redrawn.status == .removed,
+            "the map is still drawing the pre-moderation status; the held overrides were not invalidated"
+        )
+    }
 }
