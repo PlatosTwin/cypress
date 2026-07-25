@@ -559,12 +559,19 @@ final class DeepLinkVoiceOverTests: XCTestCase {
         let app = launch("treeProfile")
         guard arrive(app, screen: "treeProfile", anchor: "Tree") else { return }
 
+        // **Both element types, because a stat card legitimately becomes either one (ERRATA E133).**
+        // A card whose value is a reading has somewhere to go — screen 11 — so it is wrapped in a
+        // `Button`; a card holding the city's bucket has nowhere to go and stays a combined
+        // `StaticText`. Both are one stop, which is the whole property under test. Looking only in
+        // `staticTexts` asserted something narrower than this test's own name: that the card is not
+        // interactive. That premise was false, and it took a saved measurement on the opened tree to
+        // expose it — after which the suite failed on every run until the app was uninstalled.
         for caption in ["DBH", "Site", "City record", "Watch for"] {
-            let joined = app.staticTexts
-                .matching(NSPredicate(format: "label BEGINSWITH %@", "\(caption), "))
-                .firstMatch
+            let joint = NSPredicate(format: "label BEGINSWITH %@", "\(caption), ")
+            let asText = app.staticTexts.matching(joint).firstMatch
+            let asButton = app.buttons.matching(joint).firstMatch
             XCTAssertTrue(
-                joined.exists,
+                asText.exists || asButton.exists,
                 "treeProfile: nothing reads '\(caption)' together with its value, so the caption and "
                     + "the thing it describes are announced as separate fragments"
             )

@@ -178,7 +178,10 @@ enum DebugDeepLink {
             case .activity:
                 router.push(.activity(try await standingTree(api)))
             case .measure:
-                router.push(.measure(try await standingTree(api)))
+                // **`measuredTree`, not `standingTree`** — see that function. This case does not
+                // write, but the test behind it does, and a saved reading outlives the launch
+                // (ERRATA E133).
+                router.push(.measure(try await measuredTree(api)))
             case .species:
                 router.push(.species(try await anySpecies(api)))
             case .outbox:
@@ -267,6 +270,40 @@ enum DebugDeepLink {
             )
         }
         return match.tree.id
+    }
+
+    /// The *middle* standing tree among the candidates — the one screen 16 measures.
+    ///
+    /// ── Why this is not `standingTree` either (ERRATA E133) ────────────────────────────────
+    /// `.measure` writes nothing, which is exactly why it sat on `standingTree` and looked safe.
+    /// **The test writes.** `testSavingAMeasurementLeavesTheScreen` taps a digit and the save, and a
+    /// saved reading is a row in the device container that outlives the launch — so from the first
+    /// full suite run onward, the one tree nine other cases open has a measurement on it.
+    ///
+    /// What then failed was not the measure test. Screen 03's DBH card prefers a reading over the
+    /// city's bucket, and a card holding a reading has somewhere to go — screen 11 — so it is wrapped
+    /// in a `Button`. `StatCard` combines its children either way, so the joint label E118 asked for
+    /// is still there; it has simply moved out of `staticTexts` and into `buttons`, where
+    /// `testAStatCardIsOneStop` was not looking. The suite then failed on *every* subsequent run and
+    /// passed the instant the app was uninstalled — the signature of persistent pollution, and
+    /// indistinguishable from a flake until you clear the container and watch it go green.
+    ///
+    /// `.memorial` marches from the near end and the photo cases from the far end (see
+    /// `photographedTree`), so this takes the middle — the one place neither reaches, with hundreds of
+    /// standing records between them.
+    ///
+    /// The rule, restated because it needed restating: **a case that writes persistent state must not
+    /// write it onto a tree another case reads** — and "the case" includes the test driving it.
+    private static func measuredTree(_ api: LocalAPI) async throws -> UUID {
+        let candidates = try await api.treesNear(centre, radiusM: radiusM, limit: candidateLimit)
+        let standing = candidates.filter { $0.tree.status.acceptsNewContributions }
+        guard !standing.isEmpty else {
+            throw Failure(
+                screen: "a standing tree to measure",
+                reason: "none among the \(candidates.count) records nearest \(centre.latitude), \(centre.longitude)"
+            )
+        }
+        return standing[standing.count / 2].tree.id
     }
 
     /// The nearest vacant planting site — the 12,518 records with no tree in them (E107).
