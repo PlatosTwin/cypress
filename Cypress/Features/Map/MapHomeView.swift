@@ -125,6 +125,9 @@ struct MapHomeView: View {
                 VStack(alignment: .leading, spacing: MapLayout.chipRowTop) {
                     SearchBar(text: $model.searchText)
                     MapFilterChips(filter: $model.filter)
+                    // Below the chips, so the C20 → chips order the accessibility tests walk is
+                    // exactly as it was. Draws nothing unless the search has something to say.
+                    MapSearchStatus(search: model.search)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, MapLayout.sideInset)

@@ -14,11 +14,6 @@ import SwiftUI
 /// Accepts the redirect log and refuses everything else. Previews only.
 struct ReportPreviewAPI: CypressAPI {
     func logHazardRedirect(_ event: HazardRedirectEvent) async throws {}
-    /// D4's private reminder, which previews never write.
-    func savePrivateReminder(_ reminder: PrivateReminder) async throws -> SyncResult.Status {
-        throw APIError.forbidden
-    }
-
     func mapContent(in viewport: MapViewport) async throws -> MapContent { .pins([]) }
     func treesNear(_ coordinate: Coordinate, radiusM: Double, limit: Int) async throws -> [NearbyTree] { [] }
     func treeProfile(id: UUID) async throws -> TreeProfile { throw APIError.notFound }
@@ -30,7 +25,6 @@ struct ReportPreviewAPI: CypressAPI {
         throw APIError.forbidden
     }
     func uploadPhoto(at localPath: String, ticket: PhotoUploadTicket) async throws {}
-    func outboxStatus() async throws -> [SyncResult] { [] }
     func grove() async throws -> [GroveEntry] { [] }
     func journal(cursor: String?, limit: Int) async throws -> Page<JournalEntry> { Page(items: []) }
     func claimDevice(deviceUUID: UUID, userID: UUID) async throws {}

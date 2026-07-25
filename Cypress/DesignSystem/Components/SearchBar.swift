@@ -8,15 +8,35 @@
 //  own. The bar is positioned by its caller; §2's `top:68px; left:16px; right:16px` is an
 //  absolute position on the map screen, not a property of the component.
 //
-//  **NOT SPECIFIED** (§5 gap 7): the search results screen behind it.
+//  **NOT SPECIFIED** (§5 gap 7): the search results screen behind it. `MapSearch` is where the
+//  surface that was designed instead is reasoned out.
+//
+//  ── The placeholder no longer promises street or neighborhood, and that is deliberate ────────────
+//  §2 draws `Species, street, or neighborhood…` and this component said it verbatim for as long as
+//  the bar did nothing at all — a promise costs nothing while the field is inert. It is not inert
+//  any more: it narrows the map to a species (ERRATA E134), and it cannot do the other two.
+//
+//  Neither is a small gap to close. A street search wants `trees.address`, which carries no index —
+//  every keystroke would be a scan of 195,309 rows on the map's critical path, which is the one
+//  thing `TreeQueries` forbids outright. A neighbourhood search wants the boundary geometry the seed
+//  does not ship; `TreeProfile.neighborhoodName` exists precisely because a neighbourhood has no
+//  identity in this database beyond a name hanging off a tree. Both are `Tools/build_seed.py`'s work
+//  before they can be the client's, exactly as `SpeciesQueries` already rules for the substring
+//  matching an FTS5 index would take.
+//
+//  So the words match what happens. A bar that offers three kinds of search and answers one is the
+//  defect this whole change exists to remove, not a nicety to leave for later — and it is worse than
+//  a bar that offers one, because a reader who types a street and sees the map empty out has been
+//  told, wrongly, that their street has no trees.
 //
 
 import SwiftUI
 
 struct SearchBar: View {
     @Binding var text: String
-    /// Verbatim from §2: `Species, street, or neighborhood…`
-    var placeholder: String = "Species, street, or neighborhood…"
+    /// §2 draws `Species, street, or neighborhood…`; this is the half of it that works. See the file
+    /// comment for why the other two are not a matter of writing more code here.
+    var placeholder: String = "Search a species…"
 
     var body: some View {
         HStack(spacing: CypressSpacing.Component.searchSpacing) {

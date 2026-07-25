@@ -101,10 +101,6 @@ public protocol CypressAPI: Sendable {
     /// `PhotoAccess.swift`; see `photoData` above for why it is declared here and not only there.
     func setPhotoVote(photoID: UUID, vote: PhotoVote?) async throws
 
-    /// `GET /me/outbox-status` — the server's view of recent sync results, for screen 17's
-    /// "says why" line.
-    func outboxStatus() async throws -> [SyncResult]
-
     // MARK: - Personal surfaces (private by default, D11)
 
     /// `GET /me/grove`.
@@ -142,27 +138,34 @@ public protocol CypressAPI: Sendable {
     /// public record. `private_reminders` is a separate write (D4).
     func logHazardRedirect(_ event: HazardRedirectEvent) async throws
 
-    /// The separate `private_reminders` POST that §6 names beside the hazard-redirect log (D4).
-    ///
-    /// Takes a finished `PrivateReminder` rather than a draft because the reminder is written to the
-    /// outbox *before* this is called, and what goes into the outbox has to be the whole mutation
-    /// (ARCHITECTURE §4). The drain reaches the same write through `sync`, which carries the queued
-    /// reminder in its batch; this is the single-item door for a caller that already has one in hand.
-    ///
-    /// The reminder arrives owned — by the signed-in user, or by the device that wrote it before
-    /// there was one (D9, `ReminderOwner`). Adoption is `claimDevice`'s job, never this method's.
-    ///
-    /// Returns `.duplicate` when the reminder is already stored, exactly as `sync` does for every
-    /// other kind — a replay after a flap is a success, not a second reminder.
-    ///
-    /// Never public, never auto-staled, and it does not tell the city anything (D4, DECISIONS §3.3).
-    @discardableResult
-    func savePrivateReminder(_ reminder: PrivateReminder) async throws -> SyncResult.Status
-
     /// `GET /export/latest.csv` / `.geojson` — the nightly export, carrying `verification_state`
     /// (D12, BUILD-PLAN §5).
     func exportLatest(_ format: ExportFormat) async throws -> Data
 }
+
+// MARK: - Two methods that were requirements and are not any more
+//
+// `outboxStatus()` and `savePrivateReminder(_:)` were both declared here and implemented by every
+// conformance — two shipping types, thirteen preview doubles, five test doubles — and **neither had
+// a single caller.** Screen 17's "says why" line reads `OutboxViewState` directly, which is the
+// live view of the queue rather than a snapshot fetched from it; screen 06 writes its reminder
+// through `ReminderOutboxWriter`, because what goes into the outbox has to be the whole mutation
+// (ARCHITECTURE §4) and a single-item door around the side of it was never the way in.
+//
+// A protocol requirement nobody calls is not free. Every new conformance has to answer it, and the
+// twenty stubs that did were all `[]` or `throw .forbidden` — twenty places for a real
+// implementation to be quietly missing, and twenty more lines between a reader and the methods that
+// matter. Deleted rather than deprecated: there is one app and it is in this repository, so the
+// compiler can find every caller, and there are none.
+//
+// **`LocalAPI.savePrivateReminder` stays**, as a method on the concrete type. It implements D4's
+// separate `private_reminders` write and D9's ownership rules, `CypressTests/PrivateReminderTests`
+// exercises both against the real store, and it is the natural single-item door for a `sync` batch
+// of one. What it is not is something every conformance owes an answer to. If a caller ever needs it
+// through `any CypressAPI`, it goes back **as a requirement and not as a protocol-extension member**
+// — an extension member has no witness-table entry and dispatches statically, which is how every
+// photograph in the app failed to load on a build whose tests all passed (ERRATA E125, and the note
+// on `photoData` above).
 
 // MARK: - Viewport
 
@@ -234,19 +237,47 @@ public struct MapViewport: Hashable, Sendable {
     /// passes a cell, and `MapModel.markerCellPoints` is why 44.
     public let markerCellPoints: Double?
 
+    /// The species the map has been narrowed to, or `nil` for every species.
+    ///
+    /// **NOT SPECIFIED** — SCREENS.md 01 says "search opens species/street/neighborhood search"
+    /// (:664) and then "NOT SPECIFIED: search results" (:667). The intent is stated; the surface
+    /// never was. This is the narrowing half of it, and `MapSearch` is the reasoning for the rest.
+    ///
+    /// It rides on the viewport rather than arriving as a second argument to `mapContent(in:)`
+    /// deliberately, and for two reasons. The signature does not change, so none of the fifteen
+    /// preview doubles and five test doubles that conform to `CypressAPI` have to be touched. And
+    /// `MapViewport` is `Hashable`, which is what `MapModel`'s fetch debounce dedupes on — so a
+    /// changed query is a *different viewport*, refetched, and an unchanged one coalesces exactly as
+    /// a pan already does. Adding a parameter would have left the debounce unable to see the
+    /// difference between the same box searched two ways.
+    ///
+    /// A tree the city recorded no species for can never be in this set: 12,830 of the 195,309 rows
+    /// carry `species_current IS NULL`, and a narrowed map is expected to empty out over them.
+    public let speciesIDs: Set<UUID>?
+
     /// **A1, resolved**: "pins cluster at zoom 15 and below; individual pins at zoom 16 and above
     /// (the spec sentence was backwards)" — BUILD-PLAN §11. This constant is the only place that
     /// number appears.
     public static let highestClusteringZoom = 15
 
-    public init(bounds: BoundingBox, zoom: Int, pinLimit: Int = 2_000, markerCellPoints: Double? = nil) {
+    public init(
+        bounds: BoundingBox,
+        zoom: Int,
+        pinLimit: Int = 2_000,
+        markerCellPoints: Double? = nil,
+        speciesIDs: Set<UUID>? = nil
+    ) {
         self.bounds = bounds
         self.zoom = zoom
         self.pinLimit = pinLimit
         self.markerCellPoints = markerCellPoints
+        self.speciesIDs = speciesIDs
     }
 
     public var shouldCluster: Bool { zoom <= MapViewport.highestClusteringZoom }
+
+    /// Whether this viewport has been narrowed to a species at all.
+    public var isNarrowed: Bool { speciesIDs != nil }
 }
 
 /// One clustered cell.
@@ -300,15 +331,79 @@ public struct TreePin: Hashable, Sendable, Identifiable {
     }
 }
 
+/// The pin half of a viewport's answer, and whether it is the whole of it.
+///
+/// **It exists because "fewer pins" and "all the pins there are" look identical in an array.** The
+/// marker grid (`MapViewport.markerCellPoints`) returns one tree per 44 pt cell once the budget is
+/// overrun, so a `[TreePin]` of 151 can mean either "there are 151" or "there are 1,458 and these
+/// are the ones that won their cells". Screen 01 could not tell those apart, and neither could
+/// anything downstream — which is the shape of defect ERRATA E38 exists to forbid: a truncated set
+/// presented as a complete one.
+///
+/// Before the search bar did anything the distinction was invisible, because an un-narrowed map is
+/// *about* the neighbourhood rather than about a set the reader named, and nobody counts the trees
+/// out of a window. Ask for London Planes and it is a claim: the reader has named a set and the map
+/// is answering with it. So the count travels.
+///
+/// It is a `RandomAccessCollection` over its own pins so that the fifteen preview doubles and five
+/// test doubles that write `.pins([])` keep compiling untouched — `ExpressibleByArrayLiteral` takes
+/// the literal, and `count`, `map`, `filter`, `prefix` and `for…in` all reach the items directly.
+public struct PinAnswer: Hashable, Sendable, RandomAccessCollection, ExpressibleByArrayLiteral {
+    /// The pins to draw.
+    public let items: [TreePin]
+
+    /// How many trees actually satisfied the request, when that is more than `items` holds.
+    ///
+    /// `nil` means `items` **is** the complete answer — not "unknown". Every path that thins sets
+    /// it, and every path that does not leaves it nil, so a reader may treat nil as a guarantee.
+    public let matchesInView: Int?
+
+    public init(_ items: [TreePin], matchesInView: Int? = nil) {
+        self.items = items
+        // A "sample" that dropped nothing is not a sample. Collapsing it here means no caller has to
+        // remember the special case, and `isSample` cannot be true over a complete answer.
+        self.matchesInView = matchesInView.flatMap { $0 > items.count ? $0 : nil }
+    }
+
+    public init(arrayLiteral elements: TreePin...) {
+        self.init(elements)
+    }
+
+    /// Whether the map is drawing a spatial sample of the matches rather than all of them.
+    public var isSample: Bool { matchesInView != nil }
+
+    /// How many trees this answer stands for — the matches when it is a sample, else the pins drawn.
+    public var treesRepresented: Int { matchesInView ?? items.count }
+
+    public var startIndex: Int { items.startIndex }
+    public var endIndex: Int { items.endIndex }
+    public subscript(position: Int) -> TreePin { items[position] }
+
+    /// The same answer over different pins, keeping what is known about how many matched.
+    ///
+    /// Used where the pins are rewritten but the population behind them is not — the status
+    /// overrides in `LocalAPI.mapContent`, which change what a pin *is* and never which trees the
+    /// query found.
+    public func withItems(_ items: [TreePin]) -> PinAnswer {
+        PinAnswer(items, matchesInView: matchesInView)
+    }
+}
+
 /// What a viewport resolved to. An enum rather than two optional arrays: at any zoom exactly one of
 /// the two is meaningful, and A1 decides which.
 public enum MapContent: Hashable, Sendable {
     case clusters([TreeCluster])
-    case pins([TreePin])
+    case pins(PinAnswer)
 
+    /// How many trees this answer stands for.
+    ///
+    /// For a clustered viewport that is the sum of the badges; for pins it is the pins drawn, unless
+    /// the grid thinned them, in which case it is how many actually matched. Both halves therefore
+    /// answer the same question — "how many trees are we telling the reader about" — which is what
+    /// makes `markerCount` below the *other* question rather than a duplicate of this one.
     public var pinCount: Int {
         switch self {
-        case let .pins(pins): return pins.count
+        case let .pins(pins): return pins.treesRepresented
         case let .clusters(clusters): return clusters.reduce(0) { $0 + $1.count }
         }
     }
