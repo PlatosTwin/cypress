@@ -4763,3 +4763,96 @@ indefinite hang rather than an error, which is the part that wastes the time.
 behaviour. Screen 06's 311 redirect card showed hanging-limb body text while "Uprooted" was selected —
 the *saved* category was correct on disk, so it is a cosmetic copy-selection bug in the redirect card,
 pre-existing and untouched here.
+
+### E132 — the pin the reader places, not the pin the phone guessed
+
+The project owner: *"the ability to adjust the pin/location of where the 'What tree is this' tree
+location is; making it right where you stand is super limiting."* `VisitAddTreeModel.add()` passed
+`location.fix.coordinate` to the draft verbatim, and the screen's own footnote said as much — "the
+coordinate is the phone's current fix". E127 made that a deliberate choice. Using it revealed three
+cases it cannot serve: a tree photographed from the far kerb, from a car or through a window; a fix
+20–40 m out, which is ordinary in an SF street canyon; and a row of street trees shot from one
+standing spot, every one landing on the same point and every one after the first refused by the 10 m
+dedupe.
+
+**`Phase.placingPin`, and a row that states where the tree will go before offering to change it.**
+The add screen now says "This tree will be recorded where you are standing" above a **Move the pin**
+control — the statement comes first, so a reader who is standing at the tree reads a confirmation
+rather than a question. `VisitPinAdjustView` is `PinSetMapView`'s shape with a different subject: the
+same basemap, the same header, the same statement-then-qualifier pair above the map, the fix drawn as
+the GPS dot.
+
+**The fast path is untouched, and that was the constraint.** With no pin placed, `coordinate` is still
+`location.fix.coordinate` and the CTA writes exactly what it wrote before, so stand-shoot-save is
+still one tap and nobody is routed through a map they did not need. A fix is still required to
+*start*: `canAdjustPin` is false without one, so this changes where the pin ends, not whether the app
+will invent a location it does not have.
+
+**The pin is the centre of the map and the map moves under it.** Three reasons, and the first is the
+one that decided it: the pin under your thumb is the pin you cannot see, and the thing being aimed at
+is a tree in the street. The second is that it makes every point on screen a handle rather than an
+18 pt dot. The third is that MapKit's own pan recogniser is the only thing that moves a map smoothly,
+and a hand-rolled drag on an annotation competes with it.
+
+**75 m, and the number is argued rather than picked.** It absorbs the two errors the owner named
+*where they compose*: a 40 m street-canyon fix plus SF's standard 68'9" right-of-way — 61 m — with
+room over. It is about half a block face, so a row of trees 6–10 m apart is reachable without walking.
+And it stops short of the distance at which you are pointing at a rooftop rather than a trunk.
+
+It is deliberately far larger than the 10 m dedupe, and **that ordering is load-bearing**. The dedupe
+runs on whatever coordinate the draft carries, so a pin moved onto an existing tree is still refused
+with its candidate list. Widening the pin's reach does not widen the hole in the dedupe — it makes
+the dedupe *reachable*, which is exactly what the row-of-trees case needed.
+
+**The limit is on screen the whole time, not only when it is met.** The qualifier under the position
+names the distance and the limit in one breath. Past it the qualifier changes, the pin fades and the
+confirm goes dead. A nudge that would leave the circle is **refused rather than clamped** — a clamp
+slides the pin sideways, so pressing *north* moves you *east*, which is a control lying about what it
+did — and the refusal replaces the qualifier with "That is as far as the pin goes". A control that
+stops working never stops silently. There is no drawn circle: it would be wrong under the basemap's
+rotation and invisible to the reader who most needs the bound.
+
+**VoiceOver got a real answer rather than a label.** A pan is a gesture the screen reader owns; no
+amount of labelling fixes that, so the pin has a second way to move that needs no gesture at all —
+four nudge buttons at 5 m a press, spelled out in words because a bare "N" is heard as a letter. The
+pin carries its position as its `accessibilityValue`, the two sentences sit above the map in reading
+order so the whole state is met before any control, every press posts an announcement, and one press
+returns to the fix.
+
+**A defect the tests found, and the size of it is the point.** `VisitPinAdjust.offset` first used the
+111,320 m per degree that `BoundingBox(around:radiusM:)` uses, while `Coordinate.distance` measures on
+a 6,371,008.8 m sphere — 111,194.9 m per degree. So a 5 m nudge measured 4.994 m, and fifteen of them
+landed **84 mm** inside a limit the screen was printing as reached. Far too small to matter to a tree
+and exactly large enough to matter to an assertion. Two units of length for the same globe in one
+codebase is the kind of thing that stays invisible until something counts.
+
+**Verified by touch, then read out of the database.** Two community trees added through the real flow
+at a simulated Folsom Street fix: one placed by drag, screen reading "64 m east", stored at 64.186 m
+on bearing 90.00°; one placed by nine south and nine east nudges, screen reading "64 m south-east",
+stored at 63.640 m on bearing 135.00° — matching the nudge arithmetic to 0.0000 m. A third pass
+placed a pin, left the map without confirming, and the row reverted to the default; the tree count
+stayed at two. Had either placement been discarded on the write path, both rows would have sat exactly
+on the fix at 0.000 m, which is what makes this a proof rather than a screenshot.
+
+Two behaviours the drive surfaced that no unit test would have: MapKit's pan **decelerates**, so a
+flick keeps travelling after the finger lifts — one run read 46 m mid-glide and settled at 92 m, with
+the confirm correctly disabling itself on the way. And on a tree-lined street a moved pin frequently
+lands within 10 m of a seeded tree and is refused by the dedupe, which is the API doing its job and
+the reader meeting it for the first time.
+
+**Open, and deliberately not decided here: the provenance of the coordinate is not recorded.**
+`community_trees` has `lat` and `lon` and no column that could honestly carry whether the pair was
+placed or measured. `address` is a street address, `external_ref` is the city's identifier, `site_type`
+is where a tree is planted; writing a flag into any of them makes that column mean two things. It
+needs a `placement` column and an `AppSchema` v9, and inventing a migration was not this change's to
+make. The distinction *is* modelled in `VisitAddTreeModel.Placement` and *is* stated on screen, which
+is the honest half that does not require the schema.
+
+**Also open.** Correcting an existing community tree's location is not cheap: `community_trees` is
+insert-only by design, so it needs an update path, an outbox kind (there is none for trees at all), a
+patch on `CypressAPI` and an entrance on screen 03 gated on `source == .community`.
+`VisitPinAdjustView` takes a coordinate and two closures and owns no draft, so the *screen* is already
+reusable verbatim — the work is entirely the write path. And neighbouring trees are not drawn on the
+pin map: they would genuinely help, since they are what the dedupe is about to refuse against, but a
+pin there is a labelled button with nowhere to go, and opening a profile from inside a placement
+abandons a photograph.
