@@ -4898,3 +4898,65 @@ was widened rather than weakened.
 **The rule, restated.** A case that writes persistent state must not write it onto a tree another
 case reads — **and the writer includes the test driving the case.** The harness being pure is not
 enough; what matters is what is on disk when the next test launches.
+
+### E135 — My Grove's two dead pills, and an export button with no test on the button
+
+The project owner: *"when are we building out the journal and tree tabs on my grove?"* Both segment
+pills were inert. `api.grove()` had worked all along; `api.journal(cursor:limit:)` had existed with no
+screen at all, marked OPEN by E99 because there is no mock for a journal list. So the journal's
+presentation was unspecified and is now designed and marked as such.
+
+**The Journal tab holds two segments — your own journal and the neighbourhood almanac — and that is
+structural rather than cosmetic.** `Route.almanac` has no push call site anywhere; the Journal tab is
+what renders screen 12. A journal that simply took the tab would have silently deleted the almanac's
+only entrance. The segment is router state, so a deep link can still ask for either.
+
+**E38 is honoured at the source rather than in the copy.** `hasOlder` derives from `nextCursor != nil`
+and nothing else, and the empty state is gated on the *cursor* rather than on `rows.isEmpty` — so a
+read that stopped early cannot tell somebody they have recorded nothing. There is no count, no total
+and no "N entries" anywhere, held by a blunt test that refuses digits in any of those strings.
+
+Three states, not two: nothing recorded yet, the read failed, and — kept deliberately separate — a
+failed `Show earlier` that keeps the rows already on screen. E126 established that a blank screen and
+an empty life are different sentences; this adds the third case, where part of the answer arrived.
+
+**And the export.** `CypressAPI.exportLatest` had been implemented, tested and callerless — a privacy
+commitment with no surface, since its own documentation ties it to an account-data request. It now has
+a control in the You tab, and the bytes were read rather than assumed: 202 bytes of CSV carrying the
+D12 disclaimer, a header row, and this device's real measurement, correctly quoted because the summary
+contains a comma.
+
+**The part worth keeping is what the tests could not do.** This work was verified by a second agent
+after the first was cut off, and what it found was not in the implementation:
+
+- `JournalExportRow`'s own comment argued that two `Transferable` types make format confusion "part of
+  what the compiler checks" and that "the suite asserts each carries its own". **It did not.** Both
+  export tests built their own payloads inside the test body. Swapping the two `ShareLink` arguments —
+  so the spreadsheet control handed over the map export's bytes, the exact defect the comment warns
+  about — left every export assertion green.
+- Every assertion called the payload's `load` closure rather than resolving it through
+  `transferRepresentation`. A representation returning `Data()` would have shipped an empty file with
+  the suite passing: the failure that looks identical to working until somebody opens the file.
+- `GroveTab.hasDestination` was written `{ true }`. Two suites read it as proof that every pill leads
+  somewhere, so both were asserting a literal — and a fourth inert pill would have been welcomed in
+  silence by the very property added to prevent one.
+- `exportPayloadIsReal` checked for the summary, the tree id and the disclaimer, all three of which the
+  GeoJSON document also contains, so it too survived the swapped-format mutation.
+
+The general rule, which is the reason to record any of this: **when a test constructs the thing under
+test, it is testing its own construction.** For a control, the assertion has to start from what the
+control builds. The fix is a seam — the payloads the view body builds are now built by a named
+function the suite can call, the format each row asks for is recorded and asserted, and one test
+resolves the payload through `NSItemProvider` the way the system does. `hasDestination` became an
+exhaustive `switch` with no `default`, which moves the obligation to the compiler: a new pill does not
+compile until somebody answers for it.
+
+Thirty of thirty-three tests were killed by a twenty-five-mutation sweep; the three survivors are the
+ones listed above, and all three now die too.
+
+**Open.** The map export saves as `cypress-journal.geojson.json`, because the system appends the UTType
+extension to the suggested name. The bytes are correct; software looking for `.geojson` sees a double
+extension. Fixing it properly means declaring a custom UTI in `Info.plist`. Also noted and not claimed:
+two saves against the pre-fix binary produced 0-byte files and two against the fixed binary produced
+202 bytes, which is suggestive of a real intermittent in that path and is not evidence of one at
+n = 2 against n = 2. The new representation test guards the path either way.
