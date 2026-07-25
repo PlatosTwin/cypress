@@ -136,9 +136,17 @@ enum PrivateReminderCopy {
 
     /// Screen 06's own promise, restated where the reminders are. It says what the list is *for*, so
     /// an empty one reads as "nothing saved yet" rather than "nothing found".
+    ///
+    /// **It names the flow in the words the person saw, not the mock's number.** This string
+    /// shipped as "a reminder you keep on screen 06 after a 311 handoff", and "screen 06" is a
+    /// coordinate in SCREENS.md — it was the only user-facing string in the app that used one, and
+    /// nobody reading the You tab has ever seen a screen number. "Report an issue" is screen 06's
+    /// own C1 title and "Call 311 now" is the button above the save, so both halves of the sentence
+    /// are now things a person can have read. The promise at the end is unchanged: it is screen
+    /// 06's confirmation, and it is the whole reason this section exists.
     static let emptyState =
-        "Nothing saved. A reminder you keep on screen 06 after a 311 handoff shows up here, and "
-        + "stays yours alone."
+        "Nothing saved. A reminder you keep after reporting an issue and calling 311 shows up "
+        + "here, and stays yours alone."
 
     /// **A read that failed, said as a failure.** Not "nothing saved": that is a sentence about the
     /// person's records, and saying it over a database that could not be read tells somebody their
