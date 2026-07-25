@@ -34,6 +34,27 @@ final class MapSearchUITests: XCTestCase {
         return app
     }
 
+    /// Requires a simulated fix over San Francisco, and **skips** rather than fails without one.
+    ///
+    /// Screen 01 opens on the user when it has a fix and on the whole city when it does not, and the
+    /// whole city is zoom ≤ 15, which is A1's clustered side: badges, not individual pins. So a
+    /// narrowing that is plainly visible with a fix has nothing to be visible *on* without one, and
+    /// these two tests would fail for a reason that is nothing to do with the search bar.
+    ///
+    /// `AlmanacGroupTapTests` already carries this dependency and reports it as two red tests on any
+    /// machine that has not run `xcrun simctl location <udid> set 37.78,-122.42`. Skipping is the
+    /// honest form: a skip says "not checked here", which is true, where a failure says "broken",
+    /// which is not. Run with a fix — as the live verification for ERRATA E131 did — and they check
+    /// the thing they were written for.
+    private func requireAMapWithPins(_ app: XCUIApplication) throws {
+        guard wait(timeout: 25, for: { self.cityTreePins(app) > 0 }) else {
+            throw XCTSkip(
+                "the map drew no individual pins at launch — this needs a simulated GPS fix over "
+                    + "San Francisco: xcrun simctl location <udid> set 37.78485,-122.4215"
+            )
+        }
+    }
+
     /// Waits for a condition, polling. The map debounces the camera and the search independently and
     /// then reads a 195,309-row database; what is worth asserting is where it settles, never when.
     @discardableResult
@@ -50,17 +71,14 @@ final class MapSearchUITests: XCTestCase {
     }
 
     /// Type a species name; watch the map narrow. Clear it; watch it come back.
-    func testTypingASpeciesNameNarrowsTheMap() {
+    func testTypingASpeciesNameNarrowsTheMap() throws {
         let app = launch()
 
         let field = app.textFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 20), "the map's search field never appeared")
 
         // The map has to have drawn something before narrowing it means anything.
-        XCTAssertTrue(
-            wait { self.cityTreePins(app) > 0 },
-            "the map drew no city-tree pins at launch, so this test cannot tell narrowing from an empty map"
-        )
+        try requireAMapWithPins(app)
         let before = cityTreePins(app)
 
         field.tap()
@@ -87,12 +105,12 @@ final class MapSearchUITests: XCTestCase {
 
     /// A word no species matches empties the map **and says so**. An empty map with no explanation is
     /// indistinguishable from a broken one, which is the reason `MapSearchCopy` exists.
-    func testAWordNoSpeciesMatchesSaysSo() {
+    func testAWordNoSpeciesMatchesSaysSo() throws {
         let app = launch()
 
         let field = app.textFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 20), "the map's search field never appeared")
-        XCTAssertTrue(wait { self.cityTreePins(app) > 0 }, "the map drew nothing at launch")
+        try requireAMapWithPins(app)
 
         field.tap()
         field.typeText("zzzznotatree")
