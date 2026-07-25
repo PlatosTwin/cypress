@@ -241,7 +241,7 @@ struct MapQueryPlanTests {
             )
             try #require(!before.isEmpty && !after.isEmpty, "one of the two boxes returned no pins")
 
-            func inside(_ pins: [TreePin]) -> Set<UUID> {
+            func inside(_ pins: PinAnswer) -> Set<UUID> {
                 Set(pins.lazy
                     .filter { $0.coordinate.latitude >= interior.low && $0.coordinate.latitude <= interior.high }
                     .map(\.id))

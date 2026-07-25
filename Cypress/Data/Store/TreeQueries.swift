@@ -90,10 +90,17 @@ public struct TreeQueries {
     /// caller and giving the map a second thing to keep in sync.
     private func speciesRowIDs(for ids: Set<UUID>, connection: SQLiteConnection) throws -> [Int64] {
         guard !ids.isEmpty else { return [] }
+        // `COLLATE NOCASE` goes on the **left operand**, and that placement is load-bearing: the
+        // seed writes uuids in lower case and `UUID.uuidString` produces upper, so this comparison is
+        // case-insensitive or it matches nothing at all. Written the way the rest of this file writes
+        // an equality — `… IN (…) COLLATE NOCASE` — the collation binds to the subquery instead of to
+        // the comparison, and the whole search silently returned an empty map. That is a syntax that
+        // reads correct, compiles, runs, and answers zero; `CypressTests/MapSearchTests` caught it
+        // because it compares against a second read of the seed rather than against a pin count.
         let statement = try connection.cachedStatement("""
         SELECT sp.id AS species_rowid
           FROM \(seed).species sp
-         WHERE sp.\(schema.speciesIdentityColumn) IN (SELECT value FROM json_each(:uuids)) COLLATE NOCASE
+         WHERE sp.\(schema.speciesIdentityColumn) COLLATE NOCASE IN (SELECT value FROM json_each(:uuids))
         """)
         let json = "[\(ids.map { "\"\($0.uuidString)\"" }.joined(separator: ","))]"
         _ = try statement.bind(json, forName: ":uuids")

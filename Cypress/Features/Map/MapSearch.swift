@@ -64,6 +64,13 @@ enum MapSearch: Equatable {
         /// Trees that matched inside the viewport, which is `drawn` unless the grid thinned them.
         var matched: Int?
 
+        init(speciesIDs: Set<UUID>, names: [String], drawn: Int? = nil, matched: Int? = nil) {
+            self.speciesIDs = speciesIDs
+            self.names = names
+            self.drawn = drawn
+            self.matched = matched
+        }
+
         /// Whether the map is showing a spatial sample rather than every match.
         var isSample: Bool {
             guard let drawn, let matched else { return false }

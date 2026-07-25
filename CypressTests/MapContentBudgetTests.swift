@@ -31,7 +31,7 @@ struct MapContentBudgetTests {
 
     private static func pins(_ content: MapContent) -> [TreePin] {
         guard case let .pins(pins) = content else { return [] }
-        return pins
+        return pins.items
     }
 
     @Test("a community tree survives a viewport whose seed query is already at its cap")
