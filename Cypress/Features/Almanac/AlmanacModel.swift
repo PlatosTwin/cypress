@@ -57,4 +57,11 @@ final class AlmanacModel {
             phase = .failed
         }
     }
+
+    /// Re-reads after a failure. The load writes nothing, so a retry is free — the same reason
+    /// `ShareModel.retry` and `SpeciesModel.retry` can offer one (ERRATA E126).
+    func retry() async {
+        phase = .loading
+        await load()
+    }
 }

@@ -341,6 +341,18 @@ enum GroveCopy {
         let street = parts.joined(separator: " ")
         return street.isEmpty ? nil : street
     }
+
+    // MARK: The read that did not arrive (ERRATA E126)
+
+    /// **NOT SPECIFIED** by SCREENS.md 08, which draws no error state.
+    ///
+    /// It is deliberately not a sentence about the grove's contents. An empty grove is a true and
+    /// ordinary thing to have — it is what every device shows on day one — and a failed read must
+    /// not borrow that sentence, because "you have not met a species yet" is news about the reader
+    /// and this is news about the app. The wording is the one every other failed read in the app
+    /// already uses, so a reader who has met one of them recognises this one.
+    static let loadFailed = "Your grove could not be loaded."
+    static let loadRetry = "Try again"
 }
 
 // MARK: - Tile artwork

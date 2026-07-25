@@ -4328,3 +4328,43 @@ button and the DEBUG lead controls. 426 unit tests pass.
 pins and the tree profile — not in every aggregate read. A locally-removed tree can still be counted
 in an almanac stat or a "near you" list until those layer the override too. Noted so it is a known
 edge rather than a surprise; the loop that delivers the memorial is complete.
+
+### E126 — the two tab roots that drew a blank when they could not read
+
+Both `GroveModel.Phase` and `AlmanacModel.Phase` keep `.failed` as its own case, and both say why in a
+comment: an empty grove means "you have not met a species yet" and an empty almanac means "nothing is
+happening in your neighbourhood", while a failed read means "we could not tell". `AlmanacModel` calls
+its screen "the last place to conflate them". Both views then conflated them, by having exactly one
+branch: `if let presentation` with no `else`, and `presentation` is nil for `.loading` and `.failed`
+alike. `hasFailed` was written for this and had **zero readers anywhere in the codebase**. A failed
+read therefore drew the cold-start screen — title, tab row, footnote, nothing between them — which is
+a designed, legitimate, common state, so the failure was invisible by construction rather than ugly.
+
+**The fix is the shape every other failed read in the app already has.** One sentence, then a `SecondaryOutlineButton`
+that re-runs the load, exactly as `ShareView.failure`, `SiteView`, `SpeciesView`, `GrowthHistoryView`
+and `MemorialView` do; `retry()` on each model, which is free because neither load writes anything.
+The copy is in `GroveCopy`/`AlmanacCopy` with the rest, and says only that the read failed — it
+borrows no word from the empty states, because a read that did not finish has not earned a sentence
+about the subject. `AlmanacScreen` takes `hasFailed` and `onRetry` as values rather than reading the
+model, for the reason it takes `presentation` as one: a state the screen cannot be handed is a state
+nobody can photograph.
+
+**The verification is the point of this entry.** A test asserting `hasFailed == true` passes on the
+broken app — the property was always correct — and so does a test asserting the copy string exists.
+What can only pass on the fixed app is a comparison of the two *pictures*. `FailedReadTests` renders
+each screen through a `UIHostingController` in an off-screen window (the harness
+`DynamicTypeScreenshotTests` established) after a read that failed and after a read that succeeded and
+returned nothing, and asserts the PNGs differ, with a control render proving the harness is
+byte-stable first. With the two `else if` arms deleted, both went red — `(failed → 117027 bytes) !=
+(empty → 117027 bytes)` for screen 08, `105045` for 12 — while all five value-level tests in the same
+file stayed green. That is the defect stated as an assertion. Both screens were also looked at
+running: `LocalAPI.groveSpecies` and `almanac(near:)` were made to throw temporarily, the app was deep
+linked to `grove` and `journal`, and both drew the sentence and a legible `Try again` above the
+footnote. The injection was removed before commit; `e08-grove-read-failed` and
+`e12-almanac-read-failed` join the screenshot sweep so the states stay photographed in light and dark.
+
+**One known limitation, left as-is.** On screen 12 a missing location fix still wins over a failed
+read: `showsLocationPrompt` is checked first, so a device with no fix sees E123's prompt rather than
+this sentence. That is the right order — without a fix there is no neighbourhood to have failed to
+read — but it means the two cannot be seen at once, and the prompt is the one that has an action
+behind it.

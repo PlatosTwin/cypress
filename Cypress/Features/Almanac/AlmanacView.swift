@@ -73,7 +73,12 @@ struct AlmanacView: View {
             onWalk: onWalk,
             onOpenSite: onOpenSite,
             showsLocationPrompt: showsLocationPrompt,
-            onRequestLocation: onRequestLocation
+            onRequestLocation: onRequestLocation,
+            // Handed down as a value and a closure rather than read off the model inside the screen,
+            // for the same reason the presentation is: a state the screen cannot be *given* is a
+            // state nobody can photograph (ERRATA E126).
+            hasFailed: model.hasFailed,
+            onRetry: { Task { await model.retry() } }
         )
         .task { await model.load() }
     }
@@ -98,6 +103,13 @@ struct AlmanacScreen: View {
     var showsLocationPrompt: Bool = false
     var onRequestLocation: (() -> Void)?
 
+    /// The read came back empty-handed. Distinct from `presentation == nil`, which is also true
+    /// while the read is still in flight (ERRATA E126).
+    var hasFailed: Bool = false
+    /// Absent when nobody is listening — a button that looks pressable and does nothing is worse
+    /// than no button, the judgement `GroveTabRow` already made about its two inert pills.
+    var onRetry: (() -> Void)?
+
     var body: some View {
         GeometryReader { proxy in
             ScrollView {
@@ -117,6 +129,8 @@ struct AlmanacScreen: View {
                         compositionBlock(presentation)
                         vacantSitesBlock(presentation)
                         coverageBlock(presentation)
+                    } else if hasFailed {
+                        failure
                     }
 
                     // §5's `margin-top:auto`. The footnote sits at the bottom of the column whether
@@ -274,6 +288,35 @@ struct AlmanacScreen: View {
             .padding(.top, CypressSpacing.labelSectionTop)
             .padding(.horizontal, CypressSpacing.gutter)
         }
+    }
+
+    // MARK: - The read that did not arrive
+
+    /// **NOT SPECIFIED** by SCREENS.md 12, which draws no error state.
+    ///
+    /// `AlmanacModel.Phase` makes the argument for this arm and then had nowhere to make it: with no
+    /// branch here, a failed read drew the almanac with every block withheld — which is this screen's
+    /// way of saying the neighbourhood is quiet. Five true blocks removed and one removed because we
+    /// could not ask produced the same picture, on the one screen whose entire subject is what is and
+    /// is not there (ERRATA E126).
+    ///
+    /// The header above it drops its neighbourhood pill on its own, since there is no presentation to
+    /// name one, so nothing on the screen claims an area it never resolved.
+    @ViewBuilder
+    private var failure: some View {
+        VStack(alignment: .leading, spacing: CypressSpacing.gapRows) {
+            Text(AlmanacCopy.loadFailed)
+                .cypressBody135()
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let onRetry {
+                SecondaryOutlineButton(AlmanacCopy.loadRetry, style: .compact, action: onRetry)
+                    .fixedSize()
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, CypressSpacing.labelSectionTop)
+        .padding(.horizontal, CypressSpacing.gutter)
     }
 
     // MARK: - §5 Footnote

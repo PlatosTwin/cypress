@@ -15,8 +15,14 @@ import SwiftUI
 /// Hands back a fixed grove and refuses everything else. Previews only.
 struct GrovePreviewAPI: CypressAPI {
     var grove: GroveSpecies = .empty
+    /// Makes the one read fail, which is the only way to see screen 08's failure arm without a
+    /// broken device (ERRATA E126).
+    var fails = false
 
-    func groveSpecies() async throws -> GroveSpecies { grove }
+    func groveSpecies() async throws -> GroveSpecies {
+        if fails { throw APIError.serverError }
+        return grove
+    }
 
     func mapContent(in viewport: MapViewport) async throws -> MapContent { .pins([]) }
     func treesNear(_ coordinate: Coordinate, radiusM: Double, limit: Int) async throws -> [NearbyTree] { [] }
@@ -140,6 +146,16 @@ private enum GroveFixtures {
             now: { GroveFixtures.now },
             onOpenSpecies: { _ in }
         )
+    }
+    .environment(AppRouter())
+}
+
+/// The read that failed. Next to `08 · empty grove` above, which is the picture this used to draw
+/// (ERRATA E126) — the two are meant to be looked at together, because the whole point is that they
+/// are no longer the same one.
+#Preview("08 · read failed") {
+    NavigationStack {
+        GroveView(api: GrovePreviewAPI(fails: true), now: { GroveFixtures.now })
     }
     .environment(AppRouter())
 }

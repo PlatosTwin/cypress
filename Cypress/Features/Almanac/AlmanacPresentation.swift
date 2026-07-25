@@ -384,6 +384,18 @@ enum AlmanacCopy {
     static let locationPromptTitle = "See your neighbourhood"
     static let locationPromptSubtitle = "Turn on location and the almanac fills with the trees around you."
 
+    // MARK: The read that did not arrive (ERRATA E126)
+
+    /// **NOT SPECIFIED** by SCREENS.md 12, which draws no error state.
+    ///
+    /// It says the almanac could not be read, and says nothing at all about the neighbourhood —
+    /// which is the distinction `AlmanacModel.Phase` exists to keep, and the one this screen can
+    /// least afford to lose, its whole subject being what is and is not out there. A screen that
+    /// draws its five blocks away and leaves a footnote is reporting a quiet neighbourhood; that
+    /// report has to be earned by a read that finished.
+    static let loadFailed = "This almanac could not be loaded."
+    static let loadRetry = "Try again"
+
     // MARK: §2 row 1 — the first bloom
 
     /// `Red flowering gum on 44th Ave · Jan 22, three neighbors saw it`.
