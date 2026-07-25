@@ -145,6 +145,12 @@ struct RootView: View {
                 api: data.api,
                 outbox: data.outbox,
                 deviceID: data.deviceID,
+                // Screen 15's sign-in, wired to complete on-device (E124). Owned here because
+                // identity is the composition root's question, the same rule that puts `attribution`
+                // resolution here rather than in a feature. See `accountLink` for what it does; formed
+                // at the call site with an explicit capture list so the `@Sendable` closure carries
+                // only its two `Sendable` captures across the isolation boundary, not this view.
+                onLink: accountLink(),
                 onExit: { router.sheet = nil },
                 onAddTree: { router.sheet = nil },
                 onOpenTree: { id in
@@ -227,6 +233,32 @@ struct RootView: View {
     /// Screen 03's heart, as this app performs it (RULINGS R2, ERRATA E112).
     private var favoriteWriter: ProfileFavoriteWriter {
         ProfileFavoriteWriter(api: data.api, outbox: data.outbox)
+    }
+
+    /// Screen 15's sign-in, performed locally (ERRATA E124).
+    ///
+    /// A local account needs no server: this mints an account id and hands it to `claimDevice`, which
+    /// moves this device's anonymous contributions onto it and persists it in `app_state`. The
+    /// request's email address is neither read nor stored — there is nowhere local it could go, and
+    /// DECISIONS §3.9 wants it nowhere — so the account is an *identity*, not a backup, and screen
+    /// 18's "saving to this phone only" stays true after it.
+    ///
+    /// Idempotent on identity: if this device already carries a `userID` (the ask can return once
+    /// under ERRATA E34), it is reused, so a second link sweeps any freshly-anonymous rows onto the
+    /// same account rather than minting a rival one. When the magic-link service exists this closure
+    /// becomes the client half of the token exchange and nothing on the call path above changes.
+    ///
+    /// `nonisolated` so the `@Sendable` closure is formed off `RootView`'s `@MainActor` isolation: it
+    /// captures only two `Sendable` values (`LocalAPI` is an actor, `UUID` a value) read from the
+    /// `Sendable` `data`, so it carries nothing of the view across the boundary it will be called on.
+    nonisolated func accountLink() -> AccountAskLink {
+        let api = data.api
+        let deviceID = data.deviceID
+        return { request in
+            _ = request
+            let existing = await api.userID
+            try await api.claimDevice(deviceUUID: deviceID, userID: existing ?? UUID())
+        }
     }
 
     @ViewBuilder

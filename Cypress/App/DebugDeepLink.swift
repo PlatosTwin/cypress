@@ -58,8 +58,10 @@ enum DebugDeepLink {
     /// Screen 04 (the camera) is absent for a different reason: presenting it raises a system
     /// permission alert, and what the test would then read is Springboard's tree, not Cypress's.
     ///
-    /// Screen 15 is absent because `BetaCapability.accountsAvailable` is false (R4); a harness that
-    /// opened it would be reaching past the gate the build is shipping behind.
+    /// Screen 15 (the account ask) is absent because it is not a `Route`: it is presented from inside
+    /// the visit-save flow on the third save (`VisitSavedView`), the same reason screen 18 is not
+    /// here. The harness drives `AppRouter`, which has no case that opens it. It signs in locally now
+    /// (ERRATA E124), but through that flow, not a deep link.
     enum Screen: String, CaseIterable {
         // Pushed destinations.
         case treeProfile        // 03

@@ -18,6 +18,11 @@ struct VisitSavedView: View {
     /// another feature's model (ARCHITECTURE §4).
     private let api: any CypressAPI
 
+    /// Screen 15's sign-in action, from the composition root (ERRATA E124). Held beside `api` and
+    /// handed straight to `AccountAskView`, because who performs a sign-in is the root's question,
+    /// not this screen's — the same boundary that keeps `api` here rather than reached for.
+    private let onLink: AccountAskLink?
+
     /// Advance to the next tree — straight to its camera, per PROTOTYPE-FLOW's `nextAction`.
     let onNextTree: (VisitCandidate) -> Void
     /// "Route done · see your grove". The grove is screen 08 and not this feature's; the container
@@ -35,6 +40,7 @@ struct VisitSavedView: View {
         visitedTreeIDs: [UUID],
         api: any CypressAPI,
         ledger: VisitSaveLedger,
+        onLink: AccountAskLink? = nil,
         onNextTree: @escaping (VisitCandidate) -> Void,
         onRouteComplete: @escaping () -> Void,
         onDone: @escaping () -> Void,
@@ -49,6 +55,7 @@ struct VisitSavedView: View {
             ledger: ledger
         ))
         self.api = api
+        self.onLink = onLink
         self.onNextTree = onNextTree
         self.onRouteComplete = onRouteComplete
         self.onDone = onDone
@@ -85,13 +92,15 @@ struct VisitSavedView: View {
         // 15 draws its *own* scrim over its own map backdrop (C17 `.account`, scrim `.3`), and a
         // system sheet would impose a second card and a second dimming over the top of it.
         //
-        // No sign-in action is passed. `CypressAPI` states why in its own header — there is no auth
-        // server and no local equivalent of a token exchange — and a stub that minted an account on
-        // device would have this screen claim a backup that does not exist (ARCHITECTURE §5.4's
-        // principle, applied to an account rather than to the city). The screen says so instead.
+        // The sign-in action is `onLink`, from the composition root (ERRATA E124). It completes
+        // on-device — mint a `userID`, `claimDevice` this device's contributions onto it — rather
+        // than round-tripping a magic link this build has no server for. The account is an identity,
+        // not a backup: `storageLine` keeps saying "this phone only" after it, which stays true. When
+        // `onLink` is nil (a build with neither a server nor the local seam) 15 renders its "not ready
+        // yet" notice instead, unchanged.
         // ══════════════════════════════════════════════════════════════════════════════════════
         .fullScreenCover(isPresented: model.accountAskPresentation) {
-            AccountAskView(api: api, onFinish: { model.resolveAccountAsk() })
+            AccountAskView(api: api, onLink: onLink, onFinish: { model.resolveAccountAsk() })
         }
     }
 

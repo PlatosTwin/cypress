@@ -4245,3 +4245,43 @@ on the next visit to the tab rather than the instant the permission is granted. 
 to observe location changes is a larger change than this prompt, and the prompt is honest either way:
 it says "turn on location", which remains true, and the reader reaches the filled screen by the next
 navigation. Noted here so it is a known behaviour rather than a surprise.
+
+### E124 — screen 15 signs people in, locally (RULINGS R4, #1/#2 Part A)
+
+RULINGS **R4** gated screen 15 behind `BetaCapability.accountsAvailable = false`: the ask was built
+and tested but could not *complete*, because authentication is magic-link only (DECISIONS §3.9, no
+passwords ever) and a magic link needs a server the local beta does not have. The project owner ruled
+to unblock it — "can we not just live with having no backend for now… it's me on my phone playing
+around" — with the correction that mattered: the dead-end was never the account, it was the round
+trip. A local account needs no server.
+
+**What this changes.** `accountsAvailable` flips to `true`, and the composition root supplies the
+`onLink` action screen 15 was always written to receive (`AccountAskModel` has taken an injected
+`AccountAskLink` since it was built). `RootView.accountLink()` mints a `userID` and calls the existing
+`claimDevice(deviceUUID:userID:)` seam, which moves this device's anonymous contributions onto that id
+and persists it in `app_state` — the same mechanism `DeviceClaimTests` already proves. No email is
+sent and none is stored: the request's address is ignored, so §3.9's "no passwords, ever" and §3.11's
+"private by default" are kept by construction. The action is `nonisolated` and threads
+`RootView → VisitFlowView → VisitSavedView → AccountAskView`, because who performs a sign-in is the
+composition root's question, the same boundary that already resolves `attribution` there.
+
+**A local account is an identity, not a backup.** There is no cloud behind it, so screen 18's storage
+line stays "saving to this phone only" after sign-in — which is now honest rather than a placeholder.
+When the magic-link service lands, `accountLink()` swaps its body for the client half of the token
+exchange and nothing on the call path changes. Sign-in is idempotent on identity: if the device
+already carries a `userID` (ERRATA E34 can re-present the ask once), it is reused, so a second link
+sweeps freshly-anonymous rows onto the same account rather than minting a rival.
+
+**Tests.** `BetaCapabilityTests` is rewritten from "this build cannot sign anyone in" to the live
+wiring (the shipped flag earns the ask by the third save) while keeping the `mayAsk:` contract that
+outlives the flag's value. `AccountLinkTests` is new and closes the one gap the flag flip invited: the
+model is correct and `claimDevice` is correct, so a build that flipped the flag but left `onLink` nil
+would present a sheet whose every button says "not ready yet" and *no existing test would fail*. It
+exercises `RootView.accountLink()` directly and asserts sign-in completes, persists, and carries the
+device's work across.
+
+**What is deferred.** Screen 15's only entrance is the third visit-save, which runs through the camera
+(deferred to the owner's hardware), so live end-to-end verification waits on that. The seam is proven
+by tests at every layer instead. This is Part A of the accounts/moderation work; Part B — a role on
+the local account, mocked city-lead accounts, and a moderation surface that flips a flagged tree to
+`removed` so screen 19's memorial goes live — is the larger build still ahead.

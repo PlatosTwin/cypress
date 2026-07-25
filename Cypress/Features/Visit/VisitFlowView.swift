@@ -38,6 +38,10 @@ struct VisitFlowView: View {
     /// The signed-in user, when there is one. Nil is the normal Phase 1 case (D9).
     var userID: UUID?
 
+    /// Screen 15's sign-in action, from the composition root (ERRATA E124). Nil is still a valid
+    /// build — it renders 15's "not ready yet" notice — but the local build supplies one.
+    var onLink: AccountAskLink?
+
     /// Leaving the flow entirely — the shortlist's back chevron and "Done for today".
     var onExit: () -> Void = {}
     /// "None of these? Add this tree" (screen 20) and "See it on the tree's timeline" (screen 03)
@@ -98,6 +102,7 @@ struct VisitFlowView: View {
                 visitedTreeIDs: visitedTreeIDs,
                 api: api,
                 ledger: ledger,
+                onLink: onLink,
                 onNextTree: { next in step = .camera(next) },
                 onRouteComplete: onOpenGrove,
                 onDone: onExit,
