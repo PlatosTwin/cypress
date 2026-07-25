@@ -230,6 +230,9 @@ enum SpeciesCopy {
     static let cityCountLabel = "In San Francisco"
     static let nearYouLabel = "Near you"
 
+    static let locationPromptTitle = "See it near you"
+    static let locationPromptSubtitle = "Turn on location to find this species on the blocks around you."
+
     /// 07 §4's lead-in, e.g. `In July:`. The month is the reader's own month name, from the
     /// calendar, so the callout says what month it is actually being read in.
     static func seasonalLeadIn(month: Int, calendar: Calendar) -> String {

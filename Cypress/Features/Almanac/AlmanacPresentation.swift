@@ -379,6 +379,11 @@ enum AlmanacCopy {
     /// of what is planted; it does not plant.
     static let vacantSubtitle = "The city has mapped them. Nothing is growing there."
 
+    // MARK: Turn on location (R11 residual, E123)
+
+    static let locationPromptTitle = "See your neighbourhood"
+    static let locationPromptSubtitle = "Turn on location and the almanac fills with the trees around you."
+
     // MARK: §2 row 1 — the first bloom
 
     /// `Red flowering gum on 44th Ave · Jan 22, three neighbors saw it`.

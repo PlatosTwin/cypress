@@ -4214,3 +4214,34 @@ invisible in normal use. It is declined rather than built, recorded here and in 
 sixth ruling this session whose premise did not survive contact with the code — and the first where the
 right answer was to *not* do the requested change, because doing it would have caused harm a screenshot
 on a throttled machine might not even have caught.
+
+### E123 — the one empty state a tap can fill now offers the tap (R11 residual, #4)
+
+R11's survey (recorded in RULINGS) found the app's empty states already discharged by §5.6 restraint
+plus explicit `…yet.` copy — with **one residual**: a device with no location fix leaves the almanac
+and screen 07's `Near you` blank, and that is the single empty state a *user action* would fill, because
+granting location is something the reader can do. E44 chose silence there, but its reasoning was about
+the header *pill* naming an area it could not determine, not about a prompt beneath it. The project
+owner ruled to show the prompt; this builds it.
+
+**`LocationPrompt`** is a tappable card in the dashed-ring vocabulary the vacant-site family already
+speaks (`borderDashedStrong`, `surfaceEmptyThumb`) — so the one place the app breaks §5.6 silence still
+looks like the rest of it. The almanac shows `See your neighbourhood / Turn on location and the almanac
+fills with the trees around you`; screen 07 shows `See it near you / Turn on location to find this
+species on the blocks around you`. Tapping calls `onRequestLocation`, wired by the composition root to
+`MapLocationProvider.start()` — the same provider screen 01 asks with, so a grant here reports fixes
+everywhere. On a device that already refused, `start()` is a safe no-op.
+
+**The condition is `coordinate == nil`, computed at the view layer, not in the presentation.** A nil
+fix yields no neighbourhood and therefore an empty almanac, so "no fix" and "the screen would be blank"
+are the same condition — the prompt takes the place of the blank rather than sitting beside content.
+Because it is a view decision rather than a derived value, it carries no presentation test; it was
+verified by **looking** — deep-linking the running app to the journal tab with location cleared, and
+seeing the prompt stand where the blank used to be.
+
+**One known limitation, left as-is.** `AlmanacModel` loads once from the coordinate it was built with,
+so granting location while standing on the almanac does not reactively reload it — the content appears
+on the next visit to the tab rather than the instant the permission is granted. Reworking the almanac
+to observe location changes is a larger change than this prompt, and the prompt is honest either way:
+it says "turn on location", which remains true, and the reader reaches the filled screen by the next
+navigation. Noted here so it is a known behaviour rather than a surprise.

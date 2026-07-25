@@ -40,6 +40,10 @@ struct AlmanacView: View {
 
     private let onBack: (() -> Void)?
 
+    /// Shown when there is no fix — the one empty state a tap can fill (R11 residual, E123).
+    private let showsLocationPrompt: Bool
+    private let onRequestLocation: (() -> Void)?
+
     init(
         api: any CypressAPI,
         coordinate: Coordinate?,
@@ -47,13 +51,18 @@ struct AlmanacView: View {
         onBack: (() -> Void)? = nil,
         onOpenTree: ((UUID) -> Void)? = nil,
         onWalk: ((UUID) -> Void)? = nil,
-        onOpenSite: ((UUID) -> Void)? = nil
+        onOpenSite: ((UUID) -> Void)? = nil,
+        onRequestLocation: (() -> Void)? = nil
     ) {
         _model = State(wrappedValue: AlmanacModel(api: api, coordinate: coordinate, now: now))
         self.onBack = onBack
         self.onOpenTree = onOpenTree
         self.onWalk = onWalk
         self.onOpenSite = onOpenSite
+        // The prompt shows exactly when there is no fix: a nil coordinate yields no neighbourhood and
+        // therefore an empty almanac, so this is the same condition as "the screen would be blank".
+        self.showsLocationPrompt = coordinate == nil
+        self.onRequestLocation = onRequestLocation
     }
 
     var body: some View {
@@ -62,7 +71,9 @@ struct AlmanacView: View {
             onBack: onBack,
             onOpenTree: onOpenTree,
             onWalk: onWalk,
-            onOpenSite: onOpenSite
+            onOpenSite: onOpenSite,
+            showsLocationPrompt: showsLocationPrompt,
+            onRequestLocation: onRequestLocation
         )
         .task { await model.load() }
     }
@@ -84,6 +95,8 @@ struct AlmanacScreen: View {
     var onOpenTree: ((UUID) -> Void)?
     var onWalk: ((UUID) -> Void)?
     var onOpenSite: ((UUID) -> Void)?
+    var showsLocationPrompt: Bool = false
+    var onRequestLocation: (() -> Void)?
 
     var body: some View {
         GeometryReader { proxy in
@@ -91,7 +104,15 @@ struct AlmanacScreen: View {
                 VStack(alignment: .leading, spacing: 0) {
                     header
 
-                    if let presentation {
+                    if showsLocationPrompt {
+                        LocationPrompt(
+                            title: AlmanacCopy.locationPromptTitle,
+                            subtitle: AlmanacCopy.locationPromptSubtitle,
+                            onRequest: { onRequestLocation?() }
+                        )
+                        .padding(.top, CypressSpacing.labelSectionTop)
+                        .padding(.horizontal, CypressSpacing.gutter)
+                    } else if let presentation {
                         seasonBlock(presentation)
                         compositionBlock(presentation)
                         vacantSitesBlock(presentation)

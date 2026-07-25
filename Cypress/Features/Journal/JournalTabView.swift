@@ -38,6 +38,7 @@ struct JournalTabView: View {
     var onOpenTree: ((UUID) -> Void)?
     var onWalk: ((UUID) -> Void)?
     var onOpenSite: ((UUID) -> Void)?
+    var onRequestLocation: (() -> Void)?
 
     @Environment(AppRouter.self) private var router: AppRouter?
 
@@ -50,7 +51,8 @@ struct JournalTabView: View {
                 coordinate: coordinate,
                 onOpenTree: onOpenTree,
                 onWalk: onWalk,
-                onOpenSite: onOpenSite
+                onOpenSite: onOpenSite,
+                onRequestLocation: onRequestLocation
             )
 
             BottomTabBar(selection: router?.bottomTabSelection ?? .constant(.journal))

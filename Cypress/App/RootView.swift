@@ -203,7 +203,8 @@ struct RootView: View {
                 coordinate: location.availability.coordinate,
                 onOpenTree: { id in router.push(.treeProfile(id)) },
                 onWalk: { id in router.push(.treeProfile(id)) },
-                onOpenSite: { id in router.push(.site(id)) }
+                onOpenSite: { id in router.push(.site(id)) },
+                onRequestLocation: { location.start() }
             )
         case .you:
             YouTabView(outbox: outbox)
@@ -307,7 +308,8 @@ struct RootView: View {
             SpeciesView(
                 speciesID: id,
                 api: data.api,
-                coordinate: location.availability.coordinate
+                coordinate: location.availability.coordinate,
+                onRequestLocation: { location.start() }
             )
 
         case .growthHistory(let id):
@@ -374,7 +376,8 @@ struct RootView: View {
                 onBack: { router.pop() },
                 onOpenTree: { id in router.push(.treeProfile(id)) },
                 onWalk: { id in router.push(.treeProfile(id)) },
-                onOpenSite: { id in router.push(.site(id)) }
+                onOpenSite: { id in router.push(.site(id)) },
+                onRequestLocation: { location.start() }
             )
 
         case .measure(let id):

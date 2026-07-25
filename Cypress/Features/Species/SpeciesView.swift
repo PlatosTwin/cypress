@@ -25,15 +25,18 @@ struct SpeciesView: View {
     /// The caller's fix, when there is one. Nil is normal and is not an error state: the page's
     /// population half simply has no subject without it.
     private let coordinate: Coordinate?
+    private let onRequestLocation: (() -> Void)?
 
     init(
         speciesID: UUID,
         api: any CypressAPI,
         coordinate: Coordinate? = nil,
         now: @escaping () -> Date = { Date() },
-        calendar: Calendar = .current
+        calendar: Calendar = .current,
+        onRequestLocation: (() -> Void)? = nil
     ) {
         self.coordinate = coordinate
+        self.onRequestLocation = onRequestLocation
         _model = State(
             wrappedValue: SpeciesModel(
                 speciesID: speciesID,
@@ -92,6 +95,16 @@ struct SpeciesView: View {
                 }
                 if presentation.showsNearby {
                     nearbyIndividuals(presentation)
+                } else if coordinate == nil {
+                    // The one empty state a tap can fill (R11 residual, E123): no fix means no
+                    // `Near you`, and granting location is what fills it.
+                    LocationPrompt(
+                        title: SpeciesCopy.locationPromptTitle,
+                        subtitle: SpeciesCopy.locationPromptSubtitle,
+                        onRequest: { onRequestLocation?() }
+                    )
+                    .padding(.top, SpeciesMetrics.nearbyTop)
+                    .padding(.horizontal, CypressSpacing.gutter)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
