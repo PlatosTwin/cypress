@@ -314,6 +314,37 @@ yet.`, `Nothing has been recorded on this tree yet.` — and the ruling is that 
 extended to every screen lacking one**: say what the space is for and whose action puts something in
 it. Where nothing the user can do would fill it, say that instead of implying they failed.
 
+> **Already discharged, and the code says how — checked before building (like R6 and R9).** The app
+> does not have one empty-state pattern, it has two, both deliberate and both documented:
+>
+> 1. **`§5.6` restrained reading** on the tab roots and every derived block: a block whose data is
+>    absent is not drawn, and the screen keeps its chrome and an always-present honest footnote. This
+>    is a decision recorded in ERRATA **E44** (the almanac) and **E48** (the grove), not an oversight
+>    — the footnote is the empty state's sentence ("the only content the empty grove has, and the
+>    sentence that makes the screen honest whatever else is on it").
+> 2. **Explicit `…yet.` copy** on the two tree-scoped detail screens whose *whole* content is one
+>    collection — `GrowthHistoryCopy.emptyState`, `ActivityCopy.emptyState` — where §5.6 would leave a
+>    bare titled screen with nothing to explain it.
+>
+> R11's one testable core — *no section label may render over an empty section* ("a heading over
+> nothing promises something") — **already holds in every feature**. Every micro-label is guarded by
+> its content: `showsNearby` is `!nearby.items.isEmpty`, the almanac's season / composition / coverage
+> blocks each guard on their own data, the grove's ring / callout / grid derive and vanish together.
+> There is no void with a heading over it to fix.
+>
+> So R11 as written over-generalises: "name what would fill it" is right for a lone collection screen
+> and wrong for a tab root, where §5.6 deliberately says less. Building naming-copy everywhere would
+> **override E44 and E48**, not extend them.
+>
+> **The one residual with real merit, left to design.** On a device with no location fix the almanac
+> and screen 07's `Near you` go quiet by §5.6 — and that is the one empty state a *user action*
+> (granting location) would fill, which R11's own second sentence is about. E44 chose silence there on
+> purpose ("a header that named an area we could not determine would be the screen's first lie"), but
+> that reasoning is about the *header pill*, not about a one-line prompt beneath it. Whether a
+> `Turn on location to see your neighbourhood` line belongs there is a genuine tension between R11 and
+> E44, it is the only place R11 is not already discharged, and it is a drawn decision — so it stays
+> with design rather than being invented here.
+
 ### R12 — screen 19 unblocks through moderation, and moderation is Phase 2
 
 The owner chose the moderation route: designated community leads verify removals. That is the right
