@@ -297,8 +297,9 @@ struct ScreenEntranceTests {
 
         // The export has a row per format, and the two are named apart so neither can be mistaken
         // for the other.
+        let everyFormatNamed = ExportFormat.allCases.allSatisfy { !JournalCopy.exportAction($0).isEmpty }
         #expect(ExportFormat.allCases.count == 2)
-        #expect(ExportFormat.allCases.allSatisfy { !JournalCopy.exportAction($0).isEmpty })
+        #expect(everyFormatNamed)
         #expect(JournalCopy.exportFileName(.csv) != JournalCopy.exportFileName(.geojson))
     }
 

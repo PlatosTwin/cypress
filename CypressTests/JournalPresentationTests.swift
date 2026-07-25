@@ -174,7 +174,8 @@ struct JournalPresentationTests {
         #expect(rows[1].accent == .newGrowth)
         #expect(rows[2].accent == .record)
         #expect(rows[3].accent == .water)
-        #expect(rows.allSatisfy { $0.accent != .vacantSite })
+        let noVacantSite = rows.allSatisfy { $0.accent != .vacantSite }
+        #expect(noVacantSite)
     }
 
     @Test("the summary is a clause that is left out rather than a placeholder")
@@ -214,7 +215,9 @@ struct JournalPresentationTests {
     func everyRowHasADestination() {
         let entries = (1...4).map { Self.entry($0) }
         let rows = Self.presentation(entries, nextCursor: nil).rows
-        #expect(rows.map(\.treeID) == entries.map(\.treeID))
+        let drawn = rows.map(\.treeID)
+        let read = entries.map(\.treeID)
+        #expect(drawn == read)
     }
 
     /// The store orders by `captured_at DESC` and the cursor is the last row's timestamp, so a
@@ -227,7 +230,9 @@ struct JournalPresentationTests {
             Self.entry(2, at: Self.date(2026, 1, 3)),
             Self.entry(3, at: Self.date(2025, 11, 30))
         ]
-        #expect(Self.presentation(entries, nextCursor: nil).rows.map(\.id) == entries.map(\.id))
+        let drawn = Self.presentation(entries, nextCursor: nil).rows.map(\.id)
+        let read = entries.map(\.id)
+        #expect(drawn == read)
     }
 
     // MARK: - The model
@@ -378,7 +383,8 @@ struct JournalPresentationTests {
         #expect(JournalCopy.exportFileName(.geojson).hasSuffix(".geojson"))
         // Every format the API offers has a row. A third format added to `ExportFormat` without a
         // label would otherwise ship as a control with no name on it.
-        #expect(ExportFormat.allCases.allSatisfy { !JournalCopy.exportAction($0).isEmpty })
+        let everyFormatNamed = ExportFormat.allCases.allSatisfy { !JournalCopy.exportAction($0).isEmpty }
+        #expect(everyFormatNamed)
     }
 
     /// **The bytes the button hands over are the real export, over a real store.**

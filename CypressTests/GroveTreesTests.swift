@@ -77,9 +77,14 @@ struct GroveTreesTests {
     /// it should fail here rather than ship inert.
     @Test("all three of screen 08's pills lead somewhere")
     func everyPillHasADestination() {
+        // Hoisted out of `#expect`: a key-path `map` resolves to `Sequence.map`'s `rethrows`
+        // overload inside the macro expansion, which the macro then reports as an uncaught throw.
+        let labels = GroveTab.allCases.map(\.label)
+        let allLeadSomewhere = GroveTab.allCases.allSatisfy(\.hasDestination)
+
         #expect(GroveTab.allCases == [.trees, .journal, .species])
-        #expect(GroveTab.allCases.map(\.label) == ["Trees", "Journal", "Species"])
-        #expect(GroveTab.allCases.allSatisfy(\.hasDestination), "a pill is drawn and does nothing")
+        #expect(labels == ["Trees", "Journal", "Species"])
+        #expect(allLeadSomewhere, "a pill is drawn and does nothing")
     }
 
     /// The abandoned round's objection, answered. See the file comment.
@@ -97,8 +102,10 @@ struct GroveTreesTests {
         // The derivation both mount points use, given the same read, produces the same rows.
         let a = JournalPresentation(entries: entries, nextCursor: nil, now: Self.now, calendar: Self.calendar, locale: Self.locale)
         let b = JournalPresentation(entries: entries, nextCursor: nil, now: Self.now, calendar: Self.calendar, locale: Self.locale)
+        let subtitlesA = a.rows.map(\.subtitle)
+        let subtitlesB = b.rows.map(\.subtitle)
         #expect(a == b)
-        #expect(a.rows.map(\.subtitle) == b.rows.map(\.subtitle))
+        #expect(subtitlesA == subtitlesB)
         // And the tab still holds the almanac, which is the thing that must not have been displaced
         // to make room for it (ERRATA E57).
         #expect(JournalSegment.allCases.contains(.almanac))
@@ -140,7 +147,9 @@ struct GroveTreesTests {
             Self.entry(2, lastVisitedAt: Self.date(2026, 1, 3)),
             Self.entry(3, lastVisitedAt: nil, isFavorite: true)
         ]
-        #expect(Self.presentation(entries).rows.map(\.treeID) == entries.map(\.treeID))
+        let drawn = Self.presentation(entries).rows.map(\.treeID)
+        let read = entries.map(\.treeID)
+        #expect(drawn == read)
     }
 
     @Test("a tree the city named neither way is called what its own page calls it")
