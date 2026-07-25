@@ -104,13 +104,9 @@ struct FavoriteToggleTests {
             throw APIError.forbidden
         }
         func uploadPhoto(at localPath: String, ticket: PhotoUploadTicket) async throws {}
-        func outboxStatus() async throws -> [SyncResult] { [] }
         func journal(cursor: String?, limit: Int) async throws -> Page<JournalEntry> { Page(items: []) }
         func claimDevice(deviceUUID: UUID, userID: UUID) async throws {}
         func logHazardRedirect(_ event: HazardRedirectEvent) async throws {}
-        func savePrivateReminder(_ r: PrivateReminder) async throws -> SyncResult.Status {
-            throw APIError.forbidden
-        }
         func exportLatest(_ format: ExportFormat) async throws -> Data { Data() }
     }
 

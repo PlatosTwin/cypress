@@ -321,7 +321,7 @@ final class MapModel {
             // arrived, not about the query — "1,458 here, 151 drawn" is only knowable now. A search
             // whose species did not change still re-reads this on every pan, because panning is
             // exactly what changes how much of it fits.
-            search = search.reporting(content, budget: viewport.pinLimit)
+            search = search.reporting(content)
             loadFailure = nil
             if filter.needsSeasonalData { resolveSpeciesForVisiblePins() }
         } catch let error as APIError {

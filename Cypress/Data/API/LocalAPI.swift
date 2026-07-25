@@ -850,30 +850,10 @@ public actor LocalAPI: CypressAPI {
         }
     }
 
-    /// `GET /me/outbox-status`.
-    ///
-    /// The local store has no separate server-side record of recent sync results; the outbox rows
-    /// are that record. This returns the settled state of every row so screen 17's "says why" line
-    /// has the same shape it will have against the real service.
-    public func outboxStatus() async throws -> [SyncResult] {
-        let records = try await store.queue.read { connection in
-            try OutboxStore().allItems(connection: connection)
-        }
-        return records.map { record in
-            switch record.item.state {
-            case .done:
-                return SyncResult(clientUUID: record.item.clientUUID, status: .applied)
-            case .failed:
-                return SyncResult(
-                    clientUUID: record.item.clientUUID,
-                    status: .failed,
-                    error: record.item.lastErrorCode ?? .serverError
-                )
-            case .pending, .uploading:
-                return SyncResult(clientUUID: record.item.clientUUID, status: .failed, error: record.item.lastErrorCode)
-            }
-        }
-    }
+    // `outboxStatus()` was here, and is gone with the protocol requirement it answered — see the
+    // note at the foot of `CypressAPI`. It mapped every outbox row to a `SyncResult` so screen 17's
+    // "says why" line would have the same shape against the real service; screen 17 reads
+    // `OutboxViewState` instead, and always did.
 
     // MARK: - Personal surfaces
 

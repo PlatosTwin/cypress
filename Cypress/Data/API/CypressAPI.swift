@@ -101,10 +101,6 @@ public protocol CypressAPI: Sendable {
     /// `PhotoAccess.swift`; see `photoData` above for why it is declared here and not only there.
     func setPhotoVote(photoID: UUID, vote: PhotoVote?) async throws
 
-    /// `GET /me/outbox-status` — the server's view of recent sync results, for screen 17's
-    /// "says why" line.
-    func outboxStatus() async throws -> [SyncResult]
-
     // MARK: - Personal surfaces (private by default, D11)
 
     /// `GET /me/grove`.
@@ -142,27 +138,34 @@ public protocol CypressAPI: Sendable {
     /// public record. `private_reminders` is a separate write (D4).
     func logHazardRedirect(_ event: HazardRedirectEvent) async throws
 
-    /// The separate `private_reminders` POST that §6 names beside the hazard-redirect log (D4).
-    ///
-    /// Takes a finished `PrivateReminder` rather than a draft because the reminder is written to the
-    /// outbox *before* this is called, and what goes into the outbox has to be the whole mutation
-    /// (ARCHITECTURE §4). The drain reaches the same write through `sync`, which carries the queued
-    /// reminder in its batch; this is the single-item door for a caller that already has one in hand.
-    ///
-    /// The reminder arrives owned — by the signed-in user, or by the device that wrote it before
-    /// there was one (D9, `ReminderOwner`). Adoption is `claimDevice`'s job, never this method's.
-    ///
-    /// Returns `.duplicate` when the reminder is already stored, exactly as `sync` does for every
-    /// other kind — a replay after a flap is a success, not a second reminder.
-    ///
-    /// Never public, never auto-staled, and it does not tell the city anything (D4, DECISIONS §3.3).
-    @discardableResult
-    func savePrivateReminder(_ reminder: PrivateReminder) async throws -> SyncResult.Status
-
     /// `GET /export/latest.csv` / `.geojson` — the nightly export, carrying `verification_state`
     /// (D12, BUILD-PLAN §5).
     func exportLatest(_ format: ExportFormat) async throws -> Data
 }
+
+// MARK: - Two methods that were requirements and are not any more
+//
+// `outboxStatus()` and `savePrivateReminder(_:)` were both declared here and implemented by every
+// conformance — two shipping types, thirteen preview doubles, five test doubles — and **neither had
+// a single caller.** Screen 17's "says why" line reads `OutboxViewState` directly, which is the
+// live view of the queue rather than a snapshot fetched from it; screen 06 writes its reminder
+// through `ReminderOutboxWriter`, because what goes into the outbox has to be the whole mutation
+// (ARCHITECTURE §4) and a single-item door around the side of it was never the way in.
+//
+// A protocol requirement nobody calls is not free. Every new conformance has to answer it, and the
+// twenty stubs that did were all `[]` or `throw .forbidden` — twenty places for a real
+// implementation to be quietly missing, and twenty more lines between a reader and the methods that
+// matter. Deleted rather than deprecated: there is one app and it is in this repository, so the
+// compiler can find every caller, and there are none.
+//
+// **`LocalAPI.savePrivateReminder` stays**, as a method on the concrete type. It implements D4's
+// separate `private_reminders` write and D9's ownership rules, `CypressTests/PrivateReminderTests`
+// exercises both against the real store, and it is the natural single-item door for a `sync` batch
+// of one. What it is not is something every conformance owes an answer to. If a caller ever needs it
+// through `any CypressAPI`, it goes back **as a requirement and not as a protocol-extension member**
+// — an extension member has no witness-table entry and dispatches statically, which is how every
+// photograph in the app failed to load on a build whose tests all passed (ERRATA E125, and the note
+// on `photoData` above).
 
 // MARK: - Viewport
 

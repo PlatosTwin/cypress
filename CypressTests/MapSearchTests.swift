@@ -381,13 +381,13 @@ struct MapSearchTests {
         let model = MapModel(api: LocalAPI(store: store, deviceID: Self.deviceID))
 
         model.cameraDidChange(bounds: Self.bounds, zoom: 16)
-        try await Self.settle()
+        try await Self.waitUntil { !model.pins.isEmpty }
         let before = model.pins.count
         try #require(before > 0, "the map drew nothing before the search")
 
         // The scientific name, prefix-matched — `Platanus x hispanica` is the London Plane.
         model.searchText = "Platanus"
-        try await Self.settle()
+        try await Self.waitUntil { model.search.isActive && model.pins.count != before }
 
         guard case let .narrowed(narrowed) = model.search else {
             Issue.record("typing a real species left the model at \(model.search)")
@@ -402,7 +402,7 @@ struct MapSearchTests {
 
         // Clearing the field puts the whole neighbourhood back.
         model.searchText = ""
-        try await Self.settle()
+        try await Self.waitUntil { model.search == .off && model.pins.count == before }
         #expect(model.search == .off)
         #expect(model.pins.count == before, "clearing the search did not restore the map")
     }
@@ -415,21 +415,34 @@ struct MapSearchTests {
         let model = MapModel(api: LocalAPI(store: store, deviceID: Self.deviceID))
 
         model.cameraDidChange(bounds: Self.bounds, zoom: 16)
-        try await Self.settle()
+        try await Self.waitUntil { !model.pins.isEmpty }
         try #require(!model.pins.isEmpty)
 
         model.searchText = "zzzznotatree"
-        try await Self.settle()
+        try await Self.waitUntil { model.search.isActive && model.pins.isEmpty }
 
         #expect(model.search == .noMatch(query: "zzzznotatree"))
         #expect(model.pins.isEmpty, "a search matching no species still drew trees")
         #expect(MapSearchCopy.status(for: model.search) == "No species matches “zzzznotatree”")
     }
 
-    /// Long enough for the search debounce, the camera debounce and the read behind them. Generous
-    /// on purpose: this is asserting *what* the model settles on, never how fast.
-    private static func settle() async throws {
-        try await Task.sleep(for: .milliseconds(1_200))
+    /// Waits for the model to settle on a state, rather than for a fixed span.
+    ///
+    /// A fixed sleep is the wrong tool twice over here: too short and it fails on a cold page cache —
+    /// the first read against the attached 95 MB seed takes seconds in CI — and too long and every
+    /// one of these tests pays for the worst case. Polling asserts *what* the model settles on and
+    /// never how fast, which is the only thing worth pinning: the debounces are tuned for a thumb,
+    /// not for a test, and a test that pinned them would fail every time they were retuned.
+    @MainActor
+    private static func waitUntil(
+        _ condition: () -> Bool,
+        timeout: Duration = .seconds(20)
+    ) async throws {
+        let deadline = ContinuousClock.now + timeout
+        while ContinuousClock.now < deadline {
+            if condition() { return }
+            try await Task.sleep(for: .milliseconds(50))
+        }
     }
 
     // MARK: - The words

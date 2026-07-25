@@ -106,7 +106,7 @@ enum MapSearch: Equatable {
     /// A clustered viewport reports no counts: its badges already carry them, and "showing 151 of
     /// 1,458" is a sentence about pins. `MapContent.pinCount` counts the trees a clustered answer
     /// stands for, which is the honest number for the badges and the wrong one for this line.
-    func reporting(_ content: MapContent, budget: Int) -> MapSearch {
+    func reporting(_ content: MapContent) -> MapSearch {
         guard case var .narrowed(narrowed) = self else { return self }
         switch content {
         case let .pins(answer):
