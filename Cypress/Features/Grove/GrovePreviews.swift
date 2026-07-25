@@ -12,12 +12,41 @@ import SwiftUI
 
 // MARK: - Double
 
+/// Counts `grove()` reads, so a test can assert the `Trees` pill's read is lazy and runs once.
+final class GroveReadCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+
+    var count: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+
+    func record() {
+        lock.lock()
+        defer { lock.unlock() }
+        value += 1
+    }
+}
+
 /// Hands back a fixed grove and refuses everything else. Previews only.
+///
+/// **Two reads and two ways to fail**, because screen 08 has two pills with data behind them and
+/// they are two endpoints. A double with one `fails` flag could not express the case that matters
+/// most — one read failing while the other succeeds — which is the case `GroveModel` keeps two
+/// phases for.
 struct GrovePreviewAPI: CypressAPI {
     var grove: GroveSpecies = .empty
-    /// Makes the one read fail, which is the only way to see screen 08's failure arm without a
+    /// Makes the species read fail, which is the only way to see screen 08's failure arm without a
     /// broken device (ERRATA E126).
     var fails = false
+
+    /// The `Trees` pill's rows.
+    var trees: [GroveEntry] = []
+    /// Makes the trees read fail, independently of the species one.
+    var treesFail = false
+    var groveReads: GroveReadCounter?
 
     func groveSpecies() async throws -> GroveSpecies {
         if fails { throw APIError.serverError }
@@ -36,7 +65,11 @@ struct GrovePreviewAPI: CypressAPI {
     }
     func uploadPhoto(at localPath: String, ticket: PhotoUploadTicket) async throws {}
     func outboxStatus() async throws -> [SyncResult] { [] }
-    func grove() async throws -> [GroveEntry] { [] }
+    func grove() async throws -> [GroveEntry] {
+        groveReads?.record()
+        if treesFail { throw APIError.serverError }
+        return trees
+    }
     func journal(cursor: String?, limit: Int) async throws -> Page<JournalEntry> { Page(items: []) }
     func claimDevice(deviceUUID: UUID, userID: UUID) async throws {}
     func logHazardRedirect(_ event: HazardRedirectEvent) async throws {}

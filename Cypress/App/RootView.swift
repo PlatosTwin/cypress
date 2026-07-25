@@ -228,9 +228,14 @@ struct RootView: View {
         case .grove:
             // Screen 08. The species tile's destination is 07, which is the one entrance
             // SCREENS.md draws for it: "Tapping a tile opens the species page."
+            //
+            // Its other two pills work now. Both the `Trees` list and the `Journal` list are lists
+            // of things that happened to a tree, so a row on either opens that tree's profile —
+            // the same destination the almanac's season rows and the outbox's rows already use.
             GroveView(
                 api: data.api,
-                onOpenSpecies: { id in router.push(.species(id)) }
+                onOpenSpecies: { id in router.push(.species(id)) },
+                onOpenTree: { id in router.push(.treeProfile(id)) }
             )
         case .journal:
             // Screen 12 lives here. The elder and first-bloom rows each name a specific tree, so they
@@ -244,7 +249,16 @@ struct RootView: View {
                 onRequestLocation: { location.start() }
             )
         case .you:
-            YouTabView(outbox: outbox, moderation: moderation, account: account)
+            // The export closure is resolved here rather than inside the tab, for the reason every
+            // other boundary call is: the feature gets the one operation it needs, not the API.
+            // `LocalAPI` is an actor and `ExportFormat` a value, so the `@Sendable` closure carries
+            // nothing of this view across the isolation boundary.
+            YouTabView(
+                outbox: outbox,
+                moderation: moderation,
+                account: account,
+                export: { [api = data.api] format in try await api.exportLatest(format) }
+            )
         }
     }
 

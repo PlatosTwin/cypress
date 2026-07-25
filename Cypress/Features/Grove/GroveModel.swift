@@ -6,6 +6,14 @@
 //  folder, owned by the feature's root view via `@State`"). It talks to `CypressAPI` and to nothing
 //  else — no store, no network (ARCHITECTURE §4).
 //
+//  ── Two reads, kept apart ─────────────────────────────────────────────────────────────────────
+//  The screen has two pills with data behind them and they are two different endpoints:
+//  `groveSpecies()` for the species grid and `grove()` for the list of trees. Each therefore has its
+//  own way to fail, and a single `phase` would mean one failing read blanked the other pill — a
+//  reader whose species read failed would find an empty-looking Trees list and conclude they had no
+//  trees. So there are two phases, and `GroveTreesTests.thePhasesAreIndependent` is the assertion
+//  that they stay that way.
+//
 
 import Foundation
 import Observation
@@ -14,7 +22,7 @@ import Observation
 @Observable
 final class GroveModel {
 
-    /// Where the one read is.
+    /// Where the species read is.
     ///
     /// A failed read is its own case rather than an empty grove, because the two look identical on
     /// screen and mean opposite things: one says "you have not met a species yet", the other says
@@ -26,21 +34,33 @@ final class GroveModel {
         case failed
     }
 
-    private(set) var phase: Phase = .loading
+    /// Where the trees read is. The same three states for the same reason, over a different endpoint.
+    enum TreesPhase: Equatable {
+        case idle
+        case loaded([GroveEntry])
+        case failed
+    }
 
-    /// Which of the three pills SCREENS.md 08 §2 is on. Always `.species`: this screen *is* the
-    /// Species tab, and the other two have nowhere to go (see `GroveTab.hasDestination`).
-    let tab: GroveTab = .species
+    private(set) var phase: Phase = .loading
+    private(set) var treesPhase: TreesPhase = .idle
+
+    /// Which of the three pills SCREENS.md 08 §2 draws is showing.
+    ///
+    /// **It was a `let` fixed at `.species`**, on the grounds that the other two had nowhere to go.
+    /// Both now do — see `GroveTab` — so the screen is what its own mock draws it as: one screen with
+    /// three segments, rather than one segment with two labels beside it.
+    var tab: GroveTab
 
     private let api: any CypressAPI
     private let now: @Sendable () -> Date
 
-    init(api: any CypressAPI, now: @escaping @Sendable () -> Date = { Date() }) {
+    init(api: any CypressAPI, now: @escaping @Sendable () -> Date = { Date() }, tab: GroveTab = .species) {
         self.api = api
         self.now = now
+        self.tab = tab
     }
 
-    /// The derivation the view draws, or nil while loading or after a failure.
+    /// The derivation the species grid draws, or nil while loading or after a failure.
     var presentation: GrovePresentation? {
         guard case let .loaded(grove) = phase else { return nil }
         return GrovePresentation(grove: grove, now: now())
@@ -61,5 +81,39 @@ final class GroveModel {
     func retry() async {
         phase = .loading
         await load()
+    }
+
+    // MARK: - The Trees pill
+
+    var treesPresentation: GroveTreesPresentation? {
+        guard case let .loaded(entries) = treesPhase else { return nil }
+        return GroveTreesPresentation(entries: entries, now: now())
+    }
+
+    var treesHaveFailed: Bool { treesPhase == .failed }
+
+    /// Reads the grove the first time the pill is asked for, and not again.
+    ///
+    /// **Lazy**, because a reader who opens My Grove and stays on `Species` should not pay for a
+    /// query they never looked at. **Once**, because the `.task` that drives this fires on every
+    /// reappearance of the view it is attached to, so a reader switching pills back and forth would
+    /// otherwise re-run the read on every switch. "Once" has to be a property of the model rather
+    /// than of the view, which is what makes it testable.
+    func loadTreesIfNeeded() async {
+        guard case .idle = treesPhase else { return }
+        await readTrees()
+    }
+
+    func retryTrees() async {
+        treesPhase = .idle
+        await readTrees()
+    }
+
+    private func readTrees() async {
+        do {
+            treesPhase = .loaded(try await api.grove())
+        } catch {
+            treesPhase = .failed
+        }
     }
 }
