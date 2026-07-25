@@ -133,6 +133,18 @@ struct MapHomeView: View {
                 .padding(.horizontal, MapLayout.sideInset)
                 .padding(.top, topInset + MapLayout.searchTopInset)
             }
+            // The frame readout, when it is armed. Its own `#if DEBUG` and its own environment gate;
+            // a separate `.overlay` rather than a member of either stack, so it cannot move anything
+            // the mock positions. See `MapProbeOverlay`.
+            #if DEBUG
+            .overlay(alignment: .topTrailing) {
+                if MapFrameProbe.isEnabled {
+                    MapProbeOverlay()
+                        .padding(.horizontal, MapLayout.sideInset)
+                        .padding(.top, topInset + MapProbeLayout.topOffset)
+                }
+            }
+            #endif
             .overlay(alignment: .bottom) {
                 VStack(alignment: .trailing, spacing: 0) {
                     // `present`, not `push` (ERRATA E127). The visit flow is a `fullScreenCover` off

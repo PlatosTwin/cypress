@@ -64,6 +64,12 @@ struct MapKitBasemap: View {
     }
 
     var body: some View {
+        // Every pass through here rebuilds the whole annotation layer, so the count of passes *is*
+        // the work this screen does. `MapProbeOverlay` draws it next to the frame times, and off
+        // unless `CYPRESS_MAP_PROBE=1`; see `MapFrameProbe`.
+        #if DEBUG
+        let _ = MapFrameProbe.shared.noteBody()
+        #endif
         GeometryReader { proxy in
             Map(position: $position, interactionModes: [.pan, .zoom, .rotate]) {
                 parchmentWash

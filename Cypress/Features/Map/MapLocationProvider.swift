@@ -68,6 +68,9 @@ final class MapLocationProvider {
         }
         delegate.onLocation = { [weak self] coordinate, accuracyM in
             self?.availability = .located(coordinate, accuracyM: accuracyM)
+            #if DEBUG
+            MapFrameProbe.shared.noteLocationPublish()
+            #endif
         }
         self.delegate = delegate
         manager.delegate = delegate
