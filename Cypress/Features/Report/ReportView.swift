@@ -93,20 +93,50 @@ struct ReportView: View {
         }
     }
 
+    // ══════════════════════════════════════════════════════════════════════════════════════════
+    // §3's neighborly chips, **drawn and not tappable** (ERRATA E130).
+    //
+    // ── What was wrong ────────────────────────────────────────────────────────────────────────
+    // Every chip was a button with a selected style, under a section label that reads `Neighborly
+    // note · stays in Cypress`. Tapping one set `ReportSelection.note`, and nothing anywhere read
+    // it except the chip's own fill: `OutboxPayload` has no `.communityNote` case, so a note cannot
+    // enter the queue at all, and `ContributionStore.insert(_ note:)` has existed with no shipping
+    // caller since M1. A control that highlights under a storage promise is a control that says
+    // something was kept. Nothing was.
+    //
+    // ── Why the write path was not built instead ──────────────────────────────────────────────
+    // `community_notes.user_id` is `NOT NULL` (`AppSchema` v1) and no migration has made it
+    // nullable. RULINGS **R3** and ERRATA E109 already worked out what that costs: account deletion
+    // can neither anonymize such a row nor delete it, and
+    // `AccountDeletion.Outcome.communityNotesLeftAttributed` exists — in its own words — "so that
+    // the day something does write one, the hole is a number somebody can see rather than a
+    // silence". Writing notes is that day. It would put publicly visible rows on people's trees
+    // that a deletion cannot honour, against DECISIONS §3.12, and closing that needs a schema
+    // migration and a second pass over R3 — a decision-owner's call, not this errata's. The note
+    // would also need a submit CTA, and ERRATA **E22** settled that there is none because none is
+    // mocked.
+    //
+    // ── Why the chips stay drawn ──────────────────────────────────────────────────────────────
+    // SCREENS.md 06 §3 draws all three, and draws all three **off**. Removing them would redraw a
+    // mocked screen (DECISIONS constraint 21); leaving them exactly as the mock draws them shows
+    // the vocabulary and claims nothing. E22 chose C4's "structure flag, on" as the unspecified
+    // selected appearance and that choice stands unused rather than deleted — it is what this
+    // section will need on the day the write path is built, and `ReportPreviews` still draws it.
+    //
+    // E22's own text reads as though these chips were already inert ("posting a community note has
+    // no drawn affordance and none was added"). They were not: the ruling covered the missing submit
+    // button and not the highlight, and this is the half it did not reach.
+    // ══════════════════════════════════════════════════════════════════════════════════════════
     private func notePicker(_ presentation: ReportPresentation) -> some View {
         section(label: ReportCopy.noteSectionLabel, color: CypressColor.textFaint) {
             CypressChipFlow(spacing: CypressSpacing.gapDense) {
                 ForEach(presentation.noteCategories, id: \.self) { category in
-                    // Idle is C4's "structure flag, idle" row, which is exactly the fill, border,
-                    // text and padding SCREENS.md 06 §3 states for these chips. Its `on` twin is the
-                    // selected appearance, which 06 never draws — the least invented answer to an
-                    // unspecified state is the variant the catalogue already pairs with this one.
+                    // No `action:`, so `Chip` renders a plain pill with no button trait and no hit
+                    // area — VoiceOver reads it as the label it is, not as something to activate.
                     Chip(
                         CommunityNoteCategoryLabel.text(for: category),
                         style: presentation.selectedNote == category ? .structureFlagOn : .structureFlagIdle
-                    ) {
-                        model.select(note: category)
-                    }
+                    )
                 }
             }
         }

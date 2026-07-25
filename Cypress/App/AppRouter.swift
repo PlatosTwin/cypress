@@ -45,6 +45,15 @@ enum Route: Hashable {
     /// (ERRATA E125): A3 has always ended "a manual pin by any org member overrides", and until
     /// there was somewhere to look at a tree's photographs there was nowhere to pin one.
     case photos(UUID)
+    /// 15, the account ask. **Mocked**, so this is not an invented destination — and `sheet`'s own
+    /// comment below has always named 15 among the three screens drawn as sheets, which is what this
+    /// case finally lets it mean.
+    ///
+    /// Presented, never pushed. It has no entrance of its own until now: D9 puts the ask on the
+    /// third visit save, where `VisitSavedView` covers it directly, and no route was needed. The You
+    /// tab needs one because it can sign you *out* (ERRATA E130), and a sign-out with no way back
+    /// short of three more field visits is a door that locks behind you.
+    case accountAsk             // 15
 }
 
 /// The four root destinations of the bottom bar (C16 / screen 01).

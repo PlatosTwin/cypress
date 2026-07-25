@@ -37,6 +37,12 @@ final class AccountAskModel {
     /// BUILD-PLAN §5). The answer travels on the request instead, so the account records what was
     /// actually agreed to and `User.licenseVersion` stays honestly nil when nothing was. Recorded
     /// in ERRATA.
+    ///
+    /// **That last sentence was false for as long as it stood here (ERRATA E130).** The composition
+    /// root's handler read `_ = request` and discarded both fields, so unchecking this box changed
+    /// nothing anywhere and no account recorded anything. It now lands in `app_state` through
+    /// `LocalAPI.linkAccount` and is read back by `AccountLinkRecord`, which is what makes leaving
+    /// the box ungated defensible rather than merely convenient.
     var isConsentAccepted = true
 
     private(set) var notice: AccountAskPresentation.Notice?

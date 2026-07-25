@@ -923,6 +923,93 @@ public actor LocalAPI: CypressAPI {
         }
         self.userID = userID
         try await store.setAppState(.currentUserID, to: userID.uuidString)
+        // A claim that was not screen 15's — the DEBUG deep links, a future server exchange — leaves
+        // no consent record, and must not leave a stale one either. See `linkAccount`.
+        try await store.clearAppState(.signedOutUserID)
+    }
+
+    // MARK: - The account (local, ERRATA E130)
+
+    /// Screen 15's sign-in, with the two things the screen collects (ERRATA **E130**).
+    ///
+    /// `claimDevice` plus the consent record, because the request screen 15 assembles has to land
+    /// somewhere a later read can find it: the composition root used to throw the whole
+    /// `AccountLinkRequest` away, which made `AccountAskModel`'s own justification for leaving the
+    /// checkbox ungated ("the answer travels on the request instead") untrue. See
+    /// `AccountLinkRecord` for why the license is stored as a version and not a flag.
+    ///
+    /// Not on `CypressAPI`, for `deleteAccount`'s reason: the protocol carries `POST /devices/claim`
+    /// because a server has that endpoint, and has no `/auth/*` at all. Recording what a person
+    /// agreed to on *this* device is the local half, and it is not a stub.
+    ///
+    /// Written after the claim rather than before it: a claim that throws leaves no account, and a
+    /// consent record for an account that does not exist would be read back on the next sign-in as
+    /// if the person had already agreed to something.
+    public func linkAccount(
+        deviceUUID: UUID,
+        userID: UUID,
+        provider: String,
+        acceptsLicense: Bool,
+        licenseVersion: String = LicenseConsent.currentVersion
+    ) async throws {
+        try await claimDevice(deviceUUID: deviceUUID, userID: userID)
+        try await store.setAppState(.accountProvider, to: provider)
+        if acceptsLicense {
+            try await store.setAppState(.accountLicenseVersion, to: licenseVersion)
+        } else {
+            // Cleared rather than written as an empty string, so a declined consent reads back as
+            // the nil `User.hasAcceptedLicense` already tests for, and a re-link that declines
+            // cannot leave the previous agreement standing.
+            try await store.clearAppState(.accountLicenseVersion)
+        }
+    }
+
+    /// What the signed-in account agreed to, read back from `app_state`.
+    ///
+    /// Nil when nobody is signed in, rather than an empty record: "no consent recorded" and "no
+    /// account" are different sentences and the caller renders them differently.
+    public func accountLink() async throws -> AccountLinkRecord? {
+        guard userID != nil else { return nil }
+        return AccountLinkRecord(
+            provider: try await store.appState(.accountProvider),
+            licenseVersion: try await store.appState(.accountLicenseVersion)
+        )
+    }
+
+    /// The account this device could sign back in as, having signed out of it
+    /// (`AppStateKey.signedOutUserID`).
+    ///
+    /// Nil while signed in — the question only means anything when there is no current account — so
+    /// a caller cannot accidentally resume an id while another one is live.
+    public func resumableUserID() async throws -> UUID? {
+        guard userID == nil else { return nil }
+        return (try await store.appState(.signedOutUserID)).flatMap(UUID.init(uuidString:))
+    }
+
+    /// Sign out: stop acting as this account, keep everything it wrote (ERRATA **E130**).
+    ///
+    /// **Nothing is deleted here and that is the entire distinction from `deleteAccount`.** The rows
+    /// stay exactly as they are, still carrying the account's id; what changes is that this
+    /// installation stops presenting itself as that account, so `attribution` goes back to the
+    /// device and the reads that ask for "my" reminders and favourites stop returning the account's.
+    ///
+    /// The id is remembered under `AppStateKey.signedOutUserID` so signing in again resumes it. A
+    /// local account has no credential to sign back in *with* — `accountLink` mints a `UUID` when it
+    /// finds none — so forgetting the id would leave every account-owned row unreadable by any query
+    /// and unremovable by any deletion, which is the litter RULINGS R3 spent its length refusing to
+    /// create. Sign-out is not a quiet, unlabelled deletion.
+    ///
+    /// The role goes with it for `deleteAccount`'s reason: a lead's authority is the account's, and
+    /// a device with nobody signed in is not a lead. The consent record stays put — it is the
+    /// account's, it is resumed with the account, and a re-link overwrites it with whatever the
+    /// person agrees to that time.
+    public func signOut() async throws {
+        guard let account = userID else { return }
+        try await store.setAppState(.signedOutUserID, to: account.uuidString)
+        try await store.clearAppState(.currentUserID)
+        userID = nil
+        userRole = .member
+        try await store.setAppState(.currentUserRole, to: UserRole.member.rawValue)
     }
 
     // MARK: - Moderation (local, ERRATA E124-B)
@@ -1211,6 +1298,14 @@ public actor LocalAPI: CypressAPI {
         // in `AccountDeletion` because it is device state (`app_state`), not one of the account's rows.
         userRole = .member
         try await store.setAppState(.currentUserRole, to: UserRole.member.rawValue)
+        // Device state again, and the same argument one step further (ERRATA E130). A deleted account
+        // must not be resumable: `signedOutUserID` exists so that signing back in returns to the same
+        // identity, and an id left here after `AccountDeletion` has emptied it would hand the next
+        // sign-in an account whose rows are gone. The consent record goes for the plainer reason —
+        // it is a sentence about a person who asked to be forgotten.
+        try await store.clearAppState(.signedOutUserID)
+        try await store.clearAppState(.accountProvider)
+        try await store.clearAppState(.accountLicenseVersion)
         return outcome
     }
 

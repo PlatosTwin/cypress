@@ -31,4 +31,21 @@ public enum BetaCapability {
     /// exactly as before; a local account simply gives those contributions a `userID` to hang from
     /// instead of the device id, which is the move `claimDevice` was written for.
     public static let accountsAvailable = true
+
+    /// Whether an account is created on this phone and nowhere else (ERRATA **E130**).
+    ///
+    /// **Why a second constant rather than a reading of the first.** `accountsAvailable` answers
+    /// "can somebody sign in"; this answers "what did signing in do", and the two stop agreeing the
+    /// day the magic-link service lands — accounts are available then *and* they round-trip. Screen
+    /// 15's body copy is the difference: its drawn sentence promises "an account backs them up and
+    /// lets them join each tree's public timeline", and a local account does neither. It is not a
+    /// backup (this file's own header: "an identity, not a backup"), and `User.publicAttribution`
+    /// cannot be turned on anywhere in the app (ERRATA E100), so there is no public timeline to
+    /// join. A screen that says otherwise is claiming a thing the app did not do, which is what
+    /// DECISIONS constraint 3 exists to forbid.
+    ///
+    /// So `AccountAskPresentation` picks `AccountAskCopy.bodyLocalAccount` while this is true, and
+    /// the drawn sentence returns by deleting the constant — the same "true by deletion" rule the
+    /// header states for the whole enum.
+    public static let accountsAreLocalOnly = true
 }

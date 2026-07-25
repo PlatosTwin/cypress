@@ -178,6 +178,59 @@ final class DeepLinkVoiceOverTests: XCTestCase {
         )
     }
 
+    // MARK: - A save that acknowledged nothing and went nowhere
+
+    /// Saving a measurement on screen 16 has to have a visible consequence (ERRATA **E130**).
+    ///
+    /// **Why this is a UI test and not a model test.** `MeasureModel.save()` was never wrong, and
+    /// `MeasurementAccuracyTests` already drives it and passes. The defect was one line above both:
+    /// `RootView`'s `.measure` call site omitted `onSaved`, so `MeasureView`'s `{ _ in }` default
+    /// applied. The screen has a failure line and no success line, and the model clears the entry on
+    /// its way out — so the only visible consequence of a reading that reached the disk was the
+    /// keypad clearing, which is also what the screen looks like for the moment before a *failed*
+    /// save draws its amber line. Compare screen 05, which was wired with `onSaved: { _ in
+    /// router.pop() }` from the start; 16 was the odd one out.
+    ///
+    /// Anything asserted inside the model would have passed on the broken build. What could not is
+    /// that the screen is *gone* afterwards, which is the assertion made here.
+    ///
+    /// **Nothing is put back, and nothing needs to be.** Unlike `testAThumbActuallyVotes`, this
+    /// writes an ordinary measurement onto a real seed tree — an append-only contribution that no
+    /// other test reads and that the app is designed to accumulate. The reading is 3, entered on the
+    /// keypad, which is inside every sanity range for both DBH and height so no anomaly line changes
+    /// the layout under the CTA.
+    func testSavingAMeasurementLeavesTheScreen() {
+        let app = launch("measure")
+        guard arrive(app, screen: "measure", anchor: "Measure") else { return }
+
+        let three = app.buttons["3"]
+        XCTAssertTrue(three.waitForExistence(timeout: 10), "measure: the keypad has no '3'")
+        three.tap()
+
+        let save = app.buttons["Save measurement"]
+        XCTAssertTrue(save.waitForExistence(timeout: 10), "measure: no save CTA")
+        XCTAssertTrue(
+            save.isEnabled,
+            "measure: the CTA is still disabled after a digit was entered, so this test never "
+                + "exercised a save at all"
+        )
+        save.tap()
+
+        // The consequence. `Measure` is screen 16's C1 title; if it is still on screen ten seconds
+        // after a successful save, the save went nowhere — which is exactly what shipped.
+        let gone = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"),
+            object: app.staticTexts["Measure"]
+        )
+        XCTAssertEqual(
+            XCTWaiter().wait(for: [gone], timeout: 15), .completed,
+            "measure: screen 16 is still on screen after saving a reading, so the only thing the "
+                + "save changed was the keypad clearing — which is also what a failure looks like"
+        )
+
+        app.terminate()
+    }
+
     // MARK: - What a modal owes the screen it covers
 
     /// A VoiceOver user must not be able to swipe onto the screen behind a modal.

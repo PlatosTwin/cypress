@@ -154,10 +154,17 @@ final class ReportModel {
         }
     }
 
-    func select(note: CommunityNote.Category) {
-        selection = selection.note == note ? .nothing : .note(note)
-        resetReminder()
-    }
+    // There is no `select(note:)` any more, and its absence is the point (ERRATA E130). Screen 06's
+    // neighborly chips are drawn and not tappable, because a `.note` selection had no reader
+    // anywhere: no outbox kind, no submit CTA (ERRATA E22), and a `community_notes` row that account
+    // deletion could not honour (RULINGS R3, ERRATA E109). `ReportView.notePicker` carries the whole
+    // argument. A mutator with no caller is the same shape as the control it used to serve — from
+    // the outside it still looks like a write path — so it is gone rather than left behind a
+    // comment.
+    //
+    // `ReportSelection.note` itself stays: it is what makes "a hazard or a note, never both" a fact
+    // about the type rather than a guard (D4), and `initialSelection` still stands the state up for
+    // `ReportPreviews`.
 
     /// A new selection is a new reminder: a fresh idempotency key, and no stale confirmation.
     private func resetReminder() {

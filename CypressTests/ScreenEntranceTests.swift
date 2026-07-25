@@ -161,6 +161,12 @@ struct ScreenEntranceTests {
             return "03 · a tap on the hero photograph (invented, E125)"
         case .site:
             return "01 map · a pin with no tree behind it (invented, E107)"
+        case .accountAsk:
+            // Two, and the second is why the route exists at all. D9 puts the ask on the third
+            // visit save, where `VisitSavedView` covers it with no route needed; the You tab needs
+            // one because it can sign you out (ERRATA E130), and a sign-out whose only way back is
+            // three more field visits is a door that locks behind you.
+            return "the third visit save (D9) · the You tab · the account block's Sign in row (E130)"
         }
     }
 
@@ -180,6 +186,7 @@ struct ScreenEntranceTests {
         .measure(treeID),
         .outbox,
         .site(treeID),
+        .accountAsk,
     ]
 
     @Test("every route names a real affordance, not a plan for one")
