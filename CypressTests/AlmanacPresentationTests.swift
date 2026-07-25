@@ -77,10 +77,27 @@ struct AlmanacPresentationTests {
         )
     }
 
+    /// A city-inventory pin, spread along one street (ERRATA E129). `.cityImport` / `.cityRecord`
+    /// because every row of the shipped seed is — asserted over all 195,309 in
+    /// `PinSetDestinationTests`.
+    static func pin(_ index: Int, status: TreeStatus = .alive) -> TreePin {
+        TreePin(
+            id: id(index),
+            coordinate: Coordinate(
+                latitude: 37.7530 + Double(index % 40) * 0.000_35,
+                longitude: -122.4850 + Double(index % 40) * 0.000_20
+            ),
+            status: status,
+            source: .cityImport,
+            verificationState: .cityRecord,
+            speciesID: nil
+        )
+    }
+
     private static func coverage(_ count: Int, farthestM: Double, isComplete: Bool = true) -> CoverageGap {
         let trees = (0..<count).map { index -> CoverageTree in
             let step = count <= 1 ? farthestM : Double(index) / Double(count - 1) * farthestM
-            return CoverageTree(id: id(100 + index), distanceM: step)
+            return CoverageTree(pin: pin(100 + index), distanceM: step)
         }
         return CoverageGap(trees: Series(items: trees, isComplete: isComplete))
     }
@@ -386,17 +403,26 @@ struct AlmanacPresentationTests {
         #expect(presentation.coverage?.body.contains("It is within a 15-minute walk.") == true)
     }
 
-    @Test("the CTA opens the nearest of them")
-    func coverageCTATargetsTheNearest() {
-        let far = CoverageTree(id: Self.id(200), distanceM: 900)
-        let near = CoverageTree(id: Self.id(201), distanceM: 40)
+    /// **This test used to assert the defect** (ERRATA E129). It read
+    /// `#expect(presentation.coverage?.firstTreeID == near.id)` — the CTA opens the nearest of them —
+    /// and it passed, on a card whose button says `Walk the nine`. A test can pin the wrong answer
+    /// just as precisely as the right one, and this is what that looks like.
+    ///
+    /// What it checks now is the group, and that the group is still ordered nearest first, because the
+    /// destination's own sentence ("The 20 nearest are on this map.") is a claim about that ordering.
+    @Test("the CTA hands over every tree it counted, nearest first")
+    func coverageCTACarriesTheGroupNearestFirst() {
+        let far = CoverageTree(pin: Self.pin(200), distanceM: 900)
+        let near = CoverageTree(pin: Self.pin(201), distanceM: 40)
         let presentation = Self.present(
             AlmanacNeighborhood(
                 name: "Sunset/Parkside",
                 coverage: CoverageGap(trees: Series(complete: [near, far]))
             )
         )
-        #expect(presentation.coverage?.firstTreeID == near.id)
+        #expect(presentation.coverage?.group.pins.map(\.id) == [near.id, far.id])
+        #expect(presentation.coverage?.group.count == 2)
+        #expect(presentation.coverage?.group.isComplete == true)
     }
 
     // MARK: - Windows

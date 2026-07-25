@@ -192,17 +192,34 @@ public struct AlmanacQueries {
     /// prefix-extension of the second.
     ///
     /// Reads one row more than `limit` so the caller can prove whether the series is whole.
+    ///
+    /// **Returns whole pins since ERRATA E129.** The two extra columns and the species join are what
+    /// let §4's row hand its nine trees to a map instead of handing over one id: a pin the
+    /// destination draws has to be the pin screen 01 would draw for the same record, and `MapPinKind`
+    /// answers that from `status`, `source` and `verification_state`. The coordinate was already
+    /// being selected here — `LocalAPI` needs it to check the "within a 15-minute walk" claim — and
+    /// was thrown away one line later, which is how §4 came to know where all nine trees were while
+    /// being able to send the reader to only one of them.
+    ///
+    /// The join is `LEFT`, as `elder`'s is and for the same reason: 312 trees city-wide carry a city
+    /// label that names no taxon (ERRATA E14), and a young tree with no species is still a young tree
+    /// nobody has visited. It must not drop out of a count the card prints.
     public func youngTreesWithoutVisits(
         neighborhoodID: Int,
         plantedOnOrAfter: String,
         limit: Int,
         connection: SQLiteConnection
-    ) throws -> [(treeID: UUID, coordinate: Coordinate)] {
+    ) throws -> [TreePin] {
         let statement = try connection.cachedStatement("""
             SELECT t.\(schema.treeIdentityColumn) AS tree_uuid,
                    t.lat AS lat,
-                   t.lon AS lon
+                   t.lon AS lon,
+                   t.status AS status,
+                   t.source AS source,
+                   t.verification_state AS verification_state,
+                   s.\(schema.speciesIdentityColumn) AS species_uuid
               FROM \(seed).trees t
+              LEFT JOIN \(seed).species s ON s.id = t.species_current
              WHERE t.neighborhood_id = :neighborhood
                AND t.planted_on >= :since
                AND t.deleted_at IS NULL
@@ -221,15 +238,27 @@ public struct AlmanacQueries {
             ":since": plantedOnOrAfter,
             ":limit": limit
         ])
-        return try statement.fetchAll { row in
-            (
-                treeID: try row.uuid("tree_uuid"),
-                coordinate: Coordinate(
-                    latitude: try row.double("lat"),
-                    longitude: try row.double("lon")
-                )
-            )
-        }
+        return try statement.fetchAll { row in try Self.pin(from: row) }
+    }
+
+    /// One `TreePin` out of a row of `seed.trees`.
+    ///
+    /// Shared by the two reads that feed a map (ERRATA E129) so that the vocabulary a pin is drawn in
+    /// is decided in one place, and the same place `TreeQueries.pins` decides it — a group whose
+    /// members were built differently from the map's own would be a second answer to "what kind of
+    /// pin is this record", which is the shape of defect RULINGS R7 closed.
+    private static func pin(from row: SQLiteRow) throws -> TreePin {
+        TreePin(
+            id: try row.uuid("tree_uuid"),
+            coordinate: Coordinate(
+                latitude: try row.double("lat"),
+                longitude: try row.double("lon")
+            ),
+            status: try row.value("status", TreeStatus.self),
+            source: try row.value("source", TreeSource.self),
+            verificationState: try row.value("verification_state", VerificationState.self),
+            speciesID: try row.uuidIfPresent("species_uuid")
+        )
     }
 
     // MARK: - This season · the first bloom
@@ -321,45 +350,64 @@ public struct AlmanacQueries {
     /// where a neighbourhood resolved — but the caller still treats zero as "no block", because §5.6
     /// is a rule about the general case rather than about today's seed.
     ///
-    /// `nearestID` is `nil` only if `count` is zero. The tap destination is a `vacant_site` in *this*
-    /// neighbourhood, so it can never route the reader from one basin to a basin in the next
-    /// neighbourhood over — the block's subject and its destination are the same set.
+    /// `nearest` is empty only if `count` is zero. Every row in it is a `vacant_site` in *this*
+    /// neighbourhood, so the destination can never show the reader a basin in the next neighbourhood
+    /// over — the block's subject and its destination are the same set.
+    ///
+    /// **`nearest` is a list rather than one id since ERRATA E129**, and the two halves are
+    /// deliberately separate reads of the same index. The count is a `COUNT(*)` over the whole
+    /// filtered set and has to stay that way: it is the number screen 12 prints, so it may never
+    /// become the size of a page (ERRATA E38). The rows are the nearest `limit` of that set, which is
+    /// all a map can hold — E115 measured neighbourhoods at between 4 and 1,474 sites. Because the
+    /// total is read independently, the caller can prove whether the page is the whole group by
+    /// comparing the two, which is what `PinSet.isComplete` does.
     public func vacantSites(
         neighborhoodID: Int,
         near coordinate: Coordinate,
+        limit: Int,
         connection: SQLiteConnection
-    ) throws -> (count: Int, nearestID: UUID?) {
-        // Longitude degrees are shorter than latitude degrees by cos(lat); squaring the ratio makes
-        // the two terms comparable, exactly as `TreeQueries.nearest` does it.
-        let longitudeWeight = pow(cos(coordinate.latitude * .pi / 180), 2)
-        let statement = try connection.cachedStatement("""
-            SELECT COUNT(*) AS site_count,
-                   (
-                     SELECT n.\(schema.treeIdentityColumn)
-                       FROM \(seed).trees n
-                      WHERE n.neighborhood_id = :neighborhood
-                        AND n.status = 'vacant_site'
-                        AND n.deleted_at IS NULL
-                      ORDER BY (n.lat - :lat) * (n.lat - :lat)
-                             + (n.lon - :lon) * (n.lon - :lon) * :lonWeight
-                      LIMIT 1
-                   ) AS nearest_uuid
+    ) throws -> (count: Int, nearest: [TreePin]) {
+        let counted = try connection.cachedStatement("""
+            SELECT COUNT(*) AS site_count
               FROM \(seed).trees t
              WHERE t.neighborhood_id = :neighborhood
                AND t.status = 'vacant_site'
                AND t.deleted_at IS NULL
             """)
+        _ = try counted.bind(neighborhoodID, forName: ":neighborhood")
+        let count = try counted.fetchOne { try $0.int("site_count") } ?? 0
+        guard count > 0 else { return (count: 0, nearest: []) }
+
+        // Longitude degrees are shorter than latitude degrees by cos(lat); squaring the ratio makes
+        // the two terms comparable, exactly as `TreeQueries.nearest` does it.
+        let longitudeWeight = pow(cos(coordinate.latitude * .pi / 180), 2)
+        let statement = try connection.cachedStatement("""
+            SELECT t.\(schema.treeIdentityColumn) AS tree_uuid,
+                   t.lat AS lat,
+                   t.lon AS lon,
+                   t.status AS status,
+                   t.source AS source,
+                   t.verification_state AS verification_state,
+                   NULL AS species_uuid
+              FROM \(seed).trees t
+             WHERE t.neighborhood_id = :neighborhood
+               AND t.status = 'vacant_site'
+               AND t.deleted_at IS NULL
+             ORDER BY (t.lat - :lat) * (t.lat - :lat)
+                    + (t.lon - :lon) * (t.lon - :lon) * :lonWeight
+             LIMIT :limit
+            """)
         _ = try statement.bind([
             ":neighborhood": neighborhoodID,
             ":lat": coordinate.latitude,
             ":lon": coordinate.longitude,
-            ":lonWeight": longitudeWeight
+            ":lonWeight": longitudeWeight,
+            ":limit": limit
         ])
-        return try statement.fetchOne { row in
-            (
-                count: try row.int("site_count"),
-                nearestID: try row.uuidIfPresent("nearest_uuid")
-            )
-        } ?? (count: 0, nearestID: nil)
+        // `species_uuid` is a literal NULL rather than a join, and that is a measurement rather than
+        // a shortcut: `species_current` is NULL on all 12,518 vacant sites (`AlmanacVacantSiteTests`
+        // asserts it against the shipped seed), so a `LEFT JOIN` here could only ever return NULL.
+        // A basin has nothing to identify — the reason `SiteCopy` exists at all (ERRATA E107).
+        return (count: count, nearest: try statement.fetchAll { row in try Self.pin(from: row) })
     }
 }

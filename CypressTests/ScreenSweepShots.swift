@@ -276,7 +276,7 @@ struct ScreenSweepShots {
                     now: { SweepFixtures.now },
                     onBack: {},
                     onOpenTree: { _ in },
-                    onWalk: { _ in }
+                    onShowGroup: { _ in }
                 )
             }
             .environment(AppRouter())
@@ -288,6 +288,34 @@ struct ScreenSweepShots {
                     presentation: ActivityPreviewFixtures.presentation(
                         ActivityPreviewFixtures.drawnProfile()
                     )
+                )
+            }
+            .environment(AppRouter())
+        })
+
+        // ── Screen 12's two counted rows go here (ERRATA E129). Both states are photographed,
+        //    because the difference between them is one line of copy: the whole group says `All nine
+        //    are on this map.` and a page says which twenty of 1,474 are, and E38 is the entry for
+        //    what happens when a screen loses that distinction.
+        #expect(await Self.sweep("12b-group-whole") {
+            NavigationStack {
+                PinSetMapView(
+                    set: SweepFixtures.coverageGroup,
+                    userCoordinate: SweepFixtures.coordinate,
+                    onBack: {},
+                    onOpenPin: { _ in }
+                )
+            }
+            .environment(AppRouter())
+        })
+
+        #expect(await Self.sweep("12c-group-page") {
+            NavigationStack {
+                PinSetMapView(
+                    set: SweepFixtures.vacantGroup,
+                    userCoordinate: SweepFixtures.coordinate,
+                    onBack: {},
+                    onOpenPin: { _ in }
                 )
             }
             .environment(AppRouter())
@@ -590,6 +618,42 @@ enum SweepFixtures {
 
     // ── Screen 12 ────────────────────────────────────────────────────────────────────────────
 
+    /// A city-inventory pin, spread along a street in the Sunset (ERRATA E129). Screen 12's two
+    /// counted rows carry pins rather than ids now, so the sweep's almanac has to hold real ones — a
+    /// group with no coordinates is a group no map could draw.
+    static func pin(_ index: Int, status: TreeStatus = .alive) -> TreePin {
+        TreePin(
+            id: id(index),
+            coordinate: Coordinate(
+                latitude: 37.7530 + Double(index % 40) * 0.000_35,
+                longitude: -122.4850 + Double(index % 40) * 0.000_20
+            ),
+            status: status,
+            source: .cityImport,
+            verificationState: .cityRecord,
+            speciesID: nil
+        )
+    }
+
+    /// The two groups screen 12 hands out (ERRATA E129), one whole and one a page of 1,474.
+    static var coverageGroup: PinSet {
+        PinSet(
+            subject: .coverageGap,
+            pins: (0..<9).map { pin(920 + $0) },
+            count: 9,
+            neighborhoodName: "Outer Sunset"
+        )
+    }
+
+    static var vacantGroup: PinSet {
+        PinSet(
+            subject: .vacantSites,
+            pins: (0..<20).map { pin(930 + $0, status: .vacantSite) },
+            count: 1_474,
+            neighborhoodName: "Outer Sunset"
+        )
+    }
+
     static var almanac: Almanac {
         Almanac(neighborhood: AlmanacNeighborhood(
             name: "Outer Sunset",
@@ -618,9 +682,9 @@ enum SweepFixtures {
                 ]
             ),
             coverage: CoverageGap(trees: Series(complete: (0..<9).map {
-                CoverageTree(id: id(920 + $0), distanceM: Double(120 + $0 * 60))
+                CoverageTree(pin: pin(920 + $0), distanceM: Double(120 + $0 * 60))
             })),
-            vacantSites: VacantSites(count: 1_474, nearestID: id(930))
+            vacantSites: VacantSites(count: 1_474, nearest: (0..<20).map { pin(930 + $0, status: .vacantSite) })
         ))
     }
 
@@ -645,9 +709,9 @@ enum SweepFixtures {
                 ]
             ),
             coverage: CoverageGap(trees: Series(complete: (0..<9).map {
-                CoverageTree(id: id(920 + $0), distanceM: Double(120 + $0 * 60))
+                CoverageTree(pin: pin(920 + $0), distanceM: Double(120 + $0 * 60))
             })),
-            vacantSites: VacantSites(count: 1_474, nearestID: id(930))
+            vacantSites: VacantSites(count: 1_474, nearest: (0..<20).map { pin(930 + $0, status: .vacantSite) })
         ))
     }
 

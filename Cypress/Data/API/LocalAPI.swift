@@ -500,7 +500,7 @@ public actor LocalAPI: CypressAPI {
             let coverage = CoverageGap(
                 trees: Series(
                     items: found.prefix(AlmanacLimits.coverageRowLimit)
-                        .map { CoverageTree(id: $0.treeID, distanceM: coordinate.distance(to: $0.coordinate)) }
+                        .map { CoverageTree(pin: $0, distanceM: coordinate.distance(to: $0.coordinate)) }
                         .sorted { $0.distanceM < $1.distanceM },
                     isComplete: isComplete
                 )
@@ -509,9 +509,18 @@ public actor LocalAPI: CypressAPI {
             // --- Where a tree could go. The one block that inverts `standing`: the planting sites
             // with no tree in them. A count of city records, so it draws on a fresh install like the
             // species mix does — no contribution needed (R10, ERRATA E121).
-            let sites = try almanacQueries.vacantSites(neighborhoodID: area.id, near: coordinate, connection: connection)
+            //
+            // The rows are capped and the count is not, deliberately: the count is what the row
+            // prints and the rows are what its map can hold (ERRATA E38, E129). See
+            // `AlmanacLimits.vacantSiteRowLimit`.
+            let sites = try almanacQueries.vacantSites(
+                neighborhoodID: area.id,
+                near: coordinate,
+                limit: AlmanacLimits.vacantSiteRowLimit,
+                connection: connection
+            )
             let vacantSites = sites.count > 0
-                ? VacantSites(count: sites.count, nearestID: sites.nearestID)
+                ? VacantSites(count: sites.count, nearest: sites.nearest)
                 : nil
 
             return Almanac(

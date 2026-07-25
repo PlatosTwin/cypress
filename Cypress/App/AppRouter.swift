@@ -40,6 +40,14 @@ enum Route: Hashable {
     /// missing. A tree profile with fields missing still asserts a tree, and 12,518 of these records
     /// have no tree in them.
     case site(UUID)
+    /// A group of records the almanac counted, shown together on a map. **No mocked screen** —
+    /// decided in ERRATA E129, which is the entry for why screen 12's two counted rows could not keep
+    /// opening one record each.
+    ///
+    /// The only route that carries a payload rather than an id, and it has to: the almanac's row has
+    /// already printed a count, and a destination that re-read the group could disagree with the
+    /// sentence the reader tapped. See `PinSet`.
+    case pinSet(PinSet)
     /// The photographs of one tree, with a thumb on each. **No mocked screen** — DECISIONS 21 says
     /// an unmocked destination is a question for the design, and this is that question answered
     /// (ERRATA E125): A3 has always ended "a manual pin by any org member overrides", and until

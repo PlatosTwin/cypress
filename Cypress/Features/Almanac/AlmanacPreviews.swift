@@ -109,16 +109,49 @@ private enum AlmanacFixtures {
         ]
     )
 
+    /// A fix inside Sunset/Parkside, so the previewed groups sit where the previewed almanac says
+    /// they are.
+    static let here = Coordinate(latitude: 37.7530, longitude: -122.4850)
+
+    /// A city-inventory pin `index` records along a street from `here` (ERRATA E129).
+    ///
+    /// `.cityImport` / `.cityRecord` because that is what every row of the shipped seed is — measured,
+    /// not assumed: `PinSetDestinationTests` asserts it over all 195,309 of them.
+    static func pin(_ index: Int, status: TreeStatus = .alive) -> TreePin {
+        TreePin(
+            id: id(100 + index),
+            coordinate: Coordinate(
+                latitude: here.latitude + Double(index) * 0.000_35,
+                longitude: here.longitude + Double(index) * 0.000_20
+            ),
+            status: status,
+            source: .cityImport,
+            verificationState: .cityRecord,
+            speciesID: nil
+        )
+    }
+
     static func coverage(_ count: Int, farthestM: Double) -> CoverageGap {
         CoverageGap(
             trees: Series(
                 complete: (0..<count).map {
                     CoverageTree(
-                        id: id(100 + $0),
+                        pin: pin($0),
                         distanceM: count <= 1 ? farthestM : Double($0) / Double(count - 1) * farthestM
                     )
                 }
             )
+        )
+    }
+
+    /// The block as a real device draws it: 1,474 basins in the neighbourhood, the nearest 20 of them
+    /// carried to the map (ERRATA E129, E38).
+    static func vacantSites(count: Int = 1_474) -> VacantSites {
+        VacantSites(
+            count: count,
+            nearest: (0..<min(count, AlmanacLimits.vacantSiteRowLimit)).map {
+                pin(200 + $0, status: .vacantSite)
+            }
         )
     }
 
@@ -131,7 +164,7 @@ private enum AlmanacFixtures {
             newestNeighbors: RecentPlanting(treeCount: 23, leadingSpecies: ["Ginkgo", "NZ tea tree"]),
             composition: composition,
             coverage: coverage(9, farthestM: 900),
-            vacantSites: VacantSites(count: 1_474, nearestID: UUID())
+            vacantSites: vacantSites()
         )
     )
 
@@ -149,7 +182,7 @@ private enum AlmanacFixtures {
             composition: composition,
             coverage: coverage(17, farthestM: 4_100),
             // The block draws on a fresh install: it counts city records, not contributions (R10).
-            vacantSites: VacantSites(count: 1_474, nearestID: UUID())
+            vacantSites: vacantSites()
         )
     )
 
@@ -180,7 +213,7 @@ private enum AlmanacFixtures {
             now: { AlmanacFixtures.now },
             onBack: {},
             onOpenTree: { _ in },
-            onWalk: { _ in }
+            onShowGroup: { _ in }
         )
     }
 }
@@ -194,7 +227,7 @@ private enum AlmanacFixtures {
             coordinate: Coordinate(latitude: 37.7533, longitude: -122.4934),
             now: { AlmanacFixtures.now },
             onBack: {},
-            onWalk: { _ in }
+            onShowGroup: { _ in }
         )
     }
 }
@@ -208,7 +241,7 @@ private enum AlmanacFixtures {
             coordinate: Coordinate(latitude: 37.7533, longitude: -122.4934),
             now: { AlmanacFixtures.now },
             onBack: {},
-            onWalk: { _ in }
+            onShowGroup: { _ in }
         )
     }
 }
@@ -249,7 +282,7 @@ private enum AlmanacFixtures {
             coordinate: Coordinate(latitude: 37.7533, longitude: -122.4934),
             now: { AlmanacFixtures.now },
             onBack: {},
-            onWalk: { _ in }
+            onShowGroup: { _ in }
         )
     }
     .preferredColorScheme(.dark)
