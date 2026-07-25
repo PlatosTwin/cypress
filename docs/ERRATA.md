@@ -4166,3 +4166,51 @@ the ramp` — every one of them killed with `signal term` rather than failing an
 machine throttled far enough that single sweep tests were taking 600–2,950 s. They assert nothing (they
 write PNGs), the other **435 tests passed**, and the visual claim above rests on the live render rather
 than on them. Recorded so that a later reader does not mistake a green count for a suite that ran whole.
+
+### E122 — C23 needed no dash, the vacant tile needed to be visible, and R9's collapse turned out to be a trap
+
+Three of the delegated design calls, resolved together because all three are token-layer.
+
+**C23 (R8): a plain lightness fix, not the deferred dash.** E120 deferred C23 believing the three chart
+series were "separated by hue alone" and would need a non-colour encoding. Looking at `ActivityView`
+showed the premise was wrong: screen 13 draws the series as **three spatially-separate, text-labelled
+strips** — each `ChartSeriesLegend` names its series (`Photos` / `Check-ins` / `Care`), and each
+`BarChart` carries a VoiceOver label reading its months. A colour-blind reader already tells them apart
+three ways before hue enters it, so the pre-authorised dash solves a problem that does not exist, and
+the 38%-separation-loss E120 measured is moot because the series never share a visual space.
+
+So C23 is the same fix as C10: **lightness-only in OKLCh, dark value only.** `chartSeriesPrimary`
+`#2F6B4F ↔ dark #3C785B` (2.53 → 3.05), `chartSeriesTertiary` `#7A4F33 ↔ #8F6346` (2.27 → 3.06); light
+is untouched (6.29 / 7.01) and `chartSeriesSecondary` already passed (4.13). Both moved from
+`knownFailures` to `retinted`, which pins the exact ratios. The tokens changed from `escalated` to
+`overruled`, which meant relocating their registry rows from `escalatedTokens` to `overruledTokens` —
+the escalated invariant is "resolves the same in both appearances", and these now deliberately do not.
+
+**The vacant tile (R10 follow-up): visible, still not alive.** Looking at the shipped screen 12 showed
+`TileAccent.vacantSite` reading as an almost-blank square: its ground was `surfaceEmptyThumb`, ≈1.05:1
+on the card. Base and highlight are swapped — `borderDashedStrong` is the ground now, `surfaceEmptyThumb`
+the dished centre — so the tile is a present muted grey-green basin, clearly distinct from the card and
+from the living elder tile beside it, while adding no new hue and no life colour. Verified by
+deep-linking the running app to the journal tab against the real seed.
+
+**R9 (amber borders): declined, and the reason is a trap the ruling could not see.** R9 read "three
+amber border weights come apart; collapse to one." Checking the tokens before building — the discipline
+that has now caught six of these — found the collapse to be some mix of no-op, already-done, and
+actively harmful:
+
+- The tokens R9 *names* (`borderAmberMid`, `borderAmberStrong`) have **zero call-site uses**. Collapsing
+  them changes nothing drawn.
+- The amber borders actually drawn are a different set, and two are load-bearing. `amberAttentionCardBorder`
+  was **deliberately darkened by R1** (`overruled` to `#B8803A`) for contrast; `hazardPanelBorder`
+  (`#E0B070`) is the 311 panel's whole boundary, pinned in `knownFailures` because "the border is the
+  whole boundary". Collapsing either toward the paler ambers **undoes deliberate contrast work** —
+  R9 would re-break what R1 fixed.
+- **Dark is already collapsed.** Every amber border derives to `#D99A4E` after dark (E8). The only
+  divergence is among light decorative pales on non-adjacent components.
+
+There is no beneficial collapse to make: the redundant tokens are dead, the distinct ones are distinct
+on purpose. Executing R9 as written would have weakened two contrast decisions for a cosmetic change
+invisible in normal use. It is declined rather than built, recorded here and in RULINGS R9. This is the
+sixth ruling this session whose premise did not survive contact with the code — and the first where the
+right answer was to *not* do the requested change, because doing it would have caused harm a screenshot
+on a throttled machine might not even have caught.

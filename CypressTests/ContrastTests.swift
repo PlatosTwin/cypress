@@ -384,6 +384,19 @@ struct ContrastTests {
 
     static let retinted: [Pin] = [
         Pin(
+            what: "C23 series 1 (Canopy) on a dark card",
+            foreground: CypressColor.chartSeriesPrimary, background: CypressColor.surfaceCard,
+            light: 6.29, dark: 3.05,
+            because: "R8/E122: dark lifted lightness-only #2F6B4F→#3C785B; no dash — 13's series are "
+                + "text-labelled strips, already distinct without hue"
+        ),
+        Pin(
+            what: "C23 series 3 (Bark) on a dark card",
+            foreground: CypressColor.chartSeriesTertiary, background: CypressColor.surfaceCard,
+            light: 7.01, dark: 3.06,
+            because: "R8/E122: dark lifted lightness-only #7A4F33→#8F6346"
+        ),
+        Pin(
             what: "C10 species-tile locked glyph on its fill",
             foreground: CypressColor.speciesTileLockedGlyph, background: CypressColor.speciesTileLockedFill,
             light: 3.06, dark: 3.05,
@@ -512,19 +525,15 @@ struct ContrastTests {
     ///    almost all of these it is not — a card is identified by the type in it. The 311 panel
     ///    has its own fill and its own amber body copy; the border is not what identifies it. The
     ///    one place a border *was* required is C24, and that one is fixed above.
-    /// 2. **The C23 chart series on a dark card.** R1 left this to design and R8 took it up, then
-    ///    deferred it on measurement rather than on taste: the lightness-only move that clears 3:1
-    ///    also costs 38% of series 1's OKLab separation from series 2 (0.117 → 0.073, and both are
-    ///    greens), while `ActivityView` draws all three series at once. R8 pre-authorised a second,
-    ///    non-colour encoding as the compensator — which is owed anyway, since a chart separated only
-    ///    by hue is unreadable to a colour-blind reader at *any* ratio — but a dash belongs to a
-    ///    stroked mark, and whether 13's series are strokes is a design question rather than a token
-    ///    edit. It moves when the encoding does, with the screens photographed after.
-    ///
-    ///    **The C10 locked glyph left this list** and is in `retinted`. E8 exempted it as decorative
-    ///    — "the tile's meaning is in its label" — and that was wrong: `SpeciesTile`'s locked case
-    ///    draws the `?` and nothing else, and the label meant is `accessibilityLabel`, invisible to a
-    ///    sighted reader. See ERRATA E120.
+    /// 2. **C23 and C10 both left this list** and are in `retinted`. R8 deferred C23 on a
+    ///    measurement — the lightness move costs 38% of series 1's separation from series 2 — but
+    ///    E122 found the premise wrong: `ActivityView` draws the three series as *text-labelled,
+    ///    spatially separate strips* (`ChartSeriesLegend` names each, plus a VoiceOver label), so
+    ///    they were never "separated by hue alone" and the pre-authorised dash solves a problem that
+    ///    does not exist. C23 is therefore a plain lightness-only fix like C10, and both now pass at
+    ///    3:1. C10's own story: E8 exempted the `?` as decorative — "the tile's meaning is in its
+    ///    label" — and that was wrong, because `SpeciesTile`'s locked case draws the `?` and nothing
+    ///    else and the label meant is `accessibilityLabel`, invisible to a sighted reader (E120).
     ///
     /// The empty photo well on 14 was a third group here and is not any more. It was the one text
     /// pair the R1 retint left failing, at 4.16 after dark, and it was not fixable in the token:
@@ -548,21 +557,6 @@ struct ContrastTests {
             foreground: CypressColor.borderCool, background: CypressColor.surfaceScreen,
             light: 1.15, dark: 1.42,
             because: "house style — no card is identified by its edge alone, so 1.4.11 does not bind"
-        ),
-        // 2 · E8's two, re-measured here.
-        KnownFailure(
-            what: "C23 series 1 (Canopy) on a dark card",
-            foreground: CypressColor.chartSeriesPrimary, background: CypressColor.surfaceCard,
-            light: 6.29, dark: 2.53,
-            because: "R8 deferred: lightness-only to 3.05 costs 38% of its OKLab separation from "
-                + "series 2 (0.117 → 0.073) and 13 draws all three at once — needs the second encoding, "
-                + "not a token edit"
-        ),
-        KnownFailure(
-            what: "C23 series 3 (Bark) on a dark card",
-            foreground: CypressColor.chartSeriesTertiary, background: CypressColor.surfaceCard,
-            light: 7.01, dark: 2.27,
-            because: "R8 deferred, same pass as series 1"
         ),
     ]
 

@@ -1040,9 +1040,10 @@ extension CypressColor {
             case .newGrowth: return CypressColor.escalated(0x8FB573)
             case .water: return CypressColor.escalated(0x7FA8C4)
             case .record: return CypressColor.escalated(0xC9B44A)
-            // Not a life hue: the dashed-ring token, muted, the same mark a vacant site draws
-            // everywhere else. Nothing new (R10, E121).
-            case .vacantSite: return CypressColor.borderDashedStrong
+            // The pale ground the basin dishes toward. Swapped with the base for visibility
+            // (E122): as the base it read as an almost-blank square, so the present token is the
+            // ground now and this pale one is the highlight. Still no new hue.
+            case .vacantSite: return CypressColor.surfaceEmptyThumb
             }
         }
 
@@ -1058,7 +1059,7 @@ extension CypressColor {
             case .newGrowth: return CypressColor.derived(light: 0xEDF2E0, dark: 0x1F2E22)
             case .water: return CypressColor.derived(light: 0xE8EEF2, dark: 0x282F34)
             case .record: return CypressColor.derived(light: 0xF4F0DE, dark: 0x322E1A)
-            case .vacantSite: return CypressColor.surfaceEmptyThumb
+            case .vacantSite: return CypressColor.borderDashedStrong
             }
         }
     }
@@ -1210,11 +1211,11 @@ extension CypressColor {
     // `dark.surface.card` is 2.5:1 and Bark is 2.3:1.
 
     /// Series 1 (photos, DBH, height) — Canopy. **Escalated** with the other two.
-    static let chartSeriesPrimary = escalated(0x2F6B4F)
+    static let chartSeriesPrimary = overruled(light: 0x2F6B4F, dark: 0x3C785B)
     /// Series 2 (check-ins) — New Growth. **Escalated** with the other two.
     static let chartSeriesSecondary = escalated(0x4E8F6A)
     /// Series 3 (care) — Bark. **Escalated** with the other two.
-    static let chartSeriesTertiary = escalated(0x7A4F33)
+    static let chartSeriesTertiary = overruled(light: 0x7A4F33, dark: 0x8F6346)
 
     // MARK: 13 §4 · "Same week, other years" photo strip
 
@@ -1489,8 +1490,8 @@ extension CypressColor {
               basis: "tinted-fill rule at the elder hue", color: TileAccent.elder.base),
         .init("TileAccent.newGrowth.base", .derived, light: 0xEDF2E0, dark: 0x1F2E22,
               basis: "tinted-fill rule at the new-growth hue", color: TileAccent.newGrowth.base),
-        .init("TileAccent.vacantSite.base", .derived, light: 0xFAFBF4, dark: 0x18251D,
-              basis: "R10: surfaceEmptyThumb — no new hue, the empty-well ground",
+        .init("TileAccent.vacantSite.base", .derived, light: 0xC4CEB4, dark: 0x364133,
+              basis: "R10/E122: borderDashedStrong — the dashed-ring ground, visible, no new hue",
               color: TileAccent.vacantSite.base),
         .init("TileAccent.water.base", .derived, light: 0xE8EEF2, dark: 0x282F34,
               basis: "tinted-fill rule at the water hue", color: TileAccent.water.base),
@@ -1514,6 +1515,11 @@ extension CypressColor {
     /// Reversing one is one line here and one line on the token. What comes back with it is the
     /// AA failure in ERRATA E106, so the reversal wants an answer to that in the same pass.
     static let overruledTokens: [CypressReviewToken] = [
+        .init("chartSeriesPrimary", .overruled, light: 0x2F6B4F, dark: 0x3C785B,
+              basis: "R8/E122: dark lifted lightness-only to 3.05:1; series are text-labelled strips",
+              color: chartSeriesPrimary),
+        .init("chartSeriesTertiary", .overruled, light: 0x7A4F33, dark: 0x8F6346,
+              basis: "R8/E122: dark lifted lightness-only to 3.06:1", color: chartSeriesTertiary),
         .init("textFaint", .overruled, light: 0x697260, dark: 0x7E8F80,
               basis: "R1 · was #8B9482 ↔ #5F6F61; 2.90/3.16 light and 3.42/2.98 dark → 4.62/5.03 and 5.33/4.64",
               color: textFaint),
@@ -1570,13 +1576,8 @@ extension CypressColor {
               basis: "same muted-pin family", color: pinRouteDone),
         .init("toggleKnob", .escalated, light: 0xFFFFFF,
               basis: "two tracks, opposite answers; 17 has no dark mock", color: toggleKnob),
-        .init("chartSeriesPrimary", .escalated, light: 0x2F6B4F,
-              basis: "series separation collapses 0.117 → 0.011; 2.5:1 on a dark card",
-              color: chartSeriesPrimary),
         .init("chartSeriesSecondary", .escalated, light: 0x4E8F6A,
               basis: "chosen as a set with series 1 and 3", color: chartSeriesSecondary),
-        .init("chartSeriesTertiary", .escalated, light: 0x7A4F33,
-              basis: "chosen as a set; 2.3:1 on a dark card", color: chartSeriesTertiary),
         .init("TileAccent.bloom.accent", .escalated, light: 0xD77A8A,
               basis: "0% stop of a radial that fades by 55%", color: TileAccent.bloom.accent),
         .init("TileAccent.elder.accent", .escalated, light: 0x4E8F6A,
