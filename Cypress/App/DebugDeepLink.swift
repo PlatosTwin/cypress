@@ -48,12 +48,13 @@ enum DebugDeepLink {
 
     /// The screens the harness can open, named as the UI test names them.
     ///
-    /// **Screen 19, the memorial, is not here, and that is a fact about the data rather than an
-    /// omission.** The shipped seed holds two statuses and only two — 182,791 `alive` and 12,518
-    /// `vacant_site`. There is no `removed` tree in it, so there is no record on this device that
-    /// `MemorialView` could honestly be opened with. Resolving one against a living tree would draw a
-    /// memorial over a tree that is standing, which is a lie in the exact place this suite exists to
-    /// catch lies. It is recorded in ERRATA E117 as unreachable-until-the-data-changes.
+    /// **Screen 19, the memorial, is reachable now — the data changed (ERRATA E124-B).** The shipped
+    /// seed still holds only `alive` and `vacant_site`, so there is no `removed` row to resolve. But
+    /// the local moderation route can *make* one: a lead confirms an `appears_removed` review and the
+    /// tree gains a device-side `removed` override. The `memorial` case below writes that override on a
+    /// real standing seed tree (`debugMarkRemoved`) and opens 19 over it — a memorial over a record
+    /// that this device really does now hold as removed, not a lie over a living tree. E117's
+    /// "unreachable-until-the-data-changes" is discharged.
     ///
     /// Screen 04 (the camera) is absent for a different reason: presenting it raises a system
     /// permission alert, and what the test would then read is Springboard's tree, not Cypress's.
@@ -73,6 +74,7 @@ enum DebugDeepLink {
         case activity           // 13
         case measure            // 16
         case outbox             // 17
+        case memorial           // 19 — reachable now via a local removal override (ERRATA E124-B)
         // Presented over the tab root.
         case careLog            // 09
         case share              // 10
@@ -80,6 +82,7 @@ enum DebugDeepLink {
         case grove              // 08
         case journal            // 12
         case you                // 18
+        case moderationReview   // the You tab with a lead's open review (ERRATA E124-B)
     }
 
     /// Why a requested screen did not open. Rendered on top of the app, in words, by `RootView` —
@@ -143,6 +146,20 @@ enum DebugDeepLink {
             case .outbox:
                 router.tab = .you
                 router.push(.outbox)
+            case .memorial:
+                // The data changes here (ERRATA E124-B): mark the nearest standing tree removed, then
+                // open its memorial. The tree is a real seed record, and after the override this device
+                // genuinely holds it as removed — so 19 draws over a memorial, not over a living tree.
+                let id = try await standingTree(api)
+                try await api.debugMarkRemoved(treeID: id)
+                router.push(.memorial(id))
+            case .moderationReview:
+                // Put the lead's review queue in front of a screenshot: open a removal review on a real
+                // tree, promote this account to a lead, and show the You tab, where the section draws.
+                let id = try await standingTree(api)
+                try await api.debugSeedRemovalReview(treeID: id)
+                try await api.setRole(.coordinator)
+                router.tab = .you
             case .careLog:
                 router.present(.careLog(try await standingTree(api)))
             case .share:

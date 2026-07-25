@@ -35,7 +35,8 @@ public enum AppSchema {
         Migration(version: 3, name: "a private reminder can be owned by a device", migrate: applyV3),
         Migration(version: 4, name: "the outbox carries private reminders", migrate: applyV4),
         Migration(version: 5, name: "a favourite can be owned by a device", migrate: applyV5),
-        Migration(version: 6, name: "an account's own rows go with the account", migrate: applyV6)
+        Migration(version: 6, name: "an account's own rows go with the account", migrate: applyV6),
+        Migration(version: 7, name: "a lead can locally mark a tree removed", sql: v7)
     ]
 
     /// The version a freshly migrated database reports.
@@ -725,6 +726,36 @@ public enum AppSchema {
             END;
             """)
     }
+
+    // MARK: - v7
+
+    /// A device-side layer of tree-status overrides — the first place in the iOS app that can make a
+    /// tree's status differ from the inventory's (ERRATA E124-B).
+    ///
+    /// **Why this table exists, and why it is a separate layer rather than an UPDATE.** The seed's
+    /// `trees` are read-only by construction (they live in an ATTACHed database), and `community_trees`
+    /// is insert-only — nothing in the app has ever transitioned a tree's status, because a status
+    /// transition was a *moderator* action and moderator surfaces were scoped to the web
+    /// (`CypressAPI`'s header omits `/admin/*`; `TreeStatus` says "a moderator or org coordinator
+    /// confirms"; DECISIONS §3.7). The local beta brings that confirmation on-device (the project
+    /// owner's moderation route), and this is how it stays honest: a confirmation records an *override*
+    /// keyed on the tree's stable UUID rather than mutating an inventory row that the weekly city diff
+    /// still owns. `LocalAPI` reads the tree, then layers the override on top — the same shape the
+    /// future `removed_but_active` reconciliation would take. When a real diff or a real moderator
+    /// service lands, this table is what it writes through, unchanged.
+    ///
+    /// `set_by` is the account that confirmed it (a lead), for the same reason `review_flags.raised_by`
+    /// records who raised one. One row per tree — a second confirmation replaces the first — because a
+    /// tree has one current status, whatever the history of flags behind it.
+    private static let v7 = """
+    CREATE TABLE IF NOT EXISTS tree_status_overrides (
+        tree_uuid  TEXT PRIMARY KEY,
+        status     TEXT NOT NULL CHECK (status IN (
+                       'alive','declining','dead_reported','removed','vacant_site')),
+        set_by     TEXT,
+        created_at TEXT NOT NULL
+    );
+    """
 
     /// The `CREATE TABLE` text SQLite holds for `outbox`, which is where the `kind` vocabulary
     /// actually lives — `pragma_table_info` reports columns, not their CHECKs.

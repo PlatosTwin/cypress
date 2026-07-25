@@ -20,6 +20,10 @@ public actor LocalAPI: CypressAPI {
     public let deviceID: UUID
     /// The signed-in user, when there is one.
     public private(set) var userID: UUID?
+    /// The signed-in account's role (ERRATA E124-B). `.member` until promoted; a lead
+    /// (`canConfirmReviewFlag`) is who the local moderation route lets confirm a removal. Read from
+    /// `app_state` at boot, like `userID`, because there is no `users` table on device (ERRATA E86).
+    public private(set) var userRole: UserRole
     /// Where photo binaries live once "uploaded". `LocalAPI`'s upload is a move into this
     /// directory, which is what makes the outbox's photo phase exercisable with no network.
     private let photoDirectory: URL
@@ -28,12 +32,14 @@ public actor LocalAPI: CypressAPI {
         store: CypressStore,
         deviceID: UUID,
         userID: UUID? = nil,
+        role: UserRole = .member,
         photoDirectory: URL? = nil,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.store = store
         self.deviceID = deviceID
         self.userID = userID
+        self.userRole = role
         self.now = now
         self.treeQueries = store.seed.map {
             TreeQueries(schema: $0, seedHasSoftDeletedTrees: store.seedHasSoftDeletedTrees)
@@ -74,7 +80,31 @@ public actor LocalAPI: CypressAPI {
         let added = try await store.queue.read { connection in
             try communityTrees.inBounds(viewport.bounds, limit: viewport.pinLimit, connection: connection)
         }
-        guard !added.isEmpty else { return seedContent }
+
+        // Local status overrides (ERRATA E124-B): a lead-confirmed removal makes a tree a memorial
+        // pin even though the inventory still calls it alive. Applied to `.pins` only — a removed tree
+        // inside a zoomed-out cluster stays part of the count; the memorial matters at the pin zoom
+        // where it can be tapped through to screen 19. The table holds one row per locally-moderated
+        // tree, so this read is a scan of a handful of rows (usually none).
+        let overrides = try await store.queue.read { connection in
+            try contributions.statusOverrides(connection: connection)
+        }
+        func applyingOverrides(_ content: MapContent) -> MapContent {
+            guard !overrides.isEmpty, case let .pins(pins) = content else { return content }
+            return .pins(pins.map { pin in
+                guard let status = overrides[pin.id] else { return pin }
+                return TreePin(
+                    id: pin.id,
+                    coordinate: pin.coordinate,
+                    status: status,
+                    source: pin.source,
+                    verificationState: pin.verificationState,
+                    speciesID: pin.speciesID
+                )
+            })
+        }
+
+        guard !added.isEmpty else { return applyingOverrides(seedContent) }
 
         switch seedContent {
         case let .pins(pins):
@@ -103,7 +133,7 @@ public actor LocalAPI: CypressAPI {
                 )
             }
             let seedBudget = max(viewport.pinLimit - communityPins.count, 0)
-            return .pins(Array(pins.prefix(seedBudget)) + communityPins)
+            return applyingOverrides(.pins(Array(pins.prefix(seedBudget)) + communityPins))
 
         case var .clusters(clusters):
             let centreLatitude = (viewport.bounds.minLatitude + viewport.bounds.maxLatitude) / 2
@@ -163,7 +193,15 @@ public actor LocalAPI: CypressAPI {
         return try await store.queue.readConsistently { connection -> TreeProfile in
             let record = try treeQueries?.tree(id: id, connection: connection)
             let inventoryTree = try record?.tree ?? communityTrees.tree(id: id, connection: connection)
-            guard let tree = inventoryTree else { throw APIError.notFound }
+            guard var tree = inventoryTree else { throw APIError.notFound }
+
+            // Layer any local status override (ERRATA E124-B): a lead-confirmed removal makes this a
+            // memorial record — `status.isMemorial` gates `MemorialModel`, and `acceptsNewContributions`
+            // goes false — exactly as the same override makes the map pin a memorial. One row per
+            // moderated tree, so the lookup is a scan of a handful of rows (usually none).
+            if let overridden = try contributions.statusOverrides(connection: connection)[id] {
+                tree.status = overridden
+            }
 
             // Each series is read whole (`limit: nil`), because everything the profile derives from
             // one is a statement about all of it: the hero's count and its `since` year, A5's
@@ -824,6 +862,115 @@ public actor LocalAPI: CypressAPI {
         try await store.setAppState(.currentUserID, to: userID.uuidString)
     }
 
+    // MARK: - Moderation (local, ERRATA E124-B)
+
+    /// Set the signed-in account's role, persisted like `userID`.
+    ///
+    /// In the shipping product a role is granted server-side by an org coordinator (PRODUCT §2); the
+    /// local beta has no server, so the promote path is the DEBUG affordance in the You tab — a
+    /// person stepping into the mocked city-lead role to verify removals. `.member` is the ground
+    /// state a fresh local account signs in as; nothing else grants a role.
+    public func setRole(_ role: UserRole) async throws {
+        self.userRole = role
+        try await store.setAppState(.currentUserRole, to: role.rawValue)
+    }
+
+    /// The open `appears_removed` flags a lead has to act on, resolved for display: each tree's name
+    /// (active name, else species common name), address and coordinate, newest concern first.
+    ///
+    /// A read, so it is ungated — a non-lead simply never reaches the surface that calls it (the You
+    /// tab shows the section only when `userRole.canConfirmReviewFlag`). The *write* is what carries
+    /// the authority check; see `confirmRemoval`.
+    public func openRemovalReviews() async throws -> [RemovalReviewItem] {
+        try await store.queue.read { connection -> [RemovalReviewItem] in
+            let flags = try contributions.openReviewFlags(kind: .appearsRemoved, connection: connection)
+            return try flags.compactMap { flag -> RemovalReviewItem? in
+                // The tree may be a seed row or a community add; resolve through the same two-step the
+                // profile uses. A flag whose tree cannot be found is skipped rather than shown nameless.
+                let record = try treeQueries?.tree(id: flag.treeID, connection: connection)
+                guard let tree = try record?.tree ?? communityTrees.tree(id: flag.treeID, connection: connection)
+                else { return nil }
+                let name = try contributions.activeName(treeID: flag.treeID, connection: connection)?.name
+                    ?? Self.resolveSpecies(
+                        record: record,
+                        speciesID: tree.speciesCurrentID,
+                        queries: speciesQueries,
+                        connection: connection
+                    )?.commonName
+                    ?? "This tree"
+                return RemovalReviewItem(
+                    flagID: flag.id,
+                    treeID: flag.treeID,
+                    treeName: name,
+                    address: tree.address,
+                    coordinate: tree.coordinate,
+                    raisedAt: flag.createdAt
+                )
+            }
+        }
+    }
+
+    /// A lead confirms an `appears_removed` flag: the flag moves to `confirmed` and the tree gains a
+    /// local status override of `removed`, in one transaction (see `AppSchema.v7`). That is the whole
+    /// of what makes screen 19 reachable from real data — the map pin becomes a memorial and the
+    /// profile becomes a memorial record, because `mapContent` and `treeProfile` layer this override
+    /// over the inventory's status.
+    ///
+    /// Gated: only `userRole.canConfirmReviewFlag` (moderator, admin, coordinator) may confirm a flag
+    /// into a status transition (DECISIONS §3.7). A `member` or `steward` gets `.forbidden` — the
+    /// authority lives on the write, so even a surface shown in error cannot move a tree.
+    public func confirmRemoval(flagID: UUID) async throws {
+        guard userRole.canConfirmReviewFlag else { throw APIError.forbidden }
+        let moment = now()
+        let confirmer = userID
+        try await store.queue.write { connection in
+            guard let flag = try contributions.reviewFlag(id: flagID, connection: connection),
+                  flag.deletedAt == nil else {
+                throw APIError.notFound
+            }
+            // Only a removal flag becomes a removal. A confirm arriving for any other kind is a bug in
+            // the caller, not a silent status change on the wrong grounds.
+            guard flag.kind == .appearsRemoved else { throw APIError.validationFailed }
+            guard flag.status == .open else { throw APIError.conflict }
+
+            try contributions.confirmReviewFlag(id: flagID, at: moment, connection: connection)
+            try contributions.setStatusOverride(
+                treeID: flag.treeID,
+                status: .removed,
+                setBy: confirmer,
+                at: moment,
+                connection: connection
+            )
+        }
+    }
+
+    #if DEBUG
+    /// Test seam (ERRATA E124-B): open a removal review on a real seed tree, returning its flag id, so
+    /// the deep-link harness can put the moderation surface in front of a screenshot with a genuine
+    /// record behind it. Inserts the same `appears_removed` flag a "Removed?" check-in would, without
+    /// the outbox round trip.
+    @discardableResult
+    public func debugSeedRemovalReview(treeID: UUID) async throws -> UUID {
+        let moment = now()
+        let flag = ReviewFlag(treeID: treeID, kind: .appearsRemoved, raisedBy: nil, createdAt: moment, updatedAt: moment)
+        try await store.queue.write { connection in
+            try contributions.insert(flag, connection: connection)
+        }
+        return flag.id
+    }
+
+    /// Test seam (ERRATA E124-B): force a tree to a memorial by writing its status override directly,
+    /// so the harness can open screen 19 against a real seed record. The shipping path is
+    /// `confirmRemoval`, which requires a lead and an open flag; this skips both because the harness is
+    /// proving the *screen renders*, not the moderation gate — `ModerationTests` proves the gate.
+    public func debugMarkRemoved(treeID: UUID) async throws {
+        let moment = now()
+        try await store.queue.write { connection in
+            try contributions.setStatusOverride(treeID: treeID, status: .removed, setBy: nil, at: moment, connection: connection)
+        }
+    }
+    #endif
+
     /// `DELETE /me` — deletion, in the two-part sense RULINGS R3 settles (see `AccountDeletion`).
     ///
     /// **Not on `CypressAPI`, and that is deliberate.** The protocol's header lists `DELETE /me`
@@ -849,6 +996,10 @@ public actor LocalAPI: CypressAPI {
             try AccountDeletion().delete(userID: account, at: moment, connection: connection)
         }
         userID = nil
+        // The role went with the account: a deleted account is not a lead. Cleared here rather than
+        // in `AccountDeletion` because it is device state (`app_state`), not one of the account's rows.
+        userRole = .member
+        try await store.setAppState(.currentUserRole, to: UserRole.member.rawValue)
         return outcome
     }
 

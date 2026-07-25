@@ -141,4 +141,8 @@ public enum AppStateKey: String, CaseIterable, Sendable {
     /// The signed-in user, when there is one. Contributions made before sign-in stay attributed to
     /// the device until `POST /devices/claim` migrates them.
     case currentUserID = "current_user_id"
+    /// The signed-in account's role (`UserRole`), for the local moderation route (ERRATA E124-B).
+    /// Absent means `member`. There is no `users` table on device (ERRATA E86), so a role — like the
+    /// user id itself — is carried in `app_state` rather than on a user row.
+    case currentUserRole = "current_user_role"
 }

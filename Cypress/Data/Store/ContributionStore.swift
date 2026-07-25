@@ -484,6 +484,77 @@ public struct ContributionStore {
         return try run(statement, on: connection)
     }
 
+    // MARK: - Moderation (ERRATA E124-B)
+
+    /// The open flags a lead has to act on, newest first. Scoped to one `kind` so the removal queue
+    /// and (a future) dead-tree queue are separate lists, and to `status = 'open'` because a confirmed
+    /// or dismissed flag is done — the index `(tree_uuid, status)` is not the one that serves this, so
+    /// it is a small scan over a table that holds one row per raised concern, not per tree.
+    public func openReviewFlags(kind: ReviewFlag.Kind, connection: SQLiteConnection) throws -> [ReviewFlag] {
+        let statement = try connection.cachedStatement("""
+            SELECT * FROM review_flags
+             WHERE kind = :kind AND status = 'open' AND deleted_at IS NULL
+             ORDER BY created_at DESC
+            """)
+        _ = try statement.bind([":kind": kind.rawValue])
+        return try statement.fetchAll(Self.decodeReviewFlag)
+    }
+
+    /// One flag by id, for the confirm path that has to read a flag's tree before it acts on it.
+    public func reviewFlag(id: UUID, connection: SQLiteConnection) throws -> ReviewFlag? {
+        let statement = try connection.cachedStatement("SELECT * FROM review_flags WHERE id = :id")
+        _ = try statement.bind([":id": id.uuidString])
+        return try statement.fetchOne(Self.decodeReviewFlag)
+    }
+
+    /// Move an open flag to `confirmed`. Guarded on `status = 'open'` so a second confirmation (two
+    /// leads, or a double tap) changes nothing and reports `.duplicate` — the confirmation is a
+    /// transition, not a toggle, and the row records who has already made it.
+    @discardableResult
+    public func confirmReviewFlag(id: UUID, at date: Date, connection: SQLiteConnection) throws -> WriteOutcome {
+        let statement = try connection.cachedStatement("""
+            UPDATE review_flags SET status = 'confirmed', updated_at = :now
+             WHERE id = :id AND status = 'open' AND deleted_at IS NULL
+            """)
+        _ = try statement.bind([":id": id.uuidString, ":now": date])
+        return try run(statement, on: connection)
+    }
+
+    /// Record — or replace — a device-side status override for a tree (see `AppSchema.v7`). One row
+    /// per tree: `INSERT … ON CONFLICT(tree_uuid) DO UPDATE`, because a tree has one current status.
+    public func setStatusOverride(
+        treeID: UUID,
+        status: TreeStatus,
+        setBy: UUID?,
+        at date: Date,
+        connection: SQLiteConnection
+    ) throws {
+        let statement = try connection.cachedStatement("""
+            INSERT INTO tree_status_overrides (tree_uuid, status, set_by, created_at)
+            VALUES (:tree, :status, :by, :created)
+            ON CONFLICT(tree_uuid) DO UPDATE SET
+                status = excluded.status, set_by = excluded.set_by, created_at = excluded.created_at
+            """)
+        _ = try statement.bind([
+            ":tree": treeID.uuidString,
+            ":status": status.rawValue,
+            ":by": setBy?.uuidString,
+            ":created": date
+        ])
+        _ = try run(statement, on: connection)
+    }
+
+    /// Every override this device holds, as a lookup `LocalAPI` layers over a tree's inventory status
+    /// (`mapContent`, `treeProfile`). Small by construction — one row per locally-moderated tree — so
+    /// it is read whole rather than joined into each seed query across the ATTACH boundary.
+    public func statusOverrides(connection: SQLiteConnection) throws -> [UUID: TreeStatus] {
+        let statement = try connection.cachedStatement("SELECT tree_uuid, status FROM tree_status_overrides")
+        let rows = try statement.fetchAll { row -> (UUID, TreeStatus) in
+            (try row.uuid("tree_uuid"), try row.value("status", TreeStatus.self))
+        }
+        return Dictionary(rows, uniquingKeysWith: { _, latest in latest })
+    }
+
     /// First namer wins (D15). The partial unique index on `(tree_uuid) WHERE status = 'active'`
     /// makes a second active name a constraint violation rather than a race.
     @discardableResult
@@ -1014,6 +1085,19 @@ public struct ContributionStore {
             name: try row.string("name"),
             givenBy: try row.uuidIfPresent("given_by"),
             status: try row.value("status", TreeName.Status.self),
+            createdAt: try row.date("created_at"),
+            updatedAt: try row.date("updated_at"),
+            deletedAt: try row.dateIfPresent("deleted_at")
+        )
+    }
+
+    static func decodeReviewFlag(_ row: SQLiteRow) throws -> ReviewFlag {
+        ReviewFlag(
+            id: try row.uuid("id"),
+            treeID: try row.uuid("tree_uuid"),
+            kind: try row.value("kind", ReviewFlag.Kind.self),
+            raisedBy: try row.uuidIfPresent("raised_by"),
+            status: try row.value("status", ReviewFlag.Status.self),
             createdAt: try row.date("created_at"),
             updatedAt: try row.date("updated_at"),
             deletedAt: try row.dateIfPresent("deleted_at")

@@ -393,7 +393,7 @@ struct ScreenSweepShots {
             .environment(AppRouter())
         })
         #expect(await Self.sweep("21-you-tab") {
-            NavigationStack { YouTabView(outbox: SweepFixtures.outboxViewState()) }
+            NavigationStack { YouTabView(outbox: SweepFixtures.outboxViewState(), moderation: ModerationModel(api: nil)) }
                 .environment(AppRouter())
         })
     }

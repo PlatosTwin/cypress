@@ -41,7 +41,10 @@ public struct DataLayer: Sendable {
         }
 
         let userID = (try await store.appState(.currentUserID)).flatMap(UUID.init(uuidString:))
-        let api = LocalAPI(store: store, deviceID: deviceID, userID: userID)
+        // The account's role (ERRATA E124-B), carried in `app_state` like the user id — there is no
+        // `users` table on device (ERRATA E86). Absent, or an unknown string, reads as `.member`.
+        let role = (try await store.appState(.currentUserRole)).flatMap(UserRole.init(rawValue:)) ?? .member
+        let api = LocalAPI(store: store, deviceID: deviceID, userID: userID, role: role)
         let outbox = OutboxQueue(queue: store.queue, transport: APIOutboxTransport(api: api))
 
         // Anything left `uploading` belongs to a previous launch that was killed mid-drain. It is

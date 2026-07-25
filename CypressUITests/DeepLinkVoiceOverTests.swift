@@ -51,6 +51,17 @@ final class DeepLinkVoiceOverTests: XCTestCase {
     func testJournalTab()    { check("journal",       anchor: "Almanac",          pushed: false) }
     func testYouTab()        { check("you",           anchor: "Your contributions", pushed: false) }
 
+    /// Screen 19, reachable at last (ERRATA E124-B): the harness marks a real seed tree removed and
+    /// opens its memorial, so the one screen E117 could not reach — there was no removed tree to open
+    /// it with — finally has its accessibility tree read like every other. Pushed, so it owes a Back.
+    func testMemorial()      { check("memorial",      anchor: "Removed by the city", pushed: true) }
+
+    /// The local moderation surface (ERRATA E124-B): the You tab in a lead's state, with one open
+    /// removal review in front of it. A tab root, so no Back. The anchor is the review's own caption —
+    /// a plain static text, unlike the `Confirm removed` button whose label the tree exposes on the
+    /// button rather than as free text.
+    func testModerationReview() { check("moderationReview", anchor: "Reported removed", pushed: false) }
+
     // MARK: - What a modal owes the screen it covers
 
     /// A VoiceOver user must not be able to swipe onto the screen behind a modal.

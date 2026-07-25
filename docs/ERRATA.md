@@ -4285,3 +4285,46 @@ device's work across.
 by tests at every layer instead. This is Part A of the accounts/moderation work; Part B — a role on
 the local account, mocked city-lead accounts, and a moderation surface that flips a flagged tree to
 `removed` so screen 19's memorial goes live — is the larger build still ahead.
+
+### E124-B — the local moderation route: report → confirm → memorial (#1/#2 Part B)
+
+The project owner's moderation route ("designate some people as community leads and they can verify
+removals"), which finally makes screen 19 reachable from real data. It crosses a boundary the app was
+built behind, so the design is deliberate: **the iOS client never transitioned a tree's status**, by
+construction. Seed trees are read-only (ATTACHed), `community_trees` is insert-only, and confirming a
+review flag into a status change was a web `/admin/*` deliverable `CypressAPI` omits on purpose. The
+local beta has no web, so the confirmation happens on-device — without corrupting the read-only seed.
+
+**A status-override layer, not an UPDATE.** A new `tree_status_overrides` table (migration v7) records
+that a tree's status has been locally moved, keyed on its stable UUID. `LocalAPI.mapContent` and
+`treeProfile` read the inventory, then layer the override on top — so a confirmed-removed tree becomes
+a memorial pin and a memorial record while the seed row it came from is never touched. This is the
+exact shape the future weekly city diff would take; when a real diff or moderator service lands, it
+writes through the same table.
+
+**The loop.** A "Removed?" check-in (screen 05's `appears_removed` segment) opens a review flag, the
+way it always did. A lead sees it in a new **Reviews** section on the You tab — drawn only when the
+signed-in account `canConfirmReviewFlag`. Confirming moves the flag to `confirmed` and writes a
+`removed` override in one transaction (`LocalAPI.confirmRemoval`), gated so a member or steward gets
+`.forbidden` on the write itself, not merely a hidden button. The tree's map pin becomes a memorial,
+its profile becomes a memorial record, and screen 19 — unreachable since E117 for want of a removed
+tree — opens over it.
+
+**The role, with no `users` table (ERRATA E86).** Carried in `app_state` like the user id, read at
+boot, cleared on account deletion. There is no server to grant it and no separate account to seed a
+mock lead into, so the promote path is a DEBUG-only row in the You tab: the owner stepping into the
+mocked city-personnel lead role to verify removals. `#if DEBUG`, so Release has no self-promote — a
+real moderation grant is never the account's own to make.
+
+**Verification.** `ModerationTests` (6, data layer) prove the full loop, the map memorial pin, the
+role gate (member *and* steward forbidden), the double-confirm conflict, and role persistence.
+`DeepLinkVoiceOverTests` gains `testMemorial` and `testModerationReview` — screen 19 finally has its
+accessibility tree read like every other deep screen, discharging E117's
+"unreachable-until-the-data-changes". Both surfaces were also looked at running: the memorial renders
+"Removed by the city…" over a real Southern Magnolia; the You tab shows the review card with a Confirm
+button and the DEBUG lead controls. 426 unit tests pass.
+
+**Known boundary, left as-is.** The override is applied where the memorial loop needs it — the map's
+pins and the tree profile — not in every aggregate read. A locally-removed tree can still be counted
+in an almanac stat or a "near you" list until those layer the override too. Noted so it is a known
+edge rather than a surprise; the loop that delivers the memorial is complete.

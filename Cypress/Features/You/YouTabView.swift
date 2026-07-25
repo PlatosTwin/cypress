@@ -40,6 +40,11 @@ struct YouTabView: View {
     /// between two surfaces. The composition root owns the single instance (ARCHITECTURE §3).
     @Bindable var outbox: OutboxViewState
 
+    /// The local moderation queue (ERRATA E124-B). Present on every build; it draws nothing unless the
+    /// signed-in account is a lead, so a non-lead sees exactly the You tab it saw before. Owned by the
+    /// composition root, like `outbox`.
+    let moderation: ModerationModel
+
     @Environment(AppRouter.self) private var router: AppRouter?
 
     var body: some View {
@@ -50,9 +55,13 @@ struct YouTabView: View {
                         // C1 with no back circle: a tab root has nothing to go back to.
                         ScreenHeader(title: YouCopy.screenTitle)
 
+                        moderationSection
                         contributionsSection
                         settingsSection
                         privacySection
+                        #if DEBUG
+                        developerSection
+                        #endif
 
                         Spacer(minLength: 0)
                     }
@@ -74,6 +83,27 @@ struct YouTabView: View {
         // the toggle below does, and `start()` is what reads the stored preference. It guards its
         // own observer, so screen 17 calling it too costs nothing.
         .task { await outbox.start() }
+        // Reads the role and, if it is a lead's, the open reviews. Runs on every appearance of the
+        // tab, so a removal reported elsewhere shows up the next time a lead looks here.
+        .task { await moderation.load() }
+    }
+
+    // MARK: - Reviews (leads only, ERRATA E124-B)
+
+    /// The removal-review queue. Draws nothing at all unless `moderation.canModerate` — a non-lead
+    /// never sees the section, and the authority that actually protects a tree is on the confirm write
+    /// (`LocalAPI.confirmRemoval`), not on whether this view drew.
+    @ViewBuilder
+    private var moderationSection: some View {
+        if moderation.canModerate {
+            ModerationReviewList(
+                items: moderation.items,
+                onOpen: { router?.push(.treeProfile($0.treeID)) },
+                onConfirm: { item in Task { await moderation.confirm(item) } }
+            )
+            .padding(.top, CypressSpacing.labelSectionTop)
+            .padding(.horizontal, CypressSpacing.gutter)
+        }
     }
 
     // MARK: - The outbox entry point (BUILD-PLAN §9)
@@ -159,6 +189,38 @@ struct YouTabView: View {
         .padding(.horizontal, CypressSpacing.gutter)
         .padding(.bottom, CypressSpacing.bottomFootnote)
     }
+
+    // MARK: - Developer (DEBUG only, ERRATA E124-B)
+
+    #if DEBUG
+    /// The one way to become a lead on a device with no server to grant a role: the project owner
+    /// stepping into the mocked city-personnel role to verify removals. `#if DEBUG`, so the Release
+    /// build has no self-promote path — a real moderation grant is never the account's own to make.
+    private var developerSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(YouCopy.developerLabel)
+                .cypressMicroLabel()
+                .padding(.bottom, CypressSpacing.gapVitality)
+
+            IconTextRow(
+                accent: .water,
+                title: moderation.canModerate ? YouCopy.stepDownTitle : YouCopy.becomeLeadTitle,
+                subtitle: moderation.canModerate ? YouCopy.stepDownSubtitle : YouCopy.becomeLeadSubtitle,
+                action: {
+                    Task {
+                        if moderation.canModerate {
+                            await moderation.stepDownForDebug()
+                        } else {
+                            await moderation.promoteToLeadForDebug()
+                        }
+                    }
+                }
+            )
+        }
+        .padding(.top, CypressSpacing.labelSectionTop)
+        .padding(.horizontal, CypressSpacing.gutter)
+    }
+    #endif
 }
 
 // MARK: - Copy
@@ -181,6 +243,13 @@ enum YouCopy {
 
     static let privacyLabel = "Privacy"
     static let privacyLeadIn = "Private by default:"
+
+    // Developer (DEBUG only, ERRATA E124-B). Not shipped; see `YouTabView.developerSection`.
+    static let developerLabel = "Developer"
+    static let becomeLeadTitle = "Become a community lead"
+    static let becomeLeadSubtitle = "Debug: act as mocked city personnel and review removals"
+    static let stepDownTitle = "Step down from lead"
+    static let stepDownSubtitle = "Debug: return to an ordinary member account"
 
     /// **Stated rather than switched, and that is the finding this screen exists to surface.**
     ///

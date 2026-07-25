@@ -21,12 +21,18 @@ struct RootView: View {
     /// SwiftUI environment from a single composition root; no singletons").
     @State private var outbox: OutboxViewState
 
+    /// The local moderation queue (ERRATA E124-B), owned here so the You tab and any future surface
+    /// share one instance — the same reason `outbox` is owned here. It reads the account's role on
+    /// appearance and draws nothing unless that role is a lead's.
+    @State private var moderation: ModerationModel
+
     /// `@MainActor` because `makeOutboxViewState()` is: the model is a `@MainActor @Observable`, and
     /// building it in `init` is what lets both screens receive the same one.
     @MainActor
     init(data: DataLayer) {
         self.data = data
         _outbox = State(wrappedValue: data.makeOutboxViewState())
+        _moderation = State(wrappedValue: ModerationModel(api: data.api))
     }
 
     /// The one shared location provider (ARCHITECTURE §3: "Shared services (`CypressAPI`, `Outbox`,
@@ -213,7 +219,7 @@ struct RootView: View {
                 onRequestLocation: { location.start() }
             )
         case .you:
-            YouTabView(outbox: outbox)
+            YouTabView(outbox: outbox, moderation: moderation)
         }
     }
 
