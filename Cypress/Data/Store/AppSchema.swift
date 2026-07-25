@@ -36,7 +36,8 @@ public enum AppSchema {
         Migration(version: 4, name: "the outbox carries private reminders", migrate: applyV4),
         Migration(version: 5, name: "a favourite can be owned by a device", migrate: applyV5),
         Migration(version: 6, name: "an account's own rows go with the account", migrate: applyV6),
-        Migration(version: 7, name: "a lead can locally mark a tree removed", sql: v7)
+        Migration(version: 7, name: "a lead can locally mark a tree removed", sql: v7),
+        Migration(version: 8, name: "a photo can be voted up or down", sql: v8)
     ]
 
     /// The version a freshly migrated database reports.
@@ -755,6 +756,51 @@ public enum AppSchema {
         set_by     TEXT,
         created_at TEXT NOT NULL
     );
+    """
+
+    // MARK: - v8
+
+    /// A thumbs up or down on one photograph — the mechanism that decides which photo is a tree's
+    /// hero (ERRATA E125).
+    ///
+    /// **Why a vote and not a favourite.** D1 removed the version of `favorites` that was a public
+    /// vote, and `ContributionStore.isFavorite` says why: a favourite is a private bookmark, and
+    /// there is deliberately no "is anybody's favourite" query. This is the opposite kind of thing.
+    /// A vote here is a *contribution* in DECISIONS §3.12's sense — a judgement about the record
+    /// that the forest keeps and that other people read off — because what it decides, the hero, is
+    /// the photograph everybody looking at that tree sees. So it aggregates: `PhotoHero` sums the
+    /// column across contributors rather than reading one person's row.
+    ///
+    /// **The owner columns are `favorites`' (v5), for `favorites`' reason.** A vote is cast before
+    /// there is an account as often as after — D9's whole shape — so exactly one owner, a user or a
+    /// device, enforced by the same `CHECK` and the same pair of partial unique indexes. One vote
+    /// per owner per photo; changing your mind is an upsert, and taking it back is a `DELETE`.
+    ///
+    /// **No tombstone trigger, unlike `favorites`.** A withdrawn favourite has to leave a trace,
+    /// because v5's adoption merge and R3's erasure both need to find the row. A withdrawn vote does
+    /// not: an un-vote is the absence of a judgement, and a zero score and no row are the same fact.
+    /// Account erasure therefore just deletes, with no sentinel to open the gate.
+    ///
+    /// `tree_uuid` is denormalised out of `photos` so the profile can read a whole tree's tally in
+    /// one indexed scan; it is written from the photo's own row and never from a caller's argument.
+    private static let v8 = """
+    CREATE TABLE IF NOT EXISTS photo_votes (
+        id         TEXT PRIMARY KEY,
+        photo_id   TEXT NOT NULL REFERENCES photos(id),
+        tree_uuid  TEXT NOT NULL,
+        user_id    TEXT,
+        device_id  TEXT,
+        vote       INTEGER NOT NULL CHECK (vote IN (-1, 1)),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        CHECK ((user_id IS NULL) <> (device_id IS NULL))
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_photo_votes_user
+        ON photo_votes(user_id, photo_id) WHERE user_id IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_photo_votes_device
+        ON photo_votes(device_id, photo_id) WHERE device_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_photo_votes_tree ON photo_votes(tree_uuid);
     """
 
     /// The `CREATE TABLE` text SQLite holds for `outbox`, which is where the `kind` vocabulary

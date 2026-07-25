@@ -26,6 +26,12 @@ struct RootView: View {
     /// appearance and draws nothing unless that role is a lead's.
     @State private var moderation: ModerationModel
 
+    /// One decoded-photograph cache for the whole app (ERRATA E125), owned here for the reason
+    /// `outbox` and `moderation` are: the profile hero and the photo browser draw the same
+    /// photographs, and two caches would decode each of them twice. Read through the environment,
+    /// so a screen that shows a photograph does not have to be handed one.
+    @State private var photoImages: PhotoImageStore
+
     /// `@MainActor` because `makeOutboxViewState()` is: the model is a `@MainActor @Observable`, and
     /// building it in `init` is what lets both screens receive the same one.
     @MainActor
@@ -33,6 +39,7 @@ struct RootView: View {
         self.data = data
         _outbox = State(wrappedValue: data.makeOutboxViewState())
         _moderation = State(wrappedValue: ModerationModel(api: data.api))
+        _photoImages = State(wrappedValue: PhotoImageStore(api: data.api))
     }
 
     /// The one shared location provider (ARCHITECTURE §3: "Shared services (`CypressAPI`, `Outbox`,
@@ -56,6 +63,7 @@ struct RootView: View {
                 }
         }
         .environment(router)
+        .environment(photoImages)
         // **One** cover, switching on `router.sheet`, not one modifier per route. Stacking several
         // `fullScreenCover`s on the same view is not a supported arrangement — SwiftUI keeps the
         // last one and the others become dead code, which is exactly the kind of wiring bug that
@@ -400,6 +408,12 @@ struct RootView: View {
                 onBack: { router.pop() },
                 onOpenTree: { treeID in router.push(.treeProfile(treeID)) }
             )
+
+        case .photos(let id):
+            // Screen 20 (ERRATA E125). Its entrance is the hero on screen 03: the photograph a tree
+            // leads with is the control that opens the set it was chosen from, which is the only
+            // place in the app where tapping a picture has an obvious meaning.
+            TreePhotosView(treeID: id, api: data.api)
 
         case .almanac:
             // Screen 12, **pushed**. Its entrance is the Journal tab, which renders the almanac as

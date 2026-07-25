@@ -4328,3 +4328,97 @@ button and the DEBUG lead controls. 426 unit tests pass.
 pins and the tree profile — not in every aggregate read. A locally-removed tree can still be counted
 in an almanac stat or a "near you" list until those layer the override too. Noted so it is a known
 edge rather than a surprise; the loop that delivers the memorial is complete.
+
+### E125 — the app had never drawn a photograph, and the reason was a protocol extension
+
+Four owner reports from a phone, which turned out to be one shallow bug, one layout bug, and two
+halves of a hole where a whole feature belonged: the ghost overlay showed the tree even when the
+subject was TRUNK or LEAF; the log-visit tray ran off the right edge once the ghost appeared; a tree
+had no hero image; and there was no way to browse a tree's photographs or say which one should lead.
+
+**The ghost.** `VisitCameraModel` decided the overlay, the subject pill and the caption in three
+places, so they could disagree — and did. One rule now: `shotType.supportsGhostOverlay` gates the
+layer, and the caption says "overlay off · full-tree only" rather than describing a layer that is not
+there. Ghosting a trunk against a whole tree's silhouette was never guidance; it was noise over the
+one thing the photographer was trying to frame.
+
+**The tray.** `Image.resizable().scaledToFill()` reports the *scaled* size, not the proposal, so a
+3024×4032 photograph measured 627 pt wide against a 393 pt proposal — and the parent laid the note
+field and the Log visit button out against 627. Measured with `NSHostingController.sizeThatFits`
+before touching anything, and again after. `PhotoFill` is the fix and the reason it exists:
+`Color.clear.overlay { … }.clipped()` reports the proposal, so a photograph can never again push a
+sibling off the screen. Camera, hero and browser all draw through it.
+
+**The hole, and the trap under it.** There was no hero because **no photograph rendered anywhere in
+the app except screen 04**, which holds the image it just captured in memory. E37 gave `Photo` the
+predicates that say who may see what and never gave anybody the bytes. So `photoData(id:)` and
+`setPhotoVote(photoID:vote:)` went onto the API, `PhotoImageStore` downsamples and caches them,
+screen 03 leads with one, and screen 20 — new — is the only screen in the app where a photograph is
+the subject rather than the backdrop. The vote is A3's long-dead "a manual pin by any org member
+overrides", finally spelled as the thing a person actually does: keep this one, not that one.
+`PhotoHero.choose` in `Core` is the single rule both screens ask, and `AppSchema` v8 (`photo_votes`,
+exactly-one-owner CHECK, two partial unique indexes) is where it is written down.
+
+**The lesson, which cost a shipped defect.** Both methods were first declared *only* in
+`public extension CypressAPI`. That compiles, reads as a protocol with defaults, and is a trap: a
+member that exists solely in an extension has no witness-table entry and dispatches **statically**.
+Every screen holds `any CypressAPI`, so every call reached the extension's `throw APIError.notFound`
+and `LocalAPI`'s real implementation was unreachable code. The whole suite was green — my tests held
+the concrete type, and the two UI tests anchored on the string "Best photo", which renders perfectly
+while every image on the screen is a gradient. The owner found it in thirty seconds on a phone:
+"i did rebuilt and i did a photo all i see is the standard blurry image". Both are now declared
+requirements; `PhotoHeroTests.worksThroughTheProtocol` erases to `any CypressAPI` on purpose and
+fails if anyone reverts it; and `speciesGuide`, `almanac`, `groveSpecies` and `deviceContributions`
+were audited and were already declared, so the hole was confined to this work.
+
+**A second rule, learned from a suite that went red.** The photo deep links seeded photographs onto
+`standingTree` — the tree nine other cases open — and seeding is persistent, so screen 03 stopped
+being cold and four `DeepLinkVoiceOverTests` began failing on a title that had become a species name.
+They failed only in whole-suite order, which no single-test run reproduces. `photographedTree` takes
+`.last` instead, mutating from the far end while `.memorial` mutates from the near end, with 456
+standing records between them. The rule, for whoever adds the next case: **a case that writes
+persistent state must not write it onto a tree another case reads.**
+
+And its corollary, which took a second red run to learn: **a case that writes persistent state must be
+idempotent.** `debugSeedPhotos` was append-only, so two launches left six photographs and three left
+nine — a container reached twelve during one suite run — and a vote cast by hand on the way past
+outlived every launch after it. `testAThumbActuallyVotes` requires the hero to start on the top card
+and found it on the second, because an hour-old manual up-vote was still the hero. It now clears the
+tree first: its photographs, their votes, and their files, verified stable at three across repeated
+launches starting from the twelve-photograph container that broke it. A harness whose state depends on
+how many times it has been run before is not a harness.
+
+**Verification, and why the fixture is garish.** The seeded JPEGs were at first a flat dark green —
+sensible-looking and useless, because a flat green photograph behind the hero's legibility scrim
+renders as a dark green vertical ramp, which is exactly what `CypressGradientField` draws when there
+is *no* photograph. Looking could not tell the fixed app from the broken one. They are now saturated
+magenta, orange and cyan with a hard white bar across the middle; nothing in Cypress draws that.
+Screens 03 and 20 were then launched over a freshly installed container and photographed, with a
+cold tree as the negative control: the control shows the dashed "No photos of this tree yet" well,
+screen 03 leads with the magenta frame, and screen 20 lists all three. The full suite passes — unit
+tests plus 26 UI tests, including the four that the seeding defect had broken.
+
+**And then the thumbs did not work, for a third reason nobody would have guessed.** Every tap on
+every thumb in the list did nothing: no vote, no error, no filled glyph. The buttons were in the
+accessibility tree, correctly labelled, and `isHittable` reported true. The cause is the other half
+of the bug `PhotoFill` was built to prevent — **`.clipped()` clips drawing, not touches.** The
+overflowing `Image` keeps its full scaled footprint for hit testing, so SwiftUI routes taps to pixels
+it never painted. Measured on screen 20: a 361 × 217 pt box holding a 3:4 photograph reports an
+element 361 × 481.3, leaving 132 pt of invisible photograph hanging off each end. Screen 20 stacks
+photograph, then caption-and-thumbs, then the next photograph — and the next photograph is later in
+the `VStack`, so later in z-order, so its unpainted upper overhang lay on top of the previous card's
+thumb row and swallowed every tap. Every thumb in the list was dead *except the two on the last
+card*, which has nothing drawn after it; that asymmetry is what proved the diagnosis before a line
+was changed. The fix is `.contentShape(Rectangle())`, and it belongs in `PhotoFill` rather than at
+the call site: the promise that component makes is that a photograph occupies the box it was given
+and not one pixel more, and a touch footprint is one of the ways a view occupies space. Screen 04
+had already patched the same leak by hand with a local `.allowsHitTesting(false)`.
+
+Two lessons compound here, and they are the same lesson. `isHittable` was true throughout, because
+the accessibility hit test resolved to the button while the touch hit test resolved to the photograph
+on top of it — so a test could confirm the control was reachable by every measure it knew how to
+take, and the control still did nothing. Both defects in this entry were found by a person tapping a
+running build. The regression test that now guards it, `testAThumbActuallyVotes`, therefore asserts
+the *consequence* — it votes the top card down and requires the `Hero` badge to move off it — and it
+targets the top card deliberately, because a test that had picked the last card would have passed
+throughout the entire period the feature was broken. 443 unit tests and 27 UI tests pass.

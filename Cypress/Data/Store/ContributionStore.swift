@@ -364,6 +364,138 @@ public struct ContributionStore {
         return Self.series(try statement.fetchAll(Self.decodePhoto), limit: limit)
     }
 
+    /// Where a photo's bytes are on this device, if they are anywhere yet.
+    ///
+    /// Two columns, because a photograph is in one of two places for a while: `local_path` from the
+    /// moment of capture until the outbox drains it, `storage_key` — a filename inside `LocalAPI`'s
+    /// own photo directory — from then on. `markPhotoUploaded` sets the second and clears the first
+    /// in one statement, so exactly one of them is non-null on a settled row.
+    ///
+    /// A screen that only read `storage_key` would show nothing for the seconds or minutes between
+    /// the shutter and the drain — which is precisely when somebody is looking at the tree they just
+    /// photographed. Hence both.
+    public func photoBinaryLocation(
+        id: UUID,
+        connection: SQLiteConnection
+    ) throws -> (storageKey: String?, localPath: String?)? {
+        let statement = try connection.cachedStatement("""
+            SELECT storage_key, local_path FROM photos
+             WHERE id = :id COLLATE NOCASE AND deleted_at IS NULL
+            """)
+        _ = try statement.bind([":id": id.uuidString])
+        return try statement.fetchOne { row in
+            (storageKey: try row.stringIfPresent("storage_key"),
+             localPath: try row.stringIfPresent("local_path"))
+        }
+    }
+
+    // MARK: - Photo votes (AppSchema v8)
+
+    /// Casts or changes one owner's vote on one photograph.
+    ///
+    /// `tree_uuid` is copied from the photo's own row inside the statement rather than taken as an
+    /// argument, so a vote can never be filed against a tree the photograph does not belong to. A
+    /// photo that does not exist inserts nothing — the `SELECT` yields no row — which is the right
+    /// answer to voting on something that is not there.
+    ///
+    /// Two statements' worth of conflict targets in one, the way `applyFavoriteToggle` does it: the
+    /// owner column is one of two literals chosen by a `switch` here, never a caller's string.
+    @discardableResult
+    public func setPhotoVote(
+        photoID: UUID,
+        owner: FavoriteOwner,
+        vote: PhotoVote,
+        at date: Date,
+        connection: SQLiteConnection
+    ) throws -> WriteOutcome {
+        let ownerColumn: String
+        switch owner {
+        case .user: ownerColumn = "user_id"
+        case .device: ownerColumn = "device_id"
+        }
+        let statement = try connection.cachedStatement("""
+            INSERT INTO photo_votes (id, photo_id, tree_uuid, user_id, device_id, vote, created_at, updated_at)
+            SELECT :id, p.id, p.tree_uuid, :user, :device, :vote, :now, :now
+              FROM photos p
+             WHERE p.id = :photo COLLATE NOCASE AND p.deleted_at IS NULL
+            ON CONFLICT(\(ownerColumn), photo_id) WHERE \(ownerColumn) IS NOT NULL DO UPDATE
+               SET vote = excluded.vote, updated_at = excluded.updated_at
+            """)
+        _ = try statement.bind([
+            ":id": UUID(),
+            ":photo": photoID.uuidString,
+            ":user": owner.userID,
+            ":device": owner.deviceID,
+            ":vote": vote.rawValue,
+            ":now": date
+        ])
+        return try run(statement, on: connection)
+    }
+
+    /// Takes a vote back. No tombstone: an un-vote is the absence of a judgement, and a missing row
+    /// and a zero score are the same fact (`AppSchema` v8).
+    public func clearPhotoVote(photoID: UUID, owner: FavoriteOwner, connection: SQLiteConnection) throws {
+        let statement = try connection.cachedStatement("""
+            DELETE FROM photo_votes
+             WHERE photo_id = :photo COLLATE NOCASE
+               AND ((:user IS NOT NULL AND user_id = :user COLLATE NOCASE)
+                    OR (:device IS NOT NULL AND device_id = :device COLLATE NOCASE))
+            """)
+        _ = try statement.bind([
+            ":photo": photoID.uuidString,
+            ":user": owner.userID?.uuidString,
+            ":device": owner.deviceID?.uuidString
+        ])
+        try statement.run()
+        _ = try statement.reset()
+    }
+
+    /// Every photograph of this tree that anybody has voted on, with the total and this owner's own.
+    ///
+    /// The sum is over all voters and the `own` column is one voter's, in one pass, because the hero
+    /// and the control that changes it are read at the same moment by the same screen and must not
+    /// be able to disagree about which photograph is which.
+    public func photoTallies(
+        treeID: UUID,
+        owner: FavoriteOwner,
+        connection: SQLiteConnection
+    ) throws -> [UUID: PhotoTally] {
+        let statement = try connection.cachedStatement("""
+            SELECT photo_id,
+                   SUM(vote) AS score,
+                   SUM(CASE WHEN (:user IS NOT NULL AND user_id = :user COLLATE NOCASE)
+                              OR (:device IS NOT NULL AND device_id = :device COLLATE NOCASE)
+                            THEN vote ELSE 0 END) AS own
+              FROM photo_votes
+             WHERE tree_uuid = :tree COLLATE NOCASE
+             GROUP BY photo_id
+            """)
+        _ = try statement.bind([
+            ":tree": treeID.uuidString,
+            ":user": owner.userID?.uuidString,
+            ":device": owner.deviceID?.uuidString
+        ])
+        let rows = try statement.fetchAll { row -> (UUID, PhotoTally)? in
+            guard let id = try row.uuidIfPresent("photo_id") else { return nil }
+            return (id, PhotoTally(
+                score: try row.int("score"),
+                ownVote: PhotoVote(rawValue: try row.int("own"))
+            ))
+        }
+        return Dictionary(uniqueKeysWithValues: rows.compactMap { $0 })
+    }
+
+    /// Erases one account's votes (RULINGS R3). Nothing here needs the deletion sentinel `favorites`
+    /// needs, because no trigger guards this table.
+    public func deletePhotoVotes(userID: UUID, connection: SQLiteConnection) throws {
+        let statement = try connection.cachedStatement("""
+            DELETE FROM photo_votes WHERE user_id = :user COLLATE NOCASE
+            """)
+        _ = try statement.bind([":user": userID.uuidString])
+        try statement.run()
+        _ = try statement.reset()
+    }
+
     // MARK: - Notes, reminders, flags, names
 
     @discardableResult
@@ -729,6 +861,7 @@ public struct ContributionStore {
         _ = try reminders.reset()
 
         try claimFavorites(deviceUUID: deviceUUID, userID: userID, at: date, connection: connection)
+        try claimPhotoVotes(deviceUUID: deviceUUID, userID: userID, at: date, connection: connection)
 
         let device = try connection.cachedStatement("""
             INSERT INTO device (id, device_uuid, user_id, created_at, updated_at)
@@ -815,6 +948,61 @@ public struct ContributionStore {
         // 3 — and the ones with nothing to collide with simply move.
         let adopt = try connection.cachedStatement("""
             UPDATE favorites SET user_id = :user, device_id = NULL, updated_at = :now
+             WHERE device_id = :device COLLATE NOCASE AND user_id IS NULL
+            """)
+        _ = try adopt.bind([":user": userID, ":now": date, ":device": deviceUUID.uuidString])
+        try adopt.run()
+        _ = try adopt.reset()
+    }
+
+    /// `claimFavorites`' shape, one table over and two statements shorter (`AppSchema` v8).
+    ///
+    /// A vote can collide the same way a favourite can — the same photograph voted from the device
+    /// before sign-in and from the account after — and it resolves the same way: whichever the
+    /// person said last is what they meant. What it does not need is the tombstone dance. There is
+    /// no trigger on `photo_votes`, so the superseded row is simply deleted rather than being
+    /// deleted under an exception; and there is nothing to merge beyond the vote itself, because a
+    /// vote is one integer with no state behind it.
+    private func claimPhotoVotes(
+        deviceUUID: UUID,
+        userID: UUID,
+        at date: Date,
+        connection: SQLiteConnection
+    ) throws {
+        // 1 — the device's later word overwrites the account's earlier one.
+        let merge = try connection.cachedStatement("""
+            UPDATE photo_votes
+               SET vote       = (SELECT d.vote FROM photo_votes d
+                                  WHERE d.photo_id = photo_votes.photo_id
+                                    AND d.user_id IS NULL AND d.device_id = :device COLLATE NOCASE),
+                   updated_at = (SELECT d.updated_at FROM photo_votes d
+                                  WHERE d.photo_id = photo_votes.photo_id
+                                    AND d.user_id IS NULL AND d.device_id = :device COLLATE NOCASE)
+             WHERE photo_votes.user_id = :user COLLATE NOCASE
+               AND EXISTS (SELECT 1 FROM photo_votes d
+                            WHERE d.photo_id = photo_votes.photo_id
+                              AND d.user_id IS NULL AND d.device_id = :device COLLATE NOCASE
+                              AND d.updated_at > photo_votes.updated_at)
+            """)
+        _ = try merge.bind([":user": userID, ":device": deviceUUID.uuidString])
+        try merge.run()
+        _ = try merge.reset()
+
+        // 2 — the superseded device row goes.
+        let drop = try connection.cachedStatement("""
+            DELETE FROM photo_votes
+             WHERE user_id IS NULL AND device_id = :device COLLATE NOCASE
+               AND EXISTS (SELECT 1 FROM photo_votes mine
+                            WHERE mine.photo_id = photo_votes.photo_id
+                              AND mine.user_id = :user COLLATE NOCASE)
+            """)
+        _ = try drop.bind([":user": userID, ":device": deviceUUID.uuidString])
+        try drop.run()
+        _ = try drop.reset()
+
+        // 3 — and the rest move.
+        let adopt = try connection.cachedStatement("""
+            UPDATE photo_votes SET user_id = :user, device_id = NULL, updated_at = :now
              WHERE device_id = :device COLLATE NOCASE AND user_id IS NULL
             """)
         _ = try adopt.bind([":user": userID, ":now": date, ":device": deviceUUID.uuidString])

@@ -152,6 +152,8 @@ struct ScreenEntranceTests {
             return "03 · a measurement stat card with no reading in it (invented, E98)"
         case .outbox:
             return "the You tab · the outbox row (specified, BUILD-PLAN §9)"
+        case .photos:
+            return "03 · a tap on the hero photograph (invented, E125)"
         case .site:
             return "01 map · a pin with no tree behind it (invented, E107)"
         }

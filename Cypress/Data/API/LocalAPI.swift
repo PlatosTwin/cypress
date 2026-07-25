@@ -1,4 +1,7 @@
+import CoreGraphics
 import Foundation
+import ImageIO
+import UniformTypeIdentifiers
 
 /// The implementation that ships (ARCHITECTURE §4).
 ///
@@ -236,7 +239,12 @@ public actor LocalAPI: CypressAPI {
                 // and `addTree` are the only two writers and both run here, and nothing syncs
                 // anybody else's photos down. So this device may show its owner all of them, and
                 // `.pending` stays `.pending`, because nothing has in fact moderated them.
-                ownPhotoIDs: Set(photos.items.map(\.id))
+                ownPhotoIDs: Set(photos.items.map(\.id)),
+                // Read in the same transaction as the photographs, so the hero and the list that
+                // can change it are computed from one consistent picture (ERRATA E125).
+                photoTallies: try contributions.photoTallies(
+                    treeID: id, owner: FavoriteOwner(attribution), connection: connection
+                )
             )
         }
     }
@@ -723,6 +731,61 @@ public actor LocalAPI: CypressAPI {
         }
     }
 
+    /// The bytes of one photograph (see `PhotoAccess` for why this is on the API at all).
+    ///
+    /// Two places to look, because a photograph is in one of two for a while: `local_path` from the
+    /// shutter until the outbox drains it, then `storage_key` inside this actor's own photo
+    /// directory. Looking only in the second would blank the tree you just photographed for exactly
+    /// as long as the drain takes — the one moment somebody is certain to be looking at it.
+    ///
+    /// `storage_key` is resolved against `photoDirectory` here rather than being trusted as a path:
+    /// the column holds a filename (`markPhotoUploaded` writes `lastPathComponent`), and treating a
+    /// stored string as a path is how a directory traversal gets in when these rows one day arrive
+    /// from somewhere other than this device.
+    public func photoData(id: UUID) async throws -> Data {
+        let location = try await store.queue.read { connection in
+            try contributions.photoBinaryLocation(id: id, connection: connection)
+        }
+        guard let location else { throw APIError.notFound }
+
+        let candidates = [
+            location.storageKey.map { photoDirectory.appendingPathComponent(($0 as NSString).lastPathComponent) },
+            location.localPath.map { URL(fileURLWithPath: $0) }
+        ].compactMap { $0 }
+
+        for url in candidates {
+            if let data = try? Data(contentsOf: url) { return data }
+        }
+        // The row exists and the file does not — a photograph whose binary was lost. `notFound` is
+        // the truthful answer and the screen draws its placeholder; inventing an empty `Data` would
+        // hand a decoder something to fail on later and further away.
+        throw APIError.notFound
+    }
+
+    /// A thumb up or down on a photograph, or `nil` to take it back (ERRATA E125, `AppSchema` v8).
+    ///
+    /// The owner is `attribution`'s — the account when there is one, this device otherwise — so a
+    /// vote cast before sign-in is adopted by `claimDevice` exactly as a favourite is, and never
+    /// counted twice.
+    public func setPhotoVote(photoID: UUID, vote: PhotoVote?) async throws {
+        let moment = now()
+        let owner = FavoriteOwner(attribution)
+        try await store.queue.write { connection in
+            // Voting on a photograph that is not there is `notFound`, not a silent success. The
+            // insert's own `SELECT FROM photos` would already write nothing, but "wrote nothing" and
+            // "there was nothing to write about" have to reach the caller as different answers.
+            guard try contributions.photoBinaryLocation(id: photoID, connection: connection) != nil else {
+                throw APIError.notFound
+            }
+            guard let vote else {
+                return try contributions.clearPhotoVote(photoID: photoID, owner: owner, connection: connection)
+            }
+            try contributions.setPhotoVote(
+                photoID: photoID, owner: owner, vote: vote, at: moment, connection: connection
+            )
+        }
+    }
+
     /// `GET /me/outbox-status`.
     ///
     /// The local store has no separate server-side record of recent sync results; the outbox rows
@@ -967,6 +1030,154 @@ public actor LocalAPI: CypressAPI {
         let moment = now()
         try await store.queue.write { connection in
             try contributions.setStatusOverride(treeID: treeID, status: .removed, setBy: nil, at: moment, connection: connection)
+        }
+    }
+
+    /// Test seam (ERRATA E125): give a real seed tree some photographs, so the deep-link harness can
+    /// open screen 20 and the profile hero against records that exist.
+    ///
+    /// The shipping path is the shutter — `beginPhotoUpload` then `uploadPhoto`, through the outbox —
+    /// and it needs a camera. This writes the same rows and the same files directly. The images are
+    /// generated rather than bundled: a fixture JPEG in the app's resources would ship in Release,
+    /// and what these screens have to prove is that *a photograph* renders, not which one.
+    ///
+    /// Returns the ids, newest first, in the order the profile reads them.
+    ///
+    /// **Idempotent per tree, and it has to be.** Every launch of the `photos` or `photoHero` deep
+    /// link calls this, and both the rows and the JPEGs outlive the launch — so an append-only seam
+    /// would leave six photographs after two launches and nine after three, and any vote cast on the
+    /// way past would still be sitting there. That is not a hypothetical: it broke a run of
+    /// `testAThumbActuallyVotes`, which reasonably requires the hero to start on the top card and
+    /// found it on the second, because a photograph voted up by hand an hour earlier was still the
+    /// hero. A harness whose state depends on how many times it has been run before is not a harness.
+    /// So this clears the tree first: its photographs, their votes, and their files.
+    @discardableResult
+    public func debugSeedPhotos(treeID: UUID, count: Int = 3) async throws -> [UUID] {
+        var ids: [UUID] = []
+        try await debugClearPhotos(treeID: treeID)
+        try FileManager.default.createDirectory(at: photoDirectory, withIntermediateDirectories: true)
+        for index in 0..<count {
+            // Portrait, like a phone's, and each one a different hue so a browser of three
+            // photographs is visibly a browser of three photographs.
+            let data = Self.debugJPEG(hue: Double(index) / Double(max(count, 1)))
+            let moment = now().addingTimeInterval(TimeInterval(-86_400 * index))
+            let photo = Photo(
+                treeID: treeID,
+                shotType: index == 0 ? .fullTree : (index == 1 ? .trunk : .leaf),
+                width: 1_200,
+                height: 1_600,
+                capturedAt: moment,
+                createdAt: moment,
+                updatedAt: moment
+            )
+            let destination = photoDirectory.appendingPathComponent("\(photo.id.uuidString).jpg")
+            try data.write(to: destination, options: .atomic)
+            try await store.queue.write { connection in
+                try contributions.insert(photo, localPath: nil, connection: connection)
+                try contributions.markPhotoUploaded(
+                    id: photo.id,
+                    storageKey: destination.lastPathComponent,
+                    at: moment,
+                    connection: connection
+                )
+            }
+            ids.append(photo.id)
+        }
+        return ids
+    }
+
+    /// Takes one tree back to having never been photographed — rows, votes and bytes.
+    ///
+    /// The files go first and the rows second, because the reverse order loses the filenames: a
+    /// photograph's bytes are found through its row, so deleting the row strands the JPEG in the
+    /// container with nothing left pointing at it.
+    private func debugClearPhotos(treeID: UUID) async throws {
+        let existing = try await store.queue.read { connection in
+            try contributions.photos(treeID: treeID, connection: connection).items
+        }
+        for photo in existing {
+            let location = try await store.queue.read { connection in
+                try contributions.photoBinaryLocation(id: photo.id, connection: connection)
+            }
+            guard let name = location?.storageKey else { continue }
+            try? FileManager.default.removeItem(
+                at: photoDirectory.appendingPathComponent((name as NSString).lastPathComponent)
+            )
+        }
+        try await store.queue.write { connection in
+            // The votes first: `photo_votes` refers to the photographs, and a delete in the other
+            // order would leave rows pointing at nothing for as long as the transaction is open.
+            let votes = try connection.cachedStatement("""
+                DELETE FROM photo_votes WHERE tree_uuid = :tree COLLATE NOCASE
+                """)
+            _ = try votes.bind([":tree": treeID.uuidString])
+            try votes.run()
+            _ = try votes.reset()
+
+            let photos = try connection.cachedStatement("""
+                DELETE FROM photos WHERE tree_uuid = :tree COLLATE NOCASE
+                """)
+            _ = try photos.bind([":tree": treeID.uuidString])
+            try photos.run()
+            _ = try photos.reset()
+        }
+    }
+
+    /// A small portrait JPEG that could not be mistaken for any view in this app.
+    ///
+    /// ── Why it is garish, and why that is the whole point (ERRATA E125) ───────────────────────
+    /// The first version filled a flat dark green. Sensible-looking, and useless: a flat green
+    /// photograph behind the hero's legibility scrim renders as a dark green vertical ramp — which is
+    /// *exactly* what `CypressGradientField` draws when there is no photograph. Verifying by eye
+    /// could not tell the fixed app from the broken one, and the bug this seam exists to catch is
+    /// precisely "every photograph silently fell back to the gradient".
+    ///
+    /// So: a saturated hue swept off the green axis, plus a white bar across the middle. Cypress has
+    /// no magenta, no cyan, and nothing anywhere draws a hard white band inside a photo frame. If
+    /// that band is on the screen, bytes came through `photoData` and were decoded. If it is not,
+    /// they did not — no interpretation required.
+    ///
+    /// CoreGraphics and ImageIO, not UIKit: `Data` may import the system libraries its own job is
+    /// defined in terms of, and no UI framework (ARCHITECTURE §2, and see `PhotoBinary`'s note on
+    /// the same line). A `#if DEBUG` seam is not a reason to cross a layer boundary.
+    private static func debugJPEG(hue: Double) -> Data {
+        let width = 300, height = 400
+        guard let context = CGContext(
+            data: nil, width: width, height: height,
+            bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+        ) else { return Data() }
+        // Three hues a third of the wheel apart, started at magenta so none of them lands on the
+        // app's greens: magenta, orange, cyan for count == 3.
+        let (red, green, blue) = Self.saturatedRGB(hue: (hue + 0.85).truncatingRemainder(dividingBy: 1))
+        context.setFillColor(CGColor(red: red, green: green, blue: blue, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: height / 2 - 20, width: width, height: 40))
+
+        guard let image = context.makeImage() else { return Data() }
+        let output = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(
+            output, UTType.jpeg.identifier as CFString, 1, nil
+        ) else { return Data() }
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else { return Data() }
+        return output as Data
+    }
+
+    /// Fully saturated, fully bright RGB for a hue in `0..<1`. Written out rather than taken from
+    /// `UIColor(hue:…)` for the layering reason above: `Data` imports no UI framework.
+    private static func saturatedRGB(hue: Double) -> (Double, Double, Double) {
+        let sector = hue * 6
+        let fraction = sector - sector.rounded(.down)
+        switch Int(sector) % 6 {
+        case 0: return (1, fraction, 0)
+        case 1: return (1 - fraction, 1, 0)
+        case 2: return (0, 1, fraction)
+        case 3: return (0, 1 - fraction, 1)
+        case 4: return (fraction, 0, 1)
+        default: return (1, 0, 1 - fraction)
         }
     }
     #endif

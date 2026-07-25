@@ -85,6 +85,22 @@ public protocol CypressAPI: Sendable {
     /// `LocalAPI` implements it as a move into the app's photo directory.
     func uploadPhoto(at localPath: String, ticket: PhotoUploadTicket) async throws
 
+    /// `GET /photos/{id}` — the bytes of a photograph this device may show. Defaulted in
+    /// `PhotoAccess.swift`; `LocalAPI` overrides it.
+    ///
+    /// **Declared here, and that is the entire point of the line.** Both of these methods first
+    /// existed only as extension members. An extension member is not a requirement, so it has no
+    /// witness-table entry and dispatches *statically*: `LocalAPI`'s implementations were reached
+    /// when the value was a `LocalAPI`, and the extension's `throw APIError.notFound` was reached the
+    /// moment it was erased to `any CypressAPI` — which is what every screen holds. Every photograph
+    /// failed to load and every vote failed to save, on a build whose tests all passed, because the
+    /// tests held the concrete type (ERRATA E125).
+    func photoData(id: UUID) async throws -> Data
+
+    /// A thumb up or down on a photograph, or `nil` to withdraw it (`AppSchema` v8). Defaulted in
+    /// `PhotoAccess.swift`; see `photoData` above for why it is declared here and not only there.
+    func setPhotoVote(photoID: UUID, vote: PhotoVote?) async throws
+
     /// `GET /me/outbox-status` — the server's view of recent sync results, for screen 17's
     /// "says why" line.
     func outboxStatus() async throws -> [SyncResult]
@@ -362,6 +378,14 @@ public struct TreeProfile: Hashable, Sendable {
     /// from the server's attribution, and everything it does not list stays gated on `.approved`.
     public let ownPhotoIDs: Set<UUID>
 
+    /// What has been voted on `photos`, keyed by photo (`AppSchema` v8, ERRATA E125).
+    ///
+    /// It travels with the series rather than being fetched beside it because the hero and the
+    /// browser both derive from the pair, and a screen that read the photographs at one moment and
+    /// the votes at another could draw a hero that its own list disagrees with. Photos nobody has
+    /// voted on are simply absent; `PhotoHero` reads a missing entry as zero.
+    public let photoTallies: [UUID: PhotoTally]
+
     public init(
         tree: Tree,
         activeName: TreeName? = nil,
@@ -375,7 +399,8 @@ public struct TreeProfile: Hashable, Sendable {
         careEvents: Series<CareEvent> = .empty,
         communityNotes: [CommunityNote] = [],
         siteLineageTreeID: UUID? = nil,
-        ownPhotoIDs: Set<UUID> = []
+        ownPhotoIDs: Set<UUID> = [],
+        photoTallies: [UUID: PhotoTally] = [:]
     ) {
         self.tree = tree
         self.activeName = activeName
@@ -390,6 +415,7 @@ public struct TreeProfile: Hashable, Sendable {
         self.communityNotes = communityNotes
         self.siteLineageTreeID = siteLineageTreeID
         self.ownPhotoIDs = ownPhotoIDs
+        self.photoTallies = photoTallies
     }
 
     /// Whether this device contributed the photo, and may therefore show it to the person who took

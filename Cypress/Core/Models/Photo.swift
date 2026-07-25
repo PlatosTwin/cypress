@@ -140,3 +140,79 @@ public struct Photo: CoreEntity, SoftDeletable {
         shotType == .fullTree && deletedAt == nil
     }
 }
+
+// MARK: - Voting
+
+/// A thumb, up or down, on one photograph (`photo_votes`, `AppSchema` v8).
+///
+/// The raw values are the summands: a tally is the arithmetic sum of the votes cast, so the type
+/// and the column agree by construction rather than by a mapping somebody has to keep in step.
+public enum PhotoVote: Int, Codable, Sendable, Hashable, CaseIterable {
+    case down = -1
+    case up = 1
+}
+
+/// What a photograph's voters have said about it, and what this viewer said.
+///
+/// `score` is across everybody who voted; `ownVote` is this viewer's row, which is what the browser
+/// draws as a filled thumb. On a device with no account and no sync those two are the same person,
+/// and they are still two facts: the hero is decided by the first and the control is drawn from the
+/// second.
+public struct PhotoTally: Sendable, Hashable, Codable {
+    public let score: Int
+    public let ownVote: PhotoVote?
+
+    public init(score: Int = 0, ownVote: PhotoVote? = nil) {
+        self.score = score
+        self.ownVote = ownVote
+    }
+
+    public static let none = PhotoTally()
+}
+
+/// Which photograph a tree leads with.
+///
+/// **A3, with its own escape clause finally implemented.** A3 reads: "best photo = most recent
+/// `full_tree`, ties broken by resolution; **a manual pin by any org member overrides**." Nothing
+/// in the app could pin one, so the override half was dead text and the heuristic was the whole
+/// rule. A thumbs-up is that pin (ERRATA E125): a person looking at the photographs and saying
+/// *this one*, which is better evidence about a photograph than its shot type and its timestamp.
+///
+/// The order, therefore:
+///
+/// 1. **A down-voted photograph is never the hero.** Not a tie-break — an exclusion. Somebody
+///    looked at it and said no.
+/// 2. **An up-voted photograph wins**, highest score first; the most recent breaks a tie, then
+///    resolution. Shot type does not enter into it, because the pin overrides the heuristic rather
+///    than being ranked inside it.
+/// 3. **Otherwise A3**: the most recent `full_tree`, ties by resolution.
+/// 4. **Otherwise the most recent photograph of any kind.** A tree photographed only in close-up
+///    has no A3 candidate, and drawing a gradient over a tree that has photographs would be the
+///    same emptiness E37 left behind. The eyebrow that names the choice is the caller's to omit.
+///
+/// Deliberately free of any visibility judgement: the caller passes the set it may show, exactly as
+/// `Photo.isBestPhotoShot` requires, and this ranks it.
+public enum PhotoHero {
+
+    public static func choose(from photos: [Photo], tallies: [UUID: PhotoTally] = [:]) -> Photo? {
+        func score(_ photo: Photo) -> Int { tallies[photo.id]?.score ?? 0 }
+
+        let eligible = photos.filter { $0.deletedAt == nil && score($0) >= 0 }
+        guard !eligible.isEmpty else { return nil }
+
+        /// Most recent, then most pixels — A3's ordering, reused by every tier below.
+        func mostRecent(_ candidates: [Photo]) -> Photo? {
+            candidates.max {
+                ($0.capturedAt, $0.resolution) < ($1.capturedAt, $1.resolution)
+            }
+        }
+
+        let pinned = eligible.filter { score($0) > 0 }
+        if !pinned.isEmpty {
+            let best = pinned.map(score).max() ?? 0
+            return mostRecent(pinned.filter { score($0) == best })
+        }
+
+        return mostRecent(eligible.filter(\.isBestPhotoShot)) ?? mostRecent(eligible)
+    }
+}

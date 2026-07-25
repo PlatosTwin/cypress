@@ -245,24 +245,29 @@ struct TreeProfilePresentation {
         return "Best photo · " + TreeProfilePresentation.monthYear.string(from: best.capturedAt)
     }
 
-    /// A3: most recent `full_tree` photo, ties broken by resolution — over the set this screen may
-    /// show. A3's word "approved" is the *public* half of the rule and lives in
+    /// The photograph this tree leads with — `PhotoHero.choose` over the set this screen may show.
+    ///
+    /// A3's word "approved" is the *public* half of the rule and lives in
     /// `Photo.isPublicBestPhotoCandidate`; applying it here would mean this device never shows its
     /// owner a best photo of their own tree.
     ///
-    /// The resolution tie-break only does anything once `width` and `height` are recorded, which
-    /// `APIOutboxTransport` now does.
+    /// The rule itself moved to `Core` (ERRATA E125) so that screen 03's hero and screen 20's
+    /// `Hero` badge cannot answer this differently — the browser exists to change the answer, and a
+    /// browser that disagreed with the screen it changes would be worse than no browser. It also
+    /// gained A3's long-dead second half: a thumbs-up is the manual pin that overrides the
+    /// heuristic. See `PhotoHero`.
     var bestPhoto: Photo? {
-        visiblePhotos.items
-            .filter(\.isBestPhotoShot)
-            .max { left, right in
-                if left.capturedAt != right.capturedAt { return left.capturedAt < right.capturedAt }
-                return left.resolution < right.resolution
-            }
+        PhotoHero.choose(from: visiblePhotos.items, tallies: profile.photoTallies)
     }
 
     /// 14's dashed well copy, verbatim.
     static let emptyPhotoWellText = "No photos of this tree yet"
+
+    /// The hero as a control, and what pressing it does. **NOT SPECIFIED** — screen 20 has no mock
+    /// (ERRATA E125). The label names the thing rather than describing the picture: what is under
+    /// the finger is the tree's photographs, and the meta pill beside it already says how many.
+    static let heroLabel = "Photos of this tree"
+    static let heroHint = "Opens every photo of this tree"
 
     // MARK: - Season strip (A5)
 

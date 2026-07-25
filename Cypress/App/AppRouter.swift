@@ -35,6 +35,11 @@ enum Route: Hashable {
     /// missing. A tree profile with fields missing still asserts a tree, and 12,518 of these records
     /// have no tree in them.
     case site(UUID)
+    /// The photographs of one tree, with a thumb on each. **No mocked screen** — DECISIONS 21 says
+    /// an unmocked destination is a question for the design, and this is that question answered
+    /// (ERRATA E125): A3 has always ended "a manual pin by any org member overrides", and until
+    /// there was somewhere to look at a tree's photographs there was nowhere to pin one.
+    case photos(UUID)
 }
 
 /// The four root destinations of the bottom bar (C16 / screen 01).

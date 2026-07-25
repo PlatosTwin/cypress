@@ -75,6 +75,8 @@ enum DebugDeepLink {
         case measure            // 16
         case outbox             // 17
         case memorial           // 19 — reachable now via a local removal override (ERRATA E124-B)
+        case photos             // 20 — the photo browser (ERRATA E125)
+        case photoHero          // 03 with photographs on it, which the seed alone cannot produce
         // Presented over the tab root.
         case careLog            // 09
         case share              // 10
@@ -153,6 +155,18 @@ enum DebugDeepLink {
                 let id = try await standingTree(api)
                 try await api.debugMarkRemoved(treeID: id)
                 router.push(.memorial(id))
+            case .photos, .photoHero:
+                // The data changes here too (ERRATA E125), and for the same reason as `.memorial`:
+                // the shipped seed holds no photographs at all, because every photograph in this app
+                // is one somebody took. `debugSeedPhotos` writes three, through the same rows and
+                // the same files the shutter writes, so screen 20 lists real records and screen 03's
+                // hero draws real bytes rather than the gradient placeholder.
+                //
+                // **`photographedTree`, not `standingTree`** — see that function. Seeding is
+                // persistent, and a tree with photographs on it is a different tree.
+                let id = try await photographedTree(api)
+                try await api.debugSeedPhotos(treeID: id)
+                router.push(screen == .photos ? .photos(id) : .treeProfile(id))
             case .moderationReview:
                 // Put the lead's review queue in front of a screenshot: open a removal review on a real
                 // tree, promote this account to a lead, and show the You tab, where the section draws.
@@ -186,6 +200,34 @@ enum DebugDeepLink {
     /// owns the question of which states may be written to (E95).
     private static func standingTree(_ api: LocalAPI) async throws -> UUID {
         try await firstTree(matching: { $0.status.acceptsNewContributions }, api: api, wanted: "a standing tree")
+    }
+
+    /// The *farthest* standing tree among the candidates — the one the photo screens seed onto.
+    ///
+    /// ── Why this is not `standingTree` (ERRATA E125) ──────────────────────────────────────
+    /// Both photo cases write, and **what they write outlives the launch**: `debugSeedPhotos` inserts
+    /// `photos` rows and JPEGs into the device container, which the next launch reads back. Point them
+    /// at `standingTree` and they photograph the one tree nine other cases open — and screen 03 stops
+    /// being cold. `testTreeProfile` anchors on `TreeProfilePresentation.fallbackTitle`, the title a
+    /// tree with nothing on it shows; a warm hero has a species name instead, so four tests in
+    /// `DeepLinkVoiceOverTests` failed with "'Tree' never appeared in the accessibility tree" — and
+    /// failed only in the whole-suite run, in an order no single-test run reproduces.
+    ///
+    /// `.last` rather than `.first` because `.memorial` mutates from the near end (it marks the nearest
+    /// standing tree removed, so `standingTree` steps one outward each time it runs) and this mutates
+    /// from the far end. They march away from each other, with 456 standing records between them.
+    ///
+    /// The rule this encodes, for whoever adds the next case: **a case that writes persistent state
+    /// must not write it onto a tree another case reads.**
+    private static func photographedTree(_ api: LocalAPI) async throws -> UUID {
+        let candidates = try await api.treesNear(centre, radiusM: radiusM, limit: candidateLimit)
+        guard let match = candidates.last(where: { $0.tree.status.acceptsNewContributions }) else {
+            throw Failure(
+                screen: "a standing tree to photograph",
+                reason: "none among the \(candidates.count) records nearest \(centre.latitude), \(centre.longitude)"
+            )
+        }
+        return match.tree.id
     }
 
     /// The nearest vacant planting site — the 12,518 records with no tree in them (E107).

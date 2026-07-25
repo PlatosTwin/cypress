@@ -79,6 +79,9 @@ struct VisitCameraView: View {
             // This is the single artefact the docs say the official city app will never have. It
             // is drawn *over* the live preview and *under* the framing furniture, and it goes away
             // the moment a frame is taken, because at that point there is nothing left to line up.
+            //
+            // It also goes away when the subject changes. `model.showsGhost`, not `model.ghost` —
+            // see there for why a trunk close-up gets no tree behind it (ERRATA E125).
             // ══════════════════════════════════════════════════════════════════════════════════
             if !model.hasSnapped {
                 ghostLayer
@@ -124,10 +127,9 @@ struct VisitCameraView: View {
     @ViewBuilder
     private var base: some View {
         if let snapshot = model.snapshot {
-            Image(uiImage: snapshot)
-                .resizable()
-                .scaledToFill()
-                .accessibilityLabel("The photo you just took")
+            // `PhotoFill`, not `scaledToFill` — a portrait photo measured 234 pt wider than the
+            // phone and took the tray with it (ERRATA E125). See `PhotoFill`.
+            PhotoFill(image: snapshot, label: "The photo you just took")
         } else if model.camera.isLive, let session = model.camera.session {
             VisitCameraPreview(session: session)
         } else {
@@ -139,18 +141,16 @@ struct VisitCameraView: View {
 
     @ViewBuilder
     private var ghostLayer: some View {
-        if let ghost = model.ghost {
-            Image(uiImage: ghost)
-                .resizable()
-                .scaledToFill()
+        if let ghost = model.ghost, model.subjectTakesGhost {
+            PhotoFill(image: ghost)
                 .opacity(VisitMetrics.Camera.ghostOpacity)
                 .allowsHitTesting(false)
-                .accessibilityHidden(true)
-        } else if !model.camera.isLive {
+        } else if !model.camera.isLive, model.subjectTakesGhost {
             // First visit, no camera: `CypressGradient.cameraGhost` is the spec's stand-in for the
             // alignment layer, so the screen's own subject is visible in a simulator. It is never
             // drawn over a live preview — an invented ghost on a real camera would be a lie about
-            // where the last photo was taken from.
+            // where the last photo was taken from. It is a stand-in for the alignment layer, so it
+            // follows the same subject rule the real one does.
             CypressGradientField(CypressGradient.cameraGhost)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
@@ -265,7 +265,7 @@ struct VisitCameraView: View {
     @ViewBuilder
     private var ghostCaption: some View {
         if !model.hasSnapped {
-            Text(model.ghost == nil ? "no ghost yet · first photo" : "ghost overlay 30%")
+            Text(model.ghostCaption)
                 .font(CypressFont.mono105)
                 .foregroundStyle(VisitColor.ghostCaption)
                 .lineSpacing(VisitMetrics.Camera.ghostCaptionLineSpacing)

@@ -191,15 +191,53 @@ struct TreeProfileView: View {
 
     // MARK: - 1 · Hero (C2) / cold header (C1) + empty well
 
+    /// C2, and since E125 with an actual photograph in it.
+    ///
+    /// The gradient was always described as "a *placeholder for photography*" (SCREENS.md §2), and
+    /// `HeroPhotoHeader` was built with a `background:` slot so swapping one in would be a one-line
+    /// change at the call site. It was one line; what was missing was any way to get the bytes. See
+    /// `PhotoAccess`.
+    ///
+    /// The whole hero is the tap target for screen 20. A photograph that leads a page is the natural
+    /// place to ask "what else is there?", and it is where the answer changes: the browser is how a
+    /// different photograph becomes this one (`PhotoHero`).
     private func hero(_ presentation: TreeProfilePresentation) -> some View {
-        HeroPhotoHeader(
-            style: colorScheme == .dark ? .profileDark : .profile,
+        let style: HeroPhotoHeader<PhotoImage, EmptyView>.Style =
+            colorScheme == .dark ? .profileDark : .profile
+        return HeroPhotoHeader(
+            style: style,
             metaPill: presentation.heroMetaPill,
             // D2 drops the `Best photo · Oct 2025` eyebrow.
             eyebrow: colorScheme == .dark ? nil : presentation.heroEyebrow,
-            onBack: { router?.pop() }
+            onBack: { router?.pop() },
+            background: {
+                PhotoImage(
+                    photoID: presentation.bestPhoto?.id ?? Self.noPhoto,
+                    placeholder: style.recipe
+                )
+            },
+            bottomLeading: { EmptyView() }
         )
+        // A tap anywhere on the photograph opens the set, *except* the back circle, which is a
+        // button in an overlay and therefore gets the touch first.
+        .contentShape(Rectangle())
+        .onTapGesture { router?.push(.photos(model.treeID)) }
+        // `children: .contain`, not `.combine` — the back circle lives inside this component, and
+        // combining would swallow the one control that gets a listener off the screen.
+        //
+        // The label is not optional decoration. A trait without one produces exactly what
+        // `DeepLinkVoiceOverTests` refuses to let ship: "a button at (0, 0, 393, 224) has no
+        // accessibility label", announced as "button" and nothing else.
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(TreeProfilePresentation.heroLabel)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint(TreeProfilePresentation.heroHint)
     }
+
+    /// The id used when there is no photograph to draw: it resolves to nothing, `PhotoImage` finds
+    /// no bytes, and the gradient stays. A sentinel rather than an `if`, so the hero has one shape
+    /// and the "no photo" case cannot drift into a differently-sized header.
+    private static let noPhoto = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
 
     private var coldHeader: some View {
         ScreenHeader(title: TreeProfilePresentation.fallbackTitle, onBack: { router?.pop() })

@@ -75,9 +75,26 @@ final class VisitCameraModel {
 
     var hasSnapped: Bool { draft.hasPhoto }
 
+    /// Whether the alignment layer means anything for the subject now selected.
+    ///
+    /// The ghost is *the last full-tree photo*, and `ShotType.supportsGhostOverlay` has always said
+    /// so — `VisitGhostStore.record` refuses to store a trunk close-up as one. The screen only ever
+    /// read the storing half of that rule: it drew whatever ghost the tree had behind every chip,
+    /// so choosing Trunk or Leaf left a whole tree hanging in the viewfinder to line a bark
+    /// close-up up against, which is not a thing anybody can do (ERRATA E125).
+    ///
+    /// One property, read by the layer, the pill and the caption, so the three cannot disagree
+    /// about what is on screen.
+    var subjectTakesGhost: Bool { shotType.supportsGhostOverlay }
+
+    /// Whether a ghost is in fact being drawn right now — a stored one, for a subject that takes
+    /// one, before the shutter.
+    var showsGhost: Bool { ghost != nil && subjectTakesGhost && !hasSnapped }
+
     /// The guidance pill. `cameraHint` in the prototype: with a ghost it asks you to match the last
     /// angle; without one it tells you this is the first photo, which is the honest version of the
-    /// same sentence.
+    /// same sentence. On a subject that takes no ghost it says the third true thing — that this
+    /// shot stands on its own — rather than asking for an angle there is nothing to match.
     var guidance: String {
         let subject: String
         switch shotType {
@@ -87,7 +104,14 @@ final class VisitCameraModel {
         case .other: subject = "Photo"
         }
         if hasSnapped { return "Photo added to the timeline" }
+        if !subjectTakesGhost { return "\(subject) · framed on its own" }
         return ghost == nil ? "\(subject) · its first photo" : "\(subject) · match last visit's angle"
+    }
+
+    /// The mono line in the bottom-left corner, which names what the viewfinder is doing.
+    var ghostCaption: String {
+        if !subjectTakesGhost { return "overlay off · full-tree only" }
+        return ghost == nil ? "no ghost yet · first photo" : "ghost overlay 30%"
     }
 
     /// D5, the whole of it. See `VisitPhenologyVocabulary` for the two gates and why the row is

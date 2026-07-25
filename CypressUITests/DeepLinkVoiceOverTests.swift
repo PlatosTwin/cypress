@@ -62,6 +62,122 @@ final class DeepLinkVoiceOverTests: XCTestCase {
     /// button rather than as free text.
     func testModerationReview() { check("moderationReview", anchor: "Reported removed", pushed: false) }
 
+    /// Screen 20, the photo browser (ERRATA E125). The harness photographs a real seed tree first —
+    /// the shipped inventory has no photographs, because every photograph in this app is one somebody
+    /// took — so this reads a list of real records. The anchor is the explainer line rather than the
+    /// `Hero` badge, which sits inside the image's own element.
+    func testPhotos() {
+        check("photos", anchor: "The photo with the most thumbs up leads this tree's page.", pushed: true)
+    }
+
+    /// Screen 03 with photographs on it, which is a different tree from the cold one `treeProfile`
+    /// opens: the hero draws a photograph and becomes the control that opens screen 20.
+    func testPhotoHero()     { check("photoHero",     anchor: "Best photo",      pushed: true) }
+
+    // MARK: - A control that is in the tree, labelled, hittable — and dead
+
+    /// Tapping a thumb on screen 20 has to *do* something (ERRATA E125).
+    ///
+    /// **Why this is a UI test and not a model test.** `TreePhotosModel.vote` was never wrong, and
+    /// `PhotoHeroTests.worksThroughTheProtocol` already drives `setPhotoVote` through the existential
+    /// and passes. The defect was two layers above either of them: `PhotoFill` draws a `scaledToFill`
+    /// photograph inside a `.clipped()` box, and `.clipped()` clips pixels but not touches, so each
+    /// card's photograph kept an invisible 132 pt overhang that lay on top of the *previous* card's
+    /// thumb row and swallowed the tap. Every thumb in the list was dead except the two on the last
+    /// card, which has nothing drawn after it. No error, no log, no vote.
+    ///
+    /// That failure is invisible to everything except a real tap on a real layout. The screen renders
+    /// correctly, every element is present with the right frame, every label is right, and
+    /// `isHittable` is `true` — the accessibility hit test resolves to the button even while the touch
+    /// hit test resolves to the photograph on top of it. So the assertion here is deliberately made on
+    /// *consequences*: the glyph's own state, and the `Hero` badge physically moving to the card that
+    /// was voted up. Anchoring on anything that merely exists would pass on the broken build, which is
+    /// the whole lesson of E118 and of the defect this closes.
+    ///
+    /// **The top card is the subject, and it is chosen on purpose.** It is the one the bug covered
+    /// first and the one a casual check would tap; the *last* card is the only one the bug spared, so a
+    /// test that happened to pick it would have passed throughout. It is also the card `PhotoHero`
+    /// picks when nothing has been voted — most recent, then most pixels — which is what makes the
+    /// second assertion deterministic.
+    ///
+    /// **Thumbs *down*, and the test puts the vote back.** `debugSeedPhotos` is cumulative and the
+    /// `photo_votes` rows outlive the launch, so a test that leaves a vote behind passes once and then
+    /// fails against its own leftovers the next time the suite is run on the same device. A down-vote
+    /// is the one move whose effect on the hero cannot be ambiguous — `PhotoHero.choose` drops anything
+    /// scoring below zero outright, so the badge *must* leave this card — and tapping it a second time
+    /// takes it back, leaving the device exactly as this test found it.
+    func testAThumbActuallyVotes() {
+        let app = launch("photos")
+        guard arrive(app, screen: "photos", anchor: "The photo with the most thumbs up leads") else { return }
+
+        let topPhoto = app.images
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "Photo · "))
+            .firstMatch
+        let thumbDown = app.buttons
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "Thumbs down, "))
+            .firstMatch
+        XCTAssertTrue(thumbDown.waitForExistence(timeout: 10), "photos: the top card has no thumbs-down")
+        XCTAssertEqual(
+            thumbDown.value as? String, "off",
+            "photos: the top card is already down-voted before this test votes on it — a previous run "
+                + "did not put its vote back"
+        )
+
+        let hero = app.staticTexts["Hero"]
+        XCTAssertTrue(hero.exists, "photos: no Hero badge, so there is nothing to watch move")
+        XCTAssertTrue(
+            topPhoto.frame.contains(hero.frame),
+            "photos: the Hero badge starts on some card other than the top one, so the move this test "
+                + "watches for would not mean what it is read to mean"
+        )
+
+        thumbDown.tap()
+        assertThumb(thumbDown, reads: "on", after: "being tapped")
+
+        // The consequence a user actually sees. Containment in the card's own photograph, not mere
+        // inequality of frames: the badge has to have left *this* card, not merely been redrawn.
+        XCTAssertFalse(
+            topPhoto.frame.contains(hero.frame),
+            "photos: the Hero badge is still inside the top photograph at \(topPhoto.frame) after that "
+                + "photograph was voted down, so the vote changed nothing"
+        )
+
+        // Put it back, and prove the toggle works in the other direction while doing so.
+        thumbDown.tap()
+        assertThumb(thumbDown, reads: "off", after: "being tapped a second time")
+        XCTAssertTrue(
+            topPhoto.frame.contains(hero.frame),
+            "photos: taking the down-vote back did not return the Hero badge to the top photograph"
+        )
+
+        app.terminate()
+    }
+
+    /// A thumb's own state, waited for rather than read immediately: the vote is written and the whole
+    /// list re-read before the glyph can change.
+    ///
+    /// `XCTWaiter` rather than `waitForExpectations`, so the failure reported is the sentence below
+    /// rather than the framework's "unfulfilled expectations", which says nothing about what a thumb is.
+    private func assertThumb(
+        _ thumb: XCUIElement,
+        reads expected: String,
+        after action: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let settled = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", expected),
+            object: thumb
+        )
+        XCTAssertEqual(
+            XCTWaiter().wait(for: [settled], timeout: 10), .completed,
+            "photos: '\(thumb.label)' reads '\(thumb.value as? String ?? "nothing")' rather than "
+                + "'\(expected)' after \(action), so the tap never reached the button — no vote was "
+                + "written and no error was shown",
+            file: file, line: line
+        )
+    }
+
     // MARK: - What a modal owes the screen it covers
 
     /// A VoiceOver user must not be able to swipe onto the screen behind a modal.

@@ -28,3 +28,6 @@ __pycache__/
 # schema.sql beside it IS checked in — it is the readable contract; the .sqlite is just its output.
 Fixtures/seed/*.sqlite
 Cypress/Resources/cypress-seed.sqlite
+
+# Worktrees created for parallel agent runs.
+.claude/

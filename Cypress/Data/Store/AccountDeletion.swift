@@ -63,6 +63,16 @@ public struct AccountDeletion {
         /// off. Both are exclusively owned; see `delete` for why a tombstone goes too.
         public var deletedFavorites: Int = 0
         public var deletedFavoriteTombstones: Int = 0
+        /// Photo votes deleted (`AppSchema` v8).
+        ///
+        /// A vote *is* a contribution in §3.12's sense — the hero it picks is what everybody sees —
+        /// so anonymizing rather than deleting would be the rule. It is not writable: `photo_votes`
+        /// carries the same exactly-one-owner CHECK `favorites` does, and a row with its `user_id`
+        /// nulled is owned by nobody. Nor is a vote separable from its voter the way a measurement
+        /// is separable from whoever took it: "one vote per owner per photo" is the whole of its
+        /// integrity, and an ownerless vote is a ballot that can never be recounted, changed or
+        /// withdrawn. So it goes with the account, on R3's reasoning about `favorites`.
+        public var deletedPhotoVotes: Int = 0
         /// Queued mutations discarded because applying them would re-create a deleted row.
         public var discardedOutboxItems: Int = 0
         /// Queued mutations kept, with the account stripped out of their payload.
@@ -167,6 +177,13 @@ public struct AccountDeletion {
             )
             outcome.deletedFavorites = try run(
                 "DELETE FROM favorites WHERE user_id = :user COLLATE NOCASE",
+                [":user": userID.uuidString],
+                on: connection
+            )
+
+            // No sentinel needed: `photo_votes` has no tombstone trigger to satisfy (`AppSchema` v8).
+            outcome.deletedPhotoVotes = try run(
+                "DELETE FROM photo_votes WHERE user_id = :user COLLATE NOCASE",
                 [":user": userID.uuidString],
                 on: connection
             )
