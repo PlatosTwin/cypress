@@ -212,15 +212,38 @@ public struct MapViewport: Hashable, Sendable {
     /// anyway and the answer is to cluster.
     public let pinLimit: Int
 
+    /// How many screen points one drawn pin may stand for, or `nil` for every pin in the box.
+    ///
+    /// **This is the level-of-detail rule between the clustering threshold and maximum zoom, and
+    /// until ERRATA E130 there was none.** A1 puts individual pins at zoom ≥ 16 and nothing thinned
+    /// them above it, so the size of the answer tracked the viewport's *area*. The camera opens at
+    /// 120 m; one pinch out is four times the ground and two is sixteen, and at sixteen times the
+    /// ground the map stopped answering — which is exactly "SUPER slow when you zoom out a bit", and
+    /// why it went fast again further out, where clustering caps the badges.
+    ///
+    /// With a cell set, the box is gridded into cells this many points square *at this zoom* and one
+    /// tree per occupied cell comes back — but only once the un-thinned answer would overrun
+    /// `pinLimit`. What that buys is that the count is then bounded by screen area ÷ cell area, which
+    /// is the same number at every zoom: pulling the camera back stops adding annotations and starts
+    /// making each pin stand for more ground.
+    ///
+    /// `nil` by default, which is the un-thinned query, because `pinLimit` means exactly what it says
+    /// to the callers that already depend on it — `CypressTests/MapContentBudgetTests` reaches its
+    /// cap deliberately with a `pinLimit` of 3 over a block of the Marina, and a query that quietly
+    /// returned fewer rows than the budget allows would change that contract. `MapModel` is what
+    /// passes a cell, and `MapModel.markerCellPoints` is why 44.
+    public let markerCellPoints: Double?
+
     /// **A1, resolved**: "pins cluster at zoom 15 and below; individual pins at zoom 16 and above
     /// (the spec sentence was backwards)" — BUILD-PLAN §11. This constant is the only place that
     /// number appears.
     public static let highestClusteringZoom = 15
 
-    public init(bounds: BoundingBox, zoom: Int, pinLimit: Int = 2_000) {
+    public init(bounds: BoundingBox, zoom: Int, pinLimit: Int = 2_000, markerCellPoints: Double? = nil) {
         self.bounds = bounds
         self.zoom = zoom
         self.pinLimit = pinLimit
+        self.markerCellPoints = markerCellPoints
     }
 
     public var shouldCluster: Bool { zoom <= MapViewport.highestClusteringZoom }
@@ -287,6 +310,19 @@ public enum MapContent: Hashable, Sendable {
         switch self {
         case let .pins(pins): return pins.count
         case let .clusters(clusters): return clusters.reduce(0) { $0 + $1.count }
+        }
+    }
+
+    /// How many things the map has to *draw* for this answer — one annotation per pin, one per
+    /// cluster badge.
+    ///
+    /// Not the same question as `pinCount`, which counts trees: a clustered viewport holds 29,390
+    /// trees and draws 171 badges. This is the number the level-of-detail rule bounds, and the one
+    /// that had no bound at all between zoom 16 and 21 (`MapViewport.markerCellPoints`).
+    public var markerCount: Int {
+        switch self {
+        case let .pins(pins): return pins.count
+        case let .clusters(clusters): return clusters.count
         }
     }
 }

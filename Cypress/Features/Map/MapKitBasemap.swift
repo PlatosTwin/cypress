@@ -45,6 +45,24 @@ struct MapKitBasemap: View {
 
     @Environment(\.colorScheme) private var colorScheme
 
+    /// The one pin the card is open on, if it is still in the fetched set.
+    ///
+    /// It can stop being: the level-of-detail grid picks one tree per cell and the winner changes
+    /// with the zoom, so zooming out with a card open can thin the selected pin away. When that
+    /// happens the card stays — it is showing a tree that is still there — and the map simply has no
+    /// enlarged pin to draw, which is the same thing that happens when the camera leaves it behind.
+    private var selectedPin: TreePin? {
+        guard let selectedPinID else { return nil }
+        return pins.first { $0.id == selectedPinID }
+    }
+
+    /// Everything else. Returns `pins` itself — same array, same identity, no copy — whenever nothing
+    /// is selected, which is every frame of a pan and a pinch.
+    private var unselectedPins: [TreePin] {
+        guard let selectedPinID else { return pins }
+        return pins.filter { $0.id != selectedPinID }
+    }
+
     var body: some View {
         GeometryReader { proxy in
             Map(position: $position, interactionModes: [.pan, .zoom, .rotate]) {
@@ -61,7 +79,16 @@ struct MapKitBasemap: View {
                     .annotationTitles(.hidden)
                 }
 
-                ForEach(pins) { pin in
+                // **The unselected pins, and nothing about the selection.** The scale and its
+                // animation used to live in here, on every pin, keyed on `selectedPinID` — so one tap
+                // opened an animation transaction on the whole layer and every pin in it re-evaluated
+                // to arrive at scale 1 (ERRATA E130). The selected pin is one annotation and is
+                // hoisted out below; this branch is now invariant under selection, which is what lets
+                // MapKit leave it alone while the card opens.
+                //
+                // `unselectedPins` is the same array by identity when nothing is selected, which is
+                // the whole of a pan and a pinch.
+                ForEach(unselectedPins) { pin in
                     Annotation("", coordinate: pin.coordinate.clLocationCoordinate, anchor: .center) {
                         MapPin(MapPinKind.kind(for: pin)) { onSelectPin(pin) }
                             // C19 has no pin for a vacant site, so one is drawn as `removed` — a
@@ -72,8 +99,16 @@ struct MapKitBasemap: View {
                             // distinction that could be made honestly, and it wins by being applied
                             // outside the component's own.
                             .accessibilityLabel(MapPinKind.accessibilityLabel(for: pin))
-                            .scaleEffect(pin.id == selectedPinID ? MapLayout.selectedPinScale : 1)
-                            .cypressAnimation(CypressMotion.selection, value: selectedPinID)
+                    }
+                    .annotationTitles(.hidden)
+                }
+
+                if let selected = selectedPin {
+                    Annotation("", coordinate: selected.coordinate.clLocationCoordinate, anchor: .center) {
+                        MapPin(MapPinKind.kind(for: selected)) { onSelectPin(selected) }
+                            .accessibilityLabel(MapPinKind.accessibilityLabel(for: selected))
+                            .scaleEffect(MapLayout.selectedPinScale)
+                            .cypressAnimation(CypressMotion.selection, value: selected.id)
                     }
                     .annotationTitles(.hidden)
                 }

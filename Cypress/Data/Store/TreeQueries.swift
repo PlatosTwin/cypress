@@ -3,8 +3,13 @@ import Foundation
 /// How a bounding-box filter reaches the rows.
 ///
 /// Both strategies produce **identical** result sets; they differ only in which index does the
-/// work. The seed contract test runs the map queries through both and asserts set equality, which
-/// is what proves the R*Tree re-check below is correct.
+/// work. `CypressTests/MapQueryPlanTests` runs every map query through both and asserts set
+/// equality, which is what proves the R*Tree re-check below is correct.
+///
+/// That test exists as of ERRATA E130. Before it this paragraph named the seed contract test, which
+/// checked no such thing — `SeedContractTests` held one zoom-threshold assertion and nothing else,
+/// and the only place both strategies were compared was `DataGates`, over one viewport, on the pin
+/// query alone.
 public enum SpatialIndexStrategy: String, Sendable, CaseIterable {
     /// `idx_trees_lat_lon ON trees(lat, lon, id)`. A plain composite B-tree.
     case coveringIndex
@@ -67,39 +72,169 @@ public struct TreeQueries {
 
     /// Individual pins, zoom ≥ 16.
     ///
+    /// One of two queries, chosen by `MapViewport.markerCellPoints`. Without a cell, every pin in the
+    /// box up to `pinLimit`:
+    ///
     /// ```
     /// SEARCH t USING INDEX idx_trees_lat_lon (lat>? AND lat<?)
     /// SEARCH s USING INTEGER PRIMARY KEY (rowid=?) LEFT-JOIN
     /// ```
+    ///
+    /// With one, the grid decides — but only when it has to.
+    ///
+    /// **The cell is a ceiling, not a rule.** `markerCells` counts what is in the box while it grids
+    /// it, at no extra cost, so the cheap question comes first: if every tree in view would fit
+    /// inside `pinLimit` anyway, the un-thinned query runs and nothing is thinned. That is the answer
+    /// at the zooms the app opens at, where the whole problem never existed; the grid takes over
+    /// where the count runs away from the screen. Gridding unconditionally was the obvious version
+    /// and it is wrong — it pays for a performance problem in the two places that never had one.
     public func pins(
         in viewport: MapViewport,
         strategy: SpatialIndexStrategy = .default,
         connection: SQLiteConnection
     ) throws -> [TreePin] {
-        let sql = """
-        SELECT t.\(schema.treeIdentityColumn) AS tree_uuid,
-               t.lat AS lat, t.lon AS lon,
-               t.status AS status, t.source AS source,
-               t.verification_state AS verification_state,
-               s.\(schema.speciesIdentityColumn) AS species_uuid
+        if let cellPoints = viewport.markerCellPoints {
+            let cells = try markerCells(
+                in: viewport,
+                cellPoints: cellPoints,
+                strategy: strategy,
+                connection: connection
+            )
+            let treesInView = cells.reduce(0) { $0 + $1.memberCount }
+            if treesInView > viewport.pinLimit {
+                return try pins(rowIDs: cells.map(\.rowID), connection: connection)
+            }
+        }
+
+        let statement = try connection.cachedStatement(everyPinSQL(strategy))
+        _ = try statement.bind(bindings(for: viewport.bounds))
+        _ = try statement.bind(viewport.pinLimit, forName: ":limit")
+        return try statement.fetchAll(Self.decodePin)
+    }
+
+    /// One tree's rowid per occupied grid cell, and how many trees that cell stands for — the whole
+    /// of the level-of-detail rule, and the reason the map's answer stopped growing with the viewport
+    /// (ERRATA E130).
+    ///
+    /// ```
+    /// SEARCH t USING COVERING INDEX idx_trees_lat_lon (lat>? AND lat<?)
+    /// USE TEMP B-TREE FOR GROUP BY
+    /// ```
+    ///
+    /// **It is the cluster query's plan, and it must stay that way.** `MIN(t.rowid)` and `COUNT(*)`
+    /// are the only things asked for beyond the grouping keys, and a rowid is carried by every entry
+    /// of every index, so this reads `idx_trees_lat_lon` and never touches the table. Ask it for
+    /// `t.uuid` instead and the rowid is no longer enough — that is a table probe per candidate row,
+    /// the same 3.4× that keeps a representative tree id out of `TreeCluster`. The winners are
+    /// hydrated by rowid afterwards, a few hundred integer-primary-key lookups, which is why the
+    /// two-step is cheaper than the one-step it would replace.
+    ///
+    /// `COUNT(*)` is free here — the rows are already grouped — and it is what lets `pins` decide
+    /// whether to thin at all.
+    ///
+    /// `deleted_at IS NULL` is omitted on the same terms and for the same measured reason as in
+    /// `clusters`: it is not in the index, so on a seed with no soft-deleted row it would cost a
+    /// probe per row to change nothing. `pins(rowIDs:connection:)` applies it unconditionally, so a
+    /// soft-deleted tree that wins a cell is dropped there rather than drawn — the cell goes empty,
+    /// which is the honest picture and not a hole anyone can notice at one pin in 195,309.
+    ///
+    /// **Which tree wins its cell is arbitrary, and deliberately stable.** The lowest rowid in the
+    /// cell is the seed's own insertion order, which says nothing about the tree; what matters is
+    /// that the grid is absolute rather than relative to the viewport's corner (the `+90`/`+180`
+    /// offsets, as in `clusters`), so the same tree keeps winning the same cell as the user pans and
+    /// no pin flickers or re-animates under the drag. Preferring a status — drawing the amber
+    /// needs-care pin over its neighbours — would mean reading `t.status`, which is the table probe
+    /// this query exists to avoid. The shipped seed carries no `declining` tree at all, so there is
+    /// no amber pin to lose today; when the curated pipeline gives it one, the honest fix is a second
+    /// query for just those trees, not a column added here.
+    func markerCells(
+        in viewport: MapViewport,
+        cellPoints: Double,
+        strategy: SpatialIndexStrategy = .default,
+        connection: SQLiteConnection
+    ) throws -> [(rowID: Int64, memberCount: Int)] {
+        let centreLatitude = (viewport.bounds.minLatitude + viewport.bounds.maxLatitude) / 2
+        let cell = Self.cellSize(zoom: viewport.zoom, centreLatitude: centreLatitude, points: cellPoints)
+
+        let statement = try connection.cachedStatement(markerCellsSQL(strategy))
+        _ = try statement.bind(bindings(for: viewport.bounds))
+        _ = try statement.bind([":latCell": cell.latitude, ":lonCell": cell.longitude])
+        return try statement.fetchAll {
+            (rowID: try $0.int64("marker_rowid"), memberCount: try $0.int("member_count"))
+        }
+    }
+
+    /// The winners, as pins.
+    ///
+    /// ```
+    /// SEARCH t USING INTEGER PRIMARY KEY (rowid=?)
+    /// LIST SUBQUERY 1 · SCAN json_each VIRTUAL TABLE INDEX 1:
+    /// SEARCH s USING INTEGER PRIMARY KEY (rowid=?) LEFT-JOIN
+    /// ```
+    ///
+    /// The rowids arrive through `json_each` rather than as an interpolated `IN (…)` list, so the
+    /// statement text is constant and `cachedStatement` holds one prepared copy of it across every
+    /// camera change instead of compiling a fresh one per pan.
+    private func pins(rowIDs: [Int64], connection: SQLiteConnection) throws -> [TreePin] {
+        guard !rowIDs.isEmpty else { return [] }
+        let statement = try connection.cachedStatement("""
+        SELECT \(pinColumns)
+          FROM \(seed).trees t
+          \(speciesJoin)
+         WHERE t.rowid IN (SELECT value FROM json_each(:rowids))
+           AND t.deleted_at IS NULL
+        """)
+        _ = try statement.bind("[\(rowIDs.map(String.init).joined(separator: ","))]", forName: ":rowids")
+        return try statement.fetchAll(Self.decodePin)
+    }
+
+    // MARK: - The statements, as text
+    //
+    // The three map statements are built by named methods rather than inline, so the plan gate can
+    // explain the SQL the app actually runs. It used to explain SQL hand-copied into `DataGates`,
+    // which is a gate on a paraphrase (ERRATA E130 — see `CypressTests/MapQueryPlanTests`).
+
+    /// Every pin in the box, up to `pinLimit`.
+    func everyPinSQL(_ strategy: SpatialIndexStrategy) -> String {
+        """
+        SELECT \(pinColumns)
         \(bboxSource(strategy, joins: speciesJoin, extraPredicates: "AND t.deleted_at IS NULL"))
          LIMIT :limit
         """
+    }
 
-        let statement = try connection.cachedStatement(sql)
-        _ = try statement.bind(bindings(for: viewport.bounds))
-        _ = try statement.bind(viewport.pinLimit, forName: ":limit")
+    /// `markerCells`' statement. `CAST(… AS INTEGER)` truncates toward zero and the `+90`/`+180`
+    /// offsets make that floor — see `clustersSQL`, which grids the same way at 64 points.
+    ///
+    /// No `LIMIT`, deliberately: the row count is already bounded by the viewport's area in screen
+    /// points divided by the cell's, at every zoom. A `LIMIT` on this `GROUP BY` would truncate in
+    /// cell order, which is latitude order, which is the strip along the bottom edge that this whole
+    /// rule exists to stop drawing.
+    func markerCellsSQL(_ strategy: SpatialIndexStrategy) -> String {
+        """
+        SELECT MIN(t.rowid) AS marker_rowid, COUNT(*) AS member_count
+        \(bboxSource(strategy, joins: "", extraPredicates: seedHasSoftDeletedTrees ? "AND t.deleted_at IS NULL" : ""))
+         GROUP BY CAST((t.lat + 90.0) / :latCell AS INTEGER),
+                  CAST((t.lon + 180.0) / :lonCell AS INTEGER)
+        """
+    }
 
-        return try statement.fetchAll { row in
-            TreePin(
-                id: try row.uuid("tree_uuid"),
-                coordinate: Coordinate(latitude: try row.double("lat"), longitude: try row.double("lon")),
-                status: try row.value("status", TreeStatus.self),
-                source: try row.value("source", TreeSource.self),
-                verificationState: try row.value("verification_state", VerificationState.self),
-                speciesID: try row.uuidIfPresent("species_uuid")
-            )
-        }
+    /// `clusters`' statement. See that method for why nothing outside `(lat, lon, rowid)` may join
+    /// this projection.
+    ///
+    /// `CAST(… AS INTEGER)` truncates toward zero, which is not floor for negative values. The
+    /// `+90`/`+180` offsets move every coordinate on Earth into the positive quadrant first, where
+    /// truncation *is* floor, so a cell never straddles the equator or the prime meridian.
+    func clustersSQL(_ strategy: SpatialIndexStrategy) -> String {
+        """
+        SELECT CAST((t.lat + 90.0) / :latCell AS INTEGER) AS cell_y,
+               CAST((t.lon + 180.0) / :lonCell AS INTEGER) AS cell_x,
+               COUNT(*) AS member_count,
+               AVG(t.lat) AS centre_lat,
+               AVG(t.lon) AS centre_lon
+        \(bboxSource(strategy, joins: "", extraPredicates: seedHasSoftDeletedTrees ? "AND t.deleted_at IS NULL" : ""))
+         GROUP BY cell_y, cell_x
+        """
     }
 
     /// Clustered cells, zoom ≤ 15.
@@ -128,22 +263,7 @@ public struct TreeQueries {
     ) throws -> [TreeCluster] {
         let centreLatitude = (viewport.bounds.minLatitude + viewport.bounds.maxLatitude) / 2
         let cell = Self.cellSize(zoom: viewport.zoom, centreLatitude: centreLatitude)
-        let deletionFilter = seedHasSoftDeletedTrees ? "AND t.deleted_at IS NULL" : ""
-
-        // CAST(… AS INTEGER) truncates toward zero, which is not floor for negative values. The
-        // +90/+180 offsets move every coordinate on Earth into the positive quadrant first, where
-        // truncation *is* floor, so a cell never straddles the equator or the prime meridian.
-        let sql = """
-        SELECT CAST((t.lat + 90.0) / :latCell AS INTEGER) AS cell_y,
-               CAST((t.lon + 180.0) / :lonCell AS INTEGER) AS cell_x,
-               COUNT(*) AS member_count,
-               AVG(t.lat) AS centre_lat,
-               AVG(t.lon) AS centre_lon
-        \(bboxSource(strategy, joins: "", extraPredicates: deletionFilter))
-         GROUP BY cell_y, cell_x
-        """
-
-        let statement = try connection.cachedStatement(sql)
+        let statement = try connection.cachedStatement(clustersSQL(strategy))
         _ = try statement.bind(bindings(for: viewport.bounds))
         _ = try statement.bind([":latCell": cell.latitude, ":lonCell": cell.longitude])
 
@@ -161,14 +281,19 @@ public struct TreeQueries {
         }
     }
 
-    /// Cluster cell size in degrees, sized so a cell is `clusterCellPoints` square on screen.
+    /// Cell size in degrees, sized so a cell is `points` square on screen. `clusterCellPoints` for a
+    /// cluster badge; `MapViewport.markerCellPoints` for one drawn pin.
     ///
     /// A web-mercator pixel spans `360 / (256 · 2^zoom)` degrees of longitude everywhere, and
     /// `cos(latitude)` times that in latitude — hence two different cell sizes.
-    static func cellSize(zoom: Int, centreLatitude: Double) -> (latitude: Double, longitude: Double) {
+    static func cellSize(
+        zoom: Int,
+        centreLatitude: Double,
+        points: Double = clusterCellPoints
+    ) -> (latitude: Double, longitude: Double) {
         let clampedZoom = max(0, min(zoom, 22))
         let degreesPerPoint = 360.0 / (256.0 * pow(2.0, Double(clampedZoom)))
-        let longitude = degreesPerPoint * clusterCellPoints
+        let longitude = degreesPerPoint * points
         let latitude = longitude * max(cos(centreLatitude * .pi / 180), 0.05)
         return (latitude: latitude, longitude: longitude)
     }
@@ -325,6 +450,18 @@ public struct TreeQueries {
         "LEFT JOIN \(seed).species s ON s.id = t.species_current"
     }
 
+    /// The four facts a `TreePin` carries, plus the species it belongs to. Shared by both pin
+    /// queries, so the un-thinned and the gridded answers cannot drift in what they select.
+    private var pinColumns: String {
+        """
+        t.\(schema.treeIdentityColumn) AS tree_uuid,
+               t.lat AS lat, t.lon AS lon,
+               t.status AS status, t.source AS source,
+               t.verification_state AS verification_state,
+               s.\(schema.speciesIdentityColumn) AS species_uuid
+        """
+    }
+
     /// The `FROM … JOIN … WHERE` clause for a bounding box, per strategy.
     ///
     /// **The exact re-check is not optional on the R*Tree path.** SQLite's rtree module stores
@@ -384,6 +521,18 @@ public struct TreeQueries {
     }
 
     // MARK: - Decoding
+
+    /// Decodes a `TreePin` from any projection built on `pinColumns`.
+    static func decodePin(_ row: SQLiteRow) throws -> TreePin {
+        TreePin(
+            id: try row.uuid("tree_uuid"),
+            coordinate: Coordinate(latitude: try row.double("lat"), longitude: try row.double("lon")),
+            status: try row.value("status", TreeStatus.self),
+            source: try row.value("source", TreeSource.self),
+            verificationState: try row.value("verification_state", VerificationState.self),
+            speciesID: try row.uuidIfPresent("species_uuid")
+        )
+    }
 
     /// Decodes a `Tree` from any projection built on `treeColumns`.
     ///

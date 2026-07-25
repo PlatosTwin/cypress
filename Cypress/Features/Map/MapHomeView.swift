@@ -72,8 +72,17 @@ struct MapHomeView: View {
         .toolbar(.hidden, for: .navigationBar)
         .task {
             location.start()
+            #if DEBUG
+            // Off unless `CYPRESS_MAP_PROBE=1` is in the environment. See `MapFrameProbe`.
+            MapFrameProbe.shared.start()
+            #endif
             await model.fetch()
         }
+        #if DEBUG
+        .onChange(of: model.content) { _, content in
+            MapFrameProbe.shared.note(markers: content.markerCount, zoom: model.viewport?.zoom ?? 0)
+        }
+        #endif
         .onChange(of: location.availability) { _, availability in
             guard !hasCentredOnUser, let coordinate = availability.coordinate else { return }
             hasCentredOnUser = true

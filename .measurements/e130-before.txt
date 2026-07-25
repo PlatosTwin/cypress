@@ -1,0 +1,11 @@
+2026-07-25 09:47:21.906 Cypress[7940:45841332] CAMetalLayer ignoring invalid setDrawableSize width=0.000000 height=0.000000
+[probe] armed
+[probe] z18 markers=10 frames=54 fps=53.7 p50=16.7ms p95=28.0ms worst=93.9ms dropped=6
+[probe] z18 markers=10 frames=38 fps=38.0 p50=16.7ms p95=46.8ms worst=325.0ms dropped=31
+[probe] z16 markers=1300 frames=16 fps=14.3 p50=16.7ms p95=753.5ms worst=753.5ms dropped=51
+[probe] z16 markers=1300 frames=1 fps=0.5 p50=2060.8ms p95=2060.8ms worst=2060.8ms dropped=0
+[probe] z16 markers=1300 frames=55 fps=54.9 p50=16.7ms p95=27.5ms worst=72.5ms dropped=23
+[probe] z16 markers=1300 frames=55 fps=55.0 p50=16.7ms p95=33.3ms worst=66.3ms dropped=8
+[probe] z16 markers=1300 frames=35 fps=18.7 p50=16.7ms p95=33.8ms worst=1286.0ms dropped=80
+[probe] z16 markers=1300 frames=21 fps=20.7 p50=16.7ms p95=67.6ms worst=626.1ms dropped=43
+app.cypress.Cypress: 7940

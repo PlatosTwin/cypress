@@ -31,6 +31,20 @@ public actor LocalAPI: CypressAPI {
     /// directory, which is what makes the outbox's photo phase exercisable with no network.
     private let photoDirectory: URL
 
+    /// `tree_status_overrides`, held between the writes that can change it.
+    ///
+    /// The table is read on every `mapContent` — a whole-table `SELECT` with no predicate, because a
+    /// row is keyed by a tree uuid and the map has a box, not a list of ids. That is a cheap query on
+    /// a table that is usually empty, and the map asks it every time the camera moves, which made it
+    /// one of the fifteen serialised round-trips per pan (ERRATA E130).
+    ///
+    /// **The invalidation is the whole safety of this.** `nil` means "ask", and exactly one thing
+    /// writes the table — `ContributionStore.setStatusOverride`, reached only through this actor's
+    /// two moderation routes — so both of those clear it and there is no other way for the answer to
+    /// change under us. It is per-`LocalAPI` and this actor is the only writer of its own database,
+    /// so no second process can invalidate it either.
+    private var overrideCache: [UUID: TreeStatus]?
+
     public init(
         store: CypressStore,
         deviceID: UUID,
@@ -70,28 +84,46 @@ public actor LocalAPI: CypressAPI {
 
     // MARK: - Map
 
+    /// One viewport, **one** trip to the database.
+    ///
+    /// It used to be three: the seed query, the community layer, and the status overrides, each its
+    /// own `queue.read` and so each its own hop onto and off the store's serial queue. `MapModel`
+    /// then called this five times per camera change, one per latitude band — fifteen round-trips
+    /// where the map needed one, ten of them returning results already in hand, all of it serialised
+    /// on a single connection while the user's thumb was still on the glass (ERRATA E130).
+    ///
+    /// The bands are gone and the three reads are one closure. Nothing about *what* is read changed;
+    /// what changed is that the three statements now run back to back inside one acquisition of the
+    /// connection instead of queueing behind each other three times.
     public func mapContent(in viewport: MapViewport) async throws -> MapContent {
-        let seedContent = try await store.queue.read { connection -> MapContent in
-            guard let treeQueries else {
-                return viewport.shouldCluster ? .clusters([]) : .pins([])
-            }
-            return try treeQueries.mapContent(in: viewport, connection: connection)
-        }
+        let overrideCache = self.overrideCache
+        let (seedContent, added, overrides) = try await store.queue.read {
+            connection -> (MapContent, [Tree], [UUID: TreeStatus]) in
+            let seedContent: MapContent = try treeQueries.map {
+                try $0.mapContent(in: viewport, connection: connection)
+            } ?? (viewport.shouldCluster ? .clusters([]) : .pins([]))
 
-        // Community-added trees live in `main` and are merged here rather than unioned in SQL. See
-        // `CommunityTreeStore` for why.
-        let added = try await store.queue.read { connection in
-            try communityTrees.inBounds(viewport.bounds, limit: viewport.pinLimit, connection: connection)
-        }
+            // Community-added trees live in `main` and are merged here rather than unioned in SQL.
+            // See `CommunityTreeStore` for why.
+            let added = try communityTrees.inBounds(
+                viewport.bounds,
+                limit: viewport.pinLimit,
+                connection: connection
+            )
 
-        // Local status overrides (ERRATA E124-B): a lead-confirmed removal makes a tree a memorial
-        // pin even though the inventory still calls it alive. Applied to `.pins` only — a removed tree
-        // inside a zoomed-out cluster stays part of the count; the memorial matters at the pin zoom
-        // where it can be tapped through to screen 19. The table holds one row per locally-moderated
-        // tree, so this read is a scan of a handful of rows (usually none).
-        let overrides = try await store.queue.read { connection in
-            try contributions.statusOverrides(connection: connection)
+            // Local status overrides (ERRATA E124-B): a lead-confirmed removal makes a tree a
+            // memorial pin even though the inventory still calls it alive. Applied to `.pins` only —
+            // a removed tree inside a zoomed-out cluster stays part of the count; the memorial
+            // matters at the pin zoom where it can be tapped through to screen 19.
+            //
+            // The statement has no predicate at all, so it is a scan of the whole table — which is
+            // fine, because the table holds one row per locally-moderated tree and is usually empty,
+            // and not fine to run on every camera change for the life of the app. `overrideCache`
+            // holds the answer between the writes that can change it.
+            let overrides = try overrideCache ?? contributions.statusOverrides(connection: connection)
+            return (seedContent, added, overrides)
         }
+        self.overrideCache = overrides
         func applyingOverrides(_ content: MapContent) -> MapContent {
             guard !overrides.isEmpty, case let .pins(pins) = content else { return content }
             return .pins(pins.map { pin in
@@ -1014,6 +1046,8 @@ public actor LocalAPI: CypressAPI {
                 connection: connection
             )
         }
+        // The map holds this table between writes; this is one of the two writes. See `overrideCache`.
+        overrideCache = nil
     }
 
     #if DEBUG
@@ -1040,6 +1074,8 @@ public actor LocalAPI: CypressAPI {
         try await store.queue.write { connection in
             try contributions.setStatusOverride(treeID: treeID, status: .removed, setBy: nil, at: moment, connection: connection)
         }
+        // The other write. See `overrideCache`.
+        overrideCache = nil
     }
 
     /// Test seam (ERRATA E125): give a real seed tree some photographs, so the deep-link harness can
