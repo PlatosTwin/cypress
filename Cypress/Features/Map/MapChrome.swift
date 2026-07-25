@@ -32,6 +32,42 @@ struct MapFilterChips: View {
     }
 }
 
+// MARK: - Search status
+
+/// What the map is showing for the query in C20, when that needs saying.
+///
+/// **NOT SPECIFIED** — SCREENS.md 01:667 lists "search results" among its unspecified surfaces. The
+/// argument for a line here rather than a results screen is in `MapSearch`; this is only the drawing
+/// of it, and it is deliberately the smallest thing that can carry the sentence.
+///
+/// It takes the search bar's own capsule and fill so it reads as part of the bar rather than as a
+/// new kind of object floating on the map, and it sits *below* the filter chips so that the order of
+/// the chrome C20 → chips is untouched — `CypressUITests/AccessibilityTreeTests` and
+/// `DeepLinkVoiceOverTests` both walk that order and both require the search field to stay a real
+/// `TextField` in its existing place.
+///
+/// Nothing is drawn when there is nothing to say, which includes the ordinary success case: a map
+/// showing every match it found does not need a banner over it announcing that it did.
+struct MapSearchStatus: View {
+    let search: MapSearch
+
+    var body: some View {
+        if let message = MapSearchCopy.status(for: search) {
+            Text(message)
+                .font(CypressFont.body13)
+                .foregroundStyle(CypressColor.textMuted)
+                .padding(.vertical, CypressSpacing.Component.chipPaddingVFilter)
+                .padding(.horizontal, CypressSpacing.Component.chipPaddingHFilter)
+                .background { Capsule().fill(CypressColor.searchFill) }
+                .cypressPillBorder(CypressColor.searchBorder)
+                // One element, one sentence. The map behind it has just changed shape, and a reader
+                // on VoiceOver gets no other signal that it did.
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(message)
+        }
+    }
+}
+
 // MARK: - FAB
 
 /// SCREENS.md 01 §13. `HStack(spacing:9)`, `ctaFill`, pill, `padding:15px 20px`, `shadow.fab`,

@@ -241,7 +241,7 @@ struct MapQueryPlanTests {
             )
             try #require(!before.isEmpty && !after.isEmpty, "one of the two boxes returned no pins")
 
-            func inside(_ pins: [TreePin]) -> Set<UUID> {
+            func inside(_ pins: PinAnswer) -> Set<UUID> {
                 Set(pins.lazy
                     .filter { $0.coordinate.latitude >= interior.low && $0.coordinate.latitude <= interior.high }
                     .map(\.id))
@@ -292,6 +292,95 @@ struct MapQueryPlanTests {
             #expect(
                 shared.count >= before.count / 2,
                 "only \(shared.count) of \(before.count) cluster cells survived a quarter-box pan with their id"
+            )
+        }
+    }
+
+    // MARK: - The narrowed statements (ERRATA E134)
+
+    /// `Platanus x hispanica`, the densest species in the seed.
+    private static let londonPlane = UUID(uuidString: "7d22dcda-354d-5f7d-9be0-3739ea8c6688")!
+
+    /// A narrowed map statement must still resolve through an index and must never scan a table —
+    /// the same two rules as every other map statement, over the statements the search bar produces.
+    ///
+    /// **The index it lands on is deliberately not pinned, and that is the point.** Every other map
+    /// query is asserted to use `idx_trees_lat_lon`, because there is one spatial index worth using
+    /// and no predicate selective enough to beat it. A species predicate *is* that selective, and the
+    /// right plan genuinely differs by query: one species over the whole city is answered from
+    /// `idx_trees_species_current` in 21 ms where forcing the spatial index costs 386, and a hundred
+    /// species at once inverts it. `TreeQueries.speciesPredicate` has the table. Pinning either index
+    /// here would pin the wrong one half the time.
+    @Test("a narrowed map statement resolves through an index and never scans a table")
+    func narrowedPlansStayIndexed() async throws {
+        let store = try await Self.store()
+        let queries = try Self.queries(store)
+
+        try await store.queue.read { connection in
+            let viewport = MapViewport(
+                bounds: Self.bounds,
+                zoom: 16,
+                pinLimit: MapModel.pinLimit,
+                markerCellPoints: MapModel.markerCellPoints,
+                speciesIDs: [Self.londonPlane]
+            )
+            let narrowing = try queries.narrowing(for: viewport, connection: connection)
+            #expect(narrowing != .matchesNothing, "the London Plane did not resolve; the uuid lookup is broken")
+
+            for strategy in SpatialIndexStrategy.allCases {
+                let statements: [(String, String)] = [
+                    ("narrowed pins", queries.everyPinSQL(strategy, narrowing: narrowing)),
+                    ("narrowed marker cells", queries.markerCellsSQL(strategy, narrowing: narrowing)),
+                    ("narrowed cluster badges", queries.clustersSQL(strategy, narrowing: narrowing))
+                ]
+                for (label, sql) in statements {
+                    let steps = try connection.queryPlan(for: sql)
+                    let plan = steps.joined(separator: " | ")
+                    let tableScans = steps.filter {
+                        $0.contains("SCAN") && !$0.contains("COVERING INDEX") && !$0.contains("VIRTUAL TABLE")
+                    }
+                    #expect(
+                        tableScans.isEmpty,
+                        "\(label) (\(strategy.rawValue)) degraded to a table scan: \(plan)"
+                    )
+                    #expect(
+                        plan.contains("idx_trees_lat_lon") || plan.contains("idx_trees_species_current"),
+                        "\(label) (\(strategy.rawValue)) reached neither useful index: \(plan)"
+                    )
+                }
+            }
+        }
+    }
+
+    /// **The seed must carry `ANALYZE` statistics, and this is not a tidiness rule.**
+    ///
+    /// The narrowed queries are the only ones in the app whose right plan depends on the *data* — a
+    /// selective species wants `idx_trees_species_current`, a broad prefix matching a hundred species
+    /// wants `idx_trees_lat_lon` — and `sqlite_stat1` is the only thing that lets SQLite tell those
+    /// apart. Measured over the shipped seed, zoom-16 marker cells narrowed to the hundred densest
+    /// species, which is 85 % of the inventory:
+    ///
+    ///     with sqlite_stat1     18.3 ms   SEARCH … idx_trees_lat_lon
+    ///     without it           266.0 ms   SEARCH … idx_trees_species_current
+    ///
+    /// Fourteen times slower, on the map's critical path, from a table that is easy to lose: it does
+    /// not survive a rebuild that forgets to run `ANALYZE`, and `Tools/build_seed.py` is the only
+    /// thing that puts it there. Nothing else in the app notices, which is exactly why this is worth
+    /// asserting rather than trusting — every other query has one sane plan and gets it either way.
+    @Test("the seed carries the statistics the narrowed queries are planned with")
+    func theSeedCarriesItsStatistics() async throws {
+        let store = try await Self.store()
+
+        try await store.queue.read { connection in
+            let statement = try connection.cachedStatement("""
+            SELECT count(*) AS n
+              FROM \(SeedDatabase.schemaName).sqlite_stat1
+             WHERE tbl = 'trees' AND idx = 'idx_trees_species_current'
+            """)
+            let rows = try statement.fetchOne { try $0.int("n") } ?? 0
+            #expect(
+                rows > 0,
+                "the seed has no ANALYZE statistics for idx_trees_species_current, so a broad species search will be planned blind — run ANALYZE in Tools/build_seed.py"
             )
         }
     }

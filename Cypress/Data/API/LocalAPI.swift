@@ -105,11 +105,22 @@ public actor LocalAPI: CypressAPI {
 
             // Community-added trees live in `main` and are merged here rather than unioned in SQL.
             // See `CommunityTreeStore` for why.
-            let added = try communityTrees.inBounds(
+            //
+            // **The narrowing has to be applied to them too, in Swift, or "only" leaks.** The seed
+            // half of a narrowed viewport is filtered in SQL; this half is a separate table that
+            // knows nothing about it, so a search for London Planes would have drawn every community
+            // tree in the box on top of the matches — and drawn them *dashed*, which reads as "the
+            // community found you these", the most convincing possible way to be wrong. Filtering
+            // here rather than in `CommunityTreeStore.inBounds` keeps the narrowing in one place per
+            // layer and costs nothing: the table holds one row per tree this device added.
+            let allAdded = try communityTrees.inBounds(
                 viewport.bounds,
                 limit: viewport.pinLimit,
                 connection: connection
             )
+            let added = viewport.speciesIDs.map { wanted in
+                allAdded.filter { tree in tree.speciesCurrentID.map(wanted.contains) ?? false }
+            } ?? allAdded
 
             // Local status overrides (ERRATA E124-B): a lead-confirmed removal makes a tree a
             // memorial pin even though the inventory still calls it alive. Applied to `.pins` only —
@@ -125,8 +136,10 @@ public actor LocalAPI: CypressAPI {
         }
         self.overrideCache = overrides
         func applyingOverrides(_ content: MapContent) -> MapContent {
-            guard !overrides.isEmpty, case let .pins(pins) = content else { return content }
-            return .pins(pins.map { pin in
+            guard !overrides.isEmpty, case let .pins(answer) = content else { return content }
+            // `withItems`, not a fresh `PinAnswer`: an override changes what a pin *is*, never how
+            // many trees the query found, so whatever the answer knew about being a sample survives.
+            return .pins(answer.withItems(answer.items.map { pin in
                 guard let status = overrides[pin.id] else { return pin }
                 return TreePin(
                     id: pin.id,
@@ -136,13 +149,13 @@ public actor LocalAPI: CypressAPI {
                     verificationState: pin.verificationState,
                     speciesID: pin.speciesID
                 )
-            })
+            }))
         }
 
         guard !added.isEmpty else { return applyingOverrides(seedContent) }
 
         switch seedContent {
-        case let .pins(pins):
+        case let .pins(answer):
             // The community layer gets its own share of the budget rather than the tail of the
             // seed's.
             //
@@ -168,7 +181,17 @@ public actor LocalAPI: CypressAPI {
                 )
             }
             let seedBudget = max(viewport.pinLimit - communityPins.count, 0)
-            return applyingOverrides(.pins(Array(pins.prefix(seedBudget)) + communityPins))
+            let kept = Array(answer.items.prefix(seedBudget)) + communityPins
+            // Reserving the community layer's space spends seed pins, and on a narrowed map those
+            // are matches — so if this cut anything, the answer is a sample whether or not the grid
+            // already made it one. `PinAnswer` collapses a "sample" that dropped nothing, so an
+            // untouched answer still reports itself complete.
+            let dropped = answer.items.count - min(answer.items.count, seedBudget)
+            return applyingOverrides(.pins(PinAnswer(
+                kept,
+                matchesInView: answer.matchesInView.map { $0 + communityPins.count }
+                    ?? (dropped > 0 ? answer.items.count + communityPins.count : nil)
+            )))
 
         case var .clusters(clusters):
             let centreLatitude = (viewport.bounds.minLatitude + viewport.bounds.maxLatitude) / 2
@@ -827,30 +850,10 @@ public actor LocalAPI: CypressAPI {
         }
     }
 
-    /// `GET /me/outbox-status`.
-    ///
-    /// The local store has no separate server-side record of recent sync results; the outbox rows
-    /// are that record. This returns the settled state of every row so screen 17's "says why" line
-    /// has the same shape it will have against the real service.
-    public func outboxStatus() async throws -> [SyncResult] {
-        let records = try await store.queue.read { connection in
-            try OutboxStore().allItems(connection: connection)
-        }
-        return records.map { record in
-            switch record.item.state {
-            case .done:
-                return SyncResult(clientUUID: record.item.clientUUID, status: .applied)
-            case .failed:
-                return SyncResult(
-                    clientUUID: record.item.clientUUID,
-                    status: .failed,
-                    error: record.item.lastErrorCode ?? .serverError
-                )
-            case .pending, .uploading:
-                return SyncResult(clientUUID: record.item.clientUUID, status: .failed, error: record.item.lastErrorCode)
-            }
-        }
-    }
+    // `outboxStatus()` was here, and is gone with the protocol requirement it answered — see the
+    // note at the foot of `CypressAPI`. It mapped every outbox row to a `SyncResult` so screen 17's
+    // "says why" line would have the same shape against the real service; screen 17 reads
+    // `OutboxViewState` instead, and always did.
 
     // MARK: - Personal surfaces
 
