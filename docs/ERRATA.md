@@ -4960,3 +4960,66 @@ extension. Fixing it properly means declaring a custom UTI in `Info.plist`. Also
 two saves against the pre-fix binary produced 0-byte files and two against the fixed binary produced
 202 bytes, which is suggestive of a real intermittent in that path and is not evidence of one at
 n = 2 against n = 2. The new representation test guards the path either way.
+
+### E136 — deletion asks a question now, and the safe answer is already chosen
+
+The project owner, ruling on the open item E131 left behind: *"account deletion should have an
+option—one kills all photos, up votes, etc, the other leaves them in place and tags them to an
+anonymous/deleted account, with that being the default."*
+
+E131 had recorded that `AccountDeletion` removed `photo_votes` while R3's copy named only reminders and
+favourites, and asked whether the sentence should grow a clause. The answer turned out to be neither:
+stop deciding it for the person. The behaviour the safe door describes already existed for
+observations — they stay on their tree with `user_id` nulled — so this generalises it rather than
+inventing it, and makes the other option explicit instead of implicit.
+
+**"Anonymous" means NULL, not a stand-in id.** A sentinel deleted-account id is a *pseudonym*, and
+these rows carry a tree, a date and a time: a stable key joining one person's whole history
+reconstructs where they walked, at street-tree resolution, in one city. Deletion is a privacy promise,
+and a promise that leaves behind a key relinking everything it claimed to unlink is the version that
+would be worst to ship — because nothing on screen would reveal it. The cost is real and is accepted
+rather than hidden: a moderator can no longer tell that forty anonymised observations were one
+person's.
+
+**Reminders and favourites are outside the choice** and go under both doors. R3's original argument
+survives intact: an ownerless favourite is a row no query returns and no person can remove, so
+offering to keep one is a decorative control. The copy says so unconditionally, above both doors,
+opening with "Either way".
+
+**Photo bytes go files-first**, and the ordering is a ruling rather than a detail. `FileManager` cannot
+join a SQLite transaction, so one half of the delete is outside the atomic part and one of the two
+failure modes is going to happen. Files-first fails as rows pointing at missing bytes — visible,
+retryable, cosmetic. Rows-first fails as a JPEG belonging to somebody who asked to be forgotten,
+stranded on disk and unreachable by any query. A deletion path takes the loud failure.
+
+**A vote survives its voter, and that forced a migration.** `AppSchema` v8 constrained `photo_votes`
+with `CHECK ((user_id IS NULL) <> (device_id IS NULL))`, which made an anonymous vote literally
+unstorable — so R3 deleted votes not because anyone had decided they should go, but because the schema
+left no other option. A constraint had been wearing a ruling's clothes. v9 relaxes it to at-most-one
+owner, and hero selection is unchanged on the default door.
+
+**The surface is a sheet rather than a `confirmationDialog`**, because both paragraphs have to be
+readable *before* either is chosen and a dialog cannot do that. Each confirming button names its own
+door — "Delete account, leave my records" against "…and erase everything" — so the destructive path
+cannot be taken without the word *erase* under your thumb, and it gets a second gate besides.
+
+**Verified against the database and the disk, on a real account** holding three visits with
+photographs, a check-in, a vote, a favourite, a private reminder and two queued outbox rows. Default
+door: three visits still present with none naming a user, **three JPEGs still on disk**, the vote row
+surviving with both owner columns NULL, favourite and reminder gone, outbox six to four. Destructive
+door, from the same state restored from a container snapshot: every contribution row gone and **the
+photo directory empty**. One tap on the row destroys nothing; both ways out leave everything intact; a
+destructive selection does not survive dismissal. Signing in afterwards minted a different id.
+
+**Two holes, pinned rather than hidden.**
+
+`addTree` writes a photograph with no `visit_id`, and `community_trees` has no owner column at all — so
+a photograph on a tree you added is attributable to nobody, and **neither door can reach it**. "Erase
+everything" leaves it on disk. Closing this needs an owner column; there is now a test that fails the
+day somebody adds one and forgets this path.
+
+And `claimDevice` re-adopts anonymised rows onto the *next* account signed in on that phone, because
+they keep their `device_id`. That is pre-existing D9 behaviour and predates this change, but it means
+the default door's promise is weaker than its sentence: records unlinked from you can become linked to
+whoever signs in next on the same device. Recorded here because it is a privacy promise rather than an
+implementation detail, and the ruling belongs to the owner.
