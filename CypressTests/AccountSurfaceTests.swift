@@ -174,7 +174,7 @@ struct AccountSurfaceTests {
 
         let account = AccountModel(api: data.api)
         await account.load()
-        let outcome = try #require(await account.deleteAccount())
+        let outcome = try #require(await account.deleteAccount(.default))
 
         #expect(outcome.deletedPrivateReminders == 1, "R3's half of the deletion did not run")
         #expect(account.isSignedIn == false)
@@ -199,7 +199,7 @@ struct AccountSurfaceTests {
         try await link(AccountLinkRequest(provider: .apple, acceptsLicense: true))
         #expect(await data.api.userID == deleted)
 
-        _ = try await data.api.deleteAccount()
+        _ = try await data.api.deleteAccount(.eraseEverything)
         #expect(try await data.api.resumableUserID() == nil, "a deleted account was left resumable")
 
         try await link(AccountLinkRequest(provider: .apple, acceptsLicense: true))
@@ -209,20 +209,47 @@ struct AccountSurfaceTests {
     // MARK: - 4. R3's copy, which is the defence
 
     /// R3: "deleting more than someone expected is the failure mode this ruling creates, and copy is
-    /// the whole defence against it". The confirmation therefore has to carry all three sentences,
-    /// and `whatHappens` has to arrive whole — its own doc comment forbids splitting it, because a
-    /// person told only that their observations stay would reasonably expect everything else to stay
-    /// too.
-    @Test("the deletion confirmation says what stays, what goes, what is queued, and that it is final")
-    func confirmationCarriesTheWholeRuling() {
-        let message = AccountCopy.deletionMessage
-        #expect(message.contains(AccountDeletionCopy.whatHappens), "R3's one sentence was split or dropped")
-        #expect(message.contains(AccountDeletionCopy.queuedWork))
-        #expect(message.contains(AccountDeletionCopy.irreversible))
-        // Both halves in one breath: the record kinds that are deleted are named in the same
-        // sentence as the ones that stay.
-        #expect(AccountDeletionCopy.whatHappens.contains("reminders"))
-        #expect(AccountDeletionCopy.whatHappens.contains("favorites"))
+    /// the whole defence against it". With two doors the defence moves but does not weaken: each
+    /// door states its own behaviour, and the clause about the records that go **either way** is
+    /// hoisted out of both so it cannot be escaped by choosing.
+    ///
+    /// This test used to assert that `whatHappens` arrived whole inside one dialog message. That
+    /// constant no longer exists and the assertion is deliberately not being reconstructed against
+    /// its replacement — see `AccountDeletionCopy` for why welding the shared clause onto each door
+    /// would bury the difference between them, which is now the thing a reader most needs.
+    @Test("both doors state their own behaviour and the shared clause escapes neither")
+    func bothDoorsAreStatedBeforeEitherIsChosen() {
+        // What each door does to the contributions, in its own paragraph.
+        #expect(AccountDeletionCopy.leaveRecordsBody.contains("stay on the trees"))
+        #expect(AccountDeletionCopy.leaveRecordsBody.contains("photo votes"))
+        #expect(AccountDeletionCopy.eraseEverythingBody.contains("deleted"))
+        #expect(AccountDeletionCopy.eraseEverythingBody.contains("photographs are removed"))
+        // The consequence a person would not think of, which R3's reasoning requires be told
+        // rather than discovered: withdrawing a vote can change which photograph a stranger sees.
+        #expect(AccountDeletionCopy.eraseEverythingBody.contains("different one"))
+
+        // R3's other half, unconditional and outside both doors.
+        #expect(AccountDeletionCopy.personalRecords.hasPrefix("Either way"))
+        #expect(AccountDeletionCopy.personalRecords.contains("reminders"))
+        #expect(AccountDeletionCopy.personalRecords.contains("favorites"))
+
+        // The two doors must not read as the same promise, or the choice is decorative.
+        #expect(AccountDeletionCopy.leaveRecordsBody != AccountDeletionCopy.eraseEverythingBody)
+        #expect(AccountDeletionCopy.leaveRecordsTitle != AccountDeletionCopy.eraseEverythingTitle)
+    }
+
+    /// The last tap names the door it takes. This is the whole of the defence against reaching the
+    /// destructive door by momentum, so it is asserted rather than left to a reading of the view.
+    @Test("the confirming button's label differs by door and names erasure on the destructive one")
+    func theConfirmingLabelNamesItsDoor() {
+        let safe = AccountDeletionCopy.confirmAction(for: .leaveRecords)
+        let destructive = AccountDeletionCopy.confirmAction(for: .eraseEverything)
+        #expect(safe != destructive, "one label on both doors makes the choice a forgettable setting")
+        #expect(destructive.lowercased().contains("erase"))
+        #expect(!safe.lowercased().contains("erase"))
+        // The safe door is the default, stated in one place and read from it everywhere.
+        #expect(AccountDeletionChoice.default == .leaveRecords)
+        #expect(AccountDeletionChoice.allCases.first == .leaveRecords, "the destructive door is drawn first")
     }
 
     /// An empty list and a failed read are different sentences, and drawing them the same way is a

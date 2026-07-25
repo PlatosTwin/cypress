@@ -1334,12 +1334,58 @@ public actor LocalAPI: CypressAPI {
     ///
     /// The signed-in state goes with it, in the same transaction as the rows, so there is no instant
     /// at which the app believes it is signed in as an account whose records are gone.
+    ///
+    /// ── The bytes, and why they go before the rows ────────────────────────────────────────────
+    /// `eraseEverything` has to remove photographs from disk as well as from the database, and a
+    /// `FileManager` call cannot join a SQLite transaction. So one of the two has to happen outside
+    /// the atomic part, and which one is not a matter of taste.
+    ///
+    /// **Files first.** The rule is already written down in `debugClearPhotos`, whose reason is that
+    /// a photograph's bytes are *found through its row* — delete the row first and the JPEG is
+    /// stranded in the container with nothing left pointing at it. For an erasure that reason is not
+    /// merely tidiness, it is the whole promise: a stranded file is a photograph belonging to a person
+    /// who asked to be forgotten, sitting on disk forever, unreachable by any query that could find it
+    /// again and therefore undetectable. The opposite failure — files removed, transaction rolls back —
+    /// leaves rows pointing at missing bytes, which is a visible, retryable, cosmetic inconsistency
+    /// whose data loss is exactly the data the person asked to destroy. Between a silent privacy
+    /// failure and a loud cosmetic one, a deletion path takes the loud one.
+    ///
+    /// It is also idempotent in the direction it can fail: a retry re-reads the same rows, tries to
+    /// remove files that are already gone (`try?`, and a missing file is not an error worth failing a
+    /// deletion over), and completes the transaction that did not commit last time.
+    ///
+    /// The default door removes nothing from disk, because there is nothing to remove: a photograph
+    /// has no owner column, so anonymizing the visit is the whole of un-naming it. See
+    /// `AccountDeletion.photoBytes`.
     @discardableResult
-    public func deleteAccount() async throws -> AccountDeletion.Outcome {
+    public func deleteAccount(
+        _ choice: AccountDeletionChoice = .default
+    ) async throws -> AccountDeletion.Outcome {
         guard let account = userID else { throw APIError.unauthorized }
         let moment = now()
+
+        if choice == .eraseEverything {
+            let bytes = try await store.queue.read { connection in
+                try AccountDeletion().photoBytes(userID: account, connection: connection)
+            }
+            let manager = FileManager.default
+            // `lastPathComponent`, not the stored string: a storage key is resolved against this
+            // app's photo directory rather than trusted as a path, the same guard `photoData` makes
+            // on the way in.
+            for key in bytes.storageKeys {
+                try? manager.removeItem(
+                    at: photoDirectory.appendingPathComponent((key as NSString).lastPathComponent)
+                )
+            }
+            for path in bytes.absolutePaths {
+                try? manager.removeItem(at: URL(fileURLWithPath: path))
+            }
+        }
+
         let outcome = try await store.queue.write { connection in
-            try AccountDeletion().delete(userID: account, at: moment, connection: connection)
+            try AccountDeletion().delete(
+                userID: account, choice: choice, at: moment, connection: connection
+            )
         }
         userID = nil
         // The role went with the account: a deleted account is not a lead. Cleared here rather than

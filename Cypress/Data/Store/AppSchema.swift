@@ -37,7 +37,8 @@ public enum AppSchema {
         Migration(version: 5, name: "a favourite can be owned by a device", migrate: applyV5),
         Migration(version: 6, name: "an account's own rows go with the account", migrate: applyV6),
         Migration(version: 7, name: "a lead can locally mark a tree removed", sql: v7),
-        Migration(version: 8, name: "a photo can be voted up or down", sql: v8)
+        Migration(version: 8, name: "a photo can be voted up or down", sql: v8),
+        Migration(version: 9, name: "a vote can outlive the voter", migrate: applyV9)
     ]
 
     /// The version a freshly migrated database reports.
@@ -803,13 +804,118 @@ public enum AppSchema {
     CREATE INDEX IF NOT EXISTS idx_photo_votes_tree ON photo_votes(tree_uuid);
     """
 
+    // MARK: - v9
+
+    /// `photo_votes` gains the one state v8 forbade: a vote with no owner at all, which is what a
+    /// vote becomes when the person who cast it deletes their account and asks for their
+    /// contributions to be left where they are (the project owner's two-door ruling; see
+    /// `AccountDeletionChoice`).
+    ///
+    /// **Why the schema has to change.** v8 wrote `CHECK ((user_id IS NULL) <> (device_id IS NULL))`
+    /// — exactly one owner — copying `favorites`, and gave the reason: one vote per owner per photo
+    /// is the whole of a ballot's integrity. That reasoning is about a *live* vote, and it is right
+    /// about live votes. It has one consequence nobody costed at the time: an account's vote cannot
+    /// be anonymized. Nulling `user_id` leaves a row the engine refuses, and re-homing it onto
+    /// `device_id` would hand one person's ballot to whoever picks the phone up next — and worse
+    /// here than for a favourite, because the next person could then *change* it. So R3's deletion
+    /// deleted votes, and `AccountDeletion` documented that as a ruling ("it goes with the account")
+    /// when it was really a constraint wearing a ruling's clothes.
+    ///
+    /// **What the two doors need.** The default door leaves contributions in place, and a vote is a
+    /// contribution in DECISIONS §3.12's sense — v8 says so itself, at length, and it is the whole
+    /// reason `photo_votes` is not `favorites`. What it decides, the hero, is the photograph
+    /// everybody looking at that tree sees. Deleting it silently changes what strangers see, which is
+    /// the opposite of leaving contributions where they are.
+    ///
+    /// **The new CHECK: at most one owner, rather than exactly one.**
+    ///
+    /// ```sql
+    /// CHECK (NOT (user_id IS NOT NULL AND device_id IS NOT NULL))
+    /// ```
+    ///
+    /// An ownerless vote is not a hole in v8's integrity rule, it is that rule's terminal state. Both
+    /// unique indexes are already partial — `WHERE user_id IS NOT NULL`, `WHERE device_id IS NOT
+    /// NULL` — so an ownerless row is in neither, and "one vote per owner per photo" still binds
+    /// every owner there is. `setPhotoVote`'s `ON CONFLICT` targets those same partial indexes, so an
+    /// ownerless row can never be the conflict target of somebody else's vote and can never be
+    /// upserted over. `clearPhotoVote` matches on an owner and so can never match one either.
+    /// `photoTallies` sums `vote` across the whole photo without looking at the owner, so the score
+    /// is unchanged, and its `own` column is guarded by `:user IS NOT NULL AND user_id = :user`, so
+    /// an ownerless row contributes zero to everybody's own-vote and never lights up somebody else's
+    /// thumb. The row is, exactly, frozen: it counts, it cannot be changed, and it cannot be
+    /// withdrawn. That is the correct set of powers for a judgement whose author is gone — you do
+    /// not get to change your mind after you have left.
+    ///
+    /// **Why not a sentinel owner instead.** A "deleted account" id would satisfy v8's CHECK with no
+    /// migration, and it was rejected on privacy grounds that `AccountDeletionChoice` argues in full:
+    /// a stable id across every row one person wrote is a pseudonym, and a pseudonym over dated,
+    /// located field records in one city re-identifies. A single shared sentinel would additionally
+    /// collide on `idx_photo_votes_user` the moment two deleted accounts had voted on the same
+    /// photograph, and the collision would surface as a *deletion that fails*, which is the worst
+    /// place in this app for a UNIQUE violation to appear.
+    ///
+    /// **Existing rows survive unchanged and cannot collide.** Every row in a v8 database satisfies
+    /// exactly-one-owner, which implies at-most-one-owner, so the copy is column-for-column and the
+    /// new CHECK accepts all of it; the two indexes are recreated with the same definitions, and the
+    /// old ones guaranteed what the new ones require. SQLite cannot alter a CHECK in place, so this
+    /// is the documented table rebuild v3 and v5 both used. `photo_votes` has no trigger and nothing
+    /// references it, so dropping it drops nothing else.
+    ///
+    /// **Idempotent by guard**, and the guard reads `sqlite_master` rather than `pragma_table_info`
+    /// for `outboxDefinition`'s reason: a CHECK is not a column, so the only place the old constraint
+    /// is visible is the stored `CREATE TABLE` text.
+    private static func applyV9(_ connection: SQLiteConnection) throws {
+        let existing = try tableDefinition(named: "photo_votes", connection: connection)
+        guard existing.contains("(user_id IS NULL) <> (device_id IS NULL)") else { return }
+        try connection.execute("""
+            CREATE TABLE photo_votes_unowned (
+                id         TEXT PRIMARY KEY,
+                photo_id   TEXT NOT NULL REFERENCES photos(id),
+                tree_uuid  TEXT NOT NULL,
+                user_id    TEXT,
+                device_id  TEXT,
+                vote       INTEGER NOT NULL CHECK (vote IN (-1, 1)),
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                -- At most one owner. A vote owned twice still needs a precedence rule somewhere a
+                -- query could get wrong, so that half of v8's CHECK stays. A vote owned by nobody is
+                -- now reachable, and only one thing reaches it: an account deletion whose owner
+                -- chose to leave their contributions on the trees.
+                CHECK (NOT (user_id IS NOT NULL AND device_id IS NOT NULL))
+            );
+
+            INSERT INTO photo_votes_unowned
+                (id, photo_id, tree_uuid, user_id, device_id, vote, created_at, updated_at)
+            SELECT id, photo_id, tree_uuid, user_id, device_id, vote, created_at, updated_at
+              FROM photo_votes;
+
+            DROP TABLE photo_votes;
+            ALTER TABLE photo_votes_unowned RENAME TO photo_votes;
+
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_photo_votes_user
+                ON photo_votes(user_id, photo_id) WHERE user_id IS NOT NULL;
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_photo_votes_device
+                ON photo_votes(device_id, photo_id) WHERE device_id IS NOT NULL;
+            CREATE INDEX IF NOT EXISTS idx_photo_votes_tree ON photo_votes(tree_uuid);
+            """)
+    }
+
     /// The `CREATE TABLE` text SQLite holds for `outbox`, which is where the `kind` vocabulary
     /// actually lives — `pragma_table_info` reports columns, not their CHECKs.
     private static func outboxDefinition(connection: SQLiteConnection) throws -> String {
+        try tableDefinition(named: "outbox", connection: connection)
+    }
+
+    /// The stored `CREATE TABLE` text for any table, empty when there is no such table.
+    ///
+    /// The only place a CHECK constraint is visible from SQL, which is why v9's idempotence guard
+    /// reads this rather than the column list a `pragma_table_info` guard would give it.
+    private static func tableDefinition(named table: String, connection: SQLiteConnection) throws -> String {
         let statement = try connection.prepare(
-            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'outbox'"
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = :name"
         )
         defer { statement.finalize() }
+        _ = try statement.bind([":name": table])
         return try statement.fetchOne { try $0.stringIfPresent("sql") ?? "" } ?? ""
     }
 }

@@ -127,21 +127,26 @@ final class AccountModel {
         await load()
     }
 
-    /// Delete the account, in the two-part sense RULINGS R3 settles.
+    /// Delete the account, through the door the person chose (`AccountDeletionChoice`).
     ///
     /// **Only ever called from behind the confirmation.** The copy `AccountDeletionCopy` holds is,
     /// in R3's own words, "the whole defence" against deleting more than somebody expected, so there
     /// is no path from a single tap to this method and no default-styled button that reaches it.
     ///
+    /// **The choice is a required argument with no default**, unlike `LocalAPI.deleteAccount`, which
+    /// takes the safe door when nobody says otherwise. The layering is deliberate in both directions:
+    /// a *store* call that forgets to name a door should do the harmless thing, and a *screen* that
+    /// forgets to name one should not compile. This is the layer that knows what the person tapped.
+    ///
     /// The outcome is returned rather than rendered as a tally. R3's copy names *kinds* of record
     /// and counts nothing, because ARCHITECTURE §5.1 forbids counts of user actions and a farewell
     /// is the last place to start one; the numbers exist so a test can assert what happened.
     @discardableResult
-    func deleteAccount() async -> AccountDeletion.Outcome? {
+    func deleteAccount(_ choice: AccountDeletionChoice) async -> AccountDeletion.Outcome? {
         guard let api, !isBusy else { return nil }
         isBusy = true
         defer { isBusy = false }
-        let outcome = try? await api.deleteAccount()
+        let outcome = try? await api.deleteAccount(choice)
         await load()
         return outcome
     }

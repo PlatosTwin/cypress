@@ -299,11 +299,19 @@ public struct OutboxStore {
     /// is worse still: it describes, by name, a tree this person kept, which is precisely the record
     /// R3 says nobody but they could read.
     ///
+    /// **`eraseEverything` collapses the two cases into one.** Rule 2 above exists because the
+    /// contribution survives deletion; through the destructive door it does not, so a queued one has
+    /// nothing left to arrive as. It is discarded with the rest, and `anonymized` comes back zero.
+    /// Leaving it to land anonymously would be the loudest possible version of the failure the whole
+    /// queue clause guards against: a person who chose "erase everything" watching a check-in appear
+    /// on a tree the next time the phone found wifi.
+    ///
     /// Both statements are `UPDATE`/`DELETE` whose `WHERE` stops matching once they have run, so a
     /// second call over the same account changes nothing.
     @discardableResult
     public func forgetAccount(
         userID: UUID,
+        choice: AccountDeletionChoice,
         at date: Date,
         connection: SQLiteConnection
     ) throws -> (discarded: Int, anonymized: Int) {
@@ -323,18 +331,39 @@ public struct OutboxStore {
         // The four append-only contribution kinds. `userID` is a top-level key on each of their
         // payloads (`Visit`, `TreeObservation`, `TreeMeasurement`, `CareEvent` all flatten
         // `Attribution` into `userID` + `deviceID`).
-        let anonymize = try connection.cachedStatement("""
-            UPDATE outbox
-               SET payload = json_remove(payload, '$.userID'), updated_at = :now
-             WHERE kind IN ('visit','observation','measurement','care_event')
-               AND json_extract(payload, '$.userID') = :user COLLATE NOCASE
-            """)
-        _ = try anonymize.bind([":now": date, ":user": userID.uuidString])
-        try anonymize.run()
-        let anonymized = connection.changes
-        _ = try anonymize.reset()
+        //
+        // One statement or the other, chosen by the door, over exactly the same set of rows — so
+        // there is no arrangement of the two in which a queued contribution is both anonymized and
+        // discarded, and none in which it is neither.
+        let contributions = "kind IN ('visit','observation','measurement','care_event')"
+        let mine = "json_extract(payload, '$.userID') = :user COLLATE NOCASE"
 
-        return (discarded: discarded, anonymized: anonymized)
+        switch choice {
+        case .leaveRecords:
+            let anonymize = try connection.cachedStatement("""
+                UPDATE outbox
+                   SET payload = json_remove(payload, '$.userID'), updated_at = :now
+                 WHERE \(contributions) AND \(mine)
+                """)
+            _ = try anonymize.bind([":now": date, ":user": userID.uuidString])
+            try anonymize.run()
+            let anonymized = connection.changes
+            _ = try anonymize.reset()
+            return (discarded: discarded, anonymized: anonymized)
+
+        case .eraseEverything:
+            // The staged JPEGs these rows point at are removed by `LocalAPI.deleteAccount` before
+            // this transaction opens; `AccountDeletion.photoBytes` reads them from this same
+            // `photo_paths` column, which is why that read has to happen first.
+            let erase = try connection.cachedStatement("""
+                DELETE FROM outbox WHERE \(contributions) AND \(mine)
+                """)
+            _ = try erase.bind([":user": userID.uuidString])
+            try erase.run()
+            let erased = connection.changes
+            _ = try erase.reset()
+            return (discarded: discarded + erased, anonymized: 0)
+        }
     }
 
     public func counts(connection: SQLiteConnection) throws -> [OutboxItem.State: Int] {
