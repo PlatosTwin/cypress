@@ -32,12 +32,25 @@ struct AccountSection: View {
 
     var onSignIn: () -> Void = {}
     var onSignOut: () -> Void = {}
-    /// Reached **only** from the confirmation dialog below. See `AccountModel.deleteAccount()`.
-    var onDelete: () -> Void = {}
+    /// Reached **only** from inside `AccountDeletionSheet`, and always carrying the door the person
+    /// chose there. See `AccountModel.deleteAccount(_:)`.
+    var onDelete: (AccountDeletionChoice) -> Void = { _ in }
 
-    /// Whether the deletion confirmation is up. Local to the view, because a confirmation that
-    /// survived the screen it was raised on would be a pending destructive action nobody can see.
+    /// Whether the deletion sheet is up. Local to the view, because a confirmation that survived the
+    /// screen it was raised on would be a pending destructive action nobody can see.
     @State private var isConfirmingDeletion = false
+
+    /// Which door the sheet is currently showing as chosen.
+    ///
+    /// **Owned here rather than inside the sheet, so that raising the sheet resets it.** SwiftUI
+    /// keeps a `@State` value alive across a `.sheet` dismissal when the presenter's identity does
+    /// not change, so a `@State` inside `AccountDeletionSheet` would remember `eraseEverything` from
+    /// a session the person backed out of — and the next time they opened it the destructive door
+    /// would be pre-selected with nothing on screen explaining why. A destructive default that
+    /// arrives by history is the exact failure the whole two-door design is arranged to prevent, so
+    /// the reset is written down at the one line that opens the sheet rather than left to SwiftUI's
+    /// identity rules.
+    @State private var deletionChoice = AccountDeletionChoice.default
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -54,30 +67,31 @@ struct AccountSection: View {
         .padding(.top, CypressSpacing.labelSectionTop)
         .padding(.horizontal, CypressSpacing.gutter)
         // ══════════════════════════════════════════════════════════════════════════════════════
-        // RULINGS R3's confirmation. **The copy is the feature**, in R3's own words: "deleting more
-        // than someone expected is the failure mode this ruling creates, and copy is the whole
-        // defence against it". `AccountDeletionCopy` holds every string, written to that ruling and
-        // reviewed as prose; this view arranges them and adds none of its own.
+        // RULINGS R3's confirmation, now two doors wide (the project owner's ruling). **The copy is
+        // the feature**, in R3's own words: "deleting more than someone expected is the failure
+        // mode this ruling creates, and copy is the whole defence against it". `AccountDeletionCopy`
+        // holds every string; `AccountDeletionSheet` arranges them and adds none of its own.
         //
-        // A dialog rather than a pushed screen, for the reason `ModerationReviewList` raises one:
-        // the destructive tap and the sentence about it belong in the same modal moment, and there
-        // is no mocked deletion screen to draw (SCREENS.md has none, BUILD-PLAN §9 lists none — so
-        // this surface is **NOT SPECIFIED**, and the nearest specified thing in the app is the
-        // moderation confirm, which is also a `confirmationDialog` over an irreversible write).
+        // A sheet rather than the `confirmationDialog` this used to be, and rather than a pushed
+        // screen. The dialog was the right shape while there was one behaviour and is the wrong
+        // shape for two — see the header of `AccountDeletionSheet` for the argument, which is that
+        // a dialog cannot make both doors readable before either is chosen. Still **NOT SPECIFIED**:
+        // SCREENS.md draws no deletion surface and BUILD-PLAN §9 lists none.
         //
-        // `cancelAction` carries `role: .cancel`, so it is the outside tap, the Escape key and the
-        // VoiceOver default — R3 wants the way out to be the default on any surface that draws
-        // these two.
+        // Dismissing by swipe or scrim lands on the same `onCancel` the `Keep my account` button
+        // does — R3 wants the way out to be the default on any surface that draws these two, and a
+        // sheet's default gesture is a dismissal.
         // ══════════════════════════════════════════════════════════════════════════════════════
-        .confirmationDialog(
-            AccountDeletionCopy.title,
-            isPresented: $isConfirmingDeletion,
-            titleVisibility: .visible
-        ) {
-            Button(AccountDeletionCopy.confirmAction, role: .destructive) { onDelete() }
-            Button(AccountDeletionCopy.cancelAction, role: .cancel) {}
-        } message: {
-            Text(AccountCopy.deletionMessage)
+        .sheet(isPresented: $isConfirmingDeletion) {
+            AccountDeletionSheet(
+                choice: $deletionChoice,
+                isBusy: isBusy,
+                onDelete: { choice in
+                    isConfirmingDeletion = false
+                    onDelete(choice)
+                },
+                onCancel: { isConfirmingDeletion = false }
+            )
         }
     }
 
@@ -94,13 +108,19 @@ struct AccountSection: View {
                 action: isBusy ? nil : onSignOut
             )
 
-            // The destructive row does not delete. It opens R3's sentence, and the tap that deletes
-            // is inside that dialog — there is no path from one tap to an emptied account.
+            // The destructive row does not delete. It opens R3's two sentences, and the tap that
+            // deletes is inside that sheet — there is no path from one tap to an emptied account.
+            //
+            // The choice is reset here, on the way in, rather than on the way out. See
+            // `deletionChoice`.
             IconTextRow(
                 accent: .bloom,
-                title: AccountDeletionCopy.confirmAction,
+                title: AccountCopy.deleteTitle,
                 subtitle: AccountCopy.deleteSubtitle,
-                action: isBusy ? nil : { isConfirmingDeletion = true }
+                action: isBusy ? nil : {
+                    deletionChoice = .default
+                    isConfirmingDeletion = true
+                }
             )
         }
     }
@@ -180,26 +200,20 @@ enum AccountCopy {
     /// door either (`LocalAPI.signOut()` keeps the id so signing in again resumes this account).
     static let signOutSubtitle = "Keeps everything you have saved. Sign in again to pick this account back up"
 
-    /// The destructive row's second line. It does not repeat R3's sentence — that sentence is the
-    /// dialog's, and a summary of it here would be a shorter, less careful version of the one
-    /// warning that matters.
-    static let deleteSubtitle = "Read what stays and what goes before you confirm"
+    /// The destructive row's own title. It was `AccountDeletionCopy.confirmAction` while there was
+    /// one of those; there are now two, each naming the door it takes, and neither is the right
+    /// label for a row that takes no door at all. So the row says the plain thing and the sheet
+    /// says the specific ones.
+    static let deleteTitle = "Delete account"
+
+    /// The destructive row's second line. It does not repeat R3's sentences — those are the sheet's,
+    /// and a summary of them here would be a shorter, less careful version of the one warning that
+    /// matters. "What stays" is now a thing the reader decides rather than a thing they are told,
+    /// which the line says by promising a choice rather than a description.
+    static let deleteSubtitle = "Choose what happens to your records, then confirm"
 
     static let signInTitle = "Sign in"
     static let signInSubtitle = "Gather what you save under one name on this phone"
-
-    /// R3's three sentences, in the order R3 puts them: what happens, then the queue, then the one
-    /// fact that cannot be undone.
-    ///
-    /// **`whatHappens` is not split**, per its own doc comment: told only that their observations
-    /// stay, a person would reasonably expect everything else to stay too. Joined with blank lines
-    /// rather than run together, because a dialog message that is one paragraph of three sentences
-    /// is a paragraph people skim.
-    static let deletionMessage = [
-        AccountDeletionCopy.whatHappens,
-        AccountDeletionCopy.queuedWork,
-        AccountDeletionCopy.irreversible
-    ].joined(separator: "\n\n")
 
     /// What the license row on screen 15 was answered with, read back (ERRATA E131).
     ///

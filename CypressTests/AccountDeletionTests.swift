@@ -124,7 +124,7 @@ struct AccountDeletionTests {
             #expect(try await Self.attributed(table, to: Self.userID, in: store) == 1, "fixture: \(table)")
         }
 
-        let outcome = try await api.deleteAccount()
+        let outcome = try await api.deleteAccount(.leaveRecords)
         #expect(outcome.anonymizedContributions == 4)
         #expect(outcome.anonymizedAttributions == 2)
 
@@ -157,7 +157,7 @@ struct AccountDeletionTests {
         try await api.claimDevice(deviceUUID: Self.deviceID, userID: Self.userID)
         #expect(try await store.appState(.currentUserID) == Self.userID.uuidString)
 
-        try await api.deleteAccount()
+        try await api.deleteAccount(.leaveRecords)
 
         let claimed = try await store.queue.read { connection in
             try ContributionStore().claimedUser(forDevice: Self.deviceID, connection: connection)
@@ -168,7 +168,7 @@ struct AccountDeletionTests {
 
         // And a second deletion is refused rather than silently succeeding, because there is no
         // longer an account to delete.
-        await #expect(throws: APIError.unauthorized) { try await api.deleteAccount() }
+        await #expect(throws: APIError.unauthorized) { try await api.deleteAccount(.leaveRecords) }
     }
 
     // MARK: - 2. What only one person could ever see
@@ -206,7 +206,7 @@ struct AccountDeletionTests {
             )
         }
 
-        let outcome = try await api.deleteAccount()
+        let outcome = try await api.deleteAccount(.leaveRecords)
         #expect(outcome.deletedPrivateReminders == 1)
         #expect(outcome.deletedFavorites == 1)
 
@@ -262,7 +262,7 @@ struct AccountDeletionTests {
             "SELECT COUNT(*) AS n FROM favorites WHERE deleted_at IS NOT NULL", in: store
         ) == 1, "fixture: the un-favourite should have tombstoned rather than deleted")
 
-        let outcome = try await api.deleteAccount()
+        let outcome = try await api.deleteAccount(.leaveRecords)
         #expect(outcome.deletedFavorites == 1)
         #expect(outcome.deletedFavoriteTombstones == 1)
         #expect(try await Self.scalar("SELECT COUNT(*) AS n FROM favorites", in: store) == 0)
@@ -299,7 +299,7 @@ struct AccountDeletionTests {
                 """)
         }
 
-        await #expect(throws: (any Error).self) { try await api.deleteAccount() }
+        await #expect(throws: (any Error).self) { try await api.deleteAccount(.leaveRecords) }
 
         // Nothing moved. Not the contributions — a person who saw an error and tried again must not
         // find their work already anonymized and the deletion reporting success over rows that are
@@ -326,7 +326,7 @@ struct AccountDeletionTests {
         try await store.queue.write { connection in
             try connection.execute("DROP TRIGGER deletion_atomicity_probe")
         }
-        let outcome = try await api.deleteAccount()
+        let outcome = try await api.deleteAccount(.leaveRecords)
         #expect(outcome.anonymizedContributions == 4)
         #expect(outcome.deletedPrivateReminders == 1)
         #expect(outcome.deletedFavorites == 1)
@@ -360,7 +360,7 @@ struct AccountDeletionTests {
             try outbox.enqueue(OutboxPayload.favoriteToggle(deviceToggle).makeItem(), connection: connection)
         }
 
-        let outcome = try await api.deleteAccount()
+        let outcome = try await api.deleteAccount(.leaveRecords)
         #expect(outcome.discardedOutboxItems == 2)
         #expect(outcome.anonymizedOutboxItems == 1)
 
@@ -426,7 +426,7 @@ struct AccountDeletionTests {
                 isFavorite: true, at: Self.moment, connection: connection
             )
         }
-        try await api.deleteAccount()
+        try await api.deleteAccount(.leaveRecords)
         #expect(try await Self.scalar(
             "SELECT COUNT(*) AS n FROM app_state WHERE key = '\(AccountDeletion.erasureSentinelKey)'", in: store
         ) == 0)
@@ -488,27 +488,346 @@ struct AccountDeletionTests {
         #expect(try connection.userVersion == AppSchema.currentVersion)
 
         // Both rows are still there, and both are still deletable only under an erasure.
-        let outcome = try AccountDeletion().delete(userID: Self.userID, at: Self.moment, connection: connection)
+        let outcome = try AccountDeletion().delete(
+            userID: Self.userID, choice: .leaveRecords, at: Self.moment, connection: connection
+        )
         #expect(outcome.deletedFavorites == 2)
         #expect(outcome.deletedFavoriteTombstones == 1)
     }
 
     // MARK: - 7. The copy, which R3 makes load-bearing
 
-    @Test("the deletion copy names the reminders and the favourites in the sentence that keeps the observations")
-    func theCopyEnumeratesBoth() {
-        let sentence = AccountDeletionCopy.whatHappens
-        // R3: "A person deleting an account should be told that their reminders and favourites go
-        // with it, before it happens, in the same sentence that tells them their observations stay."
-        // One sentence — deleting more than someone expected is the failure mode this ruling
-        // creates, and copy split into two paragraphs is how the second one stops being read.
-        #expect(sentence.contains("reminders"))
-        #expect(sentence.contains("favorites"))
-        #expect(sentence.contains("stay on the trees"))
-        #expect(sentence.filter { $0 == "." }.count == 1, "the two halves must arrive in one sentence")
+    @Test("each door states its own behaviour and the shared clause escapes neither")
+    func theCopyStatesBothDoors() {
+        // R3's rule was one sentence because there was one behaviour. There are now two, and the
+        // half that is true either way is hoisted out of both rather than printed inside each — see
+        // `AccountDeletionCopy` for the argument. What R3 actually defends against is a person
+        // reading the reassuring half and missing the rest, and that is what these pin.
+        let stays = AccountDeletionCopy.leaveRecordsBody
+        let goes = AccountDeletionCopy.eraseEverythingBody
+        let either = AccountDeletionCopy.personalRecords
+
+        #expect(stays.contains("stay on the trees"))
+        #expect(stays.contains("photo votes"), "the door that keeps votes must say it keeps votes")
+        #expect(stays.contains("Nobody can tell"), "NULL rather than a sentinel is a promise, so it is made")
+
+        #expect(goes.contains("photo vote"))
+        #expect(goes.contains("photographs are removed from this phone"))
+        #expect(goes.contains("different one"), "the hero consequence must be told rather than discovered")
+
+        #expect(either.hasPrefix("Either way"))
+        #expect(either.contains("reminders"))
+        #expect(either.contains("favorites"))
+
         // House style: no spaces around em dashes (ARCHITECTURE §5.7).
-        #expect(!sentence.contains(" — "))
-        #expect(sentence.contains("—"))
+        for line in [stays, goes, either, AccountDeletionCopy.queuedWork] {
+            #expect(!line.contains(" — "))
+        }
         #expect(AccountDeletionCopy.irreversible == "This cannot be undone.")
+
+        // The last tap names its door. Nothing else stops the destructive one being reached by
+        // momentum, so this stands in for the whole interaction design.
+        let safeLabel = AccountDeletionCopy.confirmAction(for: .leaveRecords)
+        let eraseLabel = AccountDeletionCopy.confirmAction(for: .eraseEverything)
+        #expect(safeLabel != eraseLabel)
+        #expect(eraseLabel.lowercased().contains("erase"))
+        #expect(!safeLabel.lowercased().contains("erase"))
+        #expect(AccountDeletionChoice.default == .leaveRecords)
+        #expect(AccountDeletionChoice.allCases.first == .leaveRecords)
+    }
+
+    // MARK: - 8. The two doors
+
+    /// A photo directory of this suite's own, so a test can look at the bytes on disk rather than at
+    /// a row that claims something about them.
+    private static func photoDirectory() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("cypress-deletion-\(UUID().uuidString)", isDirectory: true)
+    }
+
+    private static func signedIn(photoDirectory: URL) async throws -> (store: CypressStore, api: LocalAPI) {
+        let store = try await CypressStore.inMemory()
+        return (
+            store,
+            LocalAPI(
+                store: store, deviceID: deviceID, userID: userID,
+                photoDirectory: photoDirectory, now: { moment }
+            )
+        )
+    }
+
+    /// A photograph taken on one of the account's visits, uploaded through the shipping path so its
+    /// bytes land in the app's photo directory exactly as a real one's would.
+    ///
+    /// It goes through `beginPhotoUpload`/`uploadPhoto` rather than an INSERT because the thing
+    /// under test is whether the deletion can *find* the file, and a hand-written row could agree
+    /// with a hand-written filename while the real pair disagreed.
+    private static func photograph(
+        api: LocalAPI,
+        treeID: UUID,
+        visitID: UUID
+    ) async throws -> (id: UUID, url: URL) {
+        let staged = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cypress-staged-\(UUID().uuidString).jpg")
+        try Data("not really a jpeg, and that is fine: nothing decodes it here".utf8)
+            .write(to: staged, options: .atomic)
+
+        let ticket = try await api.beginPhotoUpload(
+            PhotoUploadRequest(
+                treeID: treeID, visitID: visitID, shotType: .fullTree,
+                localPath: staged.path, capturedAt: moment, width: 12, height: 16
+            )
+        )
+        try await api.uploadPhoto(at: staged.path, ticket: ticket)
+        return (ticket.photoID, ticket.destination)
+    }
+
+    /// One account holding one of everything the ruling names.
+    private static func everything(
+        api: LocalAPI,
+        store: CypressStore
+    ) async throws -> (tree: Tree, visit: Visit, photo: (id: UUID, url: URL)) {
+        let tree = try await makeTree(api: api)
+        let attribution = Attribution(userID: userID, deviceID: deviceID)
+        let visit = try await writeContributions(treeID: tree.id, attribution: attribution, in: store)
+        let photo = try await photograph(api: api, treeID: tree.id, visitID: visit.id)
+
+        try await store.queue.write { connection in
+            let contributions = ContributionStore()
+            try contributions.setPhotoVote(
+                photoID: photo.id, owner: .user(userID), vote: .up, at: moment, connection: connection
+            )
+            try contributions.insert(
+                PrivateReminder(owner: .user(userID), treeID: tree.id, category: .uprooted),
+                connection: connection
+            )
+            try contributions.applyFavoriteToggle(
+                owner: .user(userID), treeID: tree.id, clientUUID: UUID(),
+                isFavorite: true, at: moment, connection: connection
+            )
+            try contributions.insert(
+                TreeName(treeID: tree.id, name: "Grandmother Cypress", givenBy: userID),
+                connection: connection
+            )
+        }
+        return (tree, visit, photo)
+    }
+
+    @Test("the default door leaves the photo bytes and the vote, with the attribution gone")
+    func theDefaultDoorLeavesTheContributions() async throws {
+        let (store, api) = try await Self.signedIn(photoDirectory: Self.photoDirectory())
+        let fixture = try await Self.everything(api: api, store: store)
+        #expect(FileManager.default.fileExists(atPath: fixture.photo.url.path), "fixture: no bytes on disk")
+
+        let outcome = try await api.deleteAccount(.leaveRecords)
+        #expect(outcome.choice == .leaveRecords)
+        #expect(outcome.anonymizedContributions == 4)
+        #expect(outcome.anonymizedPhotoVotes == 1)
+        #expect(outcome.deletedPhotos == 0)
+        #expect(outcome.deletedContributions == 0)
+        #expect(outcome.deletedPhotoVotes == 0)
+
+        // The bytes, read from the container rather than from a column that claims something about
+        // them.
+        #expect(
+            FileManager.default.fileExists(atPath: fixture.photo.url.path),
+            "the default door deleted a photograph's bytes"
+        )
+        #expect(try await Self.scalar("SELECT COUNT(*) AS n FROM photos", in: store) == 1)
+
+        // The vote survives and still counts, which is what "leaves them in place" has to mean for a
+        // record whose whole purpose is to be aggregated.
+        #expect(try await Self.scalar("SELECT COUNT(*) AS n FROM photo_votes", in: store) == 1)
+        #expect(try await Self.scalar(
+            "SELECT COUNT(*) AS n FROM photo_votes WHERE user_id IS NULL AND device_id IS NULL", in: store
+        ) == 1, "the vote kept an owner, or was deleted")
+
+        let tallies = try await store.queue.read { connection in
+            try ContributionStore().photoTallies(
+                treeID: fixture.tree.id, owner: .device(Self.deviceID), connection: connection
+            )
+        }
+        #expect(tallies[fixture.photo.id]?.score == 1, "hero selection changed on the door that changes nothing")
+        #expect(tallies[fixture.photo.id]?.ownVote == nil, "an ownerless vote lit up somebody else's thumb")
+
+        // …and nothing anywhere still names the account.
+        for table in ["visits", "observations", "measurements", "care_events"] {
+            #expect(try await Self.attributed(table, to: Self.userID, in: store) == 0, "\(table)")
+        }
+        #expect(try await Self.scalar(
+            "SELECT COUNT(*) AS n FROM tree_names WHERE given_by IS NULL", in: store
+        ) == 1)
+        // A photograph has no owner column at all, so anonymizing the visit is the whole of it.
+        #expect(try await Self.scalar(
+            "SELECT COUNT(*) AS n FROM photos p JOIN visits v ON v.id = p.visit_id WHERE v.user_id IS NOT NULL",
+            in: store
+        ) == 0)
+    }
+
+    @Test("the destructive door removes the rows and the files")
+    func theDestructiveDoorRemovesRowsAndBytes() async throws {
+        let (store, api) = try await Self.signedIn(photoDirectory: Self.photoDirectory())
+        let fixture = try await Self.everything(api: api, store: store)
+
+        // A stranger's vote on the account's photograph. It is not this person's to withdraw and it
+        // goes anyway, because the photograph it is about is going — the one cost of this door that
+        // falls on somebody else, asserted rather than left as a comment.
+        try await store.queue.write { connection in
+            try ContributionStore().setPhotoVote(
+                photoID: fixture.photo.id, owner: .user(Self.strangerID), vote: .up,
+                at: Self.moment, connection: connection
+            )
+        }
+        #expect(try await Self.scalar("SELECT COUNT(*) AS n FROM photo_votes", in: store) == 2)
+
+        let outcome = try await api.deleteAccount(.eraseEverything)
+        #expect(outcome.choice == .eraseEverything)
+        #expect(outcome.deletedContributions == 4)
+        #expect(outcome.deletedPhotos == 1)
+        #expect(outcome.deletedPhotoVotes == 2)
+        #expect(outcome.deletedAttributions == 1)
+        #expect(outcome.anonymizedContributions == 0)
+        #expect(outcome.anonymizedPhotoVotes == 0)
+
+        // The file, which an assertion on rows alone would never notice.
+        #expect(
+            !FileManager.default.fileExists(atPath: fixture.photo.url.path),
+            "the JPEG survived an erasure and is now unreachable by any query"
+        )
+        for table in ["photos", "photo_votes", "visits", "observations", "measurements", "care_events", "tree_names"] {
+            #expect(try await Self.scalar("SELECT COUNT(*) AS n FROM \(table)", in: store) == 0, "\(table)")
+        }
+        // The tree is still there. "Everything I have added" is the person's rows, not the forest.
+        #expect(try await api.treeProfile(id: fixture.tree.id).tree.id == fixture.tree.id)
+    }
+
+    @Test("the destructive door does not touch the device's own rows or a stranger's")
+    func theDestructiveDoorIsScopedToTheAccount() async throws {
+        let (store, api) = try await Self.signedIn(photoDirectory: Self.photoDirectory())
+        let mine = try await Self.makeTree(api: api)
+        let theirs = try await Self.makeTree(api: api, at: -122.46)
+
+        try await Self.writeContributions(
+            treeID: mine.id, attribution: Attribution(userID: Self.userID, deviceID: Self.deviceID), in: store
+        )
+        // The device's own work, written before there was an account and never moved onto it, plus a
+        // second account's. Neither identity is being deleted and neither can consent here.
+        try await Self.writeContributions(
+            treeID: theirs.id, attribution: Attribution.anonymous(deviceID: Self.deviceID), in: store
+        )
+        try await Self.writeContributions(
+            treeID: theirs.id, attribution: Attribution(userID: Self.strangerID, deviceID: Self.deviceID), in: store
+        )
+        try await store.queue.write { connection in
+            try ContributionStore().insert(
+                PrivateReminder(owner: .device(Self.deviceID), treeID: theirs.id, category: .uprooted),
+                connection: connection
+            )
+        }
+
+        try await api.deleteAccount(.eraseEverything)
+
+        for table in ["visits", "observations", "measurements", "care_events"] {
+            #expect(try await Self.scalar("SELECT COUNT(*) AS n FROM \(table)", in: store) == 2, "\(table)")
+            #expect(try await Self.attributed(table, to: Self.strangerID, in: store) == 1, "\(table): a stranger's row went")
+        }
+        let deviceReminders = try await store.queue.read { connection in
+            try ContributionStore().privateReminders(userID: nil, deviceID: Self.deviceID, connection: connection)
+        }
+        #expect(deviceReminders.count == 1, "the device's own reminder went with somebody else's account")
+    }
+
+    @Test("the destructive door discards queued contributions instead of landing them anonymously")
+    func theDestructiveDoorEmptiesTheQueue() async throws {
+        let (store, api) = try await Self.signedIn(photoDirectory: Self.photoDirectory())
+        let tree = try await Self.makeTree(api: api)
+        let attribution = Attribution(userID: Self.userID, deviceID: Self.deviceID)
+
+        // A queued visit with a staged JPEG, which is the state a phone is in on a bus: the
+        // photograph is on disk with no `photos` row at all, so a deletion that only looked at
+        // `photos` would leave the most recent picture the person took.
+        let staged = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cypress-queued-\(UUID().uuidString).jpg")
+        try Data("queued bytes".utf8).write(to: staged, options: .atomic)
+
+        let queued = Visit(treeID: tree.id, attribution: attribution, capturedAt: Self.moment)
+        try await store.queue.write { connection in
+            let item = try OutboxPayload.visit(queued).makeItem(
+                photos: [OutboxPhoto(path: staged.path, shotType: .fullTree)]
+            )
+            try OutboxStore().enqueue(item, connection: connection)
+        }
+        #expect(FileManager.default.fileExists(atPath: staged.path), "fixture: nothing staged")
+
+        let outcome = try await api.deleteAccount(.eraseEverything)
+        #expect(outcome.anonymizedOutboxItems == 0, "a contribution the person erased was kept to land later")
+        #expect(outcome.discardedOutboxItems == 1)
+        #expect(try await store.queue.read { connection in
+            try OutboxStore().allItems(connection: connection).count
+        } == 0)
+        #expect(
+            !FileManager.default.fileExists(atPath: staged.path),
+            "the staged JPEG of an erased visit is still on disk"
+        )
+    }
+
+    @Test("a deleted account is unrecoverable through either door")
+    func neitherDoorLeavesTheAccountResumable() async throws {
+        for choice in AccountDeletionChoice.allCases {
+            let (store, api) = try await Self.signedIn(photoDirectory: Self.photoDirectory())
+            try await api.claimDevice(deviceUUID: Self.deviceID, userID: Self.userID)
+
+            try await api.deleteAccount(choice)
+
+            #expect(await api.userID == nil, "\(choice)")
+            #expect(try await store.appState(.currentUserID) == nil, "\(choice)")
+            #expect(try await api.resumableUserID() == nil, "\(choice): the account was left resumable")
+            await #expect(throws: APIError.unauthorized) { try await api.deleteAccount(choice) }
+        }
+    }
+
+    // MARK: - 9. v9, which is what lets a vote outlive its voter
+
+    @Test("v9 accepts an ownerless vote and v8 did not")
+    func theVoteCheckWasRelaxedRatherThanRemoved() throws {
+        let connection = try SQLiteConnection(path: ":memory:")
+        try connection.configureForWriting()
+
+        // v8's shape, on a database that stops there. That CHECK is why R3 deleted votes rather than
+        // anonymizing them, so it is worth proving it really did refuse.
+        _ = try SchemaMigrator.migrate(AppSchema.migrations.filter { $0.version <= 8 }, on: connection)
+        let tree = UUID(), photo = UUID(), voter = UUID()
+        let stamp = SQLiteTimestamp.string(from: Self.moment)
+        try connection.execute("""
+            INSERT INTO photos (id, tree_uuid, shot_type, captured_at, created_at, updated_at)
+            VALUES ('\(photo.uuidString)','\(tree.uuidString)','full_tree','\(stamp)','\(stamp)','\(stamp)');
+            INSERT INTO photo_votes (id, photo_id, tree_uuid, user_id, device_id, vote, created_at, updated_at)
+            VALUES ('\(UUID().uuidString)','\(photo.uuidString)','\(tree.uuidString)',
+                    '\(voter.uuidString)', NULL, 1, '\(stamp)','\(stamp)');
+            """)
+        #expect(throws: (any Error).self) {
+            try connection.execute("UPDATE photo_votes SET user_id = NULL")
+        }
+
+        // Migrating forward keeps the row and lifts exactly that refusal.
+        let applied = try SchemaMigrator.migrate(AppSchema.migrations, on: connection)
+        #expect(applied == AppSchema.migrations.map(\.version).filter { $0 > 8 })
+        #expect(try connection.userVersion == AppSchema.currentVersion)
+        try connection.execute("UPDATE photo_votes SET user_id = NULL")
+
+        // Relaxed, not removed: owned twice is still refused, which is the half of v8's rule that
+        // was about integrity rather than about deletion.
+        #expect(throws: (any Error).self) {
+            try connection.execute("""
+                UPDATE photo_votes SET user_id = '\(voter.uuidString)', device_id = '\(UUID().uuidString)'
+                """)
+        }
+
+        // A replay from an interrupted run lands on the same table rather than rebuilding it twice.
+        try connection.setUserVersion(8)
+        _ = try SchemaMigrator.migrate(AppSchema.migrations, on: connection)
+        let survivors = try connection.prepare("SELECT COUNT(*) AS n FROM photo_votes")
+        defer { survivors.finalize() }
+        #expect(try survivors.fetchOne { try $0.int("n") } == 1, "the rebuild lost the votes it copied")
     }
 }

@@ -339,7 +339,9 @@ public enum DataGates {
             // pass both assertions above and neither would notice.
             do {
                 try await store.queue.write { connection in
-                    try AccountDeletion().delete(userID: erasedAccount, at: Date(), connection: connection)
+                    try AccountDeletion().delete(
+                        userID: erasedAccount, choice: .default, at: Date(), connection: connection
+                    )
                 }
             } catch {
                 failures.append("R3: an account's own favourite could not be deleted with the account: \(error)")

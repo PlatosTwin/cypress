@@ -127,7 +127,7 @@ struct YouTabView: View {
                 isBusy: account.isBusy,
                 onSignIn: { router?.present(.accountAsk) },
                 onSignOut: { Task { await account.signOut() } },
-                onDelete: { Task { await account.deleteAccount() } }
+                onDelete: { choice in Task { await account.deleteAccount(choice) } }
             )
         }
     }
