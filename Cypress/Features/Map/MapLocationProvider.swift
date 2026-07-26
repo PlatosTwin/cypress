@@ -59,6 +59,20 @@ final class MapLocationProvider {
     private let manager: CLLocationManager
     private var delegate: Delegate?
 
+    /// Whether anybody has actually asked this provider for fixes.
+    ///
+    /// **It exists because `init` used to start a GPS session on its own**, through
+    /// `apply(authorization:)`, and a SwiftUI `@State` default expression is re-evaluated on every
+    /// initialisation of the view that declares it — so screen 01 was constructing a fresh
+    /// `CLLocationManager` and starting it around fifty times a second (measured: 336 instances in
+    /// seven seconds). `RootView`'s own comment says of its provider "it is never `start()`ed here,
+    /// and that is deliberate", and that sentence has been false since it was written: on a device
+    /// where permission was already granted, construction started updating immediately.
+    ///
+    /// Now construction configures and answers questions; `start()` is the only thing that opens a
+    /// session. A provider nobody asked is inert, which is what makes a stray one harmless.
+    private var hasStarted = false
+
     init(manager: CLLocationManager = CLLocationManager()) {
         self.manager = manager
         self.authorization = manager.authorizationStatus
@@ -95,6 +109,7 @@ final class MapLocationProvider {
     /// status is already an answer and must not be re-asked (iOS silently no-ops, and pretending
     /// otherwise would put a dead button in the denied state).
     func start() {
+        hasStarted = true
         switch manager.authorizationStatus {
         case .notDetermined:
             manager.requestWhenInUseAuthorization()
@@ -106,6 +121,7 @@ final class MapLocationProvider {
     }
 
     func stop() {
+        hasStarted = false
         manager.stopUpdatingLocation()
     }
 
@@ -184,7 +200,10 @@ final class MapLocationProvider {
             availability = status == .restricted ? .servicesOff : .denied
         case .authorizedAlways, .authorizedWhenInUse:
             if availability.coordinate == nil { availability = .waitingForFix }
-            manager.startUpdatingLocation()
+            // Only if somebody asked. This is the authorisation *callback* as well as the
+            // constructor's own call, and answering "you are allowed" with "then I shall start"
+            // is right in the first case and is the fifty-sessions-a-second defect in the second.
+            if hasStarted { manager.startUpdatingLocation() }
         @unknown default:
             availability = .notAsked
         }

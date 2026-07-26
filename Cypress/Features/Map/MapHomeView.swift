@@ -29,18 +29,35 @@ struct MapHomeView: View {
 
     let api: any CypressAPI
 
+    /// **The composition root's provider, passed in — not one of this screen's own.**
+    ///
+    /// It was `@State private var location = MapLocationProvider()`, and that one line is the
+    /// single largest thing wrong with this screen's frame rate. A SwiftUI `@State` default
+    /// expression is re-evaluated every time the view struct is initialised, and `RootView.body`
+    /// initialises this one on every pass; `MapLocationProvider.init` used to open a
+    /// `CLLocationManager` session there and then, so screen 01 was standing up and discarding
+    /// around **fifty GPS sessions a second** — measured, 336 provider instances in seven seconds —
+    /// each of which delivered a cached fix and rewrote observable state on its way out.
+    ///
+    /// Two things were wrong and both are fixed: the provider no longer starts on construction
+    /// (`MapLocationProvider.hasStarted`), and this screen no longer constructs one. ARCHITECTURE §3
+    /// already said so — "shared services (`CypressAPI`, `Outbox`, `LocationProvider`) are passed
+    /// through the SwiftUI environment from a single composition root" — and the app was running two
+    /// providers, two managers and two GPS sessions against that sentence.
+    let location: MapLocationProvider
+
     @Environment(AppRouter.self) private var router
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var model: MapModel
-    @State private var location = MapLocationProvider()
     @State private var position: MapCameraPosition = .region(MapLayout.region(around: MapLayout.defaultCentre))
     /// The last region MapKit reported, so a cluster tap knows what "two zoom levels in" means.
     @State private var region = MapLayout.region(around: MapLayout.defaultCentre)
     /// One-shot: the first fix recentres the map, later ones must not yank it out from under a pan.
     @State private var hasCentredOnUser = false
 
-    init(api: any CypressAPI) {
+    init(api: any CypressAPI, location: MapLocationProvider) {
         self.api = api
+        self.location = location
         _model = State(initialValue: MapModel(api: api))
     }
 
@@ -90,7 +107,12 @@ struct MapHomeView: View {
                 position = .region(MapLayout.region(around: coordinate))
             }
         }
-        .onDisappear { location.stop() }
+        // **No `stop()` on disappear any more, and that is not an oversight.** It used to stop *this
+        // screen's own* provider while the composition root's kept running, which meant the stop
+        // bought nothing and the app held two GPS sessions regardless. There is one provider now, and
+        // screens 09, 12, 16 and the visit flow all read fixes from it — a map that switched it off
+        // on its way to a tree profile would take the accuracy out from under the record being
+        // written on the screen it opened.
     }
 
     // MARK: - Basemap
