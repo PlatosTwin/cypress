@@ -135,6 +135,8 @@ struct VisitAddTreeView: View {
 
                     placementRow
 
+                    landRow
+
                     speciesRow
 
                     if case let .duplicate(candidates) = model.phase {
@@ -193,6 +195,50 @@ struct VisitAddTreeView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    // MARK: - What ground it stands on
+
+    /// One sentence about the ground, and three chips that answer it.
+    ///
+    /// **NOT SPECIFIED.** SCREENS.md has no add-tree mock at all (see the file header), so this is
+    /// built the way every other part of this screen is: from something already drawn. It is C4's
+    /// chip flow in `CypressChipFlow`, which is the component screen 06 uses for exactly this shape
+    /// of question — a short closed vocabulary, one answer at a time — and the sentence above it is
+    /// `placementRow`'s and `speciesRow`'s, in the same voice, saying what the record will say.
+    ///
+    /// **It sits between the pin and the species, and the order is the argument.** Both rows above it
+    /// are about *where*: the pin decides the coordinate, this decides the ground under it, and only
+    /// then does the screen ask *what* the tree is. A reader who has just placed a pin from across the
+    /// street is looking at the map they placed it on when this question arrives.
+    ///
+    /// **No gate.** Unlike `placementRow` there is nothing to wait for — the ground under a tree does
+    /// not need a GPS fix — so the row is never hidden and the CTA never waits on it. A contributor
+    /// who does not answer reads a sentence saying so and presses `Add this tree`, which is what makes
+    /// the field genuinely optional rather than optional-if-you-find-the-skip.
+    private var landRow: some View {
+        VStack(alignment: .leading, spacing: CypressSpacing.gapVitality) {
+            Text(VisitAddTreeCopy.land(model.landContext))
+                .cypressBody135(color: CypressColor.textBody)
+                .fixedSize(horizontal: false, vertical: true)
+
+            CypressChipFlow(spacing: CypressSpacing.gapDense) {
+                ForEach(VisitAddTreeModel.offered, id: \.self) { context in
+                    // C4's neutral selected/idle pair — screen 05's structure flags, not screen
+                    // 06's hazard chips. The amber pair means "this tree needs something" (§1.1)
+                    // and none of these three answers does: a tree in a garden is not a worse tree
+                    // than a tree on a kerb. Nothing new is added to C4 for one screen.
+                    Chip(
+                        LandContextCopy.noun(context),
+                        style: model.landContext == context ? .structureFlagOn : .structureFlagIdle
+                    ) {
+                        model.chooseLandContext(context)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityHint(VisitAddTreeCopy.landHint)
     }
 
     // MARK: - What the contributor says it is
@@ -463,6 +509,30 @@ enum VisitAddTreeCopy {
         return "This will be recorded as your claim that it is a \(name) — "
             + "not as a confirmed identification."
     }
+
+    /// What the record will say about the ground, in one sentence, above the chips that change it.
+    ///
+    /// **The empty form does not apologise, and here that matters more than it does for the
+    /// species.** A sentence that made an unanswered land context sound like a gap would be pressure
+    /// to tap something, and the cheapest tap is the first chip — which is `Street or sidewalk`,
+    /// which is the answer that makes a tree in somebody's front garden look like the city's to fix.
+    /// Optionality that is nagged at is not optionality. So the empty form states what the record
+    /// will say and stops, exactly as `species(_:)` does.
+    ///
+    /// The answered form says **you say**, and says it before the ground, for `species(_:)`'s reason:
+    /// leading with the attribution says who is speaking before it says what they said. There is no
+    /// second source for this fact on a community row — nobody is checking — and the sentence should
+    /// not let a reader forget that between tapping a chip and pressing the CTA.
+    static func land(_ context: LandContext?) -> String {
+        guard let context else {
+            return "Where it stands will not be recorded. The tree goes on the map either way."
+        }
+        return "This will be recorded as your answer that it stands "
+            + "\(LandContextCopy.standing(context))."
+    }
+
+    /// The row's hint, said once for the whole group rather than repeated on three chips.
+    static let landHint = "Optional. Tap the answer again to clear it."
 
     static func speciesAction(hasSpecies: Bool) -> String {
         hasSpecies ? "Choose a different species" : "Say what species it is"

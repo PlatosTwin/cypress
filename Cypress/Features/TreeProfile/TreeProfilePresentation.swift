@@ -762,6 +762,10 @@ struct TreeProfilePresentation {
             items.append(StatItem(id: "site", label: "Site", value: .text(siteType)))
         }
 
+        if let land = landContextStat {
+            items.append(land)
+        }
+
         if let record = cityRecordText {
             items.append(StatItem(id: "cityRecord", label: "City record", value: .text(record)))
         }
@@ -772,6 +776,64 @@ struct TreeProfilePresentation {
 
         return items
     }
+
+    /// `Where it stands` — the ground under the tree, with how Cypress knows it.
+    ///
+    /// **NOT SPECIFIED.** SCREENS.md predates the column; the project owner asked for the
+    /// distinction to be visible here — *"need to see this distinction on tree's landing page too,
+    /// along with other tree metadata"*.
+    ///
+    /// ── Why it is a stat card and not a fifth fragment of the subtitle ────────────────────────
+    /// The provenance line was the obvious home — `placementNote` and `speciesClaimNote` are both
+    /// there, both are facts about where a record's contents came from, and BUILD-PLAN §5 puts
+    /// provenance on the record rather than in a UI corner. It was measured instead of assumed. A
+    /// community tree with a species and a moved pin already renders **five** `·`-joined elements:
+    ///
+    ///     Monterey cypress · Hesperocyparis macrocarpa · community-added, unverified ·
+    ///     species named by a contributor · position placed by hand
+    ///
+    /// That is three wrapped lines of italic serif before this adds anything. A sixth element would
+    /// not be read; worse, it would push the two provenance notes that *are* about authorship into
+    /// the middle of a list that had stopped being one sentence. The line is full, and the honest
+    /// finding is that it was full before this arrived.
+    ///
+    /// So it goes where the tree's other facts about itself go. The stat grid is 03's `Details`, it
+    /// already carries `Site`, `Planted` and `City record` — a location fact, a date and an
+    /// identifier — and a labelled card gives this one thing the subtitle cannot: room to say how
+    /// Cypress knows, in words, next to the answer rather than three fragments away from it.
+    ///
+    /// ── Symmetric, and E138's rule does carry here where E141's did not ───────────────────────
+    /// All four values print and none is marked: `Street or sidewalk` renders exactly as
+    /// `Private property` does, and a tree in a garden is not flagged. E141 refused E138's symmetry
+    /// for the species line because the alternative to "a contributor named it" is *no species*,
+    /// which has nothing to attribute. That does not apply here. A land context that exists always
+    /// came from one of exactly two ways of knowing — a contributor looked, or Cypress read the
+    /// city's record — so both arms name themselves (`LandContextCopy.source`) and marking one
+    /// would rank it against the other. When neither exists there is no card, which asserts nothing.
+    ///
+    /// ── Not a door ────────────────────────────────────────────────────────────────────────────
+    /// No `destination`. Nothing in the app corrects this: `community_trees.land_context` has no
+    /// update path and a city row's context is derived in `Core` from a read-only database. A card
+    /// that opened something would be promising an edit that does not exist — E63's defect, and
+    /// `cityRecord`'s card is inert for the same reason.
+    ///
+    /// **`.prose`, not `.cityRecord`.** The `city record` badge beside it on the DBH card means *San
+    /// Francisco published this number*, which is true of a 5 cm bucket and false of this: the city
+    /// wrote `qLegalStatus = 'Property Tree'`, and turning that into a place is Cypress's rule. Using
+    /// the badge would attribute this app's inference to the city. `LandContextCopy.source` says what
+    /// actually happened in four words instead.
+    var landContextStat: StatItem? {
+        guard let known = tree.landContext else { return nil }
+        return StatItem(
+            id: "landContext",
+            label: TreeProfilePresentation.landContextLabel,
+            value: .prose(LandContextCopy.attributed(known))
+        )
+    }
+
+    /// The card's micro-label. A question about ground, not about an address — `Site` beside it is
+    /// already the city's `qSiteInfo` string and the two must not read as the same field.
+    static let landContextLabel = "Where it stands"
 
     /// A measurement card with nothing in it, which is the app's only door to screen 16.
     ///

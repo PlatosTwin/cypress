@@ -51,6 +51,17 @@
 //  answer as the claim it is: `source = 'community'`, `verification_state = 'unverified'`, and
 //  `TreeProfilePresentation.speciesClaimNote` saying out loud on screen who named it.
 //
+//  ── The ground the contributor stands on ──────────────────────────────────────────────────
+//  *"When adding a tree need option to mark it as a tree on private property vs city park vs street
+//  tree"*, and later, from real use: *"I don't see option to select city or park or private yard when
+//  adding tree. still being built?"*. It is three chips on this screen — **not a fourth phase**. The
+//  pin map and the species catalogue are phases because each is a whole screen with its own
+//  interaction; three chips are not, and a step between the photograph and the CTA that exists to
+//  hold three chips would be the second separate step this flow was told not to grow.
+//
+//  Optional, for reasons that are not E141's — `landContext` carries them. Three of the four
+//  permitted values are offered; `offered` says why the fourth is not.
+//
 //  **No migration.** `community_trees.species_current` has existed since the table did, `TreeDraft`
 //  has always carried `speciesID` and `addTree` has always written it. The column had no caller, not
 //  no column. The `after` half is `CypressAPI.claimSpecies`, argued in `SpeciesClaim`.
@@ -145,6 +156,60 @@ final class VisitAddTreeModel {
     /// *there is a tree here*, which is the fact the city inventory is missing and the reason the add
     /// flow exists at all.
     private(set) var species: Species?
+
+    /// What ground the contributor says this tree stands on, or nil because nobody has said.
+    ///
+    /// ── Optional, and E141's argument is *not* what decides it ─────────────────────────────────
+    /// The species row above is optional because a required 569-row picker collects **guessed**
+    /// botany: somebody who cannot name a tree has two ways forward and the cheaper is to pick
+    /// something plausible. That argument is genuinely weaker here and it would be dishonest to
+    /// pretend otherwise — a person standing at a tree can nearly always see whether they are on a
+    /// sidewalk, in a park, or in somebody's front garden. Land context is not specialist knowledge
+    /// the way botany is. If "they might not know" were the only consideration, this field would be
+    /// required.
+    ///
+    /// Three other things decide it, and they are stronger than the one that does not apply:
+    ///
+    /// 1. **A required picker cannot remove the unanswered state, only slow the flow down.** Every
+    ///    community row written before AppSchema v11 has `land_context` NULL, and a city row whose
+    ///    `legalStatus` and `caretaker` both say nothing infers nothing. So `Tree.landContext` is an
+    ///    optional forever, every reader of it already handles nil, and making this screen mandatory
+    ///    buys the read side exactly nothing while costing the field flow a tap it cannot skip.
+    /// 2. **A mandatory answer is the screen-level version of the column default v11 refused.** E143
+    ///    would not give `land_context` a DEFAULT because no tree written before v11 had ever been
+    ///    asked and any default would be Cypress putting words in a contributor's mouth. A picker
+    ///    nobody can leave produces a value for every row whether or not anybody knew one — it
+    ///    destroys the distinction between *not asked* and *street* that the schema paid a decision
+    ///    for, and it destroys it in the harmful direction: a wrong `street` is what routes somebody
+    ///    to 311 about a tree 311 does not handle.
+    /// 3. **BUILD-PLAN §6's endpoint requires a photo and nothing else**, and a screen stricter than
+    ///    its own boundary is a screen inventing a rule — E141's opening move, which does carry.
+    ///
+    /// **Optional is not the same as hidden, and that is where this differs from the species row.**
+    /// Naming a species costs a trip to a 569-row catalogue, so that row is a sentence and a link.
+    /// This is three chips, on the composer, always visible, one tap to answer and no taps to skip.
+    /// The question is asked as plainly as a required field would ask it; only the refusal is free.
+    private(set) var landContext: LandContext?
+
+    /// The three the contributor is shown, out of the four the column permits.
+    ///
+    /// E143 settled that the vocabulary must have four — 956 city rows are SFUSD, Port, PUC, Housing
+    /// Authority, Fire Department land, and a CHECK pinned to three would make them unstorable, which
+    /// is E136's mistake written in advance. It also settled the asymmetry this list rests on: *"a
+    /// permitted value no screen offers costs nothing; a forbidden value the data contains costs a
+    /// migration"*.
+    ///
+    /// **`.otherPublic` is not offered, and the reason is that it is not a thing a person can see.**
+    /// The other three are answers to *look down*: pavement, park, garden. `Other public land` is a
+    /// statement about which agency holds the parcel — a school's frontage strip, a Port pier, a PUC
+    /// right-of-way — and a contributor standing on it sees grass or concrete, not a jurisdiction.
+    /// Offering it would ask for a guess about a municipal fact, which is precisely the collection of
+    /// confident-looking wrong answers this field is optional to avoid. Somebody who cannot fit their
+    /// tree into the three leaves it unanswered, and unanswered is an honest record.
+    ///
+    /// The profile still renders all four, because 956 city rows carry the fourth (`LandContextCopy`
+    /// spells every case). Display is not input, and this list is only input.
+    static let offered: [LandContext] = [.street, .cityPark, .privateProperty]
 
     init(api: any CypressAPI, location: VisitLocationProvider, attribution: Attribution) {
         self.api = api
@@ -358,6 +423,24 @@ final class VisitAddTreeModel {
         phase = .composing
     }
 
+    // MARK: - The ground it stands on
+
+    /// A chip was pressed. Pressing the selected one again clears the answer.
+    ///
+    /// The toggle is the retraction, and it is the only one this row needs: unlike the species picker
+    /// there is no second screen to back out of, so `skipSpecies`'s distinction between *leaving* and
+    /// *saying you are not sure* has nothing to attach to here. Tapping the lit chip is unmistakably
+    /// the second of those, and a row of three chips with none lit is the same honest nil the screen
+    /// opened in.
+    ///
+    /// A context outside `offered` is refused rather than stored. The picker cannot produce one, and
+    /// a model that would accept what its own screen cannot offer is a second way in — the shape
+    /// `confirmPin`'s out-of-range rule already refuses.
+    func chooseLandContext(_ context: LandContext) {
+        guard VisitAddTreeModel.offered.contains(context) else { return }
+        landContext = landContext == context ? nil : context
+    }
+
     // MARK: - The add
 
     /// Calls `POST /trees` and reports what came back.
@@ -415,7 +498,15 @@ final class VisitAddTreeModel {
                     // Nil when nobody named one, which stays the common case and the fast path.
                     speciesID: species?.id,
                     photoLocalPath: photoPath,
-                    attribution: attribution
+                    attribution: attribution,
+                    // ── The ground, when the contributor said which ──────────────────────────────
+                    // Nil when they did not, and nil is a value here rather than a gap: AppSchema
+                    // v11 gave this column no DEFAULT precisely so that *not asked* stays
+                    // distinguishable from *street*. Writing a fallback at the boundary would put
+                    // back the default the schema refused, one layer up where nobody would look for
+                    // it — and the fallback that looks reasonable is `street`, which is the one that
+                    // makes a tree in somebody's garden look like the city's business.
+                    landContext: landContext
                 )
             )
             return tree.id
