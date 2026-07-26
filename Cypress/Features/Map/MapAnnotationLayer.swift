@@ -321,9 +321,26 @@ struct MapAnnotationLayer: UIViewRepresentable {
         /// The settled region, which is only needed when a cluster is tapped — a cluster cannot be
         /// tapped mid-gesture, so it is read once the camera stops rather than sixty times a second.
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
-            // Only the echo. Nothing here touches `lastRequestedPosition` — see its note for what
-            // happens when the settled region is allowed to stand in for the requested one.
             parent.region = mapView.region
+
+            // **The reader moved the map, so the last thing the app asked for is no longer where we
+            // are.** Without this, the recentre control (#66) has a dead second press: it centres,
+            // the reader pans away, and pressing it again produces the *same* `MapCameraPosition`
+            // value — same coordinate, same span — which the equality check above would swallow.
+            //
+            // The threshold is a quarter of the visible span, which is far larger than the few
+            // metres MapKit lands away from a region it was handed and far smaller than any pan
+            // worth calling one. That gap is what keeps this from becoming the loop its own note
+            // describes: a settle can never clear the request, only a real move can.
+            guard let requested = lastRequestedPosition?.region else { return }
+            let current = mapView.region
+            let drifted = abs(current.center.latitude - requested.center.latitude)
+                > requested.span.latitudeDelta / 4
+                || abs(current.center.longitude - requested.center.longitude)
+                > requested.span.longitudeDelta / 4
+                || abs(current.span.longitudeDelta - requested.span.longitudeDelta)
+                > requested.span.longitudeDelta / 4
+            if drifted { lastRequestedPosition = nil }
         }
 
         // MARK: The annotations

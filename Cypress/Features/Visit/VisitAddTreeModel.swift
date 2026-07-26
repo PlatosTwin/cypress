@@ -37,7 +37,9 @@
 //  `VisitPinAdjust.radiusM`. The default is still the fix, so stand-shoot-save is still one tap and
 //  nobody is walked through a map they did not need.
 //
-//  What the record cannot yet say is *which* of the two it got. See `Placement`.
+//  And the record says which of the two it got: `community_trees.placement`, added by AppSchema v10
+//  on the project owner's ruling. See `Placement` for the mapping and `TreePlacement` for why the
+//  distinction is provenance rather than a grade.
 //
 //  No SwiftUI in this file.
 //
@@ -71,23 +73,16 @@ final class VisitAddTreeModel {
 
     /// Where the coordinate on the record came from.
     ///
-    /// ── This distinction is not persisted, and that is a boundary rather than an oversight ────
-    /// `main.community_trees` has columns for `lat` and `lon` and nothing that could carry the
-    /// provenance of the pair. Nothing else in the table could carry it honestly either: `address` is
-    /// a street address, `external_ref` is the city's own identifier for an inventory row, and
-    /// `site_type` is where a tree is planted. Writing a flag into any of them would make the column
-    /// mean two things and the next reader would find out the hard way.
+    /// ── This is now persisted, and the two types are not the same type ────────────────────────
+    /// The record's half is `TreePlacement`, a two-case enum on `Tree` backed by
+    /// `community_trees.placement` (AppSchema v10). This one is the *screen's* half, and it carries
+    /// two coordinates the record does not keep: the pin and the fix it was placed against, which is
+    /// what lets the screen say "23 m north-east" while the reader still has a chance to change their
+    /// mind. Neither of those survives the save — the row keeps the pin as `lat`/`lon` and the
+    /// category, and deliberately nothing more; v10 argues at length why the offset is not stored.
     ///
-    /// So it needs a migration — a `placement TEXT NOT NULL DEFAULT 'gps'` on `community_trees`, an
-    /// AppSchema v9, and `CommunityTreeStore.insert`/`decode` and `Tree` carrying it — and a
-    /// migration is a decision about the shape of the record that is not this screen's to take alone
-    /// (`Migration`'s own note: "checked in, never edited after shipping"). It is written up in the
-    /// round's report instead.
-    ///
-    /// The type exists anyway, because the screen genuinely has the two states and says which one it
-    /// is on: the reader is told whether the tree is going down where they stand or 23 m north-east
-    /// of it, and that sentence is the honest part of the distinction that could be delivered without
-    /// deciding the schema.
+    /// So the mapping is one-way and lossy on purpose, and it lives in `treePlacement` rather than in
+    /// `add()`, so that what the record will say can be asserted without performing a write.
     enum Placement: Equatable {
         /// The phone's fix, verbatim. The default, and what every community tree added before this
         /// screen existed was.
@@ -142,6 +137,16 @@ final class VisitAddTreeModel {
     var isReaderPlaced: Bool {
         if case .reader = placement { return true }
         return false
+    }
+
+    /// What the record will say about this coordinate — the value `add()` puts on the draft.
+    ///
+    /// Derived from `placement` rather than tracked beside it, so the sentence on screen and the value
+    /// in the column cannot drift apart. In particular a pin nudged back onto the fix has already
+    /// become `.gps` in `confirmPin`, and it is `.gps` here too, because a reader who moved nothing
+    /// made no judgement to record.
+    var treePlacement: TreePlacement {
+        isReaderPlaced ? .contributorPlaced : .gps
     }
 
     /// How far the pin was moved from the fix it was placed against, or nil when it was not moved.
@@ -315,10 +320,12 @@ final class VisitAddTreeModel {
         do {
             let tree = try await api.addTree(
                 TreeDraft(
-                    // `placement` is deliberately not on the draft: there is nowhere in
-                    // `community_trees` for it to land, and a field the boundary accepts and discards
-                    // is a lie told to the caller. See `Placement`.
                     coordinate: coordinate,
+                    // The coordinate and its provenance go over the boundary together, because they
+                    // are one statement: this point, arrived at this way. A draft that carried the
+                    // moved pin and not the fact that it was moved would produce a row claiming the
+                    // phone had measured a spot nobody stood on.
+                    placement: treePlacement,
                     // Species is optional on the endpoint, and the screen asks for none: a species
                     // this app cannot confirm would be fabricated botany (BUILD-PLAN §15), and the
                     // record it writes says `community-added, unverified` for exactly that reason.

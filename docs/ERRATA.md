@@ -4899,6 +4899,183 @@ was widened rather than weakened.
 case reads — **and the writer includes the test driving the case.** The harness being pure is not
 enough; what matters is what is on disk when the next test launches.
 
+### E134 — the search bar was a binding nothing read, and narrowing after the grid could not have worked
+
+C20 shipped as decoration. `grep -rn searchText` returned exactly two lines repo-wide — the
+declaration on `MapModel` and the binding in the view — and `CypressAPI.searchSpecies` existed with
+no caller at all. The placeholder read `Species, street, or neighborhood…`, which is three promises
+against zero deliveries, and every unit test in the suite passed while typing into the field did
+nothing whatever. The owner's ask was that typing a tree name "brought up all and only those trees".
+
+**The result surface was never specified, so it was designed here.** SCREENS.md 01:664 states the
+intent — "search opens species/street/neighborhood search" — and 01:667, three lines later, says
+"NOT SPECIFIED: search results"; PROTOTYPE-FLOW.md:105 lists the bar as inert, which is what shipped.
+The ruling, under ARCHITECTURE §8 rule 8, is that **there is no results screen: the map is the
+result.** A list behind a sheet is a second surface to design, it covers the thing the answer is
+drawn on, and it is not what was asked for. It also keeps C20 a real `TextField` in the accessibility
+tree, which `AccessibilityTreeTests` and `DeepLinkVoiceOverTests` both require — and the obvious
+"tap to open a results sheet" design is precisely what would have broken that.
+
+**Filtering the answer afterwards could not have worked, and the reason is E130's grid.** Since E130,
+`TreeQueries.pins` divides the viewport into 44 pt cells and returns one tree per occupied cell once
+the un-thinned answer would overrun `pinLimit`; the cell's winner is whichever tree holds
+`MIN(rowid)`. Apply a species predicate downstream of that and **both halves of the ask break at
+once**: the winner of a cell need not be a match, so "only" fails, and six London Planes sharing a
+cell come back as at most one, so "all" fails too. That is the same class as E36 and E38 — a
+predicate applied downstream of a budget that was already spent on the wrong rows.
+
+**So the predicate goes into `markerCells` as well as into the pin query, and that one detail is the
+fix.** The number the grid decides on stops being "trees in view" and becomes "trees in view *that
+match*", which is a far smaller number, so the un-thinned query runs in every case where the matches
+fit — and there the answer is exactly all of them and only them. Over the shipped seed the densest
+zoom-16 screenful of the city holds 7,042 trees, of which 1,458 are London Planes: un-narrowed it
+grids to 304 cells and thins, narrowed it counts 1,458 and still thins, but one zoom in there are 632
+matches and by zoom 18 there are 268 and the viewport comes back whole. Most searches are answered
+un-thinned at every zoom, because 12,830 of the 195,309 rows carry no species at all and even the
+commonest species is 6 % of the inventory spread across the city rather than packed into one screen.
+
+**Where it still thins, "only" holds absolutely and "all" does not, and the answer has to say so.**
+`mapContent`'s pin case now carries a `PinAnswer` rather than a `[TreePin]`, because *"fewer pins"*
+and *"all the pins there are"* are identical in an array: 151 can mean "there are 151" or "there are
+1,458 and these won their cells". `PinAnswer.matchesInView` is `nil` when the answer is complete —
+and `nil` means complete, **not unknown**, so a caller may treat it as a guarantee — and the count is
+the sum `markerCells` already computed, so it is free. E38's rule, applied to a map. It is a
+`RandomAccessCollection` and `ExpressibleByArrayLiteral` so the fifteen preview doubles and five test
+doubles that write `.pins([])` compiled untouched.
+
+**The narrowing rides on `MapViewport` rather than arriving as a second argument to
+`mapContent(in:)`**, for two reasons, and the second is the load-bearing one. The signature does not
+change, so none of the twenty conformances have to be edited. And `MapViewport` is `Hashable`, which
+is what `MapModel`'s fetch debounce dedupes on — so a changed query is a *different viewport* and is
+refetched, while an unchanged one coalesces exactly as a pan already does. A parameter would have
+left the debounce unable to tell the same box searched two ways apart.
+
+**The species ids are interpolated into the statement text, which nothing else in `TreeQueries`
+does.** Every other list travels through `json_each` on a bound parameter so the text stays constant
+and `cachedStatement` holds one prepared copy across every camera change. That is the right trade
+everywhere else and the wrong one here, because **the planner cannot cost what it cannot see.**
+`sqlite_stat1` records `idx_trees_species_current | 195309 343` — 343 rows per species — and that
+estimate is what lets SQLite choose between walking the box and walking the species. Hidden behind
+`json_each` it is unavailable and the box wins by default. Measured over the whole city, one species:
+
+    literal `IN (24)`                          18.8 ms   SEARCH … idx_trees_species_current
+    `IN (SELECT value FROM json_each(?))`     399.8 ms   SEARCH … idx_trees_lat_lon
+    `IN (SELECT id FROM species WHERE uuid …)` 400.4 ms   SEARCH … idx_trees_lat_lon
+
+The cost is one prepared statement per distinct species set, which is one per query the user types
+rather than one per pan — the ids are sorted, so the same set always spells the same text. It is not
+an injection surface: they are integers the same method read out of the seed a moment earlier, never
+anything typed.
+
+**And deliberately no `+` barrier on the column.** The unary `+` that forbids SQLite an index is the
+standard move for pinning a hot query to the plan it was tuned for, and here it is wrong by a lot:
+whole-city clusters narrowed to the London Plane cost 386 ms with it and 21 ms without, whole-city
+marker cells 419 against 19, zoom-16 marker cells 28 against 15. A species predicate is *selective*
+in a way none of the map's other predicates are. The fear the `+` answers — that a broad query drags
+the map onto a bad plan — does not survive measurement either: given the hundred densest species at
+once, 85 % of the inventory, the planner picks `idx_trees_lat_lon` on its own and lands within 3 % of
+what the `+` would have forced. Forcing it can only lose.
+
+**Which makes `sqlite_stat1` load-bearing for the first time in this app.** Zoom-16 marker cells
+narrowed to the hundred densest species measure 18.3 ms with the seed's `ANALYZE` statistics and
+266.0 ms without — fourteen times slower, on the map's critical path, from a table that does not
+survive a seed rebuild which forgets to run `ANALYZE`, and which only `Tools/build_seed.py` puts
+there. Nothing else in the app would notice it go missing, which is exactly why
+`MapQueryPlanTests.theSeedCarriesItsStatistics` asserts it rather than trusting it.
+
+**The query-plan gate deliberately does not pin an index, and that is why it exists.** Anyone
+arriving at `MapQueryPlanTests:299` from a citation should know that the section is *not* there
+because a query went quadratic or dropped an index — no regression of that kind happened. It is there
+because the narrowed statements are the only ones in the app whose *right* plan depends on the data.
+Two rules are asserted over `everyPinSQL`, `markerCellsSQL` and `clustersSQL` in both spatial
+strategies: no step may be a `SCAN` that is not a covering index or a virtual table, and the plan
+must reach either `idx_trees_lat_lon` or `idx_trees_species_current`. Never which one. Every other map
+query is pinned to `idx_trees_lat_lon`, because there is one spatial index worth using and no
+predicate selective enough to beat it; pinning either index here would pin the wrong one half the
+time.
+
+**A collation defect that compiled, ran, and answered zero.** The uuid-to-rowid lookup was first
+written the way the rest of the file writes an equality — `sp.uuid IN (…) COLLATE NOCASE` — where the
+collation binds to the *subquery* rather than to the comparison. The seed stores uuids in lower case
+and `UUID.uuidString` produces upper, so every narrowed query matched nothing and the map went empty.
+`COLLATE NOCASE` now sits on the left operand. It was caught because `MapSearchTests` checks the
+drawn set against a second, independent read of the seed — raw SQL that shares no code with
+`TreeQueries`, naming the species by uuid and taking the bounding box literally — rather than against
+a pin count. A pin-count assertion would have read an empty map as a very effective narrowing.
+
+**And a measured result that contradicts the obvious assertion.** A narrowed map can draw *more* pins
+than an un-narrowed one at the same zoom, because narrowing brings the count under the budget and
+switches the grid off entirely. Anyone tempted to write "narrowing draws fewer pins" is writing a
+false statement; `narrowingActuallyNarrows` asserts on the trees answered for, under a budget nothing
+can reach, for that reason.
+
+**Clustering is untouched by a search, and that was measured rather than assumed.** An earlier design
+forced the pin regime whenever a query was running, on the grounds that a species-filtered badge would
+put the predicate on the `GROUP BY` at the 3.4× a non-index column costs there. Measured, that was an
+argument against a query nobody has to write: the narrowed badge costs 21 ms, not 355, because the
+planner answers it through `idx_trees_species_current` instead. So A1's rule stands unbroken, the
+*shape* of the answer never depends on what is typed, and a zoomed-out search gets badges counting the
+species asked for rather than every tree underneath them.
+
+**Four states, because "nothing drawn" would otherwise answer a different question each time.** Typed
+nothing; typed a word the catalogue has no prefix match for; typed a real species with none in *this
+viewport*; typed a real species with more here than the map can draw. The middle two are the pair that
+matter — "No species matches “sycamore”" tells the reader the app understood them and the catalogue
+does not have it, where "No Platanus in view" tells them to move the map rather than doubt their
+spelling. `MapSearchCopy.status` returns `nil` for the ordinary success case, because a map showing
+every match it found does not need a banner over it announcing that it did.
+
+**The placeholder was cut from three promises to one**, and that is part of the fix rather than a
+tidy-up. `Search a species…`. A street search wants `trees.address`, which carries no index — every
+keystroke would be a scan of 195,309 rows on the map's critical path, the one thing `TreeQueries`
+forbids outright. A neighbourhood search wants boundary geometry the seed does not ship;
+`TreeProfile.neighborhoodName` exists precisely because a neighbourhood has no identity in this
+database beyond a name hanging off a tree. Both are `Tools/build_seed.py`'s work before they can be
+the client's. A bar that offers three kinds of search and answers one is *worse* than a bar that
+offers one, because a reader who types a street and watches the map empty out has been told, wrongly,
+that their street has no trees.
+
+**The only test that could have caught the original defect is a UI test.** `MapSearchTests` proves the
+query — that the set the map draws equals the set the seed holds — and it never touches a search bar,
+because it builds its own `MapViewport` and hands it to the API. It would have gone on passing.
+`MapSearchUITests` launches the real app, taps the real field, types `Platanus`, and watches the pin
+count change and come back when the field is cleared. Two of its three cases **skip** rather than fail
+without a simulated GPS fix: screen 01 opens on the whole city without one, the whole city is zoom
+≤ 15, which is A1's clustered side, so a narrowing that is plainly visible with a fix has nothing to
+be visible *on* without one. A skip says "not checked here", which is true; a failure says "broken",
+which is not.
+
+**What could not be established, and is recorded as unknown rather than guessed.**
+
+The merge removed two `CypressAPI` protocol requirements, `outboxStatus()` and
+`savePrivateReminder(_:)`, along with their `RemoteAPI` stubs and their answers in every preview
+double. **No commit message on the branch or on the merge says why.** Neither had a caller, which is
+the likely reason and is not a recorded one. The removal is visible only in the merge diff, and it
+caught a second branch out: `317c586` had to drop the same two members from preview mocks the
+incoming work had added, where they had quietly stopped being requirements and become ordinary
+methods nobody calls.
+
+It also left an artifact that is still there. `savePrivateReminder` carried `@discardableResult`;
+deleting the declaration left the attribute behind, and `RemoteAPI.swift:147` now applies it to
+`exportLatest(_:)`, which returns `Data` that nobody discards. Harmless, wrong, and not deliberate.
+
+Every performance number above comes from doc comments in `TreeQueries` and `MapQueryPlanTests` and
+from the commit messages. Unlike E130, **nothing was written into `.measurements/`** — that directory
+holds only the E130 before/after logs — so the harness, the device, the build configuration and the
+number of runs behind "18.8 ms" and "399.8 ms" are not recorded anywhere and cannot be reproduced from
+this repository. They are consistent with each other and with the plans asserted in the tests, and
+that is the whole of what can be said for them.
+
+`MapSearchUITests:47` refers to "the live verification for ERRATA E134". The only surviving record of
+it is `ca46647`'s message — with a simulated fix all three cases pass, without one two skip and the
+third still runs. What was seen on screen was not written down, so unlike E132 there is no read-back
+proving the *drawn* map matched the database on a device; the read-back proof here is
+`MapSearchTests`, in the simulator, against the seed.
+
+Finally, the numbering. The branch was written as E131 and renumbered at the merge because the account
+work took that number first, so `15bb695`, `2a180ae` and `7debba6` all still say E131 in their subject
+lines. There is no E131 search entry and never was.
+
 ### E135 — My Grove's two dead pills, and an export button with no test on the button
 
 The project owner: *"when are we building out the journal and tree tabs on my grove?"* Both segment
@@ -5023,3 +5200,185 @@ they keep their `device_id`. That is pre-existing D9 behaviour and predates this
 the default door's promise is weaker than its sentence: records unlinked from you can become linked to
 whoever signs in next on the same device. Recorded here because it is a privacy promise rather than an
 implementation detail, and the ruling belongs to the owner.
+
+### E137 — twelve fonts handed to Core Text that Core Text already had, and the test that would have passed against the bug
+
+The project owner, watching Xcode's console with their own iPhone attached, saw twelve
+`GSFont: file already registered` lines on every single launch and reported them.
+
+Cypress registers its fonts twice over. `Cypress/Resources/Info.plist` lists all twelve faces under
+`UIAppFonts` — four Source Serif 4, five Alegreya Sans, three Spline Sans Mono — and
+`CypressApp.swift:11` then calls `CypressFont.registerBundledFonts()`. Both halves were deliberate.
+The plist is how iOS loads fonts. The call exists so the design system does not depend on an
+Info.plist edit at all (ARCHITECTURE §2: the project file is not hand-edited), which makes it a safety
+net rather than the mechanism. In the shipping app every face is therefore already registered by the
+time the registrar runs, and every one of its twelve `CTFontManagerRegisterFontsForURL` calls is
+refused.
+
+**The old comment called that "harmless", and it was right about the wrong property.** Nothing is
+missing, the call returns false, the error is dropped. It is harmless. It is not *silent*, and that is
+what was missed. Twelve lines per launch in a console somebody is reading to find real problems, and a
+log nobody trusts is a log nobody reads.
+
+**The fix asks before it registers.** `CypressFont.unregisteredBundledFonts(in:)` reads each bundled
+`.ttf`'s PostScript name through `CGDataProvider`/`CGFont` and keeps only the files whose face does
+not already resolve via `UIFont(name:size:)`; `registerBundledFonts` iterates that instead of the raw
+bundle listing. In the shipping app the list is empty and Core Text is not called at all.
+
+**Fail-open, and the asymmetry is the whole justification.** A file whose name cannot be read reports
+*not registered* and is handed over anyway. A missing face is a far worse defect than a console line,
+because `Font.custom` falls back to the system font **silently** — a face that failed to load does not
+look like a bug, it looks like a design choice, and nothing on screen says otherwise. So the check is
+allowed to be wrong in the direction that costs a log line and never in the direction that costs a
+typeface.
+
+**And now the part this entry exists for: the obvious test would have passed against the broken
+version.** `registerBundledFonts()` returns the number of faces *newly* registered. That number was 0
+before this change and is 0 after — 0 because every call failed with `alreadyRegistered`, and 0
+because every call is now skipped. `#expect(CypressFont.registerBundledFonts() == 0)` is green against
+the version that printed twelve lines on every launch, and it would have been written with a
+straight face, because it is the assertion the function's own signature invites. The return value
+cannot see the difference, because **the difference is not in the outcome; it is in whether the call
+happened at all.**
+
+So the test asserts on the *inputs to Core Text* instead. `BundleContractTests`' "the registrar asks
+Core Text for nothing it already has" requires `unregisteredBundledFonts()` to be empty, and its
+failure message names the offending files. Empty means Core Text is never asked, which is the only
+thing that actually makes the console quiet.
+
+Stated as the rule it is: **when the defect is that a call is being made, the assertion has to be
+about the call and not about what it returned.** A function that fails harmlessly returns exactly what
+a function that was never invoked returns, so every "the count came back right" assertion over such a
+function is blind by construction, and blind in a way that reads as thorough. `unregisteredBundledFonts`
+exists as a separate, non-private member for this reason and for no other: it is the seam that lets a
+test see the argument list rather than the result. Any function whose failure mode is a side effect
+needs one.
+
+**Verified by breaking it.** Disabling the skip turns the new test red naming all twelve files — the
+same twelve the owner saw in the console. 585 unit tests pass, build warning-free.
+
+**One thing found and deliberately left alone.** `CypressFont.debugDumpAvailableFamilies()` has no
+callers. The only three mentions of it in the repository are the file's own header comment
+(`CypressFont.swift:21`), its doc comment (:297) and its declaration (:299) — nothing invokes it, in
+the app, in a preview or in a test. It is dead weight by the usual measure and it is kept anyway: it is
+exactly the tool you want the moment a face goes missing, and this change is precisely the kind that
+could make one go missing. Recorded here so that the next person to run a dead-code sweep knows it was
+seen rather than overlooked, and knows what they would be giving up.
+
+### E138 — a coordinate now says how it was arrived at, and neither answer is the marked one
+
+The project owner, ruling on the item E132 left open: *"yes we should track and surface when location
+was added via pin by hand instead of by gps."*
+
+E132 gave the add screen a movable pin and then wrote down, at length, why the record could not say
+which of the two it had got. `community_trees` has `lat` and `lon` and nothing that could honestly
+carry the provenance of the pair: `address` is a street address, `external_ref` is the city's own
+identifier for an inventory row, `site_type` is where a tree is planted, and a flag written into any
+of them makes that column mean two things — which the next reader finds out the hard way. The
+distinction lived in `VisitAddTreeModel.Placement` and was stated on screen, and stopped at the
+boundary. So on disk a coordinate somebody had walked over and placed by hand was indistinguishable
+from one the phone had guessed.
+
+**Placement is provenance, not a grade, and every other decision here follows from that sentence.**
+`community_trees.placement` is filed beside `source` and `verification_state` because it is the same
+kind of fact — how the record came to say what it says — and BUILD-PLAN §5 requires every provenance
+fact to be a queryable column rather than something a screen knows. It is emphatically *not* a fourth
+vocabulary of trustworthiness. A contributor who moved the pin was very often **more** accurate than
+the phone: they could see the tree and the phone could not, and a GPS fix in a San Francisco street
+canyon is routinely 20–40 m out, which is the argument the movable pin was built on in the first
+place. The column exists so that somebody correcting a coordinate later, or a moderator looking at
+one, can tell a judgement from a reading. It does not exist so that either can be doubted on sight.
+
+**Which is why the tree profile states both arms.** `position from GPS` and `position placed by hand`,
+appended as the last element of screen 03's provenance line, where `source` and `verification_state`
+are already read out. It would have been cheaper to print something only for the placed case, and that
+is exactly what turns a label into a warning: the marked case is the exceptional one, and an
+exceptional coordinate reads as a suspect coordinate. Both arms name the instrument and neither
+evaluates it, the way `SF city inventory` names a source without praising it — and there is a test
+asserting that property by name, "neither placement line evaluates the coordinate it describes".
+A badge or a stat card of its own was declined for the same reason the line was chosen: a second,
+parallel vocabulary elsewhere on the screen would be the app describing one kind of fact twice.
+Community rows only — a city-import row has no `placement` behind it, the city arrived at its
+coordinate by neither of these means, and printing `position from GPS` over an inventory row is a
+claim nothing in the seed supports. The words are the owner's own, kept rather than improved.
+
+**The migration's four rulings, distilled — `AppSchema.applyV10` carries each argument in full, and
+that is the file to read before editing it.**
+
+*A CHECK, not a bare TEXT column.* E132's note proposed `placement TEXT NOT NULL DEFAULT 'gps'`. Every
+other closed vocabulary in this schema also carries its vocabulary in a CHECK — `source`, `status`,
+`verification_state`, `shot_type`, `moderation_state`, `kind`, `category`, `unit_entered`, `method` —
+because the invariant has to hold against a hand-written `INSERT` in a debugger and not merely against
+the DAO. A bare column accepts `'GPS'`, `'true'` and `''`, and `CommunityTreeStore.decode` would then
+throw on a row the engine had cheerfully accepted.
+
+*`ALTER TABLE ADD COLUMN`, not a table rebuild.* v3, v5 and v9 each rebuilt their table because SQLite
+cannot drop a NOT NULL, replace a UNIQUE or widen a CHECK in place. None of that applies here: nothing
+existing changes, and SQLite does accept a CHECK on an added column — it declines only PRIMARY KEY and
+UNIQUE — and enforces it from that moment. A rebuild would copy every community tree in the database
+to gain nothing, and copying rows is the one thing in a migration that can lose them.
+
+*The `'gps'` default is a true statement about every row it backfills, not a plausible guess.* Every
+community tree written before this column existed was written at `location.fix.coordinate` verbatim,
+because the add screen had no other behaviour until E132 gave it one. The backfill records what
+happened. That is the **opposite** of v2's situation, where the old rows' real value was unrecorded and
+the plausible guess was the harmful one, and the distinction is worth keeping in mind the next time a
+migration needs a default: the question is not whether the value is likely, it is whether the history
+is known. It also fails in the safe direction if it is ever wrong — a row mislabelled `gps`
+under-claims, and the failure this column must never have is a coordinate silently claiming to have
+been placed by somebody who never touched it.
+
+*No distance column, argued rather than skipped.* A pin dropped 3 m from the fix and one dropped 74 m
+away are different claims, and storing the offset was genuinely on the table. Three things decided
+against it. The offset is measured from an anchor whose own error is the reason the pin exists — a
+40 m street-canyon fix — so "74 m" is 74 ± 40, and `community_trees` is the one contribution table
+with no `gps_accuracy_m` column to say so; storing a REAL to millimetres against an anchor that vague
+dresses an estimate as a measurement, which is precisely what D7 refuses for the city's DBH buckets.
+It would be the only continuous quantity in a provenance vocabulary that is otherwise categorical, and
+a number invites ranking in a way a category does not — 74 m starts to look like a worse tree. And the
+coordinate plus the offset puts the person who added the tree on a circle of known radius around it,
+which is the fact A7 fuzzes photo coordinates to a 25 m grid to avoid. If a moderator surface later
+needs the distance, that is a migration with `gps_accuracy_m` and the anchor in it, and the anchor is a
+record of where somebody stood.
+
+The migration is idempotent by guard, in v3's shape, because `ALTER TABLE ADD COLUMN` has no
+`IF NOT EXISTS` and a replay after an interrupted run would fail on "duplicate column name" and strand
+the database one version short.
+
+**`contributor_placed`, not `manual` and not `user`.** It names the author of the fact, the way
+`tree_names.given_by` and `review_flags.raised_by` already do. "Manual" carries a whiff of an
+override, which is exactly the reading this column must not invite.
+
+**Two `Placement` types, and keeping them apart is deliberate.** `TreePlacement` is the record's: two
+cases, raw values frozen by v10's CHECK, defaulting to `.gps` so that a caller with no pin to offer is
+not obliged to have an opinion and so that the default on the boundary and the default in the column
+say the same thing. `VisitAddTreeModel.Placement` is the *screen's*, and it carries two coordinates the
+record does not keep — the pin, and the fix it was placed against — which is what lets the screen say
+"23 m north-east" while the reader can still change their mind. The mapping is one-way and lossy on
+purpose, and it lives in a derived `treePlacement` property rather than inside `add()`, so that what
+the record *will* say can be asserted without performing a write. A pin nudged back onto the fix reads
+`.gps`, because a reader who moved nothing made no judgement to record.
+
+**The value is bound on the insert rather than left to the column default**, and the comment in
+`CommunityTreeStore` says why: the default is what an upgraded row that predates the column gets, and a
+row written now states its own provenance. A writer that let the default answer for it would record
+`gps` for a pin somebody placed by hand — the one direction this column must never fail in.
+
+**Verified by reading the column, not by asking the object.** 594 unit tests pass. `TreePlacementTests`
+drives the real screen, the real `addTree` and the real store, then reads `placement` back out of
+`community_trees` with SQL, and its header names the reason as a defect this project has produced
+twice: a test that asks the object it just configured whether it holds the right value proves nothing
+about the write. Both arms are asserted, because a column with a DEFAULT is very easy to get backwards
+and a suite that only ever checked the hand-placed case would pass with the value hard-coded. The CHECK
+is exercised against a value that is neither of the two, and an upgraded pre-column row is exercised
+for reading back as GPS.
+
+**The break test is what says the suite bites.** Forcing `treePlacement` to return `.gps` always fails
+three assertions, and the spread is the point: one on the model, one on the stored SQL text, and one on
+the value decoded back out. Three layers, so no single mock, no single decode and no single accessor
+can be the thing holding the property up.
+
+**Still open, and inherited rather than introduced.** E132's other open item is untouched:
+`community_trees` is insert-only by design, so a placement can now be recorded and still cannot be
+revised, and the same is true of the coordinate it describes. A contributor who realises afterwards
+that the pin went in the wrong place has nowhere to say so.

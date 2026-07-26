@@ -54,6 +54,18 @@ struct MapHomeView: View {
     @State private var region = MapLayout.region(around: MapLayout.defaultCentre)
     /// One-shot: the first fix recentres the map, later ones must not yank it out from under a pan.
     @State private var hasCentredOnUser = false
+    /// The answer to a press of the recentre control that could not move the camera. See
+    /// `MapRecentre` — the whole point of the control is that no press is ever silent.
+    @State private var recentreAnswer: RecentreAnswer?
+    /// A press made while waiting for the first fix. The notice promises the map will move when one
+    /// arrives; this is the promise, held.
+    @State private var recentreWhenFixArrives = false
+
+    /// The two presses that produce words instead of a camera move.
+    private enum RecentreAnswer: Equatable {
+        case waitingForFix
+        case refused(MapLocationProvider.Availability)
+    }
 
     init(api: any CypressAPI, location: MapLocationProvider) {
         self.api = api
@@ -101,16 +113,22 @@ struct MapHomeView: View {
         }
         #endif
         .onChange(of: location.availability) { _, availability in
-            guard !hasCentredOnUser, let coordinate = availability.coordinate else { return }
-            hasCentredOnUser = true
-            // **No `withAnimation`, and the camera still flies.** The basemap is a `UIViewRepresentable`
-            // now, so the thing that animates is `MKMapView.setRegion(_:animated:)` on the other side
-            // of the seam; a SwiftUI transaction wrapped around the write cannot interpolate a UIKit
-            // map's camera and only keeps a transaction alive over the view tree while it tries.
-            // Reduce Motion is honoured where the animation actually happens — `MapAnnotationLayer`
-            // reads it — rather than here, where it would be deciding about an animation that no
-            // longer exists.
-            position = .region(MapLayout.region(around: coordinate))
+            // Any change in what the app knows about the user answers whatever the last press was
+            // told to wait for — a grant arriving from Settings, or the first fix landing.
+            recentreAnswer = nil
+            guard let coordinate = availability.coordinate else { return }
+            // Two reasons to move on a fix, and they want different cameras. The one-shot opening
+            // recentre goes to the screen's own opening scale, because there is no scale the reader
+            // chose yet. A press that was held for this fix keeps whatever they have since zoomed to.
+            if !hasCentredOnUser {
+                hasCentredOnUser = true
+                recentreWhenFixArrives = false
+                flyTo(coordinate, metres: MapLayout.defaultSpanMetres)
+            } else if recentreWhenFixArrives {
+                recentreWhenFixArrives = false
+                flyTo(coordinate, metres: nil)
+                speak(MapRecentreCopy.spokenCentred)
+            }
         }
         // **No `stop()` on disappear any more, and that is not an oversight.** It used to stop *this
         // screen's own* provider while the composition root's kept running, which meant the stop
@@ -133,7 +151,12 @@ struct MapHomeView: View {
             onCameraChange: { bounds, zoom in
                 model.cameraDidChange(bounds: bounds, zoom: zoom)
             },
-            onSelectPin: { model.select($0) },
+            onSelectPin: { pin in
+                // A pin tap is a new question. Whatever the recentre control was explaining is no
+                // longer what the reader is asking about, and the card needs the slot.
+                recentreAnswer = nil
+                model.select(pin)
+            },
             onSelectCluster: zoom(into:)
         )
     }
@@ -174,6 +197,13 @@ struct MapHomeView: View {
             #endif
             .overlay(alignment: .bottom) {
                 VStack(alignment: .trailing, spacing: 0) {
+                    // Above the FAB and right-aligned with it, inside the same absolutely positioned
+                    // block — which is the position MapKit's own `MapUserLocationButton` could not
+                    // have been given (`MapRecentre`, and ERRATA E110 for why the arithmetic here is
+                    // not something a system control can be dropped into).
+                    MapRecentreButton(engagement: recentreEngagement) { recentre() }
+                        .padding(.horizontal, MapLayout.sideInset - MapLayout.cardInset)
+                        .padding(.bottom, MapLayout.locateToFabGap)
                     // `present`, not `push` (ERRATA E127). The visit flow is a `fullScreenCover` off
                     // `AppRouter.sheet` — `RootView.destination(for:)` answers a *pushed* `.identify`
                     // with `NotBuiltYetView`, because a pushed one is a programming error the way a
@@ -190,8 +220,13 @@ struct MapHomeView: View {
             }
     }
 
-    /// One slot, three possible occupants, in priority order: the selected tree, the location
-    /// refusal, or nothing at all. Only one of them can be true at a time and only one is drawn.
+    /// One slot, four possible occupants, in priority order: the answer to a recentre press, the
+    /// selected tree, the standing location refusal, or nothing at all.
+    ///
+    /// **The recentre answer outranks the card**, which is the only ordering that keeps the control's
+    /// promise. A reader with a tree card open who presses the control and cannot be found has asked
+    /// a question, and leaving the card in place would be the silent no-op the control exists to
+    /// abolish. The card comes back the moment they touch a pin again.
     ///
     /// The card arrives with no transition on purpose. SCREENS.md 01 documents none, and the
     /// slide-and-fade this had first left the card stranded at half opacity below the tab bar —
@@ -199,15 +234,122 @@ struct MapHomeView: View {
     /// keeps invalidating. A tap that answers instantly is better than one that answers prettily.
     @ViewBuilder
     private var bottomSlot: some View {
-        if let subject = model.selection {
-            MapTreeCard(subject: subject, userCoordinate: location.availability.coordinate) {
-                router.push(MapHomeView.route(for: subject.pin))
-            }
-        } else if location.availability.isRefused {
-            MapLocationNotice(availability: location.availability) {
-                if let url = location.settingsURL { UIApplication.shared.open(url) }
+        switch recentreAnswer {
+        case .waitingForFix:
+            MapLocationNotice(
+                title: MapRecentreCopy.waitingTitle,
+                message: MapRecentreCopy.waitingMessage
+            )
+        case let .refused(availability):
+            MapLocationNotice(
+                title: MapRecentreCopy.refusalTitle(availability),
+                message: MapRecentreCopy.refusalMessage,
+                onOpenSettings: openSettings
+            )
+        case nil:
+            if let subject = model.selection {
+                MapTreeCard(subject: subject, userCoordinate: location.availability.coordinate) {
+                    router.push(MapHomeView.route(for: subject.pin))
+                }
+            } else if location.availability.isRefused {
+                MapLocationNotice(
+                    title: MapLocationCopy.title(location.availability),
+                    message: MapLocationCopy.message,
+                    onOpenSettings: openSettings
+                )
             }
         }
+    }
+
+    private func openSettings() {
+        if let url = location.settingsURL { UIApplication.shared.open(url) }
+    }
+
+    // MARK: - Recentre
+
+    /// Where the camera is, in the terms `MapRecentre` decides in.
+    ///
+    /// `region` is what MapKit last reported *when it settled*, which before the first settle is the
+    /// opening region rather than a zero span — so `isCentred` is asked an honest question from the
+    /// first frame.
+    private var camera: MapRecentre.Camera {
+        MapRecentre.Camera(
+            centre: Coordinate(region.center),
+            latitudeSpan: region.span.latitudeDelta,
+            longitudeSpan: region.span.longitudeDelta
+        )
+    }
+
+    private var recentreEngagement: MapRecentre.Engagement {
+        MapRecentre.engagement(availability: location.availability, camera: camera)
+    }
+
+    /// A press. Every branch is visible: two move the camera, one raises the system sheet, and two
+    /// put a sentence in the bottom slot.
+    private func recentre() {
+        switch MapRecentre.press(availability: location.availability, camera: camera) {
+        case .ask:
+            // `start()` is the same call `.task` makes on appear, and it is the *only* one that can
+            // produce the sheet — iOS presents it once per undetermined status and silently ignores
+            // a request in any other. The press is held so the fix this grants recentres the map.
+            recentreAnswer = nil
+            recentreWhenFixArrives = true
+            location.start()
+
+        case .explainRefusal:
+            recentreAnswer = .refused(location.availability)
+            speak(MapRecentreCopy.refusalMessage)
+
+        case .waitForFix:
+            recentreAnswer = .waitingForFix
+            recentreWhenFixArrives = true
+            speak(MapRecentreCopy.waitingMessage)
+
+        case let .centre(coordinate):
+            recentreAnswer = nil
+            flyTo(coordinate, metres: nil)
+            speak(MapRecentreCopy.spokenCentred)
+
+        case let .centreAndZoomIn(coordinate):
+            recentreAnswer = nil
+            flyTo(coordinate, metres: MapLayout.defaultSpanMetres)
+            speak(MapRecentreCopy.spokenZoomedIn)
+        }
+    }
+
+    /// Moves the camera to `coordinate`. A `nil` span keeps whatever the reader is looking at, which
+    /// is the recentre control's first step and the same rule `VisitPinAdjustView.move(to:)` follows.
+    ///
+    /// The search narrowing is untouched on purpose and by construction: the species live on
+    /// `MapViewport`, which `MapModel` rebuilds from `MapModel.search` on every camera change, so a
+    /// recentre refetches *through* the narrowing rather than around it. Clearing the field here
+    /// would be a second, hidden meaning for a button that says it centres the map.
+    private func flyTo(_ coordinate: Coordinate, metres: CLLocationDistance?) {
+        // **No `withAnimation`, and the camera still flies.** The basemap is a `UIViewRepresentable`
+        // over `MKMapView` now, so the thing that animates is `setRegion(_:animated:)` on the far
+        // side of the seam; a SwiftUI transaction wrapped around this write cannot interpolate a
+        // UIKit map's camera, and while it tries it holds a transaction open over the whole view
+        // tree. Reduce Motion snaps rather than flies for the reason a cluster tap does — the new
+        // camera is the answer to the press, not the way the answer is delivered — and that decision
+        // is made in `MapAnnotationLayer.applyCameraIfChanged`, where the animation actually is.
+        if let metres {
+            position = .region(MapLayout.region(around: coordinate, metres: metres))
+        } else {
+            // The span MapKit last reported, not a zoom recomputed from one — a round trip
+            // through `MapZoom` would quantise to an integer level and move a camera the reader
+            // did not ask to have moved.
+            position = .region(
+                MKCoordinateRegion(center: coordinate.clLocationCoordinate, span: region.span)
+            )
+        }
+    }
+
+    /// Says what just happened. The map has changed under a VoiceOver reader's finger and nothing
+    /// else reports it; an announcement is the one mechanism that does so without stealing focus, so
+    /// the reader can press again and hear the second step. `VisitPinAdjustView` makes the same
+    /// argument for its nudge pad.
+    private func speak(_ sentence: String) {
+        AccessibilityNotification.Announcement(sentence).post()
     }
 
     // MARK: - Behaviour

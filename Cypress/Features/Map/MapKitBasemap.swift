@@ -92,6 +92,26 @@ enum MapLayout {
     static let fabPaddingH: CGFloat = 20
     static let fabSpacing: CGFloat = 9
 
+    // MARK: The recentre control
+
+    /// **NOT SPECIFIED** — see `MapRecentre` for why this control exists and why it is ours. The
+    /// numbers are its own; SCREENS.md 01 gives none, so they are derived from what is already drawn.
+    ///
+    /// The gap to the FAB below it is the same 12 the search bar keeps from the chip row, which is
+    /// the only vertical rhythm this screen's chrome has.
+    static let locateToFabGap: CGFloat = chipRowTop
+    /// The crosshair inside a 44pt circle: a 15pt ring with 4pt ticks and a 2pt gap comes to 27pt of
+    /// mark, leaving an 8pt margin all round — the same air C19's 18pt pin keeps inside its own tap
+    /// target.
+    static let locateRing: CGFloat = 15
+    static let locateDot: CGFloat = 5
+    static let locateTick: CGFloat = 4
+    static let locateTickGap: CGFloat = 2
+    static let locateStroke: CGFloat = 2
+    /// Long enough to cross the ring and both ticks it passes through, so it reads as one stroke over
+    /// the whole mark rather than as a line inside it.
+    static let locateSlash: CGFloat = 27
+
     /// The 01 tree card: `padding:13px 15px`, `gap:13px`, chevron `8×14`.
     static let cardPaddingV: CGFloat = 13
     static let cardPaddingH: CGFloat = 15

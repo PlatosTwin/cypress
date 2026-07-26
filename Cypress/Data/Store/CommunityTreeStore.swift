@@ -19,11 +19,11 @@ public struct CommunityTreeStore {
             INSERT INTO community_trees
                 (id, client_uuid, external_ref, source, lat, lon, address, site_type, status,
                  species_current, planted_year, dbh_city_cm_min, dbh_city_cm_max, site_lineage,
-                 verification_state, created_at, updated_at, deleted_at)
+                 verification_state, placement, created_at, updated_at, deleted_at)
             VALUES
                 (:id, :client, :ref, 'community', :lat, :lon, :address, :site, :status,
                  :species, :planted, :dbhMin, :dbhMax, :lineage,
-                 :verification, :created, :updated, :deleted)
+                 :verification, :placement, :created, :updated, :deleted)
             ON CONFLICT(client_uuid) DO NOTHING
             """)
         _ = try statement.bind([
@@ -41,6 +41,11 @@ public struct CommunityTreeStore {
             ":dbhMax": tree.dbhCityCmRange?.upperBound,
             ":lineage": tree.siteLineage,
             ":verification": tree.verificationState.rawValue,
+            // Bound rather than left to the column default. The default is what an upgraded row that
+            // predates the column gets; a row written *now* states its own provenance, and a writer
+            // that let the default answer for it would record `gps` for a pin somebody placed by
+            // hand — the one direction this column must never fail in (AppSchema v10).
+            ":placement": tree.placement.rawValue,
             ":created": tree.createdAt,
             ":updated": tree.updatedAt,
             ":deleted": tree.deletedAt
@@ -129,6 +134,7 @@ public struct CommunityTreeStore {
                 ? IntRange(lowerBound: minimum!, upperBound: maximum!) : nil,
             siteLineage: try row.uuidIfPresent("site_lineage"),
             verificationState: try row.value("verification_state", VerificationState.self),
+            placement: try row.value("placement", TreePlacement.self),
             createdAt: try row.date("created_at"),
             updatedAt: try row.date("updated_at"),
             deletedAt: try row.dateIfPresent("deleted_at")
