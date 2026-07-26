@@ -102,7 +102,7 @@ struct VisitFlowView: View {
     /// practice it dismisses the cover onto the screen that opened it.
     var onExit: () -> Void = {}
 
-    /// **Finishing** the flow — screen 18's "Done for today" (ERRATA E149).
+    /// **Finishing** the flow — screen 18's "Done for today" (ERRATA E151).
     ///
     /// Separate from `onExit`, which it used to be wired to, because the two mean different things and
     /// the container can only act on the difference if it can see it. Abandoning is relative — go back

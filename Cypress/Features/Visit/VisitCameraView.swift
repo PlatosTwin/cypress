@@ -458,7 +458,7 @@ struct VisitCameraView: View {
 
 /// The three framings, and which of them this session has already photographed.
 ///
-/// ── Why the chips had to start reporting state (ERRATA E150) ───────────────────────────────
+/// ── Why the chips had to start reporting state (ERRATA E152) ───────────────────────────────
 /// One session can take all three now, so these chips are no longer three ways of labelling one
 /// photograph — they are three slots, and a contributor has to be able to see which are filled without
 /// tapping each one to find out. The mark is a `CypressCheckmark`, the same shape screen 18's success

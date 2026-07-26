@@ -337,7 +337,7 @@ final class VisitAddTreeModel {
             // `.fullTree`, and it is not a placeholder: a community add's one required photograph is the
             // photograph of the tree (BUILD-PLAN §6, "requires photo"), and this screen offers no
             // framing choice to record anything else from. The framing is in the staged filename now
-            // (E150), so it has to be named here rather than left implicit.
+            // (E152), so it has to be named here rather than left implicit.
             photoPath = try VisitPhotoStaging.write(imageData, for: captureID, shotType: .fullTree)
             snapshot = image
             if case .failed = phase { phase = .composing }

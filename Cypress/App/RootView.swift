@@ -242,7 +242,7 @@ struct RootView: View {
                 // Abandoning the flow — the shortlist's back chevron, and the camera's ✕ on the
                 // profile entrance. Relative on purpose: nothing was contributed, so the honest place
                 // to land is the screen that opened the camera. `onDone` is the one that is finished,
-                // and it goes somewhere absolute (ERRATA E149).
+                // and it goes somewhere absolute (ERRATA E151).
                 onExit: { router.sheet = nil },
                 // "Done for today" — the end of a contribution rather than the abandoning of one, and
                 // the control whose label already promises what the owner asked for. It is the map's
@@ -251,7 +251,7 @@ struct RootView: View {
                 onDone: { router.goToMap() },
                 onOpenTree: { id in
                     router.sheet = nil
-                    // Not a second copy of the profile this flow may have been opened from (E149).
+                    // Not a second copy of the profile this flow may have been opened from (E151).
                     router.push(.treeProfile(id), unlessAlreadyOnTop: true)
                 },
                 // PROTOTYPE-FLOW §1.6 rule 5: after the third tree the next-tree CTA reads

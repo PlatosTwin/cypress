@@ -111,7 +111,7 @@ final class AppRouter {
 
     /// Pushes, optionally declining to stack a second copy of the screen already in front.
     ///
-    /// The visit flow needs the second form (ERRATA E149). Screen 18's "See it on the tree's timeline"
+    /// The visit flow needs the second form (ERRATA E151). Screen 18's "See it on the tree's timeline"
     /// is reached from two entrances, and one of them — the profile's own photo CTA — is *already on that
     /// tree's profile*. Pushing unconditionally put a second, identical profile of the same tree on the
     /// stack, so the way out got one chevron longer every time somebody photographed a tree from its own
@@ -127,7 +127,7 @@ final class AppRouter {
 
     /// Back to the map, from wherever the app is — the one **absolute** destination in this router.
     ///
-    /// ── Why this had to exist (ERRATA E149) ───────────────────────────────────────────────────
+    /// ── Why this had to exist (ERRATA E151) ───────────────────────────────────────────────────
     /// Every other way out of the capture flow is *relative*. `onExit` dismisses the cover to whatever
     /// happened to be underneath it and `onSaved` pops one level, so "where does the app go when I have
     /// finished" had no answer of its own — it was however many screens deep the person happened to be.

@@ -34,7 +34,7 @@ struct VisitDraft {
     /// they were taken. A visit without any cannot be saved — "Log visit" is disabled until a photo is
     /// snapped (PROTOTYPE-FLOW §1.6.1) — and it may now hold up to one per framing.
     ///
-    /// ── A list, because one camera session takes three (ERRATA E150) ──────────────────────────
+    /// ── A list, because one camera session takes three (ERRATA E152) ──────────────────────────
     /// This was a single `OutboxPhoto?`, so switching the chip and pressing the shutter again replaced
     /// the photograph that was there. `OutboxItem.photos` has been `[OutboxPhoto]` since it was
     /// written, and `outbox.enqueue(_:photos:)` has always taken a list; the draft was the narrow part
@@ -149,7 +149,7 @@ enum VisitOutboxWriter {
         now: Date = Date()
     ) async throws -> (visit: Visit, item: OutboxItem) {
         // One photograph is enough and three is the most there can be. **Two of three is a complete
-        // contribution** (ERRATA E150): nothing in BUILD-PLAN or PROTOTYPE-FLOW asks for a set, the
+        // contribution** (ERRATA E152): nothing in BUILD-PLAN or PROTOTYPE-FLOW asks for a set, the
         // only stated gate is 1.6.1's "disabled until snapped", and a visit that refused to save
         // because the contributor did not find a leaf worth photographing would lose the two
         // photographs they did take. There is no draft state, so there is nothing left behind to nag
@@ -218,7 +218,7 @@ enum VisitPhotoStaging {
 
     /// One file per **visit and framing**, which is one file per photograph a visit can hold.
     ///
-    /// ── Why the framing is in the name (ERRATA E150) ──────────────────────────────────────────
+    /// ── Why the framing is in the name (ERRATA E152) ──────────────────────────────────────────
     /// This was `\(visitID.uuidString).jpg`, and the sentence above it read "one file per visit id, so
     /// a re-save of the same draft overwrites rather than accumulating". That was true and it was the
     /// bug: one camera session can now take a full tree, a trunk and a leaf, and under the old name all

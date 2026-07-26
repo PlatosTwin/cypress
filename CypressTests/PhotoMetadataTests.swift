@@ -295,7 +295,7 @@ struct PhotoMetadataTests {
         Self.expectClean(try Self.properties(ofFileAt: staged), orientation: nil, "the staged file")
     }
 
-    /// **The new staging path gets the same coverage as the old one (ERRATA E150).**
+    /// **The new staging path gets the same coverage as the old one (ERRATA E152).**
     ///
     /// One session now stages three files instead of one, and the framing is what tells them apart. The
     /// risk this covers is the obvious one and it would be silent: if all three still resolved to one

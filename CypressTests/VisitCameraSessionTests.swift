@@ -2,8 +2,8 @@
 //  VisitCameraSessionTests.swift
 //  CypressTests
 //
-//  One camera session takes a full tree, a trunk and a leaf (ERRATA E150), and the way back to the map
-//  is a destination rather than a number of chevrons (ERRATA E149).
+//  One camera session takes a full tree, a trunk and a leaf (ERRATA E152), and the way back to the map
+//  is a destination rather than a number of chevrons (ERRATA E151).
 //
 //  ── What these tests are for, and what they deliberately do not do ────────────────────────────
 //  The defect being guarded is **silent data loss**. Three shots used to be one `OutboxPhoto?` written
@@ -551,7 +551,7 @@ struct VisitCameraSessionTests {
         #expect(model.remainingShotsLine == nil, "it kept asking after all three were taken")
     }
 
-    // MARK: - 7 · The way back to the map (ERRATA E149)
+    // MARK: - 7 · The way back to the map (ERRATA E151)
 
     /// `goToMap` is the app's one absolute destination, and all three fields have to move.
     ///

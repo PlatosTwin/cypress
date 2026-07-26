@@ -41,7 +41,7 @@ final class VisitCameraModel {
     private(set) var draft: VisitDraft
     /// The frames taken so far, by framing — each shown in place of the live preview while its own chip
     /// is selected. A dictionary and not one `snapshot`, because all three photographs of a session are
-    /// live at once and switching chips has to be able to show you what you already have (E150).
+    /// live at once and switching chips has to be able to show you what you already have (E152).
     private(set) var snapshots: [ShotType: UIImage] = [:]
     var shotType: ShotType = .fullTree
     var note: String = ""
@@ -91,7 +91,7 @@ final class VisitCameraModel {
     /// Whether the framing now selected has been photographed. This is the viewfinder's question — it
     /// decides whether the screen shows a photograph or a live preview — and it is per framing, so
     /// choosing `Trunk` after shooting the full tree opens the camera again rather than showing the
-    /// tree (E150).
+    /// tree (E152).
     var hasSnapped: Bool { draft.hasPhoto(shotType: shotType) }
 
     /// The photograph for the framing now selected, if there is one.
@@ -237,7 +237,7 @@ final class VisitCameraModel {
         // Frozen for the whole of this capture. The chip row stays tappable, and it used to be re-read
         // at save — which was harmless when a visit held one photograph and is wrong now: with three
         // staged files the framing is what names each one on disk, so the label has to be decided at
-        // the shutter or the file and the row can disagree about which photograph this is (E150).
+        // the shutter or the file and the row can disagree about which photograph this is (E152).
         let framing = shotType
         do {
             let path = try VisitPhotoStaging.write(imageData, for: draft.visitID, shotType: framing)
@@ -286,7 +286,7 @@ final class VisitCameraModel {
         // row stays live after the shutter and the last tap before Log visit is the answer" — true of
         // one photograph, and destructive with three: it would relabel every staged photograph as
         // whichever chip happened to be selected when the button was pressed. `apply(imageData:)` freezes
-        // it at the shutter now, which is also where the filename is decided (E150).
+        // it at the shutter now, which is also where the filename is decided (E152).
 
         do {
             let receipt = try await VisitOutboxWriter.save(
@@ -305,7 +305,7 @@ final class VisitCameraModel {
             // the last full-tree photo and `VisitGhostStore.record` refuses anything else, so with three
             // photographs in hand the right one has to be picked rather than guessed at: passing the
             // selected chip would have made whether the alignment layer got recorded depend on which
-            // chip a contributor happened to leave selected (E150).
+            // chip a contributor happened to leave selected (E152).
             if let fullTree = draft.photo(shotType: .fullTree) {
                 if let data = try? Data(contentsOf: URL(fileURLWithPath: fullTree.path)) {
                     VisitGhostStore.record(data, for: treeID, shotType: fullTree.shotType)
