@@ -64,6 +64,33 @@ public enum VerificationState: String, Codable, Sendable, Hashable, CaseIterable
     public var isFitForInventoryIngestion: Bool { self != .unverified }
 }
 
+/// Where a community tree's coordinate came from — `community_trees.placement`.
+///
+/// **This is provenance, not a grade.** It sits beside `source` and `verification_state` because it
+/// is the same kind of fact: how the record came to say what it says. Nothing here ranks the two,
+/// and nothing downstream may read one as a warning. A contributor who moved the pin was very often
+/// *more* accurate than the phone — they could see the tree and the phone could not, and a fix in an
+/// SF street canyon is routinely 20–40 m out, which is the argument the movable pin was built on. The
+/// column exists so that somebody correcting a coordinate later, or a moderator looking at one, can
+/// tell a judgement from a reading; it does not exist so that either can be doubted on sight.
+///
+/// **Only community trees have one.** A city-import row's coordinate is the city's, arrived at by
+/// neither of these means, and `main.community_trees` is the only table this column lives on. A
+/// `Tree` decoded from the seed carries `.gps` because the type needs a value, and nothing renders a
+/// placement for a record whose `source` is `.cityImport` — see `TreeProfilePresentation`.
+///
+/// The raw values are the stored vocabulary and are frozen by AppSchema v10's CHECK.
+public enum TreePlacement: String, Codable, Sendable, Hashable, CaseIterable {
+    /// The coordinate is the phone's fix, verbatim. The default, and what every community tree added
+    /// before the pin could be moved was.
+    case gps = "gps"
+    /// The contributor moved the pin and confirmed it. `contributor` rather than `manual` or `user`
+    /// because it names the author of the fact, the way `tree_names.given_by` and
+    /// `review_flags.raised_by` do, and because "manual" carries a whiff of an override — which is
+    /// exactly the reading this column must not invite.
+    case contributorPlaced = "contributor_placed"
+}
+
 /// `trees.site_type` — the DataSF `qSiteInfo` value, kept as free text because the source
 /// vocabulary is open-ended (BUILD-PLAN §7). Not an enum for that reason.
 public typealias SiteType = String
@@ -94,6 +121,9 @@ public struct Tree: CoreEntity, SoftDeletable {
     /// Links a replanted site to the removed tree that preceded it (BUILD-PLAN §4, PRODUCT §3).
     public var siteLineage: UUID?
     public var verificationState: VerificationState
+    /// How `coordinate` was arrived at, for a community-added tree. Meaningless on a city row, which
+    /// has no `placement` column behind it — see `TreePlacement`.
+    public var placement: TreePlacement
     public let createdAt: Date
     public var updatedAt: Date
     /// City sync never deletes community contributions; removal is a status, not a delete
@@ -114,6 +144,7 @@ public struct Tree: CoreEntity, SoftDeletable {
         dbhCityCmRange: IntRange? = nil,
         siteLineage: UUID? = nil,
         verificationState: VerificationState = .unverified,
+        placement: TreePlacement = .gps,
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
         deletedAt: Date? = nil
@@ -131,6 +162,7 @@ public struct Tree: CoreEntity, SoftDeletable {
         self.dbhCityCmRange = dbhCityCmRange
         self.siteLineage = siteLineage
         self.verificationState = verificationState
+        self.placement = placement
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.deletedAt = deletedAt

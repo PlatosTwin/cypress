@@ -558,6 +558,11 @@ public struct TreeProfile: Hashable, Sendable {
 public struct TreeDraft: Hashable, Sendable {
     public let clientUUID: UUID
     public let coordinate: Coordinate
+    /// How `coordinate` was arrived at, which the record keeps (`community_trees.placement`,
+    /// AppSchema v10). It defaults to `.gps` so that the caller who does not offer a pin is not
+    /// obliged to have an opinion, and so that the default on the boundary and the default in the
+    /// column say the same thing.
+    public let placement: TreePlacement
     public let speciesID: UUID?
     /// Required: "Community add: requires photo" (BUILD-PLAN §6).
     public let photoLocalPath: String
@@ -567,6 +572,7 @@ public struct TreeDraft: Hashable, Sendable {
     public init(
         clientUUID: UUID = UUID(),
         coordinate: Coordinate,
+        placement: TreePlacement = .gps,
         speciesID: UUID? = nil,
         photoLocalPath: String,
         attribution: Attribution,
@@ -574,6 +580,7 @@ public struct TreeDraft: Hashable, Sendable {
     ) {
         self.clientUUID = clientUUID
         self.coordinate = coordinate
+        self.placement = placement
         self.speciesID = speciesID
         self.photoLocalPath = photoLocalPath
         self.attribution = attribution

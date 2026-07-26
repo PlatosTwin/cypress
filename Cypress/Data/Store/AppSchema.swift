@@ -38,7 +38,8 @@ public enum AppSchema {
         Migration(version: 6, name: "an account's own rows go with the account", migrate: applyV6),
         Migration(version: 7, name: "a lead can locally mark a tree removed", sql: v7),
         Migration(version: 8, name: "a photo can be voted up or down", sql: v8),
-        Migration(version: 9, name: "a vote can outlive the voter", migrate: applyV9)
+        Migration(version: 9, name: "a vote can outlive the voter", migrate: applyV9),
+        Migration(version: 10, name: "a coordinate says how it was arrived at", migrate: applyV10)
     ]
 
     /// The version a freshly migrated database reports.
@@ -897,6 +898,82 @@ public enum AppSchema {
             CREATE UNIQUE INDEX IF NOT EXISTS idx_photo_votes_device
                 ON photo_votes(device_id, photo_id) WHERE device_id IS NOT NULL;
             CREATE INDEX IF NOT EXISTS idx_photo_votes_tree ON photo_votes(tree_uuid);
+            """)
+    }
+
+    // MARK: - v10
+
+    /// `community_trees` learns where its coordinate came from: the phone's fix, or a pin the
+    /// contributor placed by hand.
+    ///
+    /// **The hole this closes.** The add screen has been able to move the pin since the movable-pin
+    /// round, and it models the distinction — `VisitAddTreeModel.Placement` — and states it on screen.
+    /// The row did not carry it. That round declined to invent a migration and wrote down exactly why
+    /// the fact had nowhere to go: `lat` and `lon` are the pair, `address` is a street address,
+    /// `external_ref` is the city's own identifier for an inventory row, and `site_type` is where a
+    /// tree is planted. Writing a flag into any of those makes a column mean two things, and the next
+    /// reader finds out the hard way. So it needs its own column, and the project owner has now ruled
+    /// that it gets one.
+    ///
+    /// **This is provenance, and it is filed with the provenance the table already keeps.** `source`
+    /// says who put the record here and `verification_state` says who has stood behind it; BUILD-PLAN
+    /// §5 requires that every provenance fact be a queryable column rather than something a screen
+    /// knows. `placement` is the third sentence of the same paragraph, and deliberately not a fourth
+    /// vocabulary of trustworthiness — a hand-placed pin is not a lesser coordinate, and is very often
+    /// the better one. See `TreePlacement`, which carries that argument in full.
+    ///
+    /// **The shape, and why it is not quite the one that was proposed.** The earlier note proposed
+    /// `placement TEXT NOT NULL DEFAULT 'gps'`. Every other closed vocabulary in this schema also
+    /// carries its vocabulary in a CHECK — `source`, `status`, `verification_state`, `shot_type`,
+    /// `moderation_state`, `kind`, `category`, `unit_entered`, `method` — because the invariant is
+    /// meant to hold against a hand-written `INSERT` in a debugger as well as against the DAO, which
+    /// is what this file's own header promises. A bare TEXT column would accept `'GPS'`, `'true'` and
+    /// `''`, and `CommunityTreeStore.decode` would then throw on a row the engine had accepted. So:
+    ///
+    /// ```sql
+    /// placement TEXT NOT NULL DEFAULT 'gps' CHECK (placement IN ('gps','contributor_placed'))
+    /// ```
+    ///
+    /// **`ALTER TABLE ADD COLUMN`, not a table rebuild.** v3, v5 and v9 each rebuilt their table
+    /// because SQLite cannot drop a NOT NULL, replace a UNIQUE or widen a CHECK in place. None of
+    /// those apply here: nothing existing changes, and SQLite does accept a CHECK on an added column
+    /// (it declines only PRIMARY KEY and UNIQUE), and enforces it from that moment on. A rebuild would
+    /// copy every community tree in the database to gain nothing, and copying rows is the one thing in
+    /// a migration that can lose them.
+    ///
+    /// **The default is `'gps'`, and it is a true statement about every row it touches.** Every
+    /// community tree written before this column existed was written at `location.fix.coordinate`
+    /// verbatim — the add screen had no other behaviour — so backfilling them as `gps` records what
+    /// actually happened rather than guessing. This is the opposite of v2's situation, where the old
+    /// rows' real value was unrecorded and the plausible guess was the harmful one; here the history
+    /// is known. It is also the direction that fails safe if it is ever wrong: a row mislabelled `gps`
+    /// under-claims, and the failure this column must never have is a coordinate silently claiming to
+    /// have been placed by somebody who never touched it.
+    ///
+    /// **No distance column, and that was argued rather than skipped.** A pin dropped 3 m from the fix
+    /// and one dropped 74 m away are different claims, and storing the offset was on the table. Three
+    /// things decided against it. It is measured from an anchor whose own error is the reason the pin
+    /// exists — a 40 m street-canyon fix — so "74 m" is 74 ± 40, and `community_trees` is the one
+    /// contribution table with no `gps_accuracy_m` column to say so; storing a REAL to millimetres
+    /// against an anchor that vague dresses an estimate as a measurement, which is precisely what D7
+    /// refuses for the city's DBH buckets. It would be the only continuous quantity in a provenance
+    /// vocabulary that is otherwise categorical, and a number invites ranking in a way a category does
+    /// not — 74 m starts looking like a worse tree. And it re-introduces the contributor's own
+    /// position: the coordinate plus the offset puts the person who added the tree on a circle of
+    /// known radius around it, which is the fact A7 fuzzes photo coordinates to a 25 m grid to avoid.
+    /// Doing it honestly would need the accuracy and the anchor as well, and the anchor is a record of
+    /// where somebody stood. If a moderator surface later shows it needs the distance, that is the
+    /// migration to write, with those columns and that argument.
+    ///
+    /// **Idempotent by guard**, in v3's shape: `ALTER TABLE ADD COLUMN` has no `IF NOT EXISTS`, so a
+    /// replay after an interrupted run would fail on "duplicate column name" and strand the database
+    /// one version short.
+    private static func applyV10(_ connection: SQLiteConnection) throws {
+        guard try !connection.columnNames(ofTable: "community_trees").contains("placement") else { return }
+        try connection.execute("""
+            ALTER TABLE community_trees
+                ADD COLUMN placement TEXT NOT NULL DEFAULT 'gps'
+                CHECK (placement IN ('gps','contributor_placed'));
             """)
     }
 
