@@ -133,39 +133,55 @@ spellable as the pin that was already there.
 
 #### Measured, on a booted simulator, with the probe armed
 
-`CYPRESS_MAP_PROBE=1`, location denied, iPhone 16 Pro, camera settled, nobody touching the glass.
-The same walk into the same part of the Mission, on the build before this change and the build after:
+`CYPRESS_MAP_PROBE=1`, a simulated fix at 37.77462,-122.42244 (Hayes Valley, 199 alive city trees and
+21 species inside one opening viewport), iPhone 16 Pro Max, camera settled, nobody touching the glass.
+Both builds installed onto the same booted device back to back — **`cc01e32` before, this branch
+after** — and read off the overlay, because console logging does not work on these simulators.
 
 ```
-                                   fps   worst frame   body/sec
-before · z16, 245 markers        60.0        17 ms          0
-before · z18, 218 markers        60.0        17 ms          0
-after  · z16, 197 markers        60.0        17 ms          0
-after  · z18, 194 markers        60.0        17 ms          0   ← all four slots in use
-after  · z20,  13 markers        60.0        17 ms          0
-after  · z14,  91 badges         60.0        17 ms          0
-after  · z12,  27 badges         60.0        17 ms          0
+                                        fps   worst frame   gps/body/fetch per sec
+before (cc01e32) · z18, 139 markers      49        35 ms            0 / 0 / 0
+before (cc01e32) · z15,  49 badges       45        40 ms            0 / 0 / 0
+after            · z18, 169 markers      53        37 ms            0 / 0 / 0
+after            · z18, 292 markers      53        33 ms            0 / 0 / 0   ← all four slots in use
+after            · z21,   3 markers      45        52 ms            0 / 0 / 0
 ```
 
-Unchanged, which is the expected result and worth stating as one: the palette is computed once per
-*fetch*, not per pass, and `recomputeSpeciesPalette` drops a palette equal to the one it already had
-rather than republishing observable state — a pan across a block re-derives the palette it has.
+**Read the last column, not the first.** The absolute frame rate here is worthless and is reported
+anyway so that nobody mistakes it for a result: this machine was carrying six booted simulators, a
+second agent's `xcodebuild`, and a load average of 17–22 throughout, and the overlay read 45–55 fps
+with a 33–52 ms worst frame on *every* combination of build, zoom and marker count — including 3
+markers and including a build that predates this change. Nothing in that spread is attributable to the
+palette; a quiet machine is owed before any absolute number off this screen means anything.
+
+What the numbers do establish is the shape: **at 292 markers with all four slots in use, the after
+build is not worse than the before build at 139**, and `body` and `fetch` are 0 per second at rest in
+both. That last one is the property the design actually rests on — the palette is computed once per
+*fetch* rather than per pass, and `recomputeSpeciesPalette` drops a palette equal to the one it
+already had rather than republishing observable state, so a pan across a block re-derives the palette
+it has and tells nobody.
 
 #### What was looked at, because tests cannot say whether it reads
 
-Eleven full screens and eight crops, both appearances, checked by eye and not by hash — the probe's
-text ticks every second, so a byte comparison always reports "different", and every image was
-additionally checked for a channel span and a colour count rather than trusted because a file existed
-(the harness returned fully transparent PNGs once, and every test passed).
+Twelve screenshots off the booted device, both appearances, every one checked for an opaque alpha
+channel and a colour count (9,069–37,418 distinct colours) rather than trusted because a file was
+written — the shot harness has returned fully transparent PNGs while every test passed. Compared by
+eye and never by hash or `cmp`: the probe's own text ticks once a second, so a byte comparison always
+reports "different".
 
-The before shot at zoom 16 is the whole argument for the task: an even mat of **245 identical green
-dots** over the Mission, in which no question about any two of them can be asked. The after shot at
-zoom 18 has Victorian Box in plum, Mexican Fan Palm in lagoon, Chinese Banyan in cherry and Cherry
-Plum in iris, each with its mark, over a residual green.
+The one that is the whole argument for the task is `11-light-localzoom.png` — **292 markers over the
+Oak/Page/Lily grid**, in which Brisbane Box reads as plum dots down Gough St, Sycamore: London Plane as
+lagoon triangles along the south side of Page, Swamp Myrtle as iris crosses on Oak, and Maidenhair Tree
+as cherry bars in a run of eight, over a residual green that claims nothing. "Which of these are the
+same?" is answerable at a glance, and before the change every one of those 292 dots was the same green.
 
-**And the crop was converted to greyscale and looked at again**, which is the check the glyph exists
-to pass: with every hue removed, ◉ and ▲ and ▮ and ✚ are still four different marks, in the pins and
-in the legend chips that key them.
+**And the crops were converted to greyscale and looked at again**, in both appearances, which is the
+check the glyph exists to pass: with every hue removed, the dot, the triangle, the cross and the
+standing bar are still four different marks — and the residual pin, which carries no mark at all, is
+still a fifth thing. The legend chips key them with the same four marks.
+
+The legend's empty and near-empty states were seen rather than reasoned about: at z21 with three
+markers it drew a single chip, and at z15 the map is badges and it drew nothing.
 
 #### What was not built
 
@@ -237,8 +253,18 @@ nothing.
 
 #### Looked at
 
-Screenshotted selected, in both appearances, at zoom 16 with 197 markers and zoom 18 with 194: a black
-outer ring and a white inner ring around one enlarged pin, on a screen of forty visible dots, with
-`Brisbane Box · Lophostemon confertus` in the card below it. Findable at a glance in both, and
-findable on a *residual green* pin as well as a coloured one — which is the case that matters, since
-the pin the reader taps is more often than not one of the many rather than one of the four.
+Screenshotted selected in both appearances at z18 with 169 markers, on a **residual green** pin — which
+is the case that matters, since the pin a reader taps is more often than not one of the many rather
+than one of the four. In light the outer ink ring is the only black mark on the map and the eye lands
+on it; the inner white ring is nearly invisible against the paper, which is exactly the failure the
+second ring exists to cover, and after dark the two swap roles — the pale outer ring carries it and the
+near-black inner one is the faint one. One of the two always reads, which was the claim.
+
+The card below named `Kwanzan Flowering Cherry · Prunus serrulata 'Kwanzan' · 50 m E`, so the tap and
+the card and the mark are one selection.
+
+One thing the drawing got wrong and the screenshot did not catch, which is why there is now a test for
+it: the reticle's `CALayer`s are children of a view carrying `selectedPinScale`, so a ring built at
+2.0 × 18 pt was landing on the glass at **45 pt** — outside the 44 pt tap target the test believed it
+had checked, because the test restated the constant instead of measuring the layer times the
+transform. The sizes are divided by the scale now.

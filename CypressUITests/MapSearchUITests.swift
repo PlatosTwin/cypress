@@ -24,8 +24,21 @@ final class MapSearchUITests: XCTestCase {
     /// Screen 01's pins, as the accessibility tree exposes them. `MapPin.Kind.accessibilityLabel`
     /// is the catalogue; a city tree is the overwhelming majority of the seed and the only kind the
     /// Mission fixture reliably draws.
+    ///
+    /// **A prefix, not an equality, and the difference is a real defect this test caught.** Task #80
+    /// gives a city tree whose species holds one of the four viewport colour slots the label
+    /// `City tree, London Plane` — the third channel of the species grouping, and the only one a
+    /// reader with the screen off gets. Narrowing the search to one species makes *every* visible pin
+    /// that species, so it wins slot A and every label gains its name: an exact match on
+    /// `"City tree"` counted zero pins and this test read that as "narrowing emptied the map".
+    ///
+    /// What the helper is a proxy for is "how many tree pins are drawn", so it matches the vocabulary
+    /// rather than one word of it. Still black-box — a predicate over labels is not a reach into the
+    /// app's types.
     private func cityTreePins(_ app: XCUIApplication) -> Int {
-        app.buttons.matching(identifier: "City tree").count
+        app.buttons
+            .matching(NSPredicate(format: "identifier BEGINSWITH %@", "City tree"))
+            .count
     }
 
     private func launch() -> XCUIApplication {
