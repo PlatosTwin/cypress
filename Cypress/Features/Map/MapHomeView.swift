@@ -146,6 +146,7 @@ struct MapHomeView: View {
             region: $region,
             clusters: model.clusters,
             pins: model.pins,
+            speciesPalette: model.speciesPalette,
             userCoordinate: location.availability.coordinate,
             selectedPinID: model.selectedPinID,
             onCameraChange: { bounds, zoom in
@@ -178,6 +179,10 @@ struct MapHomeView: View {
                     // Below the chips, so the C20 → chips order the accessibility tests walk is
                     // exactly as it was. Draws nothing unless the search has something to say.
                     MapSearchStatus(search: model.search)
+                    // And below that, for the same reason. The key to the species colouring — which
+                    // names the four species the map has coloured, and draws nothing when it has
+                    // coloured none. See `MapSpeciesLegend`.
+                    MapSpeciesLegend(palette: model.speciesPalette)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, MapLayout.sideInset)

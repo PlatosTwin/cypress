@@ -70,12 +70,36 @@ import UIKit
 final class TreePinAnnotation: NSObject, MKAnnotation {
     let pin: TreePin
     let kind: MapPin.Kind
+    /// What VoiceOver says. Computed here rather than in the view because it depends on the palette,
+    /// and the palette is a fact about the screenful rather than about this tree.
+    ///
+    /// **It is a `var`, and that is the fix rather than an affordance.** The species *name* arrives
+    /// after the palette that ranked it — `MapModel.resolveSpeciesNamesForPalette` reads the catalogue
+    /// asynchronously — and a name arriving does not change any pin's `kind`, so `Coordinator.sync`'s
+    /// kind comparison correctly leaves every annotation in place. Stored once at init, the label
+    /// would therefore have said `City tree` for the whole life of the pin and the spoken channel
+    /// would never have named a species at all. `refreshSpokenLabel(palette:)` is called from the same
+    /// pass that would have retired it.
+    private(set) var spokenLabel: String
     @objc dynamic var coordinate: CLLocationCoordinate2D
 
-    init(pin: TreePin) {
+    init(pin: TreePin, palette: MapSpeciesPalette = .empty) {
         self.pin = pin
-        self.kind = MapPinKind.kind(for: pin)
+        self.kind = MapPinKind.kind(for: pin, palette: palette)
+        self.spokenLabel = MapPinKind.accessibilityLabel(for: pin, palette: palette)
         self.coordinate = pin.coordinate.clLocationCoordinate
+    }
+
+    /// Recomputes the spoken label against the palette that is live now.
+    ///
+    /// Returns whether it moved, so the caller can leave a marker view alone in the overwhelmingly
+    /// common case where nothing was learnt about this tree's species since the last pass.
+    @discardableResult
+    func refreshSpokenLabel(palette: MapSpeciesPalette) -> Bool {
+        let next = MapPinKind.accessibilityLabel(for: pin, palette: palette)
+        guard next != spokenLabel else { return false }
+        spokenLabel = next
+        return true
     }
 }
 
@@ -110,6 +134,19 @@ final class UserDotAnnotation: NSObject, MKAnnotation {
 // MARK: - The pin bitmaps
 
 /// C19's pins, rasterised once per kind and reused by every marker of that kind.
+///
+/// ── The species colouring is a *bounded* addition to this, which is the whole design of it ────
+/// Task #80 asks for a colour per species and the seed has 569 of them. Keying this cache on a
+/// species would make "once per kind" into "once per species per appearance" — 1,138 rasterised
+/// SwiftUI views, past the 256-entry ceiling below, so the cache would spend a long session
+/// thrashing its own `removeAll` and re-rendering pins during pans. That is not a slower version of
+/// the MapKit swap; it is the defect the swap was made to fix, reintroduced.
+///
+/// So the key is a **slot**, and there are four (`MapSpeciesSlot`). The fixed pin vocabulary is 8
+/// kinds today and 12 after this change; in both appearances that is **16 cached bitmaps before,
+/// 24 after**, and the number does not move with the species count, the pin count or the length of
+/// the session. Cluster badges are still one per distinct count, unchanged, and selection adds none
+/// at all — it is a `CALayer` (see `MapMarkerView.setSelectedAppearance`).
 ///
 /// **`MapPin` renders itself.** `ImageRenderer` runs the real SwiftUI component, so the fill, the
 /// ring, the dashes, the shadow and the 85 % opacity on a memorial all come from the same tokens
@@ -155,6 +192,13 @@ enum MapPinImage {
         return image
     }
 
+    /// How many bitmaps are held right now.
+    ///
+    /// Exposed for `MapSpeciesColourTests`, which asserts the number rather than the argument: "the
+    /// species colouring is bounded" is a sentence, and this is the thing that makes it a test. It is
+    /// the one property of this cache that a future change can quietly destroy.
+    static var count: Int { cache.count }
+
     /// Dropped when the colour scheme flips, so the map does not keep drawing the light-mode ring
     /// on a dark basemap. Cluster counts are unbounded in principle, so this is also the only thing
     /// stopping the cache growing without limit over a long session of panning.
@@ -175,6 +219,8 @@ struct MapAnnotationLayer: UIViewRepresentable {
     @Binding var region: MKCoordinateRegion
     let clusters: [TreeCluster]
     let pins: [TreePin]
+    /// The four colour slots, as `MapModel` ranked them over exactly these pins.
+    var speciesPalette: MapSpeciesPalette = .empty
     let userCoordinate: Coordinate?
     let selectedPinID: UUID?
 
@@ -253,7 +299,12 @@ struct MapAnnotationLayer: UIViewRepresentable {
         }
 
         context.coordinator.applyCameraIfChanged(position, to: mapView)
-        context.coordinator.sync(clusters: clusters, pins: pins, on: mapView)
+        context.coordinator.sync(
+            clusters: clusters,
+            pins: pins,
+            palette: speciesPalette,
+            on: mapView
+        )
         context.coordinator.syncUserDot(userCoordinate, on: mapView)
         context.coordinator.applySelection(selectedPinID, on: mapView)
     }
@@ -284,6 +335,25 @@ struct MapAnnotationLayer: UIViewRepresentable {
         private var pinAnnotations: [UUID: TreePinAnnotation] = [:]
         private var clusterAnnotations: [String: TreeClusterAnnotation] = [:]
         private var userDot: UserDotAnnotation?
+
+        /// The palette the annotations on the map were last labelled against.
+        ///
+        /// **The gate that keeps "an update that changes nothing costs nothing" true.** Refreshing a
+        /// pin's spoken label means building a string per pin, and screen 01 runs 240 body passes a
+        /// second at rest (E139) — so doing it unconditionally would be ~70,000 string constructions a
+        /// second on a 292-pin screenful, in a file whose first promise is that an update whose pins are
+        /// the same pins does no work at all. A palette that has not moved cannot have changed a label,
+        /// and on the two other screens that draw this basemap the palette is always `.empty`, so the
+        /// loop below never runs there at all.
+        ///
+        /// **This is not a precaution, it is a fix for a measured regression.** Written without the
+        /// gate, the extra per-pass work on screen 16's basemap was enough to put
+        /// `DeepLinkVoiceOverTests.testThePinSaysWhenItHasGoneAsFarAsItGoes` red three runs out of
+        /// three — fifteen 5 m nudges landing the pin at 74 m instead of 75, because that screen reads
+        /// the pin's position off the settled MapKit camera and the camera settles differently when the
+        /// pass costs more. The same test is green two runs out of two with the gate, and green on
+        /// `cc01e32`. A test about a *nudge* is what noticed; nothing about a species colour did.
+        private var appliedPalette: MapSpeciesPalette = .empty
         private var wash: MKPolygon?
         private var selectedPinID: UUID?
 
@@ -378,7 +448,12 @@ struct MapAnnotationLayer: UIViewRepresentable {
         ///
         /// This is the method the whole file exists for. An update whose pins are the same pins does
         /// no work at all — no view is created, none is destroyed, and MapKit is not told anything.
-        func sync(clusters: [TreeCluster], pins: [TreePin], on mapView: MKMapView) {
+        func sync(
+            clusters: [TreeCluster],
+            pins: [TreePin],
+            palette: MapSpeciesPalette,
+            on mapView: MKMapView
+        ) {
             var staleClusters: [MKAnnotation] = []
             let wantedClusters = Set(clusters.map(\.id))
             for (id, annotation) in clusterAnnotations where !wantedClusters.contains(id) {
@@ -392,6 +467,9 @@ struct MapAnnotationLayer: UIViewRepresentable {
                 freshClusters.append(annotation)
             }
 
+            let paletteMoved = palette != appliedPalette
+            appliedPalette = palette
+
             var stalePins: [MKAnnotation] = []
             var wanted: [UUID: TreePin] = [:]
             wanted.reserveCapacity(pins.count)
@@ -400,15 +478,32 @@ struct MapAnnotationLayer: UIViewRepresentable {
                 // A tree can also change *kind* under a stable id — a lead confirming a removal
                 // turns a green pin grey without moving it — so an id that is still wanted but now
                 // draws differently is retired here rather than left showing the old picture.
-                guard let pin = wanted[id], MapPinKind.kind(for: pin) == annotation.kind else {
+                // The palette is part of what a pin draws, so it is part of this comparison. A pan
+                // that moves a species out of the top four changes that species' kind under a stable
+                // id, which is the same shape of change as a lead confirming a removal — and it is
+                // noticed here for the same reason, by the same test.
+                guard let pin = wanted[id],
+                      MapPinKind.kind(for: pin, palette: palette) == annotation.kind else {
                     stalePins.append(annotation)
                     pinAnnotations[id] = nil
                     continue
                 }
+                // The pin is staying, and its picture is right. Its *words* can still have changed
+                // without its kind changing: a species name landing turns `City tree` into
+                // `City tree, London Plane` on every pin of that species, and the kind comparison
+                // above cannot see it because the fill and the glyph were already correct. Nothing
+                // is added or removed for this — the label is read off the annotation.
+                //
+                // Only when the palette actually moved. See `appliedPalette`.
+                if paletteMoved,
+                   annotation.refreshSpokenLabel(palette: palette),
+                   let view = mapView.view(for: annotation) {
+                    view.accessibilityLabel = annotation.spokenLabel
+                }
             }
             var freshPins: [MKAnnotation] = []
             for pin in pins where pinAnnotations[pin.id] == nil {
-                let annotation = TreePinAnnotation(pin: pin)
+                let annotation = TreePinAnnotation(pin: pin, palette: palette)
                 pinAnnotations[pin.id] = annotation
                 freshPins.append(annotation)
             }
@@ -458,6 +553,12 @@ struct MapAnnotationLayer: UIViewRepresentable {
             for annotation in mapView.annotations {
                 guard let view = mapView.view(for: annotation) as? MapMarkerView else { continue }
                 view.apply(annotation: annotation, isDark: isDark)
+                // `apply` resets `zPriority`, which selection now owns as well as the transform and
+                // the reticle — so a colour-scheme flip would otherwise drop the selected pin back
+                // behind its neighbours and leave a half-covered ring pointing at nothing.
+                if let pin = annotation as? TreePinAnnotation {
+                    view.setSelectedAppearance(pin.pin.id == selectedPinID)
+                }
             }
         }
 
@@ -503,6 +604,12 @@ final class MapMarkerView: MKAnnotationView {
     static let reuseIdentifier = "cypress.marker"
 
     private var pulseLayer: CALayer?
+    /// The two rings of the selection reticle. See `setSelectedAppearance`.
+    ///
+    /// Readable rather than private so `MapSpeciesColourTests` can assert the size these end up on the
+    /// glass at — the one number in the mark that a screenshot cannot check and a constant does not
+    /// tell you, because the view is also carrying a scale transform.
+    private(set) var reticleLayers: [CALayer] = []
 
     /// The 44 pt hit target every control in this app carries (ARCHITECTURE §6, SCREENS.md §5 gap
     /// 12). A drawn pin is 16–18 pt, so without this the tap target would shrink to the bitmap and
@@ -513,6 +620,12 @@ final class MapMarkerView: MKAnnotationView {
         super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
         canShowCallout = false
         centerOffset = .zero
+        // The selection reticle is achromatic in *both* halves, so it has to be redrawn when the
+        // basemap flips. `MapPinImage.flush()` handles the bitmaps; a `CGColor` inside a `CALayer` is
+        // the one thing on this view that cannot resolve itself off the trait collection.
+        registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (view: MapMarkerView, _) in
+            view.redrawReticleForCurrentAppearance()
+        }
     }
 
     @available(*, unavailable)
@@ -552,7 +665,9 @@ final class MapMarkerView: MKAnnotationView {
         case let pin as TreePinAnnotation:
             // C19 has no pin for a vacant site and `MapPinKind` says the honest thing for one
             // instead of borrowing a memorial's words (ERRATA E107). Same override, same reason.
-            accessibilityLabel = MapPinKind.accessibilityLabel(for: pin.pin)
+            // The annotation computed this against the palette that was live when it was made, and
+            // it is remade whenever the palette changes it — so reading it here cannot go stale.
+            accessibilityLabel = pin.spokenLabel
             accessibilityTraits = .button
         case let cluster as TreeClusterAnnotation:
             accessibilityLabel = cluster.kind.accessibilityLabel
@@ -563,10 +678,63 @@ final class MapMarkerView: MKAnnotationView {
         }
     }
 
-    /// `MapLayout.selectedPinScale`, as a transform on one recycled view.
+    /// **The tapped pin, findable among thirty.** Task #89.
+    ///
+    /// `MapLayout.selectedPinScale` on its own was 22.5 pt against 18 — the reader was being asked to
+    /// find the marginally larger dot on a block that draws up to 288 of them. The scale stays,
+    /// because it is what makes the pin and the card read as one selection, and a **reticle** is added
+    /// around it: two achromatic rings outside the pin's own footprint. `MapLayout` carries the
+    /// numbers and the argument for why this cannot be confused with a species colour.
+    ///
+    /// It is drawn with `CALayer`s rather than a new bitmap, for the reason the pulse is: the marker's
+    /// image comes out of a cache that must stay countable, and a selected variant of every pin kind
+    /// would double it. Selection therefore costs zero cache entries.
+    ///
+    /// The selected marker also comes to the front. Two pins 20 pt apart overlap inside 36 pt of
+    /// reticle, and a reticle half-covered by the neighbour it is distinguishing itself from is not a
+    /// mark.
     func setSelectedAppearance(_ isSelected: Bool) {
         let scale = isSelected ? MapLayout.selectedPinScale : 1
         transform = CGAffineTransform(scaleX: scale, y: scale)
+        zPriority = isSelected ? .max : .defaultUnselected
+        setReticle(isSelected)
+    }
+
+    private func setReticle(_ isSelected: Bool) {
+        guard isSelected else {
+            reticleLayers.forEach { $0.removeFromSuperlayer() }
+            reticleLayers = []
+            return
+        }
+        guard reticleLayers.isEmpty, let pin = annotation as? TreePinAnnotation else { return }
+        let diameter = pin.kind.diameter
+        // **Divided by the selection scale, because these layers are children of a view that is
+        // wearing it.** `setSelectedAppearance` puts `selectedPinScale` on the whole view, so a layer
+        // asked for 2.0 × 18 pt would land on the glass at 45 pt — past the 44 pt tap target, and not
+        // the number `MapLayout` states or the test asserts. Compensating here is what makes the
+        // documented geometry the drawn geometry.
+        let compensation = 1 / MapLayout.selectedPinScale
+        // Outer in ink, inner in the ring colour — so whichever end of the ramp the basemap is at,
+        // one of the two rings is the opposite of it. `resolvedColor` because a `CALayer` holds a
+        // `CGColor` and cannot resolve a dynamic one itself; the view's own traits are the map's.
+        let rings: [(scale: CGFloat, colour: UIColor)] = [
+            (MapLayout.selectedReticleOuterScale, UIColor(CypressColor.textInk)),
+            (MapLayout.selectedReticleInnerScale, UIColor(CypressColor.pinRingStroke)),
+        ]
+        for ring in rings {
+            let size = diameter * ring.scale * compensation
+            let layer = CALayer()
+            layer.bounds = CGRect(x: 0, y: 0, width: size, height: size)
+            layer.position = CGPoint(x: bounds.midX, y: bounds.midY)
+            layer.cornerRadius = size / 2
+            layer.borderWidth = MapLayout.selectedReticleStroke * compensation
+            layer.borderColor = ring.colour.resolvedColor(with: traitCollection).cgColor
+            layer.backgroundColor = UIColor.clear.cgColor
+            // Under the pin's own bitmap, so a ring can never eat into the dot it is pointing at.
+            layer.zPosition = -1
+            self.layer.addSublayer(layer)
+            reticleLayers.append(layer)
+        }
     }
 
     /// **czPulse**, on the amber pin and nothing else — "reserved solely for 'this tree needs
@@ -620,12 +788,23 @@ final class MapMarkerView: MKAnnotationView {
     override func layoutSubviews() {
         super.layoutSubviews()
         pulseLayer?.position = CGPoint(x: bounds.midX, y: bounds.midY)
+        for layer in reticleLayers { layer.position = CGPoint(x: bounds.midX, y: bounds.midY) }
+    }
+
+    /// Registered in `init` against `UITraitUserInterfaceStyle`. A no-op unless this view is the one
+    /// carrying the selection.
+    private func redrawReticleForCurrentAppearance() {
+        guard !reticleLayers.isEmpty else { return }
+        setReticle(false)
+        setReticle(true)
     }
 
     override func prepareForReuse() {
         super.prepareForReuse()
         transform = .identity
+        zPriority = .defaultUnselected
         pulseLayer?.removeFromSuperlayer()
         pulseLayer = nil
+        setReticle(false)
     }
 }
