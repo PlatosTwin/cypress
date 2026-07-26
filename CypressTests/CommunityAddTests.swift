@@ -31,7 +31,7 @@ struct CommunityAddTests {
     /// the behaviour E148 exists for — so the fixture is the same real photograph the model is given.
     @MainActor
     private static func stagedPhoto() throws -> String {
-        try VisitPhotoStaging.write(try jpeg(), for: UUID())
+        try VisitPhotoStaging.write(try jpeg(), for: UUID(), shotType: .fullTree)
     }
 
     @MainActor

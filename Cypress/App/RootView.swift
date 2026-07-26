@@ -73,8 +73,7 @@ struct RootView: View {
                     destination(for: route)
                 }
         }
-        .environment(router)
-        .environment(photoImages)
+        .modifier(sharedEnvironment)
         // **One** cover, switching on `router.sheet`, not one modifier per route. Stacking several
         // `fullScreenCover`s on the same view is not a supported arrangement — SwiftUI keeps the
         // last one and the others become dead code, which is exactly the kind of wiring bug that
@@ -101,10 +100,15 @@ struct RootView: View {
             // caption and the sentence "That photograph could not be opened" across the middle,
             // because an absent store and a photograph whose bytes are gone are the same state to
             // a view that only has an optional. Every test passed. ERRATA E142.
+            //
+            // **It is the same modifier the stack gets, not a second copy of the same two lines.**
+            // E142 fixed the values that were missing; what it left behind was a hand-maintained
+            // duplicate, so a *third* shared value added to the stack would reach every pushed screen
+            // and silently not reach any sheet — the identical defect, one environment value later,
+            // and just as invisible. `sharedEnvironment` is the one list. See it for the rest.
             // ══════════════════════════════════════════════════════════════════════════════════
             presentedSheet
-                .environment(router)
-                .environment(photoImages)
+                .modifier(sharedEnvironment)
         }
         #if DEBUG
         // The UI test target's door into the screens behind the map (ERRATA E117). `#if DEBUG` here
@@ -235,18 +239,27 @@ struct RootView: View {
                 // at the call site with an explicit capture list so the `@Sendable` closure carries
                 // only its two `Sendable` captures across the isolation boundary, not this view.
                 onLink: accountLink(),
+                // Abandoning the flow — the shortlist's back chevron, and the camera's ✕ on the
+                // profile entrance. Relative on purpose: nothing was contributed, so the honest place
+                // to land is the screen that opened the camera. `onDone` is the one that is finished,
+                // and it goes somewhere absolute (ERRATA E151).
                 onExit: { router.sheet = nil },
+                // "Done for today" — the end of a contribution rather than the abandoning of one, and
+                // the control whose label already promises what the owner asked for. It is the map's
+                // FAB that starts this flow and the map that a volunteer morning is conducted from, so
+                // finishing goes there rather than to whichever screen happened to be underneath.
+                onDone: { router.goToMap() },
                 onOpenTree: { id in
                     router.sheet = nil
-                    router.push(.treeProfile(id))
+                    // Not a second copy of the profile this flow may have been opened from (E151).
+                    router.push(.treeProfile(id), unlessAlreadyOnTop: true)
                 },
                 // PROTOTYPE-FLOW §1.6 rule 5: after the third tree the next-tree CTA reads
                 // `Route done · see your grove` and goes to the grove. It closes the camera flow
-                // and moves the bottom bar rather than pushing, because the grove is a tab root.
-                onOpenGrove: {
-                    router.sheet = nil
-                    router.tab = .grove
-                }
+                // and moves the bottom bar rather than pushing, because the grove is a tab root —
+                // and it has to clear the stack to do it, or the grove arrives underneath whatever
+                // is pushed and nothing appears to happen (`AppRouter.goToTab`).
+                onOpenGrove: { router.goToTab(.grove) }
             )
 
         case let .photoViewer(id, caption):
@@ -321,6 +334,39 @@ struct RootView: View {
                 account: account,
                 export: JournalExportBytes { [api = data.api] format in try await api.exportLatest(format) }
             )
+        }
+    }
+
+    /// Everything this composition root puts into the SwiftUI environment, in one place.
+    ///
+    /// ── Why this is a modifier and not two lines written twice ─────────────────────────────────
+    /// A `fullScreenCover` is presented in its own hosting context, so `.environment(_:)` applied to
+    /// the `NavigationStack` reaches every *pushed* destination and reaches nothing presented over it.
+    /// E142 is what that costs: `PhotoViewerView` came up saying "That photograph could not be opened"
+    /// over a photograph that was perfectly fine, because the one cache in the app was not there to be
+    /// read, and an absent store and absent bytes are the same `nil` to a view holding an optional.
+    ///
+    /// E142 supplied the two values by hand at the cover. That fixed the bug and left the shape of it:
+    /// the list existed in two places and nothing made them agree, so the next shared value added to
+    /// the stack would have reached the pushed screens and not the sheets — same defect, same silence,
+    /// one value later. Adding to this list now reaches both, which is the only version of this that
+    /// cannot rot.
+    ///
+    /// The environment is for **shared, long-lived services** (ARCHITECTURE §3). Everything else a
+    /// screen needs is still handed to it as an argument, which is why most of the sheets in
+    /// `presentedSheet` would work with no environment at all.
+    private var sharedEnvironment: SharedEnvironment {
+        SharedEnvironment(router: router, photoImages: photoImages)
+    }
+
+    private struct SharedEnvironment: ViewModifier {
+        let router: AppRouter
+        let photoImages: PhotoImageStore
+
+        func body(content: Content) -> some View {
+            content
+                .environment(router)
+                .environment(photoImages)
         }
     }
 

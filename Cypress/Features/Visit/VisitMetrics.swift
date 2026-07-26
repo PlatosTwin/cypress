@@ -112,11 +112,41 @@ enum VisitMetrics {
         static let shotTypeBottom: CGFloat = 150
         static let shotTypeGap: CGFloat = 8
 
+        /// The tick on a framing this session has already photographed (ERRATA E152). **NOT SPECIFIED**
+        /// — SCREENS 04 draws the three chips with no captured state, because when it was drawn a visit
+        /// held one photograph and the chips were three labels for it. Sized off screen 05's check
+        /// circle, which is the app's existing "this one is chosen" mark, at the smaller end because it
+        /// sits on the corner of a chip rather than in a row of its own.
+        static let capturedMark: CGFloat = 16
+        static let capturedMarkGlyph: CGFloat = 8
+        static let capturedMarkStroke: CGFloat = 2
+        /// Half the mark, so it straddles the chip's corner rather than being clipped by it.
+        static let capturedMarkInset: CGFloat = 5
+
         /// Shutter — 68×68 circle at `bottom:34px`, `box-shadow:0 0 0 6px rgba(255,255,255,.35)`
         /// (a solid ring, not a blur).
         static let shutterDiameter: CGFloat = 68
         static let shutterBottom: CGFloat = 34
         static let shutterRingWidth: CGFloat = 6
+
+        /// The gap between the chip row and the shutter, **derived** so that the chips land on
+        /// `shotTypeBottom` when the shutter block is at its specified size and nothing else is in it.
+        ///
+        /// The two used to be independent bottom-anchored overlays at `bottom:150` and `bottom:34`,
+        /// which is fine at the size the mock was drawn at and is a collision at every larger one: the
+        /// camera-denied fallback sentence lives in the shutter block (BUILD-PLAN §9 requires that
+        /// state), it grows to two and three lines as the type ramp climbs, and it grew straight up
+        /// through the chip row. Seen at AX1 on a simulator, where the camera is always unavailable, so
+        /// the fallback sentence is always there. One stack cannot overlap itself: the chips get pushed
+        /// up instead, and at the specified sizes they do not move at all.
+        ///
+        /// **The ring is deliberately not in this sum.** `VisitShutterButton` draws it as an `.overlay`
+        /// on a 68 pt frame, and an overlay does not enlarge what it is over — so the shutter block's
+        /// *layout* height is 68 and the ring hangs 6 pt outside it in both directions. Subtracting it
+        /// would move the chips 12 pt off the mock in the one state the mock actually draws.
+        static var shotTypeGapAboveShutter: CGFloat {
+            shotTypeBottom - shutterBottom - shutterDiameter
+        }
 
         /// Ghost caption — `bottom:44px; left:34px`, `max-width:80px`, `line-height:1.4`.
         static let ghostCaptionBottom: CGFloat = 44
