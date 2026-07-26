@@ -100,7 +100,7 @@ struct RootView: View {
             // (see `PhotoImage`). Found by looking: the viewer came up with its close button, its
             // caption and the sentence "That photograph could not be opened" across the middle,
             // because an absent store and a photograph whose bytes are gone are the same state to
-            // a view that only has an optional. Every test passed. ERRATA E141.
+            // a view that only has an optional. Every test passed. ERRATA E142.
             // ══════════════════════════════════════════════════════════════════════════════════
             presentedSheet
                 .environment(router)

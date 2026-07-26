@@ -43,7 +43,7 @@
 //  more, and a touch footprint is one of the ways a view occupies space. A caller that has to
 //  remember to fence off its own photograph has not been given that promise.
 //
-//  ── Which part of the photograph survives the crop (ERRATA E141) ──────────────────────────
+//  ── Which part of the photograph survives the crop (ERRATA E142) ──────────────────────────
 //  **NOT SPECIFIED.** SCREENS.md gives the hero a height (§2 C2 — 224 px on 03) and never says which
 //  part of the photograph that height is taken from. The default was `.center`, which is SwiftUI's,
 //  and nobody chose it.

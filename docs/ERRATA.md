@@ -5545,7 +5545,7 @@ instrument — three counters drawn in the corner of the map — read off a scre
 "the map stays where it was put" passed against a build that was writing the camera 527 times a
 second. **An assertion about the outcome is not an assertion about the work done to reach it**, and on
 this screen the second one is where the defects live.
-### E141 — the app could crop a photograph four ways and show one zero ways, and the capture path was innocent
+### E142 — the app could crop a photograph four ways and show one zero ways, and the capture path was innocent
 
 Two reports from the project owner, from their own iPhone, on the same day:
 
