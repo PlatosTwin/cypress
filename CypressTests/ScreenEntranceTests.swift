@@ -297,9 +297,17 @@ struct ScreenEntranceTests {
     /// keeping** rather than a missing convenience.
     @Test("the three built surfaces that were not routes now have a control each")
     func theSurfacesThatWereNotRoutes() {
-        // Both pills are controls, and each has a read behind it.
+        // `grove()`'s caller is the pill SCREENS.md 08 §2 draws for it.
         #expect(GroveTab.trees.hasDestination, "grove() still has no caller")
-        #expect(GroveTab.journal.hasDestination, "journal() still has no caller")
+
+        // **`journal()`'s caller is the tab, and only the tab.** It briefly had two — the tab's
+        // `Yours` segment and a second pill on My Grove drawing the same list — and the second one
+        // was cut, because two doors into one room is what the project owner could not tell apart.
+        // What has to stay true is that it still has one: this is the assertion that would have
+        // caught a cut that removed the surface instead of the duplicate.
+        #expect(JournalSegment.allCases.contains(.journal), "journal() has no caller again")
+        let groveLabels = GroveTab.allCases.map(\.label)
+        #expect(groveLabels.contains(JournalCopy.screenTitle) == false, "the journal has two doors again")
 
         // The export has a row per format, and the two are named apart so neither can be mistaken
         // for the other.
