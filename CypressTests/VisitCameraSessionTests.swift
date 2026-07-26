@@ -455,6 +455,25 @@ struct VisitCameraSessionTests {
         )
     }
 
+    /// The chip row and the shutter are one bottom-anchored stack now, and the chips must still land on
+    /// the mock's `bottom:150px` in the state the mock draws.
+    ///
+    /// **The screenshot is the proof, not this.** What a layout looks like is not a thing a unit test in
+    /// this project can read (ARCHITECTURE §7: visual verification is by running the app). What this
+    /// pins is the arithmetic that a later tidy-up could get wrong in exactly one way — subtracting the
+    /// shutter's ring, which is an `.overlay` on a 68 pt frame and takes no layout space, and which
+    /// would move the chips 12 pt off the mock.
+    @Test("the chip row still sits 150 pt off the bottom when the shutter block is at its drawn size")
+    func theChipRowKeepsItsDrawnPosition() {
+        let metrics = VisitMetrics.Camera.self
+        let chipsBottomEdge = metrics.shutterBottom + metrics.shutterDiameter + metrics.shotTypeGapAboveShutter
+        #expect(
+            chipsBottomEdge == metrics.shotTypeBottom,
+            "the chips land \(chipsBottomEdge) pt off the bottom, and SCREENS 04 draws them at \(metrics.shotTypeBottom)"
+        )
+        #expect(metrics.shotTypeGapAboveShutter == 48, "the ring was counted as layout height")
+    }
+
     // MARK: - 6 · The copy that keeps the count honest
 
     @Test("the CTA names how many photographs are about to be saved")

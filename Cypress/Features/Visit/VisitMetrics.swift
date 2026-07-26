@@ -129,6 +129,25 @@ enum VisitMetrics {
         static let shutterBottom: CGFloat = 34
         static let shutterRingWidth: CGFloat = 6
 
+        /// The gap between the chip row and the shutter, **derived** so that the chips land on
+        /// `shotTypeBottom` when the shutter block is at its specified size and nothing else is in it.
+        ///
+        /// The two used to be independent bottom-anchored overlays at `bottom:150` and `bottom:34`,
+        /// which is fine at the size the mock was drawn at and is a collision at every larger one: the
+        /// camera-denied fallback sentence lives in the shutter block (BUILD-PLAN §9 requires that
+        /// state), it grows to two and three lines as the type ramp climbs, and it grew straight up
+        /// through the chip row. Seen at AX1 on a simulator, where the camera is always unavailable, so
+        /// the fallback sentence is always there. One stack cannot overlap itself: the chips get pushed
+        /// up instead, and at the specified sizes they do not move at all.
+        ///
+        /// **The ring is deliberately not in this sum.** `VisitShutterButton` draws it as an `.overlay`
+        /// on a 68 pt frame, and an overlay does not enlarge what it is over — so the shutter block's
+        /// *layout* height is 68 and the ring hangs 6 pt outside it in both directions. Subtracting it
+        /// would move the chips 12 pt off the mock in the one state the mock actually draws.
+        static var shotTypeGapAboveShutter: CGFloat {
+            shotTypeBottom - shutterBottom - shutterDiameter
+        }
+
         /// Ghost caption — `bottom:44px; left:34px`, `max-width:80px`, `line-height:1.4`.
         static let ghostCaptionBottom: CGFloat = 44
         static let ghostCaptionLeading: CGFloat = 34

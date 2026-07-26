@@ -92,8 +92,10 @@ struct VisitCameraView: View {
         .overlay(alignment: .topLeading) { closeButton }
         .overlay(alignment: .top) { guidancePill }
         .overlay { framingCorners }
-        .overlay(alignment: .bottom) { shotTypeChips }
-        .overlay(alignment: .bottom) { shutter }
+        // **One** bottom-anchored stack, not two. See `VisitMetrics.Camera.shotTypeGapAboveShutter`:
+        // the chip row and the shutter block were separate overlays at `bottom:150` and `bottom:34`,
+        // and the fallback sentence inside the shutter block grew up through the chips at AX1.
+        .overlay(alignment: .bottom) { bottomControls }
         .overlay(alignment: .bottomLeading) { ghostCaption }
         .overlay { shutterFlash }
     }
@@ -220,6 +222,15 @@ struct VisitCameraView: View {
     /// checkmarks on them at AX5 are wider than the phone, and E125's tray already ran off the right edge
     /// once. The flow wraps instead, and it is the same component screen 05's structure chips and the
     /// add screen's land row use.
+    /// The chip row and the shutter, in one stack, anchored to the bottom of the viewfinder.
+    private var bottomControls: some View {
+        VStack(spacing: VisitMetrics.Camera.shotTypeGapAboveShutter) {
+            shotTypeChips
+            shutter
+        }
+        .padding(.bottom, VisitMetrics.Camera.shutterBottom)
+    }
+
     private var shotTypeChips: some View {
         CypressChipFlow(spacing: VisitMetrics.Camera.shotTypeGap) {
             ForEach(model.shotTypes, id: \.self) { type in
@@ -242,7 +253,6 @@ struct VisitCameraView: View {
             }
         }
         .padding(.horizontal, VisitMetrics.Camera.trayPadding)
-        .padding(.bottom, VisitMetrics.Camera.shotTypeBottom)
     }
 
     /// The tick on a framing that has been photographed. Decoration — `shotTypeChips` puts the same fact
@@ -309,7 +319,8 @@ struct VisitCameraView: View {
                 .accessibilityLabel(model.hasSnapped ? "Take another photo" : "Take the photo")
             }
         }
-        .padding(.bottom, VisitMetrics.Camera.shutterBottom)
+        // The bottom inset belongs to `bottomControls` now — this block is no longer the last thing
+        // above the tray on its own.
     }
 
     private var fallbackReason: String {
