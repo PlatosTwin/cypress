@@ -233,6 +233,7 @@ struct TreeProfilePresentation {
             }
         }
         parts.append(provenance)
+        if let placementNote { parts.append(placementNote) }
         return parts.joined(separator: " · ")
     }
 
@@ -243,6 +244,42 @@ struct TreeProfilePresentation {
         case .community: return "community-added, unverified"
         }
     }
+
+    /// How this record's coordinate was arrived at — the fourth element of the subtitle, and the last
+    /// one, because it is the finest-grained provenance fact the row carries.
+    ///
+    /// **NOT SPECIFIED.** SCREENS.md predates the movable pin; the project owner's ruling is that the
+    /// distinction be tracked *and* surfaced. It goes here, on the provenance line, rather than into a
+    /// stat card or a badge of its own, because BUILD-PLAN §5 makes provenance a property of the
+    /// record — "no UI-only provenance; every provenance fact is a queryable column" — and this line
+    /// is where `source` and `verification_state` are already read out. A second, parallel vocabulary
+    /// somewhere else on the screen would be the app describing the same kind of fact twice.
+    ///
+    /// ── Both values are stated, and that is the whole defence against it reading as a demerit ──
+    /// It would have been cheaper to print something only for the placed case. That is exactly what
+    /// makes a label a warning: the marked case is the exceptional one, and an exceptional coordinate
+    /// is a suspect coordinate. It would also be untrue to the record — a hand-placed pin is not the
+    /// worse pin, and is very often the better one, because the contributor could see the tree and the
+    /// phone could not, and a fix in an SF street canyon is routinely 20–40 m out. So the two arms are
+    /// symmetric and neither is evaluative: they name the instrument, the way `SF city inventory`
+    /// names a source without praising it. `TreePlacement` carries the argument in full.
+    ///
+    /// The words are the owner's own — "added via pin by hand instead of by gps" — kept rather than
+    /// improved, because the copy this screen needed was a plain statement and they wrote one.
+    ///
+    /// **Community rows only.** A city-import row has no `placement` column behind it: the city
+    /// arrived at its coordinate by neither of these means, and printing `position from GPS` over an
+    /// inventory row would be a claim nothing in the seed supports.
+    var placementNote: String? {
+        guard tree.source == .community else { return nil }
+        switch tree.placement {
+        case .gps: return TreeProfilePresentation.placementFromGPS
+        case .contributorPlaced: return TreeProfilePresentation.placementByHand
+        }
+    }
+
+    static let placementFromGPS = "position from GPS"
+    static let placementByHand = "position placed by hand"
 
     /// `THRIVING` / `PLANTED 2024` / `REMOVED`, or none. The mapping is the component's (C13); a
     /// fourth badge is never invented here.
