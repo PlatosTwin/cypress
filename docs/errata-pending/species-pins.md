@@ -133,10 +133,25 @@ spellable as the pin that was already there.
 
 #### Measured, on a booted simulator, with the probe armed
 
-`CYPRESS_MAP_PROBE=1`, a simulated fix at 37.77462,-122.42244 (Hayes Valley, 199 alive city trees and
-21 species inside one opening viewport), iPhone 16 Pro Max, camera settled, nobody touching the glass.
-Both builds installed onto the same booted device back to back — **`cc01e32` before, this branch
-after** — and read off the overlay, because console logging does not work on these simulators.
+Twice, on two different machine states, and the pair is worth more than either half.
+
+**Quiet machine, iPhone 16 Pro, the Mission, `CYPRESS_MAP_PROBE=1`**, camera settled, nobody touching
+the glass, the same walk on the build before this change and the build after:
+
+```
+                                   fps   worst frame   gps/body/fetch per sec
+before · z16, 245 markers        60.0        17 ms            0 / 0 / 0
+before · z18, 218 markers        60.0        17 ms            0 / 0 / 0
+after  · z16, 197 markers        60.0        17 ms            0 / 0 / 0
+after  · z18, 194 markers        60.0        17 ms            0 / 0 / 0   ← all four slots in use
+after  · z20,  13 markers        60.0        17 ms            0 / 0 / 0
+after  · z14,  91 badges         60.0        17 ms            0 / 0 / 0
+after  · z12,  27 badges         60.0        17 ms            0 / 0 / 0
+```
+
+**Loaded machine, iPhone 16 Pro Max, Hayes Valley** (37.77462,-122.42244 — 199 alive city trees and 21
+species inside one opening viewport), `cc01e32` and this branch installed onto the same booted device
+back to back:
 
 ```
                                         fps   worst frame   gps/body/fetch per sec
@@ -147,19 +162,19 @@ after            · z18, 292 markers      53        33 ms            0 / 0 / 0  
 after            · z21,   3 markers      45        52 ms            0 / 0 / 0
 ```
 
-**Read the last column, not the first.** The absolute frame rate here is worthless and is reported
-anyway so that nobody mistakes it for a result: this machine was carrying six booted simulators, a
-second agent's `xcodebuild`, and a load average of 17–22 throughout, and the overlay read 45–55 fps
-with a 33–52 ms worst frame on *every* combination of build, zoom and marker count — including 3
-markers and including a build that predates this change. Nothing in that spread is attributable to the
-palette; a quiet machine is owed before any absolute number off this screen means anything.
+The second table is not a contradiction of the first and is not a measurement of this change either:
+that machine was carrying six booted simulators, a second agent's `xcodebuild`, and a load average of
+17–22, and the overlay read 45–55 fps with a 33–52 ms worst frame on *every* combination of build, zoom
+and marker count — including three markers, and including a build that predates this change. It is
+recorded because it is the state a verification run is likely to be attempted in, and because reading
+an absolute frame rate off it is how a load average gets reported as a regression.
 
-What the numbers do establish is the shape: **at 292 markers with all four slots in use, the after
-build is not worse than the before build at 139**, and `body` and `fetch` are 0 per second at rest in
-both. That last one is the property the design actually rests on — the palette is computed once per
-*fetch* rather than per pass, and `recomputeSpeciesPalette` drops a palette equal to the one it
-already had rather than republishing observable state, so a pan across a block re-derives the palette
-it has and tells nobody.
+**The column that discriminates in both tables is the last one.** `body` and `fetch` are 0 per second at
+rest on every row of both, which is the property the design rests on: the palette is computed once per
+*fetch* rather than per pass, and `recomputeSpeciesPalette` drops a palette equal to the one it already
+had rather than republishing observable state, so a pan across a block re-derives the palette it has and
+tells nobody. On the loaded machine the after build at **292 markers with all four slots in use** is not
+worse than `cc01e32` at 139.
 
 #### The label refresh had to be gated, and a nudge test is what said so
 
