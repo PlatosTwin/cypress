@@ -5621,6 +5621,116 @@ rather than claiming no such tree exists.
 `species_assertions` in `main` and a moderation surface to resolve competing claims, and standing that
 up on a two-clause feature request would be inventing a product. `claimSpecies` returns `.conflict`
 and the screen says so in words rather than failing silently.
+### E142 — the app could crop a photograph four ways and show one zero ways, and the capture path was innocent
+
+Two reports from the project owner, from their own iPhone, on the same day:
+
+> Clicking on photo from tree page should show full view, current is horizontal which cuts off
+> photos taken in vertical orientation.
+
+> Photo for custom tree should be standard photo style, right now it's horizontal and cuts off
+> vertical frame.
+
+One root cause, and it is worth saying plainly which half of the system it is in.
+
+**The capture path was already correct, and nothing in it was changed.** That was checked first,
+because if the camera were constrained to landscape or the saved file were losing its orientation
+tag, every display fix would be a cosmetic over a data loss. It is not:
+
+- `VisitCameraController.configureAndRun` sets `sessionPreset = .photo` — the full sensor frame,
+  4:3, no crop and no aspect constraint anywhere in the session.
+- `capturePhoto` returns `AVCapturePhoto.fileDataRepresentation()`, the container as the ISP wrote
+  it, orientation tag included.
+- The photo-library fallback asks `PhotosPickerItem` for `Data.self`, not for an image, so it too
+  gets the original container.
+- `VisitPhotoStaging.write` does `data.write(to:)` and nothing else. No re-encode, no resize.
+- `PhotoBinary.writeStrippingMetadata` empties the EXIF, GPS, IPTC, TIFF and Maker Note containers
+  and then makes a **second pass** for the sole purpose of putting `kCGImagePropertyOrientation`
+  back, with a comment saying exactly why: "an iPhone photograph taken in portrait is landscape
+  pixels plus an orientation tag, so dropping it turns every portrait shot on its side".
+- `PhotoImageStore.downsample` passes `kCGImageSourceCreateThumbnailWithTransform: true`, so the
+  tag is applied to the pixels on the way out.
+
+Every stage of that was written by somebody who had thought about portrait photographs. The bytes on
+disk are the bytes the camera produced, the right way up. **The defect is entirely in what the app
+chose to draw of them**, which is the less serious half — and it should be recorded that the more
+serious half was looked for rather than assumed absent.
+
+**The app had four fixed photo frames and no unfixed one.** The hero on 03 is 393×224. Screen 20's
+rows are the same 224. The well on 14 is 268 tall in a column about 361 wide. All three are
+`PhotoFill`, which is right — a hero has to be a known height or the page under it moves, and a list
+whose rows change height cannot be scanned. The arithmetic is what makes it a defect: a 3:4
+photograph scaled to fill 393 pt of width is 524 pt tall, so a 224 pt band keeps **42.7%** of the
+picture, and it kept the middle 42.7% because `.center` is SwiftUI's default and nobody had ever
+chosen it. Rows 28.5% to 71.5% survive. A street tree photographed from the pavement has its crown
+in the top third and the kerb in the bottom third, so what survived was upper trunk — the part of a
+tree that identifies nothing.
+
+And the tap that should have escaped all of this had nowhere to go. Pressing the hero pushed screen
+20, which is the same crop repeated down a page. **There was no last tap that produced a
+photograph.** The owner's first sentence is precisely that: the "full view" they expected does not
+exist anywhere in the app.
+
+**Two fixes, because they are two different questions.**
+
+*The crop, where a crop is correct.* `PhotoCropAnchor` — a custom `VerticalAlignment` that pins one
+third of the way down both the box and the photograph. On the numbers above it keeps rows 19% to
+62%: the canopy and the top of the trunk. A third rather than `.top`, because `.top` is sky —
+a photographer framing a whole tree leaves headroom, and an anchor that keeps the headroom and drops
+the tree has swapped one bad crop for another. `.crown` is the default because every fixed frame in
+this app has a tree in it. **Screen 04 asks for `.centre` explicitly and must keep it**: its ghost
+overlay, the frame just taken and the live `AVCaptureVideoPreviewLayer` behind both are three
+drawings of one scene that only mean anything if they agree, and the layer's `.resizeAspectFill`
+centres and is not ours to reconfigure.
+
+*The absence of a viewer.* `PhotoFit` is `PhotoFill`'s counterpart — the whole frame, letterboxed,
+at the shape of the file, still reporting the box it was proposed. `PhotoViewerView` is the screen
+built on it, presented rather than pushed because it is a closer look at what is already on screen
+rather than a place in the app. The well on 14 uses `PhotoFit` too, which is the second report: that
+photograph is not being displayed, it is being **checked**, by somebody standing in front of the
+tree in the last second before they commit a record they cannot amend. A crop there does not restyle
+the picture, it withholds the evidence — a finger over the lens, a cut-off crown, next door's tree.
+
+**The hero was one control doing two jobs, and that is why it could do neither.** It is now two: the
+photograph opens the photograph, and the pill that already reads `3 photos · since 2024` opens the
+three. Giving both jobs to the whole header is what left the picture unviewable; giving both to the
+picture would have left screen 20 with no entrance at all. The pill grows to a 44 pt target with its
+drawn capsule unmoved, per ARCHITECTURE §6 — it was a caption until now, so nothing was owed.
+
+**Screen 20's photograph is a gesture and a named action, not a `Button`.** `PhotoFill` publishes it
+as an *image* carrying the photograph's subject and date, because on that one screen the picture is
+the thing being judged. A `Button` folds that label into itself and the element stops being an
+image — and `DeepLinkVoiceOverTests.testAThumbActuallyVotes` finds the top card via `app.images`
+matching `Photo · ` and reads the `Hero` badge's position against its frame. A button there would
+have silently turned that test's subject into something it could no longer find.
+
+**Verified by breaking it, because a crop is invisible to every measurement.** This is the E137
+lesson in a second costume. `PhotoFill` reports the box it was proposed *whichever* part of the
+photograph it keeps — that is its whole documented promise — so `sizeThatFits` is identical against a
+centred crop and a crown-anchored one, and any test written on it would have been green against the
+bug. The assertion has to be on pixels. `PhotoCropTests` renders a 300×400 fixture of three flat
+bands (red canopy, green trunk, blue ground) into the hero's own 393×224 box and reads the colours
+back out; the discriminating fact is that a crown-anchored crop contains **no blue at all** and a
+centred one does. Setting the anchor fraction back to 0.5 turns it red.
+
+**A third defect, found only by looking, that every test was blind to.** The viewer came up on the
+device with its close button, its caption pill and the sentence "That photograph could not be opened"
+across the middle. `PhotoImageStore` reaches the pushed destinations through `.environment(_:)` on
+the `NavigationStack`, and it does not reach a `fullScreenCover`, which is presented in its own
+hosting context. Nothing had ever noticed, because every sheet before this one — 09, 10, 15, and the
+visit flow — takes what it needs as an argument, so no presented screen had ever read the
+environment. The store is now handed to the cover's content explicitly.
+
+What makes it worth its own paragraph is that **an absent store and a photograph whose bytes are gone
+are the same state** to a view holding `PhotoImageStore?`, so the screen reported the second while
+suffering the first, in fluent English, with correct chrome around it. 637 unit tests passed against
+that build. The only thing that caught it was opening the screen and looking at it.
+
+**And the fixture itself was evidence of nothing.** `LocalAPI.debugJPEG` drew a flat rectangle with
+one white bar, which proved bytes had arrived and could not prove *which part of them* had — both
+crops of it look identical. It is now a crude tree at 1200×1600, matching the `width`/`height` the
+row had always claimed while producing 300×400. A screenshot of a hero can now be looked at and
+answered.
 
 ### E143 — the six columns the seed was throwing away, and the mapping that would have mislabelled 150,000 street trees
 
