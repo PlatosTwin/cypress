@@ -113,6 +113,7 @@ final class MapModel {
     private var fetchTask: Task<Void, Never>?
     private var selectionTask: Task<Void, Never>?
     private var speciesTask: Task<Void, Never>?
+    private var paletteNameTask: Task<Void, Never>?
 
     /// A pan emits camera changes every frame. 200 ms is long enough that a flick costs one read
     /// and short enough that letting go feels like the map answered immediately.
@@ -221,7 +222,64 @@ final class MapModel {
     /// a pan and on every GPS fix, so a filtered map re-filtered its whole pin set sixty times a
     /// second to arrive at the same array (ERRATA E130). Exactly three things can change the answer,
     /// and all three recompute it: `content`, `filter`, and the species the bloom chip reads.
-    private(set) var pins: [TreePin] = []
+    private(set) var pins: [TreePin] = [] {
+        didSet { recomputeSpeciesPalette() }
+    }
+
+    /// Which four species hold the four colour slots, for the pins that are drawn right now.
+    ///
+    /// **Derived from `pins`, which is why it is set here and nowhere else.** A filter chip changes
+    /// which pins are admitted, and a palette ranked over the pins the reader cannot see would light
+    /// up species that are not on the glass. `recomputeAdmittedPins` is the one place `pins` moves,
+    /// so this follows it rather than the fetch.
+    private(set) var speciesPalette: MapSpeciesPalette = .empty
+
+    private func recomputeSpeciesPalette() {
+        let next = MapSpeciesPalette.assign(pins: pins, previous: speciesPalette)
+        // A pan across a block usually re-derives the palette it already had — same species, same
+        // sticky slots. Writing it anyway would republish observable state sixty times a second and
+        // put every annotation through the layer's kind comparison for nothing, which is the exact
+        // shape of what E130 spent its time removing.
+        guard next != speciesPalette else { return }
+        speciesPalette = next
+        resolveSpeciesNamesForPalette()
+    }
+
+    /// Reads the common names of the ≤4 species holding slots, so the legend can name them.
+    ///
+    /// Four reads at worst, against a 569-row catalogue, and only when the palette actually changed.
+    /// It reuses the cache the bloom chip already fills (`species`), so a species resolved for one is
+    /// free for the other.
+    private func resolveSpeciesNamesForPalette() {
+        let wanted = speciesPalette.unnamedSpeciesIDs
+        guard !wanted.isEmpty else { return }
+        let alreadyKnown = wanted.compactMap { id in species[id].map { (id, Self.displayName(of: $0)) } }
+        if !alreadyKnown.isEmpty {
+            speciesPalette = speciesPalette.naming(Dictionary(uniqueKeysWithValues: alreadyKnown))
+        }
+        let missing = speciesPalette.unnamedSpeciesIDs.filter { !speciesMisses.contains($0) }
+        guard !missing.isEmpty else { return }
+        paletteNameTask?.cancel()
+        paletteNameTask = Task { [weak self, api] in
+            for id in missing {
+                if Task.isCancelled { return }
+                guard let resolved = try? await api.species(id: id) else {
+                    self?.speciesMisses.insert(id)
+                    continue
+                }
+                guard let self, !Task.isCancelled else { return }
+                self.species[id] = resolved
+                self.speciesPalette = self.speciesPalette.naming([id: Self.displayName(of: resolved)])
+            }
+        }
+    }
+
+    /// "The species common name is the fallback display everywhere" (D15) — and the scientific name
+    /// is the fallback for *that*, because 150,000 seeded rows carry a Latin binomial and a stub
+    /// common name is allowed to be empty.
+    private static func displayName(of species: Species) -> String {
+        species.commonName.isEmpty ? species.scientificName : species.commonName
+    }
 
     private func recomputeAdmittedPins() {
         guard case let .pins(fetched) = content else {
@@ -468,6 +526,20 @@ enum MapPinKind {
         }
     }
 
+    /// The same vocabulary, plus the four viewport species slots (task #80).
+    ///
+    /// **A slot is only ever added to a pin that would already have been `.cityTree`.** Every other
+    /// pin's fill is carrying a meaning that outranks "which species is this" — amber says the tree
+    /// needs something, dashes say the record is unverified, grey and hollow say there is no living
+    /// tree here — so this delegates to `kind(for:)` first and only then looks the species up. The
+    /// argument is in `MapSpeciesPalette`'s header; the guarantee is that no colour of the map's
+    /// existing vocabulary can be replaced by a species colour.
+    static func kind(for pin: TreePin, palette: MapSpeciesPalette) -> MapPin.Kind {
+        let base = kind(for: pin)
+        guard base == .cityTree, let slot = palette.slot(for: pin.speciesID) else { return base }
+        return .cityTreeSpecies(slot)
+    }
+
     static func needsCare(status: TreeStatus) -> Bool { status == .declining }
 
     /// What a pin announces to VoiceOver.
@@ -490,6 +562,26 @@ enum MapPinKind {
             return kind(for: pin).accessibilityLabel
         }
         return SiteCopy.pinAccessibilityLabel
+    }
+
+    /// The same label, with the species named when the map has a colour on this pin.
+    ///
+    /// **This is the third channel, and the only one that works with the screen off.** A slot is a
+    /// hue plus a glyph, and both are things you have to see. A reader on VoiceOver sweeping a block
+    /// gets `City tree, London Plane` from every plane on it, which answers "which of these are the
+    /// same tree?" better than either drawn channel does — so the grouping is not a sighted-only
+    /// feature that happens to have an accessible fallback.
+    ///
+    /// A pin with no slot says exactly what it said before. The name is deliberately not added to
+    /// every pin: it is only knowable for the four species the legend has resolved, and a label that
+    /// named some trees and not others would read as a claim about the ones it left out.
+    static func accessibilityLabel(for pin: TreePin, palette: MapSpeciesPalette) -> String {
+        let plain = accessibilityLabel(for: pin)
+        guard kind(for: pin, palette: palette) != kind(for: pin),
+              let slot = palette.slot(for: pin.speciesID),
+              let name = palette.entries.first(where: { $0.slot == slot })?.name
+        else { return plain }
+        return "City tree, \(name)"
     }
 }
 

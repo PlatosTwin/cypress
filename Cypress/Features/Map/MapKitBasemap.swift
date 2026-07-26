@@ -95,6 +95,11 @@ struct MapKitBasemap: View {
     @Binding var region: MKCoordinateRegion
     let clusters: [TreeCluster]
     let pins: [TreePin]
+    /// Which species hold the four colour slots for these pins (task #80). Defaults to nothing,
+    /// because the two other screens that draw this basemap — 16's pin adjust and the pin-set map —
+    /// are about *one* tree and its neighbours rather than about the mix of species on a street, and
+    /// a species colouring there would be four hues answering a question nobody is asking.
+    var speciesPalette: MapSpeciesPalette = .empty
     let userCoordinate: Coordinate?
     let selectedPinID: UUID?
 
@@ -116,6 +121,7 @@ struct MapKitBasemap: View {
             region: $region,
             clusters: clusters,
             pins: pins,
+            speciesPalette: speciesPalette,
             userCoordinate: userCoordinate,
             selectedPinID: selectedPinID,
             onCameraChange: onCameraChange,
@@ -190,6 +196,42 @@ enum MapLayout {
     /// in SCREENS.md — 01 draws no selected pin — so it is deliberately the smallest change that
     /// still answers the tap, and it moves nothing else.
     static let selectedPinScale: CGFloat = 1.25
+
+    // MARK: The selection reticle (task #89)
+    //
+    // ── Why 1.25× was not an answer ────────────────────────────────────────────────────────────
+    // A scale was "deliberately the smallest change that still answers the tap", and on the screen
+    // it was drawn against — a handful of pins around one tree — it was enough. On a Mission block
+    // the map draws up to 288 pins, and 1.25 of 18 pt is 22.5 pt: a pin two and a half points wider
+    // than thirty identical neighbours, which is not a thing a reader can find. The card at the
+    // bottom names the tree and the map does not say which dot it is talking about.
+    //
+    // ── What replaces it, and why it cannot be read as a species colour ────────────────────────
+    // Two concentric rings **outside** the pin, in ink and in the ring colour, and the scale stays.
+    // Three properties make it unconfusable with the species palette, by construction rather than by
+    // taste:
+    //
+    //   1. **It is achromatic.** `textInk` and `pinRingStroke` are the near-black and the white of
+    //      the app's two ends; every species slot is a chromatic fill at OKLCh chroma ≥ 0.08. A
+    //      reader cannot mistake a black-and-white ring for one of four hues, and a colour-blind
+    //      reader — for whom the four hues are the *hardest* thing on the map — finds this one
+    //      easiest.
+    //   2. **It is outside the pin's own footprint**, at 1.7× and 2× the 18 pt dot, where no pin of
+    //      any kind ever draws fill. Species colour is always *inside* a pin.
+    //   3. **It is a ring, not a fill**, and there is only ever one of them on the map.
+    //
+    // Two rings rather than one because the ground is a live MapKit basemap: a white ring vanishes on
+    // the paper and an ink one vanishes over a park polygon after dark, so the mark carries both ends
+    // of the ramp and one of them always reads. The inner ring takes the outer's colour in the other
+    // appearance, which is the same crossed-over trick C19's FAB glyph already uses.
+    //
+    // It costs **no new bitmap**. The rings are `CALayer`s on the one selected marker view, the way
+    // the amber pulse already is, so `MapPinImage`'s cache is untouched by selection entirely.
+    /// Outer ring diameter, as a multiple of the pin it surrounds.
+    static let selectedReticleOuterScale: CGFloat = 2.0
+    /// Inner ring diameter, as a multiple of the pin.
+    static let selectedReticleInnerScale: CGFloat = 1.7
+    static let selectedReticleStroke: CGFloat = 1.5
 
     /// How far the parchment wash pushes MapKit's palette toward the mock's paper. Tuned against
     /// screenshots of the real basemap, not against the hex — see `parchmentWash`. The test is a

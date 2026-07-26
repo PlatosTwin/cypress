@@ -630,6 +630,68 @@ enum CypressColor {
     /// Attention accent — Signal Amber `#B4711F` ↔ `dark.accent.amber` `#D99A4E`.
     static let accentAmber = dynamic(light: 0xB4711F, dark: 0xD99A4E)
 
+    // MARK: - The four species slots (01, task #80)
+    //
+    // ── These are the only tokens in this file whose *light* half is ours too ──────────────────
+    // Every other `derived` token below is a documented light value with a computed dark
+    // counterpart. SCREENS.md draws no species colouring at all, so both halves of these four are
+    // computed, and they are declared `derived` for exactly the reason that constructor exists: it
+    // is the claim that puts a value in `reviewTokens`, which `TokenGallery` renders first, so a
+    // designer answers four swatches on one screen instead of auditing a palette. Promoting one is
+    // still the one-line change `derived` documents.
+    //
+    // ── What they are ─────────────────────────────────────────────────────────────────────────
+    // Four **slots**, handed to the four commonest species in the current viewport by
+    // `MapSpeciesPalette`. Not four species: the seed has 569 and a screenful has 6–64 of them, so
+    // a species-to-hue function is not a thing four colours can be. See `MapSpeciesSlot`.
+    //
+    // ── Where the numbers come from ───────────────────────────────────────────────────────────
+    // Chosen in OKLCh by search, the same space E8's derivation works in, against five hard
+    // constraints. Reproduce any of them with `Tools/map_species_palette.py`:
+    //
+    // 1. **≥ 3:1 (WCAG 1.4.11, non-text mark) on every ground screen 01 draws** — `map.paper`,
+    //    `map.grid`, the street band, the park block and its inset ring, the ocean and the beach —
+    //    in **both** appearances. Fourteen grounds per slot, 56 measurements, all pinned in
+    //    `ContrastTests.speciesPinsOnTheMap`. The park block is the binding one in light and the
+    //    park ring in dark; the paper everyone would have measured against is the easiest of the
+    //    seven, which is how a palette passes on paper and vanishes over Golden Gate Park.
+    // 2. **≥ 0.10 apart from each other in OKLab ΔE**, five times the ~0.02 just-noticeable
+    //    difference, in both appearances. This is what makes "same colour ⇒ same species" a claim a
+    //    reader can act on.
+    // 3. **≥ 0.099 from every mark on the map whose hue already means something**: Canopy
+    //    (`pinFill`, the residual class), Signal Amber (`accentAmber`, "this tree needs something",
+    //    the one urgent meaning in the palette), the GPS dot, the cluster badge, and the memorial
+    //    grey. No slot sits in the amber band (OKLCh hue 20–115°), the Canopy band (125–200°) or
+    //    the GPS band (232–272°) at all — the separation above is what is left after those three
+    //    arcs are removed from the wheel, which is also why there are four slots and not six.
+    // 4. **The ring colour reads on every fill**: `pinRingStroke` against each of the eight values
+    //    is 5.4:1 or better, so the 3 pt ring and the glyph inside the dot both hold.
+    // 5. **Lightness descends A→D in light and ascends A→D in dark**, which keeps the four separated
+    //    in luminance as well as in hue, so no pair collapses for a reader whose deficiency is
+    //    severe. It is *not* a ranking channel: slots are sticky, so `a` is the commonest species
+    //    only until the reader pans (see `MapSpeciesSlot`).
+    //
+    // The tightest separation in the whole set is slot B in light against the **cluster badge**,
+    // ΔE 0.099 — and a badge is a filled 28 pt circle carrying a number, which is not a thing a
+    // reader confuses with an 18 pt dot at any hue. The tightest against another *pin* is slot B
+    // after dark against the GPS dot (ΔE 0.110), separated by three further channels: the dot
+    // carries no glyph, it is the only mark on the map with an 8 pt halo, and it is drawn *under*
+    // every tree (`zPriority = .min`). Both are reproduced by `Tools/map_species_palette.py`.
+
+    /// Species slot A — plum `#7B226D` ↔ `#FC9FE9`. OKLCh 335°, L 0.42 ↔ 0.82, C 0.15 ↔ 0.14.
+    /// Worst ground 5.34:1 light (ocean), 5.69:1 dark (park ring). Carries the **dot**.
+    static let pinSpeciesA = derived(light: 0x7B226D, dark: 0xFC9FE9)
+    /// Species slot B — lagoon `#085570` ↔ `#74D1FC`. OKLCh 230°, L 0.42 ↔ 0.82.
+    /// Worst ground 4.81:1 light, 6.19:1 dark. Carries the **triangle**.
+    static let pinSpeciesB = derived(light: 0x085570, dark: 0x74D1FC)
+    /// Species slot C — iris `#5A43A4` ↔ `#C3BAFC`. OKLCh 290°, L 0.46 ↔ 0.82.
+    /// Worst ground 4.41:1 light, 5.93:1 dark. Carries the **cross**.
+    static let pinSpeciesC = derived(light: 0x5A43A4, dark: 0xC3BAFC)
+    /// Species slot D — cherry `#A33460` ↔ `#D9668E`. OKLCh 0°, L 0.50 ↔ 0.66.
+    /// Worst ground 3.81:1 light, 3.15:1 dark — the closest of the four to its floor, and the
+    /// reason nothing in this set is allowed to drift. Carries the **standing bar**.
+    static let pinSpeciesD = derived(light: 0xA33460, dark: 0xD9668E)
+
     // MARK: - §1.2 Foliage strip greens (fixed 3-step ramp)
 
     /// Foliage density step. Used identically on every foliage strip.
@@ -1399,6 +1461,22 @@ extension CypressColor {
               color: shareTargetWellBorder),
         .init("avatarRing", .derived, light: 0xFFFFFF, dark: 0x18251D,
               basis: "the ring is the card behind it; cf. pinRingStroke", color: avatarRing),
+
+        // The four species slots on screen 01 (task #80). Both halves computed — see
+        // the block comment above `pinSpeciesA`. These are the four swatches a designer is most
+        // likely to want to move, and the constraints they have to keep are listed there.
+        .init("pinSpeciesA", .derived, light: 0x7B226D, dark: 0xFC9FE9,
+              basis: "OKLCh 335° · outside the amber, Canopy and GPS arcs · worst map ground 5.34:1 light / 5.69:1 dark",
+              color: pinSpeciesA),
+        .init("pinSpeciesB", .derived, light: 0x085570, dark: 0x74D1FC,
+              basis: "OKLCh 230° · worst map ground 4.81:1 light / 6.19:1 dark · ΔE 0.110 from the GPS dot after dark, its tightest neighbour",
+              color: pinSpeciesB),
+        .init("pinSpeciesC", .derived, light: 0x5A43A4, dark: 0xC3BAFC,
+              basis: "OKLCh 290° · worst map ground 4.41:1 light / 5.93:1 dark",
+              color: pinSpeciesC),
+        .init("pinSpeciesD", .derived, light: 0xA33460, dark: 0xD9668E,
+              basis: "OKLCh 0° · worst map ground 3.81:1 light / 3.15:1 dark — the closest to its 3:1 floor",
+              color: pinSpeciesD),
 
         // Borders. L' = 0.816 − 0.543·L, fitted on the three documented border pairs, which it
         // reproduces to within 0.005 in OKLab.
