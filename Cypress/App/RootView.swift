@@ -86,7 +86,25 @@ struct RootView: View {
         // its own dimming and the live screen behind it — none of which is what the mocks draw.
         // `AppRouter.sheet` already distinguishes these from `path` for exactly this reason.
         .fullScreenCover(isPresented: presentingSheet) {
+            // ══════════════════════════════════════════════════════════════════════════════════
+            // **The environment is handed over explicitly, and it has to be.**
+            //
+            // A cover is presented in its own hosting context, and the `.environment(_:)` calls
+            // above are attached to the `NavigationStack` this modifier hangs off — they reach the
+            // pushed destinations and they do not reach here. Every sheet before the photo viewer
+            // took what it needed as an argument (`api`, `outbox`, `attribution`), so nothing had
+            // ever asked, and the gap was invisible.
+            //
+            // `PhotoViewerView` asks, because `PhotoImageStore` is a cache with one instance and
+            // threading it through as an argument is the thing the environment exists to avoid
+            // (see `PhotoImage`). Found by looking: the viewer came up with its close button, its
+            // caption and the sentence "That photograph could not be opened" across the middle,
+            // because an absent store and a photograph whose bytes are gone are the same state to
+            // a view that only has an optional. Every test passed. ERRATA E141.
+            // ══════════════════════════════════════════════════════════════════════════════════
             presentedSheet
+                .environment(router)
+                .environment(photoImages)
         }
         #if DEBUG
         // The UI test target's door into the screens behind the map (ERRATA E117). `#if DEBUG` here

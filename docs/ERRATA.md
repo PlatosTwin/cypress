@@ -5637,6 +5637,19 @@ bands (red canopy, green trunk, blue ground) into the hero's own 393×224 box an
 back out; the discriminating fact is that a crown-anchored crop contains **no blue at all** and a
 centred one does. Setting the anchor fraction back to 0.5 turns it red.
 
+**A third defect, found only by looking, that every test was blind to.** The viewer came up on the
+device with its close button, its caption pill and the sentence "That photograph could not be opened"
+across the middle. `PhotoImageStore` reaches the pushed destinations through `.environment(_:)` on
+the `NavigationStack`, and it does not reach a `fullScreenCover`, which is presented in its own
+hosting context. Nothing had ever noticed, because every sheet before this one — 09, 10, 15, and the
+visit flow — takes what it needs as an argument, so no presented screen had ever read the
+environment. The store is now handed to the cover's content explicitly.
+
+What makes it worth its own paragraph is that **an absent store and a photograph whose bytes are gone
+are the same state** to a view holding `PhotoImageStore?`, so the screen reported the second while
+suffering the first, in fluent English, with correct chrome around it. 637 unit tests passed against
+that build. The only thing that caught it was opening the screen and looking at it.
+
 **And the fixture itself was evidence of nothing.** `LocalAPI.debugJPEG` drew a flat rectangle with
 one white bar, which proved bytes had arrived and could not prove *which part of them* had — both
 crops of it look identical. It is now a crude tree at 1200×1600, matching the `width`/`height` the
