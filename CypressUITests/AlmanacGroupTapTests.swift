@@ -35,14 +35,18 @@ final class AlmanacGroupTapTests: XCTestCase {
     /// arrives is the *block's* screen and not a tree's profile, and it says how much of the group is
     /// on it. The profile that used to arrive has neither string on it — it has `A young tree nobody
     /// has visited`, which is asserted absent for exactly that reason.
-    func testWalkTheNineOpensAMapOfThemAll() {
+    func testWalkTheNineOpensAMapOfThemAll() throws {
         let app = launch()
-        guard reachAlmanac(app) else { return }
 
         let walk = app.buttons
             .matching(NSPredicate(format: "label BEGINSWITH %@", "Walk the "))
             .firstMatch
-        XCTAssertTrue(walk.waitForExistence(timeout: 30), "§4's CTA is not on the almanac")
+        try reachAlmanac(app, waitingFor: walk)
+
+        // `reachAlmanac` has already waited for this and skipped if the screen was showing the
+        // location prompt instead, so a failure here is the real one: the almanac has a
+        // neighbourhood and §4's CTA is missing from it.
+        XCTAssertTrue(walk.exists, "§4's CTA is not on the almanac, which does have a neighbourhood")
         let ctaLabel = walk.label
         walk.tap()
 
@@ -70,14 +74,17 @@ final class AlmanacGroupTapTests: XCTestCase {
     /// This is the E38 half. The row's own count stays on screen and the map holds a page of it, so the
     /// page has to name its own size in the same breath. A destination that said `All 1,474 are on this
     /// map.` over twenty pins would be the defect E38 exists for, and it is asserted against directly.
-    func testTheVacantRowOpensAMapAndNamesThePage() {
+    func testTheVacantRowOpensAMapAndNamesThePage() throws {
         let app = launch()
-        guard reachAlmanac(app) else { return }
 
         let row = app.buttons
             .matching(NSPredicate(format: "label CONTAINS %@", "empty planting site"))
             .firstMatch
-        XCTAssertTrue(row.waitForExistence(timeout: 30), "R10's row is not on the almanac")
+        try reachAlmanac(app, waitingFor: row)
+
+        // See the sibling test: past `reachAlmanac` the neighbourhood is there and this is R10's row
+        // genuinely missing from it.
+        XCTAssertTrue(row.exists, "R10's row is not on the almanac, which does have a neighbourhood")
         let rowLabel = row.label
         row.tap()
 
@@ -112,34 +119,77 @@ final class AlmanacGroupTapTests: XCTestCase {
         return app
     }
 
-    /// Gets to a populated almanac, dismissing the location ask on the way.
+    /// Screen 12's `AlmanacCopy.locationPromptTitle` — what the screen draws *instead of* its blocks
+    /// when there is no fix. Repeated here as a literal because these tests import nothing from
+    /// `Cypress`; if the copy changes this stops matching, which is the same bargain every other
+    /// anchor in this file makes.
+    private static let locationPrompt = "See your neighbourhood"
+
+    /// Gets to a populated almanac, dismissing the location ask on the way, and **skips** rather than
+    /// fails when there is no fix for it to be populated from.
     ///
     /// The ask belongs to Springboard rather than to Cypress, so it is tapped through Springboard's own
     /// element tree — an `addUIInterruptionMonitor` fires only on the next interaction with the app,
     /// which is too late when the thing being waited for is behind the alert.
     ///
-    /// Without a fix there is no neighbourhood and therefore neither of the two rows (A4, ERRATA E44),
-    /// so a device with location refused reports that rather than failing an assertion about a row that
-    /// is correctly absent.
-    private func reachAlmanac(_ app: XCUIApplication) -> Bool {
+    /// Without a fix there is no neighbourhood and therefore neither of the two rows (A4, ERRATA E44):
+    /// `AlmanacScreen` draws E123's location prompt in place of all four blocks, so both rows are
+    /// *correctly* absent. That is an environment fact and not a defect, so it is an `XCTSkip` — the
+    /// judgement `MapSearchUITests.requireAMapWithPins` already made for the same missing fix, in the
+    /// same words: a skip says "not checked here", which is true, where a failure says "broken", which
+    /// is not.
+    ///
+    /// **The wait is a race, and it is deliberately not symmetric** (ERRATA — see
+    /// docs/errata-pending/almanac-location.md). What it used to be was `waitForExistence(timeout: 3)`
+    /// on the prompt, which is a fixed wait on an *absence*: three seconds is longer than a healthy run
+    /// should ever pay and shorter than the almanac takes to settle, so the guard missed and the test
+    /// went on to fail on a row it had itself decided might not be there. Now `content` — the row this
+    /// particular test is about — ends the wait the moment it appears, so a machine with a fix pays
+    /// nothing. The prompt does **not** end it early, because "the prompt is on screen" is the state
+    /// screen 12 opens in whether or not a fix is coming: `showsLocationPrompt` is `coordinate == nil`
+    /// and the coordinate arrives from CoreLocation after the screen is already drawn. Only once the
+    /// content has failed to arrive does the prompt decide *which* report is honest — skip, or the
+    /// caller's own assertion.
+    private func reachAlmanac(_ app: XCUIApplication, waitingFor content: XCUIElement) throws {
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
-        for label in ["Allow While Using App", "Allow Once", "Allow"] {
-            let button = springboard.buttons[label]
-            if button.waitForExistence(timeout: 5) {
-                button.tap()
-                break
-            }
+        let allow = ["Allow While Using App", "Allow Once", "Allow"].map { springboard.buttons[$0] }
+        // Whichever of the three this iOS draws, or none at all when permission is already answered —
+        // polled together rather than waited for one at a time, so the already-answered case costs one
+        // window instead of three.
+        if wait(timeout: 5, for: { allow.contains { $0.exists } }) {
+            allow.first { $0.exists }?.tap()
         }
 
         guard app.staticTexts["Almanac"].waitForExistence(timeout: 30) else {
             XCTFail("the Journal tab did not draw the almanac")
-            return false
+            return
         }
-        if app.staticTexts["See your neighbourhood"].waitForExistence(timeout: 3) {
-            XCTFail("no location fix, so screen 12 has no neighbourhood and neither counted row exists")
-            return false
+
+        if wait(timeout: 30, for: { content.exists }) { return }
+
+        if app.staticTexts[Self.locationPrompt].exists {
+            throw XCTSkip(
+                "screen 12 drew “\(Self.locationPrompt)” instead of its neighbourhood, so neither "
+                    + "counted row exists to tap — this needs a simulated GPS fix over San Francisco: "
+                    + "xcrun simctl location <udid> set 37.78485,-122.4215"
+            )
         }
-        return true
+        // Neither the content nor the prompt: the almanac claims a neighbourhood and is missing the
+        // row anyway, which is a defect. Left to the caller's own assertion, which names the row.
+    }
+
+    /// Waits for a condition, polling. Mirrors `MapSearchUITests.wait(timeout:for:)` — same reason,
+    /// same shape: what is worth asserting about this screen is where it settles, never when. Copied
+    /// rather than shared because that one is `private` to a file two other tasks are editing this
+    /// week; if a third caller appears it should become one helper for the target.
+    @discardableResult
+    private func wait(timeout: TimeInterval = 30, for condition: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return true }
+            usleep(200_000)
+        }
+        return condition()
     }
 
     /// The first static text on screen ending with `suffix`, or nil.
