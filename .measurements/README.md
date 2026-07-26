@@ -104,3 +104,30 @@ second at 4 m/s is one fix every fifteen centimetres, which no GNSS receiver pro
 delivers about one a second. What transfers is the **per-publish cost** and the **mechanism**, not
 the absolute frame numbers. The instrument for the absolute numbers is now the on-screen overlay, on
 the owner's own phone.
+
+## Proved compiled out of Release — `e139-compiled-out.txt`
+
+The on-screen readout is `#if DEBUG` in both of its own files and at every call site, and off unless
+`CYPRESS_MAP_PROBE=1` on top of that. Proved the way ERRATA E117 proved the same thing of
+`DebugDeepLink`, including its trap: Xcode puts Debug app code in `Cypress.debug.dylib` beside a
+small stub named `Cypress`, so grepping the Debug *stub* finds nothing and looks like a pass while
+measuring the wrong file. The control strings are what catch that — they are absent from the stub
+too, and present in both real artifacts.
+
+| | Debug dylib | Debug stub | Release |
+|---|---|---|---|
+| `CYPRESS_MAP_PROBE` | 1 | 0 | **0** |
+| `[probe]` | 2 | 0 | **0** |
+| `MapProbeOverlay` symbols | 102 | 0 | **0** |
+| `MapFrameProbe` symbols | 365 | 0 | **0** |
+| *control* `What tree is this?` | 1 | 0 | 2 |
+| *control* `MapAnnotationLayer` | 3 | 0 | 6 |
+| *control* `MapLocationProvider` | 5 | 0 | 8 |
+
+## How the owner turns the readout on
+
+It needs the environment variable, which on a device means a scheme, not a command line: Xcode →
+Product → Scheme → Edit Scheme → Run → Arguments → Environment Variables, add `CYPRESS_MAP_PROBE`
+= `1`, then Run onto the phone. The map draws a small dark badge under the filter chips with rolling
+fps, the worst frame in the last second, the marker count and zoom, and the three counters. The fps
+line turns amber whenever the worst frame in that second missed the display's cadence.
