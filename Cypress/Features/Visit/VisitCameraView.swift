@@ -17,8 +17,8 @@ struct VisitCameraView: View {
 
     @State private var model: VisitCameraModel
     @State private var libraryItem: PhotosPickerItem?
-    /// czFlash's second keyframe. See `shutterFlash`.
-    @State private var flashHasFaded = false
+    /// The capture whose flash has already been faded out. See `shutterFlash`.
+    @State private var fadedCaptureTick = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let onSaved: (VisitSaveReceipt) -> Void
@@ -106,20 +106,25 @@ struct VisitCameraView: View {
     /// other signal there is. It is also the clearest case in the app for Reduce Motion: a
     /// full-screen luminance change is exactly what the setting exists to suppress, so under it
     /// the flash does not draw at all and the snapshot arriving is the confirmation.
+    ///
+    /// **Keyed on `model.captureTick`, not on `model.hasSnapped`.** `hasSnapped` is per framing now, so
+    /// it turns true both when a photograph is taken and when a chip that already has one is selected —
+    /// and the second of those flashed the screen white at somebody who had taken nothing. The tick only
+    /// ever counts captures. See `VisitCameraModel.captureTick`.
+    ///
+    /// Two keyframes out of one monotonic counter: the body renders full opacity for the frame in which
+    /// the tick is ahead of `fadedCaptureTick`, and `onChange` — which runs after that frame — animates
+    /// the two back into agreement. A reset flag would not survive back-to-back captures.
     @ViewBuilder
     private var shutterFlash: some View {
         if !reduceMotion {
             Color.white
-                .opacity(model.hasSnapped && !flashHasFaded ? CypressMotionOffset.flashOpacity : 0)
+                .opacity(model.captureTick > fadedCaptureTick ? CypressMotionOffset.flashOpacity : 0)
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
-                .onChange(of: model.hasSnapped) { _, snapped in
-                    guard snapped else {
-                        flashHasFaded = false
-                        return
-                    }
-                    withAnimation(CypressMotion.flash) { flashHasFaded = true }
+                .onChange(of: model.captureTick) { _, tick in
+                    withAnimation(CypressMotion.flash) { fadedCaptureTick = tick }
                 }
         }
     }

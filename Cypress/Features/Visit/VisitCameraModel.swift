@@ -50,6 +50,16 @@ final class VisitCameraModel {
     private(set) var isSaving = false
     private(set) var saveError: String?
 
+    /// How many photographs this session has actually **taken**, counting retakes, never going down.
+    ///
+    /// It exists for the shutter flash, and it exists because `hasSnapped` stopped being able to carry
+    /// that signal. The flash used to fire on `hasSnapped` turning true, which was the same event as a
+    /// capture when a visit held one photograph. Per framing it is not: selecting a chip you have
+    /// already photographed also turns `hasSnapped` true, so tapping between filled chips flashed the
+    /// screen white as though each tap had taken a photograph. A flash is the only confirmation a
+    /// capture *has* on a simulator or a library fallback, so a false one is worse than none.
+    private(set) var captureTick = 0
+
     // MARK: Init
 
     init(
@@ -147,6 +157,12 @@ final class VisitCameraModel {
 
     /// What "Log visit" says, which has to name how many photographs are about to be saved.
     ///
+    /// **NOT SPECIFIED.** SCREENS 04 draws this button reading `Log visit` and nothing else, because
+    /// when it was drawn a visit held one photograph and there was no number to report. Both this and
+    /// `remainingShotsLine` are invented, under the project owner's own request for three framings in
+    /// one session; ARCHITECTURE §5.8 forbids inventing a *screen or state*, and a session that holds
+    /// two photographs is a state the owner asked for and the mocks do not cover.
+    ///
     /// Two of three is a complete contribution, so the button must not read as though it were waiting
     /// for a third — but it must not hide the count either, because the whole failure this replaces was
     /// a contributor believing they had three photographs when they had one. A count is not a score: it
@@ -159,6 +175,8 @@ final class VisitCameraModel {
     }
 
     /// The line under the chips that names the framings still open, or nothing once all three are taken.
+    ///
+    /// **NOT SPECIFIED** — see `logVisitLabel` for the authorization this and it are written under.
     ///
     /// An invitation, not a requirement: it says what else this session *could* hold. It disappears
     /// rather than turning into a tick, because a screen that congratulates somebody for taking three
@@ -226,6 +244,9 @@ final class VisitCameraModel {
             draft.stage(OutboxPhoto(path: path, shotType: framing))
             draft.capturedAt = Date()
             snapshots[framing] = image
+            // After the write, so a refusal does not flash a confirmation at somebody whose
+            // photograph was not saved.
+            captureTick += 1
             saveError = nil
         } catch {
             // A photo that cannot be written to disk is a photo that cannot survive termination, so

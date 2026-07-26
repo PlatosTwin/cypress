@@ -78,6 +78,16 @@ struct VisitCameraSessionTests {
         )
     }
 
+    /// A camera model whose outbox can actually be **written** to.
+    ///
+    /// `VisitPreviewFixtures.outbox()` is deliberately *unmigrated* — "the previews draw the screens,
+    /// they do not save from them" — so a `logVisit()` over it fails on `no such table: outbox` and
+    /// returns nil. Two tests here save without going near `LocalAPI`, and they were reading that as a
+    /// refusal of the framings under test.
+    static func savingModel(treeID: UUID = VisitPreviewFixtures.cypress.id) async throws -> VisitCameraModel {
+        model(treeID: treeID, outbox: try await VisitPreviewFixtures.migratedOutbox())
+    }
+
     /// Takes one photograph of each framing, in the order the chips are drawn, exactly as a contributor
     /// would: select the chip, then press the shutter.
     static func shootAll(_ model: VisitCameraModel, _ framings: [ShotType] = [.fullTree, .trunk, .leaf]) throws {
@@ -293,7 +303,7 @@ struct VisitCameraSessionTests {
     /// make the row and the file disagree about which photograph they are.
     @Test("leaving a different chip selected does not relabel the photographs")
     func theFramingIsFrozenAtTheShutter() async throws {
-        let model = Self.model()
+        let model = try await Self.savingModel()
         try Self.shootAll(model, [.fullTree, .trunk])
         defer { Self.removeStaged(model.draft.photoPaths) }
 
@@ -329,17 +339,84 @@ struct VisitCameraSessionTests {
             }
         }
 
-        let model = Self.model(treeID: treeID)
+        let model = try await Self.savingModel(treeID: treeID)
         try Self.shootAll(model)
         defer { Self.removeStaged(model.draft.photoPaths) }
 
         model.shotType = .leaf
         _ = try #require(await model.logVisit())
 
-        #expect(
-            VisitGhostStore.ghost(for: treeID) != nil,
+        let ghost = try #require(
+            VisitGhostStore.ghost(for: treeID),
             "no ghost was recorded, so the next visit has nothing to line up against"
         )
+        // And it is the **full tree**, not merely *a* photograph. The three fixtures have three
+        // shapes and nothing here is over `maximumEdge`, so `record`'s downscale is a no-op and the
+        // stored ghost still measures whatever it was made from. Without this the assertion above
+        // would pass on a ghost made from the trunk.
+        let fullTree = try #require(Self.sizes[.fullTree])
+        let complaint = "the ghost is \(Int(ghost.size.width))×\(Int(ghost.size.height)), which is not "
+            + "the full-tree photograph (\(fullTree.width)×\(fullTree.height)) — it came from another framing"
+        #expect(
+            Int(ghost.size.width) == fullTree.width && Int(ghost.size.height) == fullTree.height,
+            "\(complaint)"
+        )
+    }
+
+    /// The shutter flash counts captures, and only captures.
+    ///
+    /// `VisitCameraView` used to fire it on `hasSnapped` turning true, which was the same event as a
+    /// capture while a visit held one photograph. Per framing it is not: selecting a chip that already
+    /// holds a photograph turns `hasSnapped` true as well, so tapping between filled chips flashed the
+    /// screen white as though each tap had photographed something. On a simulator or a library fallback
+    /// that flash is the *only* confirmation a capture has, so a false one is a lie about the one thing
+    /// this screen has to be honest about.
+    @Test("the shutter flash fires once per photograph taken, and not when a chip is selected")
+    func theFlashCountsCapturesOnly() throws {
+        let model = Self.model()
+        #expect(model.captureTick == 0)
+
+        model.shotType = .fullTree
+        model.useLibraryImage(try Self.jpeg(.fullTree))
+        defer { Self.removeStaged(model.draft.photoPaths) }
+        #expect(model.captureTick == 1)
+
+        model.shotType = .trunk
+        model.useLibraryImage(try Self.jpeg(.trunk))
+        #expect(model.captureTick == 2)
+
+        // Tapping back and forth across two framings that both hold a photograph. `hasSnapped` goes
+        // true on each of these, and nothing was photographed.
+        model.shotType = .fullTree
+        model.shotType = .trunk
+        model.shotType = .fullTree
+        #expect(model.captureTick == 2, "selecting a photographed chip flashed the screen \(model.captureTick - 2) times")
+
+        // A retake takes the photograph away and then puts one back: no flash for the discard, one
+        // for the replacement.
+        model.retake()
+        #expect(model.captureTick == 2, "discarding a photograph flashed a confirmation")
+        model.useLibraryImage(try Self.jpeg(width: 120, height: 90))
+        #expect(model.captureTick == 3)
+
+        model.shotType = .leaf
+        model.useLibraryImage(try Self.jpeg(.leaf))
+        #expect(model.captureTick == 4)
+    }
+
+    /// Bytes that are not a photograph take nothing and confirm nothing.
+    ///
+    /// The flash is the confirmation, and it is fired from the same statement that records the capture
+    /// — after the write, not before it — so the only way to flash is to have staged a file.
+    @Test("a capture that could not be written flashes nothing and takes nothing")
+    func aRefusedCaptureIsNotAFlash() throws {
+        let model = Self.model()
+        model.shotType = .fullTree
+        model.useLibraryImage(Data("this is not a photograph".utf8))
+
+        #expect(model.captureTick == 0, "a refused capture flashed a confirmation")
+        #expect(model.capturedCount == 0)
+        #expect(!model.canLogVisit)
     }
 
     // MARK: - 5 · The tray, with three chips wearing marks, at AX5
