@@ -5383,7 +5383,169 @@ can be the thing holding the property up.
 revised, and the same is true of the coordinate it describes. A contributor who realises afterwards
 that the pin went in the wrong place has nowhere to say so.
 
-### E139 — a contributor may now say what the tree is, and the record says who said it
+---
+
+### E139 — the map was measured with the location turned off, twice
+
+E130 cut screen 01 from 1,300 markers to under 300 and measured a 2,061 ms frame down to 28. It was
+real and it helped. The project owner installed it on their own iPhone and said the map was still
+slow. E130's own note argued that rebuilding the annotation layer on every GPS fix "costs nothing
+SwiftUI cannot diff away". The owner's phone disproved that sentence, and it took a third round to
+find out why nobody had seen it.
+
+**Both prior measurements were taken with location permission declined.** That opens the camera at
+the fixed fallback centre — Mission Dolores **Park**, a park, in a *street* tree inventory — with ten
+markers on screen. Neither run was ever a measurement of a full screen of pins, and a static
+`simctl location` fires `didUpdateLocations` once and never again, so neither *could* have exercised
+the GPS path. With a fix granted and 167 markers, the same build idles at **1 fps with a worst frame
+of 862 ms**, rebuilding an annotation layer that has not changed, twelve to eighteen times a second,
+with nobody touching the glass.
+
+**Three defects, found in the order they were hiding behind each other.**
+
+**A `@State` default expression that opened a GPS session.** `MapHomeView` declared
+`@State private var location = MapLocationProvider()`. A SwiftUI `@State` default expression is
+re-evaluated on *every initialisation of the view struct*; `RootView.body` initialises this one on
+every pass; and `MapLocationProvider.init` called `startUpdatingLocation()` right there. So screen 01
+stood up and discarded roughly **fifty `CLLocationManager` sessions a second**, each delivering a
+cached fix and rewriting observable state on its way out — 336 provider instances in seven measured
+seconds. The provider now comes from the composition root, which `ARCHITECTURE.md` §3 already
+required; the app had been running two providers and two GPS sessions against that sentence.
+`RootView`'s own comment claiming its provider "is never `start()`ed here" had been false since it
+was written. **A comment asserting an invariant is not a test of it.**
+
+**`distanceFilter = 5` is not honoured.** Measured on a simulated 4 m/s walk: 24–42 fixes a second,
+one every fifteen centimetres. The fix is not to coarsen anything — `desiredAccuracy` stays at
+`Best` and `distanceFilter` stays at 5, because 5 m is what screen 02 needs to tell two trees on one
+block apart — but to keep, in the write, the promise the setting was already making.
+
+**And underneath both, ~200 SwiftUI-hosted annotations that never settle.** Ablations, each built,
+installed and run: remove the GPS dot, no change; disable the amber pin's `repeatForever` pulse, no
+change; decline location and draw nine markers, a flat 60 fps and zero rebuilds. The variable is the
+count of hosted views, and the failure is not "a bit more per pan" — it is a map that never comes to
+rest. `MapCanvas` has advertised a replaceable basemap since C18; `MapAnnotationLayer` takes that
+seam with an `MKMapView` and `dequeueReusableAnnotationView`, each marker a bitmap of the C19 pin
+rendered **once per kind** by `ImageRenderer`, so the design system stays the single source of truth
+and there is no hand-drawn second copy of the pin. MapKit's own `clusteringIdentifier` is declined
+and the reason is written where somebody will look for it: this app clusters in SQL on an absolute
+grid, and MapKit's is screen-space, so it would lay a second grid on top of the first and undo E130.
+
+**Verified independently of the agent that did the work**, because two rounds of measurement had
+already been believed and been wrong. The frame probe was cherry-picked alone onto *unmodified*
+`main`, both builds were driven over one route in the Mission at 4 m/s on the same simulator with
+location **granted**, and the overlay was read off screenshots:
+
+| | before (main) | after |
+|---|---|---|
+| frame rate | **1 fps** | **46 fps** |
+| worst frame | **862 ms** | **49 ms** |
+| GPS writes per second | 36 | 0 |
+| markers on screen | 167 | 159 |
+
+**The instrument moved onto the glass.** `MapFrameProbe` had the numbers and printed them to stdout;
+a person holding a phone has no stdout, which is exactly how two rounds of "measured on a simulator,
+stated as a limit" were believed anyway. It now publishes a one-second snapshot that
+`MapProbeOverlay` draws in the corner — fps, worst frame, marker count, zoom, and three counters
+(`gps` / `body` / `fetch`) that tell the three candidate causes apart from the outside. `#if DEBUG`
+in both files and at every call site, off unless `CYPRESS_MAP_PROBE=1`, and proved absent from
+Release against the right artifacts with a control that fires — the trap E117 records.
+
+**What is honestly still open.**
+
+The basemap still re-evaluates its body around 200 times a second at rest once a fix has arrived.
+`Self._printChanges()` puts the trigger at or above `RootView`, not in the map. It now costs about a
+fifth of the frame budget rather than ninety-eight per cent of it, because a pass is ~1 ms instead of
+~77 ms — so it is cheap, and it is still wrong. It is not fixed here.
+
+And the limit on every number above: these are **simulator** figures. The *rate* of 24–42 callbacks
+a second at walking pace is a simulator artifact — no GNSS receiver produces a fix every fifteen
+centimetres; a phone gives roughly 1 Hz. What transfers is the per-publish cost and the mechanism,
+not the absolute frame rate. The overlay exists precisely so that the claim can be checked on the
+owner's own hardware instead of inferred from a Mac, which is what went wrong twice.
+
+### E140 — the map could not be moved off the reader's own location
+
+The owner, on their own iPhone, on the build that shipped that morning:
+
+> "the center me on the map button PREVENTS THE MAP FROM BEING MOVED OFF THE CURRENT LOCATION. Every
+> time I moved the map, in a second I got brought back to where I am centered and there was no way I
+> could figure out around this. STUPID AND BAD"
+
+The default screen of the app could not be panned. It had shipped that way in the merge of two rounds
+that both touched the camera — the recentre control (#66) and the `MKMapView` rewrite (E139).
+
+**The gesture was landing all along.** The first reproduction attempts drew a blank: a synthetic drag
+left the geography unchanged and `mapViewDidChangeVisibleRegion` never fired, which looked like a
+swallowed gesture — a different defect. It was an artifact of the drag. A two-point swipe does nothing
+to MapKit; a ten-point path with 70 ms between points does. With one of those, and the counters on
+screen, the reproduction is unambiguous: **44 region changes during the drag, three app-driven camera
+writes after it, and a screenshot identical to the one before it.** The map moved and was driven back
+inside a frame.
+
+**What drove it back.** When the camera settled, the coordinator asked whether the map had drifted far
+from the last camera the app had requested, and if it had — a real pan — it cleared its record of that
+request. The intent was to stop a second press of the recentre control being swallowed as a duplicate
+value. But nothing upstream had changed: a pan writes `region`, never `position`, and `position` still
+held the one-shot centring on the first GPS fix. So the next `updateUIView` found a position that
+differed from an empty record, took it for a fresh request, and drove the camera to the fix. Ablating
+that single line, the same drag left the map on Shotwell St with no camera write at all.
+
+**Two fixes were wrong before the third was right, and the probe caught both.**
+
+The first made the two sides agree: write the reader's region into the coordinator's record *and* into
+`position`. It passed a test asserting the map stays panned. On the device it was worse than the bug —
+`mapViewDidChangeVisibleRegion` firing 2,196 times and the camera re-applied 527 times in a few idle
+seconds, the map drifting across the city untouched. Two independently constructed
+`MapCameraPosition.region` values do not compare equal; what had been established earlier was only the
+weaker claim that a *copy* equals its original.
+
+Copying one value fixed that and the map still came back — 39 camera writes per pan. The instrument
+answered the question directly: at the moment the guard let a write through, the record was **not**
+empty, and the two cameras were **147 metres apart**, which is the length of the pan. Reading
+`position` straight back after writing it returned exactly what had been written. The write was fine;
+the *reader* was stale. `updateUIView` is called with the view value from a body pass, and that pass
+read the app's state when it ran — so after a pan there is an update already in flight carrying the
+camera from before the pan. On this screen, at 240 body passes a second, there always is.
+
+**No comparison of camera values can survive that, so the fix does not make one.** A camera request
+now carries a monotonic ticket (`MapCameraRequest`), and the layer applies a request only when its
+ticket is newer than the last one it applied. A stale value carries a ticket already applied and is
+ignored on sight. The drift heuristic is gone entirely: a press mints a ticket whether or not it names
+the same place, so #66's second press works by construction and a settle has no opinion about the
+camera at all.
+
+**Measured, iPhone 16 simulator, location granted, 161 markers, the same ten-point drag:**
+
+| | before | after |
+|---|---|---|
+| region changes during the drag | 44 | 40 |
+| app-driven camera writes after it | 3 | **0** |
+| where the map ended up | back on the GPS fix | where it was put |
+| basemap body passes per second, at rest | 240 | **0** |
+| frame rate at rest / worst frame | 56 fps / 34 ms | **60 fps / 17 ms** |
+
+The last two rows were not the goal. E139 left it recorded that the basemap re-evaluated its body
+around 200 times a second at rest with `Self._printChanges()` blaming something at or above
+`RootView`, and called it cheap and still wrong. It was the camera: swapping the bound
+`MapCameraPosition` for a small `Equatable` struct took it to **zero**. E139 guessed these might share
+a root cause. They did.
+
+**The recentre control, checked by hand afterwards, four presses on the device.** Panned away at z15:
+first press centres and keeps z15, second press zooms to z18 — the 120 m opening scale, which is what
+`MapRecentre` specifies. Already at 120 m: both presses are honoured and drive the camera rather than
+being swallowed. A pinch produces no app-driven write at all.
+
+**Two other screens had the same defect and are fixed by the same change**, because they share the
+coordinator: the visit pin-adjust map (02) and the pin-set map. Neither had been reported, and neither
+had a test that would have found it.
+
+**What this cost, and the general form of it.** The bug was one line, and the two wrong fixes were
+each one line, and all three were defensible from reading the code. What separated them was an
+instrument — three counters drawn in the corner of the map — read off a screenshot. A test asserting
+"the map stays where it was put" passed against a build that was writing the camera 527 times a
+second. **An assertion about the outcome is not an assertion about the work done to reach it**, and on
+this screen the second one is where the defects live.
+### E141 — a contributor may now say what the tree is, and the record says who said it
 
 The project owner, from real use: *"Should be possible to add tree species after/at same time as
 adding a custom tree"*.

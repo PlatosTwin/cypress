@@ -1183,7 +1183,7 @@ public actor LocalAPI: CypressAPI {
     }
 
     #if DEBUG
-    /// Test seam (ERRATA E139): a community tree with a contributor's species on it, so the deep-link
+    /// Test seam (ERRATA E141): a community tree with a contributor's species on it, so the deep-link
     /// harness can put the claim in front of a screenshot.
     ///
     /// **It goes through `addTree`, not around it.** The point of looking at this screen is to check

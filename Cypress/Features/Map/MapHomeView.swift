@@ -29,11 +29,27 @@ struct MapHomeView: View {
 
     let api: any CypressAPI
 
+    /// **The composition root's provider, passed in — not one of this screen's own.**
+    ///
+    /// It was `@State private var location = MapLocationProvider()`, and that one line is the
+    /// single largest thing wrong with this screen's frame rate. A SwiftUI `@State` default
+    /// expression is re-evaluated every time the view struct is initialised, and `RootView.body`
+    /// initialises this one on every pass; `MapLocationProvider.init` used to open a
+    /// `CLLocationManager` session there and then, so screen 01 was standing up and discarding
+    /// around **fifty GPS sessions a second** — measured, 336 provider instances in seven seconds —
+    /// each of which delivered a cached fix and rewrote observable state on its way out.
+    ///
+    /// Two things were wrong and both are fixed: the provider no longer starts on construction
+    /// (`MapLocationProvider.hasStarted`), and this screen no longer constructs one. ARCHITECTURE §3
+    /// already said so — "shared services (`CypressAPI`, `Outbox`, `LocationProvider`) are passed
+    /// through the SwiftUI environment from a single composition root" — and the app was running two
+    /// providers, two managers and two GPS sessions against that sentence.
+    let location: MapLocationProvider
+
     @Environment(AppRouter.self) private var router
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var model: MapModel
-    @State private var location = MapLocationProvider()
-    @State private var position: MapCameraPosition = .region(MapLayout.region(around: MapLayout.defaultCentre))
+    @State private var position: MapCameraRequest = .opening(MapLayout.region(around: MapLayout.defaultCentre))
     /// The last region MapKit reported, so a cluster tap knows what "two zoom levels in" means.
     @State private var region = MapLayout.region(around: MapLayout.defaultCentre)
     /// One-shot: the first fix recentres the map, later ones must not yank it out from under a pan.
@@ -51,8 +67,9 @@ struct MapHomeView: View {
         case refused(MapLocationProvider.Availability)
     }
 
-    init(api: any CypressAPI) {
+    init(api: any CypressAPI, location: MapLocationProvider) {
         self.api = api
+        self.location = location
         _model = State(initialValue: MapModel(api: api))
     }
 
@@ -113,7 +130,12 @@ struct MapHomeView: View {
                 speak(MapRecentreCopy.spokenCentred)
             }
         }
-        .onDisappear { location.stop() }
+        // **No `stop()` on disappear any more, and that is not an oversight.** It used to stop *this
+        // screen's own* provider while the composition root's kept running, which meant the stop
+        // bought nothing and the app held two GPS sessions regardless. There is one provider now, and
+        // screens 09, 12, 16 and the visit flow all read fixes from it — a map that switched it off
+        // on its way to a tree profile would take the accuracy out from under the record being
+        // written on the screen it opened.
     }
 
     // MARK: - Basemap
@@ -161,6 +183,18 @@ struct MapHomeView: View {
                 .padding(.horizontal, MapLayout.sideInset)
                 .padding(.top, topInset + MapLayout.searchTopInset)
             }
+            // The frame readout, when it is armed. Its own `#if DEBUG` and its own environment gate;
+            // a separate `.overlay` rather than a member of either stack, so it cannot move anything
+            // the mock positions. See `MapProbeOverlay`.
+            #if DEBUG
+            .overlay(alignment: .topTrailing) {
+                if MapFrameProbe.isEnabled {
+                    MapProbeOverlay()
+                        .padding(.horizontal, MapLayout.sideInset)
+                        .padding(.top, topInset + MapProbeLayout.topOffset)
+                }
+            }
+            #endif
             .overlay(alignment: .bottom) {
                 VStack(alignment: .trailing, spacing: 0) {
                     // Above the FAB and right-aligned with it, inside the same absolutely positioned
@@ -291,19 +325,26 @@ struct MapHomeView: View {
     /// recentre refetches *through* the narrowing rather than around it. Clearing the field here
     /// would be a second, hidden meaning for a button that says it centres the map.
     private func flyTo(_ coordinate: Coordinate, metres: CLLocationDistance?) {
-        // Reduce Motion snaps rather than flies, for the reason a cluster tap does: the new camera is
-        // the answer to the press, not the way the answer is delivered.
-        withAnimation(CypressMotion.resolved(CypressMotion.camera, reduceMotion: reduceMotion)) {
-            if let metres {
-                position = .region(MapLayout.region(around: coordinate, metres: metres))
-            } else {
-                // The span MapKit last reported, not a zoom recomputed from one — a round trip
-                // through `MapZoom` would quantise to an integer level and move a camera the reader
-                // did not ask to have moved.
-                position = .region(
-                    MKCoordinateRegion(center: coordinate.clLocationCoordinate, span: region.span)
-                )
-            }
+        // **No `withAnimation`, and the camera still flies.** The basemap is a `UIViewRepresentable`
+        // over `MKMapView` now, so the thing that animates is `setRegion(_:animated:)` on the far
+        // side of the seam; a SwiftUI transaction wrapped around this write cannot interpolate a
+        // UIKit map's camera, and while it tries it holds a transaction open over the whole view
+        // tree. Reduce Motion snaps rather than flies for the reason a cluster tap does — the new
+        // camera is the answer to the press, not the way the answer is delivered — and that decision
+        // is made in `MapAnnotationLayer.applyCameraIfChanged`, where the animation actually is.
+        // `.move(to:)`, which takes a fresh ticket every time. That is what makes a second press of
+        // the recentre control work even when it asks for the camera the first press already gave —
+        // and it is why the annotation layer no longer has to guess, from how far the map has
+        // drifted, whether the reader moved it. See `MapCameraRequest` and ERRATA E140.
+        if let metres {
+            position = .move(to: MapLayout.region(around: coordinate, metres: metres))
+        } else {
+            // The span MapKit last reported, not a zoom recomputed from one — a round trip
+            // through `MapZoom` would quantise to an integer level and move a camera the reader
+            // did not ask to have moved.
+            position = .move(
+                to: MKCoordinateRegion(center: coordinate.clLocationCoordinate, span: region.span)
+            )
         }
     }
 
@@ -341,11 +382,9 @@ struct MapHomeView: View {
 
     /// Tapping a cluster zooms in, which is what the badge means (`TreeCluster`'s own note).
     private func zoom(into cluster: TreeCluster) {
-        // Reduce Motion snaps the camera instead of flying it. The zoom is the answer to the tap,
-        // not the way the answer is delivered.
-        withAnimation(CypressMotion.resolved(CypressMotion.camera, reduceMotion: reduceMotion)) {
-            position = .region(MapLayout.zoomedIn(on: cluster, from: region))
-        }
+        // Reduce Motion snaps the camera instead of flying it, and `MapAnnotationLayer` is where
+        // that decision is now made — see the note on the first-fix centring above.
+        position = .move(to: MapLayout.zoomedIn(on: cluster, from: region))
     }
 
     /// C16 speaks `Map / My Grove / Journal / You` and `AppRouter` speaks `map / grove / journal /

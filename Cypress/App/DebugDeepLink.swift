@@ -77,7 +77,7 @@ enum DebugDeepLink {
         case memorial           // 19 — reachable now via a local removal override (ERRATA E124-B)
         case photos             // 20 — the photo browser (ERRATA E125)
         case photoHero          // 03 with photographs on it, which the seed alone cannot produce
-        /// 03 over a **community** tree carrying a contributor's species (ERRATA E139) — the state
+        /// 03 over a **community** tree carrying a contributor's species (ERRATA E141) — the state
         /// this project has no seed record for, because every one of them is added on the device.
         case speciesClaim
         /// The same, with no species: the state that offers to be named.

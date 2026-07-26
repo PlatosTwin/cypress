@@ -317,6 +317,9 @@ final class MapModel {
             let content = try await api.mapContent(in: viewport)
             guard !Task.isCancelled else { return }
             self.content = content
+            #if DEBUG
+            MapFrameProbe.shared.noteFetch()
+            #endif
             // What the reader is told about their search is a fact about the answer that just
             // arrived, not about the query — "1,458 here, 151 drawn" is only knowable now. A search
             // whose species did not change still re-reads this on every pan, because panning is
