@@ -7,23 +7,18 @@
 //  ══════════════════════════════════════════════════════════════════════════════════════════
 //  `MapCanvas` (C18) was built with the basemap as a replaceable parameter and `StylizedBasemap`
 //  — the mock's abstract SF grid — as the placeholder. This is the real one: MapKit
-//  (ARCHITECTURE §1), through the iOS 17 SwiftUI `Map`.
+//  (ARCHITECTURE §1).
 //
-//  Two things about the composition are deliberate.
+//  **What is left in this file is the seam and the numbers.** It was the whole basemap — a SwiftUI
+//  `Map` with an `Annotation` per marker — until a screenful of pins sitting perfectly still was
+//  measured at under 2 fps on a phone-shaped device. The drawing moved to `MapAnnotationLayer`, an
+//  `MKMapView` behind a `UIViewRepresentable` with recycled marker views, and that file carries the
+//  measurements and the reasoning. This type stays because it is the name `MapCanvas`'s `basemap:`
+//  parameter is given and the shape screen 01 asks a basemap for; swapping what draws should not
+//  ripple into the screen that composes it, which is what the seam was for.
 //
-//  **The pins moved into the basemap layer.** C18's header imagined pins staying in the screen-space
-//  overlay with "real screen positions" computed for them. They are `Annotation`s instead, because
-//  MapKit's own annotation layer is the only thing that tracks a pin to its coordinate through an
-//  inertial pan without a frame of lag. Nothing about the pins *themselves* changed: they are the
-//  same `MapPin` (C19) views, in the same tokens. `MapCanvas`'s overlay still carries the search
-//  bar, the chips, the FAB and the card, which is the half of it that was always ours.
-//
-//  **The parchment wash is a map overlay, not a view overlay.** The mock's ground is `#E9E5D4`
-//  paper. A SwiftUI `.overlay` would tint the pins too and break the status colours; a world-scale
-//  `MapPolygon` sits above the basemap but below every annotation, which is the layer the wash
-//  wants. It is a *tint*, though, not a repaint: it opened at 0.42 and took the street names, the
-//  road markings and the building edges with it, so it is now 0.18 in light and 0.35 in dark and
-//  the map underneath is recognisably MapKit. See `parchmentWash` for what was measured.
+//  `MapLayout`, below, has not moved: the opening camera, the wash opacities, the card and FAB
+//  geometry and the cluster-tap zoom are screen 01's numbers rather than any one renderer's.
 //
 
 import MapKit
@@ -43,145 +38,26 @@ struct MapKitBasemap: View {
     var onSelectPin: (TreePin) -> Void
     var onSelectCluster: (TreeCluster) -> Void
 
-    @Environment(\.colorScheme) private var colorScheme
-
-    /// The one pin the card is open on, if it is still in the fetched set.
-    ///
-    /// It can stop being: the level-of-detail grid picks one tree per cell and the winner changes
-    /// with the zoom, so zooming out with a card open can thin the selected pin away. When that
-    /// happens the card stays — it is showing a tree that is still there — and the map simply has no
-    /// enlarged pin to draw, which is the same thing that happens when the camera leaves it behind.
-    private var selectedPin: TreePin? {
-        guard let selectedPinID else { return nil }
-        return pins.first { $0.id == selectedPinID }
-    }
-
-    /// Everything else. Returns `pins` itself — same array, same identity, no copy — whenever nothing
-    /// is selected, which is every frame of a pan and a pinch.
-    private var unselectedPins: [TreePin] {
-        guard let selectedPinID else { return pins }
-        return pins.filter { $0.id != selectedPinID }
-    }
-
     var body: some View {
-        // Every pass through here rebuilds the whole annotation layer, so the count of passes *is*
-        // the work this screen does. `MapProbeOverlay` draws it next to the frame times, and off
-        // unless `CYPRESS_MAP_PROBE=1`; see `MapFrameProbe`.
+        // Every pass through here used to rebuild the whole annotation layer. It no longer does —
+        // it constructs one `UIViewRepresentable` value, and `MapAnnotationLayer` diffs. The count
+        // is still worth having on screen, because it is the difference between "the map is being
+        // asked to update" and "the map is doing work", and telling those two apart from the
+        // outside is what the readout is for. Off unless `CYPRESS_MAP_PROBE=1`; see `MapFrameProbe`.
         #if DEBUG
         let _ = MapFrameProbe.shared.noteBody()
         #endif
-        GeometryReader { proxy in
-            Map(position: $position, interactionModes: [.pan, .zoom, .rotate]) {
-                parchmentWash
-
-                ForEach(clusters) { cluster in
-                    Annotation("", coordinate: cluster.coordinate.clLocationCoordinate, anchor: .center) {
-                        // A cluster badge is a count of *trees*, not of anything a person did —
-                        // D1's ban is on counting user actions (ARCHITECTURE §5.1).
-                        MapPin(.cluster(count: cluster.count, large: cluster.count >= 10)) {
-                            onSelectCluster(cluster)
-                        }
-                    }
-                    .annotationTitles(.hidden)
-                }
-
-                // **The unselected pins, and nothing about the selection.** The scale and its
-                // animation used to live in here, on every pin, keyed on `selectedPinID` — so one tap
-                // opened an animation transaction on the whole layer and every pin in it re-evaluated
-                // to arrive at scale 1 (ERRATA E130). The selected pin is one annotation and is
-                // hoisted out below; this branch is now invariant under selection, which is what lets
-                // MapKit leave it alone while the card opens.
-                //
-                // `unselectedPins` is the same array by identity when nothing is selected, which is
-                // the whole of a pan and a pinch.
-                ForEach(unselectedPins) { pin in
-                    Annotation("", coordinate: pin.coordinate.clLocationCoordinate, anchor: .center) {
-                        MapPin(MapPinKind.kind(for: pin)) { onSelectPin(pin) }
-                            // C19 has no pin for a vacant site, so one is drawn as `removed` — a
-                            // grey dot with a bar struck through it, whose own label reads "Removed
-                            // tree, memorial". That is a sentence about a tree that was, said of
-                            // 12,518 basins that never held one. Inventing a drawn pin is a design
-                            // decision and was not taken (ERRATA E107); the label is the half of the
-                            // distinction that could be made honestly, and it wins by being applied
-                            // outside the component's own.
-                            .accessibilityLabel(MapPinKind.accessibilityLabel(for: pin))
-                    }
-                    .annotationTitles(.hidden)
-                }
-
-                if let selected = selectedPin {
-                    Annotation("", coordinate: selected.coordinate.clLocationCoordinate, anchor: .center) {
-                        MapPin(MapPinKind.kind(for: selected)) { onSelectPin(selected) }
-                            .accessibilityLabel(MapPinKind.accessibilityLabel(for: selected))
-                            .scaleEffect(MapLayout.selectedPinScale)
-                            .cypressAnimation(CypressMotion.selection, value: selected.id)
-                    }
-                    .annotationTitles(.hidden)
-                }
-
-                if let userCoordinate {
-                    Annotation("", coordinate: userCoordinate.clLocationCoordinate, anchor: .center) {
-                        MapPin(.gps)
-                    }
-                    .annotationTitles(.hidden)
-                }
-            }
-            // "the city reads as street geometry rather than a busy consumer map": no POI pins, no
-            // traffic, no 3-D. What is left is the street network and the water, which is what the
-            // mock draws.
-            .mapStyle(.standard(elevation: .flat, pointsOfInterest: .excludingAll, showsTraffic: false))
-            .mapControls {
-                // The mock has no zoom, compass or scale control. SCREENS.md 01 lists zoom controls
-                // under **NOT SPECIFIED**, so none are added.
-            }
-            // The region is only needed when a cluster is tapped, and a cluster cannot be tapped
-            // mid-gesture — so it is read once the camera settles rather than sixty times a second.
-            .onMapCameraChange(frequency: .onEnd) { context in
-                region = context.region
-            }
-            .onMapCameraChange(frequency: .continuous) { context in
-                onCameraChange(
-                    BoundingBox(context.region),
-                    MapZoom.level(
-                        longitudeDelta: context.region.span.longitudeDelta,
-                        viewWidth: proxy.size.width
-                    )
-                )
-            }
-        }
-    }
-
-    /// The wash. `surfaceMapPaper` in light (`#E9E5D4`), `Dark.bgMap` in dark (`#141E16`) — D1's
-    /// "forest-floor greens instead of inverted gray" comes from tinting the ground green rather
-    /// than from MapKit's own dark mode, which is a cool navy-gray.
-    ///
-    /// **The alpha is the only lever, and it is set by eye, not by fidelity to `#E9E5D4`.** Two
-    /// things were measured on device and both matter:
-    ///
-    /// - `.mapOverlayLevel` makes no difference to a SwiftUI `MapPolygon`. `.aboveLabels` and
-    ///   `.aboveRoads` render identically (0.7 % of pixels differ between two screenshots of the
-    ///   same camera, which is annotation jitter). Labels are composited above map content either
-    ///   way, so moving the wash down the stack does not buy back a single street name. It is left
-    ///   at `.aboveRoads` because that is what it means, not because it changes the picture.
-    /// - MapKit's light basemap is *already* warm — its land is around `#F2F0EA`. The wash only has
-    ///   to finish the job. At the 0.42 it opened at, `POPLAR ST` was a ghost and the yellow centre
-    ///   lines had gone; at 0.18 the paper reads and every road casing, building edge and street
-    ///   name survives. Dark is the opposite problem: MapKit dark is genuinely blue and needs more
-    ///   push, so it gets 0.35 — past that the street names start dimming out with it.
-    ///
-    /// A flat over-blend toward a near-black green cannot actually *remove* MapKit dark's blue, only
-    /// darken it. Getting the whole way to D1's forest floor needs a tinted basemap, not an overlay.
-    ///
-    /// `MapKit.` is load-bearing: the app has its own `MapContent` — the enum `mapContent(in:)`
-    /// returns — and an unqualified `some MapContent` resolves to that one.
-    private var parchmentWash: some MapKit.MapContent {
-        let isDark = colorScheme == .dark
-        return MapPolygon(coordinates: MapLayout.washRing)
-            .foregroundStyle(
-                (isDark ? CypressColor.Dark.bgMap : CypressColor.surfaceMapPaper)
-                    .opacity(isDark ? MapLayout.washOpacityDark : MapLayout.washOpacityLight)
-            )
-            .mapOverlayLevel(level: .aboveRoads)
+        MapAnnotationLayer(
+            position: $position,
+            region: $region,
+            clusters: clusters,
+            pins: pins,
+            userCoordinate: userCoordinate,
+            selectedPinID: selectedPinID,
+            onCameraChange: onCameraChange,
+            onSelectPin: onSelectPin,
+            onSelectCluster: onSelectCluster
+        )
     }
 }
 
