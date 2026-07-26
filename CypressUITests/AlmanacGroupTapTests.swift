@@ -143,15 +143,21 @@ final class AlmanacGroupTapTests: XCTestCase {
     /// anchor in this file makes.
     private static let locationPrompt = "See your neighbourhood"
 
-    /// `MapRecentreCopy.label`, and the one value of it that can only be true with a fix.
+    /// Screen 12's `§3` label, which is the almanac saying it has a neighbourhood.
     ///
-    /// `Not centred` is ambiguous by design — `MapRecentre.engagement` draws both "no fix yet" and
-    /// "have one, camera is elsewhere" as `away`, because pressing is worth doing in both. `Centred on
-    /// you` is not: it is reached only through `camera.isCentred(on: coordinate)`, so there is a
-    /// coordinate. Screen 01 opens on the reader when it has one, so this is what the map says about
-    /// itself a second after launch, in the app's own words and with no pin or basemap involved.
-    private static let recentreControl = "Centre the map on you"
-    private static let hasAFix = "Centred on you"
+    /// A9 — "species mix always renders from city data" — is what makes it a sound witness: §2, §4 and
+    /// the vacant block can each be absent on their own merits, and this one cannot. Matched by prefix
+    /// because it carries a count (`Who lives here · 135 species`).
+    private static let neighbourhoodBlock = "Who lives here"
+
+    /// How many individual tree pins screen 01 has drawn — the same proxy, in the same words, as
+    /// `MapSearchUITests.cityTreePins`, including its warning that this must match `label` rather than
+    /// `identifier` and must be a prefix rather than an equality.
+    private func cityTreePins(_ app: XCUIApplication) -> Int {
+        app.buttons
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "City tree"))
+            .count
+    }
 
     /// Gets to a populated almanac the way a person does, and **skips** rather than fails when there is
     /// no fix for it to be populated from.
@@ -165,9 +171,20 @@ final class AlmanacGroupTapTests: XCTestCase {
     /// *correctly* absent. That is an environment fact and not a defect, so it is an `XCTSkip` — the
     /// judgement `MapSearchUITests.requireAMapWithPins` already made for the same missing fix, in the
     /// same words: a skip says "not checked here", which is true, where a failure says "broken", which
-    /// is not. The skip is decided on the map, before the almanac is opened at all, because that is
-    /// where the app states whether it has a fix; screen 12 cannot be asked, since a screen with no
-    /// neighbourhood and a screen that could not be told where it is look identical on it.
+    /// is not. The first skip is decided on the map, before the almanac is opened at all, because
+    /// arriving on screen 12 before there is a fix is what produces the blank screen described on
+    /// `launch()` — and a blank screen cannot be asked anything.
+    ///
+    /// **The map is asked in pins, not in words, and the obvious alternative was measured and
+    /// rejected.** `MapRecentreCopy.value` looked like the better witness — `Centred on you` is
+    /// reachable only through `camera.isCentred(on: coordinate)` — and on a simulator with a fix set
+    /// over Van Ness the control reads `Not centred` for the whole run, with the reader's blue dot
+    /// sitting in the middle of the screen. `region` is the binding the check reads and the
+    /// programmatic fly does not write it back, so the control is describing a camera the map left
+    /// some time ago. Pins are what `MapSearchUITests.requireAMapWithPins` already uses for this, and
+    /// they are honest here for a reason that file does not state: with no fix the camera opens at
+    /// `MapLayout.defaultCentre`, in the middle of Dolores Park, where — as `defaultSpanMetres` says
+    /// out loud — a 120 m view holds no inventoried street tree at all.
     ///
     /// **The second wait is a race, and deliberately not a symmetric one.** What it used to be was
     /// `waitForExistence(timeout: 3)` on the prompt, which is a fixed wait on an *absence*: too long
@@ -187,17 +204,11 @@ final class AlmanacGroupTapTests: XCTestCase {
             allow.first { $0.exists }?.tap()
         }
 
-        let recentre = app.buttons[Self.recentreControl]
-        XCTAssertTrue(
-            recentre.waitForExistence(timeout: 30),
-            "screen 01 never drew “\(Self.recentreControl)”, so this test cannot tell whether there is "
-                + "a fix"
-        )
-        guard wait(timeout: 25, for: { recentre.value as? String == Self.hasAFix }) else {
+        guard wait(timeout: 30, for: { self.cityTreePins(app) > 0 }) else {
             throw XCTSkip(
-                "screen 01 says “\(recentre.value as? String ?? "—")”, so there is no fix and screen "
-                    + "12 has no neighbourhood to count anything in — this needs a simulated GPS fix "
-                    + "over San Francisco: xcrun simctl location <udid> set 37.78485,-122.4215"
+                "the map drew no individual pins at launch, so there is no fix and screen 12 has no "
+                    + "neighbourhood to count anything in — this needs a simulated GPS fix over San "
+                    + "Francisco: xcrun simctl location <udid> set 37.78485,-122.4215"
             )
         }
 
@@ -223,8 +234,27 @@ final class AlmanacGroupTapTests: XCTestCase {
                     + "xcrun simctl location <udid> set 37.78485,-122.4215"
             )
         }
-        // Neither the content nor the prompt: the almanac claims a neighbourhood and is missing the
-        // row anyway, which is a defect. Left to the caller's own assertion, which names the row.
+
+        // Neither the row nor the prompt, and the three states that produces are not one report.
+        //
+        // With §3 on screen the almanac has a neighbourhood and is simply missing this row, which is
+        // the defect these tests are for; that is left to the caller's own assertion, which names the
+        // row. Without §3 the screen is *blank* — no blocks, no prompt, no failure sentence — which is
+        // the state the deep-link entrance produced every time and the reason this test no longer uses
+        // it. Naming it here rather than reporting it as a missing row is the whole point of the
+        // exercise: the last thing this file should do is blame the almanac for it twice.
+        let hasNeighbourhood = app.staticTexts
+            .matching(NSPredicate(format: "label BEGINSWITH %@", Self.neighbourhoodBlock))
+            .firstMatch
+            .exists
+        if !hasNeighbourhood {
+            XCTFail(
+                "screen 12 drew neither its neighbourhood nor “\(Self.locationPrompt)”: a blank "
+                    + "almanac, which is what a coordinate arriving after `AlmanacModel` was built "
+                    + "leaves behind (E123's known limitation; ERRATA — see "
+                    + "docs/errata-pending/almanac-location.md)"
+            )
+        }
     }
 
     /// Waits for a condition, polling. Mirrors `MapSearchUITests.wait(timeout:for:)` — same reason,
