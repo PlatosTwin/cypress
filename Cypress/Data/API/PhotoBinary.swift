@@ -92,6 +92,74 @@ enum PhotoBinary {
         }
     }
 
+    /// The same rewrite, for bytes that have not been a file yet: the capture in memory goes to
+    /// `destination` with its sidecar already gone, and the camera's own bytes never exist at a path
+    /// anything else can read.
+    ///
+    /// **Why this exists at all, given `writeStrippingMetadata` above.** That method took a source
+    /// *file*, so the only way to use it was to write the capture down first and clean it afterwards
+    /// — which is what `LocalAPI.uploadPhoto` does, and it is fine there because the file it cleans
+    /// was staged by this app minutes earlier. It is not fine as the general answer, because a path
+    /// that stages the raw bytes and then forgets to clean them is indistinguishable from one that
+    /// cleans them until somebody reads the file, and that is precisely what happened to the
+    /// community add (ERRATA E148). Handing over `Data` removes the step that can be skipped.
+    ///
+    /// The raw bytes do touch the disk, because ImageIO reads containers from URLs and CFData sources
+    /// are not worth the second code path. They touch it in `NSTemporaryDirectory()`, under a name
+    /// nothing else knows, and they are removed before this returns — not in the staging directory,
+    /// which is backed up and which a killed process would leave a GPS-bearing orphan in.
+    ///
+    /// - Throws: `APIError.validationFailed` when the bytes are not a container ImageIO can rewrite.
+    ///   **Throwing is the point.** Both capture screens already treat a photo that cannot be written
+    ///   as no photo — "that photo could not be saved to this phone", the CTA stays disabled — so the
+    ///   refusal lands in a designed, retakeable state, at the one moment when the original is still
+    ///   in the camera roll and no record has been written. Falling back to the raw bytes here would
+    ///   be the leak with a comment on it. (`uploadPhoto` reasons the other way, and says why: by
+    ///   then the staged file is the only copy and the row already exists.)
+    static func write(_ data: Data, strippingMetadataTo destination: URL) throws {
+        let scratch = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("cypress-strip-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: scratch) }
+
+        let incoming = scratch.appendingPathComponent("incoming")
+        let stripped = scratch.appendingPathComponent("stripped")
+        try data.write(to: incoming, options: .atomic)
+        try writeStrippingMetadata(from: incoming, to: stripped)
+
+        // A rename inside one volume, so the staged file is either absent or complete — the same
+        // promise `.atomic` was making, kept the same way. The previous file goes first, because a
+        // retake reuses the name.
+        if FileManager.default.fileExists(atPath: destination.path) {
+            try FileManager.default.removeItem(at: destination)
+        }
+        try FileManager.default.moveItem(at: stripped, to: destination)
+    }
+
+    /// Cleans a file that is about to become a record, when it may already have been cleaned.
+    ///
+    /// The backstop for `photos.local_path`, called from the `Data` boundary that writes that column
+    /// rather than from the screen that filled it in. The staging path strips at the shutter, so on
+    /// the shipping path this reads a header, finds nothing to do, and returns — the cost of the
+    /// guarantee is one metadata read per community add.
+    ///
+    /// It repairs rather than refuses, and that asymmetry with `write(_:strippingMetadataTo:)` is
+    /// deliberate: by the time a path reaches here the contributor is pressing "Add this tree" with
+    /// a photograph already taken, and a refusal they can only answer by retaking — from a file that
+    /// would be refused again — is a flow with no way out of it. Repairing loses nothing: the pixels
+    /// are copied, not re-encoded.
+    ///
+    /// - Throws: `APIError.validationFailed` only when the file both carries identifying metadata and
+    ///   cannot be rewritten. Nothing has produced that combination — reading a GPS dictionary out of
+    ///   a container means ImageIO knows the container — and if something does, refusing the record is
+    ///   the correct end of it.
+    static func stripMetadataInPlace(atPath path: String) throws {
+        guard carriesIdentifyingMetadata(atPath: path) else { return }
+        let file = URL(fileURLWithPath: path)
+        let data = try Data(contentsOf: file)
+        try write(data, strippingMetadataTo: file)
+    }
+
     /// One container-level rewrite, source to destination, under the given ImageIO options.
     private static func copyContainer(from source: URL, to destination: URL, options: [CFString: Any]) throws {
         guard let imageSource = CGImageSourceCreateWithURL(source as CFURL, nil),

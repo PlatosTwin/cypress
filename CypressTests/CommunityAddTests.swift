@@ -25,8 +25,13 @@ struct CommunityAddTests {
     /// A staged photo file, which is what `addTree` requires and what `VisitPhotoStaging` writes on
     /// the shipping path. A real file on disk, because "a photo that cannot be written is not a
     /// photo" is the rule the model keeps and a fictional path would not exercise it.
+    ///
+    /// Two bare JPEG markers used to do, because staging only wrote the bytes down. It rewrites the
+    /// container to drop the metadata now (E148) and refuses bytes that are not one — that refusal is
+    /// the behaviour E148 exists for — so the fixture is the same real photograph the model is given.
+    @MainActor
     private static func stagedPhoto() throws -> String {
-        try VisitPhotoStaging.write(Data([0xFF, 0xD8, 0xFF, 0xD9]), for: UUID())
+        try VisitPhotoStaging.write(try jpeg(), for: UUID())
     }
 
     @MainActor
