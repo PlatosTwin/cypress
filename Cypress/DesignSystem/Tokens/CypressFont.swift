@@ -312,18 +312,32 @@ enum CypressFont {
         print("──────────────────────────────────────────────────────────────────")
     }
 
-    /// Registers every `.ttf` shipped in the bundle with Core Text.
+    /// Registers every `.ttf` shipped in the bundle that the process cannot already see.
     ///
-    /// Idempotent and safe to call alongside `UIAppFonts` — a face that is already registered
-    /// simply reports `alreadyRegistered` and is ignored. This exists so the design system does
-    /// not depend on an Info.plist edit (see ARCHITECTURE §2: the project file is not hand-edited).
-    /// Call once from the composition root in `App/`. Returns the number of faces *newly*
-    /// registered, so a second call legitimately returns 0 — it is not a count of faces available.
+    /// This exists so the design system does not depend on an Info.plist edit (see ARCHITECTURE §2:
+    /// the project file is not hand-edited). `Info.plist` *does* currently list all twelve faces
+    /// under `UIAppFonts`, so in the shipping app every one of them is already registered by the time
+    /// this runs, and this is a safety net rather than the mechanism.
+    ///
+    /// ── Why it asks before it registers ───────────────────────────────────────────────────────
+    /// Registering an already-registered file is harmless — `CTFontManagerRegisterFontsForURL`
+    /// returns false and the error is dropped — but it is not *silent*: Core Text writes
+    /// `GSFont: file already registered` to the console, once per face, on every launch. Twelve
+    /// lines of noise in a log somebody is reading to find real problems, and a log nobody trusts is
+    /// a log nobody reads. So the file's PostScript name is read first and the registration is
+    /// skipped when that face already resolves.
+    ///
+    /// The check is deliberately fail-open: if the name cannot be read the font is registered anyway,
+    /// because a missing face is a much worse defect than a console line. `Font.custom` falls back to
+    /// the system font *silently*, so a face that failed to load looks like a design choice.
+    ///
+    /// Call once from the composition root in `App/`. Returns the number of faces *newly* registered,
+    /// so a second call legitimately returns 0 — and, now, so does the first one in the shipping app.
+    /// It is not a count of faces available; `BundleContractTests` is what checks that.
     @discardableResult
     static func registerBundledFonts(in bundle: Bundle = .main) -> Int {
-        let urls = bundle.urls(forResourcesWithExtension: "ttf", subdirectory: nil) ?? []
         var registered = 0
-        for url in urls {
+        for url in unregisteredBundledFonts(in: bundle) {
             var error: Unmanaged<CFError>?
             if CTFontManagerRegisterFontsForURL(url as CFURL, .process, &error) {
                 registered += 1
@@ -332,6 +346,34 @@ enum CypressFont {
             }
         }
         return registered
+    }
+
+    /// The bundled faces this process cannot already see — exactly the files
+    /// `registerBundledFonts` will hand to Core Text.
+    ///
+    /// **Separated out because the return value of `registerBundledFonts` cannot tell the two
+    /// worlds apart.** It counts faces *newly* registered, and that was 0 both before this
+    /// skip existed and after: before, because every call failed with `alreadyRegistered`; after,
+    /// because every call is skipped. A test asserting `== 0` would have passed against the version
+    /// that printed twelve `GSFont: file already registered` lines on every launch. This is the
+    /// value that actually distinguishes them — empty means Core Text is never asked, which is the
+    /// only thing that makes the console quiet.
+    static func unregisteredBundledFonts(in bundle: Bundle = .main) -> [URL] {
+        (bundle.urls(forResourcesWithExtension: "ttf", subdirectory: nil) ?? [])
+            .filter { !isAlreadyRegistered($0) }
+    }
+
+    /// Whether the face in this file already resolves by name.
+    ///
+    /// Fail-open by design: an unreadable file returns `false` so the caller still tries to register
+    /// it. See `registerBundledFonts`.
+    private static func isAlreadyRegistered(_ url: URL) -> Bool {
+        guard
+            let provider = CGDataProvider(url: url as CFURL),
+            let font = CGFont(provider),
+            let postScriptName = font.postScriptName as String?
+        else { return false }
+        return UIFont(name: postScriptName, size: 12) != nil
     }
 }
 
