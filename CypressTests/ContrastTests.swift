@@ -140,6 +140,168 @@ struct ContrastTests {
     @Test("the amber family clears AA in dark")
     func amberInDark() { assertAll(Self.amber, Self.dark, "dark") }
 
+    // MARK: - The four species slots, on every ground screen 01 draws
+
+    /// **The grounds a map pin actually sits on, which is not one colour.**
+    ///
+    /// `body` above measures the city pin and the amber pin against `surface.map.paper` and stops
+    /// there, and that is the easiest of the seven: the paper is the lightest thing on the map in
+    /// light and the darkest in dark, so a mark measured only against it is measured against its best
+    /// case. A pin over Golden Gate Park, over a street band, over the ocean or on the beach is on
+    /// something else entirely — and 01's own pins spend most of their time on the street band,
+    /// because that is where street trees are.
+    ///
+    /// So the four species slots (ERRATA E149) are measured against all seven, in both appearances:
+    /// 56 pairs. The floor is WCAG 1.4.11's 3:1 — a pin is a non-text mark — and the binding grounds
+    /// turned out to be the **water** in light and the **park inset ring** in dark, with the park
+    /// block next in both. Neither is a ground anybody would have thought to check, and the paper —
+    /// the only one the suite measured a pin against before — is the easiest of the seven.
+    ///
+    /// These are the app's own map tokens rather than MapKit's tiles, which is a stand-in and is
+    /// stated as one: the real ground is a MapKit basemap under `MapLayout.washOpacityLight`/`Dark`.
+    /// The tokens are the palette that basemap was tuned toward, they span the same range from paper
+    /// to park to water, and the honest other half of this check is looking at a screenshot — which
+    /// E149 did, on a booted simulator, in both appearances.
+    static let mapGrounds: [(name: String, color: Color)] = [
+        ("map paper", CypressColor.surfaceMapPaper),
+        ("map grid", CypressColor.surfaceMapGrid),
+        ("street band", CypressColor.surfaceMapStreetBand),
+        ("park block", CypressColor.mapPark),
+        ("park inset ring", CypressColor.mapParkRing),
+        ("ocean", CypressColor.mapOceanStart),
+        ("beach", CypressColor.mapBeach),
+    ]
+
+    /// The four slots, plus the two marks that are drawn *on* them: the 3 pt ring that separates a pin
+    /// from the ground, and the glyph inside it that carries the grouping without hue (RULINGS R8).
+    static let speciesSlots: [(name: String, fill: Color)] = [
+        ("slot A · plum", CypressColor.pinSpeciesA),
+        ("slot B · lagoon", CypressColor.pinSpeciesB),
+        ("slot C · iris", CypressColor.pinSpeciesC),
+        ("slot D · cherry", CypressColor.pinSpeciesD),
+    ]
+
+    static let speciesOnTheMap: [Pair] = speciesSlots.flatMap { slot in
+        mapGrounds.map { ground in
+            Pair(
+                what: "01 · \(slot.name) pin on the \(ground.name)",
+                foreground: slot.fill,
+                background: ground.color,
+                floor: 3.0
+            )
+        }
+    }
+
+    /// The ring and the glyph both ride on the fill, so they are one pair each: `pinRingStroke` is
+    /// white in light and `#0E1712` in dark, and `MapSpeciesGlyph` is drawn in the same token.
+    static let speciesMarksOnTheirFills: [Pair] = speciesSlots.map { slot in
+        Pair(
+            what: "01 · the ring and glyph on the \(slot.name) pin",
+            foreground: CypressColor.pinRingStroke,
+            background: slot.fill,
+            floor: 3.0
+        )
+    }
+
+    @Test("every species pin clears AA on every map ground, in light")
+    func speciesPinsInLight() {
+        assertAll(Self.speciesOnTheMap + Self.speciesMarksOnTheirFills, Self.light, "light")
+    }
+
+    @Test("every species pin clears AA on every map ground, after dark")
+    func speciesPinsInDark() {
+        assertAll(Self.speciesOnTheMap + Self.speciesMarksOnTheirFills, Self.dark, "dark")
+    }
+
+    /// **The residual class must not be one of the four**, because Canopy green means "a street tree
+    /// whose species is not being asserted" and the four slots mean "this species". A palette that
+    /// drifted a slot toward the house green would turn the residual into a fifth group and make the
+    /// encoding's one claim — same colour, same species — false.
+    ///
+    /// **Measured in OKLab ΔE, not in WCAG contrast**, and the distinction is the point. WCAG
+    /// contrast is a luminance ratio, so two colours of the same lightness and opposite hue read as
+    /// 1.0:1 — it is the right tool for "can I see this mark against that ground" and the wrong one
+    /// for "can I tell these two marks apart". Every separation claim the palette makes is a ΔE, and
+    /// the floor is 0.09: four and a half times the ~0.02 just-noticeable difference, and just under
+    /// the 0.099 the palette search actually achieved. See the note above `CypressColor.pinSpeciesA`.
+    @Test("no species slot can be read as the plain city pin, the amber pin, a badge or the GPS dot")
+    func slotsStayOutOfTheReservedFills() {
+        let reserved: [(String, Color)] = [
+            ("the plain city pin (the residual class)", CypressColor.pinFill),
+            ("the amber pin (\"this tree needs something\")", CypressColor.accentAmber),
+            ("a cluster badge", CypressColor.ctaFill),
+            ("the reader's own GPS dot", CypressColor.gpsDot),
+            ("a memorial's grey", CypressColor.pinRemovedFill),
+        ]
+        for (appearance, traits) in [("light", Self.light), ("dark", Self.dark)] {
+            for slot in Self.speciesSlots {
+                for (what, colour) in reserved {
+                    let separation = Self.deltaE(slot.fill, colour, traits)
+                    #expect(
+                        separation >= 0.09,
+                        """
+                        \(slot.name) is ΔE \(String(format: "%.3f", separation)) from \(what) in \
+                        \(appearance). A species colour that can be taken for one of the map's \
+                        existing fills lets a reader read a wrong answer off the map, which is the one \
+                        thing ERRATA E149's palette search was constrained to prevent.
+                        """
+                    )
+                }
+            }
+        }
+    }
+
+    /// …and the four are that far apart from **each other**, which is the claim "same colour, same
+    /// species" rests on. A pair below the floor would mean two species a reader merges.
+    @Test("the four species slots are pairwise distinguishable in both appearances")
+    func slotsAreDistinguishableFromEachOther() {
+        for (appearance, traits) in [("light", Self.light), ("dark", Self.dark)] {
+            for (first, second) in Self.pairs(Self.speciesSlots) {
+                let separation = Self.deltaE(first.fill, second.fill, traits)
+                #expect(
+                    separation >= 0.09,
+                    """
+                    \(first.name) and \(second.name) are ΔE \(String(format: "%.3f", separation)) apart \
+                    in \(appearance). Two slots a reader cannot tell apart are one colour with two \
+                    meanings, and the map would be asserting that two species are the same tree.
+                    """
+                )
+            }
+        }
+    }
+
+    private static func pairs<T>(_ items: [T]) -> [(T, T)] {
+        items.indices.dropLast().flatMap { i in
+            items.indices.dropFirst(i + 1).map { (items[i], items[$0]) }
+        }
+    }
+
+    /// Euclidean distance in OKLab — the space ERRATA E8's derivation and E149's palette search both
+    /// work in. Written out here for the same reason `contrast` is: the design system carries no
+    /// colour maths at runtime and does not need any.
+    static func deltaE(_ a: Color, _ b: Color, _ traits: UITraitCollection) -> Double {
+        func oklab(_ color: Color) -> (Double, Double, Double) {
+            var r: CGFloat = 0, g: CGFloat = 0, bl: CGFloat = 0, alpha: CGFloat = 0
+            UIColor(color).resolvedColor(with: traits).getRed(&r, green: &g, blue: &bl, alpha: &alpha)
+            func linear(_ c: CGFloat) -> Double {
+                let v = Double(c)
+                return v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)
+            }
+            let (lr, lg, lb) = (linear(r), linear(g), linear(bl))
+            let l = cbrt(0.4122214708 * lr + 0.5363325363 * lg + 0.0514459929 * lb)
+            let m = cbrt(0.2119034982 * lr + 0.6806995451 * lg + 0.1073969566 * lb)
+            let s = cbrt(0.0883024619 * lr + 0.2817188376 * lg + 0.6299787005 * lb)
+            return (
+                0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
+                1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
+                0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s
+            )
+        }
+        let (l1, a1, b1) = oklab(a)
+        let (l2, a2, b2) = oklab(b)
+        return ((l1 - l2) * (l1 - l2) + (a1 - a2) * (a1 - a2) + (b1 - b2) * (b1 - b2)).squareRoot()
+    }
+
     // MARK: - Everything else that is text on a surface
 
     /// The rest of the palette, pair by pair as the screens draw them. Each row is a place a

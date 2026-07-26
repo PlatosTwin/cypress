@@ -19,7 +19,24 @@ struct MapPin: View {
 
     enum Kind: Hashable {
         /// 18pt Canopy circle, `3px` ring, `shadow.pin`.
+        ///
+        /// **Also the residual class of the species colouring**, and that is load-bearing rather
+        /// than incidental: a city tree whose species did not win one of the four viewport slots
+        /// draws *exactly this*, unchanged, and Canopy green is deliberately absent from the slot
+        /// palette. Green therefore asserts "street tree" and never "the same tree as that one".
+        /// See `MapSpeciesSlot` and `MapSpeciesPalette`.
         case cityTree
+        /// A city tree whose species holds one of the four viewport colour slots (task #80).
+        ///
+        /// The geometry is `cityTree`'s to the point — 18 pt, a 3 pt ring, `shadow.pin` — because a
+        /// species colour must not also change what kind of thing the pin is. Only the fill moves,
+        /// and a glyph appears inside it so the grouping survives a reader who sees no hue at all
+        /// (RULINGS R8). `MapSpeciesSlot` carries both.
+        ///
+        /// It is a **separate case rather than an associated value on `cityTree`** on purpose. Every
+        /// `== .cityTree` in the app keeps meaning what it meant, the marker cache keeps a key it can
+        /// count, and "no slot" stays spellable as the pin that was already there.
+        case cityTreeSpecies(MapSpeciesSlot)
         /// 18pt Signal Amber circle — "this tree needs something".
         case needsCare
         /// 18pt pale circle with a `2.5px` **dashed** Canopy ring — the community layer, which
@@ -53,7 +70,7 @@ struct MapPin: View {
 
         var diameter: CGFloat {
             switch self {
-            case .cityTree, .needsCare, .community, .gps:
+            case .cityTree, .cityTreeSpecies, .needsCare, .community, .gps:
                 return CypressSpacing.Component.pinStandard
             case .removed, .vacantSite:
                 return CypressSpacing.Component.pinRemoved
@@ -71,6 +88,7 @@ struct MapPin: View {
         var fill: Color {
             switch self {
             case .cityTree: return CypressColor.pinFill
+            case let .cityTreeSpecies(slot): return slot.fill
             case .needsCare, .routeActive: return CypressColor.accentAmber
             case .community: return CypressColor.pinCommunityFill
             case .removed: return CypressColor.pinRemovedFill
@@ -85,7 +103,7 @@ struct MapPin: View {
         /// The white (dark: `#0E1712`) ring every pin but the route-done one carries.
         var ring: (color: Color, width: CGFloat, dashed: Bool)? {
             switch self {
-            case .cityTree, .needsCare, .removed, .cluster, .gps, .routeActive:
+            case .cityTree, .cityTreeSpecies, .needsCare, .removed, .cluster, .gps, .routeActive:
                 return (CypressColor.pinRingStroke, CypressSpacing.Component.pinRing, false)
             case .vacantSite:
                 // `borderDashedStrong` is the token the vacant-site screen and the empty photo well
@@ -101,7 +119,7 @@ struct MapPin: View {
 
         var shadow: CypressShadowStyle? {
             switch self {
-            case .cityTree, .needsCare: return CypressShadow.pin
+            case .cityTree, .cityTreeSpecies, .needsCare: return CypressShadow.pin
             case .removed, .vacantSite: return CypressShadow.pinMuted
             case .community: return CypressShadow.pinMutedStrong
             case .cluster: return CypressShadow.cluster
@@ -131,6 +149,10 @@ struct MapPin: View {
         var accessibilityLabel: String {
             switch self {
             case .cityTree: return "City tree"
+            // The slot is ordinal — "slot B" means nothing to a listener — so the words say what a
+            // sighted reader gets from the fill and the mark, and `MapPinKind.accessibilityLabel(for:)`
+            // replaces this with the species' own name whenever the map knows it.
+            case let .cityTreeSpecies(slot): return "City tree, marked \(slot.glyphName)"
             case .needsCare: return "Tree that needs something"
             case .community: return "Community-added tree"
             case .removed: return "Removed tree, memorial"
@@ -216,6 +238,16 @@ struct MapPin: View {
                             height: CypressSpacing.Component.pinRemovedBarHeight
                         )
                 }
+                .frame(width: kind.diameter)
+        case let .cityTreeSpecies(slot):
+            // `cityTree`'s circle with the slot's mark inside it. The mark is drawn *over* the fill
+            // and *under* nothing, inside the ring rather than through it, so the pin is still the
+            // pin C19 draws — a reader who cannot see the hue sees a dot, a triangle, a cross or a
+            // standing bar, and that is the whole of the redundant encoding (RULINGS R8).
+            Circle()
+                .fill(kind.fill)
+                .overlay { MapSpeciesGlyph(slot.glyph, diameter: kind.diameter) }
+                .overlay { ringOverlay(Circle()) }
                 .frame(width: kind.diameter)
         case .routeDone:
             Circle()

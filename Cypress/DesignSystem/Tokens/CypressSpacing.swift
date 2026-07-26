@@ -335,6 +335,32 @@ extension CypressSpacing {
         static let pinRemovedBarWidth: CGFloat = 8
         static let pinRemovedBarHeight: CGFloat = 2
 
+        // C19 · the species slot glyph (task #80, ERRATA E149)
+        //
+        // **Fractions of the pin, not points.** The same mark is drawn at 18 pt inside a pin and at
+        // `chipSpeciesSwatch` inside a legend chip, and a mark tuned in points for one is a smear on
+        // the other. `MapSpeciesGlyph` multiplies these by whatever diameter it is given.
+        //
+        // 0.40 of an 18 pt pin is 7.2 pt of mark inside the 12 pt the 3 pt ring leaves — the mark
+        // fills the dot without touching the ring, which is what keeps the ring reading as a ring.
+        static let pinSpeciesGlyphRatio: CGFloat = 0.40
+        /// Stroke of the cross and the standing bar — 0.105 of the pin is 1.9 pt at 18, which is the
+        /// thinnest line that survives `ImageRenderer` at 3× and still reads as a bar rather than a
+        /// hair.
+        static let pinSpeciesGlyphStrokeRatio: CGFloat = 0.105
+        /// The dot is drawn smaller than the glyph box it shares with the other three, because a
+        /// filled circle at the full extent reads as "the pin has a hole in it" rather than as a mark.
+        static let pinSpeciesDotRatio: CGFloat = 0.72
+        /// An equilateral triangle is shorter than it is wide; 0.88 keeps its optical centre on the
+        /// pin's centre instead of sitting a hair high the way a square-framed one does.
+        static let pinSpeciesTriangleRatio: CGFloat = 0.88
+        /// The legend chip's swatch — a pin, drawn small enough to sit inside a chip beside a name.
+        static let chipSpeciesSwatch: CGFloat = 14
+        /// Ring on the legend swatch, to the same 1:6 ratio the 18 pt pin's 3 pt ring keeps.
+        static let chipSpeciesSwatchRing: CGFloat = 2.3
+        /// Gap between a legend swatch and the name beside it.
+        static let chipSpeciesSwatchGap: CGFloat = 5
+
         // C20 · SearchBar
         /// `padding:12px 18px`, `HStack(spacing:10)`, icon 16×16 stroke 1.8, `top:68px`.
         static let searchPaddingV: CGFloat = 12
