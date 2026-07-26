@@ -386,8 +386,7 @@ struct PinSetDestinationTests {
         let corpus = try await SeedCorpus.current(store)
         #expect(
             !young.isEmpty == corpus.publishes("PlantDate"),
-            "the coverage read returned \(young.count) trees, and the source "
-                + "\(corpus.publishes("PlantDate") ? "does" : "does not") publish PlantDate"
+            "the coverage read returned \(young.count) trees, and the source \(corpus.publishes("PlantDate") ? "does" : "does not") publish PlantDate"
         )
         #expect(young.allSatisfy { $0.status == .alive || $0.status == .declining })
         // Inside San Francisco, so nothing arrived at 0, 0 — the failure a dropped column produces.

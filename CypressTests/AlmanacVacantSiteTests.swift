@@ -298,8 +298,7 @@ struct AlmanacVacantSiteTests {
         // non-nil is the control that makes the exclusion below mean something.
         #expect(
             (elder != nil) == hasPlantingDates,
-            "elder is \(elder == nil ? "nil" : "set") while the source "
-                + "\(hasPlantingDates ? "does" : "does not") publish PlantDate"
+            "elder is \(elder == nil ? "nil" : "set") while the source \(hasPlantingDates ? "does" : "does not") publish PlantDate"
         )
         #expect(elder.map { !vacantIDs.contains($0.treeID) } ?? !hasPlantingDates)
 
@@ -315,8 +314,7 @@ struct AlmanacVacantSiteTests {
         #expect(plantedTotal == standingWithDate)
         #expect(
             (plantedTotal > 0) == hasPlantingDates,
-            "the control: dated plantings are \(plantedTotal), and the source "
-                + "\(hasPlantingDates ? "does" : "does not") publish PlantDate"
+            "the control: dated plantings are \(plantedTotal), and the source \(hasPlantingDates ? "does" : "does not") publish PlantDate"
         )
 
         let young = try await store.queue.read { connection in
@@ -330,8 +328,7 @@ struct AlmanacVacantSiteTests {
         #expect(young.allSatisfy { !vacantIDs.contains($0.id) })
         #expect(
             !young.isEmpty == hasPlantingDates,
-            "the control: the coverage read returned \(young.count) trees, and the source "
-                + "\(hasPlantingDates ? "does" : "does not") publish PlantDate"
+            "the control: the coverage read returned \(young.count) trees, and the source \(hasPlantingDates ? "does" : "does not") publish PlantDate"
         )
     }
 

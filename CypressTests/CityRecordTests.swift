@@ -62,8 +62,7 @@ struct CityRecordTests {
                 if count == 0, let upstream = dataSFNames[column] {
                     #expect(
                         !corpus.publishes(upstream),
-                        "\(column) is empty, but \(corpus.source) does publish \(upstream) — "
-                            + "that is a lost column, not an absent one"
+                        "\(column) is empty, but \(corpus.source) does publish \(upstream): a lost column, not an absent one"
                     )
                 }
             }
