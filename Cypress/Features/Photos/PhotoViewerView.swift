@@ -10,7 +10,7 @@
 //  stops there. So the whole of this screen is designed here under ARCHITECTURE §8 rule 8, and this
 //  header is the reasoning rather than a stray comment on a view.
 //
-//  ── The defect it closes ─────────────────────────────────────────────────────────────────
+//  ── The defect it closes (ERRATA E141) ───────────────────────────────────────────────────
 //  Reported from the field: *"clicking on photo from tree page should show full view, current is
 //  horizontal which cuts off photos taken in vertical orientation."*
 //

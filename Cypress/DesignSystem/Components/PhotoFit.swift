@@ -5,7 +5,7 @@
 //  One photograph, whole, at its own shape, inside the box it is given — and, like `PhotoFill`
 //  beside it, **never reporting a size larger than that box**.
 //
-//  ── NOT SPECIFIED ────────────────────────────────────────────────────────────────────────
+//  ── NOT SPECIFIED (ERRATA E141) ──────────────────────────────────────────────────────────
 //  SCREENS.md has no component that shows an uncropped photograph, because until now no screen did.
 //  Every photograph in the app went through `PhotoFill` into a fixed frame. That is right for a hero
 //  and right for a row in a browser — a list whose rows change height is a list nobody can scan —
