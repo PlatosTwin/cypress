@@ -80,8 +80,8 @@ public enum VisitGates {
             into: &failures
         )
         expect(
-            item.photos == [draft.photo!],
-            "the photo binary and its shot type must travel with the row, was \(item.photos)",
+            item.photos == draft.photos,
+            "the photo binaries and their shot types must travel with the row, was \(item.photos)",
             into: &failures
         )
         expect(
@@ -103,8 +103,8 @@ public enum VisitGates {
             clientUUID: visit.clientUUID,
             treeID: treeID,
             note: visit.note ?? "",
-            photoPath: draft.photoPath!,
-            shotType: draft.photo!.shotType,
+            photoPath: draft.photos[0].path,
+            shotType: draft.photos[0].shotType,
             gpsAccuracyM: visit.gpsAccuracyM ?? -1
         )
         try JSONEncoder().encode(manifest).write(to: Manifest.url(besides: databaseURL), options: .atomic)
@@ -491,7 +491,7 @@ public enum VisitGates {
             gpsAccuracyM: 9,
             // A trunk shot, because the bug this gate now guards was that every shot arrived
             // labelled `full_tree`, and the default would have passed either way.
-            photo: OutboxPhoto(path: photo.path, shotType: .trunk),
+            photos: [OutboxPhoto(path: photo.path, shotType: .trunk)],
             capturedAt: Date(timeIntervalSince1970: 1_800_000_000)
         )
     }

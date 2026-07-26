@@ -30,12 +30,23 @@ struct VisitDraft {
     var phenologyTags: [PhenologyTag]
     /// D6: "Store per-contribution GPS accuracy." Nil only when there was no fix at all.
     var gpsAccuracyM: Double?
-    /// The photo the visit is about, and the framing chip it was taken under. A visit without one
-    /// cannot be saved — "Log visit" is disabled until a photo is snapped (PROTOTYPE-FLOW §1.6.1).
+    /// The photographs the visit is about, each with the framing chip it was taken under, in the order
+    /// they were taken. A visit without any cannot be saved — "Log visit" is disabled until a photo is
+    /// snapped (PROTOTYPE-FLOW §1.6.1) — and it may now hold up to one per framing.
     ///
-    /// Path and shot type are one value because they are written together and read together: the
+    /// ── A list, because one camera session takes three (ERRATA E152) ──────────────────────────
+    /// This was a single `OutboxPhoto?`, so switching the chip and pressing the shutter again replaced
+    /// the photograph that was there. `OutboxItem.photos` has been `[OutboxPhoto]` since it was
+    /// written, and `outbox.enqueue(_:photos:)` has always taken a list; the draft was the narrow part
+    /// of a pipe that was wide at both ends.
+    ///
+    /// **At most one per framing**, enforced by `stage(_:)` rather than by convention, because that is
+    /// the same invariant the staged filename now carries: a second full-tree shot is a *retake* of the
+    /// full-tree shot, writes to the same path, and must not become a second row pointing at one file.
+    ///
+    /// Path and shot type stay one value because they are written together and read together: the
     /// upload records `photos.shot_type` from whatever it is handed, and that record is append-only.
-    var photo: OutboxPhoto?
+    private(set) var photos: [OutboxPhoto]
     var capturedAt: Date
 
     init(
@@ -44,7 +55,7 @@ struct VisitDraft {
         note: String? = nil,
         phenologyTags: [PhenologyTag] = [],
         gpsAccuracyM: Double? = nil,
-        photo: OutboxPhoto? = nil,
+        photos: [OutboxPhoto] = [],
         capturedAt: Date = Date()
     ) {
         self.visitID = visitID
@@ -52,12 +63,38 @@ struct VisitDraft {
         self.note = note
         self.phenologyTags = phenologyTags
         self.gpsAccuracyM = gpsAccuracyM
-        self.photo = photo
+        self.photos = []
         self.capturedAt = capturedAt
+        // Through the same door the shutter uses, so a draft built in a test or a preview cannot hold
+        // two photographs of one framing when the app cannot.
+        for photo in photos { stage(photo) }
     }
 
-    var photoPath: String? { photo?.path }
-    var hasPhoto: Bool { photo != nil }
+    /// Records a photograph, replacing any earlier one of the same framing.
+    ///
+    /// Replacing **in place** rather than appending and letting the last win: the order of this list is
+    /// the order the photographs were taken, it is what the outbox row carries, and a retake of the
+    /// trunk is not a later event than the leaf shot that followed it.
+    mutating func stage(_ photo: OutboxPhoto) {
+        if let index = photos.firstIndex(where: { $0.shotType == photo.shotType }) {
+            photos[index] = photo
+        } else {
+            photos.append(photo)
+        }
+    }
+
+    /// Forgets the photograph of one framing — the shutter's retake, before a replacement exists.
+    mutating func discardPhoto(shotType: ShotType) {
+        photos.removeAll { $0.shotType == shotType }
+    }
+
+    func photo(shotType: ShotType) -> OutboxPhoto? {
+        photos.first { $0.shotType == shotType }
+    }
+
+    var photoPaths: [String] { photos.map(\.path) }
+    var hasPhoto: Bool { !photos.isEmpty }
+    func hasPhoto(shotType: ShotType) -> Bool { photo(shotType: shotType) != nil }
 }
 
 /// What a save produced, for the confirmation screen.
@@ -111,7 +148,13 @@ enum VisitOutboxWriter {
         species: Species? = nil,
         now: Date = Date()
     ) async throws -> (visit: Visit, item: OutboxItem) {
-        guard let photo = draft.photo else { throw APIError.validationFailed }
+        // One photograph is enough and three is the most there can be. **Two of three is a complete
+        // contribution** (ERRATA E152): nothing in BUILD-PLAN or PROTOTYPE-FLOW asks for a set, the
+        // only stated gate is 1.6.1's "disabled until snapped", and a visit that refused to save
+        // because the contributor did not find a leaf worth photographing would lose the two
+        // photographs they did take. There is no draft state, so there is nothing left behind to nag
+        // about either — what was taken is what is queued.
+        guard !draft.photos.isEmpty else { throw APIError.validationFailed }
 
         // D5, enforced at the boundary as well as in the chip row: an evergreen never carries
         // `fall_color`, whatever the UI thought it was offering.
@@ -132,9 +175,11 @@ enum VisitOutboxWriter {
             updatedAt: now
         )
 
-        // The shot type rides along with the binary. It is the only carrier: the payload beside it
+        // The shot type rides along with each binary. It is the only carrier: the payload beside it
         // is a `Visit`, which has no photo columns, and the upload is what writes `photos.shot_type`.
-        let item = try await outbox.enqueue(.visit(visit), photos: [photo])
+        // One row, several binaries — the drain uploads each in turn and takes it out of the row by
+        // path, which is why the paths have to differ (`VisitPhotoStaging.url`).
+        let item = try await outbox.enqueue(.visit(visit), photos: draft.photos)
         return (visit, item)
     }
 }
@@ -171,19 +216,46 @@ enum VisitPhotoStaging {
         return directory
     }
 
-    /// One file per visit id, so a re-save of the same draft overwrites rather than accumulating.
-    static func url(for visitID: UUID) throws -> URL {
-        try directory().appendingPathComponent("\(visitID.uuidString).jpg")
+    /// One file per **visit and framing**, which is one file per photograph a visit can hold.
+    ///
+    /// ── Why the framing is in the name (ERRATA E152) ──────────────────────────────────────────
+    /// This was `\(visitID.uuidString).jpg`, and the sentence above it read "one file per visit id, so
+    /// a re-save of the same draft overwrites rather than accumulating". That was true and it was the
+    /// bug: one camera session can now take a full tree, a trunk and a leaf, and under the old name all
+    /// three were the same path — so `PhotoBinary.write` removed the destination and moved the third
+    /// capture on top of the first two, and a contributor who photographed a tree three ways kept the
+    /// last one. Silently: nothing reads a staged file between the shutter and the drain, so there was
+    /// no moment at which the loss could show.
+    ///
+    /// `ShotType.rawValue` and not a counter, an index or a fresh UUID, because the framing is the
+    /// thing that actually distinguishes these files — a visit holds at most one photograph per
+    /// framing, which is what makes a *retake* of the trunk overwrite the trunk and nothing else. A
+    /// counter would make every retake a new file and leave the abandoned ones in a backed-up
+    /// directory with nothing pointing at them.
+    ///
+    /// **Three things read this path and all three are fine with it, which was checked rather than
+    /// assumed.** `photos.local_path` gets one row per photograph, each with its own path
+    /// (`beginPhotoUpload`). `OutboxStore.removePhoto(atPath:from:)` keys on the path, so draining one
+    /// of the three does not take its siblings out of the row — the invariant its comment states, "a
+    /// row cannot stage the same file twice", is *more* true now, not less. And `LocalAPI.uploadPhoto`
+    /// moves each staged file to `<photoID>.jpg` under a fresh photo id, so three staged files land as
+    /// three stored files.
+    static func url(for visitID: UUID, shotType: ShotType) throws -> URL {
+        try directory().appendingPathComponent("\(visitID.uuidString)-\(shotType.rawValue).jpg")
     }
 
     /// Stages a capture, without its metadata sidecar.
+    ///
+    /// Every capture in the app comes through here, which is what E148 bought and what must not be
+    /// routed around: the strip is a property of *the staged file*, not of a particular flow's onward
+    /// journey. Three shots in one session are three calls to this function.
     ///
     /// - Throws: whatever `PhotoBinary.write(_:strippingMetadataTo:)` throws for bytes it cannot
     ///   rewrite, which both capture screens already handle as "that photo could not be saved" — the
     ///   state a contributor answers by retaking. Nothing raw is left behind on that path.
     @discardableResult
-    static func write(_ data: Data, for visitID: UUID) throws -> String {
-        let url = try url(for: visitID)
+    static func write(_ data: Data, for visitID: UUID, shotType: ShotType) throws -> String {
+        let url = try url(for: visitID, shotType: shotType)
         try PhotoBinary.write(data, strippingMetadataTo: url)
         return url.path
     }

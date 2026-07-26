@@ -336,7 +336,7 @@ struct PinAdjustTests {
         let first = try await api.addTree(
             TreeDraft(
                 coordinate: occupied,
-                photoLocalPath: try VisitPhotoStaging.write(try Self.jpeg(), for: UUID()),
+                photoLocalPath: try VisitPhotoStaging.write(try Self.jpeg(), for: UUID(), shotType: .fullTree),
                 attribution: Self.attribution
             )
         )

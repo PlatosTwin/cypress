@@ -17,8 +17,8 @@ struct VisitCameraView: View {
 
     @State private var model: VisitCameraModel
     @State private var libraryItem: PhotosPickerItem?
-    /// czFlash's second keyframe. See `shutterFlash`.
-    @State private var flashHasFaded = false
+    /// The capture whose flash has already been faded out. See `shutterFlash`.
+    @State private var fadedCaptureTick = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let onSaved: (VisitSaveReceipt) -> Void
@@ -92,8 +92,10 @@ struct VisitCameraView: View {
         .overlay(alignment: .topLeading) { closeButton }
         .overlay(alignment: .top) { guidancePill }
         .overlay { framingCorners }
-        .overlay(alignment: .bottom) { shotTypeChips }
-        .overlay(alignment: .bottom) { shutter }
+        // **One** bottom-anchored stack, not two. See `VisitMetrics.Camera.shotTypeGapAboveShutter`:
+        // the chip row and the shutter block were separate overlays at `bottom:150` and `bottom:34`,
+        // and the fallback sentence inside the shutter block grew up through the chips at AX1.
+        .overlay(alignment: .bottom) { bottomControls }
         .overlay(alignment: .bottomLeading) { ghostCaption }
         .overlay { shutterFlash }
     }
@@ -106,20 +108,25 @@ struct VisitCameraView: View {
     /// other signal there is. It is also the clearest case in the app for Reduce Motion: a
     /// full-screen luminance change is exactly what the setting exists to suppress, so under it
     /// the flash does not draw at all and the snapshot arriving is the confirmation.
+    ///
+    /// **Keyed on `model.captureTick`, not on `model.hasSnapped`.** `hasSnapped` is per framing now, so
+    /// it turns true both when a photograph is taken and when a chip that already has one is selected —
+    /// and the second of those flashed the screen white at somebody who had taken nothing. The tick only
+    /// ever counts captures. See `VisitCameraModel.captureTick`.
+    ///
+    /// Two keyframes out of one monotonic counter: the body renders full opacity for the frame in which
+    /// the tick is ahead of `fadedCaptureTick`, and `onChange` — which runs after that frame — animates
+    /// the two back into agreement. A reset flag would not survive back-to-back captures.
     @ViewBuilder
     private var shutterFlash: some View {
         if !reduceMotion {
             Color.white
-                .opacity(model.hasSnapped && !flashHasFaded ? CypressMotionOffset.flashOpacity : 0)
+                .opacity(model.captureTick > fadedCaptureTick ? CypressMotionOffset.flashOpacity : 0)
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
-                .onChange(of: model.hasSnapped) { _, snapped in
-                    guard snapped else {
-                        flashHasFaded = false
-                        return
-                    }
-                    withAnimation(CypressMotion.flash) { flashHasFaded = true }
+                .onChange(of: model.captureTick) { _, tick in
+                    withAnimation(CypressMotion.flash) { fadedCaptureTick = tick }
                 }
         }
     }
@@ -201,17 +208,28 @@ struct VisitCameraView: View {
         .accessibilityHidden(true)
     }
 
-    private var shotTypeChips: some View {
-        HStack(spacing: VisitMetrics.Camera.shotTypeGap) {
-            ForEach(model.shotTypes, id: \.self) { type in
-                Chip(
-                    model.label(for: type),
-                    style: model.shotType == type ? .shotTypeOn : .shotTypeOff,
-                    action: { model.shotType = type }
-                )
-            }
+    /// The chip row and the shutter, in one stack, anchored to the bottom of the viewfinder.
+    private var bottomControls: some View {
+        VStack(spacing: VisitMetrics.Camera.shotTypeGapAboveShutter) {
+            shotTypeChips
+            shutter
         }
-        .padding(.bottom, VisitMetrics.Camera.shotTypeBottom)
+        .padding(.bottom, VisitMetrics.Camera.shutterBottom)
+    }
+
+    private var shotTypeChips: some View {
+        VisitShotTypeChips(
+            framings: model.shotTypes.map { type in
+                VisitShotTypeChips.Framing(
+                    id: type,
+                    label: model.label(for: type),
+                    isSelected: model.shotType == type,
+                    isCaptured: model.capturedShotTypes.contains(type)
+                )
+            },
+            select: { model.shotType = $0 }
+        )
+        .padding(.horizontal, VisitMetrics.Camera.trayPadding)
     }
 
     @ViewBuilder
@@ -254,7 +272,8 @@ struct VisitCameraView: View {
                 .accessibilityLabel(model.hasSnapped ? "Take another photo" : "Take the photo")
             }
         }
-        .padding(.bottom, VisitMetrics.Camera.shutterBottom)
+        // The bottom inset belongs to `bottomControls` now — this block is no longer the last thing
+        // above the tray on its own.
     }
 
     private var fallbackReason: String {
@@ -309,6 +328,17 @@ struct VisitCameraView: View {
 
     private var tray: some View {
         VStack(spacing: VisitMetrics.Camera.traySpacing) {
+            // What this session could still hold, once it holds something. In the tray rather than over
+            // the viewfinder because it is about the visit being composed, not about the frame being
+            // aimed — and because a second pill on the viewfinder is what E125's overflow was made of.
+            if let line = model.remainingShotsLine {
+                Text(line)
+                    .font(CypressFont.body125)
+                    .foregroundStyle(CypressColor.Dark.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
             noteField
 
             if !model.availablePhenologyTags.isEmpty {
@@ -387,7 +417,7 @@ struct VisitCameraView: View {
         // literal being introduced for a state the spec never drew.
         Group {
             if model.canLogVisit {
-                PrimaryButton("Log visit", style: .camera) {
+                PrimaryButton(model.logVisitLabel, style: .camera) {
                     Task {
                         if let receipt = await model.logVisit() { onSaved(receipt) }
                     }
@@ -421,6 +451,95 @@ struct VisitCameraView: View {
                 .foregroundStyle(CypressColor.Dark.textMuted)
             Spacer(minLength: 0)
         }
+    }
+}
+
+// MARK: - The chip row
+
+/// The three framings, and which of them this session has already photographed.
+///
+/// ── Why the chips had to start reporting state (ERRATA E152) ───────────────────────────────
+/// One session can take all three now, so these chips are no longer three ways of labelling one
+/// photograph — they are three slots, and a contributor has to be able to see which are filled without
+/// tapping each one to find out. The mark is a `CypressCheckmark`, the same shape screen 18's success
+/// circle and screen 05's selected row draw, so nothing new is invented for it; it is a `Shape` sized by
+/// its frame rather than by the type ramp, which is what keeps it inside a chip that grows its label at
+/// AX sizes.
+///
+/// `CypressChipFlow` and not an `HStack`, and the reason is **legibility, not overflow** — a correction
+/// to what this code first said. The claim was that three chips wearing checkmarks at AX5 are wider than
+/// the phone and an `HStack` would push the third off the right edge, the way #45's tray once did. That
+/// is not what happens, measured: in the 361 pt this row is given, an `HStack` reports 326 pt and fits,
+/// because SwiftUI compresses its children rather than overflowing a proposal. What it costs to fit is
+/// the chips themselves — each is squeezed from its natural 158 pt to about 103 and its label wraps into
+/// a column of stacked syllables, which is what the phenology row below already looks like at AX5. The
+/// flow keeps every chip its own size and puts the overflow on a second row. Same component as screen
+/// 05's structure chips and the add screen's land row.
+///
+/// ── Why this is its own type rather than a `private var` on the screen ─────────────────────────
+/// Because the sentence above needed a test that could fail, and the one it had could not. It hosted the
+/// *whole* of screen 04 at AX5 and asserted the result measured no wider than the phone — and this row
+/// is an `.overlay` on the viewfinder, and **an overlay never enlarges what it is over**. Putting the
+/// row back to an `HStack` left that test green. Hosting the row on its own is what let it be measured
+/// at all, which is also how the paragraph above got corrected; see
+/// `theChipRowFitsTheWidthItIsGivenAtAX5` for what is left that a test can actually decide, and what is
+/// verified by looking instead.
+struct VisitShotTypeChips: View {
+
+    struct Framing: Identifiable, Hashable {
+        let id: ShotType
+        let label: String
+        let isSelected: Bool
+        let isCaptured: Bool
+    }
+
+    let framings: [Framing]
+    var select: (ShotType) -> Void = { _ in }
+
+    var body: some View {
+        CypressChipFlow(spacing: VisitMetrics.Camera.shotTypeGap) {
+            ForEach(framings) { framing in
+                Chip(
+                    framing.label,
+                    style: framing.isSelected ? .shotTypeOn : .shotTypeOff,
+                    action: { select(framing.id) }
+                )
+                .overlay(alignment: .topTrailing) {
+                    if framing.isCaptured { capturedMark }
+                }
+                // The chip is a control whose label no longer carries its whole meaning: "Trunk" and
+                // "Trunk, photographed" are different states and a mark is not read out.
+                .accessibilityLabel(
+                    framing.isCaptured
+                        ? "\(framing.label), photographed"
+                        : "\(framing.label), not photographed yet"
+                )
+            }
+        }
+    }
+
+    /// The tick on a framing that has been photographed. Decoration — the chip's accessibility label
+    /// carries the same fact, where it can actually be heard.
+    private var capturedMark: some View {
+        ZStack {
+            Circle().fill(CypressColor.selectionFill)
+            CypressCheckmark()
+                .stroke(
+                    CypressColor.onSelectionFill,
+                    style: StrokeStyle(
+                        lineWidth: VisitMetrics.Camera.capturedMarkStroke,
+                        lineCap: .round,
+                        lineJoin: .round
+                    )
+                )
+                .frame(
+                    width: VisitMetrics.Camera.capturedMarkGlyph,
+                    height: VisitMetrics.Camera.capturedMarkGlyph
+                )
+        }
+        .frame(width: VisitMetrics.Camera.capturedMark, height: VisitMetrics.Camera.capturedMark)
+        .offset(x: VisitMetrics.Camera.capturedMarkInset, y: -VisitMetrics.Camera.capturedMarkInset)
+        .accessibilityHidden(true)
     }
 }
 
