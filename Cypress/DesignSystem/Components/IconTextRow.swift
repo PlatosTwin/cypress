@@ -33,8 +33,8 @@ struct IconTextRow: View {
                 // "" — a journal entry with no note, a grove row whose record could not be proved
                 // (ERRATA E38) — and `Text("")` is not nothing: it reserves a line's height and
                 // leaves the title floating above a gap. The rule this app already keeps for clauses
-                // (`JournalCopy.subtitle`'s summary, screen 11's pills) is that an absent fact is
-                // left out rather than filled in; this is the same rule one level up.
+                // (a journal row's missing note, screen 11's pills) is that an absent fact is left
+                // out rather than filled in; this is the same rule one level up.
                 if !subtitle.isEmpty {
                     Text(subtitle)
                         .font(CypressFont.body125)

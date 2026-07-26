@@ -133,8 +133,8 @@ extension GroveCopy {
     ///
     /// What takes the date's place is the one fact the journal cannot show without twenty rows: how
     /// much of a relationship this is. See `GroveRecord` for why a per-tree, per-kind, never-summed,
-    /// never-sorted-on tally is a description rather than a score, and for the three D1 clauses it
-    /// has to satisfy.
+    /// never-sorted-on tally is a description rather than a score, and for the five D1 clauses it has
+    /// to satisfy.
     ///
     /// ── The clauses, and their order ──────────────────────────────────────────────────────
     /// The favourite clause leads, because it is a thing you *chose* rather than a thing you
@@ -161,7 +161,7 @@ extension GroveCopy {
     /// `4 visits`, `1 check-in`, `2 measurements`, `1 care log` — omitting every kind that is zero.
     ///
     /// Zeroes are left out rather than printed, for the reason every other absent clause in this app
-    /// is left out (`JournalCopy.subtitle`'s summary, screen 11's pills): a stated zero is a sentence
+    /// is left out (a journal row's missing note, screen 11's pills): a stated zero is a sentence
     /// about what somebody has not done, and this screen does not have opinions about that.
     ///
     /// The nouns are the acts as the app's own controls name them — screen 05 is a check-in, screen
