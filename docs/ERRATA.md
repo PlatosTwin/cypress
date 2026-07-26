@@ -5731,3 +5731,146 @@ one white bar, which proved bytes had arrived and could not prove *which part of
 crops of it look identical. It is now a crude tree at 1200×1600, matching the `width`/`height` the
 row had always claimed while producing 300×400. A screenshot of a hero can now be looked at and
 answered.
+
+### E143 — the six columns the seed was throwing away, and the mapping that would have mislabelled 150,000 street trees
+
+The project owner asked for two things: *"Want to see more city details about trees e.g. when planted
+next pruning last pruning and others"* (#68), and a way for a new tree to say *"whether it stands on a
+street, in a city park, or on private property"* (#69). Both needed data the seed builder was
+discarding. This entry lands the data and the schema; neither screen is built here.
+
+**Seven columns were being dropped, not five.** The list carried into this round — `qCaretaker`,
+`qLegalStatus`, `PlotSize`, `PermitNotes`, `PlantType` — was recorded from a reading of
+`build_seed.py` rather than from the dataset, and the dataset is the authority. Checked against
+DataSF `tkzw-k3nq`'s own published column metadata, it also omitted **`qCareAssistant`** (25,199 rows,
+of which 22,879 say `FUF` — Friends of the Urban Forest, who planted them) and **`SiteOrder`** (99.1%
+populated). Six are now ingested. `SiteOrder` is refused: it is an ordinal disambiguating several
+trees at one address, a key inside the city's table rather than a fact about a tree, and "tree 3 of 7"
+answers nothing anybody asked. `XCoord`/`YCoord`/`Location` are the same point as `lat`/`lon`, and the
+six `Fire Prevention Districts`-style columns are Socrata `:@computed_region_*` join artifacts whose
+values are opaque row ids into other datasets — the "Zip Codes" column's commonest value is `28859`.
+
+**`qLegalStatus` was "explicitly retained" into a column that ships empty.** The comment above
+`MAPPED_COLUMNS` claimed it was retained per BUILD-PLAN §7. It was — into `city_raw`, which is `NULL`
+in the shipped seed because the passthrough costs ~74 MB, and which no code path in the app has ever
+read. It was retained the way something is retained by being written to a column nobody populates.
+This is the same defect class the ROADMAP already names: the most confident comment in the file.
+
+Populations over all 195,309 seed rows: `legal_status` 195,252 (99.97%), `caretaker` 195,309 (100%),
+`care_assistant` 25,199 (12.90%), `plant_type` 195,309 (100%), `plot_size` 146,951 (75.24%),
+`permit_notes` 52,580 (26.92%).
+
+**THERE IS NO PRUNING DATA, AND THE ANSWER IS DEFINITIVE.** `tkzw-k3nq` has eighteen real columns and
+not one records a pruning event, date or schedule — verified against the dataset's live column
+metadata, not only against a downloaded copy. The nearest things in the data are two `qLegalStatus`
+values, `Prune Opt Out` (196 rows) and `Street Tree Maintenance Opt Out` (58), which say somebody
+withdrew a site from the city's maintenance programme. That is a **standing policy about a tree, not a
+date on which anything happened to it**, and it must never render as one. Pruning history would have
+to come from a different city system. `CityRecordTests.thereIsNoPruningData` asserts no seed column
+mentions pruning, so the day DataSF starts publishing one the test fails and #68's question is
+reopened deliberately rather than staying quietly unanswerable.
+
+**The mapping for #69, and the trap in it.** DataSF describes `qCaretaker` as "Agency or person that
+is primary caregiver to tree. **Owner of Tree**", and 163,955 of 195,309 rows say `Private` — 84%.
+Read as a location it is catastrophic and it looks entirely reasonable: 112,955 of those same rows
+carry `qLegalStatus = 'DPW Maintained'`. They stand in the sidewalk, in the public right-of-way, and
+the private party named is the adjacent owner who waters them. Measured both ways over the whole seed:
+
+|                     | jurisdiction leads | caretaker leads |
+|---------------------|-------------------:|----------------:|
+| `.street`           |            182,320 |          30,080 |
+| `.privateProperty`  |             11,856 |         164,096 |
+
+A caretaker-led mapping mislabels **152,240 street trees as private property**. Those two columns are
+the actual measured output of `LandContext.inferred(from:)` and of a deliberately broken version of
+it, so the number is observed rather than estimated.
+
+**So jurisdiction leads and care fills in.** `qLegalStatus` decides wherever it names a jurisdiction.
+`Significant Tree` and `Landmark tree` are protective designations SF's Public Works Code attaches on
+either side of the property line, and `Undocumented`/blank say nothing by construction; for those
+12,286 rows the caretaker is the only signal left and answers for them alone. Final distribution over
+all 195,309 rows, re-derived from every row by `bucketsMatchTheDocumentedDistribution` so the table
+cannot rot: `.street` 182,320 (93.35%), `.privateProperty` 11,856 (6.07%), `.otherPublic` 956 (0.49%),
+`.cityPark` 177 (0.09%), unresolved 0.
+
+**`.cityPark` is 177 rows and that is the finding, not a bug.** This is the *Street* Tree List. 720
+rows name `Rec/Park` as caretaker but 543 of them also carry a DPW jurisdiction — a street tree along
+a park's edge that Rec/Park waters — and calling that "in a city park" is the error a person standing
+on the sidewalk can see. San Francisco's actual park trees are largely not in this dataset. For #69
+that is a feature: somebody adding a tree in Golden Gate Park is adding something the city does not
+have.
+
+**Four values where three were asked for, and E136 is the whole reason.** The ask was street / city
+park / private property. The city's inventory contains 956 rows that are none of them — SFUSD, the
+Port, the PUC, the Housing Authority, the Fire Department, the Arts Commission: public land that is
+neither street nor park. A CHECK pinned to three makes those unstorable, which is E136's `photo_votes`
+failure repeated exactly: a constraint wearing a ruling's clothes, forbidding a state the product
+turns out to need. The asymmetry decides it — a permitted value no screen offers costs nothing, a
+forbidden value the data contains costs a migration. `.otherPublic` exists; #69's picker is free to
+offer three.
+
+**One migration, and working out that it was only one was the first job.** All six city columns land
+on `seed.trees`, and the seed is a **bundled read-only** database ATTACHed beside `main`. It is a
+build product replaced wholesale on install, with no user data to carry forward, so a schema change
+there needs no migration and cannot have one. What is not covered by that is a fact a *contributor*
+states, which must be written and must survive an upgrade. **AppSchema v11** adds
+`community_trees.land_context` for exactly that and nothing else.
+
+**The six seed columns carry no CHECK, and that is a decision.** Every closed vocabulary in the app
+schema carries its vocabulary in a CHECK because that database is written by a DAO and by whoever
+opens it in a debugger. None of that reaches the seed: the only writer is `build_seed.py`, and the
+hand-written `INSERT` a CHECK would catch is one nobody can perform against a database shipped inside
+an `.app`. What a CHECK would do instead is pin twelve legal statuses and twenty-seven caretakers that
+belong to San Francisco rather than to Cypress — a list reading `Asian Arts Commission`, `Mission
+Verde`, `Office of Mayor`, which grows whenever a department is renamed — and turn the next weekly
+diff into a build failure over a string the city was entitled to add. BUILD-PLAN §7 settled the same
+question the same way for `site_type`. The vocabulary that *is* Cypress's is CHECK-pinned where it is
+actually written: `land_context`.
+
+**`land_context` is nullable with no default, unlike v10's `placement`.** Every community tree written
+before v10 *had* a placement — `gps`, because the screen had no other behaviour — so backfilling
+recorded what happened. No tree written before v11 has ever been asked what ground it stands on, so
+there is no true value and any default would be Cypress putting words in a contributor's mouth.
+`'street'` is the plausible guess and the harmful one: it is the answer that makes a tree look like
+the city's business, and a wrong `'street'` on a tree in somebody's front yard ends in a 311 call
+about a tree 311 does not handle.
+
+**`plot_size` is TEXT and is never parsed.** 588 distinct values in three incompatible notations plus
+a bare integer of unstated unit: `Width 3ft` (36,866), `3x3` (31,760), `3X3` (12,135), `60` (782),
+`10x10` (367). DataSF's published description of the field reads "date tree was planted", copied from
+`PlantDate` — the field is under-curated at the source. Deriving an area would be D7's forbidden move,
+dressing an estimate as a measurement.
+
+**Nothing is normalised on the way in.** `PlantType` holds `Tree` 194,988 times, `Landscaping` 318
+times and `tree` 3 times. Correcting that case would be editing the city's record to make it tidier,
+which is not the builder's job; readers compare case-folded. Blank becomes `NULL`, because storing
+`''` makes "the city recorded nothing" indistinguishable from "the value is nothing".
+
+**Provenance is carried, not inferred at the point of display.** A contributor who tapped "city park"
+observed it; a city row's context is Cypress's *reading* of two strings, and that reading can be wrong
+about any individual tree. `Tree.landContext` returns a `KnownLandContext` naming its own source
+rather than a bare `LandContext`, so a screen cannot show an inference with the confidence of an
+observation — BUILD-PLAN §5's requirement that every provenance fact be a queryable column rather than
+something a screen remembers.
+
+**The land context is derived for city rows, not stored.** Storing it would put Cypress's inference
+inside a table that otherwise holds San Francisco's record, create a derived column that can disagree
+with its own inputs, and make revising the mapping a 95 MB rebuild instead of a code change. It lives
+in `LandContext.inferred(from:)`, in `Core`, under test.
+
+**The seed grew 95.3 MB → 103.6 MB**, +8.7%, which is the honest price of six columns over 195,309
+rows and is stated rather than buried. Row counts did not move — 195,309 trees, 569 species — and
+`ANALYZE` still runs, so `sqlite_stat1` survives and E134's 14× map regression stays fixed. If bundle
+size later becomes the binding constraint, `legal_status`, `caretaker` and `plant_type` are 42
+distinct strings across 585,927 cells and normalise into a lookup table cleanly; that was not done now
+because nobody has asked for the bytes back.
+
+**A consequence #69 must know about, flagged and not fixed.** `ReportPresentation.showsHazardBranch`
+is `selection.hazard != nil` and nothing more. The 311 panel — *"This may be a public-safety hazard"*,
+`Call 311 now` — is gated on the chip alone; `ReportModel` holds a `treeID` and never looks at the
+tree. So a tree marked private property today gets the identical 311 handoff, and 311 is the city's
+line for *city* trees. Nobody can reach that state yet, because nothing writes `land_context` until
+#69 ships a picker — which is exactly why it is written down now. The moment a contributor can mark a
+tree private, screen 06 is routing them to a number that will not take the report. That is a product
+decision (does the panel change its copy, offer a different destination, or say plainly that the city
+does not handle this tree?) and belongs to whoever builds #69, not to this round.

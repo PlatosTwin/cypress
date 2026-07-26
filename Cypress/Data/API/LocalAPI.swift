@@ -345,6 +345,7 @@ public actor LocalAPI: CypressAPI {
             speciesCurrentID: draft.speciesID,
             verificationState: .unverified,
             placement: draft.placement,
+            statedLandContext: draft.landContext,
             createdAt: moment,
             updatedAt: moment
         )
