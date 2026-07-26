@@ -6266,3 +6266,10 @@ unchanged, which is the point of leaving it. `LandContextShots` photographs the 
 and both profile arms; the two profile shots moved to the 1,500 pt window `cityRecordStates` already
 used, because §9b is the last block on the screen and a phone-height capture of it stops above the
 sentence.
+
+30 tests on this round's own branch; **719 total on the merged branch**, which is E145's 689 plus
+those 30. No test was deleted resolving the collision. Four moved from asserting a stat card to
+asserting the sentence, keeping the intent each was written to protect — *the profile states where
+the tree stands, and names who concluded it*, on both arms — and `absentWhenNothingIsKnown` gained
+the assertion that no tree ever gets a `landContext` card again, so the duplicate cannot come back
+without a test going red.
