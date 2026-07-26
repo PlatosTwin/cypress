@@ -1249,6 +1249,113 @@ public enum DataGates {
             into: &failures
         )
 
+        // --- #95: no column the app matches on holds two spellings of one value.
+        //
+        // `plant_type` held 'Tree' 194,988 times and 'tree' 3 times (TreeIDs 253212, 253634, 96598),
+        // so every `WHERE plant_type = 'Tree'` in the product silently dropped three rows and every
+        // reader had to remember to case-fold. `Tools/build_seed.py` now folds these columns at
+        // ingest; this is the assertion that makes a future source change fail here rather than hide.
+        //
+        // The column list is read from the seed's own receipt rather than written out here, so the
+        // generator and the gate cannot drift: adding a column to `NORMALISED_SEED_COLUMNS` extends
+        // this check by rebuilding, and removing one from the normaliser without removing it from
+        // the receipt fails immediately.
+        //
+        // **Deliberately not every column.** `address` (2,277 case-variant groups), `plot_size` (61)
+        // and `permit_notes` (2) are free text that is shown as the city wrote it and never compared
+        // against a literal, and one of `McAllister St` / `MCALLISTER ST` is a real spelling of that
+        // street. Folding those would be editing the city's record; folding a closed vocabulary is
+        // repairing a filter. The line between them is "does any code compare this to a string".
+        let treeColumnNames = try await store.queue.read { connection in
+            Set(try connection.columnNames(ofTable: "trees", in: SeedDatabase.schemaName))
+        }
+        let normalisedColumns = (meta["case_normalised_columns"] ?? "")
+            .split(separator: ",")
+            .map { String($0).trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        expect(
+            !normalisedColumns.isEmpty,
+            "seed contract: seed_meta.case_normalised_columns is absent, so #95's assertion would "
+                + "silently check nothing",
+            into: &failures
+        )
+        for column in normalisedColumns {
+            guard treeColumnNames.contains(column) else {
+                failures.append("seed contract: seed_meta names '\(column)' as case-normalised but "
+                    + "seed.trees has no such column")
+                continue
+            }
+            let collisions = try await count("""
+                SELECT COUNT(*) AS n FROM (
+                    SELECT 1 FROM (
+                        SELECT DISTINCT \(column) AS v FROM \(SeedDatabase.schemaName).trees
+                         WHERE \(column) IS NOT NULL
+                    )
+                    GROUP BY LOWER(TRIM(v)) HAVING COUNT(*) > 1
+                )
+                """)
+            expect(
+                collisions == 0,
+                "seed contract (#95): trees.\(column) holds \(collisions) value(s) spelled two ways, "
+                    + "so a `WHERE \(column) = '…'` in the app drops rows it should match",
+                into: &failures
+            )
+        }
+
+        // --- Provenance. The seed says which of San Francisco's two street-tree inventories it is,
+        // and what day that inventory was read.
+        //
+        // This is the assertion that keeps "is our data stale?" answerable. It was not answerable
+        // before #91: the bundle carried 195,309 rows and not one byte saying where they came from
+        // or when, so the question could only be settled by re-downloading the source and diffing.
+        // A seed that ships without a dated source is the defect, not an untidiness.
+        expect(
+            InventorySource(seedMeta: meta) != nil,
+            "seed contract: the build receipt names no inventory (seed_meta.trees_source), so "
+                + "nothing in the app can say where its records came from",
+            into: &failures
+        )
+        if let provenance = InventorySource(seedMeta: meta) {
+            expect(
+                provenance.snapshotDate != nil,
+                "seed contract: seed_meta.trees_snapshot_on is "
+                    + "'\(meta["trees_snapshot_on"] ?? "absent")', which is not an ISO calendar day. "
+                    + "A snapshot with no date is what made staleness unanswerable last time.",
+                into: &failures
+            )
+            expect(
+                !provenance.name.isEmpty && !provenance.url.isEmpty,
+                "seed contract: the inventory is named '\(provenance.name)' at '\(provenance.url)'; "
+                    + "the tree page prints the name and the receipt keeps the url",
+                into: &failures
+            )
+            // Every row the source offered is accounted for: shipped, or dropped for a reason the
+            // receipt names. A seed that lost 40,000 rows to a parse bug and said nothing would
+            // otherwise pass every assertion above this one, because they all compare the file
+            // against its own receipt and the receipt would have been written by the same bug.
+            let read = meta["source_rows"].flatMap(Int.init) ?? -1
+            let dropped = ["dropped_no_coords", "dropped_out_of_bbox", "dropped_dupe_treeid"]
+                .compactMap { meta[$0].flatMap(Int.init) }
+                .reduce(0, +)
+            expect(
+                read == treeCount + dropped,
+                "seed contract: the receipt read \(read) source rows and accounts for "
+                    + "\(treeCount) shipped + \(dropped) dropped = \(treeCount + dropped)",
+                into: &failures
+            )
+            // …and the count it read is the count the source said it had. This is the only
+            // assertion in this gate that reaches past the build receipt to something the *city*
+            // asserted, which is what makes a truncated extract fail rather than pass consistently.
+            if let claimed = meta["trees_source_feature_count"].flatMap(Int.init) {
+                expect(
+                    read == claimed,
+                    "seed contract: the source reported \(claimed) records and the build read "
+                        + "\(read); the extract is incomplete",
+                    into: &failures
+                )
+            }
+        }
+
         return failures
     }
 }

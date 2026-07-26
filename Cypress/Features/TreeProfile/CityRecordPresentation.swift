@@ -416,6 +416,40 @@ enum CityRecordCopy {
     ///
     /// It names the *inventory*, not the city: San Francisco certainly prunes its trees, and a
     /// sentence reading "the city records no pruning" would say something false about a public works
-    /// department. What has no pruning in it is this dataset.
-    static let pruningNote = "The city's street tree inventory records no pruning dates or schedule."
+    /// department. What has no per-tree pruning in it is this dataset.
+    ///
+    /// **This sentence changed with #91 and the change is the point.** It used to read "records no
+    /// pruning dates or schedule", which was true of the DataSF export and is not true of the
+    /// inventory we now ship: SF Public Works' own layer carries `Prune_Status` and `Prune_Year` on
+    /// every record. Those fields are **properties of the keymap grid the tree stands in, not of the
+    /// tree** — 133,577 records share 106 distinct `Prune_Year` values, 5,147 of them the single
+    /// string `Completed 20210601`, and the city's own About panel says "Last Pruned is the date
+    /// associated with the status of a Keymap Grid". So the seed does not carry them and this screen
+    /// does not show them. Rendering `Last pruned June 2021` under one tree's name would be the
+    /// `Owner of Tree` mistake again (E143): a column read at the wrong grain and asserted as a fact
+    /// about the thing in front of you.
+    ///
+    /// Saying nothing at all was the other option and it is worse. The reader asked when this tree
+    /// was last pruned (#68); "we know, per block, and that is not an answer about your tree" is a
+    /// real answer, and it is the one that stops the next reader from going to look for the field.
+    static let pruningNote =
+        "The city's street tree inventory records pruning by block, not by tree, so it says "
+        + "nothing about when this tree was last pruned."
+
+    // ── Provenance ───────────────────────────────────────────────────────────────────────────
+
+    /// `From the SF Public Works street tree inventory, 26 July 2026.`
+    ///
+    /// The last line of the section, and the one that makes every line above it checkable. Before
+    /// #91 the app named no source and no date for any of these facts, so "is our data stale?" had
+    /// no answer anywhere in the product — not on screen, not in a log, not in the database. A
+    /// reader who disagrees with a card can now go to the same inventory on the same day and see for
+    /// themselves.
+    ///
+    /// **The date is the source's, never today's.** It comes from `seed_meta.trees_snapshot_on`,
+    /// which the build writes from the extraction's own record. If it is absent the whole sentence
+    /// is absent: a provenance line carrying a date the app inferred would be worse than no line.
+    static func provenanceNote(source: String, snapshot: String) -> String {
+        "From the \(source), \(snapshot)."
+    }
 }

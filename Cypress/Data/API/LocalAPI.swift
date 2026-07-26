@@ -306,7 +306,12 @@ public actor LocalAPI: CypressAPI {
                 // can change it are computed from one consistent picture (ERRATA E125).
                 photoTallies: try contributions.photoTallies(
                     treeID: id, owner: FavoriteOwner(attribution), connection: connection
-                )
+                ),
+                // Where this record came from and when it was read, from the seed's own build
+                // receipt. `record` is nil for a community-added tree — that one is nobody's city
+                // record and gets no provenance line, rather than one crediting an inventory it was
+                // never in.
+                inventorySource: record == nil ? nil : store.seedProvenance
             )
         }
     }

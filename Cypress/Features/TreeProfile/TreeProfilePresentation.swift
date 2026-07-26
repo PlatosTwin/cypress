@@ -987,7 +987,22 @@ struct TreeProfilePresentation {
         var notes: [String] = []
         if let optOut = cityRecord.maintenanceOptOutNote() { notes.append(optOut) }
         notes.append(CityRecordPresentation.pruningNote)
+        if let provenance = inventoryProvenanceNote { notes.append(provenance) }
         return notes
+    }
+
+    /// `From the SF Public Works street tree inventory, 26 July 2026.` — or nothing.
+    ///
+    /// Renders only when the seed knows **both** which inventory it is and what day that inventory
+    /// was read. A source with no date is half a provenance claim, and the half that is missing is
+    /// the one this line exists for; the app says nothing rather than implying the records are
+    /// current. See `InventorySource` and `CityRecordCopy.provenanceNote`.
+    var inventoryProvenanceNote: String? {
+        guard let source = profile.inventorySource, let snapshot = source.snapshotDate else { return nil }
+        return CityRecordCopy.provenanceNote(
+            source: source.name,
+            snapshot: TreeProfilePresentation.snapshotDay.string(from: snapshot)
+        )
     }
 
     /// Whether §9b draws anything at all — the land-context sentence, the city's grid, or both.
@@ -1087,6 +1102,19 @@ struct TreeProfilePresentation {
     static let monthYear = fixedFormat("MMMyyyy")
     /// `Oct 12`.
     static let dayStamp = fixedFormat("MMMd")
+
+    /// `26 July 2026` — the day the city's inventory was read.
+    ///
+    /// Spelled out rather than `Jul 26`: this stamp is read once, at the bottom of a section, by
+    /// somebody checking whether the facts above it are current. Every other date in this file is a
+    /// repeated element in a list, where the short form earns its terseness. `yMMMMd` is fixed to
+    /// UTC because the snapshot is a calendar day the source recorded, not a moment anybody was
+    /// present for — rendering it in the reader's zone could move it a day.
+    static let snapshotDay: DateFormatter = {
+        let formatter = fixedFormat("yMMMMd")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        return formatter
+    }()
 
     static let spellOut: NumberFormatter = {
         let formatter = NumberFormatter()
