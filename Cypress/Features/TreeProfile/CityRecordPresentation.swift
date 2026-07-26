@@ -131,8 +131,8 @@ struct CityRecordPresentation {
     ///
     /// ── The problem ───────────────────────────────────────────────────────────────────────────
     /// 146,951 rows carry a value and they are written in three incompatible notations plus junk:
-    /// `Width 3ft` (86,905 rows including the zeroes), `3x3`/`3X3` (~56,807), a bare integer of
-    /// unstated unit (2,726), and ~517 strings that are not sizes at all — `M6`, `TR`, `POT`, `CUT`,
+    /// `Width 3ft` (86,905 rows including the zeroes), `3x3`/`3X3` (56,760), a bare integer of
+    /// unstated unit (2,726), and 560 strings that are not sizes at all — `M6`, `TR`, `POT`, `CUT`,
     /// `On campus`, `within landscaping plot`, `aaa`, `?`. DataSF's published description of the
     /// column reads "date tree was planted", copied from `PlantDate`; the field is under-curated at
     /// the source. Printing all 588 verbatim is not showing the city's record, it is handing the
@@ -160,15 +160,16 @@ struct CityRecordPresentation {
     /// 2. **A bare integer — 2,726 rows.** `60`, `20`, `10`, `5`. No dimension, no unit. Sixty of
     ///    what, across what? A number with neither is not a size, and putting it under a label that
     ///    says it is one is the invention this section exists not to make.
-    /// 3. **Everything else — ~517 rows.** `M6` (96), `TR`, `POT`, `Plaza`, `3xe`, `2x`, `Width 4x5`.
+    /// 3. **Everything else — 560 rows.** `M6` (96), `TR`, `POT`, `Plaza`, `3xe`, `2x`, `Width 4x5`.
     ///    These are plot *codes* and typing errors from inside a Public Works workflow. `M6` under a
     ///    card labelled `Plot size` is the app asserting that `M6` is a plot size.
     ///
     /// All three are absent rather than blank or `Unknown`, which is what this screen already does
-    /// with every fact a record does not carry (`recognitionTip`, `watchForText`, `badge`). About
-    /// 126,450 of the 146,951 populated rows (86%) render; the other ~20,500 look exactly like the
-    /// 48,358 rows where the city wrote nothing, and in the sense that matters they are the same
-    /// thing — the city has no plot size for this tree.
+    /// with every fact a record does not carry (`recognitionTip`, `watchForText`, `badge`). 126,411
+    /// of the 146,951 populated rows (86.0%) render; the other 20,540 look exactly like the 48,358
+    /// rows where the city wrote nothing, and in the sense that matters they are the same thing — the
+    /// city has no plot size for this tree. Both totals are re-derived from every row by
+    /// `everyPlotSizeInTheSeedIsShownOrRefusedOnPurpose`, so this paragraph cannot rot.
     static func plotSizeText(_ raw: String) -> String? {
         let trimmed = raw.trimmingCharacters(in: .whitespaces)
         if let feet = widthInFeet(trimmed) { return feet + CityRecordCopy.plotWidthSuffix }
