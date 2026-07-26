@@ -241,6 +241,8 @@ struct TreeProfileView: View {
                     growthLink(presentation)
                 }
 
+                cityDetails(presentation)
+
                 if presentation.isCold {
                     footnote(presentation)
                 }
@@ -641,8 +643,13 @@ struct TreeProfileView: View {
         .padding(.horizontal, CypressSpacing.gutter)
         .padding(.top, presentation.isCold ? TreeProfileMetrics.blockGap : TreeProfileMetrics.statGridTop)
         // 03 §9's trailing `30px` closes the screen, so it moves below whatever is genuinely last:
-        // the growth link when there is one, this grid when there is not.
-        .padding(.bottom, presentation.isCold || presentation.offersGrowthLink ? 0 : CypressSpacing.bottomBar)
+        // the city section when there is one, then the growth link, then this grid.
+        .padding(
+            .bottom,
+            presentation.isCold || presentation.offersGrowthLink || presentation.showsCityDetails
+                ? 0
+                : CypressSpacing.bottomBar
+        )
     }
 
     // MARK: - 9b · Growth history link (screen 11)
@@ -668,7 +675,81 @@ struct TreeProfileView: View {
         .cypressHitArea()
         .padding(.horizontal, CypressSpacing.gutter)
         .padding(.top, TreeProfileMetrics.activityLinkTop)
-        .padding(.bottom, presentation.isCold ? 0 : CypressSpacing.bottomBar)
+        .padding(.bottom, presentation.isCold || presentation.showsCityDetails ? 0 : CypressSpacing.bottomBar)
+    }
+
+    // MARK: - 9c · Where it stands, and what the city has on file
+
+    /// **NOT SPECIFIED.** SCREENS.md has neither block. The reasoning for both is in
+    /// `TreeProfilePresentation.landContextNote` and `CityRecordPresentation`, so a designer can
+    /// delete either in one file without reading this one. See ERRATA (E145).
+    ///
+    /// Two blocks, one after the other, because they are two different kinds of statement about the
+    /// same tree and the order is the argument:
+    ///
+    /// 1. **The land-context sentence**, in the app's own voice, naming whoever concluded it. It goes
+    ///    *first* because it is the question a reader of the section beneath it is most likely to try
+    ///    to answer out of `Cared for by — A private party`, and getting to it after that card would
+    ///    mean the wrong answer had already been formed.
+    /// 2. **The city's grid**, under a header carrying the city's name, every card badged
+    ///    `city record` by C12.
+    ///
+    /// No new component. The grid is `StatGrid`/`StatCard` — C11, which is what already renders
+    /// labelled facts on this screen — and the header is `.cypressMicroLabel()` over it, which is how
+    /// the You tab labels its sections. C1–C30 is a closed catalogue and this needed nothing added to
+    /// it (ERRATA E46).
+    @ViewBuilder
+    private func cityDetails(_ presentation: TreeProfilePresentation) -> some View {
+        if presentation.showsCityDetails {
+            VStack(alignment: .leading, spacing: 0) {
+                cityDetailBlocks(presentation)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            // The cold variant's footnote still follows and carries its own closing space.
+            .padding(.bottom, presentation.isCold ? 0 : CypressSpacing.bottomBar)
+        }
+    }
+
+    @ViewBuilder
+    private func cityDetailBlocks(_ presentation: TreeProfilePresentation) -> some View {
+        if let note = presentation.landContextNote {
+            Text(note)
+                .cypressBody135(color: CypressColor.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, CypressSpacing.gutter)
+                .padding(.top, CypressSpacing.labelSectionTop)
+        }
+
+        if let cityRecord = presentation.cityRecord {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(CityRecordCopy.header)
+                    .cypressMicroLabel()
+                    .padding(.bottom, CypressSpacing.gapVitality)
+
+                StatGrid {
+                    ForEach(cityRecord.facts) { fact in
+                        // `.cityRecord`, never `.text`. The badge is the whole reason this section is
+                        // allowed to exist: a card that read `DPW Maintained` in plain mono would be
+                        // Cypress asserting it, and a screenshot of it would carry no source at all.
+                        // It also gives every card the VoiceOver phrase "from the city record"
+                        // (C12's `accessibilityLabel`), so the distinction survives being listened to.
+                        StatCard(label: fact.label, value: .cityRecord(fact.value))
+                            .frame(maxHeight: .infinity)
+                    }
+                }
+
+                ForEach(presentation.cityRecordNotes, id: \.self) { note in
+                    Text(note)
+                        .cypressBody135(color: CypressColor.textMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, CypressSpacing.gapRows)
+                }
+            }
+            .padding(.horizontal, CypressSpacing.gutter)
+            .padding(.top, CypressSpacing.labelSectionTop)
+        }
     }
 
     // MARK: - 7 (cold) · Footnote

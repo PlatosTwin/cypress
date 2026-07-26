@@ -99,12 +99,7 @@ struct StatCard: View {
         case let .quantity(quantity):
             MeasuredValue(quantity: quantity, font: size.valueFont)
         case let .cityRecord(text):
-            HStack(spacing: 6) {
-                Text(text)
-                    .font(size.valueFont)
-                    .foregroundStyle(CypressColor.textInk)
-                MethodBadge(.cityRecord)
-            }
+            cityRecordValue(text)
         case let .text(text):
             Text(text)
                 .font(size.valueFont)
@@ -118,6 +113,45 @@ struct StatCard: View {
             Text(text)
                 .font(size.valueFont)
                 .foregroundStyle(CypressColor.textFaint)
+        }
+    }
+
+    /// A city value and its badge, side by side where they fit and stacked where they do not.
+    ///
+    /// ── Why this stopped being one `HStack` (ERRATA E145) ─────────────────────────────────────
+    /// Until §9b this case held one shape of value: `30–35 cm`, a DBH bucket, six characters. Screen
+    /// 03's city section put whole strings in it — `DPW Maintained`, `Landscaping`, `Friends of the
+    /// Urban Forest` — inside a half-width grid cell, beside a badge that is `.fixedSize()` and
+    /// therefore never yields. Two things went wrong and both were only visible on a rendered screen:
+    /// the badge parked itself *between* two lines of the value it qualifies, so a card read
+    /// "Prune · city record · Opt Out"; and a single long word with nowhere to wrap broke mid-word,
+    /// as `Landscapin / g`.
+    ///
+    /// `ViewThatFits` measures the row's ideal width — the value unwrapped, plus the badge — and
+    /// takes the stacked form when that does not fit. A six-character bucket is unaffected and still
+    /// draws exactly as SCREENS.md 14 draws it; a long value gets the card's full width and its badge
+    /// underneath. `.lastTextBaseline` on the row is the other half: with a value that wraps to two
+    /// lines but still fits beside the badge, the badge belongs on the last line rather than
+    /// halfway up.
+    ///
+    /// **No `minimumScaleFactor` and no truncation**, deliberately. Both would make the city's own
+    /// string harder to read in order to protect a layout, and this section exists to show that
+    /// string.
+    @ViewBuilder
+    private func cityRecordValue(_ text: String) -> some View {
+        let value = Text(text)
+            .font(size.valueFont)
+            .foregroundStyle(CypressColor.textInk)
+
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .lastTextBaseline, spacing: 6) {
+                value
+                MethodBadge(.cityRecord)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                value.fixedSize(horizontal: false, vertical: true)
+                MethodBadge(.cityRecord)
+            }
         }
     }
 }

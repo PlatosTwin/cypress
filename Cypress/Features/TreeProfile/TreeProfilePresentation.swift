@@ -762,9 +762,9 @@ struct TreeProfilePresentation {
             items.append(StatItem(id: "site", label: "Site", value: .text(siteType)))
         }
 
-        if let land = landContextStat {
-            items.append(land)
-        }
+        // No `Where it stands` card here. The ground under the tree is a sentence in §9b —
+        // `landContextNote` — because the fact cannot be shown without its source and a card has
+        // nowhere to put one but a badge. Two parallel rounds both built this; see `landContextNote`.
 
         if let record = cityRecordText {
             items.append(StatItem(id: "cityRecord", label: "City record", value: .text(record)))
@@ -776,64 +776,6 @@ struct TreeProfilePresentation {
 
         return items
     }
-
-    /// `Where it stands` — the ground under the tree, with how Cypress knows it.
-    ///
-    /// **NOT SPECIFIED.** SCREENS.md predates the column; the project owner asked for the
-    /// distinction to be visible here — *"need to see this distinction on tree's landing page too,
-    /// along with other tree metadata"*.
-    ///
-    /// ── Why it is a stat card and not a fifth fragment of the subtitle ────────────────────────
-    /// The provenance line was the obvious home — `placementNote` and `speciesClaimNote` are both
-    /// there, both are facts about where a record's contents came from, and BUILD-PLAN §5 puts
-    /// provenance on the record rather than in a UI corner. It was measured instead of assumed. A
-    /// community tree with a species and a moved pin already renders **five** `·`-joined elements:
-    ///
-    ///     Monterey cypress · Hesperocyparis macrocarpa · community-added, unverified ·
-    ///     species named by a contributor · position placed by hand
-    ///
-    /// That is three wrapped lines of italic serif before this adds anything. A sixth element would
-    /// not be read; worse, it would push the two provenance notes that *are* about authorship into
-    /// the middle of a list that had stopped being one sentence. The line is full, and the honest
-    /// finding is that it was full before this arrived.
-    ///
-    /// So it goes where the tree's other facts about itself go. The stat grid is 03's `Details`, it
-    /// already carries `Site`, `Planted` and `City record` — a location fact, a date and an
-    /// identifier — and a labelled card gives this one thing the subtitle cannot: room to say how
-    /// Cypress knows, in words, next to the answer rather than three fragments away from it.
-    ///
-    /// ── Symmetric, and E138's rule does carry here where E141's did not ───────────────────────
-    /// All four values print and none is marked: `Street or sidewalk` renders exactly as
-    /// `Private property` does, and a tree in a garden is not flagged. E141 refused E138's symmetry
-    /// for the species line because the alternative to "a contributor named it" is *no species*,
-    /// which has nothing to attribute. That does not apply here. A land context that exists always
-    /// came from one of exactly two ways of knowing — a contributor looked, or Cypress read the
-    /// city's record — so both arms name themselves (`LandContextCopy.source`) and marking one
-    /// would rank it against the other. When neither exists there is no card, which asserts nothing.
-    ///
-    /// ── Not a door ────────────────────────────────────────────────────────────────────────────
-    /// No `destination`. Nothing in the app corrects this: `community_trees.land_context` has no
-    /// update path and a city row's context is derived in `Core` from a read-only database. A card
-    /// that opened something would be promising an edit that does not exist — E63's defect, and
-    /// `cityRecord`'s card is inert for the same reason.
-    ///
-    /// **`.prose`, not `.cityRecord`.** The `city record` badge beside it on the DBH card means *San
-    /// Francisco published this number*, which is true of a 5 cm bucket and false of this: the city
-    /// wrote `qLegalStatus = 'Property Tree'`, and turning that into a place is Cypress's rule. Using
-    /// the badge would attribute this app's inference to the city. `LandContextCopy.source` says what
-    /// actually happened in four words instead.
-    var landContextStat: StatItem? {
-        guard let known = tree.landContext else { return nil }
-        return StatItem(
-            id: "landContext",
-            label: TreeProfilePresentation.landContextLabel,
-            value: .prose(LandContextCopy.attributed(known))
-        )
-    }
-
-    /// The card's micro-label. A question about ground, not about an address — `Site` beside it is
-    /// already the city's `qSiteInfo` string and the two must not read as the same field.
-    static let landContextLabel = "Where it stands"
 
     /// A measurement card with nothing in it, which is the app's only door to screen 16.
     ///
@@ -933,6 +875,126 @@ struct TreeProfilePresentation {
             .filter { $0.kind == kind && $0.deletedAt == nil }
             .max { $0.capturedAt < $1.capturedAt }
     }
+
+    // MARK: - Where it stands (task #69, second half)
+
+    /// One sentence naming both where the tree stands **and who says so**, or `nil`. **This is the
+    /// only place on the screen the fact appears.**
+    ///
+    /// **NOT SPECIFIED.** SCREENS.md has no land context anywhere, because until E143 no record
+    /// carried one. The project owner asked for it here in as many words: *"need to see this
+    /// distinction on tree's landing page too, along with other tree metadata"*.
+    ///
+    /// ── Two rounds built this, and the sentence is what survived ──────────────────────────────
+    /// E145 and E146 ran in parallel and each independently put the ground under the tree on this
+    /// screen: this sentence, and a `Where it stands` stat card reading
+    /// `Private property · said by a contributor`. Both landed on one branch and the same fact
+    /// rendered twice. The card was removed; everything else E146 built — the column, the composer's
+    /// chips, `Tree.landContext`, the 311 hazard handoff — is untouched and correct.
+    ///
+    /// E146's own argument was measured against the **subtitle**, not against a sentence, and that
+    /// half of it still holds: the provenance line was the obvious home, and it was already full
+    /// before this arrived. A community tree with a given name, a species and a moved pin renders
+    /// **five** `·`-joined elements —
+    ///
+    ///     Monterey cypress · Hesperocyparis macrocarpa · community-added, unverified ·
+    ///     species named by a contributor · position placed by hand
+    ///
+    /// — three wrapped lines of italic serif, and a sixth fragment would push the two notes that
+    /// *are* about authorship into the middle of a list that had stopped being one sentence.
+    /// `theSubtitleCouldNotCarryIt` still asserts the count of five. What that argument does not
+    /// establish is a card over a sentence; it never compared the two. The reasons below do.
+    ///
+    /// ── Why a sentence and not a stat card ────────────────────────────────────────────────────
+    /// Because the fact is inseparable from its source, and a `StatCard` has nowhere to put a source
+    /// except a badge. `KnownLandContext` exists precisely so that "a contributor stood there and
+    /// tapped *city park*" and "Cypress read two strings in a municipal export and concluded *street*"
+    /// cannot reach a screen as the same claim — E143 built the type rather than returning a bare
+    /// `LandContext` for exactly that reason, on BUILD-PLAN §5's rule that provenance is carried
+    /// rather than remembered.
+    ///
+    /// The badge route was tried on paper and rejected. C12 has two cases, `taped`/`est.` and
+    /// `city record`, and neither fits: an inference from the city's record is **not** the city's
+    /// record, and stamping `city record` on it would be the app attributing its own reading to San
+    /// Francisco — the single failure this whole round is written to avoid. Adding a third and fourth
+    /// case to C12 would put "how a number was measured" and "who said where a tree stands" in one
+    /// vocabulary, and would need a colour ramp saying which of the two ways of knowing is better.
+    /// There is no such ranking: a contributor who was standing there beats the seed, and the seed
+    /// covers 195,309 trees a contributor has never visited.
+    ///
+    /// A sentence has room to name its speaker in words, which is what `speciesClaimNote` already
+    /// does one block up the screen ("species named by a contributor"). This is the same grammar.
+    /// The card's best available shape was `Private property · said by a contributor` — four words
+    /// after a middle dot, doing the work of a clause. It is thinnest on exactly the distinction that
+    /// is the point: *Cypress reads* and *A contributor said* are different verbs by different
+    /// speakers, and a `·`-joined tail flattens them into two interchangeable-looking suffixes.
+    ///
+    /// ── Symmetric, and inert ──────────────────────────────────────────────────────────────────
+    /// All four values print and none is marked — `on a street` reads exactly as `on private
+    /// property` does, and a tree in a garden is not flagged. E141 refused E138's symmetry for the
+    /// species line because the alternative to "a contributor named it" is *no species*, which has
+    /// nothing to attribute; that does not apply here, where a context that exists always came from
+    /// one of exactly two ways of knowing. Nothing here is a door, and nothing needs to be: there is
+    /// no update path on `community_trees.land_context` and a city row's context is derived in `Core`
+    /// from a read-only database, so a control offering to correct it would promise an edit the app
+    /// cannot make (E63's defect). When neither way of knowing has an answer there is no sentence,
+    /// which asserts nothing.
+    ///
+    /// ── Why it is outside "What San Francisco has on file" ────────────────────────────────────
+    /// On a city row this is Cypress's *reading* of `legalStatus` and `caretaker`, and that reading is
+    /// a rule in `LandContext.inferred(from:)` which can be wrong about any individual tree. Inside a
+    /// section headed with the city's name, under a card badged `city record`, it would be the app's
+    /// inference wearing the city's authority. So it sits above the section, in the app's own voice,
+    /// and says whose conclusion it is.
+    ///
+    /// It renders for community rows too, where there is no city section at all — one fact, one place
+    /// on the screen, regardless of which of the two ways it is known.
+    var landContextNote: String? {
+        guard let known = tree.landContext else { return nil }
+        let place = TreeProfileCopy.landContextPlace(known.context)
+        switch known.source {
+        case .inferredFromCityRecord:
+            return TreeProfileCopy.landContextInferred(place)
+        case .statedByContributor:
+            return TreeProfileCopy.landContextStated(place)
+        }
+    }
+
+    // MARK: - What San Francisco has on file (task #68)
+
+    /// The city's own six columns, prepared for the grid — or `nil` when there is no section to draw.
+    ///
+    /// `nil` on every community row, because a community tree is by definition not in the city's
+    /// inventory and `Tree.cityRecord` is `nil` for it. There is no empty state and no "the city has
+    /// no record of this tree" copy: the subtitle already reads `community-added, unverified`, which
+    /// says the same thing in the place the screen already says it, and a second sentence saying the
+    /// city has nothing would be the app apologising for a tree somebody added on purpose.
+    ///
+    /// Also `nil` when the record produces no card — see `CityRecordPresentation.isEmpty`.
+    var cityRecord: CityRecordPresentation? {
+        guard let record = tree.cityRecord, !record.isEmpty else { return nil }
+        let presentation = CityRecordPresentation(record)
+        return presentation.isEmpty ? nil : presentation
+    }
+
+    /// The sentences under the city's grid, in the order they are drawn.
+    ///
+    /// The opt-out arrangement first, because it is a fact about *this* tree and answers the reader
+    /// who has just read `Prune Opt Out` on the card above; the general note second, because it is a
+    /// fact about the dataset. Empty when there is no section.
+    var cityRecordNotes: [String] {
+        guard let cityRecord else { return [] }
+        var notes: [String] = []
+        if let optOut = cityRecord.maintenanceOptOutNote() { notes.append(optOut) }
+        notes.append(CityRecordPresentation.pruningNote)
+        return notes
+    }
+
+    /// Whether §9b draws anything at all — the land-context sentence, the city's grid, or both.
+    ///
+    /// The view asks this to decide which block closes the screen, so the 30 pt that SCREENS.md 03 §9
+    /// puts under the stat grid keeps landing under whatever is genuinely last.
+    var showsCityDetails: Bool { landContextNote != nil || cityRecord != nil }
 
     // MARK: - Cold-start footnote
 
@@ -1051,6 +1113,44 @@ enum TreeProfileCopy {
     /// starts records an opinion and the label should not promise more than the column stores.
     static let claimSpeciesAction = "Say what species you think this is"
 
+    // MARK: - Where the tree stands (see `TreeProfilePresentation.landContextNote`)
+
+    /// The place, as a prepositional phrase that fits both sentences below unchanged.
+    ///
+    /// `otherPublic` is the 956 rows that are neither street nor park nor private — SFUSD, the Port,
+    /// the PUC, the Housing Authority — and it says "other public land" rather than naming a
+    /// department, because the bucket is defined by what it is not. E143's argument for the fourth
+    /// value is that a vocabulary permitting a value no screen offers costs nothing; a screen that has
+    /// to draw it anyway owes it a phrase that is true of all 956.
+    static func landContextPlace(_ context: LandContext) -> String {
+        switch context {
+        case .street: return "on a street"
+        case .cityPark: return "in a city park"
+        case .privateProperty: return "on private property"
+        case .otherPublic: return "on other public land"
+        }
+    }
+
+    /// **The app names itself as the one drawing the conclusion**, which is the whole point of the
+    /// sentence. "This tree stands on a street" would be a claim; "Cypress reads the city's record as"
+    /// is a citation, and it puts the reader one step from disagreeing with it. The passive
+    /// alternatives all hide the speaker, and the speaker is the fact being conveyed.
+    ///
+    /// `LandContext.inferred(from:)` resolves all 195,309 seed rows, 93.35% of them to `on a street`,
+    /// so this is the sentence almost every tree in the app shows.
+    static func landContextInferred(_ place: String) -> String {
+        "Cypress reads the city's record as a tree \(place)."
+    }
+
+    /// "A contributor", not "the contributor" — `community_trees` records no author, exactly as
+    /// `speciesNamedByContributor` explains one block up.
+    ///
+    /// It states the fact directly, where the inferred arm cites itself, because a contributor
+    /// standing at the tree *observed* this. Softening an observation into a reading would be the
+    /// mirror of the error the other arm avoids.
+    static func landContextStated(_ place: String) -> String {
+        "A contributor said this tree stands \(place)."
+    }
     // The control that answers *where is it* is `ShowWhereButton`, and its words are `PinSetCopy`'s
     // — the screen it opens owns the sentence that names it, the same way `PinSetCopy.title` takes
     // the almanac's own micro-labels rather than inventing two of its own. Why the control is on

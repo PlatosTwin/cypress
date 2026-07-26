@@ -109,6 +109,13 @@ enum TreeProfileSeedFixtures {
         plantedYear: 1993,
         dbhCityCmRange: IntRange(lowerBound: 65, upperBound: 70),
         verificationState: .cityRecord,
+        // The row's own six columns (ERRATA E143), read out of the seed like everything else here.
+        cityRecord: CityRecord(
+            legalStatus: "DPW Maintained",
+            caretaker: "DPW",
+            plantType: "Tree",
+            plotSize: "3X3"
+        ),
         createdAt: date(2026, 7, 21),
         updatedAt: date(2026, 7, 21)
     )
@@ -125,6 +132,12 @@ enum TreeProfileSeedFixtures {
         plantedYear: 2024,
         dbhCityCmRange: IntRange(lowerBound: 5, upperBound: 10),
         verificationState: .cityRecord,
+        cityRecord: CityRecord(
+            legalStatus: "Undocumented",
+            caretaker: "Private",
+            plantType: "Tree",
+            plotSize: "3x3"
+        ),
         createdAt: date(2026, 7, 21),
         updatedAt: date(2026, 7, 21)
     )
@@ -138,6 +151,151 @@ enum TreeProfileSeedFixtures {
         siteType: "Sidewalk: Property side : Cutout",
         status: .vacantSite,
         verificationState: .cityRecord,
+        cityRecord: CityRecord(
+            legalStatus: "Permitted Site",
+            caretaker: "Private",
+            plantType: "Landscaping",
+            plotSize: "11x3"
+        ),
+        createdAt: date(2026, 7, 21),
+        updatedAt: date(2026, 7, 21)
+    )
+
+    // MARK: The five city-record states (ERRATA E145)
+    //
+    // Five rows, chosen so that between them every branch of `CityRecordPresentation` is on a
+    // screen somebody can look at. Each is a real seed row and every city column below is that
+    // row's own value:
+    //
+    //   sqlite3 Fixtures/seed/cypress-seed.sqlite \
+    //     "SELECT uuid, legal_status, caretaker, care_assistant, plant_type, plot_size, permit_notes
+    //        FROM trees WHERE uuid = '…';"
+    //
+    // The sixth state — a community tree with no city record at all — cannot be a seed row by
+    // definition, and is `communityTree` below.
+
+    /// `3260 Virgil St`, Bernal — every one of the six columns populated, and the tree is one of the
+    /// 22,879 whose `care_assistant` is `FUF`. DataSF TreeID 221277.
+    static let flameTreeID = UUID(uuidString: "14fd0840-1c30-5300-8050-6680cd4ef199")!
+    static let flameTreeSpeciesID = UUID(uuidString: "0DE5A9EE-0000-4000-8000-000000000059")!
+
+    static let flameTree = Tree(
+        id: flameTreeID,
+        externalRef: "221277",
+        source: .cityImport,
+        coordinate: Coordinate(latitude: 37.7492776968184, longitude: -122.415327896468),
+        address: "3260 Virgil St",
+        siteType: "Sidewalk: Curb side : Cutout",
+        status: .alive,
+        speciesCurrentID: flameTreeSpeciesID,
+        plantedYear: 2014,
+        dbhCityCmRange: IntRange(lowerBound: 5, upperBound: 10),
+        verificationState: .cityRecord,
+        cityRecord: CityRecord(
+            legalStatus: "DPW Maintained",
+            caretaker: "Private",
+            careAssistant: "FUF",
+            plantType: "Tree",
+            plotSize: "Width 3ft",
+            // Populated, and deliberately never drawn — see `permitNotesIsNotShown`. The fixture
+            // carries it so that a screenshot of this tree is evidence the column is refused rather
+            // than evidence the fixture forgot it.
+            permitNotes: "Permit Number 771729"
+        ),
+        createdAt: date(2026, 7, 21),
+        updatedAt: date(2026, 7, 21)
+    )
+
+    /// `2868 Bush St` — only the two columns that are always populated, and nothing else. No
+    /// assistant, no plot size, no permit note, and the city has no planted year or DBH for it
+    /// either. This is the floor of the section: two cards. DataSF TreeID 273314.
+    static let bareRecordID = UUID(uuidString: "7f9eda5e-9d08-5ca6-8de7-6373df660f38")!
+    static let bareRecordSpeciesID = UUID(uuidString: "0DE5A9EE-0000-4000-8000-00000000000F")!
+
+    static let bareRecordTree = Tree(
+        id: bareRecordID,
+        externalRef: "273314",
+        source: .cityImport,
+        coordinate: Coordinate(latitude: 37.7857196995974, longitude: -122.444538242866),
+        address: "2868 Bush St",
+        siteType: "Sidewalk: Curb side : Cutout",
+        status: .alive,
+        speciesCurrentID: bareRecordSpeciesID,
+        verificationState: .cityRecord,
+        cityRecord: CityRecord(legalStatus: "Undocumented", caretaker: "Private", plantType: "Tree"),
+        createdAt: date(2026, 7, 21),
+        updatedAt: date(2026, 7, 21)
+    )
+
+    /// `338 Ortega St`, Sunset — one of the 196 rows whose legal status is `Prune Opt Out`, which is
+    /// the closest the entire dataset comes to the pruning question #68 asked. DataSF TreeID 211090.
+    static let pruneOptOutID = UUID(uuidString: "361dde0d-b08b-5f43-b9e2-db2326c2aef5")!
+    static let montereyPineSpeciesID = UUID(uuidString: "0DE5A9EE-0000-4000-8000-000000000015")!
+
+    static let pruneOptOutTree = Tree(
+        id: pruneOptOutID,
+        externalRef: "211090",
+        source: .cityImport,
+        coordinate: Coordinate(latitude: 37.7528471437891, longitude: -122.467346689111),
+        address: "338 Ortega St",
+        siteType: "Sidewalk: Curb side : Cutout",
+        status: .alive,
+        speciesCurrentID: montereyPineSpeciesID,
+        dbhCityCmRange: IntRange(lowerBound: 55, upperBound: 60),
+        verificationState: .cityRecord,
+        cityRecord: CityRecord(
+            legalStatus: "Prune Opt Out",
+            caretaker: "Private",
+            plantType: "Tree",
+            plotSize: "Width 4ft"
+        ),
+        createdAt: date(2026, 7, 21),
+        updatedAt: date(2026, 7, 21)
+    )
+
+    /// `2241 Bryant St` — one of the 318 rows where the city's own `plant_type` says the record on
+    /// the tree map is **not** a tree. DataSF TreeID 2313.
+    static let landscapingID = UUID(uuidString: "5af6a042-498c-501f-a5fb-5e3c55294b18")!
+    static let oleanderSpeciesID = UUID(uuidString: "0DE5A9EE-0000-4000-8000-00000000004C")!
+
+    static let landscapingTree = Tree(
+        id: landscapingID,
+        externalRef: "2313",
+        source: .cityImport,
+        coordinate: Coordinate(latitude: 37.7584968269853, longitude: -122.409553821766),
+        address: "2241 Bryant St",
+        siteType: "Sidewalk: Curb side : Cutout",
+        status: .alive,
+        speciesCurrentID: oleanderSpeciesID,
+        plantedYear: 2000,
+        dbhCityCmRange: IntRange(lowerBound: 5, upperBound: 10),
+        verificationState: .cityRecord,
+        cityRecord: CityRecord(
+            legalStatus: "DPW Maintained",
+            caretaker: "Private",
+            plantType: "Landscaping",
+            plotSize: "3X3"
+        ),
+        createdAt: date(2026, 7, 21),
+        updatedAt: date(2026, 7, 21)
+    )
+
+    /// A tree somebody added, out past Ocean Beach where the city's inventory has nothing.
+    ///
+    /// **No `cityRecord`, and that is the state being shown**: the section does not draw, no empty
+    /// state replaces it, and the only line about where it stands is the contributor's own. The
+    /// coordinate is `DebugDeepLink`'s `unclaimedSpot`, for the same reason that one is where it is.
+    static let communityTreeID = UUID(uuidString: "0DE5A9EE-0000-4000-8000-0000000000C0")!
+
+    static let communityTree = Tree(
+        id: communityTreeID,
+        source: .community,
+        coordinate: Coordinate(latitude: 37.7618, longitude: -122.5300),
+        address: "Great Highway",
+        status: .alive,
+        speciesCurrentID: montereyCypressSpeciesID,
+        placement: .contributorPlaced,
+        statedLandContext: .cityPark,
         createdAt: date(2026, 7, 21),
         updatedAt: date(2026, 7, 21)
     )
@@ -169,6 +327,49 @@ enum TreeProfileSeedFixtures {
         family: "Myrtaceae",
         leafRetention: .evergreen,
         curated: true,
+        createdAt: date(2026, 7, 21),
+        updatedAt: date(2026, 7, 21)
+    )
+
+    /// The species on the four city-record fixtures, verbatim from `seed.species`.
+    static let flameTreeSpecies = try! Species(
+        id: flameTreeSpeciesID,
+        scientificName: "Brachychiton acerifolius",
+        commonName: "Australian Flame Tree",
+        family: "Malvaceae",
+        leafRetention: .semiDeciduous,
+        createdAt: date(2026, 7, 21),
+        updatedAt: date(2026, 7, 21)
+    )
+
+    static let greenGemSpecies = try! Species(
+        id: bareRecordSpeciesID,
+        scientificName: "Ficus microcarpa nitida 'Green Gem'",
+        commonName: "Indian Laurel Fig Tree 'Green Gem'",
+        family: "Moraceae",
+        leafRetention: .evergreen,
+        curated: true,
+        createdAt: date(2026, 7, 21),
+        updatedAt: date(2026, 7, 21)
+    )
+
+    static let montereyPineSpecies = try! Species(
+        id: montereyPineSpeciesID,
+        scientificName: "Pinus radiata",
+        commonName: "Monterey Pine",
+        family: "Pinaceae",
+        leafRetention: .evergreen,
+        curated: true,
+        createdAt: date(2026, 7, 21),
+        updatedAt: date(2026, 7, 21)
+    )
+
+    static let oleanderSpecies = try! Species(
+        id: oleanderSpeciesID,
+        scientificName: "Nerium oleander",
+        commonName: "Oleander",
+        family: "Apocynaceae",
+        leafRetention: .evergreen,
         createdAt: date(2026, 7, 21),
         updatedAt: date(2026, 7, 21)
     )
@@ -333,6 +534,44 @@ enum TreeProfileSeedFixtures {
         tree: vacantSite,
         neighborhoodName: "Potrero Hill"
     )
+
+    // ── The five §9b states (ERRATA E145) ────────────────────────────────────────────────────
+
+    /// All six columns, `FUF` among them, and a permit note that is not drawn.
+    static let fullCityRecord = TreeProfile(
+        tree: flameTree,
+        species: flameTreeSpecies,
+        neighborhoodName: "Bernal Heights"
+    )
+
+    /// Only the two columns that are always populated: two cards and nothing else.
+    static let bareCityRecord = TreeProfile(
+        tree: bareRecordTree,
+        species: greenGemSpecies,
+        neighborhoodName: "Lower Pacific Heights"
+    )
+
+    /// One of the 196 `Prune Opt Out` rows — the pruning question's only real answer.
+    static let pruneOptOut = TreeProfile(
+        tree: pruneOptOutTree,
+        species: montereyPineSpecies,
+        neighborhoodName: "Outer Sunset"
+    )
+
+    /// One of the 318 rows the city does not list as a tree.
+    static let listedAsLandscaping = TreeProfile(
+        tree: landscapingTree,
+        species: oleanderSpecies,
+        neighborhoodName: "Mission"
+    )
+
+    /// A community tree: no city section at all, and the only land-context line on the screen is
+    /// the one a contributor stated.
+    static let communityAdded = TreeProfile(
+        tree: communityTree,
+        species: montereyCypressSpecies,
+        neighborhoodName: "Outer Sunset"
+    )
 }
 
 // MARK: - Previews
@@ -378,6 +617,32 @@ func treeProfilePreview(
 /// router as well as under the app's.
 #Preview("14 · Vacant site → redirects to the site screen") {
     treeProfilePreview(TreeProfileSeedFixtures.vacant)
+}
+
+// ── §9b · What San Francisco has on file (ERRATA E145) ───────────────────────────────────────
+
+#Preview("9b · Every city column, FUF among them") {
+    treeProfilePreview(TreeProfileSeedFixtures.fullCityRecord)
+}
+
+#Preview("9b · Only the always-populated columns") {
+    treeProfilePreview(TreeProfileSeedFixtures.bareCityRecord)
+}
+
+#Preview("9b · Prune Opt Out — the pruning question's only answer") {
+    treeProfilePreview(TreeProfileSeedFixtures.pruneOptOut)
+}
+
+#Preview("9b · The city does not list this as a tree") {
+    treeProfilePreview(TreeProfileSeedFixtures.listedAsLandscaping)
+}
+
+#Preview("9b · Community-added — no city record to show") {
+    treeProfilePreview(TreeProfileSeedFixtures.communityAdded)
+}
+
+#Preview("9b · Every city column, dark") {
+    treeProfilePreview(TreeProfileSeedFixtures.fullCityRecord, scheme: .dark)
 }
 
 #Preview("D2 · Tree profile, dark") {

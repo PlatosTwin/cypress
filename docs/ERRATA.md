@@ -5946,6 +5946,144 @@ Brazilian Pepper at 3426 21st St the larger pin among some thirty neighbours. Th
 memorial were driven the same way and drew the basin pin and the grey dash-marked pin respectively,
 each enlarged, each centred.
 
+### E145 — the city's record on the tree page, and the pruning answer the data cannot give
+
+The project owner asked for two things and this entry draws both. *"Want to see more city details
+about trees e.g. when planted next pruning last pruning and others"* (#68), and *"need to see this
+distinction on tree's landing page too, along with other tree metadata"* — the distinction being
+street / city park / private property, task #69. E143 landed the six DataSF columns and
+`LandContext.inferred(from:)` and drew neither; this is the screen.
+
+**Screen 03/14 §9b, `What San Francisco has on file`.** Five cards at most: what the city lists the
+record as, the legal status, who cares for the tree, who assists, the plot size. Under them, a
+sentence or two. Above them, one sentence about where the tree stands. No new component: it is
+`StatGrid`/`StatCard` (C11), which is what already renders labelled facts on this screen, under a
+`.cypressMicroLabel()` header, which is how the You tab labels a section.
+
+**Every card is a `StatCard.Value.cityRecord`, and that is the whole design.** D7 built that case for
+the DBH bucket — the value in mono with C12's `city record` badge beside it, reading out to VoiceOver
+as "from the city record". Reusing it means a card of this section cannot be drawn, screenshotted or
+listened to without its source attached, and it means no second vocabulary was invented for a
+distinction the app already draws. A plain `.text` card would have been Cypress asserting
+`DPW Maintained`.
+
+**`plotSize`: the notation is read, the numbers are not touched, and 20,540 rows draw nothing.**
+588 distinct values in three incompatible notations plus junk. Printing them verbatim is not showing
+the city's record, it is handing the reader the city's data-entry problem. So `Width 3ft` renders
+`3 ft wide` and `3x3`/`3X3` render `3 × 3` — **with no unit appended to the pair**, because the city
+named none and feet is a guess that would be right most of the time and invisible when it was wrong.
+No area is derived: `CityRecord.plotSize` forbids it and D7 is why.
+
+Three classes draw no card at all, and each is a decision rather than a parser limit. **`Width 0ft`,
+17,254 rows** — a basin zero feet wide is not a measurement of a basin, it is the shape "not measured"
+takes in a form that wanted a number, which is E77's argument about a plain `0` reading as a
+measurement of zero. **A bare integer, 2,726 rows** — `60`, `20`, `5`: no dimension, no unit, sixty of
+what across what. **560 strings that are not sizes** — `M6`, `TR`, `POT`, `Plaza`, `aaa`, `?`, plot
+codes from inside a Public Works workflow. They render exactly like the 48,358 rows where the city
+wrote nothing, because in the sense that matters they are the same thing. 126,411 of 146,951
+populated rows draw a plot size (86.0%), and both totals are re-derived from every row by
+`everyPlotSizeInTheSeedIsShownOrRefusedOnPurpose` so the paragraph cannot rot.
+
+**`permitNotes` is refused entirely, and it is two columns wearing one name.** 52,114 of its 52,580
+rows are a permit reference — a key into a permitting system this app cannot query or link to, which
+is the test E143 used to refuse `SiteOrder`. The other 466 are staff working notes: `I believe these
+were planted in 2010 by FUF. C.Buck` · `Resulted descion 9/7/16 -DE` · `privately planted on dpw
+street; unpermitted` · `Maintenance agreement ends 8/17/2010`. Publishing those under a badge reading
+`city record` would dress a named clerk's guess as San Francisco's finding, and would put an
+employee's initials and an unverified accusation about a private owner on a public screen. The two
+cannot be told apart by a renderer, only guessed at by prefix — the same class of mistake as parsing
+`plotSize` — and neither belongs on its own merits, so neither is drawn.
+
+**`plantType` speaks only when it disagrees with the screen.** 194,991 rows say `Tree`; a card
+reading `City lists this as — Tree`, on a tree page reached from a tree map, is a row of the panel
+spent saying nothing. The 318 `Landscaping` rows are the only place the inventory says a record on
+the tree map is not a tree, and they lead the section. This is **not** `placementNote`'s "only the
+unusual case" mistake: that argument is about two provenances of one fact, where marking one ranks it
+against the other. `Tree` restates what the rest of the screen has already said and `Landscaping`
+contradicts it — suppressing an echo is not suppressing an alternative.
+
+**`caretaker` is labelled `Cared for by`, never `Owner`, and that label is load-bearing.** DataSF's
+own description ends "Owner of Tree", and reading it that way is the 152,240-tree error E143 measured.
+163,955 rows say `Private` and 112,955 of those also say `DPW Maintained`: sidewalk trees whose
+adjacent owner waters them. A card labelled `Caretaker` invites the reader to make by hand exactly the
+inference `LandContext.inferred(from:)` exists not to make.
+
+**Codes are expanded; nothing else is.** `FUF` → `Friends of the Urban Forest` (22,879 trees, and the
+one value in these columns worth telling somebody about), plus `DPW`, `PUC`, `MTA`, `SFUSD`,
+`Rec/Park`, and `Private` → `A private party` because a bare adjective in a card labelled `Cared for
+by` reads as a category and the category a reader reaches for is the property line. **Unknown values
+pass through verbatim** — `Port`, `Mission Verde`, `CAN` — which is what keeps this safe against the
+weekly refresh, the same shape of answer E143 gave when it refused a CHECK on these columns.
+Expanding an acronym says the same thing at length; it is not the tidying E143 rules out.
+
+**The pruning question is answered on screen, once, as a fact about the dataset.** E143 verified
+against `tkzw-k3nq`'s own published column metadata that not one of eighteen columns records a pruning
+event, date or schedule. The section closes with `The city's street tree inventory records no pruning
+dates or schedule.` — the *inventory*, not the city, because San Francisco certainly prunes its trees
+and a sentence saying otherwise would be false about a public works department.
+
+The alternative — a `Last pruned · Unknown` card — was rejected on grounds that are not taste.
+`Unknown` in a card is a claim about **this tree**: the value exists and Cypress has not got it. What
+is true is a claim about the **source**. Only one of those is true, and the card version would be the
+first `Unknown` on a screen whose entire grammar for "no such fact" is to draw nothing, on all 195,309
+city rows. Silence was rejected too: the owner asked, and an answer that lives only in an errata entry
+means the question gets asked again from the same wrong premise, which this project has paid for more
+than once. **The line this must not cross:** the inventory also records no watering schedule, no soil
+volume, no root barrier and no inspection date, and none of those get a line. If a second one is ever
+wanted, the honest move is one "what the city does not record" sentence, not a growing list.
+
+**The 254 opt-out trees get a sentence of their own**, because `Prune Opt Out` (196) and `Street Tree
+Maintenance Opt Out` (58) are real facts about specific trees and are exactly the strings a reader
+looking for pruning history will read as pruning history. The status renders verbatim on its card, and
+under the grid: `This site is withdrawn from the city's pruning programme — a standing arrangement,
+with no date on the record.`
+
+**Land context is a sentence, outside the city's section, naming whoever concluded it.** A city row's
+context is Cypress's *reading* of two strings — a rule that can be wrong about any individual tree —
+so it reads `Cypress reads the city's record as a tree on a street.` A community row's is an
+observation and reads `A contributor said this tree stands in a city park.` A `StatCard` was rejected
+because it has nowhere to put a source but a badge, and C12's two cases do not fit: stamping
+`city record` on Cypress's own inference is precisely the failure this round exists to avoid, and
+adding cases would need a colour ramp ranking the two ways of knowing. There is no such ranking — a
+contributor who was standing there beats the seed, and the seed covers 195,309 trees nobody has
+visited. A sentence has room to name its speaker in words, which is `speciesClaimNote`'s grammar one
+block up the same screen. Putting it inside a section headed with the city's name would have been the
+app's inference wearing the city's authority.
+
+**E146 built the same fact at the same time, as a stat card, and the two met in a merge.** Both rounds
+were answering the same clause of the same request, neither saw the other, and for the length of one
+branch screen 03 said where the tree stands twice. The card was removed and this sentence kept, on the
+argument above — which E146's round had not been in a position to read, and whose own measurement (the
+subtitle was already five elements long) rules out the subtitle without choosing between a card and a
+sentence. The full account, including what of E146 stayed, is in that entry.
+
+**A community tree draws no section and no empty state for one.** The subtitle already reads
+`community-added, unverified`; a second sentence saying the city has nothing would be the app
+apologising for a tree somebody added on purpose.
+
+**Two defects that only a rendered screen could show, both in C11.** The `.cityRecord` case had held
+one shape of value since it was written — `30–35 cm`, six characters — and §9b put whole strings in it
+inside a half-width grid cell beside a badge that is `.fixedSize()` and never yields. The badge parked
+itself *between* two lines of the value it qualifies, so a card read `Prune · city record · Opt Out`;
+and `Landscaping` broke mid-word as `Landscapin / g`. The badge now sits on the last text baseline,
+and a `ViewThatFits` drops it below the value when the two cannot share a line. No
+`minimumScaleFactor` and no truncation: both make the city's own string harder to read to protect a
+layout, and the section exists to show that string. Neither was visible to 689 passing tests, and both
+were obvious in the first contact sheet.
+
+**`ScreenSweepShots.capture` gained a `viewportHeight`, and then a reason to distrust it.** The
+section is the last block on screen 03 and an off-screen `ScrollView` cannot be scrolled, so a
+phone-height capture of a cold profile stops just above the header — the harness was photographing
+every state of this section as empty space. Raising the window fixed that at 1,500 pt and broke
+silently at 3,600: `drawHierarchy` into an off-screen window stops producing pixels somewhere past
+8,192 px of backing store (3× a 2,730 pt window) and returns a **fully transparent image rather than
+failing**. Five 1,179 × 10,800 PNGs of nothing were written and every `#expect` around them passed,
+because this harness's only assertion was that a capture *happened* — which is not the same claim as
+a capture having a screen in it. `isNotBlank` now refuses a capture that comes back as one flat
+colour, so `sweep`/`pair` return false and the expectation fails. The AX5 shot sits at 2,700 pt,
+under the limit. The states are `c01`–`c05` light and dark, and `c06` across the type ramp.
+
+23 tests, 689 total.
 ### E146 — the ground under the tree, and the telephone number that stopped being automatic
 
 The project owner asked for it twice, the second time from real use: *"When adding a tree need option
@@ -6008,26 +6146,47 @@ exists here to avoid. The **profile still renders all four**, because 956 city r
 display is not input, and `VisitAddTreeModel.offered` is only input. The model refuses a value outside
 that list rather than merely omitting it from a list the view reads.
 
-**On the profile it is a stat card, and the provenance line was measured before that was decided.**
-The `·`-joined subtitle was the obvious home — `placementNote` and `speciesClaimNote` both live there.
-A community tree with a given name, a species and a moved pin already renders **five** elements:
-`Monterey cypress · Hesperocyparis macrocarpa · community-added, unverified · species named by a
-contributor · position placed by hand`. That is three wrapped lines of italic serif before this adds
-anything, and a sixth element would push the two notes that *are* about authorship into the middle of
-a list that had stopped being one sentence. `theSubtitleCouldNotCarryIt` asserts the count of five, so
-the reason cannot rot. It goes into the stat grid — 03's own `Details`, already carrying `Site`,
-`Planted` and `City record` — where a label gives it the one thing the subtitle cannot: room to say
-*how Cypress knows*, in words, beside the answer.
+**On the profile this round built a `Where it stands` stat card, and the card did not survive the
+merge. E145 had built the same fact as a sentence, in parallel, and both landed on one branch.** This
+happened and is worth recording rather than tidying away: two rounds ran at the same time on the same
+two-clause request from the project owner, neither saw the other's screen, and screen 03 briefly said
+where the tree stands twice — once in the stat grid as `Private property · said by a contributor`, and
+once in §9b as `A contributor said this tree stands on private property.` The sentence was kept.
 
-**Symmetric, and E138's rule does carry here where E141's did not.** All four values print and none is
-marked; `Street or sidewalk` renders exactly as `Private property` does. E141 refused E138's symmetry
+The reason is the one E145 had already written down and this round had not been in a position to read.
+A `StatCard`'s only place for a source is a badge; C12's badge vocabulary is `city record`; and
+stamping `city record` on Cypress's own inference from `qLegalStatus` is the exact failure both rounds
+existed to avoid. Adding badge cases would need a colour ramp ranking observation against inference,
+and there is no such ranking. The card's best available shape was therefore a `·`-joined tail — four
+words after a middle dot — and that is thinnest on the distinction that is the whole point: *Cypress
+reads* and *A contributor said* are different verbs by different speakers, and the tail flattens them
+into two interchangeable-looking suffixes. A sentence has room to name its speaker; that is
+`speciesClaimNote`'s grammar one block up the same screen.
+
+**What this round measured is kept, because it was never the losing half of the argument.** The
+`·`-joined subtitle was the obvious home — `placementNote` and `speciesClaimNote` both live there — and
+a community tree with a given name, a species and a moved pin already renders **five** elements:
+`Monterey cypress · Hesperocyparis macrocarpa · community-added, unverified · species named by a
+contributor · position placed by hand`. Three wrapped lines of italic serif before this adds anything,
+and a sixth element would push the two notes that *are* about authorship into the middle of a list that
+had stopped being one sentence. `theSubtitleCouldNotCarryIt` still asserts the count of five, so the
+reason cannot rot. That finding rules the subtitle out; it never compared a card against a sentence,
+because there was no sentence in front of it. Nothing else of this round moved: the v11 column, the
+composer's three chips, `Tree.landContext`, and the whole 311 handoff below are untouched.
+
+Dead with the card: `TreeProfilePresentation.landContextStat` and `landContextLabel`, and
+`LandContextCopy.attributed`/`.source` — the two helpers that spelled a source in four words. They are
+not kept against a future caller. `LandContextCopy` is now the composer's vocabulary only; the profile
+has its own phrases, because *stands in the street or on the sidewalk* and *a tree on a street* are
+different grammar and one function cannot serve both.
+
+**Symmetric, and E138's rule does carry here where E141's did not.** All four values are said and none
+is marked; `on a street` reads exactly as `on private property` does. E141 refused E138's symmetry
 because the alternative to "a contributor named it" is *no species*, which has nothing to attribute.
 A land context that exists always came from one of exactly two ways of knowing, so both arms name
-themselves — `said by a contributor` / `read from the city record` — and marking one would rank it
-against the other. `read from`, not `from`: San Francisco wrote `qLegalStatus = 'Property Tree'`, and
-turning that into a place is Cypress's rule. The value is `StatCard.Value.prose` rather than
-`.cityRecord`, because that badge means *the city published this number*, which is true of a 5 cm DBH
-bucket and false of an inference. The card is not a door — nothing in the app corrects this field.
+their own speaker and marking one would rank it against the other. Nothing here is a door and nothing
+needs to be — there is no update path on this field, which is the same reason the card would have been
+inert.
 
 ---
 
@@ -6096,6 +6255,24 @@ above it changing → photo from the library → the 10 m dedupe refusing twice,
 30 m east → save → the profile showing `WHERE IT STANDS · Private property · said by a contributor` →
 `Report` → `Blocking a sightline` → the panel saying the city does not fix this one, with `Call 311
 anyway` under it. A deep-linked city tree drew `Street or sidewalk · read from the city record` beside
+its `SITE` and `SF #229291` cards, and its report drew `Call 311 now` unchanged.
+
+**That walk is left as it was written, and two of its lines no longer describe the app.** The two card
+readings above are what the screen showed on this branch before the merge with E145; the same two trees
+now read `A contributor said this tree stands on private property.` and `Cypress reads the city's record
+as a tree on a street.`, in §9b rather than in the stat grid, and the stat grid carries one card fewer.
+Everything else the walk found — the chips, the dedupe, the save, all three report branches — is
+unchanged, which is the point of leaving it. `LandContextShots` photographs the three report branches
+and both profile arms; the two profile shots moved to the 1,500 pt window `cityRecordStates` already
+used, because §9b is the last block on the screen and a phone-height capture of it stops above the
+sentence.
+
+30 tests on this round's own branch; **719 total on the merged branch**, which is E145's 689 plus
+those 30. No test was deleted resolving the collision. Four moved from asserting a stat card to
+asserting the sentence, keeping the intent each was written to protect — *the profile states where
+the tree stands, and names who concluded it*, on both arms — and `absentWhenNothingIsKnown` gained
+the assertion that no tree ever gets a `landContext` card again, so the duplicate cannot come back
+without a test going red.
 its `SITE` and `SF #229291` cards, and its report drew `Call 311 now` unchanged. Both appearances, and
 the three report branches are photographed by `LandContextShots` because two of them cannot be reached
 from the shipped seed by any deep link.
