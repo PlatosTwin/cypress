@@ -153,7 +153,7 @@ enum MapRecentre {
         case .notAsked:
             return .ask
         case .denied, .servicesOff:
-            return .explainRefusal
+            return .waitForFix // MUTATION A
         case .waitingForFix:
             return .waitForFix
         case let .located(coordinate, _):
@@ -163,7 +163,7 @@ enum MapRecentre {
                 // fix, which is where it very nearly is — rather than being swallowed.
                 return .centre(coordinate)
             }
-            return .centreAndZoomIn(coordinate)
+            return .centre(coordinate) // MUTATION B
         }
     }
 

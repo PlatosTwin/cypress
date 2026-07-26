@@ -257,6 +257,18 @@ struct MapRecentreSearchTests {
         try #require(model.viewport, "the model has no viewport")
     }
 
+    /// Waits for the model to settle, the way `MapSearchTests` does.
+    private static func waitUntil(
+        _ condition: () -> Bool,
+        timeout: Duration = .seconds(20)
+    ) async throws {
+        let deadline = ContinuousClock.now + timeout
+        while ContinuousClock.now < deadline {
+            if condition() { return }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+    }
+
     /// Drives the model exactly as a recentre does: the camera moves, `cameraDidChange` fires with a
     /// new box, and the viewport is rebuilt.
     @Test("moving the camera keeps the species the search narrowed to")
@@ -268,10 +280,11 @@ struct MapRecentreSearchTests {
         model.cameraDidChange(bounds: Self.mission, zoom: 18)
         #expect(try Self.viewport(model).speciesIDs == nil)
 
-        // A query resolves. `searchText` debounces, so the search is applied through the same private
-        // path the debounce ends in — by typing and waiting it out.
+        // A query resolves. `searchText` debounces, so this waits for the model to settle rather
+        // than for a fixed span — `MapSearchTests.waitUntil`'s argument, and the same reason: the
+        // debounce is tuned for a thumb, and a test that pinned it would fail when it was retuned.
         model.searchText = "London plane"
-        try await Task.sleep(for: MapModel.searchDebounce + .milliseconds(400))
+        try await Self.waitUntil { model.search.isActive }
         let narrowed = try #require(Self.viewport(model).speciesIDs)
         #expect(narrowed == [RecordingSearchAPI.londonPlane])
 
@@ -291,7 +304,7 @@ struct MapRecentreSearchTests {
         let model = MapModel(api: api)
         model.cameraDidChange(bounds: Self.mission, zoom: 16)
         model.searchText = "London plane"
-        try await Task.sleep(for: MapModel.searchDebounce + .milliseconds(400))
+        try await Self.waitUntil { model.search.isActive }
         let narrowed = try #require(Self.viewport(model).speciesIDs)
 
         model.cameraDidChange(bounds: Self.tight, zoom: 18)

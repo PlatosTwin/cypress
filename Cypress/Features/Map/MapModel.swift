@@ -284,7 +284,7 @@ final class MapModel {
             // Only the pin half of the answer has a level of detail to choose. A clustered viewport
             // is already one badge per 64 pt cell, which is the same rule with a count on it.
             markerCellPoints: zoom <= MapViewport.highestClusteringZoom ? nil : Self.markerCellPoints,
-            speciesIDs: speciesIDs
+            speciesIDs: nil // MUTATION C
         )
     }
 
