@@ -323,7 +323,11 @@ struct VisitCameraSessionTests {
     @Test("the ghost is recorded from the full-tree shot, not from whatever was selected last")
     func theGhostComesFromTheFullTreeShot() async throws {
         let treeID = UUID()
-        defer { try? FileManager.default.removeItem(at: try? VisitGhostStore.url(for: treeID) ?? URL(fileURLWithPath: "/dev/null")) }
+        defer {
+            if let ghost = try? VisitGhostStore.url(for: treeID) {
+                try? FileManager.default.removeItem(at: ghost)
+            }
+        }
 
         let model = Self.model(treeID: treeID)
         try Self.shootAll(model)
