@@ -134,8 +134,36 @@ final class ReportModel {
         self.onSaveReminder = onSaveReminder
     }
 
+    /// What ground this tree stands on, once the tree has been read. `nil` until then, and `nil`
+    /// forever if the read fails.
+    ///
+    /// **The screen draws before this arrives and must be correct while it is missing**, which it is:
+    /// `nil` is `HazardHandoff.city`, which is what screen 06 has always drawn. A load that never
+    /// returns leaves the screen exactly as it shipped rather than in a degraded state, and the
+    /// panel cannot flicker from "not the city's" into a 311 CTA — only the other way, and only once.
+    private(set) var landContext: KnownLandContext?
+
     var presentation: ReportPresentation {
-        ReportPresentation(selection: selection)
+        ReportPresentation(selection: selection, landContext: landContext)
+    }
+
+    /// Reads the tree this report is about — the read `ReportModel` conspicuously did not do, which
+    /// is what let a private tree get the city's telephone number (E143's flag, E146's fix).
+    ///
+    /// **`treeProfile` rather than a new protocol requirement.** It is the requirement the tree page
+    /// already calls, it is a local SQLite read, and `Tree.landContext` is on the payload it returns.
+    /// A narrower `landContext(of:)` on `CypressAPI` would be a second door onto one row, and E141
+    /// spent a paragraph on why anything added to that protocol has to be a real requirement with a
+    /// witness — the bar for adding one should be that nothing existing answers the question. One
+    /// does.
+    ///
+    /// Failures are swallowed on purpose and this is the important half. A thrown read leaves
+    /// `landContext` nil, nil is `.city`, and `.city` is the behaviour every build before this one
+    /// had. There is no error path on which this screen becomes *less* able to route a safety
+    /// report than it was — the same rule `logHazardRedirect` keeps one method down, for the same
+    /// reason: nothing may stand between a contributor and a safety call.
+    func load() async {
+        landContext = try? await api.treeProfile(id: treeID).tree.landContext
     }
 
     /// Whether a reminder can be written at all — false only in previews, which stand up the screen
@@ -217,6 +245,14 @@ final class ReportModel {
 
     // MARK: - Analytics
 
+    /// **Still fires on the private branch, and that is a decision** (E146). The event is
+    /// `HazardRedirectEvent(treeID:category:)`, and the tree is on it — so the one query anybody
+    /// would want to run against this table, *how often does a hazard land on a tree the city does
+    /// not maintain*, is a join and not a gap. Suppressing the event on that branch would delete
+    /// exactly the rows that measure the feature this round shipped, and would do it silently.
+    ///
+    /// It is also not untrue there: the panel is shown, and the number remains one tap away as
+    /// `Call 311 anyway`. What the event has never recorded is whether anybody dialled.
     private func logRedirectShown(_ category: HazardCategory) async {
         guard !loggedCategories.contains(category) else { return }
         loggedCategories.insert(category)

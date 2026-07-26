@@ -45,13 +45,76 @@ enum ReportSelection: Hashable {
 
 // MARK: - Presentation
 
+/// Where a hazard on *this* tree can actually go.
+///
+/// ── The hole E143 left open, and the measurement that shaped how it is closed ────────────────
+/// Until now every tree got the same `Call 311 now`, because the branch was gated on the chip and
+/// `ReportModel` never read the tree. 311 is San Francisco's front door for city-owned anything — a
+/// sidewalk tree, a Rec/Park tree and an SFUSD yard tree all reach a crew through it, by queues the
+/// caller never sees — so the split is not four-way, it is `LandContext.isPublicLand`, one bit.
+///
+/// ── Only an observation may redirect a safety call. An inference may only inform ─────────────
+/// This is the whole rule, and it is `KnownLandContext` earning the reason E143 built it: *a screen
+/// cannot show an inference with the confidence of an observation*. Screen 06 is the most
+/// consequential screen in the app, so it is the last place that principle may be relaxed.
+///
+/// The seed says why in numbers. 11,856 city rows infer `.privateProperty`, and **11,153 of them —
+/// 94% — come from `caretaker == 'Private'` with no jurisdiction on file**: 8,126 whose
+/// `legal_status` reads `Undocumented`, 2,964 `Significant Tree`, 48 `Landmark tree`, 15 blank. Only
+/// **703** come from San Francisco actually recording `Private` or `Property Tree` as the legal
+/// status. E143 measured that leading on `caretaker` mislabels ~152,000 street trees and built the
+/// mapping so jurisdiction leads — but for these 11,153 rows there is no jurisdiction to lead, and
+/// the caretaker decides alone. On the *Street* Tree List, "no legal status on file and a private
+/// party waters it" describes a great many ordinary street trees whose neighbour holds the hose.
+///
+/// So the harms are not symmetric and the design follows the asymmetry:
+///
+/// - Suppressing the call on a misread street tree means somebody with a hanging limb over a
+///   pavement was told by an app that the city will not help. That is a safety harm.
+/// - Showing the call on a genuinely private tree means a wasted call and a 311 operator saying
+///   "not ours". That is a friction harm.
+///
+/// **Nothing is ever removed.** `Call 311` is reachable in all three cases; the only thing that
+/// changes is how loudly the screen recommends it. Shipping the picker therefore cannot make a
+/// safety report harder for any tree in the app.
+enum HazardHandoff: Equatable {
+
+    /// Screen 06 exactly as it has always drawn. Every public context, and — importantly — every
+    /// tree whose context is unknown, which is every row written before AppSchema v11 and every
+    /// contributor who declined the question. Unknown is not private; it is unasked.
+    case city
+
+    /// The same panel and the same `Call 311 now`, plus one line saying what the city's own record
+    /// reads as. The inference is shown and not acted on.
+    case cityWithInferredPrivateLand
+
+    /// A contributor stood at the tree and said it is on private land. The panel says the city is
+    /// not the party that fixes it, and the call is demoted from the amber CTA to a plain control —
+    /// demoted, not deleted, because a contributor can be wrong too and the harm of being wrong runs
+    /// one way.
+    case notCityMaintained
+}
+
 /// The derivation the view renders. A value, recomputed from the selection on every change.
 struct ReportPresentation: Equatable {
 
     let selection: ReportSelection
 
-    init(selection: ReportSelection) {
+    /// What the record says about the ground under this tree, and who said it.
+    ///
+    /// `nil` is the honest majority and the safe default: an unasked community row, a city row whose
+    /// `legal_status` and `caretaker` both say nothing, and — deliberately — a tree whose read
+    /// failed. `ReportModel.load` swallows the error, so a screen that could not reach the database
+    /// falls back to *today's behaviour* rather than to a suppressed call. The failure mode of the
+    /// new code is the old code.
+    let landContext: KnownLandContext?
+
+    /// The default keeps every existing call site — the previews, the sweep shots, the tests that
+    /// are about the picker and not about the tree — meaning what they already meant, because `nil`
+    /// is genuinely "nobody asked" and that is genuinely unchanged behaviour.
+    init(selection: ReportSelection, landContext: KnownLandContext? = nil) {
         self.selection = selection
+        self.landContext = landContext
     }
 
     /// The hazard picker's chips, in the order `HazardCategory` declares them.
@@ -79,17 +142,66 @@ struct ReportPresentation: Equatable {
     /// this is the restrained reading of what is specified, not an invented state (DECISIONS
     /// constraint 21). Recorded in ERRATA (E22).
     ///
-    /// **This gate knows nothing about the tree, and task #69 will make that matter.** The branch
-    /// turns on the chip alone — `ReportModel` holds a `treeID` and never reads the tree — so every
-    /// tree in the app gets the same "Call 311 now". 311 is the city's line for *city* trees, and
-    /// once a contributor can mark a tree as standing on private property, this screen will route
-    /// them to a number that will not take the report. Nothing can reach that state today, because
-    /// nothing writes `community_trees.land_context` until #69 ships a picker; the data and the
-    /// column exist as of AppSchema v11 and `Tree.landContext` already answers the question for both
-    /// city and community rows. Whether the panel changes its copy, offers a different destination,
-    /// or says plainly that the city does not handle this tree is a product decision and belongs
-    /// with #69. Recorded in ERRATA (E143).
+    /// **Whether the branch draws is still the chip alone, and that did not change** when the screen
+    /// learned about the tree (E146). A hazard is a hazard on any ground: a split trunk over a
+    /// private drive is worth a private reminder and worth a neighbour knowing, and a branch that
+    /// vanished for a private tree would delete the reminder button along with the call. What the
+    /// branch *says* is `hazardHandoff`'s question, and it is a different one.
+    ///
+    /// E143 flagged the hole this closed: the gate knew nothing about the tree, `ReportModel` held a
+    /// `treeID` and never read it, so every tree got the same `Call 311 now` and 311 is the city's
+    /// line for *city* trees. Nothing could reach that state until #69 shipped a picker; it can now.
     var showsHazardBranch: Bool { selection.hazard != nil }
+
+    /// Which of the three handoffs this tree gets. See `HazardHandoff` for the whole argument and
+    /// the numbers behind it.
+    var hazardHandoff: HazardHandoff {
+        guard let landContext, !landContext.context.isPublicLand else { return .city }
+        switch landContext.source {
+        case .statedByContributor: return .notCityMaintained
+        case .inferredFromCityRecord: return .cityWithInferredPrivateLand
+        }
+    }
+
+    /// The panel's body paragraph. Its title never changes: `This may be a public-safety hazard` is
+    /// an assessment of the *tree*, and who owns the ground under it does not make a hanging limb
+    /// less dangerous. Only the destination changes, and the destination is what the body is about.
+    var hazardPanelBody: String {
+        switch hazardHandoff {
+        case .city, .cityWithInferredPrivateLand:
+            return ReportCopy.hazardPanelBody
+        case .notCityMaintained:
+            return ReportCopy.notCityMaintainedBody
+        }
+    }
+
+    /// Whether the amber `Call 311 now` button draws. False only where the panel has just said the
+    /// city is not the party that fixes this — `showsDemotedCall` puts the same call back as a plain
+    /// control on that branch, so the number is never unreachable.
+    var showsCallCTA: Bool { hazardHandoff != .notCityMaintained }
+
+    /// The plain-text `Call 311 anyway`, on the one branch that does not lead with the button.
+    var showsDemotedCall: Bool { hazardHandoff == .notCityMaintained }
+
+    /// One line under the CTA saying what San Francisco's record reads as, on a tree the *city's*
+    /// row puts on private land.
+    ///
+    /// It is a sentence and not a redirect on purpose: 94% of the rows that reach this state were
+    /// decided by the `caretaker` column alone (`HazardHandoff`), which is the column E143 measured
+    /// as the one that mislabels street trees. The screen says what it read and leaves the call
+    /// where it was.
+    ///
+    /// **The city's caretaker string is deliberately not named here, and the seed is why.** Naming
+    /// the party the city record gives was the obvious alternative — `caretaker` is populated on
+    /// 100% of city rows — and it collapses on precisely the branch it would serve: of the 11,856
+    /// rows that infer `.privateProperty`, **11,715 (98.8%) have `caretaker = 'Private'`**. A panel
+    /// reading "the city says the caretaker is Private" names nobody, tells the reader nothing they
+    /// cannot see from the sentence above it, and dresses a non-answer as a lead. `care_assistant`
+    /// is worse: it is populated on 112 of the 703 rows with a private jurisdiction, and 80 of those
+    /// say `FUF` — the volunteers who *planted* it, who are not a hazard line.
+    var cityRecordPrivateNote: String? {
+        hazardHandoff == .cityWithInferredPrivateLand ? ReportCopy.inferredPrivateLandNote : nil
+    }
 }
 
 // MARK: - Copy
@@ -114,7 +226,50 @@ enum ReportCopy {
         Cypress does not dispatch emergency work.
         """
 
+    /// **NOT SPECIFIED** (ERRATA E146). SCREENS.md 06 draws one panel body, for a screen that had no
+    /// way to know whose tree it was on. This is the body for a tree a contributor has said stands on
+    /// private land.
+    ///
+    /// Three sentences, and each one is doing a job the others cannot:
+    ///
+    /// 1. The first is `hazardPanelBody`'s own closing sentence, kept verbatim. Cypress dispatching
+    ///    nothing is true on every ground and the reader should not have to notice it changed.
+    /// 2. The second says what 311 is *for* before it says this tree is not it. A reader told only
+    ///    "not 311" learns a refusal; a reader told what the line covers learns the rule and can
+    ///    apply it themselves next time.
+    /// 3. The third states what Cypress cannot do. It would be easy to leave that out and let the
+    ///    silence imply somebody is handling it. Nobody is: this app has no owner contact for any
+    ///    parcel in San Francisco, and it has no business implying otherwise (DECISIONS constraint 3).
+    ///
+    /// It does not name the contributor's answer back at them ("you said private property") — the
+    /// tree page one screen back carries that under `Where it stands`, with its source, and a panel
+    /// that argued with the reader about their own answer would be picking a fight it cannot win.
+    static let notCityMaintainedBody = """
+        Cypress does not dispatch emergency work. 311 is the city’s line for the trees the city \
+        maintains, and this one is recorded as standing on private property — so the city is not \
+        the party that fixes it, and Cypress has no way to reach whoever is.
+        """
+
+    /// **NOT SPECIFIED** (ERRATA E146). One line under the amber CTA on a tree the city's own record
+    /// reads as private, where the call is unchanged. See `cityRecordPrivateNote` for why this
+    /// informs rather than redirects, and why no caretaker is named.
+    ///
+    /// `reads` and `may not`, not `is` and `will not`: this is Cypress's reading of two columns in a
+    /// municipal export and the sentence says so in its own grammar rather than in a footnote.
+    static let inferredPrivateLandNote = """
+        The city’s own record reads as private land here, so 311 may not be the line for this one.
+        """
+
     static let callCTA = "Call 311 now"
+
+    /// **NOT SPECIFIED** (ERRATA E146). The same number, on the branch that does not lead with it.
+    ///
+    /// `anyway` is the whole word. It concedes that the screen has just recommended against it and
+    /// keeps the choice with the person standing in front of the tree — who can see the limb, and
+    /// whose answer about the ground may simply have been wrong. A screen that removed the number
+    /// would be making a safety decision on behalf of somebody with better information than it has.
+    static let callAnyway = "Call 311 anyway"
+
     static let saveReminder = "Save a private reminder for yourself"
 
     /// **NOT SPECIFIED.** SCREENS.md 06 §5 draws the button and nothing after it, so what a
@@ -213,6 +368,11 @@ enum ReportMetrics {
     /// 06 §4: title `margin-bottom:5px`, body `margin-bottom:16px`.
     static let panelTitleBottom: CGFloat = 5
     static let panelBodyBottom: CGFloat = 16
+    /// Gap between the CTA and the line under it that says what the city's record reads as.
+    /// **NOT SPECIFIED** — the line itself is not in the mock (ERRATA E146). `reminderNoteTop`'s own
+    /// value, because it is the same relationship one block down: a control, and a sentence about it.
+    static let panelNoteTop: CGFloat = CypressSpacing.gapDense
+
     /// 06 §5: secondary button block `padding:10px 16px 0`.
     static let secondaryTop: CGFloat = 10
     /// Gap between the reminder button and the line that answers a tap on it. **NOT SPECIFIED** —

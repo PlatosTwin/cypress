@@ -134,6 +134,28 @@ public enum LandContext: String, Codable, Sendable, Hashable, CaseIterable {
 
 extension LandContext {
 
+    /// Whether the ground under the tree is publicly held.
+    ///
+    /// One bit, and it is the only thing screen 06 needs from this enum. 311 is San Francisco's
+    /// single front door for city-owned anything — a sidewalk tree, a Rec/Park tree, an SFUSD yard
+    /// tree all reach a city crew through it, by different queues the caller never sees. A tree on
+    /// private land reaches nobody through it, because the city does not maintain it.
+    ///
+    /// So the three public values answer the same way and `privateProperty` is the one that differs,
+    /// which is why this is a `Bool` rather than a four-way switch somewhere in `Features`: the
+    /// distinction that matters to a reporting screen is not "which of four" but "is this the city's
+    /// to fix", and a screen that re-derived it would be free to disagree with this file.
+    ///
+    /// It says nothing about 311, and deliberately: `Core` is pure Foundation and knows about ground,
+    /// not about municipal telephone numbers. `ReportPresentation.hazardHandoff` is where this
+    /// becomes a statement about who takes the report.
+    public var isPublicLand: Bool {
+        switch self {
+        case .street, .cityPark, .otherPublic: return true
+        case .privateProperty: return false
+        }
+    }
+
     /// Reads the city's record for where the tree stands, or `nil` when the record does not say.
     ///
     /// **`caretaker` is the trap this function exists to avoid.** DataSF describes `qCaretaker` as
