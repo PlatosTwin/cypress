@@ -314,8 +314,7 @@ struct AlmanacLateFixTests {
         #expect(early == earlyAgain, "the renderer is not stable, so the comparison below is void")
         #expect(
             late == early,
-            "a fix that arrives after the almanac was built draws a different screen from one that "
-                + "was there at mount — which is this entry's defect"
+            "a late fix draws a different screen from one present at mount, which is this defect"
         )
     }
 
