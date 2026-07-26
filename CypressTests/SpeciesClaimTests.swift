@@ -310,12 +310,27 @@ struct SpeciesClaimTests {
         return try await CypressStore.inMemory(seedURL: seedURL)
     }
 
+    /// Where the seeded cases stand.
+    ///
+    /// **Not `fix`.** The other tests here run against a store with no seed attached, so the Mission
+    /// corner is empty and anything may be added there. With the real catalogue attached the seed's
+    /// 195,309 street trees come with it, and that corner has several inside the 10 m dedupe —
+    /// `addTree` correctly refuses, and the first version of these tests failed with `add() → nil`,
+    /// which is the API doing its job rather than a defect. This is a point in the Pacific west of
+    /// Ocean Beach: the seed is the city's *street*-tree inventory, so there is nothing within any
+    /// dedupe radius of it and the only trees these tests contend with are their own.
+    private static let offshore = Coordinate(latitude: 37.7600, longitude: -122.5400)
+
     /// Adds a tree with no species, the way the fast path does.
     @MainActor
-    private static func addUnnamedTree(through api: LocalAPI) async throws -> UUID {
-        let subject = Self.model(api: api)
+    private static func addUnnamedTree(through api: LocalAPI, at spot: Coordinate) async throws -> UUID {
+        let subject = VisitAddTreeModel(
+            api: api,
+            location: VisitLocationProvider(pinnedFix: .located(spot, accuracyM: 24)),
+            attribution: attribution
+        )
         subject.useLibraryImage(try Self.jpeg())
-        return try #require(await subject.add(), "the add returned no tree")
+        return try #require(await subject.add(), "the add returned no tree: \(subject.phase)")
     }
 
     /// **The "after" half of the request, end to end**, and it goes through the same species search
@@ -326,7 +341,7 @@ struct SpeciesClaimTests {
     func aSpeciesCanBeNamedAfterTheAdd() async throws {
         let store = try await Self.seededStore()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
-        let id = try await Self.addUnnamedTree(through: api)
+        let id = try await Self.addUnnamedTree(through: api, at: Self.offshore)
         #expect(try await Self.storedSpecies(of: id, in: store) == nil, "the tree was added with a species")
 
         let matches = try await api.searchSpecies(query: "Platanus", limit: SpeciesPickModel.resultLimit)
@@ -357,7 +372,7 @@ struct SpeciesClaimTests {
     func theFirstClaimWins() async throws {
         let store = try await Self.seededStore()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
-        let id = try await Self.addUnnamedTree(through: api)
+        let id = try await Self.addUnnamedTree(through: api, at: VisitPinAdjust.offset(Self.offshore, northM: 300, eastM: 0))
 
         let plane = try #require(await api.searchSpecies(query: "Platanus", limit: 5).first)
         let oak = try #require(
