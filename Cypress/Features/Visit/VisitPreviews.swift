@@ -212,14 +212,14 @@ enum VisitPreviewFixtures {
         // A real 1×1 JPEG. Two bare markers used to do — a path on disk was all this needed — but
         // staging rewrites the container to drop the metadata now (E148) and it refuses bytes that
         // are not a container. Refusing them is the point of it, so the preview supplies a photograph.
-        let path = try VisitPhotoStaging.write(onePixelJPEG(), for: visitID)
+        let path = try VisitPhotoStaging.write(onePixelJPEG(), for: visitID, shotType: .fullTree)
         return try await VisitOutboxWriter.save(
             VisitDraft(
                 visitID: visitID,
                 treeID: treeID,
                 note: "New tips glowing",
                 gpsAccuracyM: 9,
-                photo: OutboxPhoto(path: path, shotType: .fullTree)
+                photos: [OutboxPhoto(path: path, shotType: .fullTree)]
             ),
             attribution: attribution,
             outbox: migratedOutbox()

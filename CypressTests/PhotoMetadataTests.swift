@@ -270,7 +270,7 @@ struct PhotoMetadataTests {
 
     @Test("a staged capture has lost its GPS and kept which way up it goes")
     func stagingStrips() throws {
-        let staged = try VisitPhotoStaging.write(try Self.cameraJPEG(), for: UUID())
+        let staged = try VisitPhotoStaging.write(try Self.cameraJPEG(), for: UUID(), shotType: .fullTree)
         defer { Self.removeStaged(staged) }
 
         let properties = try Self.properties(ofFileAt: staged)
@@ -287,10 +287,108 @@ struct PhotoMetadataTests {
     /// nothing to put back), so it is a different code path and gets its own file on disk.
     @Test("an upright capture is staged clean too, by the shorter route")
     func stagingStripsAnUprightCapture() throws {
-        let staged = try VisitPhotoStaging.write(try Self.cameraJPEG(orientation: nil), for: UUID())
+        let staged = try VisitPhotoStaging.write(
+            try Self.cameraJPEG(orientation: nil), for: UUID(), shotType: .fullTree
+        )
         defer { Self.removeStaged(staged) }
 
         Self.expectClean(try Self.properties(ofFileAt: staged), orientation: nil, "the staged file")
+    }
+
+    /// **The new staging path gets the same coverage as the old one (ERRATA E152).**
+    ///
+    /// One session now stages three files instead of one, and the framing is what tells them apart. The
+    /// risk this covers is the obvious one and it would be silent: if all three still resolved to one
+    /// path, the third capture would overwrite the first two and every existing assertion here would
+    /// still pass, because each one only ever looks at the file it was just handed. So this asserts on
+    /// **all three files at once, after all three writes** — which is the only order in which an
+    /// overwrite is visible — and it asserts the strip on each of them, so no framing can reach disk by a
+    /// route that skips `PhotoBinary.write`.
+    @Test("all three framings of one visit are staged, distinct, and each one clean")
+    func stagingKeepsThreeFramingsApartAndStripsEachOne() throws {
+        let visitID = UUID()
+        let framings: [ShotType] = [.fullTree, .trunk, .leaf]
+
+        // Three different photographs, distinguishable by their pixel dimensions — so "the leaf shot
+        // overwrote the full-tree shot" is a readable failure rather than three identical passes.
+        let sizes: [ShotType: (width: Int, height: Int)] = [
+            .fullTree: (400, 300), .trunk: (600, 800), .leaf: (240, 240)
+        ]
+
+        var staged: [ShotType: String] = [:]
+        for framing in framings {
+            let size = sizes[framing]!
+            staged[framing] = try VisitPhotoStaging.write(
+                try Self.cameraJPEG(width: size.width, height: size.height),
+                for: visitID,
+                shotType: framing
+            )
+        }
+        defer { staged.values.forEach(Self.removeStaged) }
+
+        // Three files, not one wearing three names.
+        #expect(
+            Set(staged.values).count == 3,
+            "the three framings share a path, so two photographs were overwritten: \(staged)"
+        )
+
+        for framing in framings {
+            let path = try #require(staged[framing])
+            #expect(
+                FileManager.default.fileExists(atPath: path),
+                "the \(framing.rawValue) file is gone — a later capture removed it"
+            )
+            // Still the photograph it was written from, after the other two were written.
+            let size = try #require(
+                PhotoBinary.pixelSize(atPath: path),
+                "the \(framing.rawValue) file is not readable as an image"
+            )
+            let expected = sizes[framing]!
+            let complaint = "the \(framing.rawValue) file is \(size.width)×\(size.height), expected "
+                + "\(expected.width)×\(expected.height) — it was overwritten by another framing"
+            #expect(size.width == expected.width && size.height == expected.height, "\(complaint)")
+            // E148 holds on every one of them, not just on whichever went last.
+            Self.expectClean(
+                try Self.properties(ofFileAt: path),
+                orientation: Self.orientationRightTop,
+                "the staged \(framing.rawValue) file"
+            )
+            #expect(!PhotoBinary.carriesIdentifyingMetadata(atPath: path))
+        }
+    }
+
+    /// A retake replaces its own framing and leaves the others alone — the other half of the filename
+    /// decision. If the name carried a counter or a fresh id instead, this would leave an orphan behind
+    /// in a directory iCloud backs up.
+    @Test("retaking one framing overwrites that framing and nothing else")
+    func stagingRetakeReplacesOnlyItsOwnFraming() throws {
+        let visitID = UUID()
+        let trunk = try VisitPhotoStaging.write(
+            try Self.cameraJPEG(width: 600, height: 800), for: visitID, shotType: .trunk
+        )
+        let fullTree = try VisitPhotoStaging.write(
+            try Self.cameraJPEG(width: 400, height: 300), for: visitID, shotType: .fullTree
+        )
+        defer { [trunk, fullTree].forEach(Self.removeStaged) }
+
+        let retaken = try VisitPhotoStaging.write(
+            try Self.cameraJPEG(width: 240, height: 240), for: visitID, shotType: .trunk
+        )
+        #expect(retaken == trunk, "a retake of the trunk went to a new path, orphaning the first file")
+
+        let trunkSize = try #require(PhotoBinary.pixelSize(atPath: trunk))
+        #expect(trunkSize.width == 240 && trunkSize.height == 240, "the retake did not replace the trunk")
+
+        let fullTreeSize = try #require(PhotoBinary.pixelSize(atPath: fullTree))
+        #expect(
+            fullTreeSize.width == 400 && fullTreeSize.height == 300,
+            "retaking the trunk destroyed the full-tree photograph"
+        )
+        Self.expectClean(
+            try Self.properties(ofFileAt: trunk),
+            orientation: Self.orientationRightTop,
+            "the retaken trunk file"
+        )
     }
 
     /// The refusal, and why it is a refusal. Both capture screens turn this throw into "that photo
@@ -300,9 +398,11 @@ struct PhotoMetadataTests {
     func stagingRefusesWhatItCannotRewrite() throws {
         let visitID = UUID()
         #expect(throws: (any Error).self) {
-            try VisitPhotoStaging.write(Data("this is not a photograph".utf8), for: visitID)
+            try VisitPhotoStaging.write(
+                Data("this is not a photograph".utf8), for: visitID, shotType: .fullTree
+            )
         }
-        let url = try VisitPhotoStaging.url(for: visitID)
+        let url = try VisitPhotoStaging.url(for: visitID, shotType: .fullTree)
         #expect(
             !FileManager.default.fileExists(atPath: url.path),
             "the refused bytes were left on disk anyway"
@@ -410,7 +510,9 @@ struct PhotoMetadataTests {
         let api = LocalAPI(store: store, deviceID: Self.deviceID, photoDirectory: photoDirectory)
         let outbox = OutboxQueue(queue: store.queue, transport: APIOutboxTransport(api: api))
 
-        let subjectPhoto = try VisitPhotoStaging.write(try Self.cameraJPEG(), for: UUID())
+        let subjectPhoto = try VisitPhotoStaging.write(
+            try Self.cameraJPEG(), for: UUID(), shotType: .fullTree
+        )
         defer { Self.removeStaged(subjectPhoto) }
         let tree = try await api.addTree(
             TreeDraft(
@@ -423,7 +525,7 @@ struct PhotoMetadataTests {
         // What `VisitCameraModel.apply(imageData:)` does with a capture, byte for byte.
         let visitID = UUID()
         let staged = try VisitPhotoStaging.write(
-            try Self.cameraJPEG(width: 600, height: 800), for: visitID
+            try Self.cameraJPEG(width: 600, height: 800), for: visitID, shotType: .fullTree
         )
         defer { Self.removeStaged(staged) }
         Self.expectClean(
