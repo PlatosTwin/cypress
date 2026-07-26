@@ -40,7 +40,8 @@ public enum AppSchema {
         Migration(version: 8, name: "a photo can be voted up or down", sql: v8),
         Migration(version: 9, name: "a vote can outlive the voter", migrate: applyV9),
         Migration(version: 10, name: "a coordinate says how it was arrived at", migrate: applyV10),
-        Migration(version: 11, name: "a new tree says what ground it stands on", migrate: applyV11)
+        Migration(version: 11, name: "a new tree says what ground it stands on", migrate: applyV11),
+        Migration(version: 12, name: "a photograph says whose it is", migrate: applyV12)
     ]
 
     /// The version a freshly migrated database reports.
@@ -1046,6 +1047,117 @@ public enum AppSchema {
                 ADD COLUMN land_context TEXT
                 CHECK (land_context IS NULL
                        OR land_context IN ('street','city_park','private_property','other_public'));
+            """)
+    }
+
+    // MARK: - v12
+
+    /// `photos` learns whose it is, which is the column ERRATA **E136** left open and the column
+    /// "delete your own photograph" cannot be built without.
+    ///
+    /// **The hole, restated.** A photograph's only tie to a person was `visit_id`, and from there
+    /// `visits.user_id`. `LocalAPI.addTree` writes a photograph with **no visit** — a community add
+    /// requires a photograph (BUILD-PLAN §6) and there is no visit to hang it on — and
+    /// `community_trees` records no author either. So the photograph on a tree you added was
+    /// attributable to nobody, and neither door of account deletion could reach it: "erase
+    /// everything I contributed" left a JPEG on disk that no query could name as yours. That is a
+    /// broken promise rather than a missing feature, which is why it is a migration and not a
+    /// backlog item.
+    ///
+    /// **Why the owner goes on `photos` and not on `community_trees`.** E136 and
+    /// `AccountDeletion.photoBytes` both wrote "closing it needs an owner on `community_trees`", and
+    /// this is a deliberate departure from that sentence. An owner on the tree only answers the
+    /// question by *derivation* — "the photographs of a tree you added, that have no visit" — and
+    /// `photoBytes` already records why a derived predicate is the wrong instrument here: widen it
+    /// by one clause and it starts deleting other people's work. It also stops being true the day
+    /// anything else writes a visitless photograph (a care event may already carry one), and it
+    /// cannot answer the question for the *ordinary* case at all — a photograph taken on a visit to
+    /// a city tree, which is most photographs in the app and which "delete your own photograph"
+    /// must also cover. One column pair on the row that is being deleted answers all of it with one
+    /// predicate. The tree row still records no author, deliberately: it is a public object, no
+    /// screen names its contributor (screen 03 says "a contributor"), and neither deletion door
+    /// needs it — a community tree survives both doors today and still does, because "everything I
+    /// have added" is the person's rows and not the forest.
+    ///
+    /// **The CHECK is at most one owner, not exactly one, and that is the whole lesson of E136.**
+    ///
+    /// ```sql
+    /// CHECK (NOT (user_id IS NOT NULL AND device_id IS NOT NULL))
+    /// ```
+    ///
+    /// `private_reminders` (v3) and `favorites` (v5) are `(user_id IS NULL) <> (device_id IS NULL)`
+    /// — exactly one owner — and copying that here would have been the obvious move and a bug with
+    /// a migration already scheduled behind it. Those two tables are *deleted* with their account
+    /// under both doors, so an ownerless row is a state they never need. A photograph is not: the
+    /// default door's entire promise is that the work stays and the name comes off, so an ownerless
+    /// photograph is not a hole in the rule, it is the rule's terminal state — exactly the argument
+    /// v9 had to make for `photo_votes` after v8 forbade it. Ask what a constraint forbids, not only
+    /// what it permits: exactly-one-owner would have forbidden anonymisation, so the anonymising
+    /// door would have had to choose between deleting the photograph (breaking its own promise) and
+    /// re-homing it onto the device (handing one person's photograph to whoever picks the phone up
+    /// next). Both are worse than the constraint being one clause weaker.
+    ///
+    /// What it still forbids, and means to: a photograph owned twice. Two owners need a precedence
+    /// rule somewhere a query can get it wrong, and adoption at sign-in stays a *move* — the account
+    /// gains the row and the device link is dropped in the same statement, so the row carries
+    /// strictly less about the device afterwards than before (E23's reason, restated).
+    ///
+    /// **The backfill, and what it assumes.** Every row in `main.photos` was written by this
+    /// installation: `beginPhotoUpload` and `addTree` are the only writers, both run in `LocalAPI`,
+    /// and nothing syncs anybody else's photographs down (`LocalAPI.treeProfile` states the same
+    /// fact where it fills `ownPhotoIDs`). So:
+    ///
+    /// 1. A photograph with a visit takes the visit's owner — `user_id` when the visit has one, and
+    ///    the visit's `device_id` otherwise. A visit carries both columns and always has a device;
+    ///    a photograph carries at most one, so the copy collapses to whichever the visit's owner
+    ///    actually is.
+    /// 2. A photograph with no visit takes this installation's own identity — the signed-in account
+    ///    if there is one, `app_state.device_uuid` if there is not. That is precisely what
+    ///    `FavoriteOwner(_ attribution:)` would have written at the time, applied retroactively,
+    ///    and it is what makes an already-added tree's photograph erasable by the person who added
+    ///    it instead of stranded for the life of the install. It can over-attribute in one case — a
+    ///    photograph taken on this phone before a *different* person signed in — and that is the
+    ///    same over-attribution `claimDevice` already performs on every visit, recorded in E136 as
+    ///    the owner's to rule on, not a new hole opened here.
+    /// 3. Anything left over stays ownerless, which the CHECK permits: a database with no
+    ///    `device_uuid` has never contributed anything.
+    ///
+    /// **`ALTER TABLE ADD COLUMN`, not a rebuild**, on v10's and v11's argument: nothing existing
+    /// changes, SQLite enforces a CHECK on an added column from the moment it is added, and copying
+    /// rows is the one thing in a migration that can lose them. A CHECK in an added column's
+    /// definition may reference other columns of the table — SQLite does not distinguish column
+    /// constraints from table constraints — so the pair rule is expressible without a rebuild.
+    ///
+    /// **No index.** `photos` holds tens of rows per install, `idx_photos_tree` already serves the
+    /// timeline, and the two owner queries are an account deletion (once, ever) and "is this one
+    /// mine" (by primary key). An index here would be a line of DDL that never changes a plan.
+    ///
+    /// **Idempotent by guard**, in v3's, v10's and v11's shape: `ALTER TABLE ADD COLUMN` has no
+    /// `IF NOT EXISTS`, so a replay after an interrupted run would fail on "duplicate column name"
+    /// and strand the database one version short.
+    private static func applyV12(_ connection: SQLiteConnection) throws {
+        guard try !connection.columnNames(ofTable: "photos").contains("user_id") else { return }
+        try connection.execute("""
+            ALTER TABLE photos ADD COLUMN user_id TEXT;
+            ALTER TABLE photos ADD COLUMN device_id TEXT
+                CHECK (NOT (user_id IS NOT NULL AND device_id IS NOT NULL));
+
+            -- 1. The photographs of a visit follow the visit.
+            UPDATE photos
+               SET user_id = (SELECT v.user_id FROM visits v WHERE v.id = photos.visit_id)
+             WHERE visit_id IS NOT NULL;
+            UPDATE photos
+               SET device_id = (SELECT v.device_id FROM visits v WHERE v.id = photos.visit_id)
+             WHERE visit_id IS NOT NULL AND user_id IS NULL;
+
+            -- 2. The visitless ones — every one of them written by this installation — take this
+            --    installation's identity, account first.
+            UPDATE photos
+               SET user_id = (SELECT value FROM app_state WHERE key = 'current_user_id')
+             WHERE visit_id IS NULL;
+            UPDATE photos
+               SET device_id = (SELECT value FROM app_state WHERE key = 'device_uuid')
+             WHERE visit_id IS NULL AND user_id IS NULL;
             """)
     }
 

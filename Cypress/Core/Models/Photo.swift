@@ -141,6 +141,79 @@ public struct Photo: CoreEntity, SoftDeletable {
     }
 }
 
+// MARK: - Ownership
+
+/// Whose photograph this is (`photos.user_id` / `photos.device_id`, `AppSchema` v12).
+///
+/// **Three cases, where `FavoriteOwner` and `ReminderOwner` have two**, and the third is the whole
+/// reason this is a separate type rather than a fourth use of `FavoriteOwner`. Those two live under
+/// `CHECK ((user_id IS NULL) <> (device_id IS NULL))` — exactly one owner, no other state
+/// representable — because a reminder and a favourite are *deleted* with the account that owns them
+/// under both doors of `AccountDeletionChoice`. A photograph is not: the default door's promise is
+/// that the work stays on the tree and the name comes off it, so a photograph owned by nobody is
+/// not a hole in the rule, it is where the rule ends up. v12's CHECK is at most one owner for
+/// exactly that reason, and this enum is that CHECK in Swift.
+///
+/// E89 said the same thing about `FavoriteOwner` and `ReminderOwner`: same shape, different
+/// invariants, kept apart on purpose so that neither one's rules leak onto the other.
+public enum PhotoOwner: Hashable, Sendable {
+    case user(UUID)
+    case device(UUID)
+    /// Anonymized: the account that took it was deleted through the door that leaves contributions
+    /// where they are. The photograph is on its tree and belongs to nobody, which means nobody can
+    /// delete it either — you do not get to reach back through a deletion you already made.
+    case nobody
+
+    /// D9's rule, the same one `FavoriteOwner` applies: a contribution belongs to the signed-in user
+    /// when there is one and to this device otherwise. A write always has one of those, so this
+    /// initializer never produces `.nobody` — only a deletion can.
+    public init(_ attribution: Attribution) {
+        if let userID = attribution.userID {
+            self = .user(userID)
+        } else {
+            self = .device(attribution.deviceID)
+        }
+    }
+
+    public var userID: UUID? {
+        if case let .user(id) = self { return id }
+        return nil
+    }
+
+    public var deviceID: UUID? {
+        if case let .device(id) = self { return id }
+        return nil
+    }
+
+    /// Whether this photograph is one *this* installation may act on — the predicate behind
+    /// "delete your own photograph".
+    ///
+    /// Both arms, deliberately, exactly as `ContributionStore.privateReminders` and
+    /// `GroveQueries.groveTreeIDs` read both: a photograph taken before sign-in is owned by the
+    /// device and is still the same person's, and on this phone `claimDevice` is what eventually
+    /// moves it. `.nobody` is false for everybody, which is the correct answer for a photograph
+    /// whose contributor deleted their account and asked for their records to be left where they
+    /// are — it is on the tree, and it is nobody's to take back.
+    public func isOwned(by attribution: Attribution) -> Bool {
+        switch self {
+        case let .user(id): return attribution.userID == id
+        case let .device(id): return attribution.deviceID == id
+        case .nobody: return false
+        }
+    }
+
+    /// What `POST /devices/claim` does to a photograph (D9): a device-owned one moves onto the
+    /// account, an account-owned one is left alone so claiming twice cannot move a record between
+    /// accounts, and an anonymized one stays anonymized — adoption is for work that has never been
+    /// attributed, not for work somebody has already asked to be unlinked from.
+    public func adopted(by userID: UUID) -> PhotoOwner {
+        switch self {
+        case .user, .nobody: return self
+        case .device: return .user(userID)
+        }
+    }
+}
+
 // MARK: - Voting
 
 /// A thumb, up or down, on one photograph (`photo_votes`, `AppSchema` v8).

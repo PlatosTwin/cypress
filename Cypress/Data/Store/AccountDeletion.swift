@@ -93,6 +93,14 @@ public struct AccountDeletion {
         /// Photo votes whose owner was nulled and which still count toward their photograph's hero
         /// (`AppSchema` v9).
         public var anonymizedPhotoVotes: Int = 0
+        /// Photographs whose owner was nulled (`AppSchema` v12, ERRATA E147). They stay on their
+        /// trees with their bytes intact and belong to nobody afterwards — which also means nobody
+        /// can delete them, including the next account signed in on this phone.
+        ///
+        /// Zero before v12, and not because nothing happened: there was no column to null, so a
+        /// photograph was un-named by proxy when its visit was, and `addTree`'s photograph was never
+        /// named at all.
+        public var anonymizedPhotos: Int = 0
         /// Public notes the anonymizing door could not anonymize, because `community_notes.user_id`
         /// is `NOT NULL` (v1) and no migration has made it nullable. Nothing in the app writes a
         /// community note, so this is zero on every database the app can produce — and it is
@@ -147,37 +155,33 @@ public struct AccountDeletion {
 
     /// Every file the account's photographs occupy, for the erasing door.
     ///
-    /// **A photograph has no owner column.** `photos` carries no `user_id`; the only thing tying one
-    /// to a person is `visit_id`, and from there `visits.user_id`. Two consequences, and both are
-    /// load-bearing:
+    /// **A photograph says whose it is** since `AppSchema` v12, and this read is the reason the
+    /// column exists. Before it, the only tie between a photograph and a person was `visit_id` and
+    /// from there `visits.user_id` — which meant `LocalAPI.addTree`'s photograph, written with no
+    /// visit for a tree whose row records no author, was attributable to nobody and reachable by
+    /// neither door. "Erase everything I contributed" left that JPEG on the disk. ERRATA E136
+    /// recorded it as a broken promise; ERRATA E147 is the column that closes it, and this predicate
+    /// is now `photos.user_id` rather than a join through the visits.
     ///
-    /// 1. Under `leaveRecords` there is nothing at all to do to a photograph. Nulling the visit's
-    ///    `user_id` removes the only link, so the bytes stay, the row stays, the tree keeps its
-    ///    picture, and no column anywhere says whose it was. The anonymizing door does not name
-    ///    `photos` once, and that is correct rather than an omission.
-    /// 2. Under `eraseEverything` this read **must run before the visits are touched**, because
-    ///    afterwards there is no way left to find out which photographs were the person's. The
-    ///    ordering is enforced by construction: this is a read on a separate connection, taken by
+    /// Two things that did not change with it:
+    ///
+    /// 1. This read still **must run before the rows are touched**, and the ordering is still
+    ///    enforced by construction: it is a read on a separate connection, taken by
     ///    `LocalAPI.deleteAccount` before it opens the write at all.
+    /// 2. It is scoped to the account and not to the device. A device-owned photograph was taken
+    ///    before there was an account and was never this account's; `claimDevice` is what moves one
+    ///    onto an account, and nothing has moved these. The erasing door is emphatically not an
+    ///    exception, for the reason `delete` gives about every other device-owned row.
     ///
-    /// **A photograph with no `visit_id` is not reachable from any account, and that is a real hole
-    /// rather than a hypothetical one.** `LocalAPI.addTree` writes exactly such a row for the tree a
-    /// person adds, and `community_trees` carries no owner column at all — an added tree belongs to
-    /// nobody in this schema, so the photograph that came with it is attributable to nobody either.
-    /// No query here can tell it from a photograph somebody else added, so `eraseEverything` leaves
-    /// it. Widening the predicate to "every photograph of a tree you visited" would delete other
-    /// people's work, which is a much worse answer than leaving one of the person's own.
-    ///
-    /// Closing it properly needs an owner on `community_trees` — a schema change and a write-path
-    /// change, not something to invent inside a deletion path.
-    /// `AccountDeletionTests.anUnattributablePhotographSurvivesBothDoors` pins the current behaviour
-    /// so that the day the column arrives, this path fails loudly instead of quietly staying wrong.
+    /// **What the anonymizing door now does, which is also new.** It used to name `photos` not once,
+    /// and that was correct when nulling the visit's `user_id` removed the only link there was. It
+    /// is not correct now: a photograph carries the name itself, so the door that promises to take
+    /// the name off has to take it off here too. See `anonymizeContributions`.
     public func photoBytes(userID: UUID, connection: SQLiteConnection) throws -> PhotoBytes {
         var bytes = PhotoBytes()
 
         let photos = try connection.cachedStatement("""
-            SELECT storage_key, local_path FROM photos
-             WHERE visit_id IN (SELECT id FROM visits WHERE user_id = :user COLLATE NOCASE)
+            SELECT storage_key, local_path FROM photos WHERE user_id = :user COLLATE NOCASE
             """)
         _ = try photos.bind([":user": userID.uuidString])
         for row in try photos.fetchAll({ row in
@@ -337,9 +341,20 @@ public struct AccountDeletion {
     /// carry if there had never been one. The "device link" §3.12 severs is the `device.user_id` row,
     /// which is the only place this installation is tied to this person.
     ///
-    /// Photographs are not named here, and that is the point of the whole arrangement: `photos` has
-    /// no owner column, so nulling the visit's has already un-named every photograph taken on it.
-    /// The bytes stay, the tree keeps its picture, and nothing on either row says whose it was.
+    /// Photographs **are** named here, since `AppSchema` v12 gave them an owner (ERRATA E147). This
+    /// paragraph used to say the opposite and used to be right: with no owner column, nulling the
+    /// visit's `user_id` un-named every photograph taken on it, and naming `photos` would have been
+    /// an empty statement. A photograph carries the name itself now, so the door whose whole promise
+    /// is that the work stays and the name comes off has to take it off here as well — otherwise the
+    /// picture would go on saying whose it was after the visit under it had stopped.
+    ///
+    /// It becomes a `PhotoOwner.nobody` photograph, which v12's CHECK permits deliberately and v9's
+    /// `photo_votes` CHECK had to be relaxed to permit: the bytes stay, the tree keeps its picture,
+    /// nothing says whose it was, and nobody — including whoever signs in on this phone next — can
+    /// delete it. `device_id` is *not* set instead, which is the difference between this and the
+    /// four tables above: they carry D9's installation handle in a NOT NULL column and always did,
+    /// whereas re-homing a photograph onto the device would hand one person's picture to the next
+    /// person holding the phone, and `claimDevice` would then attribute it to them.
     private func anonymizeContributions(
         userID: UUID,
         at date: Date,
@@ -354,6 +369,14 @@ public struct AccountDeletion {
                 userAndNow, on: connection
             )
         }
+
+        // The photograph loses its owner and keeps its place. Its own field, mirroring
+        // `deletedPhotos` on the other door, for the reason `Outcome` gives about not letting one
+        // number stand for two different acts.
+        outcome.anonymizedPhotos = try run(
+            "UPDATE photos SET user_id = NULL, updated_at = :now WHERE user_id = :user COLLATE NOCASE",
+            userAndNow, on: connection
+        )
 
         // A tree's name is the most durable public contribution in the model — first namer wins
         // and the name outlives everything (D15) — and `given_by` is nullable precisely so it can
@@ -424,21 +447,25 @@ public struct AccountDeletion {
             """
             DELETE FROM photo_votes
              WHERE user_id = :user COLLATE NOCASE
-                OR photo_id IN (
-                     SELECT id FROM photos
-                      WHERE visit_id IN (SELECT id FROM visits WHERE user_id = :user COLLATE NOCASE)
-                   )
+                OR photo_id IN (SELECT id FROM photos WHERE user_id = :user COLLATE NOCASE)
             """,
             user, on: connection
         )
 
         // The rows whose bytes the caller has already removed from disk. See
         // `LocalAPI.deleteAccount` for why that order and not this one.
+        //
+        // `photos.user_id` since v12, where this used to join through `visits`. The account's
+        // photographs are now one predicate, so the tree a person *added* — whose photograph has no
+        // visit to join through and whose row records no author — is finally inside the door that
+        // promised to erase it (ERRATA E136, E147).
+        //
+        // Tombstones go too. A photograph the person deleted one at a time keeps a stripped row so
+        // the tree's record can say a picture was here and was withdrawn (`ContributionStore
+        // .deletePhoto`); "erase everything I contributed" reaches that sentence as well, and the
+        // row is theirs to take. `deleted_at` is not in the predicate for exactly that reason.
         outcome.deletedPhotos = try run(
-            """
-            DELETE FROM photos
-             WHERE visit_id IN (SELECT id FROM visits WHERE user_id = :user COLLATE NOCASE)
-            """,
+            "DELETE FROM photos WHERE user_id = :user COLLATE NOCASE",
             user, on: connection
         )
 

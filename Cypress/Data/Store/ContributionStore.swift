@@ -304,20 +304,34 @@ public struct ContributionStore {
 
     // MARK: - Photos
 
+    /// Writes a photograph, with the owner the column has carried since `AppSchema` v12.
+    ///
+    /// `owner` is a parameter rather than a property of `Photo` for `localPath`'s reason: the model
+    /// is BUILD-PLAN §4's photo and these two are the app database's answer to questions §4 left to
+    /// `visit_id`. It is not defaulted, and that is the point — ERRATA E136's hole was a write path
+    /// that quietly recorded no owner, and a default here would be a way to write that row again by
+    /// forgetting an argument rather than by typing one.
     @discardableResult
-    public func insert(_ photo: Photo, localPath: String?, connection: SQLiteConnection) throws -> WriteOutcome {
+    public func insert(
+        _ photo: Photo,
+        localPath: String?,
+        owner: PhotoOwner,
+        connection: SQLiteConnection
+    ) throws -> WriteOutcome {
         let statement = try connection.cachedStatement("""
             INSERT INTO photos
                 (id, tree_uuid, visit_id, storage_key, local_path, shot_type, moderation_state,
                  blur_applied, width, height, captured_at, public_lat, public_lon,
-                 created_at, updated_at, deleted_at)
+                 created_at, updated_at, deleted_at, user_id, device_id)
             VALUES
                 (:id, :tree, :visit, :key, :path, :shot, :moderation,
                  :blur, :width, :height, :captured, :lat, :lon,
-                 :created, :updated, :deleted)
+                 :created, :updated, :deleted, :user, :device)
             ON CONFLICT(id) DO NOTHING
             """)
         _ = try statement.bind([
+            ":user": owner.userID,
+            ":device": owner.deviceID,
             ":id": photo.id,
             ":tree": photo.treeID,
             ":visit": photo.visitID,
@@ -387,6 +401,160 @@ public struct ContributionStore {
             (storageKey: try row.stringIfPresent("storage_key"),
              localPath: try row.stringIfPresent("local_path"))
         }
+    }
+
+    // MARK: - Deleting one photograph (AppSchema v12)
+
+    /// One photograph, as a deletion needs to see it: who owns it, which tree it is on, and where
+    /// its bytes are.
+    ///
+    /// Returned as a whole rather than as four reads because the caller has to hold all four at once
+    /// — it checks the owner, removes the files, and only then writes — and two reads of a table
+    /// that a third statement is about to change is how a delete ends up removing one photograph's
+    /// row and another photograph's file.
+    public struct PhotoForDeletion: Sendable, Equatable {
+        public let id: UUID
+        public let treeID: UUID
+        public let owner: PhotoOwner
+        public let storageKey: String?
+        public let localPath: String?
+    }
+
+    /// The photograph a delete is about, or nil when there is no live row with that id.
+    public func photoForDeletion(id: UUID, connection: SQLiteConnection) throws -> PhotoForDeletion? {
+        let statement = try connection.cachedStatement("""
+            SELECT tree_uuid, user_id, device_id, storage_key, local_path FROM photos
+             WHERE id = :id COLLATE NOCASE AND deleted_at IS NULL
+            """)
+        _ = try statement.bind([":id": id.uuidString])
+        defer { _ = try? statement.reset() }
+        return try statement.fetchOne { row in
+            let owner: PhotoOwner
+            if let userID = try row.uuidIfPresent("user_id") {
+                owner = .user(userID)
+            } else if let deviceID = try row.uuidIfPresent("device_id") {
+                owner = .device(deviceID)
+            } else {
+                owner = .nobody
+            }
+            return PhotoForDeletion(
+                id: id,
+                treeID: try row.uuid("tree_uuid"),
+                owner: owner,
+                storageKey: try row.stringIfPresent("storage_key"),
+                localPath: try row.stringIfPresent("local_path")
+            )
+        }
+    }
+
+    /// Which of this tree's photographs this installation may delete.
+    ///
+    /// **Not the same set as `TreeProfile.ownPhotoIDs`, and the difference is the point.** That set
+    /// answers "may this device show this photograph to the person holding it", and its answer is
+    /// every row in `main.photos`, because nothing syncs anybody else's down and moderation does not
+    /// stand between a contributor and their own picture (ERRATA E37). This set answers "may this
+    /// person take this photograph back", and an anonymized photograph — one whose contributor
+    /// deleted their account through the door that leaves the work in place — is in the first set
+    /// and not in this one. Seeing and unmaking are two questions; conflating them would hand a
+    /// stranger's withdrawn record to whoever holds the phone next.
+    public func deletablePhotoIDs(
+        treeID: UUID,
+        attribution: Attribution,
+        connection: SQLiteConnection
+    ) throws -> Set<UUID> {
+        let statement = try connection.cachedStatement("""
+            SELECT id FROM photos
+             WHERE tree_uuid = :tree COLLATE NOCASE AND deleted_at IS NULL
+               AND ((:user IS NOT NULL AND user_id = :user COLLATE NOCASE)
+                    OR device_id = :device COLLATE NOCASE)
+            """)
+        _ = try statement.bind([
+            ":tree": treeID.uuidString,
+            ":user": attribution.userID?.uuidString,
+            ":device": attribution.deviceID.uuidString
+        ])
+        defer { _ = try? statement.reset() }
+        return Set(try statement.fetchAll { try $0.uuidIfPresent("id") }.compactMap { $0 })
+    }
+
+    /// What one photograph's deletion changed, in rows.
+    public struct PhotoDeletionCounts: Sendable, Equatable {
+        /// 1 when the row was tombstoned, 0 when the owner predicate matched nothing.
+        public var photos: Int = 0
+        /// Every vote on it, whoever cast it.
+        public var votes: Int = 0
+        /// Queued mutations that were still carrying this photograph's staged binary.
+        public var stagedBinaries: Int = 0
+    }
+
+    /// Tombstones one photograph and strips the row of everything that could find its bytes again.
+    ///
+    /// **Soft, and stripped, which is not the same as soft alone.** `deleted_at` is the house verb
+    /// (BUILD-PLAN §4: "every table that users touch gets soft delete") and it is load-bearing here
+    /// for two reasons the erasing door does not have: `private_reminders.photo_id` and
+    /// `community_notes.photo_id` both reference `photos(id)`, so a hard delete would take a
+    /// *private reminder* — a record only its owner can read — down with a photograph, and the
+    /// surviving tombstone is what lets a community-added tree's record still say a photograph was
+    /// here and was withdrawn (see `LocalAPI.deletePhoto`).
+    ///
+    /// A tombstone on its own would be a lie, though, because the reason somebody deletes one
+    /// photograph is usually what is *in* it. So the row loses `storage_key`, `local_path`, `width`,
+    /// `height` and its fuzzed coordinate in the same statement that sets `deleted_at`; the caller
+    /// removes the bytes from disk before this runs. What is left is a photograph's id, its tree,
+    /// its shot type, when it was taken and whose it was — the same facts the visit beside it
+    /// already carries, and none of them a picture.
+    ///
+    /// **The owner predicate is in the statement, not only in the caller's guard.** A check made in
+    /// Swift and an UPDATE that would have matched anyway are one refactor apart from a delete that
+    /// reaches somebody else's photograph.
+    ///
+    /// **Votes are deleted outright** — every vote on it, not only the owner's. They were judgements
+    /// about a photograph that no longer exists, which is exactly `AccountDeletion`'s argument for
+    /// the same deletion under the erasing door. Leaving them would also leave a tombstone holding a
+    /// tally, and `PhotoHero` reads tallies.
+    public func deletePhoto(
+        id: UUID,
+        attribution: Attribution,
+        at date: Date,
+        connection: SQLiteConnection
+    ) throws -> PhotoDeletionCounts {
+        var counts = PhotoDeletionCounts()
+        let owned: [String: SQLiteBindable?] = [
+            ":id": id.uuidString,
+            ":user": attribution.userID?.uuidString,
+            ":device": attribution.deviceID.uuidString
+        ]
+
+        let votes = try connection.cachedStatement("""
+            DELETE FROM photo_votes WHERE photo_id = :id COLLATE NOCASE
+              AND EXISTS (SELECT 1 FROM photos p
+                           WHERE p.id = :id COLLATE NOCASE AND p.deleted_at IS NULL
+                             AND ((:user IS NOT NULL AND p.user_id = :user COLLATE NOCASE)
+                                  OR p.device_id = :device COLLATE NOCASE))
+            """)
+        _ = try votes.bind(owned)
+        try votes.run()
+        counts.votes = connection.changes
+        _ = try votes.reset()
+
+        let photo = try connection.cachedStatement("""
+            UPDATE photos
+               SET deleted_at = :now, updated_at = :now,
+                   storage_key = NULL, local_path = NULL,
+                   width = NULL, height = NULL,
+                   public_lat = NULL, public_lon = NULL
+             WHERE id = :id COLLATE NOCASE AND deleted_at IS NULL
+               AND ((:user IS NOT NULL AND user_id = :user COLLATE NOCASE)
+                    OR device_id = :device COLLATE NOCASE)
+            """)
+        var ownedAndNow = owned
+        ownedAndNow[":now"] = date
+        _ = try photo.bind(ownedAndNow)
+        try photo.run()
+        counts.photos = connection.changes
+        _ = try photo.reset()
+
+        return counts
     }
 
     // MARK: - Photo votes (AppSchema v8)
@@ -859,6 +1027,21 @@ public struct ContributionStore {
         _ = try reminders.bind([":user": userID, ":now": date, ":device": deviceUUID.uuidString])
         try reminders.run()
         _ = try reminders.reset()
+
+        // The photograph, adopted on the reminder's terms rather than the visit's (`AppSchema` v12,
+        // ERRATA E136). It is not in the loop above because `photos` carries at most one owner: the
+        // account gains the row and the device link is dropped in the same statement, so a
+        // photograph never says both whose account it is and which phone it was taken on. The
+        // `user_id IS NULL` guard also leaves an *anonymized* photograph alone — a row whose owner
+        // deleted their account through the leaving door has no `device_id` either, so it matches
+        // nothing here and cannot be adopted by the next person to sign in on this phone.
+        let photos = try connection.cachedStatement("""
+            UPDATE photos SET user_id = :user, device_id = NULL, updated_at = :now
+             WHERE device_id = :device COLLATE NOCASE AND user_id IS NULL
+            """)
+        _ = try photos.bind([":user": userID, ":now": date, ":device": deviceUUID.uuidString])
+        try photos.run()
+        _ = try photos.reset()
 
         try claimFavorites(deviceUUID: deviceUUID, userID: userID, at: date, connection: connection)
         try claimPhotoVotes(deviceUUID: deviceUUID, userID: userID, at: date, connection: connection)

@@ -16,6 +16,20 @@
 //  therefore follows the nearest specified thing — the profile hero's radius and the You tab's card
 //  padding — and every string states a fact and stops (ARCHITECTURE §5.7).
 //
+//  ── NOT SPECIFIED · deleting a photograph (task #78, ERRATA E147) ────────────────────────
+//  Nothing in SCREENS.md deletes a photograph. The single occurrence of the word in the file is
+//  screen 17's "**NOT SPECIFIED:** … swipe-to-delete", about an outbox row; the nearest photo
+//  sentences point the other way ("Every photo, visit, and check-in stays" on 19, and SPEC-PHASE1's
+//  "Sync never deletes community photos or visits", which is about what *sync* may do to somebody
+//  else's record). So this control is designed here under ARCHITECTURE §8 rule 8, and the comments
+//  on `deleteControl` and `TreePhotosPresentation.deleteMessage` are the reasoning rather than stray
+//  comments on a view.
+//
+//  It belongs on *this* screen and not on the hero or in the viewer, for one reason: this is the
+//  only surface in the app that shows the photographs of a tree as a set, one row each, with the
+//  controls that already judge them one at a time. A delete on the hero would act on whichever
+//  photograph the hero rule happened to pick, which is not a thing anybody means to press.
+//
 
 import SwiftUI
 
@@ -23,6 +37,10 @@ struct TreePhotosView: View {
 
     @State private var model: TreePhotosModel
     @Environment(AppRouter.self) private var router: AppRouter?
+    /// Needed so a deleted photograph stops being drawn from memory — see `PhotoImageStore.forget`.
+    /// Optional and read from the environment like every other pushed destination in this app; this
+    /// screen is on the navigation stack, not in the cover that ERRATA E142 caught.
+    @Environment(PhotoImageStore.self) private var images: PhotoImageStore?
 
     init(treeID: UUID, api: (any CypressAPI)? = nil) {
         _model = State(wrappedValue: TreePhotosModel(treeID: treeID, api: api))
@@ -47,8 +65,11 @@ struct TreePhotosView: View {
                             .foregroundStyle(CypressColor.textMuted)
                             .fixedSize(horizontal: false, vertical: true)
 
-                        if let voteError = model.voteError {
-                            Text(voteError)
+                        // Both failures read the same way and neither is swallowed. The deletion one
+                        // matters more: the person has just confirmed something irreversible, and
+                        // silence after that reads as "it worked".
+                        ForEach([model.voteError, model.deleteError].compactMap { $0 }, id: \.self) { message in
+                            Text(message)
                                 .font(CypressFont.body125)
                                 .foregroundStyle(CypressColor.textInk)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -75,6 +96,27 @@ struct TreePhotosView: View {
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .task { await model.load() }
+        .confirmationDialog(
+            TreePhotosCopy.deleteTitle,
+            isPresented: Binding(
+                get: { model.pendingDeletion != nil },
+                set: { if !$0 { model.pendingDeletion = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: model.pendingDeletion
+        ) { photo in
+            Button(TreePhotosCopy.deleteAction, role: .destructive) {
+                model.pendingDeletion = nil
+                Task { await model.delete(photo.id, images: images) }
+            }
+            Button(TreePhotosCopy.deleteCancel, role: .cancel) { model.pendingDeletion = nil }
+        } message: { photo in
+            Text(
+                TreePhotosPresentation.deleteMessage(
+                    isLastOfACommunityAdd: model.isLastPhotographOfACommunityAdd(photo)
+                )
+            )
+        }
     }
 
     // MARK: - Empty
@@ -167,7 +209,38 @@ struct TreePhotosView: View {
             }
             thumb(.up, on: photo, tally: tally)
             thumb(.down, on: photo, tally: tally)
+            if model.isDeletable(photo) { deleteControl(photo) }
         }
+    }
+
+    /// **The control is drawn only on a photograph this person may actually delete**, which is
+    /// `TreeProfile.deletablePhotoIDs` and not "every photograph on this device". The two differ on
+    /// a photograph whose contributor deleted their account and asked that their work stay where it
+    /// is: it is still shown here, and it is nobody's to take back.
+    ///
+    /// **A trash glyph and no label**, beside two thumbs that are also bare glyphs, so the row keeps
+    /// one grammar. **In the amber register, because there is no red in this palette** — the 311
+    /// hazard ramp is what this app means by "destructive", which `AccountDeletionSheet` established
+    /// and said so in as many words. It is the only cell in the row that is not in the caption
+    /// greys, which is the whole of the visual warning a glyph can carry; the words are in the
+    /// confirmation, where somebody is actually reading.
+    ///
+    /// **One tap opens a question and destroys nothing.** That is the same three-beat shape as
+    /// account deletion — a control, a sentence naming the consequence, a button carrying the verb —
+    /// compressed to two beats because there is only one outcome to choose between here.
+    private func deleteControl(_ photo: Photo) -> some View {
+        Button {
+            model.pendingDeletion = photo
+        } label: {
+            Image(systemName: "trash")
+                .font(.system(size: TreePhotosMetrics.thumbGlyph, weight: .semibold))
+                .foregroundStyle(CypressColor.hazardCTAFill)
+                .frame(width: TreePhotosMetrics.thumbTarget, height: TreePhotosMetrics.thumbTarget)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(TreePhotosPresentation.deleteLabel(photo))
+        .accessibilityHint(TreePhotosCopy.deleteHint)
     }
 
     private func thumb(_ vote: PhotoVote, on photo: Photo, tally: PhotoTally) -> some View {
@@ -215,6 +288,28 @@ enum TreePhotosPresentation {
         }
     }
 
+    static func deleteLabel(_ photo: Photo) -> String {
+        "Delete, \(caption(photo))"
+    }
+
+    /// What the confirmation says, and the only sentence in the app that has to admit a record is
+    /// about to stop satisfying its own creation rule.
+    ///
+    /// The first half is unconditional and says the two things somebody needs before an irreversible
+    /// tap: the bytes leave this phone, and there is no way back. It does not say "from the tree",
+    /// because the tree is not where the picture lives.
+    ///
+    /// The second half appears only for the last photograph of a community-added tree. BUILD-PLAN §6
+    /// requires a photograph to *add* a tree, so this is the case where the deletion is allowed and
+    /// the record ends up in a state its own creation rule forbids — and the honest thing is to say
+    /// what happens to the tree rather than to refuse (`LocalAPI.deletePhoto` argues it). It names
+    /// the consequence in the terms the person cares about: the tree is not going anywhere.
+    static func deleteMessage(isLastOfACommunityAdd: Bool) -> String {
+        isLastOfACommunityAdd
+            ? TreePhotosCopy.deleteMessage + " " + TreePhotosCopy.deleteLastOfCommunityAdd
+            : TreePhotosCopy.deleteMessage
+    }
+
     static func glyph(_ vote: PhotoVote, filled: Bool) -> String {
         switch vote {
         case .up: return filled ? "hand.thumbsup.fill" : "hand.thumbsup"
@@ -256,6 +351,24 @@ enum TreePhotosCopy {
     /// The same thing, named as an action for the VoiceOver rotor — a verb, because that is what a
     /// rotor lists.
     static let openAction = "Open the whole photo"
+    static let deleteFailed = "That photo could not be deleted. It is still here. Try again."
+    /// The question, in the dialog's title. A question rather than a statement, because the tap that
+    /// opened it did not delete anything and the copy should not imply that it did.
+    static let deleteTitle = "Delete this photo?"
+    /// The two facts an irreversible tap is owed. "This phone" and not "everywhere": there is no
+    /// server yet, and claiming a reach the app does not have is the one thing DECISIONS constraint
+    /// 3 forbids above all.
+    static let deleteMessage = "The photo is removed from this phone. This cannot be undone."
+    /// The extra sentence for the last photograph on a contributor-added tree — BUILD-PLAN §6's
+    /// "Community add: requires photo", stated as a consequence rather than enforced as a refusal.
+    static let deleteLastOfCommunityAdd =
+        "It is the only photo of a tree a contributor added. The tree stays on the map with no photo."
+    /// The verb is on the button, so the destructive path cannot be taken without the word *delete*
+    /// under your thumb — E136's rule for the account sheet, applied to a smaller thing.
+    static let deleteAction = "Delete photo"
+    /// Not "Cancel": the button that does nothing should say what nothing means here.
+    static let deleteCancel = "Keep it"
+    static let deleteHint = "Removes this photo from this phone"
 }
 
 // MARK: - Metrics
