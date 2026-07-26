@@ -123,6 +123,15 @@ enum MapPinImage {
 
     private static var cache: [Key: UIImage] = [:]
 
+    /// A ceiling, because one of the keys is unbounded: a cluster badge is keyed on its **count**,
+    /// and a long session of panning the whole city produces arbitrarily many distinct counts. Seven
+    /// pin kinds in two appearances is fourteen entries before a single badge, and a screenful of
+    /// badges is a few dozen more, so this is generous for the drawing and still a bound. When it is
+    /// reached the cache is emptied rather than evicted one at a time: the working set on any one
+    /// screen is small and re-rendering it costs a few milliseconds once, where an LRU here would be
+    /// bookkeeping nobody has measured a need for.
+    static let capacity = 256
+
     /// Room around the pin for the shadow C19 gives it. `ImageRenderer` sizes the bitmap to the
     /// view's own bounds and a shadow lives outside those, so without the padding every pin on the
     /// map would lose the soft edge that lifts it off the parchment.
@@ -138,6 +147,7 @@ enum MapPinImage {
         )
         renderer.scale = UIScreen.main.scale
         guard let image = renderer.uiImage else { return nil }
+        if cache.count >= capacity { cache.removeAll(keepingCapacity: true) }
         cache[key] = image
         return image
     }
@@ -210,6 +220,24 @@ struct MapAnnotationLayer: UIViewRepresentable {
         return mapView
     }
 
+    /// **An `MKMapView` has to be taken down, not just dropped.**
+    ///
+    /// It is a far heavier object than the SwiftUI `Map` it replaced looked like from the outside:
+    /// its own tile cache, its own rendering stack, its own GPU resources. Screen 01 is stood up and
+    /// discarded dozens of times in a row by the screenshot suites (`ScreenSweepShots`,
+    /// `DynamicTypeScreenshotTests` — twenty-one screens in four appearances each), and without this
+    /// the test process was **killed by the system partway through the sweep**: not an assertion
+    /// failure, `signal kill`, which is what running out of memory looks like from the outside.
+    ///
+    /// Clearing the annotations and overlays and dropping the delegate is what lets each one go when
+    /// the view that owned it does.
+    static func dismantleUIView(_ mapView: MKMapView, coordinator: Coordinator) {
+        mapView.delegate = nil
+        mapView.removeAnnotations(mapView.annotations)
+        mapView.removeOverlays(mapView.overlays)
+        coordinator.forget()
+    }
+
     func updateUIView(_ mapView: MKMapView, context: Context) {
         // The closures are re-made every pass and capture the current model, so the coordinator has
         // to be re-pointed at this value or a tap would call into a stale one.
@@ -266,6 +294,16 @@ struct MapAnnotationLayer: UIViewRepresentable {
 
         init(_ parent: MapAnnotationLayer) {
             self.parent = parent
+        }
+
+        /// Drops everything the coordinator is holding on behalf of a map view that is going away.
+        /// See `dismantleUIView`.
+        func forget() {
+            pinAnnotations.removeAll()
+            clusterAnnotations.removeAll()
+            userDot = nil
+            wash = nil
+            lastRequestedPosition = nil
         }
 
         // MARK: The wash
