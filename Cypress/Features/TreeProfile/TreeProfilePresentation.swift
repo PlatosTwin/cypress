@@ -840,6 +840,90 @@ struct TreeProfilePresentation {
             .max { $0.capturedAt < $1.capturedAt }
     }
 
+    // MARK: - Where it stands (task #69, second half)
+
+    /// One sentence naming both where the tree stands **and who says so**, or `nil`.
+    ///
+    /// **NOT SPECIFIED.** SCREENS.md has no land context anywhere, because until E143 no record
+    /// carried one. The project owner asked for it here in as many words: *"need to see this
+    /// distinction on tree's landing page too, along with other tree metadata"*.
+    ///
+    /// ── Why a sentence and not a stat card ────────────────────────────────────────────────────
+    /// Because the fact is inseparable from its source, and a `StatCard` has nowhere to put a source
+    /// except a badge. `KnownLandContext` exists precisely so that "a contributor stood there and
+    /// tapped *city park*" and "Cypress read two strings in a municipal export and concluded *street*"
+    /// cannot reach a screen as the same claim — E143 built the type rather than returning a bare
+    /// `LandContext` for exactly that reason, on BUILD-PLAN §5's rule that provenance is carried
+    /// rather than remembered.
+    ///
+    /// The badge route was tried on paper and rejected. C12 has two cases, `taped`/`est.` and
+    /// `city record`, and neither fits: an inference from the city's record is **not** the city's
+    /// record, and stamping `city record` on it would be the app attributing its own reading to San
+    /// Francisco — the single failure this whole round is written to avoid. Adding a third and fourth
+    /// case to C12 would put "how a number was measured" and "who said where a tree stands" in one
+    /// vocabulary, and would need a colour ramp saying which of the two ways of knowing is better.
+    /// There is no such ranking: a contributor who was standing there beats the seed, and the seed
+    /// covers 195,309 trees a contributor has never visited.
+    ///
+    /// A sentence has room to name its speaker in words, which is what `speciesClaimNote` already
+    /// does one block up the screen ("species named by a contributor"). This is the same grammar.
+    ///
+    /// ── Why it is outside "What San Francisco has on file" ────────────────────────────────────
+    /// On a city row this is Cypress's *reading* of `legalStatus` and `caretaker`, and that reading is
+    /// a rule in `LandContext.inferred(from:)` which can be wrong about any individual tree. Inside a
+    /// section headed with the city's name, under a card badged `city record`, it would be the app's
+    /// inference wearing the city's authority. So it sits above the section, in the app's own voice,
+    /// and says whose conclusion it is.
+    ///
+    /// It renders for community rows too, where there is no city section at all — one fact, one place
+    /// on the screen, regardless of which of the two ways it is known.
+    var landContextNote: String? {
+        guard let known = tree.landContext else { return nil }
+        let place = TreeProfileCopy.landContextPlace(known.context)
+        switch known.source {
+        case .inferredFromCityRecord:
+            return TreeProfileCopy.landContextInferred(place)
+        case .statedByContributor:
+            return TreeProfileCopy.landContextStated(place)
+        }
+    }
+
+    // MARK: - What San Francisco has on file (task #68)
+
+    /// The city's own six columns, prepared for the grid — or `nil` when there is no section to draw.
+    ///
+    /// `nil` on every community row, because a community tree is by definition not in the city's
+    /// inventory and `Tree.cityRecord` is `nil` for it. There is no empty state and no "the city has
+    /// no record of this tree" copy: the subtitle already reads `community-added, unverified`, which
+    /// says the same thing in the place the screen already says it, and a second sentence saying the
+    /// city has nothing would be the app apologising for a tree somebody added on purpose.
+    ///
+    /// Also `nil` when the record produces no card — see `CityRecordPresentation.isEmpty`.
+    var cityRecord: CityRecordPresentation? {
+        guard let record = tree.cityRecord, !record.isEmpty else { return nil }
+        let presentation = CityRecordPresentation(record)
+        return presentation.isEmpty ? nil : presentation
+    }
+
+    /// The sentences under the city's grid, in the order they are drawn.
+    ///
+    /// The opt-out arrangement first, because it is a fact about *this* tree and answers the reader
+    /// who has just read `Prune Opt Out` on the card above; the general note second, because it is a
+    /// fact about the dataset. Empty when there is no section.
+    var cityRecordNotes: [String] {
+        guard let cityRecord else { return [] }
+        var notes: [String] = []
+        if let optOut = cityRecord.maintenanceOptOutNote() { notes.append(optOut) }
+        notes.append(CityRecordPresentation.pruningNote)
+        return notes
+    }
+
+    /// Whether §9b draws anything at all — the land-context sentence, the city's grid, or both.
+    ///
+    /// The view asks this to decide which block closes the screen, so the 30 pt that SCREENS.md 03 §9
+    /// puts under the stat grid keeps landing under whatever is genuinely last.
+    var showsCityDetails: Bool { landContextNote != nil || cityRecord != nil }
+
     // MARK: - Cold-start footnote
 
     /// 14's footnote, verbatim — minus its first sentence when that sentence would be false.
@@ -956,6 +1040,45 @@ enum TreeProfileCopy {
     /// It asks rather than instructs, and it says *you think* rather than *it is*, because the act it
     /// starts records an opinion and the label should not promise more than the column stores.
     static let claimSpeciesAction = "Say what species you think this is"
+
+    // MARK: - Where the tree stands (see `TreeProfilePresentation.landContextNote`)
+
+    /// The place, as a prepositional phrase that fits both sentences below unchanged.
+    ///
+    /// `otherPublic` is the 956 rows that are neither street nor park nor private — SFUSD, the Port,
+    /// the PUC, the Housing Authority — and it says "other public land" rather than naming a
+    /// department, because the bucket is defined by what it is not. E143's argument for the fourth
+    /// value is that a vocabulary permitting a value no screen offers costs nothing; a screen that has
+    /// to draw it anyway owes it a phrase that is true of all 956.
+    static func landContextPlace(_ context: LandContext) -> String {
+        switch context {
+        case .street: return "on a street"
+        case .cityPark: return "in a city park"
+        case .privateProperty: return "on private property"
+        case .otherPublic: return "on other public land"
+        }
+    }
+
+    /// **The app names itself as the one drawing the conclusion**, which is the whole point of the
+    /// sentence. "This tree stands on a street" would be a claim; "Cypress reads the city's record as"
+    /// is a citation, and it puts the reader one step from disagreeing with it. The passive
+    /// alternatives all hide the speaker, and the speaker is the fact being conveyed.
+    ///
+    /// `LandContext.inferred(from:)` resolves all 195,309 seed rows, 93.35% of them to `on a street`,
+    /// so this is the sentence almost every tree in the app shows.
+    static func landContextInferred(_ place: String) -> String {
+        "Cypress reads the city's record as a tree \(place)."
+    }
+
+    /// "A contributor", not "the contributor" — `community_trees` records no author, exactly as
+    /// `speciesNamedByContributor` explains one block up.
+    ///
+    /// It states the fact directly, where the inferred arm cites itself, because a contributor
+    /// standing at the tree *observed* this. Softening an observation into a reading would be the
+    /// mirror of the error the other arm avoids.
+    static func landContextStated(_ place: String) -> String {
+        "A contributor said this tree stands \(place)."
+    }
 
     /// Why a claim did not land. Three refusals, three sentences — the mapping is here rather than in
     /// the model because "already claimed" and "not allowed on a city tree" are entirely different
