@@ -641,6 +641,37 @@ This is the one loss the join cannot repair: a vacant site is a *row*, and rows 
 If that surface matters more than agreeing with the city's map, `--source datasf` is one command
 away.
 
+### Is 133,577 a loss of 62,000 trees, or a more truthful number?
+
+**A more truthful number, and the arithmetic says so rather than the vibe.** Of the 65,239 rows that
+leave, **47,796 (73%) are not living street trees by their own labels**:
+
+| | count | why it is not a maintained street tree |
+|---|---|---|
+| vacant planting sites | 12,260 | a hole in the pavement; there is no tree |
+| `Permitted Site`, `alive` | 29,050 | a permit was issued; the tree may not exist yet |
+| `Undocumented`, `alive` | 6,486 | observed, never adopted into the maintenance inventory |
+| **not-a-maintained-tree subtotal** | **47,796** | |
+| the crux bucket | 17,443 | genuinely ambiguous — see above |
+
+So the honest statement is not "we lost 62,000 trees". It is "we stopped counting 47,796 records that
+were never living maintained street trees, and we took a position on 17,443 more that nobody can
+currently adjudicate". The residual uncertainty is 13% of the new total, not 33% of the old one.
+
+Two independent estimates of *maintained street trees* agree with each other and with the city:
+
+| | count |
+|---|---|
+| The city's own quoted figure (Prop E, 2016, still quoted in 2026) | ~125,000 |
+| The city's live operational layer, 2026-07-26 | **133,577** |
+| Our old DataSF seed, `alive` **and** `DPW Maintained` | **139,012** |
+| Our old DataSF seed, all rows | 195,309 |
+
+133,577 sits 7% above a figure fixed in 2016, which is what nine years of planting looks like, and
+within 4% of the comparable we could already compute from the export. **195,309 was never an estimate
+of that quantity** — it was every row of an open-data table, planting permits and empty basins
+included. The number got smaller and more accurate at the same time.
+
 ### What the 3,507 additions are
 
 Pure gain, and the reason the owner opened this. All 3,507 are inside the seed's SF bounding box and
@@ -702,6 +733,29 @@ a first city-only build that removed the section from every tree in the seed, ta
 answer and the provenance line with it. `TreeProfilePresentation.showsCityRecordSection` now opens
 the section for cards **or** for a provenance line; the pruning note alone still does not, because it
 is a statement about the dataset rather than about this tree.
+
+### What #68's section actually looks like now — looked at, not reasoned about
+
+Two shapes, both checked on a running build against the shipped seed:
+
+- **A record both inventories list** (130,070 of 133,577, 97.4%): unchanged from before the switch.
+  `Legal status · DPW Maintained`, `Cared for by · A private party`, `Plot size · 3 ft wide`, the
+  `Stands on` sentence above it, then the pruning note and the provenance line. Verified on
+  SF #239636 and SF #229291.
+- **A record only the city lists** (3,507): the header renders, **no cards at all**, then the two
+  sentences. Verified on SF #69746, `750 VISITACION AVE`:
+
+  > WHAT SAN FRANCISCO HAS ON FILE
+  > The city's street tree inventory records pruning by block, not by tree, so it says nothing about
+  > when this tree was last pruned.
+  > From the SF Public Works street tree inventory, July 26, 2026.
+
+  No `Stands on` sentence either — `LandContext.inferred(from:)` reads `qLegalStatus` and
+  `qCaretaker`, and those records have neither.
+
+So #68's feature does **not** disappear and does **not** draw an empty grid. It renders in full for
+97.4% of records and as a header over two true sentences for the rest, which is a fair account of what
+the city has on file for a tree it has only recently begun listing.
 
 ## Pruning: cached, deliberately not shipped
 
