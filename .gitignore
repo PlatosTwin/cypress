@@ -43,6 +43,10 @@ Cypress/Resources/cypress-seed.sqlite
 .ddspecies/
 .ddalmanac/
 .ddseed/
+.ddphotoown/
 # Build logs from a test run, written into the worktree root.
 *.log
+# Verification screenshots taken against a running simulator. Evidence for a round of work,
+# regenerable by walking the app; not source.
+shots/
 .ddland/

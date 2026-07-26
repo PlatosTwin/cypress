@@ -56,4 +56,59 @@ public extension CypressAPI {
     func setPhotoVote(photoID: UUID, vote: PhotoVote?) async throws {
         throw APIError.notFound
     }
+
+    /// Removes one photograph this person contributed.
+    ///
+    /// `notFound` on the same argument again, and it is the safe direction twice over: an
+    /// implementation with no photographs has none to remove, and a deletion default that quietly
+    /// *succeeded* would be the worst possible shape for this particular method — a screen would
+    /// tell somebody their photograph was gone while it sat on a disk somewhere.
+    func deletePhoto(id: UUID) async throws -> PhotoDeletion {
+        throw APIError.notFound
+    }
+}
+
+// MARK: - What a deletion did
+
+/// The result of removing one photograph, in the terms the caller has to be able to check.
+///
+/// Returned rather than logged for `AccountDeletion.Outcome`'s reason: every number here is a claim
+/// the app makes to a person about something irreversible, and a claim nothing checks is a claim
+/// that quietly stops being true. `removedFiles` in particular is the one a test can assert that a
+/// green "the call did not throw" cannot — a delete that deleted nothing returns zero here.
+public struct PhotoDeletion: Sendable, Equatable {
+    /// The photograph that went.
+    public let photoID: UUID
+    /// The tree it was on, so a caller can reload the surface it was drawn on.
+    public let treeID: UUID
+    /// Files actually removed from disk: the confirmed binary, the staged one, or neither when the
+    /// bytes had never arrived.
+    public let removedFiles: Int
+    /// Votes deleted with it — everybody's, not only this person's. They were judgements about a
+    /// photograph that no longer exists.
+    public let deletedVotes: Int
+    /// Queued mutations that were still carrying this photograph's staged binary and no longer are.
+    /// Non-zero means the deletion caught an upload that had not drained yet, which is the window in
+    /// which a photograph could otherwise have been "deleted" and then published.
+    public let dequeuedBinaries: Int
+    /// Whether this was the last photograph on a tree that exists *because* somebody photographed it
+    /// (BUILD-PLAN §6, "Community add: requires photo"). The deletion is allowed and this says it
+    /// happened — see `LocalAPI.deletePhoto` for the argument.
+    public let leftACommunityTreeWithoutAPhotograph: Bool
+
+    public init(
+        photoID: UUID,
+        treeID: UUID,
+        removedFiles: Int,
+        deletedVotes: Int,
+        dequeuedBinaries: Int,
+        leftACommunityTreeWithoutAPhotograph: Bool
+    ) {
+        self.photoID = photoID
+        self.treeID = treeID
+        self.removedFiles = removedFiles
+        self.deletedVotes = deletedVotes
+        self.dequeuedBinaries = dequeuedBinaries
+        self.leftACommunityTreeWithoutAPhotograph = leftACommunityTreeWithoutAPhotograph
+    }
 }

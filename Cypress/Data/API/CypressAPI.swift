@@ -120,6 +120,29 @@ public protocol CypressAPI: Sendable {
     /// `PhotoAccess.swift`; see `photoData` above for why it is declared here and not only there.
     func setPhotoVote(photoID: UUID, vote: PhotoVote?) async throws
 
+    /// Removes one photograph this person contributed — the bytes from the device, the row from
+    /// every surface that draws it (ERRATA E147, task #78).
+    ///
+    /// **Not a BUILD-PLAN §6 endpoint.** §6 has `POST /photos/begin` and nothing that unmakes a
+    /// photograph; the nearest sentence in the corpus is SPEC-PHASE1 §"Sync never deletes community
+    /// photos or visits", which is about what *sync* may do to somebody else's record and not about
+    /// what a contributor may do to their own. The ask is the owner's, verbatim — "allow photo
+    /// deletions for your own photos" — and it is a privacy control before it is a tidiness one: a
+    /// photograph can hold a face, a licence plate or the inside of somebody's front garden, and the
+    /// person who took it has to be able to take it back. When the service lands this becomes
+    /// `DELETE /photos/{id}` and this signature does not move.
+    ///
+    /// - Throws: `.notFound` when there is no such live photograph, `.forbidden` when it is not this
+    ///   person's — including when it is nobody's, which is what an account deletion through the
+    ///   leaving door makes of it.
+    ///
+    /// **Declared here and not only in an extension**, for the reason `photoData` gives above at
+    /// length: an extension member has no witness-table entry, and every screen holds
+    /// `any CypressAPI`. A `deletePhoto` that only existed in an extension would return the
+    /// default's `throw .notFound` from every screen in the app while passing every test that held a
+    /// `LocalAPI` (ERRATA E125).
+    func deletePhoto(id: UUID) async throws -> PhotoDeletion
+
     // MARK: - Personal surfaces (private by default, D11)
 
     /// `GET /me/grove`.
@@ -528,6 +551,20 @@ public struct TreeProfile: Hashable, Sendable {
     /// from the server's attribution, and everything it does not list stays gated on `.approved`.
     public let ownPhotoIDs: Set<UUID>
 
+    /// Which of `photos` this viewer may **delete** (`AppSchema` v12, ERRATA E147).
+    ///
+    /// A different question from `ownPhotoIDs` and therefore a different set, on the same principle
+    /// that keeps `isPubliclyVisible` and `isVisibleToItsContributor` apart. `ownPhotoIDs` asks
+    /// whether this device may *show* the photograph, and the answer is every row it holds.
+    /// This asks whether this person may take it back, and the answer is the rows whose owner column
+    /// names their account or this device. The two differ on exactly one kind of row and it is the
+    /// kind that matters: a photograph anonymized by an account deletion is still shown — it is on
+    /// the tree, that is what the leaving door promised — and is no longer anybody's to unmake.
+    ///
+    /// Empty on `RemoteAPI` until a server can answer it, which is the safe direction: a missing
+    /// answer hides a control rather than offering one that would fail.
+    public let deletablePhotoIDs: Set<UUID>
+
     /// What has been voted on `photos`, keyed by photo (`AppSchema` v8, ERRATA E125).
     ///
     /// It travels with the series rather than being fetched beside it because the hero and the
@@ -550,6 +587,7 @@ public struct TreeProfile: Hashable, Sendable {
         communityNotes: [CommunityNote] = [],
         siteLineageTreeID: UUID? = nil,
         ownPhotoIDs: Set<UUID> = [],
+        deletablePhotoIDs: Set<UUID> = [],
         photoTallies: [UUID: PhotoTally] = [:]
     ) {
         self.tree = tree
@@ -565,12 +603,17 @@ public struct TreeProfile: Hashable, Sendable {
         self.communityNotes = communityNotes
         self.siteLineageTreeID = siteLineageTreeID
         self.ownPhotoIDs = ownPhotoIDs
+        self.deletablePhotoIDs = deletablePhotoIDs
         self.photoTallies = photoTallies
     }
 
     /// Whether this device contributed the photo, and may therefore show it to the person who took
     /// it whatever moderation has or has not done with it yet.
     public func isOwnPhoto(_ photo: Photo) -> Bool { ownPhotoIDs.contains(photo.id) }
+
+    /// Whether this person may delete the photo — see `deletablePhotoIDs` for why this is not the
+    /// same question as `isOwnPhoto`.
+    public func isDeletablePhoto(_ photo: Photo) -> Bool { deletablePhotoIDs.contains(photo.id) }
 }
 
 /// The body of `POST /trees`.

@@ -295,6 +295,13 @@ public actor LocalAPI: CypressAPI {
                 // anybody else's photos down. So this device may show its owner all of them, and
                 // `.pending` stays `.pending`, because nothing has in fact moderated them.
                 ownPhotoIDs: Set(photos.items.map(\.id)),
+                // A narrower set, and the narrowing is the whole of it: seeing a photograph and
+                // being allowed to unmake it are two questions (`TreeProfile.deletablePhotoIDs`).
+                // Read in the same transaction as the photographs so a control cannot be drawn on a
+                // row that has since gone.
+                deletablePhotoIDs: try contributions.deletablePhotoIDs(
+                    treeID: id, attribution: attribution, connection: connection
+                ),
                 // Read in the same transaction as the photographs, so the hero and the list that
                 // can change it are computed from one consistent picture (ERRATA E125).
                 photoTallies: try contributions.photoTallies(
@@ -359,7 +366,12 @@ public actor LocalAPI: CypressAPI {
                 createdAt: moment,
                 updatedAt: moment
             )
-            try contributions.insert(photo, localPath: draft.photoLocalPath, connection: connection)
+            try contributions.insert(
+                photo,
+                localPath: draft.photoLocalPath,
+                owner: PhotoOwner(attribution),
+                connection: connection
+            )
         }
         return tree
     }
@@ -788,7 +800,12 @@ public actor LocalAPI: CypressAPI {
             updatedAt: moment
         )
         try await store.queue.write { connection in
-            try contributions.insert(photo, localPath: request.localPath, connection: connection)
+            try contributions.insert(
+                photo,
+                localPath: request.localPath,
+                owner: PhotoOwner(attribution),
+                connection: connection
+            )
         }
         try FileManager.default.createDirectory(at: photoDirectory, withIntermediateDirectories: true)
         let destination = photoDirectory.appendingPathComponent("\(photo.id.uuidString).jpg")
@@ -867,6 +884,146 @@ public actor LocalAPI: CypressAPI {
         // the truthful answer and the screen draws its placeholder; inventing an empty `Data` would
         // hand a decoder something to fail on later and further away.
         throw APIError.notFound
+    }
+
+    /// Removes one photograph this person contributed — task #78, ERRATA E147.
+    ///
+    /// ── Why this is a real delete and not `AccountDeletionChoice`'s two doors ─────────────────
+    /// E136 made "leave the work, unlink the name" the *default* for deleting an account, on the
+    /// owner's explicit ruling, and the reasoning is good: a person leaving is making a statement
+    /// about their identity, and the check-ins, measurements and votes they leave behind are worth
+    /// something to the forest whoever made them. None of that transfers to one photograph deleted
+    /// on purpose. A photograph is deleted **because of what is in it** — a face, a licence plate,
+    /// the inside of somebody's front garden, a house number — and anonymizing it addresses none of
+    /// that. It would leave the picture on the tree and take the name off the picture, which is
+    /// answering a question nobody asked. That is E136's own test for a door worth offering, applied
+    /// here and failed: it refuses to offer "keep my favourites" because a favourite nobody owns is
+    /// a row no query returns and no person can remove — a decorative control. "Keep this
+    /// photograph, unnamed" is the same control in the other direction: it looks like it honours the
+    /// request and does not.
+    ///
+    /// So there is one outcome and it is destructive, and what the design owes instead is **intent**:
+    /// the control is on screen 20, where each photograph is already being judged one at a time, and
+    /// it raises a confirmation naming the consequence before anything happens. One tap destroys
+    /// nothing. See `TreePhotosView`.
+    ///
+    /// ── The bytes go, and that is the point ──────────────────────────────────────────────────
+    /// Soft delete is the house verb and `deleted_at` is what the row gets, but a tombstone alone
+    /// would be the wrong answer to *this* request: leaving the JPEG in the container after somebody
+    /// asked for it to be gone is precisely the failure E136 refused to ship in the account case. So
+    /// the files are removed from disk, the row is stripped of `storage_key`, `local_path`, its pixel
+    /// dimensions and its fuzzed coordinate, and what survives is a tombstone that cannot find a
+    /// picture (`ContributionStore.deletePhoto` says what is left and why the row survives at all).
+    ///
+    /// **Files first, on E136's ruling**, which is a ruling and not a detail: `FileManager` cannot
+    /// join a SQLite transaction, so one half is outside the atomic part and one of two failure
+    /// modes will happen. Files-first fails as a row pointing at bytes that are gone — visible,
+    /// retryable, cosmetic, and `photoData` already draws the placeholder for it. Rows-first fails as
+    /// a JPEG somebody asked to have destroyed, stranded in the container and unreachable by every
+    /// query that could find it again. A deletion path takes the loud failure.
+    ///
+    /// ── The hero, which is derived and therefore cannot dangle ───────────────────────────────
+    /// Nothing stores a hero id. `PhotoHero.choose` ranks the set it is handed and already excludes
+    /// `deletedAt != nil`, and `ContributionStore.photos` never returns a tombstone, so deleting the
+    /// photograph a tree leads with promotes the next one by the same rule that chose the first —
+    /// an up-voted photograph, else the most recent `full_tree`, else the most recent of any kind —
+    /// and deleting the last one returns the tree to the cold, photograph-less profile it had before
+    /// anybody photographed it. That the votes go with it matters here: a tombstone left holding a
+    /// positive tally would be a deleted photograph winning a hero election.
+    ///
+    /// ── The last photograph on a community-added tree ────────────────────────────────────────
+    /// BUILD-PLAN §6 says "Community add: requires photo", so deleting the only photograph of a tree
+    /// that exists *because* of that photograph is a genuine conflict, and it is settled in favour of
+    /// the person: **allowed, named, and recorded**.
+    ///
+    /// Refusing was the other candidate and it is the wrong answer. "Requires photo" is a rule about
+    /// *making* a record — evidence at the point of creation, and the anti-spam gate on a table any
+    /// phone can write to — not an invariant the row must satisfy forever. Enforcing it afterwards
+    /// would mean the app telling somebody it will not remove a photograph of their neighbour's
+    /// window because the tree's paperwork needs it, which subordinates the exact request this
+    /// feature exists to honour to a data-completeness rule. It would also be trivially defeated:
+    /// photograph the pavement, then delete the first one.
+    ///
+    /// What the record means afterwards is stated rather than left to be discovered. The tree stays
+    /// — deleting it would remove a real tree from the map, possibly one other people have since
+    /// visited, and "everything I contributed" has never meant the forest (`AccountDeletion`). It
+    /// stays `unverified`, which is already the right word for it and the reason no state change is
+    /// invented here. And the tombstone stays on the row, so the tree's own record still says a
+    /// photograph was taken for it and withdrawn, rather than looking like a tree that was added
+    /// with no evidence at all. `PhotoDeletion.leftACommunityTreeWithoutAPhotograph` reports it, and
+    /// screen 20 says it in words *before* the tap, not after.
+    ///
+    /// ── Votes and queued uploads ─────────────────────────────────────────────────────────────
+    /// Every vote on the photograph goes, whoever cast it: they were judgements about a thing that
+    /// no longer exists, which is `AccountDeletion`'s argument for the same deletion. The at-most-one
+    /// owner CHECK v9 gave `photo_votes` means an anonymized vote is deleted by photo id like any
+    /// other, with no owner arm to strand. And any queued mutation still carrying the staged binary
+    /// has it taken out of its list, or the next drain would upload a photograph that had been
+    /// deleted.
+    public func deletePhoto(id: UUID) async throws -> PhotoDeletion {
+        let moment = now()
+        let who = attribution
+
+        // 1. Establish what this is and whose it is, before anything is removed.
+        let subject = try await store.queue.read { connection in
+            try contributions.photoForDeletion(id: id, connection: connection)
+        }
+        guard let subject else { throw APIError.notFound }
+        guard subject.owner.isOwned(by: who) else { throw APIError.forbidden }
+
+        // 2. Whether this is the last photograph of a tree that needed one to exist. Read before the
+        //    delete, because afterwards the answer is the same for a tree that never had one.
+        let lastOnACommunityAdd = try await store.queue.read { connection -> Bool in
+            guard try communityTrees.tree(id: subject.treeID, connection: connection) != nil else { return false }
+            return try contributions.photos(treeID: subject.treeID, connection: connection).items.count == 1
+        }
+
+        // 3. The bytes, before the rows. `lastPathComponent` on the storage key rather than the
+        //    stored string, the same directory-traversal guard `photoData` makes on the way in.
+        let manager = FileManager.default
+        var removedFiles = 0
+        let files = [
+            subject.storageKey.map { photoDirectory.appendingPathComponent(($0 as NSString).lastPathComponent) },
+            subject.localPath.map { URL(fileURLWithPath: $0) }
+        ].compactMap { $0 }
+        for url in files where manager.fileExists(atPath: url.path) {
+            do {
+                try manager.removeItem(at: url)
+                removedFiles += 1
+            } catch {
+                // A file that will not go is the one failure this method must not swallow: the row
+                // would be tombstoned and the picture would still be on the disk, which is the
+                // outcome the whole ordering exists to prevent. Nothing has been written yet, so
+                // throwing here leaves the photograph exactly as it was and the person can try again.
+                throw APIError.serverError
+            }
+        }
+
+        // 4. The rows, in one transaction.
+        let counts = try await store.queue.write { connection -> ContributionStore.PhotoDeletionCounts in
+            var counts = try contributions.deletePhoto(
+                id: id, attribution: who, at: moment, connection: connection
+            )
+            if let path = subject.localPath {
+                counts.stagedBinaries = try OutboxStore().discardStagedPhoto(
+                    atPath: path, at: moment, connection: connection
+                )
+            }
+            return counts
+        }
+        // The predicate in the UPDATE matched nothing although the read said it would: another
+        // deletion won the race. Reported as `notFound` rather than as a success, because a success
+        // would be this call claiming to have done something it did not do.
+        guard counts.photos == 1 else { throw APIError.notFound }
+
+        return PhotoDeletion(
+            photoID: id,
+            treeID: subject.treeID,
+            removedFiles: removedFiles,
+            deletedVotes: counts.votes,
+            dequeuedBinaries: counts.stagedBinaries,
+            leftACommunityTreeWithoutAPhotograph: lastOnACommunityAdd
+        )
     }
 
     /// A thumb up or down on a photograph, or `nil` to take it back (ERRATA E125, `AppSchema` v8).
@@ -1283,7 +1440,9 @@ public actor LocalAPI: CypressAPI {
             let destination = photoDirectory.appendingPathComponent("\(photo.id.uuidString).jpg")
             try data.write(to: destination, options: .atomic)
             try await store.queue.write { connection in
-                try contributions.insert(photo, localPath: nil, connection: connection)
+                try contributions.insert(
+                    photo, localPath: nil, owner: PhotoOwner(attribution), connection: connection
+                )
                 try contributions.markPhotoUploaded(
                     id: photo.id,
                     storageKey: destination.lastPathComponent,

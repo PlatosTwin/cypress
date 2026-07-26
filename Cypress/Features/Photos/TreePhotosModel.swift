@@ -27,6 +27,22 @@ final class TreePhotosModel {
     /// A vote that could not be written. Shown rather than swallowed: the thumb springs back and the
     /// screen says why, because a control that silently does nothing reads as a broken control.
     private(set) var voteError: String?
+    /// A deletion that could not be written, in the same register as `voteError` and for the same
+    /// reason — with one difference that matters: this one must never be silent, because the person
+    /// has just been told a photograph is about to be destroyed and has to know whether it was.
+    private(set) var deleteError: String?
+    /// Which of `photos` this person may delete (`TreeProfile.deletablePhotoIDs`). Empty until the
+    /// first read completes, so the control cannot be drawn before the answer is known — and empty
+    /// forever on an implementation that cannot answer, which hides the control rather than offering
+    /// one that would fail.
+    private(set) var deletableIDs: Set<UUID> = []
+    /// Whether this tree exists because somebody photographed it (`Tree.source == .community`).
+    /// Read once with the photographs so the confirmation can name the consequence of removing the
+    /// last one — BUILD-PLAN §6, "Community add: requires photo".
+    private(set) var isCommunityAdded = false
+    /// The photograph a confirmation is currently open for. `nil` is the resting state, which is
+    /// what makes one tap on the control destroy nothing.
+    var pendingDeletion: Photo?
 
     init(treeID: UUID, api: (any CypressAPI)? = nil) {
         self.treeID = treeID
@@ -34,12 +50,21 @@ final class TreePhotosModel {
     }
 
     /// Fixture initialiser — a finished state, for previews and the screen sweep.
-    init(treeID: UUID, photos: [Photo], tallies: [UUID: PhotoTally] = [:], treeName: String? = nil) {
+    init(
+        treeID: UUID,
+        photos: [Photo],
+        tallies: [UUID: PhotoTally] = [:],
+        treeName: String? = nil,
+        deletableIDs: Set<UUID> = [],
+        isCommunityAdded: Bool = false
+    ) {
         self.treeID = treeID
         self.api = nil
         self.photos = photos
         self.tallies = tallies
         self.treeName = treeName
+        self.deletableIDs = deletableIDs
+        self.isCommunityAdded = isCommunityAdded
         self.isLoading = false
     }
 
@@ -60,6 +85,38 @@ final class TreePhotosModel {
         photos = profile.photos.items.filter(\.isVisibleToItsContributor)
         tallies = profile.photoTallies
         treeName = profile.activeName?.name ?? profile.species?.commonName
+        deletableIDs = profile.deletablePhotoIDs
+        isCommunityAdded = profile.tree.source == .community
+    }
+
+    func isDeletable(_ photo: Photo) -> Bool { deletableIDs.contains(photo.id) }
+
+    /// Whether removing this photograph would leave a community-added tree with none — the one case
+    /// where the confirmation says something extra, because it is the one case where the record ends
+    /// up in a state its own creation rule forbids (see `LocalAPI.deletePhoto` for why that is
+    /// allowed and not refused).
+    func isLastPhotographOfACommunityAdd(_ photo: Photo) -> Bool {
+        isCommunityAdded && photos.count == 1 && photos.first?.id == photo.id
+    }
+
+    /// Removes a photograph, having been asked twice.
+    ///
+    /// The re-read afterwards is `vote`'s pattern and is load-bearing for the same reason and one
+    /// more: the hero is derived, so the screen above this one has to be recomputed from the
+    /// surviving set rather than patched, and `deletableIDs` is a fact only the store holds.
+    func delete(_ photoID: UUID, images: PhotoImageStore?) async {
+        guard let api else { return }
+        deleteError = nil
+        do {
+            _ = try await api.deletePhoto(id: photoID)
+            // The decoded copy goes with the file. Without this the picture stays on screen — and
+            // stays in memory — after the bytes it came from have been destroyed, which for this
+            // feature is not a cache staleness bug but a failure to do the thing that was asked.
+            images?.forget(photoID)
+            await load()
+        } catch {
+            deleteError = TreePhotosCopy.deleteFailed
+        }
     }
 
     /// Tapping a thumb that is already filled takes the vote back — a toggle, because the second tap

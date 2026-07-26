@@ -6099,3 +6099,173 @@ anyway` under it. A deep-linked city tree drew `Street or sidewalk · read from 
 its `SITE` and `SF #229291` cards, and its report drew `Call 311 now` unchanged. Both appearances, and
 the three report branches are photographed by `LandContextShots` because two of them cannot be reached
 from the shipped seed by any deep link.
+### E147 — a photograph on a tree you added belonged to nobody, and now you can take it back
+
+Two tasks, and one problem underneath them. **#73** is the hole ERRATA E136 pinned when it built the
+two doors of account deletion: `LocalAPI.addTree` writes a photograph with **no `visit_id`**, and
+`community_trees` carries no owner column at all, so a photograph on a tree you added was
+attributable to nobody and *neither door could reach it*. "Erase everything I contributed" left that
+JPEG on the disk. **#78** is the project owner's ask, verbatim — *"Allow photo deletions for your own
+photos"* — which cannot be built at all until "your own" is a question the schema can answer.
+
+#### Part A — where the owner went, and why not where E136 said
+
+`AppSchema` **v12** adds `photos.user_id` and `photos.device_id`.
+
+E136 and `AccountDeletion.photoBytes` both wrote that closing this "needs an owner on
+`community_trees`", and that sentence is departed from deliberately. An owner on the *tree* answers
+the question only by **derivation** — "the photographs of a tree you added, that have no visit" — and
+`photoBytes` is itself the standing warning about derived predicates here: widen one by a clause and
+it starts deleting other people's work. That derivation also stops being true the moment anything
+else writes a visitless photograph, and it cannot answer for the *ordinary* case at all — a
+photograph taken on a visit to a city tree, which is most photographs in the app and which #78 has to
+cover too. One column pair on the row being deleted answers all of it with one predicate.
+
+The tree row still records no author, and that is a decision rather than an omission: a community
+tree is a public object, no screen names its contributor (screen 03 says "a contributor"), and
+neither door needs it — a community-added tree survives **both** doors today and still does, because
+"everything I have added" has never meant the forest. Adding a personal-data column that nothing
+reads would have been a privacy cost dressed as a privacy fix.
+
+**The CHECK is `NOT (user_id IS NOT NULL AND device_id IS NOT NULL)` — at most one owner, not exactly
+one — and this is the whole of E136's lesson about constraints.** `private_reminders` (v3) and
+`favorites` (v5) are exactly-one-owner, and copying them here would have been the obvious move and a
+migration already scheduled behind it. Those two tables are *deleted* with their account under both
+doors, so an ownerless row is a state they never need. A photograph is the opposite: the default
+door's entire promise is that the work stays and the name comes off, so an ownerless photograph is
+not a hole in the rule, it is the rule's terminal state. Exactly-one-owner would have **forbidden
+anonymisation**, leaving the leaving-door a choice between deleting the photograph (breaking its own
+promise) and re-homing it onto the device (handing one person's picture to whoever picks the phone up
+next) — which is precisely what v8 did to `photo_votes` and v9 had to be written to undo. Ask what a
+constraint forbids, not only what it permits.
+
+**The backfill has three jobs and states its assumption.** Every row in `main.photos` was written by
+this installation (`beginPhotoUpload` and `addTree` are the only writers; nothing syncs anybody
+else's down, which `LocalAPI.treeProfile` already relies on for `ownPhotoIDs`). So a photograph on a
+visit takes the visit's owner; a visitless one takes this installation's identity, the signed-in
+account first and `app_state.device_uuid` otherwise; anything left over stays ownerless, which the
+CHECK permits. The second rule can over-attribute in one case — a photograph taken on this phone
+before a *different* person signed in — and that is the same over-attribution `claimDevice` already
+performs on every visit, which E136 recorded as the owner's to rule on. It is not a new hole.
+
+`PhotoOwner` is the CHECK in Swift, and it has **three** cases where `FavoriteOwner` and
+`ReminderOwner` have two. E89 kept those two apart on purpose — same shape, different invariants —
+and this is the third of them for the same reason.
+
+**Both doors now reach it.** The erasing door deletes by `photos.user_id`, tombstones included. The
+anonymising door nulls it, which it never had to do before because there was no name on the row to
+take off — `AccountDeletion`'s comment saying "the anonymizing door does not name `photos` once, and
+that is correct rather than an omission" was true when it was written and is now the opposite, and it
+says so. `claimDevice` adopts a device-owned photograph on the reminder's terms: the account gains it
+and the device link drops in one statement, and the `user_id IS NULL` guard leaves an *anonymised*
+photograph alone so it cannot be re-attributed to the next person to sign in.
+
+**The test E136 planted did its job.** `anUnattributablePhotographSurvivesBothDoors` existed "so that
+the gap is a failing assertion the day somebody adds that column and forgets this path". It failed on
+the first run after v12 landed. It is now `theAddedTreesPhotographIsReachableByBothDoors` and asserts
+the sentence the deletion copy always claimed — on the row *and* on the bytes.
+
+#### Part B — deleting one photograph, and the five questions it asks
+
+**1. It is a real delete, and it does not get E136's two doors.** The two doors exist because leaving
+an account is a statement about *identity*, and the check-ins, measurements and votes left behind are
+worth something to the forest whoever made them. None of that transfers. A single photograph is
+deleted **because of what is in it** — a face, a licence plate, the inside of somebody's front
+garden — and anonymising it addresses none of that: it would leave the picture on the tree and take
+the name off the picture, answering a question nobody asked. That is E136's own test for a door worth
+offering, applied and failed; E136 refuses to offer "keep my favourites" on the grounds that an
+ownerless favourite is a decorative control, and "keep this photograph, unnamed" is the same control
+facing the other way. What the design owes instead is **intent**: the trash control opens a
+confirmation naming the consequence, the verb is on the button (`Delete photo`), and the button that
+does nothing says what nothing means (`Keep it`). One tap destroys nothing.
+
+**2. The hero cannot dangle, because nothing stores one.** `PhotoHero.choose` ranks the set it is
+handed and already excludes `deletedAt != nil`; `ContributionStore.photos` never returns a tombstone.
+So deleting the photograph a tree leads with promotes the next by the same rule that chose the first,
+and deleting the last returns the tree to the cold profile it had before anybody photographed it.
+That the votes go with it is load-bearing here: a tombstone left holding a positive tally would be a
+deleted photograph winning a hero election.
+
+**3. The last photograph of a community-added tree is deletable — allowed, named, and recorded.**
+BUILD-PLAN §6 says "Community add: requires photo", so this is a genuine conflict and it is settled
+in favour of the person. "Requires photo" is a rule about *making* a record — evidence at the point
+of creation, and the anti-spam gate on a table any phone can write to — not an invariant the row must
+satisfy forever. Refusing would mean the app declining to remove a photograph of somebody's window
+because the tree's paperwork needs it, which subordinates the exact request this feature exists to
+honour; it is also defeated by photographing the pavement first. So: the tree stays (deleting it
+would remove a real tree from the map that other people may have visited), it stays `unverified`
+because that word is already correct, and the stripped tombstone stays on the row so the record still
+says a photograph was taken for it and withdrawn. The confirmation says so **before** the tap: *"It
+is the only photo of a tree a contributor added. The tree stays on the map with no photo."*
+
+**4. Soft delete, and the bytes go.** The row is tombstoned — `private_reminders.photo_id` and
+`community_notes.photo_id` reference `photos(id)`, so a hard delete would take a *private reminder*
+down with a photograph, and the surviving row is what carries the sentence in (3). But a tombstone
+alone would be a lie about the request, so the files are removed from disk **first** on E136's
+ruling — files-first fails as a row pointing at bytes that are gone, which is visible, retryable and
+cosmetic; rows-first fails as a JPEG somebody asked to destroy, stranded and unreachable by every
+query that could find it — and the row loses `storage_key`, `local_path`, `width`, `height` and its
+fuzzed coordinate in the same statement that sets `deleted_at`. What survives is an id, a tree, a
+shot type, a date and an owner: the same facts the visit beside it already carries, and none of them
+a picture. `PhotoImageStore.forget` drops the decoded copy too — that cache never evicts, on the
+sound argument that a photograph is immutable once written, and a deletion is the one event that
+breaks the argument.
+
+**5. Votes and outbox rows.** Every vote on the photograph is deleted, whoever cast it — they were
+judgements about a thing that no longer exists, which is `AccountDeletion`'s argument for the same
+deletion under the erasing door. v9's at-most-one-owner CHECK means an already-anonymised vote is
+deleted by photo id like any other, with no owner arm to strand. And any queued mutation still
+carrying the staged binary has it taken out of its `photo_paths` list, or the next drain would upload
+a photograph that had been deleted; the mutation itself stays queued, because the person deleted a
+picture and not the record of having stood in front of the tree.
+
+**No outbox kind, and no sync, stated rather than skipped.** BUILD-PLAN §6 has `POST /photos/begin`
+and nothing that unmakes a photograph. Queuing a `photo_delete` would need the `outbox.kind` CHECK
+widened for a payload nothing can ever post — a durable row no drain could settle. So the deletion is
+local and immediate, `CypressAPI.deletePhoto(id:)` is the shape `DELETE /photos/{id}` will take, and
+the sync half is **OPEN** for whoever builds the service.
+
+`deletePhoto` is a **protocol requirement**, not an extension member. E125 is the reason and it cost
+this project a build where every photograph failed to load and every vote failed to save while every
+test passed: an extension member has no witness-table entry, so an implementation's override is
+unreachable through `any CypressAPI`, which is what every screen holds. `PhotoDeletionTests` erases a
+`LocalAPI` to the protocol and asserts the file is gone, because every other test in that file holds
+the concrete type and would pass against exactly that bug.
+
+**Seeing and unmaking are two questions, so they are two sets.** `TreeProfile.ownPhotoIDs` stays what
+it was — every row this device holds, because moderation does not stand between a contributor and
+their own picture (E37) — and `deletablePhotoIDs` is the narrower one. They differ on exactly one
+kind of row and it is the one that matters: a photograph anonymised by an account deletion is still
+*shown*, because that is what the leaving door promised, and is nobody's to take back.
+
+#### Verified on the simulator, and one thing that was only visible by looking
+
+679 tests before, **700 after**, and each new assertion was made to fail on purpose first: removing
+the `removeItem` call turns four deletion tests red on the *file*, deleting the migration's visitless
+backfill turns the upgrade test red on the row E136 was written about, and restoring the old
+visit-join predicate in both doors turns Part A's test red on both the row and the bytes.
+
+Walked on the iPhone 16e over the `communityPhotos` and `photoHero` deep links: a contributor-added
+tree with the one photograph that made it addable, deleted, leaving the cold profile — dashed well,
+*No photos of this tree yet*, *Be the first to photograph this tree* — with the tree still on the map
+and still reading "community-added, unverified". Then three photographs on a city tree: the hero
+deleted, the `Hero` badge moved to the next row on screen 20, and screen 03 came back with the new
+hero drawn and its pill down to `2 photos`. The container was read afterwards: `user_version` 12, the
+JPEG gone from `Application Support/Cypress/Photos`, the row a tombstone with every locating column
+NULL, and a *pre-existing* visitless photograph from an earlier build carrying a `device_id` — the
+backfill, on a real database that had been written before v12 existed.
+
+**The thing worth writing down** is a harness defect that looked exactly like an app defect. The
+first version of the `communityPhotos` deep link pushed screen 03 and screen 20 in one go, so the
+profile was covered before it had ever been on screen; it therefore got no appearance event, E127's
+reload-on-reappear never armed, and coming back from the deletion drew a stale `1 photo · since 2026`
+over a tree that no longer had one. A screenshot of that would have been filed as a bug in the app.
+The real path — 03, tap the pill, delete, back — refreshes correctly, and the deep link now ends
+where a person starts.
+
+**What was not built.** The sync half, above. No delete affordance in the full-screen viewer or on
+the hero: screen 20 is the only surface that shows a tree's photographs as a set with per-photograph
+controls, and a delete on the hero would act on whichever photograph the rule happened to pick.
+And an `addTree` photograph still never passes through `PhotoBinary.writeStrippingMetadata`, because
+that path stages a file and never calls `uploadPhoto` — so a community add's EXIF is stripped by
+nothing. That is a separate defect, found while reading this path, and it is not this entry's to fix.

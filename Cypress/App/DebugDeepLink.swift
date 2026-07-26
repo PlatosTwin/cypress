@@ -82,6 +82,11 @@ enum DebugDeepLink {
         case speciesClaim
         /// The same, with no species: the state that offers to be named.
         case speciesUnclaimed
+        /// Screen 20 over a **community add** — one tree, one photograph, the photograph that
+        /// BUILD-PLAN §6 required in order to add it (ERRATA E147). The one state where deleting a
+        /// photograph leaves a record its own creation rule forbids, and the only way to look at
+        /// what the app says about that before the tap.
+        case communityPhotos
         // Presented over the tab root.
         case careLog            // 09
         case share              // 10
@@ -231,6 +236,36 @@ enum DebugDeepLink {
                     speciesQuery: screen == .speciesClaim ? "Platanus" : nil
                 )
                 router.push(.treeProfile(id))
+            case .communityPhotos:
+                // A community add with the one photograph that made it addable, opened on screen 20
+                // — the surface where it can be deleted, and the only place in the app where a
+                // delete can leave a record violating its own creation rule (ERRATA E147).
+                //
+                // Resolved before it is added, unlike `.speciesClaim`, because this case exists to
+                // have its photograph *deleted*: a second run would otherwise trip the 10 m
+                // proximity dedupe against the tree the first run left standing, and the harness
+                // would draw its failure instead of the screen. One photograph, not three, because
+                // "the only photograph of a community add" is the state being looked at.
+                let existing = try await api.treesNear(
+                    communityPhotoSpot, radiusM: TreeDraft.proximityDedupeRadiusM, limit: 1
+                ).first?.tree.id
+                // Spelled out rather than with `??`, which is an autoclosure and cannot be `await`ed.
+                let id: UUID
+                if let existing {
+                    id = existing
+                } else {
+                    id = try await api.debugAddCommunityTree(near: communityPhotoSpot, speciesQuery: nil)
+                }
+                try await api.debugSeedPhotos(treeID: id, count: 1)
+                // The **profile**, not screen 20, even though the photo browser is what this case is
+                // about. Pushing both at once was tried and is a worse harness than it looks: a
+                // destination that is covered before it has ever been on screen gets no appearance
+                // event, so `TreeProfileView`'s E127 reload-on-reappear never arms, and coming back
+                // from a deletion draws a stale `1 photo · since 2026` over a tree that no longer has
+                // one. That is the harness lying about the app — the real path (03, tap the pill,
+                // delete, back) refreshes correctly — and a screenshot of it would have been read as
+                // a defect. So the deep link ends where a person starts, and the pill is a tap away.
+                router.push(.treeProfile(id))
             case .moderationReview:
                 // Put the lead's review queue in front of a screenshot: open a removal review on a real
                 // tree, promote this account to a lead, and show the You tab, where the section draws.
@@ -277,6 +312,10 @@ enum DebugDeepLink {
     /// after the other on one simulator does not refuse the second tree. A re-run of the *same* case
     /// does refuse — the first tree is still there, 0 m away — which is correct behaviour and shows
     /// as the deep link reporting a failure rather than as a screen quietly showing the wrong tree.
+    /// Its own coordinate, well outside the other two's 10 m dedupe circles, for the reason
+    /// `.speciesClaim` gives: a case that writes persistent state must not write it onto a record
+    /// another case reads.
+    private static let communityPhotoSpot = Coordinate(latitude: 37.7636, longitude: -122.5300)
     private static let claimedSpot = Coordinate(latitude: 37.7600, longitude: -122.5300)
     private static let unclaimedSpot = Coordinate(latitude: 37.7618, longitude: -122.5300)
 
