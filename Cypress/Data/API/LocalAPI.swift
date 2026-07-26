@@ -1276,21 +1276,63 @@ public actor LocalAPI: CypressAPI {
     /// CoreGraphics and ImageIO, not UIKit: `Data` may import the system libraries its own job is
     /// defined in terms of, and no UI framework (ARCHITECTURE §2, and see `PhotoBinary`'s note on
     /// the same line). A `#if DEBUG` seam is not a reason to cross a layer boundary.
+    /// ── And since the crop fix, it is shaped like its subject ────────────────────────────────
+    /// The band alone proved *that* bytes arrived. It could not prove *which part of them* did, and
+    /// that is the question the crop anchor turns on: a centred crop of a portrait tree keeps the
+    /// trunk and throws the canopy away, and against a flat rectangle with one stripe on it both
+    /// crops look identical. A screenshot of this screen was the evidence, and it was evidence of
+    /// nothing.
+    ///
+    /// So the fixture is now a crude tree, drawn where a real one sits in a portrait frame: canopy
+    /// across the top half, trunk down the middle, ground at the foot. Anybody — or any test —
+    /// looking at a hero can now say which part survived, because a hero showing only trunk and a
+    /// hero showing the canopy are different pictures.
+    ///
+    /// **1200×1600, matching the `width`/`height` the row records.** It was 300×400 under a row
+    /// claiming 1200×1600, which is a fixture that lies about itself in the one column A3's
+    /// resolution tie-break reads; and at 300 px the full-screen viewer had nothing to show, so a
+    /// screenshot of it could not tell a correct decode from a blurred one.
     private static func debugJPEG(hue: Double) -> Data {
-        let width = 300, height = 400
+        let width = 1_200, height = 1_600
         guard let context = CGContext(
             data: nil, width: width, height: height,
             bitsPerComponent: 8, bytesPerRow: 0,
             space: CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
         ) else { return Data() }
+
+        let w = CGFloat(width), h = CGFloat(height)
+        // CoreGraphics puts the origin at the bottom-left, so every `y` below is measured up from
+        // the foot of the picture. Named once here because getting it backwards silently draws the
+        // tree upside down, which is precisely the class of mistake this fixture is meant to expose.
+        func band(fromTop top: CGFloat, toTop bottom: CGFloat) -> CGRect {
+            CGRect(x: 0, y: h * (1 - bottom), width: w, height: h * (bottom - top))
+        }
+
+        // Sky: near-white, so the letterbox bars of a viewer are obviously bars and not photograph.
+        context.setFillColor(CGColor(red: 0.93, green: 0.95, blue: 0.98, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: w, height: h))
+
         // Three hues a third of the wheel apart, started at magenta so none of them lands on the
         // app's greens: magenta, orange, cyan for count == 3.
         let (red, green, blue) = Self.saturatedRGB(hue: (hue + 0.85).truncatingRemainder(dividingBy: 1))
         context.setFillColor(CGColor(red: red, green: green, blue: blue, alpha: 1))
-        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        // Canopy: an ellipse over the top half, inset from the sides, with headroom above it —
+        // where a photographer standing at the kerb puts the crown of a street tree.
+        context.fillEllipse(in: CGRect(
+            x: w * 0.08, y: h * (1 - 0.60), width: w * 0.84, height: h * 0.52
+        ))
+
+        // Trunk and ground: dark, and unmistakably not canopy.
+        context.setFillColor(CGColor(red: 0.20, green: 0.14, blue: 0.10, alpha: 1))
+        context.fill(CGRect(x: w * 0.44, y: h * (1 - 0.94), width: w * 0.12, height: h * 0.39))
+        context.fill(band(fromTop: 0.94, toTop: 1.0))
+
+        // The white bar stays, and stays in the middle, because it is still the "bytes arrived"
+        // signal and nothing else in Cypress draws one. It now doubles as the marker for *where the
+        // middle is*: a centred crop keeps it dead centre, a crown-anchored crop pushes it low.
         context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
-        context.fill(CGRect(x: 0, y: height / 2 - 20, width: width, height: 40))
+        context.fill(band(fromTop: 0.48, toTop: 0.52))
 
         guard let image = context.makeImage() else { return Data() }
         let output = NSMutableData()

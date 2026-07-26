@@ -210,9 +210,32 @@ struct VisitAddTreeView: View {
     @ViewBuilder
     private var wellContents: some View {
         if let snapshot = model.snapshot {
-            Image(uiImage: snapshot)
-                .resizable()
-                .scaledToFill()
+            // ══════════════════════════════════════════════════════════════════════════════════
+            // **Fitted, not filled — this is the second half of the reported defect.**
+            //
+            // Reported from the field: *"photo for custom tree should be standard photo style,
+            // right now it's horizontal and cuts off vertical frame."* The well is 268 pt tall and
+            // about 361 wide; `scaledToFill` scaled a 3:4 photograph to 481 pt and drew the middle
+            // 268 of it, so a volunteer who had just photographed a tree in portrait — the correct
+            // orientation for a tree — was shown a landscape band of its trunk.
+            //
+            // That is worse here than anywhere else in the app, because of what this particular
+            // picture is *for*. Every other frame is a photograph being displayed; this one is a
+            // photograph being **checked**, by the person standing in front of the tree, in the
+            // last second before they commit it to a record they cannot easily amend. A crop at
+            // that moment does not restyle the picture, it withholds the evidence — it can hide a
+            // finger over the lens, a cut-off crown, or the fact that the shot is of next door's
+            // tree. `PhotoFit` shows the file.
+            //
+            // **The jump from viewfinder to still is intended.** The live preview above is
+            // `.resizeAspectFill` and this is not, so the frame appears to pull back at the moment
+            // of capture. That is the iPhone camera's own behaviour going from a 4:3 viewfinder to
+            // the photograph, and here it carries information: what pulls into view is the part of
+            // the frame the well was never going to show. Screen 04 keeps `PhotoFill` for the
+            // opposite reason — it has a ghost overlay to line up against the preview, and
+            // `PhotoCropAnchor.centre` says why.
+            // ══════════════════════════════════════════════════════════════════════════════════
+            PhotoFit(image: snapshot)
         } else if model.camera.isLive, let session = model.camera.session {
             VisitCameraPreview(session: session)
         } else {

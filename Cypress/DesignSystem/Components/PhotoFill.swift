@@ -43,8 +43,79 @@
 //  more, and a touch footprint is one of the ways a view occupies space. A caller that has to
 //  remember to fence off its own photograph has not been given that promise.
 //
+//  ── Which part of the photograph survives the crop ────────────────────────────────────────
+//  **NOT SPECIFIED.** SCREENS.md gives the hero a height (§2 C2 — 224 px on 03) and never says which
+//  part of the photograph that height is taken from. The default was `.center`, which is SwiftUI's,
+//  and nobody chose it.
+//
+//  It is the wrong default *for this app*, and the arithmetic says why. A phone photograph held
+//  upright is 3:4. Scaled to fill a 393 pt wide hero it is 524 pt tall, of which 224 is drawn — 43%
+//  of the picture, taken from the middle, so rows 28.5% to 71.5% survive and everything outside them
+//  is thrown away. A street tree photographed from the pavement has its crown in the top third and
+//  its trunk and the kerb in the bottom third; the middle 43% of that frame is upper trunk and the
+//  underside of the canopy. The crown — the part that says which species this is, and whether it is
+//  in leaf, in flower or dead — is exactly the part a centred crop removes. The tree is tall and
+//  portrait is the right way to photograph it, so this is the common case and not an edge one.
+//
+//  So the default anchor is the crown: the alignment guide sits one third of the way down both the
+//  box and the photograph, which on the numbers above keeps rows 19% to 62% — the canopy and the top
+//  of the trunk. A third rather than the top edge because `.top` is sky: a photographer framing a
+//  whole tree leaves headroom above the crown, and an anchor that keeps the headroom and drops the
+//  tree has swapped one bad crop for another.
+//
+//  `.centre` stays available and screen 04 uses it, for a reason that is not taste — see
+//  `PhotoCropAnchor.centre`.
+//
 
 import SwiftUI
+
+/// Which part of a photograph survives being cropped to a box that is a different shape.
+///
+/// Vertical only. Every fixed frame in this app is wider than a phone photograph is, so the crop
+/// that matters is the one along the tall edge; the horizontal crop of a landscape shot takes
+/// equally from two sides of a subject that is centred in the frame anyway.
+enum PhotoCropAnchor {
+
+    /// One third of the way down: the canopy and the top of the trunk. The default, and the reason
+    /// is in this file's header.
+    case crown
+
+    /// The middle of the photograph — SwiftUI's own default.
+    ///
+    /// **Screen 04 needs this and must keep it.** The camera screen draws the frame just taken and,
+    /// under it, a 30% ghost of the last visit's photograph, and the whole point of the screen is
+    /// that the two line up. It draws both through `PhotoFill`, and behind them a live
+    /// `AVCaptureVideoPreviewLayer` whose `videoGravity` is `.resizeAspectFill` — which centres, and
+    /// is not a thing this app gets to change. An anchor that disagrees with the layer would move
+    /// the crown of the ghost away from the crown in the viewfinder, which is the one measurement
+    /// that screen exists to make.
+    case centre
+
+    var alignment: Alignment {
+        switch self {
+        case .crown: return Alignment(horizontal: .center, vertical: .photoCrown)
+        case .centre: return .center
+        }
+    }
+}
+
+/// The fraction of the way down a photograph — and of the way down the box it is drawn in — that the
+/// crown anchor pins together.
+///
+/// Not a spacing, a font size or a radius, so it is not one of the token families ARCHITECTURE §6
+/// names; it is named and stated once here rather than written as a literal at a call site, which is
+/// the rule that section is an instance of.
+private enum PhotoCrownAlignment: AlignmentID {
+    static let fraction: CGFloat = 1.0 / 3.0
+    static func defaultValue(in context: ViewDimensions) -> CGFloat {
+        context.height * fraction
+    }
+}
+
+extension VerticalAlignment {
+    /// One third of the way down whatever it is asked about — the box, and the photograph over it.
+    static let photoCrown = VerticalAlignment(PhotoCrownAlignment.self)
+}
 
 /// A photo drawn to fill its box, cropped to it, reporting the size it was proposed.
 ///
@@ -57,10 +128,12 @@ struct PhotoFill: View {
     let image: UIImage
     /// `nil` — the default — hides it from VoiceOver as decoration.
     var label: String?
+    /// Which part of the photograph survives the crop. See `PhotoCropAnchor`.
+    var anchor: PhotoCropAnchor = .crown
 
     var body: some View {
         Color.clear
-            .overlay {
+            .overlay(alignment: anchor.alignment) {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()

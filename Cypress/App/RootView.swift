@@ -225,8 +225,17 @@ struct RootView: View {
                 }
             )
 
+        case let .photoViewer(id, caption):
+            // One photograph, whole. Presented rather than pushed for the reason `PhotoViewerView`
+            // sets out: it is a closer look at what is already on screen, not a place in the app.
+            PhotoViewerView(
+                photoID: id,
+                caption: caption,
+                onClose: { router.sheet = nil }
+            )
+
         default:
-            // Nothing else is presentable. `AppRouter.present` is only ever called with the three
+            // Nothing else is presentable. `AppRouter.present` is only ever called with the four
             // above; anything else is a pushed destination and belongs on `path`.
             EmptyView()
         }
