@@ -159,10 +159,22 @@ enum DebugDeepLink {
     /// Where records are looked for: the map's own opening camera, so the trees these tests read are
     /// the trees a tester sees on launch.
     private static let centre = MapLayout.defaultCentre
-    /// Wide enough to hold both statuses (of the 500 nearest to the centre, 456 are standing and 44
-    /// are vacant sites) and narrow enough to stay one index scan.
+    /// Wide enough to hold every status the cases below ask for, and narrow enough to stay one index
+    /// scan.
+    ///
+    /// **4,000, raised from 500 by #91.** Under the DataSF export 44 of the 500 records nearest the
+    /// map's opening centre were vacant planting sites, so 500 was ample. The seed is now built from
+    /// SF Public Works' own inventory, which has no vacant-site category at all — 153 sites in the
+    /// whole city against 12,518 — and the nearest one to the centre is the **1,181st** record by
+    /// distance. `site` therefore failed to resolve, loudly and correctly (E117): the harness said
+    /// `none among the 500 records nearest 37.7596, -122.4269` rather than quietly opening some other
+    /// screen, which is exactly what that failure message was written for.
+    ///
+    /// The fix is the window, not the assertion. 4,000 holds the nearest site with room to spare and
+    /// still resolves in a few milliseconds; if the number of sites falls further, this fails again
+    /// and says so, which is the property worth keeping.
     private static let radiusM: Double = 3_000
-    private static let candidateLimit = 500
+    private static let candidateLimit = 4_000
 
     /// Opens `screen`, resolving whatever record it needs out of the seed.
     ///
@@ -390,7 +402,8 @@ enum DebugDeepLink {
         return standing[standing.count / 2].tree.id
     }
 
-    /// The nearest vacant planting site — the 12,518 records with no tree in them (E107).
+    /// The nearest vacant planting site — a record with no tree in it (E107). 153 of them in the
+    /// city-sourced seed, 12,518 in a DataSF-sourced one; see `candidateLimit`.
     private static func vacantSite(_ api: LocalAPI) async throws -> UUID {
         try await firstTree(matching: { $0.status == .vacantSite }, api: api, wanted: "a vacant planting site")
     }
