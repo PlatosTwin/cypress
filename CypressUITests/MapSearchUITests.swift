@@ -35,9 +35,15 @@ final class MapSearchUITests: XCTestCase {
     /// What the helper is a proxy for is "how many tree pins are drawn", so it matches the vocabulary
     /// rather than one word of it. Still black-box — a predicate over labels is not a reach into the
     /// app's types.
+    ///
+    /// **`label`, not `identifier`.** `matching(identifier:)` falls back to the accessibility label for
+    /// an element that sets no identifier, and screen 01's pins set none — so the obvious translation of
+    /// this helper into `NSPredicate(format: "identifier BEGINSWITH …")` matches **nothing**, and the
+    /// two tests below then skip on "the map drew no individual pins" and report themselves green
+    /// without having checked anything. Matching `label` is what the original was doing all along.
     private func cityTreePins(_ app: XCUIApplication) -> Int {
         app.buttons
-            .matching(NSPredicate(format: "identifier BEGINSWITH %@", "City tree"))
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "City tree"))
             .count
     }
 

@@ -161,6 +161,35 @@ both. That last one is the property the design actually rests on — the palette
 already had rather than republishing observable state, so a pan across a block re-derives the palette
 it has and tells nobody.
 
+#### The label refresh had to be gated, and a nudge test is what said so
+
+The spoken channel needs one thing the drawn channels do not: a **second pass**. `MapModel` ranks the
+palette from the pins it has, then reads the four species' names asynchronously, so the palette a pin
+is born under has no name in it and the label it stores is the plain `City tree`. A name arriving
+changes no pin's *kind*, so `Coordinator.sync`'s kind comparison correctly leaves every annotation
+where it is — which means a label stored once at init is the label that pin keeps forever, and every
+coloured pin in the running app is in exactly that position. The third channel named nothing, ever,
+while `voiceOverNamesTheSpecies` passed, because that test asks `MapPinKind` directly and never goes
+through the layer.
+
+Refreshing it in `sync` fixes that and costs something, and the first version of the fix did not notice
+what: a string built per pin per pass, against a screen that runs **240 body passes a second at rest**
+(E139) — ~70,000 string constructions a second on a 292-pin screenful, in the one file whose first
+promise is that an update whose pins are the same pins does no work at all.
+
+**What noticed was `DeepLinkVoiceOverTests.testThePinSaysWhenItHasGoneAsFarAsItGoes`** — a test about
+screen 16's *nudge control*, which has nothing to do with species colours. Fifteen 5 m nudges landed
+the pin at 74 m instead of 75, three runs out of three, because that screen reads the pin's position
+off the settled MapKit camera and the camera settles differently when the update pass costs more. It
+is green on `cc01e32` and green two runs out of two once the refresh is gated on the palette having
+actually moved (`Coordinator.appliedPalette`). On the two other screens that draw this basemap the
+palette is always `.empty`, so the loop does not run there at all and their passes are byte-identical
+to what they were.
+
+The lesson is the one §7 keeps making in a different costume: the test that catches a performance
+regression is rarely a test about performance, and "unrelated suite went red" is a thing to explain
+rather than a thing to re-run.
+
 #### What was looked at, because tests cannot say whether it reads
 
 Twelve screenshots off the booted device, both appearances, every one checked for an opaque alpha

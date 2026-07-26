@@ -335,6 +335,25 @@ struct MapAnnotationLayer: UIViewRepresentable {
         private var pinAnnotations: [UUID: TreePinAnnotation] = [:]
         private var clusterAnnotations: [String: TreeClusterAnnotation] = [:]
         private var userDot: UserDotAnnotation?
+
+        /// The palette the annotations on the map were last labelled against.
+        ///
+        /// **The gate that keeps "an update that changes nothing costs nothing" true.** Refreshing a
+        /// pin's spoken label means building a string per pin, and screen 01 runs 240 body passes a
+        /// second at rest (E139) — so doing it unconditionally would be ~70,000 string constructions a
+        /// second on a 292-pin screenful, in a file whose first promise is that an update whose pins are
+        /// the same pins does no work at all. A palette that has not moved cannot have changed a label,
+        /// and on the two other screens that draw this basemap the palette is always `.empty`, so the
+        /// loop below never runs there at all.
+        ///
+        /// **This is not a precaution, it is a fix for a measured regression.** Written without the
+        /// gate, the extra per-pass work on screen 16's basemap was enough to put
+        /// `DeepLinkVoiceOverTests.testThePinSaysWhenItHasGoneAsFarAsItGoes` red three runs out of
+        /// three — fifteen 5 m nudges landing the pin at 74 m instead of 75, because that screen reads
+        /// the pin's position off the settled MapKit camera and the camera settles differently when the
+        /// pass costs more. The same test is green two runs out of two with the gate, and green on
+        /// `cc01e32`. A test about a *nudge* is what noticed; nothing about a species colour did.
+        private var appliedPalette: MapSpeciesPalette = .empty
         private var wash: MKPolygon?
         private var selectedPinID: UUID?
 
@@ -448,6 +467,9 @@ struct MapAnnotationLayer: UIViewRepresentable {
                 freshClusters.append(annotation)
             }
 
+            let paletteMoved = palette != appliedPalette
+            appliedPalette = palette
+
             var stalePins: [MKAnnotation] = []
             var wanted: [UUID: TreePin] = [:]
             wanted.reserveCapacity(pins.count)
@@ -471,7 +493,10 @@ struct MapAnnotationLayer: UIViewRepresentable {
                 // `City tree, London Plane` on every pin of that species, and the kind comparison
                 // above cannot see it because the fill and the glyph were already correct. Nothing
                 // is added or removed for this — the label is read off the annotation.
-                if annotation.refreshSpokenLabel(palette: palette),
+                //
+                // Only when the palette actually moved. See `appliedPalette`.
+                if paletteMoved,
+                   annotation.refreshSpokenLabel(palette: palette),
                    let view = mapView.view(for: annotation) {
                     view.accessibilityLabel = annotation.spokenLabel
                 }
