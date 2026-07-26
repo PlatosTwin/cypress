@@ -67,24 +67,26 @@ final class MapLocationProvider {
             self?.apply(authorization: status)
         }
         delegate.onLocation = { [weak self] coordinate, accuracyM in
-            self?.availability = .located(coordinate, accuracyM: accuracyM)
-            #if DEBUG
-            MapFrameProbe.shared.noteLocationPublish()
-            #endif
+            self?.publish(coordinate: coordinate, accuracyM: accuracyM)
         }
         self.delegate = delegate
         manager.delegate = delegate
         // A street tree is a doorstep-scale target; anything coarser than `best` cannot tell two
         // trees on the same block apart, which is what screen 02 needs from the same fix.
         manager.desiredAccuracy = kCLLocationAccuracyBest
-        // Every fix writes `availability`, and `availability` is read by screen 01's basemap — so a
-        // walk re-runs the map's whole `MapContent` builder every 5 m. Coarsening this was looked at
-        // as part of ERRATA E130's performance work and **declined twice over**: the pin layer is now
-        // a few hundred annotations rather than 1,300 and re-running the builder over an array that
-        // has not changed costs nothing SwiftUI cannot diff away, and the thing being traded is the
-        // freshness of the one fix screen 02 identifies a tree from, where 5 m is the difference
-        // between two trees on the same block. If the invalidation ever does cost something, the fix
-        // is to move the dot out of the pin layer, not to make the fix worse.
+        // **Unchanged, and it is the accuracy of the fix that is being protected here, not its rate.**
+        // A street tree is a doorstep-scale target and 5 m is the difference between two trees on the
+        // same block, which is what screen 02 identifies one from and what D6 charts growth against.
+        // The previous round considered coarsening both of these as a performance measure and
+        // declined; that decision stands, and the note it left behind — "if the invalidation ever
+        // does cost something, the fix is to move the dot out of the pin layer, not to make the fix
+        // worse" — is what `publish(coordinate:accuracyM:)` below and the basemap's own annotation
+        // diffing now do instead.
+        //
+        // What that note got wrong is the premise underneath it: re-running the builder over an
+        // unchanged array does *not* cost nothing. Measured, walking, at the opening camera with 167
+        // markers on screen and no finger on the glass: **1.3–1.9 fps, worst frame 850 ms**, with the
+        // whole of it main-thread time spent rebuilding an annotation layer that had not changed.
         manager.distanceFilter = 5
         apply(authorization: manager.authorizationStatus)
     }
@@ -110,6 +112,64 @@ final class MapLocationProvider {
     /// The only route out of `denied`: iOS never re-presents the sheet, so the honest affordance is
     /// Settings. The view owns the copy; this owns the URL.
     var settingsURL: URL? { URL(string: UIApplication.openSettingsURLString) }
+
+    // MARK: - Publishing a fix
+
+    /// How far the reader has to have actually moved before `availability` is rewritten.
+    ///
+    /// **This is `distanceFilter`'s own promise, kept.** `manager.distanceFilter = 5` says "do not
+    /// tell me until I have moved five metres", and on a device driving a simulated route it is
+    /// simply not honoured: measured at a walking 4 m/s, CoreLocation delivered **24 to 42 fixes a
+    /// second**, one every fifteen centimetres. Every one of them wrote `availability`; every write
+    /// re-ran screen 01's whole basemap body; and the map sat at under 2 fps with nobody touching it.
+    /// A static `simctl location` fires the delegate once and never again, which is exactly why two
+    /// rounds of simulator measurement never saw this.
+    ///
+    /// Five metres rather than some smaller number that would also have fixed the frame rate,
+    /// because five metres is a *decision this file already made* and the point is to make it true
+    /// rather than to make a new one. Nothing downstream can tell the difference: the fix that
+    /// arrives is the same fix, at the same `kCLLocationAccuracyBest`, and the reader's dot on a
+    /// 120 m-wide camera moves about sixteen points between publishes.
+    static let publishDistanceM: Double = 5
+
+    /// And how much the *accuracy* has to change on its own to be worth a publish, when the reader
+    /// has not moved.
+    ///
+    /// The coordinate is not the only thing on `availability` that matters. `RootView` hands
+    /// `accuracyM` to every check-in, measurement and visit it records, and D6 excludes a reading
+    /// worse than 15 m from growth charting — so a provider that froze the accuracy at whatever the
+    /// first fix happened to say would be feeding that gate a stale number. One metre is finer than
+    /// any decision made anywhere on top of it and far coarser than the jitter.
+    static let publishAccuracyM: Double = 1
+
+    /// Whether a fix says anything the last published one did not.
+    ///
+    /// Pure and `static` so the rule can be tested at its boundaries without a `CLLocationManager`,
+    /// which cannot be made to produce a fix on demand. The end-to-end path — a delegate callback
+    /// reaching `availability` or not — is tested separately by driving `manager.delegate` directly,
+    /// because a predicate that is right and not called is the defect this whole entry is about.
+    static func isWorthPublishing(
+        coordinate: Coordinate,
+        accuracyM: Double,
+        over previous: Availability
+    ) -> Bool {
+        guard case let .located(last, lastAccuracy) = previous else { return true }
+        return last.distance(to: coordinate) >= publishDistanceM
+            || abs(lastAccuracy - accuracyM) >= publishAccuracyM
+    }
+
+    /// The one place `availability` is written from a fix.
+    private func publish(coordinate: Coordinate, accuracyM: Double) {
+        guard Self.isWorthPublishing(
+            coordinate: coordinate,
+            accuracyM: accuracyM,
+            over: availability
+        ) else { return }
+        availability = .located(coordinate, accuracyM: accuracyM)
+        #if DEBUG
+        MapFrameProbe.shared.noteLocationPublish()
+        #endif
+    }
 
     private func apply(authorization status: CLAuthorizationStatus) {
         authorization = status
