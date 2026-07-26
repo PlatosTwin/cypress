@@ -459,7 +459,10 @@ struct CityRecordSectionTests {
         let presentation = Self.presentation(
             TreeProfile(tree: tree, inventorySource: store.seedProvenance)
         )
-        let facts = try #require(presentation.cityRecord?.facts)
+        // Not `#require`: under a source that publishes only `PlantType` there are no cards, so
+        // `cityRecord` is nil by design and the section is its notes. See `showsCityRecordSection`.
+        let facts = presentation.cityRecord?.facts ?? []
+        #expect(presentation.showsCityRecordSection)
 
         if rich {
             #expect(facts.contains { $0.value == "Friends of the Urban Forest" })

@@ -31,14 +31,15 @@ struct CityRecordTests {
     /// still exists and has gone half empty — a `.strip()` that starts eating values, a CSV whose
     /// header drifts. A column that emptied completely is the easy case; these numbers catch the
     /// other one.
-    /// **Five of the six are zero under `--source city`, and that is the source rather than a
-    /// regression.** SF Public Works' own layer publishes `PlantType` and none of the other five, so
-    /// the counts come from `SeedCorpus`, keyed on which inventory the seed says it is.
+    ///
+    /// **The counts move with the source**, so they come from `SeedCorpus` rather than from literals
+    /// here. Under `--source city` five of the six are carried across from the DataSF export for the
+    /// 130,070 records both inventories list, so they land at ~97% rather than 100%; the shortfall is
+    /// the 3,507 records only SF Public Works lists.
     ///
     /// A zero is additionally checked against `seed_meta.columns_absent_from_source`, so a column
-    /// that empties by accident under a source that *does* publish it still fails here. Without that
-    /// second check this test would have been converted from a real assertion into six comparisons
-    /// of nothing against nothing.
+    /// that empties by accident under a source that *does* publish it still fails here rather than
+    /// turning this test into six comparisons of nothing against nothing.
     @Test("the seed carries all six city columns, populated as measured at ingest")
     func theSixColumnsArePopulated() async throws {
         let store = try await Self.store()
@@ -72,10 +73,10 @@ struct CityRecordTests {
     /// The columns reach a decoded `Tree`, not just the file. `treeColumns` selects them and
     /// `TreeQueries.decodeCityRecord` assembles them; either could be dropped without the file
     /// changing at all.
-    /// Under `--source city` only `plant_type` is populated, so the row this looks for is the row
-    /// with every column the running source publishes — not all six unconditionally, which would
-    /// find nothing and fail for the wrong reason. The assertions below follow the same rule: a
-    /// column the source does not publish must decode to `nil`, and one it does must not.
+    ///
+    /// The row it looks for carries every column the *running source* publishes rather than all six
+    /// unconditionally, so a source that drops one fails on the dropped column rather than on an
+    /// empty result set. The assertions follow the same rule in both directions.
     @Test("a city tree's record reaches the profile payload")
     func theRecordReachesTheProfile() async throws {
         let store = try await Self.store()
@@ -269,12 +270,21 @@ struct CityRecordTests {
             (counts[LandContext?.none] ?? 0) == corpus.landContextUnplaced,
             "\(counts[LandContext?.none] ?? 0) rows resolved to no context, expected \(corpus.landContextUnplaced)"
         )
-        if corpus.landContextUnplaced > 0 {
-            #expect(
-                !corpus.publishes("qLegalStatus") && !corpus.publishes("qCaretaker"),
-                "rows are unplaced while the source still publishes the columns the mapping reads"
-            )
+        // An unplaced row must be one that says neither thing, never one the mapping failed on. The
+        // 3,506 under `--source city` are records only SF Public Works lists, so the DataSF export
+        // has no row to carry `qLegalStatus` or `qCaretaker` across from.
+        let saysNeither = try await store.queue.read { connection -> Int in
+            let statement = try connection.prepare("""
+                SELECT COUNT(*) AS n FROM \(SeedDatabase.schemaName).trees
+                 WHERE COALESCE(legal_status, '') = '' AND COALESCE(caretaker, '') = ''
+                """)
+            defer { statement.finalize() }
+            return try statement.fetchOne { try $0.int("n") } ?? -1
         }
+        #expect(
+            saysNeither == corpus.landContextUnplaced,
+            "\(corpus.landContextUnplaced) rows are unplaced but \(saysNeither) say neither thing; the mapping failed on the difference"
+        )
         #expect(counts.values.reduce(0, +) == corpus.trees)
     }
 

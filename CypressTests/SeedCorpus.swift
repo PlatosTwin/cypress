@@ -24,15 +24,16 @@ import Testing
 /// Some of these suites do not merely count. They assert a *control* — "this neighbourhood does
 /// have dated plantings", "a row with all six columns set decodes to a city record" — and the
 /// control is what proves the assertion above it measured something. The city's layer publishes
-/// nine fewer columns than the export, so under `city` there are no planting dates anywhere, no
-/// legal status and no plot sizes, and a control that reads them cannot fire.
+/// seven fewer columns than the export, and a first build of `--source city` that took only the
+/// layer had no planting dates at all: every one of those controls stopped firing, and the suites
+/// would have gone green while testing nothing. That is precisely the failure ARCHITECTURE §7
+/// records about grepping for a DEBUG symbol with no control string.
 ///
-/// Rewriting those controls to expect zero would be the worst available outcome: the suite would go
-/// green while testing nothing, which is precisely the failure ARCHITECTURE §7 records about
-/// grepping for a DEBUG symbol without a control string. So `publishes(_:)` answers whether the
-/// running corpus can support a given claim, the affected tests say out loud which half they are
-/// running, and the *absence* is asserted against `seed_meta.columns_absent_from_source` — a key the
-/// generator writes — so a column that goes empty by accident still fails.
+/// The build's answer was to keep the row set from the city and carry those seven columns across
+/// from the export for the records both list, so the controls fire again. `publishes(_:)` remains
+/// as the mechanism that would catch it happening for real: it reads
+/// `seed_meta.columns_absent_from_source`, so a source that genuinely stops publishing a column
+/// makes the affected tests say so instead of quietly asserting nothing.
 struct SeedCorpus: Sendable {
 
     /// `city` or `datasf`, from `seed_meta.trees_source`.
@@ -61,6 +62,9 @@ struct SeedCorpus: Sendable {
     let landContextUnplaced: Int
     /// Neighbourhoods that hold trees but no vacant planting site.
     let neighborhoodsWithNoVacantSite: Int
+    /// Vacant sites carrying a planting date — the reason `planted_on` alone cannot decide what the
+    /// almanac's season rows and coverage card may show.
+    let datedVacantSites: Int
 
     // ── Sunset/Parkside, the neighbourhood the almanac suites read ───────────────────────────
     let sunsetVacantSites: Int
@@ -99,10 +103,16 @@ struct SeedCorpus: Sendable {
 
     /// **SF Public Works' own street tree inventory**, extracted 2026-07-26. What ships.
     ///
-    /// Five of the six #67 columns are zero and that is the source, not a regression: the layer
-    /// publishes `PlantType` and nothing else of that set. `landContextUnplaced == trees` follows —
-    /// `LandContext.inferred(from:)` reads `qLegalStatus` and `qCaretaker`, and the layer has
-    /// neither, so no row can be placed and the `Stands on` sentence does not draw for anybody.
+    /// The row set is the city's: 133,577 records, exactly what its public map draws. The seven
+    /// columns its layer does not publish are carried across from the DataSF export for the 130,070
+    /// records both inventories list, so `legal_status`, `plot_size` and the planting dates are
+    /// populated on 97% of rows rather than none. The shortfall is the **3,507 records only the city
+    /// has**, which carry NULL there — including TreeID 276198, the tree that started #91.
+    ///
+    /// `landContextUnplaced` is therefore 3,506 rather than 0: `LandContext.inferred(from:)` reads
+    /// `qLegalStatus` and `qCaretaker`, and those 3,506 have neither, so the `Stands on` sentence
+    /// does not draw for them. (3,506 and not 3,507: one of the city-only records does carry a
+    /// caretaker, because DataSF holds a row for it that the seed's coordinate rules had dropped.)
     static func city(absentColumns: Set<String>) -> SeedCorpus {
         SeedCorpus(
             source: "city",
@@ -111,22 +121,23 @@ struct SeedCorpus: Sendable {
             species: 577,
             vacantSites: 153,
             cityColumnRows: [
-                "legal_status": 0,
-                "caretaker": 0,
-                "care_assistant": 0,
+                "legal_status": 130_029,
+                "caretaker": 130_071,
+                "care_assistant": 10_112,
                 "plant_type": 133_577,
-                "plot_size": 0,
-                "permit_notes": 0
+                "plot_size": 111_326,
+                "permit_notes": 17_737
             ],
-            distinctPlotSizes: 0,
-            plotSizesShown: 0,
-            plotSizesRefused: 0,
-            landContextStreet: 0,
-            landContextPrivate: 0,
-            landContextOtherPublic: 0,
-            landContextCityPark: 0,
-            landContextUnplaced: 133_577,
+            distinctPlotSizes: 330,
+            plotSizesShown: 94_033,
+            plotSizesRefused: 17_293,
+            landContextStreet: 126_172,
+            landContextPrivate: 3_465,
+            landContextOtherPublic: 422,
+            landContextCityPark: 12,
+            landContextUnplaced: 3_506,
             neighborhoodsWithNoVacantSite: 17,
+            datedVacantSites: 22,
             sunsetVacantSites: 7,
             sunsetTreesWithSpecies: 9_504,
             sunsetTreesLeftJoined: 9_512,
@@ -162,6 +173,7 @@ struct SeedCorpus: Sendable {
             landContextCityPark: 177,
             landContextUnplaced: 0,
             neighborhoodsWithNoVacantSite: 0,
+            datedVacantSites: 9_294,
             sunsetVacantSites: 1_474,
             sunsetTreesWithSpecies: 11_026,
             sunsetTreesLeftJoined: 11_078,

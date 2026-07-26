@@ -268,7 +268,11 @@ struct AlmanacVacantSiteTests {
             """,
             on: store
         )
-        #expect(datedSites == (hasPlantingDates ? 9_294 : 0))
+        // 9,294 under the DataSF export; 22 under the city's row set, because the export gives a
+        // planting date to a site the city no longer lists as anything. Still non-zero, so the
+        // exclusion below is still doing work rather than agreeing with an empty set.
+        #expect(datedSites == corpus.datedVacantSites)
+        #expect(corpus.datedVacantSites > 0, "the control: `planted_on` alone would put basins in the season rows")
 
         let vacantIDs = Set(try await Self.uuids(
             """

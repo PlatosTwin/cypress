@@ -362,6 +362,59 @@ def city_qspecies(botanical: str, common: str) -> str:
     return f"{botanical} :: {common}".strip()
 
 
+# The DataSF columns the city's own layer does not publish, which are carried across
+# for the records both inventories list. See `load_datasf_attributes`.
+ENRICHED_COLUMNS = (
+    "qLegalStatus", "qSiteInfo", "qCaretaker", "qCareAssistant",
+    "PlantDate", "PlotSize", "PermitNotes",
+)
+
+
+def load_datasf_attributes(csv_path: str) -> dict:
+    """`Fixtures/raw/street_tree_list.csv` -> {TreeID: {column: value}}, seven columns.
+
+    WHY THE CITY BUILD READS THE EXPORT AT ALL.
+
+    #91 is about *which trees exist*: our map is supposed to draw what the city's
+    own map draws, and only SF Public Works' operational layer knows that. It is
+    not about which facts we hold, and on that the layer is much the poorer of the
+    two -- it publishes sixteen fields against the export's eighteen and drops
+    nine of them, including every planting date.
+
+    Taking the row set from one and those nine columns from the other is not a
+    compromise between two answers; it is two different questions answered by
+    whichever source knows. The spine is the city's layer: a record it does not
+    list is not in the seed, whatever the export says about it. The attributes are
+    the export's, for the 130,070 records both list, because for those records the
+    two are describing the same tree -- verified over that whole intersection at a
+    median coordinate disagreement of 0.04 m.
+
+    What this does NOT do: add a row. A TreeID in the export and not in the layer
+    stays out, which is the entire point of the switch. The 3,507 records only the
+    city has simply carry NULL in these seven columns, and `seed_meta` says how
+    many.
+
+    Dropping this join would cost, measurably: no planting dates at all, so screen
+    12's elder, plantings and coverage rows are empty for the whole city and
+    `LandContext.inferred(from:)` can place no tree, so the `Stands on` sentence
+    never draws. That was measured on a build without it.
+    """
+    index = {}
+    with open(csv_path, "r", encoding="utf-8", newline="") as fh:
+        reader = csv.DictReader(fh)
+        missing = set(ENRICHED_COLUMNS) - set(reader.fieldnames or [])
+        if missing:
+            die(f"the DataSF export is missing {sorted(missing)}; the city build carries "
+                f"those columns across and cannot silently ship without them")
+        for row in reader:
+            ref = (row.get("TreeID") or "").strip()
+            if not ref or ref in index:
+                continue
+            index[ref] = {column: (row.get(column) or "").strip() or None
+                          for column in ENRICHED_COLUMNS}
+    return index
+
+
 def load_city_layer(raw_dir: str):
     """Fixtures/raw/city_street_trees.{ndjson,meta.json} -> (rows, meta).
 
@@ -1078,19 +1131,22 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
     schema_path = os.path.join(seed_dir, "schema.sql")
     map_path = os.path.join(fixtures_dir, "sf_species_map.csv")
 
-    if source == "datasf" and (do_fetch or not os.path.exists(csv_path)):
+    if do_fetch or not os.path.exists(csv_path):
         fetch(TREES_CSV_URL, csv_path)
     if do_fetch or not os.path.exists(nb_path):
         fetch(NEIGHBORHOODS_GEOJSON_URL, nb_path)
 
-    city_rows, city_meta = [], {}
+    if not os.path.exists(csv_path):
+        die(f"missing {csv_path}; rerun with --fetch")
+
+    city_rows, city_meta, enrichment = [], {}, {}
     if source == "city":
         city_rows, city_meta = load_city_layer(raw_dir)
         log(f"city layer: {len(city_rows):,} features, extracted "
             f"{city_meta['extracted_on']}, server last edit "
             f"{city_meta.get('server_last_edit_date')}")
-    elif not os.path.exists(csv_path):
-        die(f"missing {csv_path}; rerun with --fetch")
+        enrichment = load_datasf_attributes(csv_path)
+        log(f"enrichment index: {len(enrichment):,} DataSF rows by TreeID")
 
     # ---------------------------------------------------------- neighborhoods
     neighborhoods = []
@@ -1142,6 +1198,8 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
         "no_neighborhood": 0,
         "planted_year_present": 0,
         "dbh_present": 0,
+        "enriched_rows": 0,
+        "city_only_rows": 0,
         **{"city_" + csv_column: 0 for _, csv_column in CITY_RECORD_COLUMNS},
     }
 
@@ -1430,14 +1488,18 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
                 continue
             seen_external_refs.add(ref_str)
 
-            # PlantType is the one of the six the city layer carries. The other
-            # five are NULL, and `CityRecord.isEmpty` therefore reports false
-            # rather than true, so the tree page still draws "What San Francisco
-            # has on file" with the one fact the city publishes.
+            # `PlantType` is the city layer's own; the other five come from the
+            # export's row for this same TreeID, or are NULL for a record only the
+            # city has. See `load_datasf_attributes` for why that join exists.
+            extra = enrichment.get(ref_str)
+            if extra is None:
+                stats["city_only_rows"] += 1
+            else:
+                stats["enriched_rows"] += 1
             plant_type = (record.get("PlantType") or "").strip() or None
             city_record = []
             for seed_column, csv_column in CITY_RECORD_COLUMNS:
-                value = plant_type if seed_column == "plant_type" else None
+                value = plant_type if seed_column == "plant_type" else (extra or {}).get(csv_column)
                 city_record.append(value)
                 if value:
                     stats["city_" + csv_column] += 1
@@ -1449,8 +1511,8 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
                 lon=lon,
                 qspecies=city_qspecies(record.get("BOTANICAL"), record.get("COMMON")),
                 address=(record.get("Address") or "").strip() or None,
-                site_type=None,
-                planted_date=None,
+                site_type=(extra or {}).get("qSiteInfo"),
+                planted_date=parse_planted_date((extra or {}).get("PlantDate")),
                 dbh_raw=str(record["DBH"]) if record.get("DBH") is not None else "",
                 city_record=city_record,
                 city_raw=None,
@@ -1600,13 +1662,17 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             "trees_snapshot_on": city_meta["extracted_on"],
             "trees_source_last_edit_on": str(city_meta.get("server_last_edit_date") or ""),
             "trees_source_feature_count": str(city_meta.get("server_feature_count") or ""),
-            # The nine DataSF columns this source does not publish, named so a
-            # reader of the seed does not have to diff two schemas to find out
-            # why they are NULL.
-            "columns_absent_from_source": ",".join([
-                "qLegalStatus", "qSiteInfo", "qCaretaker", "qCareAssistant",
-                "PlantDate", "PlotSize", "PermitNotes", "XCoord", "YCoord",
-            ]),
+            # Which trees exist is the city's answer; these seven columns are the
+            # export's, for the records both list. See `load_datasf_attributes`.
+            "attributes_source": "datasf",
+            "attributes_dataset_id": TREES_DATASET_ID,
+            "attributes_snapshot_on": NOW[:10],
+            "attributes_columns": ",".join(ENRICHED_COLUMNS),
+            "rows_enriched": str(stats["enriched_rows"]),
+            "rows_city_only": str(stats["city_only_rows"]),
+            # Nothing is unavailable outright: the two state-plane coordinates are
+            # the same point as lat/lon and were never ingested from either source.
+            "columns_absent_from_source": "",
         }
     else:
         source_meta = {
