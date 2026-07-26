@@ -165,11 +165,46 @@ person, which is the line D1 draws), and one muted line naming the framings stil
 carry the fact in their accessibility labels — "Trunk, photographed" — because a mark is not read out
 and the chip's own label no longer carries its whole meaning.
 
-**#45's overflow, under the pressure that a third control adds.** The chip row was an `HStack`; three
-chips wearing ticks at AX5 are wider than the phone, which is the same failure in the same place as
-E125's tray, from a different cause. It is a `CypressChipFlow` now — the wrapping layout screen 05's
-structure chips and the add screen's land row already use — and
-`theTrayStaysOnTheScreenWithThreeCaptures` measures screen 04 at `.accessibility5` on a 393 pt phone.
+**#45's overflow, under the pressure a third control adds — and the two things that were wrong about
+how it was checked.** The chip row moved from an `HStack` to a `CypressChipFlow`, on the stated grounds
+that three chips wearing ticks at AX5 are wider than the phone and the third would go off the right
+edge, the way #45's tray once did. Both halves of that turned out to be wrong, and only measuring found
+it.
+
+*The test could not fail.* `theTrayStaysOnTheScreenWithThreeCaptures` hosted the whole of screen 04 at
+AX5 and asserted the result measured no wider than 393 pt. The chip row is an `.overlay` on the
+viewfinder and **an overlay never enlarges what it is over**, so the row's width was never in the
+number being asserted on. Putting the row back to an `HStack` left the test green. This is the same
+class of thing E148 recorded — a test that agrees with the code rather than with the world — and it was
+found the same way, by breaking the code on purpose and watching nothing happen.
+
+*And then the defect was not the defect.* Once the row was extracted into `VisitShotTypeChips` and
+hosted on its own, an `HStack` measured **326 pt in the 361 pt this row is given**. It fits. SwiftUI
+compresses children rather than overflowing a proposal. What it costs is the chips themselves: each
+squeezed from its natural 158 pt to about 103, its label wrapping into a column of stacked syllables —
+which is exactly what the phenology row below it already looks like at AX5, and what a screenshot shows
+in a second and no assertion in this project can see. Height does not separate them either: the
+compressed `HStack` measures 203 pt tall against the wrapping flow's 175, for the same reason.
+
+So the flow stays, for **legibility** and not for overflow, and the test now asserts only what a
+measurement can decide — that the row stays inside the width it is given, which a `fixedSize()` or a
+`frame(minWidth:)` would still break, and which is how #45 happened in the first place. Which layout is
+readable is verified by looking, per ARCHITECTURE §7.
+
+**What looking found that no test was asked for.** At AX1 — the size ARCHITECTURE §6 actually names as
+the bar for field screens — the camera-denied fallback sentence sat *on top of* the three chips. Both
+were bottom-anchored overlays on the viewfinder, at `bottom:150` and `bottom:34`, independent of each
+other; the sentence grows to two lines as the ramp climbs and it grew straight through the chip row.
+That state is not exotic: BUILD-PLAN §9 requires it, and a simulator is always in it. They are one
+`bottomControls` stack now, with the gap derived so the chips land on the mock's 150 pt exactly in the
+state the mock draws. A stack cannot overlap itself.
+
+**And one thing that is left broken, deliberately.** At AX5 screen 04 collapses: the tray takes almost
+the whole phone, the viewfinder is left about 130 pt tall, and the chip row — a bottom overlay on that
+viewfinder — is pushed off the bottom of the screen entirely, so #81's feature cannot be reached at all.
+It is pre-existing, the same before this change as after, and it is not a layout that can be repaired by
+moving a padding: at AX5 an overlay-based camera is not a workable arrangement and what replaces it is a
+screen variant SCREENS.md does not draw. ARCHITECTURE §5.8 says stop and ask, so this stops and asks.
 
 **The framing is frozen at the shutter, and that is a behaviour change with a reason.** It used to be
 re-read at "Log visit", on the recorded argument that "the chip row stays live after the shutter and
@@ -193,10 +228,24 @@ flashes nothing either.
 ### How each of these was made to fail
 
 Reverting `VisitPhotoStaging.url` to `"\(visitID.uuidString).jpg"` is the deliberate break that
-matters, and the failures name the loss in pixels rather than in abstractions — the branch's report
-quotes them. Setting `captureTick += 1` before the staging write instead of after fails
-`aRefusedCaptureIsNotAFlash`; keying the flash back on `hasSnapped` fails
-`theFlashCountsCapturesOnly`. `shotTypeChips` put back as an `HStack` fails the AX5 measurement.
+matters. Six tests fail with sixteen issues, and they name the loss in pixels rather than in
+abstractions: the round-trip lands two photographs instead of three, one `photos` row keeps
+`storageKey: nil` because the second upload found its source already moved, and the staged files all
+measure 240×180. Replacing `PhotoBinary.write` with a plain `data.write(to:)` — a new capture path that
+skips the strip, which is precisely E148's failure mode — fails the two new staging tests with 69
+issues naming the GPS dictionary, `MakerApple`, `TIFF.Make`, `TIFF.Model` and `Exif.BodySerialNumber`
+read off the written files.
+
+Making `shotType`'s setter bump `captureTick` — which is the old flash behaviour, expressed on the
+model — fails `theFlashCountsCapturesOnly` with "selecting a photographed chip flashed the screen 3
+times". Taking the ghost from `shotType` rather than `.fullTree` fails
+`theGhostComesFromTheFullTreeShot`. Requiring all three framings in `enqueue` fails
+`twoOfThreeIsStorable`.
+
+The one that did *not* fail is recorded above, because it is the more useful result: `shotTypeChips`
+put back to an `HStack` left the AX5 measurement green, twice — once through the old whole-screen test
+and once through the row-only rewrite — and that is what settled the question of whether an `HStack`
+overflows at all.
 
 ### A correction to the inherited work
 

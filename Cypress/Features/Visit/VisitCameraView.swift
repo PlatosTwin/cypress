@@ -208,20 +208,6 @@ struct VisitCameraView: View {
         .accessibilityHidden(true)
     }
 
-    /// The three framings, and which of them this session has already photographed.
-    ///
-    /// ── Why the chips had to start reporting state (ERRATA E150) ───────────────────────────────
-    /// One session can take all three now, so these chips are no longer three ways of labelling one
-    /// photograph — they are three slots, and a contributor has to be able to see which are filled
-    /// without tapping each one to find out. The mark is a `CypressCheckmark`, the same shape screen 18's
-    /// success circle and screen 05's selected row draw, so nothing new is invented for it; it is a
-    /// `Shape` sized by its frame rather than by the type ramp, which is what keeps it inside a chip that
-    /// grows its label at AX sizes.
-    ///
-    /// `CypressChipFlow` and not an `HStack`, which is the part that would have broken: three chips with
-    /// checkmarks on them at AX5 are wider than the phone, and E125's tray already ran off the right edge
-    /// once. The flow wraps instead, and it is the same component screen 05's structure chips and the
-    /// add screen's land row use.
     /// The chip row and the shutter, in one stack, anchored to the bottom of the viewfinder.
     private var bottomControls: some View {
         VStack(spacing: VisitMetrics.Camera.shotTypeGapAboveShutter) {
@@ -232,51 +218,18 @@ struct VisitCameraView: View {
     }
 
     private var shotTypeChips: some View {
-        CypressChipFlow(spacing: VisitMetrics.Camera.shotTypeGap) {
-            ForEach(model.shotTypes, id: \.self) { type in
-                let isCaptured = model.capturedShotTypes.contains(type)
-                Chip(
-                    model.label(for: type),
-                    style: model.shotType == type ? .shotTypeOn : .shotTypeOff,
-                    action: { model.shotType = type }
+        VisitShotTypeChips(
+            framings: model.shotTypes.map { type in
+                VisitShotTypeChips.Framing(
+                    id: type,
+                    label: model.label(for: type),
+                    isSelected: model.shotType == type,
+                    isCaptured: model.capturedShotTypes.contains(type)
                 )
-                .overlay(alignment: .topTrailing) {
-                    if isCaptured { capturedMark }
-                }
-                // The chip is a control whose label no longer carries its whole meaning: "Trunk" and
-                // "Trunk, photographed" are different states and a mark is not read out.
-                .accessibilityLabel(
-                    isCaptured
-                        ? "\(model.label(for: type)), photographed"
-                        : "\(model.label(for: type)), not photographed yet"
-                )
-            }
-        }
+            },
+            select: { model.shotType = $0 }
+        )
         .padding(.horizontal, VisitMetrics.Camera.trayPadding)
-    }
-
-    /// The tick on a framing that has been photographed. Decoration — `shotTypeChips` puts the same fact
-    /// into the chip's accessibility label, where it can actually be heard.
-    private var capturedMark: some View {
-        ZStack {
-            Circle().fill(CypressColor.selectionFill)
-            CypressCheckmark()
-                .stroke(
-                    CypressColor.onSelectionFill,
-                    style: StrokeStyle(
-                        lineWidth: VisitMetrics.Camera.capturedMarkStroke,
-                        lineCap: .round,
-                        lineJoin: .round
-                    )
-                )
-                .frame(
-                    width: VisitMetrics.Camera.capturedMarkGlyph,
-                    height: VisitMetrics.Camera.capturedMarkGlyph
-                )
-        }
-        .frame(width: VisitMetrics.Camera.capturedMark, height: VisitMetrics.Camera.capturedMark)
-        .offset(x: VisitMetrics.Camera.capturedMarkInset, y: -VisitMetrics.Camera.capturedMarkInset)
-        .accessibilityHidden(true)
     }
 
     @ViewBuilder
@@ -498,6 +451,95 @@ struct VisitCameraView: View {
                 .foregroundStyle(CypressColor.Dark.textMuted)
             Spacer(minLength: 0)
         }
+    }
+}
+
+// MARK: - The chip row
+
+/// The three framings, and which of them this session has already photographed.
+///
+/// ── Why the chips had to start reporting state (ERRATA E150) ───────────────────────────────
+/// One session can take all three now, so these chips are no longer three ways of labelling one
+/// photograph — they are three slots, and a contributor has to be able to see which are filled without
+/// tapping each one to find out. The mark is a `CypressCheckmark`, the same shape screen 18's success
+/// circle and screen 05's selected row draw, so nothing new is invented for it; it is a `Shape` sized by
+/// its frame rather than by the type ramp, which is what keeps it inside a chip that grows its label at
+/// AX sizes.
+///
+/// `CypressChipFlow` and not an `HStack`, and the reason is **legibility, not overflow** — a correction
+/// to what this code first said. The claim was that three chips wearing checkmarks at AX5 are wider than
+/// the phone and an `HStack` would push the third off the right edge, the way #45's tray once did. That
+/// is not what happens, measured: in the 361 pt this row is given, an `HStack` reports 326 pt and fits,
+/// because SwiftUI compresses its children rather than overflowing a proposal. What it costs to fit is
+/// the chips themselves — each is squeezed from its natural 158 pt to about 103 and its label wraps into
+/// a column of stacked syllables, which is what the phenology row below already looks like at AX5. The
+/// flow keeps every chip its own size and puts the overflow on a second row. Same component as screen
+/// 05's structure chips and the add screen's land row.
+///
+/// ── Why this is its own type rather than a `private var` on the screen ─────────────────────────
+/// Because the sentence above needed a test that could fail, and the one it had could not. It hosted the
+/// *whole* of screen 04 at AX5 and asserted the result measured no wider than the phone — and this row
+/// is an `.overlay` on the viewfinder, and **an overlay never enlarges what it is over**. Putting the
+/// row back to an `HStack` left that test green. Hosting the row on its own is what let it be measured
+/// at all, which is also how the paragraph above got corrected; see
+/// `theChipRowFitsTheWidthItIsGivenAtAX5` for what is left that a test can actually decide, and what is
+/// verified by looking instead.
+struct VisitShotTypeChips: View {
+
+    struct Framing: Identifiable, Hashable {
+        let id: ShotType
+        let label: String
+        let isSelected: Bool
+        let isCaptured: Bool
+    }
+
+    let framings: [Framing]
+    var select: (ShotType) -> Void = { _ in }
+
+    var body: some View {
+        CypressChipFlow(spacing: VisitMetrics.Camera.shotTypeGap) {
+            ForEach(framings) { framing in
+                Chip(
+                    framing.label,
+                    style: framing.isSelected ? .shotTypeOn : .shotTypeOff,
+                    action: { select(framing.id) }
+                )
+                .overlay(alignment: .topTrailing) {
+                    if framing.isCaptured { capturedMark }
+                }
+                // The chip is a control whose label no longer carries its whole meaning: "Trunk" and
+                // "Trunk, photographed" are different states and a mark is not read out.
+                .accessibilityLabel(
+                    framing.isCaptured
+                        ? "\(framing.label), photographed"
+                        : "\(framing.label), not photographed yet"
+                )
+            }
+        }
+    }
+
+    /// The tick on a framing that has been photographed. Decoration — the chip's accessibility label
+    /// carries the same fact, where it can actually be heard.
+    private var capturedMark: some View {
+        ZStack {
+            Circle().fill(CypressColor.selectionFill)
+            CypressCheckmark()
+                .stroke(
+                    CypressColor.onSelectionFill,
+                    style: StrokeStyle(
+                        lineWidth: VisitMetrics.Camera.capturedMarkStroke,
+                        lineCap: .round,
+                        lineJoin: .round
+                    )
+                )
+                .frame(
+                    width: VisitMetrics.Camera.capturedMarkGlyph,
+                    height: VisitMetrics.Camera.capturedMarkGlyph
+                )
+        }
+        .frame(width: VisitMetrics.Camera.capturedMark, height: VisitMetrics.Camera.capturedMark)
+        .offset(x: VisitMetrics.Camera.capturedMarkInset, y: -VisitMetrics.Camera.capturedMarkInset)
+        .accessibilityHidden(true)
     }
 }
 

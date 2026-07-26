@@ -419,40 +419,73 @@ struct VisitCameraSessionTests {
         #expect(!model.canLogVisit)
     }
 
-    // MARK: - 5 · The tray, with three chips wearing marks, at AX5
+    // MARK: - 5 · The chip row, wearing three marks, at AX5
 
-    /// E125's overflow, re-checked under the pressure that a third control adds.
+    /// #45's overflow, re-checked under the pressure a third meaningful control adds — and a correction
+    /// to what the check was thought to be.
     ///
-    /// The chip row grew a captured mark on each chip and moved to `CypressChipFlow`, which wraps. At
-    /// AX5 three chips with marks are wider than the phone, so an `HStack` here would put the third one
-    /// off the right edge — the same failure, in the same place, from a different cause.
-    @Test("screen 04 with all three framings photographed still fits the phone at AX5")
-    func theTrayStaysOnTheScreenWithThreeCaptures() async throws {
-        let width: CGFloat = 393
-        let height: CGFloat = 852
+    /// ── The version of this test that could not fail ──────────────────────────────────────────
+    /// It hosted the whole of screen 04 at AX5 and asserted the result measured no wider than a 393 pt
+    /// phone. This row is an `.overlay` on the viewfinder, and **an overlay never enlarges what it is
+    /// over** — so putting the row back to an `HStack`, which was believed to be the defect, left that
+    /// assertion green. Broken deliberately and confirmed green, which is the only way that is ever
+    /// found.
+    ///
+    /// ── And then the defect turned out not to be a defect of this kind ────────────────────────
+    /// With the row hosted on its own it could finally be measured, and an `HStack` **fits**: 326 pt in
+    /// the 361 pt this row is given. SwiftUI compresses children rather than overflowing a proposal.
+    /// What it costs is the chips — each squeezed from its natural 158 pt to about 103, its label
+    /// wrapping into a column of stacked syllables. Height does not separate the two either: the
+    /// compressed `HStack` is *taller* (203 pt) than the wrapping flow (175 pt), for the same reason.
+    /// So there is no measurement that decides between them, and this test does not pretend there is.
+    ///
+    /// ── What is left that a test can decide ────────────────────────────────────────────────────
+    /// That the row stays inside the width it is given at AX5, which is a real regression guard: a
+    /// `fixedSize()`, a `frame(minWidth:)` or a chip that refuses to compress would break it, and any of
+    /// those is how #45 happened in the first place. **Which of the two layouts is legible is verified by
+    /// looking**, per ARCHITECTURE §7, and the screenshots are in this branch's report.
+    @Test("the shot-type chips stay inside the width they are given at AX5")
+    func theChipRowFitsTheWidthItIsGivenAtAX5() async throws {
+        // What `VisitCameraView` leaves the row: the phone, less the tray's two gutters.
+        let available: CGFloat = 393 - VisitMetrics.Camera.trayPadding * 2
 
-        let host = UIHostingController(
-            rootView: VisitPreviewFixtures.camera()
-                .environment(\.dynamicTypeSize, .accessibility5)
-        )
-        host.view.frame = CGRect(x: 0, y: 0, width: width, height: height)
-
-        let window = UIWindow(frame: CGRect(x: -2_000, y: 0, width: width, height: height))
-        window.rootViewController = host
-        window.isHidden = false
-        defer { window.isHidden = true; window.rootViewController = nil }
-
-        for _ in 0..<8 {
-            try? await Task.sleep(for: .milliseconds(120))
-            host.view.setNeedsLayout()
-            host.view.layoutIfNeeded()
+        func measure(_ framings: [VisitShotTypeChips.Framing]) async -> CGSize {
+            let host = UIHostingController(
+                rootView: VisitShotTypeChips(framings: framings)
+                    .environment(\.dynamicTypeSize, .accessibility5)
+            )
+            let frame = CGRect(x: 0, y: 0, width: available, height: 2_000)
+            host.view.frame = frame
+            let window = UIWindow(frame: CGRect(x: -2_000, y: 0, width: available, height: 2_000))
+            window.rootViewController = host
+            window.isHidden = false
+            for _ in 0..<4 {
+                try? await Task.sleep(for: .milliseconds(60))
+                host.view.setNeedsLayout()
+                host.view.layoutIfNeeded()
+            }
+            defer { window.isHidden = true; window.rootViewController = nil }
+            return host.sizeThatFits(in: CGSize(width: available, height: .greatestFiniteMagnitude))
         }
 
-        let measured = host.sizeThatFits(in: CGSize(width: width, height: height))
+        func framing(_ type: ShotType, _ label: String, selected: Bool = false) -> VisitShotTypeChips.Framing {
+            VisitShotTypeChips.Framing(id: type, label: label, isSelected: selected, isCaptured: true)
+        }
+
+        let all = [
+            framing(.fullTree, "Full tree", selected: true),
+            framing(.trunk, "Trunk"),
+            framing(.leaf, "Leaf close-up"),
+        ]
+        let three = await measure(all)
         #expect(
-            measured.width <= width,
-            "screen 04 measured \(measured.width) pt wide on a \(width) pt phone at AX5"
+            three.width <= available,
+            "the chip row measured \(three.width) pt in the \(available) pt it is given"
         )
+
+        // And the row has to be *something* — a measurement of zero is a row that did not build, which
+        // would satisfy the line above and is the shape of failure this file exists to refuse.
+        #expect(three.height > 0 && three.width > 0, "the chip row measured \(three) — it drew nothing")
     }
 
     /// The chip row and the shutter are one bottom-anchored stack now, and the chips must still land on
