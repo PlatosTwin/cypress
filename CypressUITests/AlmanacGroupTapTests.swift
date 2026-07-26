@@ -197,10 +197,11 @@ final class AlmanacGroupTapTests: XCTestCase {
     /// `waitForExistence(timeout: 3)` on the prompt, which is a fixed wait on an *absence*: too long
     /// for a healthy run to pay and too short to catch the state it was looking for, so the guard
     /// missed and both tests failed on a row they had themselves decided might not be there. Now
-    /// `content` — the row this particular test is about — ends the wait the moment it appears. The
-    /// prompt does not end it early, because "the prompt is on screen" is a state screen 12 passes
-    /// through on its way to being drawn; only once the row has failed to arrive does the prompt decide
-    /// *which* report is honest.
+    /// `content` — the row this particular test is about — ends the wait the moment it appears, so a
+    /// run that is going to pass pays nothing for the guard. The prompt does not end it early. It is
+    /// the state screen 12 is drawn in until a coordinate turns up, and this file has already been
+    /// wrong once about how long that takes; letting it decide only after the row has failed to arrive
+    /// costs a machine with a fix nothing and cannot misfire on one without.
     private func reachAlmanac(_ app: XCUIApplication, waitingFor content: XCUIElement) throws {
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
         let allow = ["Allow While Using App", "Allow Once", "Allow"].map { springboard.buttons[$0] }
@@ -263,8 +264,9 @@ final class AlmanacGroupTapTests: XCTestCase {
 
     /// Waits for a condition, polling. Mirrors `MapSearchUITests.wait(timeout:for:)` — same reason,
     /// same shape: what is worth asserting about this screen is where it settles, never when. Copied
-    /// rather than shared because that one is `private` to a file two other tasks are editing this
-    /// week; if a third caller appears it should become one helper for the target.
+    /// rather than lifted, because that one is `private` to its own file and making it shared would be
+    /// a change to a file this task has no other business in; a third caller is the point at which it
+    /// should become one helper for the target.
     @discardableResult
     private func wait(timeout: TimeInterval = 30, for condition: () -> Bool) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
