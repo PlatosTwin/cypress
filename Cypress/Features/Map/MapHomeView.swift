@@ -49,7 +49,7 @@ struct MapHomeView: View {
     @Environment(AppRouter.self) private var router
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var model: MapModel
-    @State private var position: MapCameraPosition = .region(MapLayout.region(around: MapLayout.defaultCentre))
+    @State private var position: MapCameraRequest = .opening(MapLayout.region(around: MapLayout.defaultCentre))
     /// The last region MapKit reported, so a cluster tap knows what "two zoom levels in" means.
     @State private var region = MapLayout.region(around: MapLayout.defaultCentre)
     /// One-shot: the first fix recentres the map, later ones must not yank it out from under a pan.
@@ -332,14 +332,18 @@ struct MapHomeView: View {
         // tree. Reduce Motion snaps rather than flies for the reason a cluster tap does — the new
         // camera is the answer to the press, not the way the answer is delivered — and that decision
         // is made in `MapAnnotationLayer.applyCameraIfChanged`, where the animation actually is.
+        // `.move(to:)`, which takes a fresh ticket every time. That is what makes a second press of
+        // the recentre control work even when it asks for the camera the first press already gave —
+        // and it is why the annotation layer no longer has to guess, from how far the map has
+        // drifted, whether the reader moved it. See `MapCameraRequest` and ERRATA E140.
         if let metres {
-            position = .region(MapLayout.region(around: coordinate, metres: metres))
+            position = .move(to: MapLayout.region(around: coordinate, metres: metres))
         } else {
             // The span MapKit last reported, not a zoom recomputed from one — a round trip
             // through `MapZoom` would quantise to an integer level and move a camera the reader
             // did not ask to have moved.
-            position = .region(
-                MKCoordinateRegion(center: coordinate.clLocationCoordinate, span: region.span)
+            position = .move(
+                to: MKCoordinateRegion(center: coordinate.clLocationCoordinate, span: region.span)
             )
         }
     }
@@ -380,7 +384,7 @@ struct MapHomeView: View {
     private func zoom(into cluster: TreeCluster) {
         // Reduce Motion snaps the camera instead of flying it, and `MapAnnotationLayer` is where
         // that decision is now made — see the note on the first-fix centring above.
-        position = .region(MapLayout.zoomedIn(on: cluster, from: region))
+        position = .move(to: MapLayout.zoomedIn(on: cluster, from: region))
     }
 
     /// C16 speaks `Map / My Grove / Journal / You` and `AppRouter` speaks `map / grove / journal /

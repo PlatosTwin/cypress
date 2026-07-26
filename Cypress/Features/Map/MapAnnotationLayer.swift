@@ -45,8 +45,11 @@
 //     `ImageRenderer`. Nothing is redrawn by hand in Core Graphics, so a change to C19's tokens
 //     still changes the map, and there is no second copy of the pin vocabulary to keep in step.
 //  3. **The camera is applied, not bound.** A `Map(position:)` re-applies its position on every
-//     pass; here a region is set only when the value the app asked for actually changed, which is
-//     what keeps a camera write from becoming a rebuild.
+//     pass; here a region is set only when the app makes a new request, which is what keeps a camera
+//     write from becoming a rebuild. "New" is a ticket rather than a different-looking camera, and
+//     ERRATA E140 is the record of why nothing weaker works: an update pass can arrive carrying
+//     state from before the reader's last gesture, so a camera that merely *looks* new may be one
+//     the reader has already moved away from. See `MapCameraRequest`.
 //
 //  ── What was deliberately not taken from MapKit ──────────────────────────────────────────────
 //  `MKMapView` has its own clustering (`clusteringIdentifier`) and it is not used. This app clusters
@@ -168,7 +171,7 @@ enum MapPinImage {
 /// not a redesign of what screen 01 asks a basemap for.
 struct MapAnnotationLayer: UIViewRepresentable {
 
-    @Binding var position: MapCameraPosition
+    @Binding var position: MapCameraRequest
     @Binding var region: MKCoordinateRegion
     let clusters: [TreeCluster]
     let pins: [TreePin]
@@ -213,10 +216,8 @@ struct MapAnnotationLayer: UIViewRepresentable {
         )
 
         context.coordinator.installWash(on: mapView, isDark: colorScheme == .dark)
-        context.coordinator.lastRequestedPosition = position
-        if let initial = position.region {
-            mapView.setRegion(initial, animated: false)
-        }
+        context.coordinator.appliedSequence = position.sequence
+        mapView.setRegion(position.region, animated: false)
         return mapView
     }
 
@@ -265,26 +266,20 @@ struct MapAnnotationLayer: UIViewRepresentable {
         var parent: MapAnnotationLayer
         var isDark = false
 
-        /// The last camera position the **app asked for**, which is deliberately not the same thing
-        /// as the region the map is currently showing.
+        /// The ticket of the last camera the app asked for **and this layer applied**.
         ///
-        /// **This distinction is the loop.** Screen 01 writes `position` (centring on the first fix,
-        /// or a cluster tap) and reads the settled region back out into `region` for the next cluster
-        /// tap to measure against. If the applied-camera check compares against *where the map ended
-        /// up*, then every settle is a mismatch with what was asked for — MapKit never lands on
-        /// exactly the span it was given — so the settle callback writes state, the write re-runs the
-        /// body, the body re-applies the camera, and the map re-settles. Forever.
+        /// **The number, not the camera, is what makes this safe.** The check it feeds used to
+        /// compare the incoming `MapCameraPosition` against the last one applied, and no comparison
+        /// of camera *values* can work here: `updateUIView` arrives carrying state as it was when
+        /// some earlier body pass ran, screen 01 runs 240 of those a second, and so a pan is always
+        /// overtaken by an in-flight value holding the camera from before it. That value differs from
+        /// anything the settle handler records, is taken for a fresh request, and drives the map back
+        /// to where the reader just moved it away from. That is ERRATA E140, and it is why the map
+        /// could not be moved off the reader's own location.
         ///
-        /// That is what the SwiftUI `Map(position:)` this replaced was doing: it re-applied its
-        /// binding on every pass, and `.onMapCameraChange(frequency: .onEnd)` wrote `region` back.
-        /// Measured, idle, camera settled, nothing arriving: 12–18 rebuilds a second that never
-        /// stopped. It only ever started once *something* wrote `position`, which on screen 01 is the
-        /// one-shot centring on the first GPS fix — so it never happened at all with location
-        /// declined, which is how every previous round of measurement was taken.
-        ///
-        /// Comparing positions rather than regions is exact: a camera is re-applied when, and only
-        /// when, the app asks for a different one.
-        var lastRequestedPosition: MapCameraPosition?
+        /// A ticket cannot be faked by staleness. A stale value carries a number already applied and
+        /// is dropped; only `MapCameraRequest.move(to:)` mints a higher one. See `MapCameraRequest`.
+        var appliedSequence: Int?
 
         private var pinAnnotations: [UUID: TreePinAnnotation] = [:]
         private var clusterAnnotations: [String: TreeClusterAnnotation] = [:]
@@ -303,7 +298,7 @@ struct MapAnnotationLayer: UIViewRepresentable {
             clusterAnnotations.removeAll()
             userDot = nil
             wash = nil
-            lastRequestedPosition = nil
+            appliedSequence = nil
         }
 
         // MARK: The wash
@@ -332,17 +327,20 @@ struct MapAnnotationLayer: UIViewRepresentable {
 
         // MARK: The camera
 
-        func applyCameraIfChanged(_ position: MapCameraPosition, to mapView: MKMapView) {
-            guard position != lastRequestedPosition else { return }
-            lastRequestedPosition = position
-            guard let requested = position.region else { return }
-            #if DEBUG
-            MapFrameProbe.shared.noteFetch()   // TEMPORARY INSTRUMENTATION (E140)
-            #endif
+        /// **Applies a camera the app asked for, once, and never a camera it did not ask for.**
+        ///
+        /// The whole check is the ticket. It is deliberately not a comparison of where the map is
+        /// against where the app wants it: `updateUIView` can arrive holding state from before the
+        /// reader's last gesture, and on screen 01 it reliably does, so any answer derived from the
+        /// geometry of a stale request is the wrong answer. See `MapCameraRequest` for the
+        /// measurement, and ERRATA E140 for what it cost.
+        func applyCameraIfChanged(_ request: MapCameraRequest, to mapView: MKMapView) {
+            if let applied = appliedSequence, request.sequence <= applied { return }
+            appliedSequence = request.sequence
             // Reduce Motion snaps the camera instead of flying it. The zoom is the answer to a tap,
             // not the way the answer is delivered — `CypressMotion.resolved`'s rule, applied at the
             // one place on this screen where a camera actually moves.
-            mapView.setRegion(requested, animated: !UIAccessibility.isReduceMotionEnabled)
+            mapView.setRegion(request.region, animated: !UIAccessibility.isReduceMotionEnabled)
         }
 
         /// Continuous, once per frame of a pan — the same cadence
@@ -350,9 +348,6 @@ struct MapAnnotationLayer: UIViewRepresentable {
         /// decides whether any given one of these is worth a database read, and it already ignores
         /// a camera that is still inside the box it fetched.
         func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
-            #if DEBUG
-            MapFrameProbe.shared.noteLocationPublish()   // TEMPORARY INSTRUMENTATION (E140)
-            #endif
             parent.onCameraChange(
                 BoundingBox(mapView.region),
                 MapZoom.level(
@@ -364,51 +359,17 @@ struct MapAnnotationLayer: UIViewRepresentable {
 
         /// The settled region, which is only needed when a cluster is tapped — a cluster cannot be
         /// tapped mid-gesture, so it is read once the camera stops rather than sixty times a second.
+        ///
+        /// **A settle says nothing about the camera any more, and that is the fix for E140.** This
+        /// used to answer a reader's pan by clearing the record of the last camera the app asked for,
+        /// so that pressing the recentre control a second time was not swallowed as a duplicate value
+        /// (#66). Clearing it meant the next `updateUIView` — one of about 240 a second — found a
+        /// position that did not match an empty record, took that for a fresh request, and drove the
+        /// camera back to the reader's own location. The map could not be moved. A press now mints
+        /// its own ticket whether or not it names the same place, so the second press works without
+        /// this handler having any opinion about the camera at all.
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
             parent.region = mapView.region
-
-            // **The reader moved the map, so the last thing the app asked for is no longer where we
-            // are.** Without noticing that, the recentre control (#66) has a dead second press: it
-            // centres, the reader pans away, and pressing it again produces the *same*
-            // `MapCameraPosition` value — same coordinate, same span — which the equality check
-            // above would swallow.
-            //
-            // The threshold is a quarter of the visible span, which is far larger than the few
-            // metres MapKit lands away from a region it was handed and far smaller than any pan
-            // worth calling one.
-            guard let requested = lastRequestedPosition?.region else { return }
-            let current = mapView.region
-            let drifted = abs(current.center.latitude - requested.center.latitude)
-                > requested.span.latitudeDelta / 4
-                || abs(current.center.longitude - requested.center.longitude)
-                > requested.span.longitudeDelta / 4
-                || abs(current.span.longitudeDelta - requested.span.longitudeDelta)
-                > requested.span.longitudeDelta / 4
-            guard drifted else { return }
-
-            // **The pan is handed to the app as the camera it now asks for — both sides, together.**
-            //
-            // This line used to read `lastRequestedPosition = nil`, and that one word is ERRATA E140:
-            // the map could not be moved off the reader's own location. Clearing the record answers
-            // "is this request still outstanding?" with *no*, but `position` upstream still held the
-            // one-shot centring on the first GPS fix, and nothing up there had changed — no press, no
-            // cluster tap. So the very next `updateUIView` found a position that differed from a nil
-            // record, took that for a fresh request, and drove the camera back to the fix. And the
-            // next pass is never far away: measured on this screen with 161 markers, the basemap body
-            // runs **240 times a second** at rest (E139's unexplained residual), so the return trip
-            // was under a frame. Every pan, forever, exactly as reported: "there was no way I could
-            // figure out around this".
-            //
-            // Writing where the reader put it into *both* sides is what makes that impossible rather
-            // than unlikely. The record and the request now agree, so the equality check above sees
-            // no change and applies nothing; and because `position` genuinely holds the reader's
-            // camera, the next press of the recentre control produces a different value from it and
-            // is applied — which is the dead second press this block was written for, still fixed.
-            //
-            // The invariant, stated once: **an app-driven camera write happens only when something
-            // above this file asks for one.** A settle is not an ask.
-            lastRequestedPosition = .region(current)
-            parent.position = .region(current)
         }
 
         // MARK: The annotations

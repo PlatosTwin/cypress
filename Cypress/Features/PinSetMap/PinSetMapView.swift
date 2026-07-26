@@ -36,7 +36,7 @@ struct PinSetMapView: View {
 
     @Environment(\.locale) private var locale
 
-    @State private var position: MapCameraPosition?
+    @State private var position: MapCameraRequest?
     @State private var region = MKCoordinateRegion()
     @State private var selectedPinID: UUID?
 
@@ -108,7 +108,9 @@ struct PinSetMapView: View {
     private func map(_ presentation: PinSetPresentation) -> some View {
         MapKitBasemap(
             position: Binding(
-                get: { position ?? .region(Self.region(presentation.frame)) },
+                // `.opening`, not `.move(to:)` — this getter runs on every pass. See
+                // `MapCameraRequest`.
+                get: { position ?? .opening(Self.region(presentation.frame)) },
                 set: { position = $0 }
             ),
             region: $region,

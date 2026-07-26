@@ -142,9 +142,9 @@ final class MapFrameProbe {
         guard now - windowStart >= 1 else { return }
         report(over: now - windowStart)
         intervals.removeAll(keepingCapacity: true)
-        // TEMPORARY INSTRUMENTATION (E140): gps and fetch are running totals for this experiment,
-        // so a count can be read off one screenshot instead of caught inside a one-second window.
+        gpsCount = 0
         bodyCount = 0
+        fetchCount = 0
         windowStart = now
     }
 

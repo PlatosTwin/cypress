@@ -10,13 +10,19 @@ import Testing
 /// I moved the map, in a second I got brought back to where I am centered and there was no way I
 /// could figure out around this."
 ///
-/// It was one line. `MapAnnotationLayer.Coordinator.mapView(_:regionDidChangeAnimated:)` answered a
-/// real pan by clearing `lastRequestedPosition`, the record of what the app had last asked for.
-/// Upstream, `MapHomeView.position` still held the one-shot centring on the first GPS fix — a pan
-/// writes `region`, never `position`, and nobody had pressed anything. So the next `updateUIView`
-/// compared a position that had not changed against a record that had been emptied, read that as a
-/// fresh request, and drove the camera back to the fix. Measured on screen 01 with 161 markers, the
+/// It began as one line. `MapAnnotationLayer.Coordinator.mapView(_:regionDidChangeAnimated:)`
+/// answered a real pan by clearing the record of what the app had last asked for. Upstream,
+/// `MapHomeView.position` still held the one-shot centring on the first GPS fix — a pan writes
+/// `region`, never `position`, and nobody had pressed anything. So the next `updateUIView` compared
+/// a position that had not changed against a record that had been emptied, read that as a fresh
+/// request, and drove the camera back to the fix. Measured on screen 01 with 161 markers, the
 /// basemap body runs 240 times a second at rest, so "the next pass" was under a frame.
+///
+/// Making the two sides agree was not enough, and the probe proved it: `updateUIView` arrives
+/// carrying state from whichever body pass produced it, so after a pan there is always one in flight
+/// holding the camera from *before* the pan. A camera request therefore carries a ticket now, and the
+/// layer applies a request only when its ticket is newer than the last one applied — see
+/// `MapCameraRequest`. Staleness is the one thing a sequence number can always see.
 ///
 /// The assertion below is the sentence the owner is owed: **a reader who pans away stays panned
 /// away.** It is written against the coordinator rather than through a UI test because the loop is
@@ -34,8 +40,8 @@ struct MapCameraOwnershipTests {
     /// The Mission, at screen 01's opening scale — the coordinate the defect was reproduced at.
     private static let fix = CLLocationCoordinate2D(latitude: 37.7599, longitude: -122.4148)
 
-    /// Far enough that the coordinator's own quarter-of-a-span threshold calls it a pan, which is
-    /// the branch the bug lived in. About 400 m north-east, or a couple of blocks.
+    /// Far enough to be unmistakably a pan rather than the few metres MapKit lands away from a
+    /// region it was handed. About 550 m north-east, or a couple of blocks.
     private static let pannedTo = CLLocationCoordinate2D(latitude: 37.7635, longitude: -122.4105)
 
     /// Metres between two coordinates, so an assertion can be written in a unit the reader has.
@@ -50,11 +56,11 @@ struct MapCameraOwnershipTests {
     /// The two pieces of `MapHomeView` state the basemap is given bindings to. A reference type so
     /// the bindings and the assertions read one copy.
     private final class CameraState: @unchecked Sendable {
-        var position: MapCameraPosition
+        var position: MapCameraRequest
         var region: MKCoordinateRegion
 
         init(opening: MKCoordinateRegion) {
-            position = .region(opening)
+            position = .opening(opening)
             region = opening
         }
     }
@@ -72,7 +78,7 @@ struct MapCameraOwnershipTests {
         let coordinator: MapAnnotationLayer.Coordinator
 
         /// What `MapHomeView.position` currently holds.
-        var position: MapCameraPosition {
+        var position: MapCameraRequest {
             get { state.position }
             set { state.position = newValue }
         }
@@ -93,12 +99,18 @@ struct MapCameraOwnershipTests {
             )
             coordinator = layer.makeCoordinator()
             mapView.setRegion(opening, animated: false)
-            coordinator.lastRequestedPosition = position
+            coordinator.appliedSequence = position.sequence
         }
 
         /// One pass of `updateUIView`, in the only part of it this defect touches.
         func updatePass() {
             coordinator.applyCameraIfChanged(position, to: mapView)
+        }
+
+        /// A pass carrying state from *before* whatever has happened since — which is what SwiftUI
+        /// actually delivers, and what no comparison of camera geometry can survive.
+        func stalePass(_ stale: MapCameraRequest) {
+            coordinator.applyCameraIfChanged(stale, to: mapView)
         }
 
         /// The reader drags the map and lifts their finger. `setRegion` here is the gesture's own
@@ -156,19 +168,34 @@ struct MapCameraOwnershipTests {
         )
     }
 
-    /// The same thing said about the state upstream, because that is where the stale request lived.
-    /// After a pan the app's idea of the camera it is asking for has to be the reader's camera; any
-    /// other value is a write waiting to happen.
-    @Test("after a pan the app asks for the camera the reader chose")
-    func panBecomesTheRequestedCamera() {
+    /// **The pass that actually breaks it.** SwiftUI hands `updateUIView` the view value from the
+    /// body pass that produced it, and that pass read the app's state when it ran — so after a pan
+    /// there is an update in flight carrying the camera as it was *before* the pan, and on screen 01,
+    /// at 240 passes a second, there always is.
+    ///
+    /// This is the test the first two fixes would have failed. Clearing the record failed it, and so
+    /// did writing the reader's region into both sides: measured on the device, the second one still
+    /// produced 39 camera writes per pan and put the map back on the reader every time, because the
+    /// value that arrived afterwards was older than either side of the agreement.
+    ///
+    /// A stale request is a request the layer has already applied. Nothing more than that is needed,
+    /// and nothing less than that is enough.
+    @Test("an update pass carrying pre-pan state does not drive the camera")
+    func stalePassDoesNotDriveTheCamera() {
         let screen = Screen(opening: Self.opening())
-        screen.readerPans(to: Self.pannedTo)
+        // What a body pass computed before the reader's finger landed is still holding.
+        let inFlight = screen.position
 
-        let requested = screen.position.region?.center
-        #expect(requested != nil, "the screen must still be asking for a region")
+        screen.readerPans(to: Self.pannedTo)
+        for _ in 0..<10 { screen.stalePass(inFlight) }
+
+        let centre = screen.mapView.region.center
         #expect(
-            Self.metres(requested ?? Self.fix, Self.pannedTo) < 50,
-            "the app is still asking for a camera the reader has moved away from"
+            Self.metres(centre, Self.pannedTo) < 50,
+            """
+            an update pass carrying the camera from before the pan drove the map \
+            \(Int(Self.metres(centre, Self.pannedTo))) m back toward the fix — this is E140
+            """
         )
     }
 
@@ -185,8 +212,8 @@ struct MapCameraOwnershipTests {
 
         // What `MapHomeView.flyTo(_:metres:)` writes for a `.centre` press: the fix, at whatever span
         // the reader has since zoomed to.
-        screen.position = .region(
-            MKCoordinateRegion(center: Self.fix, span: screen.mapView.region.span)
+        screen.position = .move(
+            to: MKCoordinateRegion(center: Self.fix, span: screen.mapView.region.span)
         )
         screen.updatePass()
 
@@ -204,15 +231,15 @@ struct MapCameraOwnershipTests {
         screen.readerPans(to: Self.pannedTo)
 
         // Zoom out a long way first, so "zoomed in" is a change worth measuring.
-        screen.position = .region(
-            MKCoordinateRegion(center: Self.fix, latitudinalMeters: 2_000, longitudinalMeters: 2_000)
+        screen.position = .move(
+            to: MKCoordinateRegion(center: Self.fix, latitudinalMeters: 2_000, longitudinalMeters: 2_000)
         )
         screen.updatePass()
         let wide = screen.mapView.region.span.latitudeDelta
 
         // The `.centreAndZoomIn` press: the fix, at the screen's own opening scale.
-        screen.position = .region(
-            MKCoordinateRegion(
+        screen.position = .move(
+            to: MKCoordinateRegion(
                 center: Self.fix,
                 latitudinalMeters: MapLayout.defaultSpanMetres,
                 longitudinalMeters: MapLayout.defaultSpanMetres
