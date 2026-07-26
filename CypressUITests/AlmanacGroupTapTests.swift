@@ -177,11 +177,13 @@ final class AlmanacGroupTapTests: XCTestCase {
     ///
     /// **The map is asked in pins, not in words, and the obvious alternative was measured and
     /// rejected.** `MapRecentreCopy.value` looked like the better witness — `Centred on you` is
-    /// reachable only through `camera.isCentred(on: coordinate)` — and on a simulator with a fix set
-    /// over Van Ness the control reads `Not centred` for the whole run, with the reader's blue dot
-    /// sitting in the middle of the screen. `region` is the binding the check reads and the
-    /// programmatic fly does not write it back, so the control is describing a camera the map left
-    /// some time ago. Pins are what `MapSearchUITests.requireAMapWithPins` already uses for this, and
+    /// reachable only through `camera.isCentred(on: coordinate)`, so it cannot be true without a
+    /// coordinate — and it does not work. Measured on a simulator with a fix set over Van Ness: the
+    /// control reads `Not centred` for a whole 39-second run, and a screenshot of that same launch has
+    /// the camera on the fix and the reader's blue dot in the middle of the screen. Something between
+    /// the settled region and `MapRecentre.Camera` disagrees with the picture; whatever it is, it
+    /// belongs to screen 01 and not here. Pins are what `MapSearchUITests.requireAMapWithPins` uses
+    /// instead, and
     /// they are honest here for a reason that file does not state: with no fix the camera opens at
     /// `MapLayout.defaultCentre`, in the middle of Dolores Park, where — as `defaultSpanMetres` says
     /// out loud — a 120 m view holds no inventoried street tree at all.
