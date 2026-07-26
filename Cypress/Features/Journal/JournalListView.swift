@@ -60,21 +60,39 @@ struct JournalListView: View {
         .padding(.horizontal, CypressSpacing.gutter)
     }
 
-    // MARK: - The rows
+    // MARK: - The rows, under their days
 
+    /// **The date leads.** Each day is a `micro.label` rule across the column — the treatment
+    /// SCREENS.md §1.3 assigns to "section headers inside screens", and the one screens 03, 07, 13
+    /// and 17 already use — with that day's acts under it.
+    ///
+    /// This is the structural half of telling a chronology from a collection. My Grove's list has no
+    /// headers and no dates at all; this one is organised by nothing else. A reader who has just come
+    /// from the other screen can see which he is on before reading a word of either.
+    ///
+    /// `.cypressMicroLabel()` carries `.cypressTypographicFurniture()`, which clamps at AX1 — so the
+    /// headers stay rules rather than becoming large cramped uppercase that outruns the phone, which
+    /// is the failure that modifier exists for. The rows above and below scale the whole way.
     private func rows(_ presentation: JournalPresentation) -> some View {
-        VStack(spacing: JournalMetrics.rowGap) {
-            ForEach(presentation.rows) { row in
-                IconTextRow(
-                    accent: row.accent,
-                    title: row.title,
-                    subtitle: row.subtitle,
-                    // Every row is about a tree, so every row has somewhere to go. Nil only when the
-                    // host supplies no destination, in which case C10 draws a card rather than a
-                    // button — a control that looked pressable and did nothing is the thing this
-                    // whole round is about.
-                    action: onOpenTree.map { open in { open(row.treeID) } }
-                )
+        VStack(alignment: .leading, spacing: JournalMetrics.dayGap) {
+            ForEach(presentation.days) { day in
+                VStack(alignment: .leading, spacing: JournalMetrics.rowGap) {
+                    Text(day.header)
+                        .cypressMicroLabel()
+                        .padding(.horizontal, JournalMetrics.dayHeaderInset)
+
+                    ForEach(day.rows) { row in
+                        IconTextRow(
+                            accent: row.accent,
+                            title: row.title,
+                            subtitle: row.subtitle,
+                            // Every row is about a tree, so every row has somewhere to go. Nil only
+                            // when the host supplies no destination, in which case C10 draws a card
+                            // rather than a button.
+                            action: onOpenTree.map { open in { open(row.treeID) } }
+                        )
+                    }
+                }
             }
         }
     }

@@ -107,9 +107,17 @@ struct JournalPresentation: Equatable {
     /// One C10 row.
     struct Row: Equatable, Identifiable {
         let id: UUID
-        /// The tree this is about, in the words its own page uses.
+        /// `Visited Grandmother Cypress` — **the act first, then the tree it was done to.**
+        ///
+        /// It used to be the tree's name alone, which is what My Grove's rows are titled, which is
+        /// how two lists of different things came to look like one. A journal row is a sentence
+        /// about something that happened; leading with the verb is what makes it read as one.
         let title: String
-        /// `Visited · Jul 12 · Fog on the crown`.
+        /// The contributor's own note, or empty when the record carries none.
+        ///
+        /// The date left this line and became the section header above the row (`Day`), because a
+        /// date repeated on every row is a date nobody reads, and a date over a group of rows is
+        /// the structure of a chronology.
         let subtitle: String
         /// Screen 13's accent for this kind of contribution.
         let accent: CypressColor.TileAccent
@@ -117,7 +125,28 @@ struct JournalPresentation: Equatable {
         let treeID: UUID
     }
 
+    /// One day's worth of rows, under the day.
+    ///
+    /// **Grouped by consecutive run, never by key.** `ContributionStore.journal` orders by
+    /// `captured_at DESC`, so every row of one day is already contiguous; folding runs preserves that
+    /// order exactly, while a `Dictionary(grouping:)` would impose an ordering of its own and
+    /// `Show earlier` would start inserting rows into the middle of a list somebody is reading. It
+    /// also means a page boundary that falls inside a day merges into the section already on screen
+    /// rather than drawing the same date twice.
+    struct Day: Equatable, Identifiable {
+        /// The first row's id: stable, and unique without assuming two days never format alike.
+        var id: UUID { rows[0].id }
+        /// `Jul 12`, or `Jul 12, 2025` outside this year. Drawn uppercase by `.cypressMicroLabel()`.
+        let header: String
+        let rows: [Row]
+    }
+
+    /// Every row read so far, in the store's order. Kept flat as well as grouped, because the
+    /// questions the suite asks about ordering and destinations are questions about the sequence.
     let rows: [Row]
+
+    /// The same rows, under their days — what the list actually draws.
+    let days: [Day]
 
     /// Whether the read came back with a cursor — the one fact this screen has about its own extent.
     let hasOlder: Bool
@@ -151,22 +180,43 @@ struct JournalPresentation: Equatable {
         self.rows = entries.map { entry in
             Row(
                 id: entry.id,
-                title: entry.treeDisplayName.isEmpty
-                    ? TreeProfilePresentation.fallbackTitle
-                    : entry.treeDisplayName,
-                subtitle: JournalCopy.subtitle(
+                title: JournalCopy.rowTitle(
                     kind: entry.kind,
-                    at: entry.capturedAt,
-                    summary: entry.summary,
-                    now: now,
-                    calendar: calendar,
-                    locale: locale
+                    treeName: entry.treeDisplayName.isEmpty
+                        ? TreeProfilePresentation.fallbackTitle
+                        : entry.treeDisplayName
                 ),
+                subtitle: entry.summary.trimmingCharacters(in: .whitespacesAndNewlines),
                 accent: JournalCopy.accent(for: entry.kind),
                 treeID: entry.treeID
             )
         }
         self.hasOlder = nextCursor != nil
+
+        // Runs, not keys — see `Day`. The header is computed from the entry rather than re-parsed
+        // out of a row, so the string on screen and the day the fold is made on come from one date.
+        var days: [Day] = []
+        var currentRows: [Row] = []
+        var currentHeader = ""
+        var currentDay: Date?
+        for (index, entry) in entries.enumerated() {
+            let startOfDay = calendar.startOfDay(for: entry.capturedAt)
+            if startOfDay != currentDay {
+                if !currentRows.isEmpty {
+                    days.append(Day(header: currentHeader, rows: currentRows))
+                    currentRows = []
+                }
+                currentHeader = JournalCopy.day(
+                    entry.capturedAt, now: now, calendar: calendar, locale: locale
+                )
+                currentDay = startOfDay
+            }
+            currentRows.append(self.rows[index])
+        }
+        if !currentRows.isEmpty {
+            days.append(Day(header: currentHeader, rows: currentRows))
+        }
+        self.days = days
     }
 }
 
@@ -309,27 +359,35 @@ enum JournalCopy {
         }
     }
 
-    /// `Visited · Jul 12 · Fog on the crown`.
+    /// `Visited Grandmother Cypress` — the row's title, verb first.
     ///
-    /// The summary clause is **left out rather than filled in** when the record carries none. An
-    /// empty note is not a note that says nothing, and a placeholder in its place would be the
-    /// screen writing content on a contributor's behalf (BUILD-PLAN §15) — the same rule screens 11,
-    /// 13 and 16 use for their header pills.
-    static func subtitle(
-        kind: JournalEntry.Kind,
-        at date: Date,
-        summary: String,
-        now: Date,
-        calendar: Calendar,
-        locale: Locale
-    ) -> String {
-        var parts = [verb(for: kind), day(date, now: now, calendar: calendar, locale: locale)]
-        let note = summary.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !note.isEmpty { parts.append(note) }
-        return parts.joined(separator: " · ")
+    /// ── Why the verb leads ────────────────────────────────────────────────────────────────
+    /// The title used to be the tree's name alone, which is exactly what a row on My Grove's `Trees`
+    /// pill is titled. Two lists of different things, drawn with one grammar, are one list as far as
+    /// a reader is concerned — the project owner read them as one. A journal row is a sentence about
+    /// something that happened, and putting the act at the front is what makes the column scan as a
+    /// stream of acts rather than as a list of trees with details under them.
+    ///
+    /// The old row put the verb in the *subtitle*, in grey, at 12.5 pt, after which came a date and
+    /// then the note. Nothing about that ordering said the verb was the subject.
+    ///
+    /// The tree's name is still here, because a journal entry with no tree in it is not a journal
+    /// entry this app can have — every row opens a profile — and it is still what its own page calls
+    /// it, fallback included.
+    static func rowTitle(kind: JournalEntry.Kind, treeName: String) -> String {
+        "\(verb(for: kind)) \(treeName)"
     }
 
-    /// `Jul 12` inside this year, `Jul 12, 2025` outside it.
+    /// `Jul 12` inside this year, `Jul 12, 2025` outside it. **A section header now, not a clause.**
+    ///
+    /// It is the one element of a journal row the grove has no equivalent of, so it is the element
+    /// that carries the difference: it leads, it is drawn as a rule across the column
+    /// (`.cypressMicroLabel()`, the app's own section-header treatment), and it is written once for
+    /// however many things happened that day rather than repeated on each of them.
+    ///
+    /// Still used by nothing else. `GroveCopy.treeSubtitle` used to call this so the two personal
+    /// lists could not date the same record differently; it no longer prints a date at all, which
+    /// settles that question more firmly than sharing a formatter did.
     ///
     /// **A journal spans years and the almanac's `shortDate` does not.** `AlmanacCopy.shortDate`
     /// drops the year on the stated grounds that "first bloom of the year" is about a day inside the
@@ -360,4 +418,10 @@ enum JournalMetrics {
     static let rowGap: CGFloat = CypressSpacing.gapRows
     /// Above the first row and below the last, matching the section rhythm every other list uses.
     static let listTop: CGFloat = CypressSpacing.labelSectionTop
+    /// Between one day and the next — larger than the gap between rows *within* a day, because that
+    /// difference is what makes the grouping visible without a divider.
+    static let dayGap: CGFloat = CypressSpacing.labelSectionTop
+    /// The header sits a hair inside the cards, on the text's own left edge rather than the card's,
+    /// which is where every other `micro.label` in the app sits relative to what it labels.
+    static let dayHeaderInset: CGFloat = CypressSpacing.Component.iconRowPaddingH
 }
