@@ -21,7 +21,9 @@ import Foundation
 /// standing policy about a tree, not a date on which anything happened to it, and it must never be
 /// rendered as one. Pruning history would have to come from a different city system; this dataset
 /// cannot answer the question at any grain.
-public struct CityRecord: Hashable, Sendable {
+/// `Codable` because `Tree` is (`CoreEntity`), not because anything syncs this: the city's record is
+/// the city's, and Cypress never sends it back.
+public struct CityRecord: Codable, Hashable, Sendable {
 
     /// DataSF `qLegalStatus` — the tree's standing in city law, which is mostly a statement about
     /// *jurisdiction*: whether the site is in the public right-of-way, on private land, or neither.
@@ -217,7 +219,7 @@ extension LandContext {
 /// separately, which is the shape of fact that eventually stops being asked about — the reason
 /// BUILD-PLAN §5 requires every provenance fact to be carried rather than inferred at the point of
 /// display.
-public struct KnownLandContext: Hashable, Sendable {
+public struct KnownLandContext: Codable, Hashable, Sendable {
     public enum Source: String, Codable, Sendable, Hashable, CaseIterable {
         /// A contributor said so when they added the tree (`community_trees.land_context`).
         case statedByContributor = "stated_by_contributor"

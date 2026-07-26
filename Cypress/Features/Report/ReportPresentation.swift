@@ -78,6 +78,17 @@ struct ReportPresentation: Equatable {
     /// its header plus the two pickers. Both of those states are **NOT SPECIFIED** by SCREENS.md;
     /// this is the restrained reading of what is specified, not an invented state (DECISIONS
     /// constraint 21). Recorded in ERRATA (E22).
+    ///
+    /// **This gate knows nothing about the tree, and task #69 will make that matter.** The branch
+    /// turns on the chip alone — `ReportModel` holds a `treeID` and never reads the tree — so every
+    /// tree in the app gets the same "Call 311 now". 311 is the city's line for *city* trees, and
+    /// once a contributor can mark a tree as standing on private property, this screen will route
+    /// them to a number that will not take the report. Nothing can reach that state today, because
+    /// nothing writes `community_trees.land_context` until #69 ships a picker; the data and the
+    /// column exist as of AppSchema v11 and `Tree.landContext` already answers the question for both
+    /// city and community rows. Whether the panel changes its copy, offers a different destination,
+    /// or says plainly that the city does not handle this tree is a product decision and belongs
+    /// with #69. Recorded in ERRATA (E142).
     var showsHazardBranch: Bool { selection.hazard != nil }
 }
 
