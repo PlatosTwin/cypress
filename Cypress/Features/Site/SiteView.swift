@@ -33,15 +33,21 @@ struct SiteView: View {
     /// feature folder uses one: features push routes, they do not construct each other's views.
     private let onOpenTree: ((UUID) -> Void)?
 
+    /// Where "show me where this is" goes (ERRATA E144). Resolved by the composition root, like
+    /// every other destination this feature hands out.
+    private let onShowWhere: ((PinSet) -> Void)?
+
     init(
         treeID: UUID,
         api: any CypressAPI,
         onBack: (() -> Void)? = nil,
-        onOpenTree: ((UUID) -> Void)? = nil
+        onOpenTree: ((UUID) -> Void)? = nil,
+        onShowWhere: ((PinSet) -> Void)? = nil
     ) {
         _model = State(wrappedValue: SiteModel(treeID: treeID, api: api))
         self.onBack = onBack
         self.onOpenTree = onOpenTree
+        self.onShowWhere = onShowWhere
     }
 
     var body: some View {
@@ -61,7 +67,12 @@ struct SiteView: View {
             ProgressView()
         case .loaded:
             if let presentation = model.presentation {
-                SiteScreen(presentation: presentation, onBack: onBack, onOpenTree: onOpenTree)
+                SiteScreen(
+                    presentation: presentation,
+                    onBack: onBack,
+                    onOpenTree: onOpenTree,
+                    onShowWhere: onShowWhere
+                )
             }
         case .notASite:
             notASite
@@ -111,6 +122,9 @@ struct SiteScreen: View {
     let presentation: SitePresentation
     var onBack: (() -> Void)?
     var onOpenTree: ((UUID) -> Void)?
+    /// Where "show me where this is" goes. A `PinSet` rather than an id, for the reason the route
+    /// carries one: the record travels, so the map cannot re-read it and disagree (ERRATA E129).
+    var onShowWhere: ((PinSet) -> Void)?
 
     var body: some View {
         ScrollView {
@@ -148,6 +162,13 @@ struct SiteScreen: View {
             Text(presentation.subtitle)
                 .cypressLatinName(CypressFont.latinName145)
                 .fixedSize(horizontal: false, vertical: true)
+            // ERRATA E144, and see `SitePresentation.locateSet` for why a basin gets this control.
+            // Drawn only where the composition root gave it somewhere to go, exactly as the
+            // neighbour row below is: a control with no closure would be a control that does nothing
+            // in the previews and in the shot harness.
+            if let onShowWhere {
+                ShowWhereButton { onShowWhere(presentation.locateSet) }
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, CypressSpacing.gutterLabel)

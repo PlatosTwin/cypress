@@ -510,7 +510,14 @@ struct RootView: View {
             // favourite off a felled tree, which is the one-way toggle E89 refused to create. The
             // profile withholds every write from it instead (`acceptsContributions`, `quadActions`).
             // See ERRATA (E95, E112, E113).
-            MemorialView(treeID: id, api: data.api, onBack: { router.pop() })
+            MemorialView(
+                treeID: id,
+                api: data.api,
+                onBack: { router.pop() },
+                // ERRATA E144. The one control on 19, and it writes nothing — see
+                // `MemorialPresentation.locateSet`.
+                onShowWhere: { set in router.push(.pinSet(set)) }
+            )
 
         case .site(let id):
             // The vacant planting site (ERRATA E107, closing E11). Its entrance is the map card,
@@ -526,7 +533,9 @@ struct RootView: View {
                 treeID: id,
                 api: data.api,
                 onBack: { router.pop() },
-                onOpenTree: { treeID in router.push(.treeProfile(treeID)) }
+                onOpenTree: { treeID in router.push(.treeProfile(treeID)) },
+                // ERRATA E144, and the strongest case for it: a basin's only subject is where it is.
+                onShowWhere: { set in router.push(.pinSet(set)) }
             )
 
         case .photos(let id):
@@ -559,11 +568,17 @@ struct RootView: View {
             // its own. That mapping — a vacant site to the site screen, a removed tree to 19,
             // everything else to 03/14 — is E107's and E113's, and a second copy of it here is how
             // one of them comes to be right and the other stale.
+            //
+            // Since E144 the same route also carries a group of one — "show me where this is", from
+            // the profile of any record. The neighbours closure is resolved here for the reason
+            // every other boundary call is: the feature gets the one operation it needs, not the
+            // API. It is `PinSetNeighbours.around`, and the screen only calls it for a group of one.
             PinSetMapView(
                 set: group,
                 userCoordinate: location.availability.coordinate,
                 onBack: { router.pop() },
-                onOpenPin: { pin in router.push(MapHomeView.route(for: pin)) }
+                onOpenPin: { pin in router.push(MapHomeView.route(for: pin)) },
+                neighbours: .around(data.api)
             )
 
         case .measure(let id):
