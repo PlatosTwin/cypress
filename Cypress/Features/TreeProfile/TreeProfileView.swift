@@ -46,6 +46,10 @@ struct TreeProfileView: View {
     /// visit action out rather than inventing a destination (DECISIONS constraint 21).
     private let onVisit: (UUID) -> Void
 
+    /// Held so the species picker can be handed the same boundary this screen reads through. The
+    /// model owns its own reference; this one exists because `SpeciesPickView` builds its own model.
+    private let api: any CypressAPI
+
     /// - Parameter onFavorite: writes the *resulting state* of the heart — `true` for a favourite,
     ///   `false` for taking it off (RULINGS R2). Favoriting is a mutation through the outbox rather
     ///   than a navigation, and its owner is the composition root's to resolve (D9), so it is handed
@@ -66,6 +70,7 @@ struct TreeProfileView: View {
                 setFavorite: onFavorite
             )
         )
+        self.api = api
         self.onVisit = onVisit
     }
 
@@ -109,6 +114,21 @@ struct TreeProfileView: View {
             .onChange(of: router?.sheet == nil) { _, nothingPresented in
                 guard nothingPresented, model.presentation != nil else { return }
                 Task { await model.reload() }
+            }
+            // A cover rather than a sheet, for the same reason the add flow uses one: the picker puts
+            // a keyboard and a scrolling list up, and a half-height sheet leaves the list two rows
+            // tall on a small phone. It is also the shape the same picker already has in the add
+            // flow, and one control should not look like two screens.
+            .fullScreenCover(isPresented: $model.isNamingSpecies) {
+                SpeciesPickView(
+                    api: api,
+                    onPick: { species in Task { await model.claimSpecies(species) } },
+                    // Declining here is simply leaving. Unlike the add screen there is no draft to
+                    // retract from — nothing has been claimed, so there is nothing to un-claim, and
+                    // both exits do the same thing for once.
+                    onSkip: { model.isNamingSpecies = false },
+                    onBack: { model.isNamingSpecies = false }
+                )
             }
     }
 
@@ -422,10 +442,41 @@ struct TreeProfileView: View {
             Text(presentation.subtitle)
                 .cypressLatinName(presentation.isCold ? CypressFont.latinName145 : CypressFont.latinName)
                 .fixedSize(horizontal: false, vertical: true)
+
+            speciesClaim(presentation)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, presentation.isCold ? CypressSpacing.gutterLabel : CypressSpacing.gutter)
         .padding(.top, presentation.isCold ? TreeProfileMetrics.coldBlockGap : TreeProfileMetrics.blockGap)
+    }
+
+    /// The "after" half of "add tree species after/at same time as adding a custom tree".
+    ///
+    /// **It lives in the identity block, directly under the line it would change.** Not in C8's quad
+    /// action row, which is four fixed cells this record either offers or does not (E127's ruling
+    /// keeps all four), and not as a fifth stat card. The subtitle is where a species is *stated*, so
+    /// the offer to state one belongs against it — and once it is stated the control is gone for good
+    /// and the block goes back to the two lines SCREENS.md draws.
+    ///
+    /// A refusal draws under the control rather than replacing it: `claimSpecies` reloads, so the
+    /// sentence sits beside a screen that is showing what is actually stored.
+    @ViewBuilder
+    private func speciesClaim(_ presentation: TreeProfilePresentation) -> some View {
+        if presentation.offersSpeciesClaim {
+            Button { model.isNamingSpecies = true } label: {
+                Text(TreeProfileCopy.claimSpeciesAction)
+                    .font(CypressFont.body13Bold)
+                    .foregroundStyle(CypressColor.ctaFill)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .cypressHitArea()
+        }
+        if let failure = model.speciesClaimFailure {
+            Text(failure)
+                .cypressBody135(color: CypressColor.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     // MARK: - 7 · Regulars row (C26, A8, D1)

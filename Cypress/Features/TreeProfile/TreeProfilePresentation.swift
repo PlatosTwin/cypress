@@ -233,6 +233,9 @@ struct TreeProfilePresentation {
             }
         }
         parts.append(provenance)
+        // Coarse to fine, and each element narrower than the one before it: where the record came
+        // from, then who named the species on it, then how its coordinate was arrived at.
+        if let speciesClaimNote { parts.append(speciesClaimNote) }
         if let placementNote { parts.append(placementNote) }
         return parts.joined(separator: " · ")
     }
@@ -243,6 +246,76 @@ struct TreeProfilePresentation {
         case .cityImport: return "SF city inventory"
         case .community: return "community-added, unverified"
         }
+    }
+
+    /// Who said what species this is, when the answer is "a contributor did".
+    ///
+    /// **NOT SPECIFIED.** SCREENS.md has no community tree carrying a species, because until now the
+    /// add flow could not record one: `VisitAddTreeModel.add()` sent no species on principle. It can
+    /// now, on the ruling that a species the *contributor* states is a different fact from a species
+    /// the *app* guesses, and this line is the second half of that ruling — the half that makes sure
+    /// the distinction survives to the screen. It sits on the provenance line for the same reason
+    /// `placementNote` does: BUILD-PLAN §5 makes provenance a property of the record, and this is
+    /// where `source` and `verification_state` are already read out.
+    ///
+    /// ── This one arm is stated and the other is not, and that is not the placement rule broken ──
+    /// `placementNote` prints **both** of its values, and argues at length that printing only the
+    /// unusual one turns a label into a warning. That argument was tested against this line and it
+    /// does not carry, because the two cases are not the same shape.
+    ///
+    /// A coordinate always exists and always came from one of two instruments, so `gps` and
+    /// `contributor_placed` are two provenances of one fact, and marking one of them ranks it against
+    /// the other. A species does not always exist. The alternative to "species named by a
+    /// contributor" is not a second way of arriving at a species — the client has no other way; there
+    /// is no organisation confirming botany in this app and no photograph being classified by one —
+    /// it is **no species at all**, which prints nothing here because there is nothing to attribute.
+    /// A symmetric second arm would have to be a sentence about a species that does not exist.
+    ///
+    /// The symmetry the placement rule is really about is honoured, one level up and already: a city
+    /// row's species reads `SF city inventory` and a community row's reads `community-added,
+    /// unverified`, both on this same line, and neither is the marked case. This element only says
+    /// *which part* of a community record the contributor authored — and it is not evaluative, in
+    /// exactly `placementNote`'s sense: it names the author, the way `SF city inventory` names a
+    /// source without praising it. It does not say "unconfirmed", "guess", or "may be wrong". A
+    /// contributor who planted the tree knows it better than any row in the seed does.
+    ///
+    /// **Community rows with a species only.** A city row's species is the city's and `provenance`
+    /// already says so; a community row with no species has nobody to attribute.
+    ///
+    /// No `verification_state` condition, and that is deliberate rather than overlooked: `provenance`
+    /// hardcodes `community-added, unverified` for every community row, so there is no state in which
+    /// this element and the one before it could disagree. If a community row ever becomes
+    /// org-verified on screen, both sentences change together or neither does.
+    var speciesClaimNote: String? {
+        guard tree.source == .community, species != nil else { return nil }
+        return TreeProfilePresentation.speciesNamedByContributor
+    }
+
+    /// "a contributor", not "the contributor". `community_trees` records no author — it has no
+    /// `user_id` and no `device_id` — so the record cannot say *which* person, and a line that said
+    /// "the contributor" would imply the one who added the tree and quietly be wrong the moment a
+    /// second person names the species on somebody else's row.
+    static let speciesNamedByContributor = "species named by a contributor"
+
+    /// Whether this screen offers to name the species — the "after" half of the owner's request.
+    ///
+    /// **NOT SPECIFIED.** SCREENS.md has no such control, because until now there was no writable
+    /// species anywhere in the app.
+    ///
+    /// Three conditions, and each of them is a refusal `LocalAPI.claimSpecies` also enforces, drawn
+    /// rather than merely thrown. A control that offered an act the boundary would refuse is the
+    /// defect `VisitAddTreeModel.canAdd` exists to avoid on the other screen.
+    ///
+    /// - **Community rows only.** A city row's species belongs to an inventory in a read-only
+    ///   database. `SpeciesClaim` argues why overwriting it is a larger decision than this.
+    /// - **Only when there is none.** Correcting a claim needs the `species_assertions` chain, which
+    ///   is not writable on device. First claim wins, exactly as `tree_names` does for the given name
+    ///   (D15). So this control appears once per tree and then never again.
+    /// - **Only where a contribution is welcome.** A memorial and a vacant site refuse every other
+    ///   write on this screen (E95); naming the species of a tree that has been removed, or of a site
+    ///   that never had one, is the same kind of claim about a thing that is not there.
+    var offersSpeciesClaim: Bool {
+        tree.source == .community && species == nil && acceptsContributions
     }
 
     /// How this record's coordinate was arrived at — the fourth element of the subtitle, and the last
@@ -869,4 +942,36 @@ struct TreeProfilePresentation {
         "January", "February", "March", "April", "May", "June",
         "July", "August", "September", "October", "November", "December",
     ]
+}
+
+// MARK: - Copy this screen owns rather than derives
+
+/// Strings screen 03 renders that are not in SCREENS.md, kept out of the view for the reason every
+/// `*Presentation` in this app is: a sentence a state produces is a decision, and a decision is worth
+/// a test that does not have to render a `View` to read it.
+enum TreeProfileCopy {
+
+    /// The control that names a species on a tree that has none.
+    ///
+    /// It asks rather than instructs, and it says *you think* rather than *it is*, because the act it
+    /// starts records an opinion and the label should not promise more than the column stores.
+    static let claimSpeciesAction = "Say what species you think this is"
+
+    /// Why a claim did not land. Three refusals, three sentences — the mapping is here rather than in
+    /// the model because "already claimed" and "not allowed on a city tree" are entirely different
+    /// facts about the world, and an app that showed one message for both would be telling somebody
+    /// their contribution failed when it was in fact somebody else's that succeeded.
+    static func speciesClaimFailure(_ error: APIError) -> String {
+        switch error {
+        case .conflict:
+            return "Somebody has already said what this tree is. Changing that needs a correction, "
+                + "which this app cannot record yet."
+        case .forbidden:
+            return "This tree comes from the city inventory, and its species is the city's record."
+        case .notFound:
+            return "This tree could not be found. Nothing was recorded."
+        default:
+            return "That species could not be recorded. Nothing was changed."
+        }
+    }
 }

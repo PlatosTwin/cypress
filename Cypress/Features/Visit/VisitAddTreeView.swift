@@ -38,6 +38,10 @@ struct VisitAddTreeView: View {
     @State private var model: VisitAddTreeModel
     @State private var libraryItem: PhotosPickerItem?
 
+    /// Held so the species picker can be handed the same boundary this screen writes through. The
+    /// model owns its own reference; this one exists because `SpeciesPickView` builds its own model.
+    private let api: any CypressAPI
+
     /// The tree was created — its id, so the caller can open it.
     let onAdded: (UUID) -> Void
     /// The dedupe found a tree already on record here and the reader chose it instead.
@@ -55,6 +59,7 @@ struct VisitAddTreeView: View {
         _model = State(
             wrappedValue: VisitAddTreeModel(api: api, location: location, attribution: attribution)
         )
+        self.api = api
         self.onAdded = onAdded
         self.onOpenExisting = onOpenExisting
         self.onBack = onBack
@@ -69,6 +74,16 @@ struct VisitAddTreeView: View {
         Group {
             if case .placingPin = model.phase {
                 pinAdjust
+            } else if case .pickingSpecies = model.phase {
+                // Replaces the composer for the same reason the pin map does: one model, one draft,
+                // one screen in several states. A sheet over a `fullScreenCover` would put the
+                // photograph behind two layers and give the keyboard nowhere to go.
+                SpeciesPickView(
+                    api: api,
+                    onPick: { model.chooseSpecies($0) },
+                    onSkip: { model.skipSpecies() },
+                    onBack: { model.cancelPickingSpecies() }
+                )
             } else {
                 composer
             }
@@ -119,6 +134,8 @@ struct VisitAddTreeView: View {
                     photoSources
 
                     placementRow
+
+                    speciesRow
 
                     if case let .duplicate(candidates) = model.phase {
                         duplicateWarning(candidates)
@@ -176,6 +193,52 @@ struct VisitAddTreeView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    // MARK: - What the contributor says it is
+
+    /// One sentence about the species, and the way to change it. Sits under the placement row and
+    /// above the CTA, in the same shape as that row, because the two are the same kind of thing: a
+    /// statement of what is about to be written, next to the control that changes it.
+    ///
+    /// **It is never a gate.** There is no fix to wait for and no state in which this is hidden — a
+    /// species is not required (`VisitAddTreeModel.species` carries that argument), so it draws
+    /// always and the CTA never waits on it. A reader standing at a tree they cannot name reads one
+    /// sentence saying nobody has said what it is, and presses `Add this tree`.
+    ///
+    /// The second control appears only once a species has been chosen. Offering "not sure" to
+    /// somebody who has not yet said anything would be asking them to decline an offer they were
+    /// never made.
+    @ViewBuilder
+    private var speciesRow: some View {
+        VStack(alignment: .leading, spacing: CypressSpacing.gapVitality) {
+            Text(VisitAddTreeCopy.species(model.species))
+                .cypressBody135(color: CypressColor.textBody)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: CypressSpacing.gutterSheet) {
+                Button { model.beginPickingSpecies() } label: {
+                    Text(VisitAddTreeCopy.speciesAction(hasSpecies: model.species != nil))
+                        .font(CypressFont.body13Bold)
+                        .foregroundStyle(CypressColor.ctaFill)
+                        .contentShape(Rectangle())
+                }
+                .cypressHitArea()
+
+                if model.species != nil {
+                    Button { model.skipSpecies() } label: {
+                        Text(VisitAddTreeCopy.speciesClear)
+                            .font(CypressFont.body13Bold)
+                            .foregroundStyle(CypressColor.textMuted)
+                            .contentShape(Rectangle())
+                    }
+                    .cypressHitArea()
+                }
+
+                Spacer(minLength: 0)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - The photo
@@ -376,6 +439,37 @@ enum VisitAddTreeCopy {
         }
         return "This tree will be recorded \(Int(offsetM.rounded())) m from where you are standing."
     }
+
+    /// What the record will say about the species, in one sentence, above the CTA.
+    ///
+    /// **Both forms are statements of fact about the row that is about to be written**, in the same
+    /// voice as `placement(offsetM:)` right above them, because they are the same kind of sentence.
+    ///
+    /// The named form says **your claim** and says it before the species, not after. Word order is
+    /// the whole design here: "recorded as a London plane, unverified" leads with the botany and
+    /// qualifies it, which is how a reader ends up remembering the botany. Leading with the
+    /// attribution says who is speaking before it says what they said, which is what this row is for.
+    /// It also names the alternative it is *not* — a confirmed identification — because the reader
+    /// has no other way to know the app is declining to make one.
+    ///
+    /// The empty form does not apologise. An unnamed tree is the honest output of a contributor who
+    /// does not know, and a sentence that made it sound like a gap would be pressure to guess, which
+    /// is the failure mode `VisitAddTreeModel.species` argues this whole row must avoid.
+    static func species(_ species: Species?) -> String {
+        guard let species else {
+            return "No species will be recorded. An unnamed tree is still a tree on the map."
+        }
+        let name = species.commonName.isEmpty ? species.scientificName : species.commonName
+        return "This will be recorded as your claim that it is a \(name) — "
+            + "not as a confirmed identification."
+    }
+
+    static func speciesAction(hasSpecies: Bool) -> String {
+        hasSpecies ? "Choose a different species" : "Say what species it is"
+    }
+
+    /// The retraction, in the picker's own words so that one act has one name in both places.
+    static let speciesClear = SpeciesPickCopy.skip
 
     /// What the record will say. Both halves are facts about what `addTree` writes: the source is
     /// `community` and the verification state is `unverified`, which screen 03 prints as

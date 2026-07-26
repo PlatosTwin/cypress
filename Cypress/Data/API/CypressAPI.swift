@@ -41,6 +41,25 @@ public protocol CypressAPI: Sendable {
     /// dedupe against any species and returns `.conflict` with the candidate list when it trips.
     func addTree(_ draft: TreeDraft) async throws -> Tree
 
+    /// Names the species on a community tree that has none — the "after" half of "add tree species
+    /// after/at same time as adding a custom tree".
+    ///
+    /// **Not a BUILD-PLAN §6 endpoint.** §6's species write is `POST /trees/{id}/species-assertions`,
+    /// which appends to the versioned chain `SpeciesAssertion` models. That table lives in the
+    /// read-only seed database and `main` has no copy of it, so the chain cannot be appended to on
+    /// device. What *is* writable is `community_trees.species_current`, and this is the one transition
+    /// over it that needs no chain: **nothing to nothing-in-particular**. See `SpeciesClaim` for the
+    /// two refusals that fall out of that, both of which this method enforces rather than merely
+    /// documenting.
+    ///
+    /// - Returns: the tree as it now stands.
+    /// - Throws: `.notFound` when there is no such tree, `.forbidden` for a city-import row, and
+    ///   `.conflict` when a species is already claimed — a correction, which needs the chain.
+    ///
+    /// Defaulted in `SpeciesClaim.swift` to `.notFound`, which is the truthful answer from an
+    /// implementation with no store to find the tree in.
+    func claimSpecies(treeID: UUID, speciesID: UUID) async throws -> Tree
+
     // MARK: - Species
 
     /// `GET /species/{id}` — the field guide entry.

@@ -113,6 +113,35 @@ final class TreeProfileModel {
         await load()
     }
 
+    // MARK: - Naming the species, after the fact
+
+    /// Whether the picker is up.
+    var isNamingSpecies = false
+
+    /// Why the last claim did not land, or nil. A sentence rather than an `APIError`, because the
+    /// three refusals `claimSpecies` can return mean three different things to a reader and the
+    /// mapping is a decision worth reading in one place (`TreeProfileCopy.speciesClaimFailure`).
+    private(set) var speciesClaimFailure: String?
+
+    /// Names the species on this tree.
+    ///
+    /// It reloads rather than patching the presentation in place, for `write()`'s reason one section
+    /// down: the screen's job is to show what is stored, and a model that edited its own copy would
+    /// show a claim that had been refused. The failure sentence is cleared first so a retry that
+    /// works does not leave the last refusal on screen.
+    func claimSpecies(_ species: Species) async {
+        speciesClaimFailure = nil
+        isNamingSpecies = false
+        do {
+            _ = try await api.claimSpecies(treeID: treeID, speciesID: species.id)
+        } catch let error as APIError {
+            speciesClaimFailure = TreeProfileCopy.speciesClaimFailure(error)
+        } catch {
+            speciesClaimFailure = TreeProfileCopy.speciesClaimFailure(.serverError)
+        }
+        await reload()
+    }
+
     // MARK: - The favourite (RULINGS R2)
 
     /// The taps, in the order they were made.

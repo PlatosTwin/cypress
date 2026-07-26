@@ -56,6 +56,40 @@ public struct CommunityTreeStore {
         return inserted ? .inserted : .duplicate
     }
 
+    /// Names the species on a row that has none. See `SpeciesClaim` for why that is the only species
+    /// edit this table takes.
+    ///
+    /// - Returns: whether the claim landed. `false` means the row already had a species, or has been
+    ///   soft-deleted, or is not here — three refusals the caller distinguishes by reading the row.
+    ///
+    /// **`species_current IS NULL` is in the `WHERE`, not in a preceding `SELECT`.** First-claim-wins
+    /// enforced by a read-then-write leaves a window in which two callers both see NULL and the
+    /// second one silently overwrites the first, which is the same race every other contribution
+    /// write closes with `ON CONFLICT … DO NOTHING`. Here the engine decides, once.
+    public func claimSpecies(
+        treeID: UUID,
+        speciesID: UUID,
+        at moment: Date,
+        connection: SQLiteConnection
+    ) throws -> Bool {
+        let statement = try connection.cachedStatement("""
+            UPDATE community_trees
+               SET species_current = :species, updated_at = :updated
+             WHERE id = :id COLLATE NOCASE
+               AND species_current IS NULL
+               AND deleted_at IS NULL
+            """)
+        _ = try statement.bind([
+            ":species": speciesID,
+            ":updated": moment,
+            ":id": treeID
+        ])
+        try statement.run()
+        let changed = connection.changes > 0
+        _ = try statement.reset()
+        return changed
+    }
+
     // MARK: - Reading
 
     public func tree(id: UUID, connection: SQLiteConnection) throws -> Tree? {

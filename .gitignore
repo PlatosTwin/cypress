@@ -40,6 +40,7 @@ Cypress/Resources/cypress-seed.sqlite
 # own worktree, so parallel builds cannot collide.
 .ddsnap/
 .ddphoto/
+.ddspecies/
 
 # Build logs from a test run, written into the worktree root.
 *.log
