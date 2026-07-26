@@ -34,3 +34,6 @@ Cypress/Resources/cypress-seed.sqlite
 
 # Per-agent DerivedData, kept inside the worktree so parallel agents cannot collide.
 .ddphoto/
+
+# Build logs from a test run, written into the worktree root.
+*.log

@@ -209,15 +209,31 @@ struct HeroPhotoHeader<Background: View, BottomLeading: View>: View {
     private var pill: some View {
         if let metaPill {
             if let onMetaPillTap {
-                Button(action: onMetaPillTap) { pillBody(metaPill) }
-                    .buttonStyle(.plain)
-                    // The capsule and not its bounding box: the pill sits at the bottom-right corner
-                    // of a photograph that is itself a tap target for something else, and a
-                    // rectangular target would take presses from the picture along two edges where
-                    // nothing is drawn.
-                    .contentShape(Capsule())
-                    .accessibilityAddTraits(.isButton)
-                    .accessibilityHint(metaPillHint ?? "")
+                Button(action: onMetaPillTap) {
+                    // ══════════════════════════════════════════════════════════════════════════
+                    // **44 pt of target around a 21 pt capsule**, which is ARCHITECTURE §6's rule
+                    // applied the way that section words it: "where the mock and accessibility
+                    // disagree, the target grows and the *visual* stays put".
+                    //
+                    // The pill draws at mono 10.5 with 4 pt of vertical padding — 21 pt, less than
+                    // half a tap target. It was a caption until now, so nothing was owed; it is a
+                    // control from here on. `.bottom` alignment is what keeps the promise about the
+                    // visual: the enclosing `HStack` is bottom-aligned and the pill carries its own
+                    // bottom inset, so the extra height is taken *upward*, into photograph the pill
+                    // is already drawn over, and not one pixel of the mock moves.
+                    //
+                    // The band it grows into is live, and that is a real cost — the photograph
+                    // behind it opens the viewer, and presses in that band now open the browser
+                    // instead. It buys a control somebody can actually hit, which the rule says is
+                    // the trade to make.
+                    // ══════════════════════════════════════════════════════════════════════════
+                    pillBody(metaPill)
+                        .frame(minHeight: CypressSpacing.Component.backCircle, alignment: .bottom)
+                }
+                .buttonStyle(.plain)
+                .contentShape(Rectangle())
+                .accessibilityAddTraits(.isButton)
+                .accessibilityHint(metaPillHint ?? "")
             } else {
                 pillBody(metaPill)
             }
