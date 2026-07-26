@@ -1,0 +1,27 @@
+[probe] armed
+[probe] z18 markers=184 frames=28 fps=27.3 p50=38.5ms p95=63.6ms worst=121.6ms dropped=50 gps=1 body=168 fetch=2
+[probe] z18 markers=184 frames=41 fps=40.4 p50=16.7ms p95=43.9ms worst=48.6ms dropped=36 gps=0 body=199 fetch=0
+[probe] z18 markers=184 frames=46 fps=45.9 p50=16.7ms p95=35.8ms worst=37.5ms dropped=28 gps=0 body=189 fetch=0
+[probe] z18 markers=184 frames=46 fps=45.2 p50=16.7ms p95=36.8ms worst=43.9ms dropped=31 gps=0 body=202 fetch=0
+[probe] z18 markers=184 frames=50 fps=48.4 p50=16.7ms p95=35.4ms worst=37.4ms dropped=32 gps=0 body=214 fetch=0
+[probe] z18 markers=184 frames=47 fps=47.0 p50=16.7ms p95=36.1ms worst=47.4ms dropped=25 gps=0 body=206 fetch=0
+[probe] z18 markers=184 frames=48 fps=47.3 p50=16.7ms p95=35.7ms worst=45.0ms dropped=29 gps=0 body=203 fetch=0
+[probe] z18 markers=184 frames=45 fps=45.0 p50=16.7ms p95=36.1ms worst=38.1ms dropped=27 gps=0 body=204 fetch=0
+[probe] z18 markers=184 frames=44 fps=44.0 p50=16.7ms p95=46.5ms worst=47.7ms dropped=29 gps=0 body=204 fetch=0
+[probe] z18 markers=184 frames=48 fps=48.0 p50=16.7ms p95=35.1ms worst=38.3ms dropped=24 gps=0 body=211 fetch=0
+[probe] z18 markers=184 frames=47 fps=46.2 p50=16.7ms p95=36.6ms worst=43.9ms dropped=29 gps=0 body=205 fetch=0
+[probe] z18 markers=184 frames=50 fps=49.2 p50=16.7ms p95=35.7ms worst=36.0ms dropped=22 gps=0 body=212 fetch=0
+[probe] z18 markers=184 frames=46 fps=46.0 p50=16.7ms p95=37.8ms worst=46.9ms dropped=27 gps=0 body=211 fetch=0
+[probe] z18 markers=184 frames=48 fps=47.1 p50=16.7ms p95=36.1ms worst=44.3ms dropped=30 gps=0 body=210 fetch=0
+[probe] z18 markers=184 frames=49 fps=47.5 p50=16.7ms p95=36.0ms worst=44.0ms dropped=25 gps=0 body=215 fetch=0
+[probe] z18 markers=184 frames=48 fps=46.4 p50=16.7ms p95=36.3ms worst=48.1ms dropped=28 gps=0 body=211 fetch=0
+[probe] z18 markers=184 frames=50 fps=48.4 p50=16.7ms p95=36.0ms worst=36.7ms dropped=28 gps=0 body=214 fetch=0
+[probe] z18 markers=184 frames=48 fps=47.3 p50=16.7ms p95=37.0ms worst=47.9ms dropped=30 gps=0 body=211 fetch=0
+[probe] z18 markers=184 frames=48 fps=48.0 p50=16.7ms p95=35.8ms worst=36.1ms dropped=24 gps=0 body=206 fetch=0
+[probe] z18 markers=184 frames=48 fps=48.0 p50=16.7ms p95=34.9ms worst=36.8ms dropped=28 gps=0 body=204 fetch=0
+[probe] z18 markers=184 frames=46 fps=46.0 p50=16.7ms p95=42.3ms worst=45.5ms dropped=25 gps=0 body=209 fetch=0
+[probe] z18 markers=184 frames=49 fps=48.2 p50=16.7ms p95=35.5ms worst=36.7ms dropped=27 gps=0 body=209 fetch=0
+[probe] z18 markers=184 frames=50 fps=49.2 p50=16.7ms p95=34.9ms worst=36.2ms dropped=24 gps=0 body=214 fetch=0
+[probe] z18 markers=184 frames=48 fps=47.1 p50=16.7ms p95=36.2ms worst=36.4ms dropped=27 gps=0 body=204 fetch=0
+[probe] z18 markers=184 frames=49 fps=48.3 p50=16.7ms p95=35.7ms worst=36.1ms dropped=25 gps=0 body=213 fetch=0
+[probe] z18 markers=184 frames=44 fps=43.2 p50=16.7ms p95=42.1ms worst=56.1ms dropped=26 gps=0 body=195 fetch=0
