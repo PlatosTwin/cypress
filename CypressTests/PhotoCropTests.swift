@@ -196,6 +196,10 @@ struct PhotoCropTests {
         .clipped()
 
         let host = UIHostingController(rootView: content)
+        // A 224 pt window on a device with a 59 pt notch inset would otherwise hand SwiftUI 165 pt
+        // to lay 224 pt out in, and the resulting squeeze would read in the pixels as exactly the
+        // thing under test: a photograph that is not all there.
+        host.safeAreaRegions = []
         let frame = CGRect(origin: .zero, size: Self.heroBox)
         host.view.frame = frame
 
