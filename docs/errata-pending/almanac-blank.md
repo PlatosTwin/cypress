@@ -94,23 +94,71 @@ reason E126 gives about its own render test — the wiring between the model and
 what was broken. The control render proves the harness byte-stable first, without which an equality
 assertion is as void as an inequality one.
 
-Each test was made to fail on purpose before it was believed. Deleting the `guard` from
-`update(coordinate:)` so the coordinate is taken but the read is never re-run reddens the model tests
-at the second coordinate and reddens the render comparison with unequal PNGs; restoring
-`needsLocation` to E123's `coordinate == nil` leaves the plain re-read tests green and reddens
-exactly the mid-read assertion, which is the entry's whole point.
+**Three deliberate breaks, and the third one is the reason this section is long.**
 
-And it was looked at, running, on the entrance it was reported from: `CYPRESS_SCREEN=journal` on a
-simulator with a fix over San Francisco. Before, screen 12 is a bare `Almanac` header and a footnote
-and stays that way; after, it draws Western Addition with its season rows, its composition card, its
-vacant sites and its coverage ask.
+Removing the re-read at the *model* — taking the new coordinate but never loading from it — reddens
+the model tests exactly where they should: `(api.reads → [nil]) == ([nil, Self.fix] → …)`,
+`(model.presentation?.neighborhoodName → nil) == "Sunset/Parkside"`, and
+`(model.needsLocation → true) == false`.
+
+Restoring `needsLocation` to E123's `coordinate == nil` leaves every plain re-read test green and
+reddens exactly one assertion, the mid-read one: `Expectation failed: (model →
+Cypress.AlmanacModel).needsLocation → false`. One line of one test, which is what a break this
+narrow should cost.
+
+Reverting `.task(id: coordinate)` to a bare `.task` — the original defect, exactly — leaves all four
+*model* tests green, because the model is not what is wrong, and reddens only the render comparison:
+`Expectation failed: lateMatchesEarly`. That asymmetry is the argument for having both halves.
+
+**And that last break exposed a defect in the test rather than in the app, which is worth more than
+the entry it was found under.** With the comparison written the obvious way — `#expect(late ==
+early)` on two `Data` values — the test did not fail. It *hung*: sampled at ninety-nine per cent of a
+core and three gigabytes resident, the whole stack sitting inside `BidirectionalCollection.difference`
+→ `_myers(from:to:using:)`. Swift Testing, on a failing comparison of two collections, builds a Myers
+diff to describe the mismatch, and a Myers diff of two hundred-kilobyte PNGs does not finish in any
+useful time. `FailedReadTests` has never met this because its picture assertions are *inequalities*:
+they pass, and a passing expectation is never asked for a description. So an equality `#expect` on
+large `Data` is a test that cannot fail — this project's single most repeated defect, arrived at from
+a direction nobody had come from before. Reducing the comparison to a `Bool` before the macro sees it
+turns a hang into a five-point-seven-second failure. `FailedReadTests` should probably be given the
+same treatment defensively; it is not touched here.
+
+The two latch-based tests carry `.timeLimit(.minutes(3))` for a related reason: they wait on a read
+*beginning*, so an app that has stopped re-reading does not fail them either, it never wakes them.
+Three minutes and not Swift Testing's minimum of one, because one minute is reachable by load alone —
+these were measured on a machine at a load average of three hundred with three agents on it, and a
+limit a busy machine can trip is a flake wearing a failure's clothes.
+
+And it was looked at, running, on the entrance it was reported from: `CYPRESS_SCREEN=journal` on
+iPhone 16 with `xcrun simctl location … set 37.78485,-122.4215`. **Before**, screen 12 is a bare
+`Almanac` header and a footnote, with no pill, no prompt and nothing between them, and it is still
+that twenty seconds later. **After**, the same launch draws the pill `Western Addition`, `THIS SEASON`
+with the elder (`New Zealand Xmas Tree · in the city record since 1972`), `WHO LIVES HERE · 135
+SPECIES` with its four-row composition card, `WHERE A TREE COULD GO · 187 empty planting sites`, and
+`WHERE EYES ARE NEEDED · 2 young trees with no visits since planting / Walk the two` — the same
+neighbourhood and the same two numbers E153 recorded from the front door. With location revoked
+outright from the app, the same launch draws E123's `See your neighbourhood / Turn on location and the
+almanac fills with the trees around you` and nothing else, so the prompt still owns the state it was
+built for.
+
+**An environment note, filed because it cost an hour and will cost the next person the same.** The
+unit suite does not merely fail on a simulator that has never granted the app camera access — it
+**hangs**. `VisitCameraSubjectTests.aStoredGhostIsNotDrawnOverACloseUp` calls
+`VisitCameraModel.load()`, which reaches `VisitCameraController.start()`, which on `.notDetermined`
+awaits `AVCaptureDevice.requestAccess(for: .video)`. That presents a system alert over the test host
+and waits for somebody to press it, and nobody is going to. The run stops with a suite `started` and
+never finished, one test's worth of output missing and no failure anywhere — which reads exactly like
+a stall. `xcrun simctl privacy <udid> grant camera app.cypress.Cypress` and it passes in 3.9 s. The
+grant is also what an `xcrun simctl uninstall` throws away, so reinstalling the app between runs
+reintroduces it. Worth a line in whatever document tells a new agent to copy the seed database in.
 
 **One consequence worth stating.** The deep-link entrance to screen 12 is viable again — it now
 produces a populated almanac on a simulator with a fix. `AlmanacGroupTapTests` (E153) still reaches
 the almanac by the app's own front door, and is left that way deliberately: its subject is the two
 counted rows and the screens behind them, not this defect, and the front door is the sequence in
 which the app is actually used. Rewriting it to use the deep link would trade a test of the product
-for a test of the seam.
+for a test of the seam. Both of its tests were re-run against this fix and pass — 18.7 s and 18.1 s —
+so nothing E153 established has been undone.
 
 **Not addressed here.** Screen 12 still draws nothing while its first read is in flight on a device
 that *has* a fix. That is the ordinary loading blank, it is measured in milliseconds against a local
