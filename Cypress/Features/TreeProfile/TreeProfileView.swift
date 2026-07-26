@@ -666,7 +666,7 @@ struct TreeProfileView: View {
 
     /// **NOT SPECIFIED.** SCREENS.md has neither block. The reasoning for both is in
     /// `TreeProfilePresentation.landContextNote` and `CityRecordPresentation`, so a designer can
-    /// delete either in one file without reading this one.
+    /// delete either in one file without reading this one. See ERRATA (E145).
     ///
     /// Two blocks, one after the other, because they are two different kinds of statement about the
     /// same tree and the order is the argument:

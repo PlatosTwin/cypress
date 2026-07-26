@@ -9,7 +9,7 @@
 //  it in as many words — *"Want to see more city details about trees e.g. when planted next pruning
 //  last pruning and others"* (#68) — and because ERRATA E143 landed the six columns
 //  (`CityRecord`) with nothing drawing them. E143's closing line is that neither screen is built
-//  there; this is one of the two.
+//  there; this is one of the two. The whole design is argued in ERRATA (E145).
 //
 //  ── The one thing this section must never become ──────────────────────────────────────────
 //  A panel of facts that reads as *Cypress's* facts. BUILD-PLAN §5 makes provenance a queryable
