@@ -35,3 +35,72 @@ A simulator composites through a Mac GPU and runs the main thread on a desktop c
 between two runs of one gesture is worth something and the shape of it — a two-second frozen frame
 becoming a 28 ms one — is not ambiguous. The absolute milliseconds are not a device measurement and
 must not be quoted as one.
+
+---
+
+# Screen 01 with a location fix, before and after the MKMapView layer (the E130 follow-up)
+
+The owner installed E130's result on their own iPhone and reported the map still slow. Everything
+above was taken with **location permission declined**, which opens the camera over Mission Dolores
+Park — a park, in a *street* tree inventory, with ten markers on screen. None of it was a
+measurement of a full screen of pins, and none of it could have been: a static `simctl location`
+fires `didUpdateLocations` once and never again.
+
+## How these were taken
+
+- iPhone 16e simulator (`3A1F212D-…`), Debug build, 60 Hz.
+- `MapFrameProbe`, armed with `SIMCTL_CHILD_CYPRESS_MAP_PROBE=1`, now also drawn on screen by
+  `MapProbeOverlay` and carrying three counters per window: `gps` (publishes of
+  `MapLocationProvider.availability`), `body` (evaluations of the basemap) and `fetch` (completed
+  viewport reads).
+- **Location granted**, which is the difference from every previous round. Two conditions:
+  - *idle* — one static fix, `simctl location set 37.77875,-122.42466`, camera settled, nobody
+    touching the glass. The map ends up over Fulton St with 184–194 markers.
+  - *walking* — `simctl location start --speed=4 --interval=0.2 37.77875,-122.42466
+    37.77875,-122.41800`, a route through the Mission at 4 m/s.
+
+| file | condition |
+|---|---|
+| `e137-idle-before.txt` | one fix, idle, SwiftUI `Annotation` layer |
+| `e137-idle-after.txt` | one fix, idle, `MKMapView` layer |
+| `e137-walking-before.txt` | walking route, SwiftUI `Annotation` layer |
+| `e137-walking-after.txt` | walking route, `MKMapView` layer |
+| `e137-control-location-declined.txt` | **the control**: permission declined, nine markers |
+| `e137-ablation-no-gps-dot.txt` | idle, GPS-dot annotation removed |
+| `e137-ablation-no-pulse.txt` | idle, the amber pin's `repeatForever` pulse disabled |
+| `e137-idle-mkmapview-before-camera-fix.txt` | idle, `MKMapView` layer, camera loop still present |
+
+## What they say
+
+| window | before | after |
+|---|---|---|
+| idle, one fix, 184–194 markers | **1.2–1.8 fps, worst 873 ms** | 40–49 fps, worst 40–49 ms |
+| walking, 145 markers | **1.3–1.9 fps, worst 852 ms** | 50–59 fps, worst 35–53 ms |
+| `gps` publishes per second, walking | 24–42 | 1 |
+| `body` passes per second, idle | 12–18 (of a layer that had not changed) | 199–242 (each now ~1 ms) |
+| control: permission declined, 9 markers | 60.0 fps, `body` 0 | unchanged |
+
+## The three ablations, and why they are here
+
+Each was built, installed and run, and each was reverted. They are the reason the cause is stated as
+the annotation count rather than as any of the more obvious suspects:
+
+- **without the GPS dot annotation** — 1.5–1.8 fps. Unchanged.
+- **without the amber pin's pulse** — 1.2–1.8 fps. Unchanged.
+- **with location declined** (nine markers) — a flat 60 fps and zero body passes.
+
+## What is still wrong, and is not fixed here
+
+`body` is 199–242 a second in the "after" runs with `gps 0` and `fetch 0`: something above the map
+still invalidates the whole view tree continuously whenever a location fix has been received.
+`Self._printChanges()` names it `RootView: @self changed`, so the trigger is at or above the
+composition root rather than in the map. It costs about a fifth of the frame budget now that a pass
+is ~1 ms instead of ~77 ms, and it is the next thing to go after.
+
+## What none of this is
+
+Still a simulator. The *rate* of location callbacks in particular is a simulator artifact — 24–42 a
+second at 4 m/s is one fix every fifteen centimetres, which no GNSS receiver produces; a phone
+delivers about one a second. What transfers is the **per-publish cost** and the **mechanism**, not
+the absolute frame numbers. The instrument for the absolute numbers is now the on-screen overlay, on
+the owner's own phone.

@@ -203,9 +203,9 @@ struct MapAnnotationLayer: UIViewRepresentable {
         )
 
         context.coordinator.installWash(on: mapView, isDark: colorScheme == .dark)
+        context.coordinator.lastRequestedPosition = position
         if let initial = position.region {
             mapView.setRegion(initial, animated: false)
-            context.coordinator.lastAppliedRegion = initial
         }
         return mapView
     }
@@ -236,9 +236,27 @@ struct MapAnnotationLayer: UIViewRepresentable {
 
         var parent: MapAnnotationLayer
         var isDark = false
-        /// The last region *this code* put on the map, so a camera the user moved is never fought
-        /// and a `position` that has not changed is never re-applied.
-        var lastAppliedRegion: MKCoordinateRegion?
+
+        /// The last camera position the **app asked for**, which is deliberately not the same thing
+        /// as the region the map is currently showing.
+        ///
+        /// **This distinction is the loop.** Screen 01 writes `position` (centring on the first fix,
+        /// or a cluster tap) and reads the settled region back out into `region` for the next cluster
+        /// tap to measure against. If the applied-camera check compares against *where the map ended
+        /// up*, then every settle is a mismatch with what was asked for — MapKit never lands on
+        /// exactly the span it was given — so the settle callback writes state, the write re-runs the
+        /// body, the body re-applies the camera, and the map re-settles. Forever.
+        ///
+        /// That is what the SwiftUI `Map(position:)` this replaced was doing: it re-applied its
+        /// binding on every pass, and `.onMapCameraChange(frequency: .onEnd)` wrote `region` back.
+        /// Measured, idle, camera settled, nothing arriving: 12–18 rebuilds a second that never
+        /// stopped. It only ever started once *something* wrote `position`, which on screen 01 is the
+        /// one-shot centring on the first GPS fix — so it never happened at all with location
+        /// declined, which is how every previous round of measurement was taken.
+        ///
+        /// Comparing positions rather than regions is exact: a camera is re-applied when, and only
+        /// when, the app asks for a different one.
+        var lastRequestedPosition: MapCameraPosition?
 
         private var pinAnnotations: [UUID: TreePinAnnotation] = [:]
         private var clusterAnnotations: [String: TreeClusterAnnotation] = [:]
@@ -277,24 +295,13 @@ struct MapAnnotationLayer: UIViewRepresentable {
         // MARK: The camera
 
         func applyCameraIfChanged(_ position: MapCameraPosition, to mapView: MKMapView) {
+            guard position != lastRequestedPosition else { return }
+            lastRequestedPosition = position
             guard let requested = position.region else { return }
-            // **The idempotence that keeps a camera write from becoming a rebuild.** SwiftUI's
-            // `Map(position:)` re-applies its binding on every pass, so a region written by the
-            // camera's own settle callback comes straight back down as a fresh instruction. Here a
-            // region is only ever set when the app asked for a different one.
-            if let last = lastAppliedRegion, Self.regionsMatch(last, requested) { return }
-            lastAppliedRegion = requested
-            mapView.setRegion(requested, animated: true)
-        }
-
-        /// Equal to within a millionth of a degree — about a tenth of a metre, which is far below
-        /// anything the camera can be asked for and far above floating-point noise.
-        private static func regionsMatch(_ a: MKCoordinateRegion, _ b: MKCoordinateRegion) -> Bool {
-            let tolerance = 1e-6
-            return abs(a.center.latitude - b.center.latitude) < tolerance
-                && abs(a.center.longitude - b.center.longitude) < tolerance
-                && abs(a.span.latitudeDelta - b.span.latitudeDelta) < tolerance
-                && abs(a.span.longitudeDelta - b.span.longitudeDelta) < tolerance
+            // Reduce Motion snaps the camera instead of flying it. The zoom is the answer to a tap,
+            // not the way the answer is delivered — `CypressMotion.resolved`'s rule, applied at the
+            // one place on this screen where a camera actually moves.
+            mapView.setRegion(requested, animated: !UIAccessibility.isReduceMotionEnabled)
         }
 
         /// Continuous, once per frame of a pan — the same cadence
@@ -314,8 +321,9 @@ struct MapAnnotationLayer: UIViewRepresentable {
         /// The settled region, which is only needed when a cluster is tapped — a cluster cannot be
         /// tapped mid-gesture, so it is read once the camera stops rather than sixty times a second.
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
+            // Only the echo. Nothing here touches `lastRequestedPosition` — see its note for what
+            // happens when the settled region is allowed to stand in for the requested one.
             parent.region = mapView.region
-            lastAppliedRegion = mapView.region
         }
 
         // MARK: The annotations

@@ -103,9 +103,14 @@ struct MapHomeView: View {
         .onChange(of: location.availability) { _, availability in
             guard !hasCentredOnUser, let coordinate = availability.coordinate else { return }
             hasCentredOnUser = true
-            withAnimation(CypressMotion.resolved(CypressMotion.camera, reduceMotion: reduceMotion)) {
-                position = .region(MapLayout.region(around: coordinate))
-            }
+            // **No `withAnimation`, and the camera still flies.** The basemap is a `UIViewRepresentable`
+            // now, so the thing that animates is `MKMapView.setRegion(_:animated:)` on the other side
+            // of the seam; a SwiftUI transaction wrapped around the write cannot interpolate a UIKit
+            // map's camera and only keeps a transaction alive over the view tree while it tries.
+            // Reduce Motion is honoured where the animation actually happens — `MapAnnotationLayer`
+            // reads it — rather than here, where it would be deciding about an animation that no
+            // longer exists.
+            position = .region(MapLayout.region(around: coordinate))
         }
         // **No `stop()` on disappear any more, and that is not an oversight.** It used to stop *this
         // screen's own* provider while the composition root's kept running, which meant the stop
@@ -231,11 +236,9 @@ struct MapHomeView: View {
 
     /// Tapping a cluster zooms in, which is what the badge means (`TreeCluster`'s own note).
     private func zoom(into cluster: TreeCluster) {
-        // Reduce Motion snaps the camera instead of flying it. The zoom is the answer to the tap,
-        // not the way the answer is delivered.
-        withAnimation(CypressMotion.resolved(CypressMotion.camera, reduceMotion: reduceMotion)) {
-            position = .region(MapLayout.zoomedIn(on: cluster, from: region))
-        }
+        // Reduce Motion snaps the camera instead of flying it, and `MapAnnotationLayer` is where
+        // that decision is now made — see the note on the first-fix centring above.
+        position = .region(MapLayout.zoomedIn(on: cluster, from: region))
     }
 
     /// C16 speaks `Map / My Grove / Journal / You` and `AppRouter` speaks `map / grove / journal /
