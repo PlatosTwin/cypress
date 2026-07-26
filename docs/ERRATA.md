@@ -6050,6 +6050,13 @@ visited. A sentence has room to name its speaker in words, which is `speciesClai
 block up the same screen. Putting it inside a section headed with the city's name would have been the
 app's inference wearing the city's authority.
 
+**E146 built the same fact at the same time, as a stat card, and the two met in a merge.** Both rounds
+were answering the same clause of the same request, neither saw the other, and for the length of one
+branch screen 03 said where the tree stands twice. The card was removed and this sentence kept, on the
+argument above — which E146's round had not been in a position to read, and whose own measurement (the
+subtitle was already five elements long) rules out the subtitle without choosing between a card and a
+sentence. The full account, including what of E146 stayed, is in that entry.
+
 **A community tree draws no section and no empty state for one.** The subtitle already reads
 `community-added, unverified`; a second sentence saying the city has nothing would be the app
 apologising for a tree somebody added on purpose.
@@ -6139,26 +6146,47 @@ exists here to avoid. The **profile still renders all four**, because 956 city r
 display is not input, and `VisitAddTreeModel.offered` is only input. The model refuses a value outside
 that list rather than merely omitting it from a list the view reads.
 
-**On the profile it is a stat card, and the provenance line was measured before that was decided.**
-The `·`-joined subtitle was the obvious home — `placementNote` and `speciesClaimNote` both live there.
-A community tree with a given name, a species and a moved pin already renders **five** elements:
-`Monterey cypress · Hesperocyparis macrocarpa · community-added, unverified · species named by a
-contributor · position placed by hand`. That is three wrapped lines of italic serif before this adds
-anything, and a sixth element would push the two notes that *are* about authorship into the middle of
-a list that had stopped being one sentence. `theSubtitleCouldNotCarryIt` asserts the count of five, so
-the reason cannot rot. It goes into the stat grid — 03's own `Details`, already carrying `Site`,
-`Planted` and `City record` — where a label gives it the one thing the subtitle cannot: room to say
-*how Cypress knows*, in words, beside the answer.
+**On the profile this round built a `Where it stands` stat card, and the card did not survive the
+merge. E145 had built the same fact as a sentence, in parallel, and both landed on one branch.** This
+happened and is worth recording rather than tidying away: two rounds ran at the same time on the same
+two-clause request from the project owner, neither saw the other's screen, and screen 03 briefly said
+where the tree stands twice — once in the stat grid as `Private property · said by a contributor`, and
+once in §9b as `A contributor said this tree stands on private property.` The sentence was kept.
 
-**Symmetric, and E138's rule does carry here where E141's did not.** All four values print and none is
-marked; `Street or sidewalk` renders exactly as `Private property` does. E141 refused E138's symmetry
+The reason is the one E145 had already written down and this round had not been in a position to read.
+A `StatCard`'s only place for a source is a badge; C12's badge vocabulary is `city record`; and
+stamping `city record` on Cypress's own inference from `qLegalStatus` is the exact failure both rounds
+existed to avoid. Adding badge cases would need a colour ramp ranking observation against inference,
+and there is no such ranking. The card's best available shape was therefore a `·`-joined tail — four
+words after a middle dot — and that is thinnest on the distinction that is the whole point: *Cypress
+reads* and *A contributor said* are different verbs by different speakers, and the tail flattens them
+into two interchangeable-looking suffixes. A sentence has room to name its speaker; that is
+`speciesClaimNote`'s grammar one block up the same screen.
+
+**What this round measured is kept, because it was never the losing half of the argument.** The
+`·`-joined subtitle was the obvious home — `placementNote` and `speciesClaimNote` both live there — and
+a community tree with a given name, a species and a moved pin already renders **five** elements:
+`Monterey cypress · Hesperocyparis macrocarpa · community-added, unverified · species named by a
+contributor · position placed by hand`. Three wrapped lines of italic serif before this adds anything,
+and a sixth element would push the two notes that *are* about authorship into the middle of a list that
+had stopped being one sentence. `theSubtitleCouldNotCarryIt` still asserts the count of five, so the
+reason cannot rot. That finding rules the subtitle out; it never compared a card against a sentence,
+because there was no sentence in front of it. Nothing else of this round moved: the v11 column, the
+composer's three chips, `Tree.landContext`, and the whole 311 handoff below are untouched.
+
+Dead with the card: `TreeProfilePresentation.landContextStat` and `landContextLabel`, and
+`LandContextCopy.attributed`/`.source` — the two helpers that spelled a source in four words. They are
+not kept against a future caller. `LandContextCopy` is now the composer's vocabulary only; the profile
+has its own phrases, because *stands in the street or on the sidewalk* and *a tree on a street* are
+different grammar and one function cannot serve both.
+
+**Symmetric, and E138's rule does carry here where E141's did not.** All four values are said and none
+is marked; `on a street` reads exactly as `on private property` does. E141 refused E138's symmetry
 because the alternative to "a contributor named it" is *no species*, which has nothing to attribute.
 A land context that exists always came from one of exactly two ways of knowing, so both arms name
-themselves — `said by a contributor` / `read from the city record` — and marking one would rank it
-against the other. `read from`, not `from`: San Francisco wrote `qLegalStatus = 'Property Tree'`, and
-turning that into a place is Cypress's rule. The value is `StatCard.Value.prose` rather than
-`.cityRecord`, because that badge means *the city published this number*, which is true of a 5 cm DBH
-bucket and false of an inference. The card is not a door — nothing in the app corrects this field.
+their own speaker and marking one would rank it against the other. Nothing here is a door and nothing
+needs to be — there is no update path on this field, which is the same reason the card would have been
+inert.
 
 ---
 
@@ -6227,6 +6255,14 @@ above it changing → photo from the library → the 10 m dedupe refusing twice,
 30 m east → save → the profile showing `WHERE IT STANDS · Private property · said by a contributor` →
 `Report` → `Blocking a sightline` → the panel saying the city does not fix this one, with `Call 311
 anyway` under it. A deep-linked city tree drew `Street or sidewalk · read from the city record` beside
-its `SITE` and `SF #229291` cards, and its report drew `Call 311 now` unchanged. Both appearances, and
-the three report branches are photographed by `LandContextShots` because two of them cannot be reached
-from the shipped seed by any deep link.
+its `SITE` and `SF #229291` cards, and its report drew `Call 311 now` unchanged.
+
+**That walk is left as it was written, and two of its lines no longer describe the app.** The two card
+readings above are what the screen showed on this branch before the merge with E145; the same two trees
+now read `A contributor said this tree stands on private property.` and `Cypress reads the city's record
+as a tree on a street.`, in §9b rather than in the stat grid, and the stat grid carries one card fewer.
+Everything else the walk found — the chips, the dedupe, the save, all three report branches — is
+unchanged, which is the point of leaving it. `LandContextShots` photographs the three report branches
+and both profile arms; the two profile shots moved to the 1,500 pt window `cityRecordStates` already
+used, because §9b is the last block on the screen and a phone-height capture of it stops above the
+sentence.
