@@ -16,8 +16,9 @@ too long and every healthy run pays for a state it does not have.
 **So the wait is a race, and deliberately not a symmetric one.** `reachAlmanac` now takes the element
 its caller is about to tap and polls for it, in the shape `MapSearchUITests.wait(timeout:for:)` already
 uses on screen 01. The row ends the wait the instant it appears, so a run that is going to pass pays
-nothing. The prompt does not end it early — it is a state screen 12 passes *through* — and only once
-the row has failed to arrive does the prompt decide which report is honest. The report is then a skip
+nothing. The prompt does not end it early — it is the state screen 12 is drawn in until a coordinate
+turns up, and this helper has been wrong once already about how long that takes — and only once the
+row has failed to arrive does the prompt decide which report is honest. The report is then a skip
 rather than a failure, which `MapSearchUITests.requireAMapWithPins` had already settled for the same
 missing fix and in the same words: "a skip says 'not checked here', which is true, where a failure says
 'broken', which is not". It carries the same literal command its neighbours do, `xcrun simctl location
@@ -47,10 +48,10 @@ be smuggled into a test repair.
 one screen that asks for location on the shipping path (`MapHomeView.task` is the only caller of
 `start()`), wait until the map has drawn individual pins, and then press `Journal` and `Neighborhood`.
 Screen 12 is built at that press, from a coordinate that exists. This is not the test navigating around
-the blank screen — it is the sequence in which the app is actually used, and the skip lands in a better
-place for it: the map is the surface that knows whether there is a fix, and screen 12 is the one that
-cannot be asked, since a neighbourhood with nothing in it and a screen that could not be told where it
-is look identical on it.
+the blank screen — it is the sequence in which the app is actually used, and it is the only one in
+which screen 12 is built from a coordinate at all. The pin wait is not a fix check and does not claim
+to be one (see below); what it buys is that the tab is not pressed before the map has finished its
+first read, which is as close as this suite can get to "CoreLocation has had its chance to answer".
 
 **The obvious better witness was tried first and does not work, which is a finding of its own.**
 `MapRecentreCopy.value` says `Centred on you` only by way of `camera.isCentred(on: coordinate)`, so it
