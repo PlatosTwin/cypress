@@ -53,6 +53,16 @@ enum Route: Hashable {
     /// (ERRATA E125): A3 has always ended "a manual pin by any org member overrides", and until
     /// there was somewhere to look at a tree's photographs there was nowhere to pin one.
     case photos(UUID)
+    /// One photograph, whole, over everything else. **No mocked screen** — see `PhotoViewerView`,
+    /// which carries the argument for it.
+    ///
+    /// **Carries its caption rather than an id to read one from**, which makes it the second route
+    /// after `pinSet` to carry more than an identifier, and for the same reason that one does: the
+    /// caption is already drawn on the surface the reader tapped — under the card on screen 20, in
+    /// the hero's eyebrow on 03 — and a viewer that re-read the record could name the photograph
+    /// differently from the words that were on screen a frame earlier. There is nothing here worth
+    /// a database read; the caption is one line of text that the caller has already formed.
+    case photoViewer(id: UUID, caption: String)
     /// 15, the account ask. **Mocked**, so this is not an invented destination — and `sheet`'s own
     /// comment below has always named 15 among the three screens drawn as sheets, which is what this
     /// case finally lets it mean.

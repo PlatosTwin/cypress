@@ -19,11 +19,11 @@ public struct CommunityTreeStore {
             INSERT INTO community_trees
                 (id, client_uuid, external_ref, source, lat, lon, address, site_type, status,
                  species_current, planted_year, dbh_city_cm_min, dbh_city_cm_max, site_lineage,
-                 verification_state, placement, created_at, updated_at, deleted_at)
+                 verification_state, placement, land_context, created_at, updated_at, deleted_at)
             VALUES
                 (:id, :client, :ref, 'community', :lat, :lon, :address, :site, :status,
                  :species, :planted, :dbhMin, :dbhMax, :lineage,
-                 :verification, :placement, :created, :updated, :deleted)
+                 :verification, :placement, :landContext, :created, :updated, :deleted)
             ON CONFLICT(client_uuid) DO NOTHING
             """)
         _ = try statement.bind([
@@ -46,6 +46,10 @@ public struct CommunityTreeStore {
             // that let the default answer for it would record `gps` for a pin somebody placed by
             // hand — the one direction this column must never fail in (AppSchema v10).
             ":placement": tree.placement.rawValue,
+            // NULL when the contributor did not say, and NULL is the stored value for that — see
+            // AppSchema v11. Unlike `placement` there is no column default to fall back on, on
+            // purpose: nothing may answer this question on a contributor's behalf.
+            ":landContext": tree.statedLandContext?.rawValue,
             ":created": tree.createdAt,
             ":updated": tree.updatedAt,
             ":deleted": tree.deletedAt
@@ -169,6 +173,9 @@ public struct CommunityTreeStore {
             siteLineage: try row.uuidIfPresent("site_lineage"),
             verificationState: try row.value("verification_state", VerificationState.self),
             placement: try row.value("placement", TreePlacement.self),
+            // A community tree is not in the city's inventory, so there is no city record to carry.
+            cityRecord: nil,
+            statedLandContext: try row.enumIfPresent("land_context", LandContext.self),
             createdAt: try row.date("created_at"),
             updatedAt: try row.date("updated_at"),
             deletedAt: try row.dateIfPresent("deleted_at")

@@ -91,13 +91,47 @@ struct TreePhotosView: View {
 
     private func card(_ photo: Photo) -> some View {
         VStack(alignment: .leading, spacing: CypressSpacing.gapVitality) {
+            // **The photograph opens the photograph.** A browser of cropped photographs is a
+            // browser that cannot show you a photograph, which is the defect this screen and the
+            // hero on 03 were both reported for. The crop below is still right for a row — see the
+            // frame — and the way out of it is the viewer.
             PhotoImage(photoID: photo.id, label: TreePhotosPresentation.imageLabel(photo))
                 // A fixed height, not an aspect ratio: the photographs are portrait and landscape
                 // and a browser whose rows jump height is a browser nobody can scan. `PhotoFill`
-                // crops to the box and — the reason it exists — reports the box's width.
+                // crops to the box and — the reason it exists — reports the box's width. Which
+                // *part* it keeps is `PhotoCropAnchor.crown`, the component's default, and the
+                // reason the middle of a portrait tree is the wrong part is written down there.
                 .frame(height: TreePhotosMetrics.photoHeight)
                 .frame(maxWidth: .infinity)
                 .clipShape(RoundedRectangle(cornerRadius: CypressRadius.cardLg, style: .continuous))
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    router?.present(
+                        .photoViewer(id: photo.id, caption: TreePhotosPresentation.caption(photo))
+                    )
+                }
+                // ══════════════════════════════════════════════════════════════════════════════
+                // **A gesture and a named action, not a `Button`** — and this is a deliberate
+                // choice rather than a shortcut.
+                //
+                // `PhotoFill` publishes this element as an *image*, with the photograph's subject
+                // and date as its label, because on this one screen the picture is the thing being
+                // judged rather than the backdrop. Wrapping it in a `Button` folds the label into
+                // the button and the element stops being an image — which is not just a purity
+                // argument: `DeepLinkVoiceOverTests.testAThumbActuallyVotes` finds the top card by
+                // `app.images` matching `Photo · `, and reads the `Hero` badge's position against
+                // that element's frame to prove a vote moved the badge. A button here silently
+                // turns that test's subject into something it can no longer find.
+                //
+                // So the element keeps being what it is, and gains an action. VoiceOver announces
+                // the action by name from the rotor, which says more than a button trait would.
+                // ══════════════════════════════════════════════════════════════════════════════
+                .accessibilityHint(TreePhotosCopy.openHint)
+                .accessibilityAction(named: Text(TreePhotosCopy.openAction)) {
+                    router?.present(
+                        .photoViewer(id: photo.id, caption: TreePhotosPresentation.caption(photo))
+                    )
+                }
                 .overlay(alignment: .topLeading) {
                     if model.heroID == photo.id { heroBadge }
                 }
@@ -215,6 +249,13 @@ enum TreePhotosCopy {
     static let voteFailed = "That vote could not be saved. Try again."
     static let thumbOn = "on"
     static let thumbOff = "off"
+    /// The row's photograph is a crop; this is what pressing it gets you. The hint rather than the
+    /// label, on R2's rule: the element is named for what it is — the photograph, already labelled
+    /// with its subject and date — rather than relabelled with the next tap.
+    static let openHint = "Opens the whole photo"
+    /// The same thing, named as an action for the VoiceOver rotor — a verb, because that is what a
+    /// rotor lists.
+    static let openAction = "Open the whole photo"
 }
 
 // MARK: - Metrics

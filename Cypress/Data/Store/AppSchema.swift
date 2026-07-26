@@ -39,7 +39,8 @@ public enum AppSchema {
         Migration(version: 7, name: "a lead can locally mark a tree removed", sql: v7),
         Migration(version: 8, name: "a photo can be voted up or down", sql: v8),
         Migration(version: 9, name: "a vote can outlive the voter", migrate: applyV9),
-        Migration(version: 10, name: "a coordinate says how it was arrived at", migrate: applyV10)
+        Migration(version: 10, name: "a coordinate says how it was arrived at", migrate: applyV10),
+        Migration(version: 11, name: "a new tree says what ground it stands on", migrate: applyV11)
     ]
 
     /// The version a freshly migrated database reports.
@@ -974,6 +975,77 @@ public enum AppSchema {
             ALTER TABLE community_trees
                 ADD COLUMN placement TEXT NOT NULL DEFAULT 'gps'
                 CHECK (placement IN ('gps','contributor_placed'));
+            """)
+    }
+
+    // MARK: - v11
+
+    /// `community_trees` learns what ground the tree stands on: a street, a city park, private
+    /// property, or other public land.
+    ///
+    /// **Only the app database moves, and establishing that was the first job.** The six DataSF
+    /// columns this round ingests — `legal_status`, `caretaker`, `care_assistant`, `plant_type`,
+    /// `plot_size`, `permit_notes` — all land on `seed.trees`, and the seed is a *bundled, read-only*
+    /// database ATTACHed beside `main`. It ships as a build product of `Tools/build_seed.py` and is
+    /// replaced wholesale on install, so a schema change there needs no migration at all and cannot
+    /// have one: there is no user data in it to carry forward. Every one of those six columns
+    /// therefore arrives with the new binary and this file is silent about them. What is *not*
+    /// covered by that is a fact a contributor states about a tree they are adding, which has to be
+    /// written, has to survive an upgrade, and has nowhere in the seed to live. That is this column,
+    /// and it is the only reason v11 exists.
+    ///
+    /// **Why it is not `site_type`.** `community_trees.site_type` already exists and already carries
+    /// the city's `qSiteInfo` vocabulary as free text — "Sidewalk: Curb side : Cutout", "Front Yard :
+    /// Yard", "Median : Cutout". It describes the *planting site*: what the tree is growing in and
+    /// where on the frontage. It is not a statement about whose ground that is, and reusing it would
+    /// make one column mean two things, which v10 refused for exactly the same reason one round ago.
+    ///
+    /// **The vocabulary is four values and the owner asked for three, deliberately.** The ask was
+    /// "street / city park / private property". The city's own inventory contains 956 rows that are
+    /// none of the three: trees whose caretaker is SFUSD, the Port, the PUC, the Housing Authority,
+    /// the Fire Department, the Arts Commission — public land that is neither a street nor a park. A
+    /// CHECK pinned to three would have made those unstorable the moment anything tried to record
+    /// one, which is precisely E136's `photo_votes` failure repeated: a constraint wearing a ruling's
+    /// clothes, forbidding a state the product turns out to need and costing a migration to relax.
+    /// The asymmetry decides it. A permitted value that no screen offers costs nothing — there is no
+    /// way to reach it and nothing renders it. A forbidden value the data contains costs a migration.
+    /// So the column permits four and #69's picker is free to offer three.
+    ///
+    /// What the CHECK does forbid, and it is meant to: any string outside the four. `''`, `'Street'`,
+    /// `'private'`, `'park'` and a typo'd `'city-park'` are all rejected by the engine rather than
+    /// accepted by it and then thrown on by `CommunityTreeStore.decode`, which is this file's
+    /// standing promise — the invariant holds against a hand-written `INSERT` in a debugger, not only
+    /// against the DAO. The same promise is deliberately *not* extended to the six seed columns, for
+    /// reasons `Tools/build_seed.py` carries in full: those hold San Francisco's vocabulary rather
+    /// than Cypress's, the city may add to it any week, and a CHECK over 27 department names is a
+    /// build failure waiting for a reorganisation.
+    ///
+    /// **NULL is a value here, and it is "not stated".** The column is nullable with no default,
+    /// unlike v10's `placement`, and the two situations are genuinely different. Every community tree
+    /// written before v10 *had* a placement — `gps`, because the screen had no other behaviour — so
+    /// backfilling it recorded what actually happened. No tree written before v11 has ever been asked
+    /// what ground it stands on, so there is no true value to backfill and any default would be
+    /// Cypress putting words in a contributor's mouth. `'street'` would be the plausible guess and
+    /// the harmful one: it is the answer that makes a tree look like the city's business, and a wrong
+    /// `'street'` on a tree in somebody's front yard is the direction that ends in a 311 call about a
+    /// tree 311 does not handle. Absent stays absent. BUILD-PLAN §6 already makes the field optional
+    /// at the boundary, and `LandContext.inferred(from:)` can still read a city row's context from
+    /// the city's record without this column existing for it.
+    ///
+    /// **`ALTER TABLE ADD COLUMN`, not a table rebuild**, on v10's argument: nothing existing
+    /// changes, SQLite accepts a CHECK on an added column and enforces it from that moment, and
+    /// copying rows is the one thing in a migration that can lose them.
+    ///
+    /// **Idempotent by guard**, in v3's and v10's shape: `ALTER TABLE ADD COLUMN` has no
+    /// `IF NOT EXISTS`, so a replay after an interrupted run would fail on "duplicate column name"
+    /// and strand the database one version short.
+    private static func applyV11(_ connection: SQLiteConnection) throws {
+        guard try !connection.columnNames(ofTable: "community_trees").contains("land_context") else { return }
+        try connection.execute("""
+            ALTER TABLE community_trees
+                ADD COLUMN land_context TEXT
+                CHECK (land_context IS NULL
+                       OR land_context IN ('street','city_park','private_property','other_public'));
             """)
     }
 

@@ -108,6 +108,57 @@ CREATE TABLE neighborhoods (
 --   external_ref text           -> INTEGER. Every DataSF TreeID observed is
 --                                  numeric (verified across all 195,309 rows).
 --
+-- THE SIX CITY COLUMNS CARRY NO CHECK, AND THAT IS THE DECISION.
+-- Every closed vocabulary in the *app* schema carries its vocabulary in a CHECK,
+-- because that database is written by a DAO and by whoever opens it in a
+-- debugger, and the invariant has to hold against both. None of that reasoning
+-- reaches here. This file is a read-only bundle regenerated from a live city
+-- feed; the only writer is the loop below, and the only "hand-written INSERT" a
+-- CHECK could catch is one nobody can perform against a database shipped inside
+-- an .app.
+--
+-- What a CHECK would do instead is pin twelve strings that belong to San
+-- Francisco rather than to Cypress. qLegalStatus has 12 values this week and had
+-- fewer before; qCaretaker has 27, and they read like an org chart -- 'Asian
+-- Arts Commission', 'Mission Verde', 'Office of Mayor' -- which is a list that
+-- grows whenever a department is renamed. A CHECK over it would turn the next
+-- weekly diff into a build failure over a string the city was entitled to add.
+-- That is ERRATA E136's mistake written in advance rather than discovered
+-- afterwards: a constraint wearing a ruling's clothes, forbidding a state the
+-- source is allowed to reach. BUILD-PLAN section 7 already settled the same
+-- question the same way for site_type ("kept as free text because the source
+-- vocabulary is open-ended"), and these six are the same kind of column.
+--
+-- The vocabulary that IS closed -- street / city park / private property /
+-- other public land -- is Cypress's own, is derived from these columns rather
+-- than stored beside them, and is CHECK-pinned where it is actually written
+-- down: main.community_trees.land_context (AppSchema v11). The derivation lives
+-- in LandContext.inferred(from:) so that changing our reading of the city's
+-- vocabulary is a code change rather than a 95 MB rebuild.
+--
+-- plot_size is TEXT and is never parsed into a number. The city's own 588
+-- distinct values include 'Width 3ft', '3x3', '3X3', '60' and '10x10' -- three
+-- incompatible notations and a bare integer of unstated unit -- and DataSF's
+-- published description of the field reads "date tree was planted", copied from
+-- PlantDate. Turning that into an area would be D7's forbidden move: dressing an
+-- estimate as a measurement. It is shown as the city wrote it, or not at all.
+--
+-- Not ingested, and each for a reason:
+--   SiteOrder                 an ordinal disambiguating several trees at one
+--                             address (99.1% populated). It is a key inside the
+--                             city's own table, not a fact about the tree, and
+--                             "tree 3 of 7" answers nothing anybody asked.
+--   XCoord / YCoord           CA State Plane III, the same point as lat/lon.
+--   Location                  the string "(lat, lon)". Same point again.
+--   Fire Prevention Districts, Police Districts, Supervisor Districts,
+--   Zip Codes, Neighborhoods (old), Analysis Neighborhoods
+--                             Socrata :@computed_region_* spatial-join
+--                             artifacts. Their values are opaque row ids into
+--                             other datasets, not names or numbers -- the "Zip
+--                             Codes" column's commonest value is 28859. The
+--                             seed does its own neighbourhood join against
+--                             j2bu-swwd and keeps the name.
+--
 -- planted_year is section 4's column and stays. planted_on is DataSF's PlantDate
 -- kept at its own grain (ISO 'YYYY-MM-DD'), added because the almanac (screen 12)
 -- asks "how many trees were planted this spring" and a year cannot answer a
@@ -132,6 +183,16 @@ CREATE TABLE trees (
     dbh_city_cm_max    INTEGER,
     site_lineage       INTEGER REFERENCES trees(id),
     verification_state TEXT NOT NULL,           -- unverified | org_verified | city_record
+    -- ------------------------------------------------- the city's own record --
+    -- Six DataSF columns carried verbatim, for the tree page's "what the city
+    -- has on file" panel. All six are FREE TEXT and none carries a CHECK, which
+    -- is a decision rather than an omission -- see the block comment below.
+    legal_status       TEXT,                    -- DataSF qLegalStatus
+    caretaker          TEXT,                    -- DataSF qCaretaker
+    care_assistant     TEXT,                    -- DataSF qCareAssistant
+    plant_type         TEXT,                    -- DataSF PlantType
+    plot_size          TEXT,                    -- DataSF PlotSize, verbatim, never parsed
+    permit_notes       TEXT,                    -- DataSF PermitNotes
     city_raw           TEXT,
     created_at         TEXT NOT NULL,
     updated_at         TEXT NOT NULL,

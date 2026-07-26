@@ -745,6 +745,9 @@ public struct TreeQueries {
                t.status AS status, t.planted_year AS planted_year,
                t.dbh_city_cm_min AS dbh_city_cm_min, t.dbh_city_cm_max AS dbh_city_cm_max,
                t.verification_state AS verification_state,
+               t.legal_status AS legal_status, t.caretaker AS caretaker,
+               t.care_assistant AS care_assistant, t.plant_type AS plant_type,
+               t.plot_size AS plot_size, t.permit_notes AS permit_notes,
                t.created_at AS created_at, t.updated_at AS updated_at, t.deleted_at AS deleted_at
         """
     }
@@ -795,10 +798,31 @@ public struct TreeQueries {
             dbhCityCmRange: dbhRange,
             siteLineage: row.optionalUUID("site_lineage_uuid"),
             verificationState: try row.value("verification_state", VerificationState.self),
+            cityRecord: try decodeCityRecord(row),
+            // `main.community_trees` is the only table with a `land_context` column; a seed row's
+            // context is read from the city's own record by `Tree.landContext`, never stored.
+            statedLandContext: nil,
             createdAt: try row.date("created_at"),
             updatedAt: try row.date("updated_at"),
             deletedAt: try row.dateIfPresent("deleted_at")
         )
+    }
+
+    /// The city's own six columns off a projection built on `treeColumns`.
+    ///
+    /// Returns nil rather than an all-nil `CityRecord` when the city recorded none of them, so that
+    /// "there is no city record" and "there is a city record and it is blank" stay different answers
+    /// — the distinction `CityRecord.isEmpty` exists to let a screen act on.
+    static func decodeCityRecord(_ row: SQLiteRow) throws -> CityRecord? {
+        let record = CityRecord(
+            legalStatus: try row.stringIfPresent("legal_status"),
+            caretaker: try row.stringIfPresent("caretaker"),
+            careAssistant: try row.stringIfPresent("care_assistant"),
+            plantType: try row.stringIfPresent("plant_type"),
+            plotSize: try row.stringIfPresent("plot_size"),
+            permitNotes: try row.stringIfPresent("permit_notes")
+        )
+        return record.isEmpty ? nil : record
     }
 
     /// The one `id_tip` a shortlist row shows as its tell (D6).

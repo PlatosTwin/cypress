@@ -36,7 +36,12 @@ Cypress/Resources/cypress-seed.sqlite
 # Worktrees created for parallel agent runs.
 .claude/
 
-# Per-worktree DerivedData for agent builds.
+# Per-worktree DerivedData for agent builds. One directory per agent, inside that agent's
+# own worktree, so parallel builds cannot collide.
 .ddsnap/
+.ddphoto/
 .ddspecies/
 .ddalmanac/
+.ddseed/
+# Build logs from a test run, written into the worktree root.
+*.log

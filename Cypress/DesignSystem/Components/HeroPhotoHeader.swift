@@ -80,6 +80,20 @@ struct HeroPhotoHeader<Background: View, BottomLeading: View>: View {
     let style: Style
     /// Bottom-right pill, e.g. `214 photos · since 2019`.
     var metaPill: String?
+    /// Makes the pill a control rather than a caption.
+    ///
+    /// **NOT SPECIFIED.** §2 C2 draws the pill and gives it no behaviour. It gets one on screen 03
+    /// because that hero now has *two* things a tap could mean and they are not the same thing: the
+    /// photograph opens the photograph, and the words `3 photos` open the three photographs. Giving
+    /// both to the whole header — which is what it did before — meant the picture could not be
+    /// looked at, and giving both to the picture would leave the browser with no entrance at all.
+    /// A pill that already says how many there are is the obvious place to ask for them.
+    ///
+    /// `nil` on every other hero, where the pill states a fact and nothing more.
+    var onMetaPillTap: (() -> Void)?
+    /// What pressing the pill does, for a listener. Its own text is already the label — `3 photos ·
+    /// since 2024` — so this says where the press goes and does not repeat the count.
+    var metaPillHint: String?
     /// Bottom-left eyebrow, e.g. `Best photo · Oct 2025`. D2 drops it.
     var eyebrow: String?
     var onBack: (() -> Void)?
@@ -194,16 +208,48 @@ struct HeroPhotoHeader<Background: View, BottomLeading: View>: View {
     @ViewBuilder
     private var pill: some View {
         if let metaPill {
-            Text(metaPill)
-                .fixedSize(horizontal: false, vertical: true)
-                .font(CypressFont.mono105)
-                .foregroundStyle(style.onPhoto)
-                .padding(.vertical, CypressSpacing.Component.heroPillPaddingV)
-                .padding(.horizontal, CypressSpacing.Component.heroPillPaddingH)
-                .background { Capsule().fill(style.pillFill) }
-                .padding(.trailing, CypressSpacing.Component.heroPillTrailing)
-                .padding(.bottom, CypressSpacing.Component.heroBottomInset)
+            if let onMetaPillTap {
+                Button(action: onMetaPillTap) {
+                    // ══════════════════════════════════════════════════════════════════════════
+                    // **44 pt of target around a 21 pt capsule**, which is ARCHITECTURE §6's rule
+                    // applied the way that section words it: "where the mock and accessibility
+                    // disagree, the target grows and the *visual* stays put".
+                    //
+                    // The pill draws at mono 10.5 with 4 pt of vertical padding — 21 pt, less than
+                    // half a tap target. It was a caption until now, so nothing was owed; it is a
+                    // control from here on. `.bottom` alignment is what keeps the promise about the
+                    // visual: the enclosing `HStack` is bottom-aligned and the pill carries its own
+                    // bottom inset, so the extra height is taken *upward*, into photograph the pill
+                    // is already drawn over, and not one pixel of the mock moves.
+                    //
+                    // The band it grows into is live, and that is a real cost — the photograph
+                    // behind it opens the viewer, and presses in that band now open the browser
+                    // instead. It buys a control somebody can actually hit, which the rule says is
+                    // the trade to make.
+                    // ══════════════════════════════════════════════════════════════════════════
+                    pillBody(metaPill)
+                        .frame(minHeight: CypressSpacing.Component.backCircle, alignment: .bottom)
+                }
+                .buttonStyle(.plain)
+                .contentShape(Rectangle())
+                .accessibilityAddTraits(.isButton)
+                .accessibilityHint(metaPillHint ?? "")
+            } else {
+                pillBody(metaPill)
+            }
         }
+    }
+
+    private func pillBody(_ text: String) -> some View {
+        Text(text)
+            .fixedSize(horizontal: false, vertical: true)
+            .font(CypressFont.mono105)
+            .foregroundStyle(style.onPhoto)
+            .padding(.vertical, CypressSpacing.Component.heroPillPaddingV)
+            .padding(.horizontal, CypressSpacing.Component.heroPillPaddingH)
+            .background { Capsule().fill(style.pillFill) }
+            .padding(.trailing, CypressSpacing.Component.heroPillTrailing)
+            .padding(.bottom, CypressSpacing.Component.heroBottomInset)
     }
 }
 

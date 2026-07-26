@@ -124,6 +124,18 @@ public struct Tree: CoreEntity, SoftDeletable {
     /// How `coordinate` was arrived at, for a community-added tree. Meaningless on a city row, which
     /// has no `placement` column behind it — see `TreePlacement`.
     public var placement: TreePlacement
+    /// What San Francisco has on file about this tree — six DataSF columns, verbatim.
+    ///
+    /// Non-nil only for `source == .cityImport`: a community-added tree is not in the city's
+    /// inventory, and `main.community_trees` has no columns behind this. See `CityRecord`.
+    public var cityRecord: CityRecord?
+    /// Where a contributor said this tree stands (`community_trees.land_context`, AppSchema v11).
+    ///
+    /// Nil for a city row, which has no such column, and nil for a community row whose contributor
+    /// did not say — the field is optional at the boundary and a "not stated" answer must stay
+    /// distinguishable from a stated one. Read `landContext` rather than this, unless you
+    /// specifically need "did a person state it".
+    public var statedLandContext: LandContext?
     public let createdAt: Date
     public var updatedAt: Date
     /// City sync never deletes community contributions; removal is a status, not a delete
@@ -145,6 +157,8 @@ public struct Tree: CoreEntity, SoftDeletable {
         siteLineage: UUID? = nil,
         verificationState: VerificationState = .unverified,
         placement: TreePlacement = .gps,
+        cityRecord: CityRecord? = nil,
+        statedLandContext: LandContext? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
         deletedAt: Date? = nil
@@ -163,9 +177,28 @@ public struct Tree: CoreEntity, SoftDeletable {
         self.siteLineage = siteLineage
         self.verificationState = verificationState
         self.placement = placement
+        self.cityRecord = cityRecord
+        self.statedLandContext = statedLandContext
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.deletedAt = deletedAt
+    }
+
+    /// Where this tree stands, and how Cypress knows — or nil when nothing on the record says.
+    ///
+    /// A contributor's own answer always wins over a derivation, because it is the only one of the
+    /// two made by somebody who was standing there. The fall-back reads the city's record through
+    /// `LandContext.inferred(from:)`, whose doc comment carries the mapping and the numbers behind
+    /// each bucket.
+    ///
+    /// The result names its own provenance so that a screen cannot show an inference with the
+    /// confidence of an observation. Nothing here ranks the two — see `KnownLandContext`.
+    public var landContext: KnownLandContext? {
+        if let stated = statedLandContext {
+            return KnownLandContext(context: stated, source: .statedByContributor)
+        }
+        guard let cityRecord, let inferred = LandContext.inferred(from: cityRecord) else { return nil }
+        return KnownLandContext(context: inferred, source: .inferredFromCityRecord)
     }
 }
 

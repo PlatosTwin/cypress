@@ -262,30 +262,46 @@ struct TreeProfileView: View {
     /// change at the call site. It was one line; what was missing was any way to get the bytes. See
     /// `PhotoAccess`.
     ///
-    /// The whole hero is the tap target for screen 20. A photograph that leads a page is the natural
-    /// place to ask "what else is there?", and it is where the answer changes: the browser is how a
-    /// different photograph becomes this one (`PhotoHero`).
+    /// **Two controls now, not one.** The whole hero used to be the tap target for screen 20, on the
+    /// reasoning that a photograph leading a page is the natural place to ask "what else is there?".
+    /// That reasoning still holds and the browser still needs its entrance — but it left the app with
+    /// no way to see a photograph at all, which is what was reported: pressing the picture produced a
+    /// list of the same 224 pt crop, and a phone photograph held upright loses more than half of
+    /// itself to that band. So the two questions get the two controls they always were:
+    ///
+    /// - the **photograph** opens the photograph, whole (`PhotoViewerView`);
+    /// - the **pill**, which already reads `3 photos · since 2024`, opens the three.
     private func hero(_ presentation: TreeProfilePresentation) -> some View {
         let style: HeroPhotoHeader<PhotoImage, EmptyView>.Style =
             colorScheme == .dark ? .profileDark : .profile
+        let best = presentation.bestPhoto
         return HeroPhotoHeader(
             style: style,
             metaPill: presentation.heroMetaPill,
+            onMetaPillTap: { router?.push(.photos(model.treeID)) },
+            metaPillHint: TreeProfilePresentation.heroPillHint,
             // D2 drops the `Best photo · Oct 2025` eyebrow.
             eyebrow: colorScheme == .dark ? nil : presentation.heroEyebrow,
             onBack: { router?.pop() },
             background: {
                 PhotoImage(
-                    photoID: presentation.bestPhoto?.id ?? Self.noPhoto,
+                    photoID: best?.id ?? Self.noPhoto,
                     placeholder: style.recipe
                 )
             },
             bottomLeading: { EmptyView() }
         )
-        // A tap anywhere on the photograph opens the set, *except* the back circle, which is a
-        // button in an overlay and therefore gets the touch first.
+        // A tap anywhere on the photograph opens it whole, *except* the back circle and the pill,
+        // which are buttons in the tree and therefore get the touch first.
+        //
+        // Guarded on there being a photograph: with none, the hero is the gradient placeholder and
+        // there is nothing to open. An inert-looking tap is better than a viewer that says a
+        // photograph could not be loaded when there was never one to load.
         .contentShape(Rectangle())
-        .onTapGesture { router?.push(.photos(model.treeID)) }
+        .onTapGesture {
+            guard let best, let caption = presentation.heroPhotoCaption else { return }
+            router?.present(.photoViewer(id: best.id, caption: caption))
+        }
         // `children: .contain`, not `.combine` — the back circle lives inside this component, and
         // combining would swallow the one control that gets a listener off the screen.
         //

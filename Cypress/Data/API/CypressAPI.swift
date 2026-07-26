@@ -587,6 +587,16 @@ public struct TreeDraft: Hashable, Sendable {
     public let photoLocalPath: String
     public let attribution: Attribution
     public let address: String?
+    /// What ground the contributor says the tree stands on (`community_trees.land_context`,
+    /// AppSchema v11).
+    ///
+    /// **Optional, and nil means "they did not say" rather than any of the four.** It defaults to
+    /// nil so that a caller with no picker is not obliged to have an opinion, and so that the
+    /// default on the boundary and the absence of a default on the column say the same thing.
+    /// Nothing may substitute a plausible answer here — a guessed `.street` on a tree in somebody's
+    /// front yard is the failure this field must not have. The same argument BUILD-PLAN §6 makes for
+    /// an optional species: a required field does not collect better answers, it collects guesses.
+    public let landContext: LandContext?
 
     public init(
         clientUUID: UUID = UUID(),
@@ -595,7 +605,8 @@ public struct TreeDraft: Hashable, Sendable {
         speciesID: UUID? = nil,
         photoLocalPath: String,
         attribution: Attribution,
-        address: String? = nil
+        address: String? = nil,
+        landContext: LandContext? = nil
     ) {
         self.clientUUID = clientUUID
         self.coordinate = coordinate
@@ -604,6 +615,7 @@ public struct TreeDraft: Hashable, Sendable {
         self.photoLocalPath = photoLocalPath
         self.attribution = attribution
         self.address = address
+        self.landContext = landContext
     }
 
     /// "runs the proximity dedupe check (10 m, any species)" (BUILD-PLAN §6).

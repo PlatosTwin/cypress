@@ -5621,3 +5621,256 @@ rather than claiming no such tree exists.
 `species_assertions` in `main` and a moderation surface to resolve competing claims, and standing that
 up on a two-clause feature request would be inventing a product. `claimSpecies` returns `.conflict`
 and the screen says so in words rather than failing silently.
+### E142 — the app could crop a photograph four ways and show one zero ways, and the capture path was innocent
+
+Two reports from the project owner, from their own iPhone, on the same day:
+
+> Clicking on photo from tree page should show full view, current is horizontal which cuts off
+> photos taken in vertical orientation.
+
+> Photo for custom tree should be standard photo style, right now it's horizontal and cuts off
+> vertical frame.
+
+One root cause, and it is worth saying plainly which half of the system it is in.
+
+**The capture path was already correct, and nothing in it was changed.** That was checked first,
+because if the camera were constrained to landscape or the saved file were losing its orientation
+tag, every display fix would be a cosmetic over a data loss. It is not:
+
+- `VisitCameraController.configureAndRun` sets `sessionPreset = .photo` — the full sensor frame,
+  4:3, no crop and no aspect constraint anywhere in the session.
+- `capturePhoto` returns `AVCapturePhoto.fileDataRepresentation()`, the container as the ISP wrote
+  it, orientation tag included.
+- The photo-library fallback asks `PhotosPickerItem` for `Data.self`, not for an image, so it too
+  gets the original container.
+- `VisitPhotoStaging.write` does `data.write(to:)` and nothing else. No re-encode, no resize.
+- `PhotoBinary.writeStrippingMetadata` empties the EXIF, GPS, IPTC, TIFF and Maker Note containers
+  and then makes a **second pass** for the sole purpose of putting `kCGImagePropertyOrientation`
+  back, with a comment saying exactly why: "an iPhone photograph taken in portrait is landscape
+  pixels plus an orientation tag, so dropping it turns every portrait shot on its side".
+- `PhotoImageStore.downsample` passes `kCGImageSourceCreateThumbnailWithTransform: true`, so the
+  tag is applied to the pixels on the way out.
+
+Every stage of that was written by somebody who had thought about portrait photographs. The bytes on
+disk are the bytes the camera produced, the right way up. **The defect is entirely in what the app
+chose to draw of them**, which is the less serious half — and it should be recorded that the more
+serious half was looked for rather than assumed absent.
+
+**The app had four fixed photo frames and no unfixed one.** The hero on 03 is 393×224. Screen 20's
+rows are the same 224. The well on 14 is 268 tall in a column about 361 wide. All three are
+`PhotoFill`, which is right — a hero has to be a known height or the page under it moves, and a list
+whose rows change height cannot be scanned. The arithmetic is what makes it a defect: a 3:4
+photograph scaled to fill 393 pt of width is 524 pt tall, so a 224 pt band keeps **42.7%** of the
+picture, and it kept the middle 42.7% because `.center` is SwiftUI's default and nobody had ever
+chosen it. Rows 28.5% to 71.5% survive. A street tree photographed from the pavement has its crown
+in the top third and the kerb in the bottom third, so what survived was upper trunk — the part of a
+tree that identifies nothing.
+
+And the tap that should have escaped all of this had nowhere to go. Pressing the hero pushed screen
+20, which is the same crop repeated down a page. **There was no last tap that produced a
+photograph.** The owner's first sentence is precisely that: the "full view" they expected does not
+exist anywhere in the app.
+
+**Two fixes, because they are two different questions.**
+
+*The crop, where a crop is correct.* `PhotoCropAnchor` — a custom `VerticalAlignment` that pins one
+third of the way down both the box and the photograph. On the numbers above it keeps rows 19% to
+62%: the canopy and the top of the trunk. A third rather than `.top`, because `.top` is sky —
+a photographer framing a whole tree leaves headroom, and an anchor that keeps the headroom and drops
+the tree has swapped one bad crop for another. `.crown` is the default because every fixed frame in
+this app has a tree in it. **Screen 04 asks for `.centre` explicitly and must keep it**: its ghost
+overlay, the frame just taken and the live `AVCaptureVideoPreviewLayer` behind both are three
+drawings of one scene that only mean anything if they agree, and the layer's `.resizeAspectFill`
+centres and is not ours to reconfigure.
+
+*The absence of a viewer.* `PhotoFit` is `PhotoFill`'s counterpart — the whole frame, letterboxed,
+at the shape of the file, still reporting the box it was proposed. `PhotoViewerView` is the screen
+built on it, presented rather than pushed because it is a closer look at what is already on screen
+rather than a place in the app. The well on 14 uses `PhotoFit` too, which is the second report: that
+photograph is not being displayed, it is being **checked**, by somebody standing in front of the
+tree in the last second before they commit a record they cannot amend. A crop there does not restyle
+the picture, it withholds the evidence — a finger over the lens, a cut-off crown, next door's tree.
+
+**The hero was one control doing two jobs, and that is why it could do neither.** It is now two: the
+photograph opens the photograph, and the pill that already reads `3 photos · since 2024` opens the
+three. Giving both jobs to the whole header is what left the picture unviewable; giving both to the
+picture would have left screen 20 with no entrance at all. The pill grows to a 44 pt target with its
+drawn capsule unmoved, per ARCHITECTURE §6 — it was a caption until now, so nothing was owed.
+
+**Screen 20's photograph is a gesture and a named action, not a `Button`.** `PhotoFill` publishes it
+as an *image* carrying the photograph's subject and date, because on that one screen the picture is
+the thing being judged. A `Button` folds that label into itself and the element stops being an
+image — and `DeepLinkVoiceOverTests.testAThumbActuallyVotes` finds the top card via `app.images`
+matching `Photo · ` and reads the `Hero` badge's position against its frame. A button there would
+have silently turned that test's subject into something it could no longer find.
+
+**Verified by breaking it, because a crop is invisible to every measurement.** This is the E137
+lesson in a second costume. `PhotoFill` reports the box it was proposed *whichever* part of the
+photograph it keeps — that is its whole documented promise — so `sizeThatFits` is identical against a
+centred crop and a crown-anchored one, and any test written on it would have been green against the
+bug. The assertion has to be on pixels. `PhotoCropTests` renders a 300×400 fixture of three flat
+bands (red canopy, green trunk, blue ground) into the hero's own 393×224 box and reads the colours
+back out; the discriminating fact is that a crown-anchored crop contains **no blue at all** and a
+centred one does. Setting the anchor fraction back to 0.5 turns it red.
+
+**A third defect, found only by looking, that every test was blind to.** The viewer came up on the
+device with its close button, its caption pill and the sentence "That photograph could not be opened"
+across the middle. `PhotoImageStore` reaches the pushed destinations through `.environment(_:)` on
+the `NavigationStack`, and it does not reach a `fullScreenCover`, which is presented in its own
+hosting context. Nothing had ever noticed, because every sheet before this one — 09, 10, 15, and the
+visit flow — takes what it needs as an argument, so no presented screen had ever read the
+environment. The store is now handed to the cover's content explicitly.
+
+What makes it worth its own paragraph is that **an absent store and a photograph whose bytes are gone
+are the same state** to a view holding `PhotoImageStore?`, so the screen reported the second while
+suffering the first, in fluent English, with correct chrome around it. 637 unit tests passed against
+that build. The only thing that caught it was opening the screen and looking at it.
+
+**And the fixture itself was evidence of nothing.** `LocalAPI.debugJPEG` drew a flat rectangle with
+one white bar, which proved bytes had arrived and could not prove *which part of them* had — both
+crops of it look identical. It is now a crude tree at 1200×1600, matching the `width`/`height` the
+row had always claimed while producing 300×400. A screenshot of a hero can now be looked at and
+answered.
+
+### E143 — the six columns the seed was throwing away, and the mapping that would have mislabelled 150,000 street trees
+
+The project owner asked for two things: *"Want to see more city details about trees e.g. when planted
+next pruning last pruning and others"* (#68), and a way for a new tree to say *"whether it stands on a
+street, in a city park, or on private property"* (#69). Both needed data the seed builder was
+discarding. This entry lands the data and the schema; neither screen is built here.
+
+**Seven columns were being dropped, not five.** The list carried into this round — `qCaretaker`,
+`qLegalStatus`, `PlotSize`, `PermitNotes`, `PlantType` — was recorded from a reading of
+`build_seed.py` rather than from the dataset, and the dataset is the authority. Checked against
+DataSF `tkzw-k3nq`'s own published column metadata, it also omitted **`qCareAssistant`** (25,199 rows,
+of which 22,879 say `FUF` — Friends of the Urban Forest, who planted them) and **`SiteOrder`** (99.1%
+populated). Six are now ingested. `SiteOrder` is refused: it is an ordinal disambiguating several
+trees at one address, a key inside the city's table rather than a fact about a tree, and "tree 3 of 7"
+answers nothing anybody asked. `XCoord`/`YCoord`/`Location` are the same point as `lat`/`lon`, and the
+six `Fire Prevention Districts`-style columns are Socrata `:@computed_region_*` join artifacts whose
+values are opaque row ids into other datasets — the "Zip Codes" column's commonest value is `28859`.
+
+**`qLegalStatus` was "explicitly retained" into a column that ships empty.** The comment above
+`MAPPED_COLUMNS` claimed it was retained per BUILD-PLAN §7. It was — into `city_raw`, which is `NULL`
+in the shipped seed because the passthrough costs ~74 MB, and which no code path in the app has ever
+read. It was retained the way something is retained by being written to a column nobody populates.
+This is the same defect class the ROADMAP already names: the most confident comment in the file.
+
+Populations over all 195,309 seed rows: `legal_status` 195,252 (99.97%), `caretaker` 195,309 (100%),
+`care_assistant` 25,199 (12.90%), `plant_type` 195,309 (100%), `plot_size` 146,951 (75.24%),
+`permit_notes` 52,580 (26.92%).
+
+**THERE IS NO PRUNING DATA, AND THE ANSWER IS DEFINITIVE.** `tkzw-k3nq` has eighteen real columns and
+not one records a pruning event, date or schedule — verified against the dataset's live column
+metadata, not only against a downloaded copy. The nearest things in the data are two `qLegalStatus`
+values, `Prune Opt Out` (196 rows) and `Street Tree Maintenance Opt Out` (58), which say somebody
+withdrew a site from the city's maintenance programme. That is a **standing policy about a tree, not a
+date on which anything happened to it**, and it must never render as one. Pruning history would have
+to come from a different city system. `CityRecordTests.thereIsNoPruningData` asserts no seed column
+mentions pruning, so the day DataSF starts publishing one the test fails and #68's question is
+reopened deliberately rather than staying quietly unanswerable.
+
+**The mapping for #69, and the trap in it.** DataSF describes `qCaretaker` as "Agency or person that
+is primary caregiver to tree. **Owner of Tree**", and 163,955 of 195,309 rows say `Private` — 84%.
+Read as a location it is catastrophic and it looks entirely reasonable: 112,955 of those same rows
+carry `qLegalStatus = 'DPW Maintained'`. They stand in the sidewalk, in the public right-of-way, and
+the private party named is the adjacent owner who waters them. Measured both ways over the whole seed:
+
+|                     | jurisdiction leads | caretaker leads |
+|---------------------|-------------------:|----------------:|
+| `.street`           |            182,320 |          30,080 |
+| `.privateProperty`  |             11,856 |         164,096 |
+
+A caretaker-led mapping mislabels **152,240 street trees as private property**. Those two columns are
+the actual measured output of `LandContext.inferred(from:)` and of a deliberately broken version of
+it, so the number is observed rather than estimated.
+
+**So jurisdiction leads and care fills in.** `qLegalStatus` decides wherever it names a jurisdiction.
+`Significant Tree` and `Landmark tree` are protective designations SF's Public Works Code attaches on
+either side of the property line, and `Undocumented`/blank say nothing by construction; for those
+12,286 rows the caretaker is the only signal left and answers for them alone. Final distribution over
+all 195,309 rows, re-derived from every row by `bucketsMatchTheDocumentedDistribution` so the table
+cannot rot: `.street` 182,320 (93.35%), `.privateProperty` 11,856 (6.07%), `.otherPublic` 956 (0.49%),
+`.cityPark` 177 (0.09%), unresolved 0.
+
+**`.cityPark` is 177 rows and that is the finding, not a bug.** This is the *Street* Tree List. 720
+rows name `Rec/Park` as caretaker but 543 of them also carry a DPW jurisdiction — a street tree along
+a park's edge that Rec/Park waters — and calling that "in a city park" is the error a person standing
+on the sidewalk can see. San Francisco's actual park trees are largely not in this dataset. For #69
+that is a feature: somebody adding a tree in Golden Gate Park is adding something the city does not
+have.
+
+**Four values where three were asked for, and E136 is the whole reason.** The ask was street / city
+park / private property. The city's inventory contains 956 rows that are none of them — SFUSD, the
+Port, the PUC, the Housing Authority, the Fire Department, the Arts Commission: public land that is
+neither street nor park. A CHECK pinned to three makes those unstorable, which is E136's `photo_votes`
+failure repeated exactly: a constraint wearing a ruling's clothes, forbidding a state the product
+turns out to need. The asymmetry decides it — a permitted value no screen offers costs nothing, a
+forbidden value the data contains costs a migration. `.otherPublic` exists; #69's picker is free to
+offer three.
+
+**One migration, and working out that it was only one was the first job.** All six city columns land
+on `seed.trees`, and the seed is a **bundled read-only** database ATTACHed beside `main`. It is a
+build product replaced wholesale on install, with no user data to carry forward, so a schema change
+there needs no migration and cannot have one. What is not covered by that is a fact a *contributor*
+states, which must be written and must survive an upgrade. **AppSchema v11** adds
+`community_trees.land_context` for exactly that and nothing else.
+
+**The six seed columns carry no CHECK, and that is a decision.** Every closed vocabulary in the app
+schema carries its vocabulary in a CHECK because that database is written by a DAO and by whoever
+opens it in a debugger. None of that reaches the seed: the only writer is `build_seed.py`, and the
+hand-written `INSERT` a CHECK would catch is one nobody can perform against a database shipped inside
+an `.app`. What a CHECK would do instead is pin twelve legal statuses and twenty-seven caretakers that
+belong to San Francisco rather than to Cypress — a list reading `Asian Arts Commission`, `Mission
+Verde`, `Office of Mayor`, which grows whenever a department is renamed — and turn the next weekly
+diff into a build failure over a string the city was entitled to add. BUILD-PLAN §7 settled the same
+question the same way for `site_type`. The vocabulary that *is* Cypress's is CHECK-pinned where it is
+actually written: `land_context`.
+
+**`land_context` is nullable with no default, unlike v10's `placement`.** Every community tree written
+before v10 *had* a placement — `gps`, because the screen had no other behaviour — so backfilling
+recorded what happened. No tree written before v11 has ever been asked what ground it stands on, so
+there is no true value and any default would be Cypress putting words in a contributor's mouth.
+`'street'` is the plausible guess and the harmful one: it is the answer that makes a tree look like
+the city's business, and a wrong `'street'` on a tree in somebody's front yard ends in a 311 call
+about a tree 311 does not handle.
+
+**`plot_size` is TEXT and is never parsed.** 588 distinct values in three incompatible notations plus
+a bare integer of unstated unit: `Width 3ft` (36,866), `3x3` (31,760), `3X3` (12,135), `60` (782),
+`10x10` (367). DataSF's published description of the field reads "date tree was planted", copied from
+`PlantDate` — the field is under-curated at the source. Deriving an area would be D7's forbidden move,
+dressing an estimate as a measurement.
+
+**Nothing is normalised on the way in.** `PlantType` holds `Tree` 194,988 times, `Landscaping` 318
+times and `tree` 3 times. Correcting that case would be editing the city's record to make it tidier,
+which is not the builder's job; readers compare case-folded. Blank becomes `NULL`, because storing
+`''` makes "the city recorded nothing" indistinguishable from "the value is nothing".
+
+**Provenance is carried, not inferred at the point of display.** A contributor who tapped "city park"
+observed it; a city row's context is Cypress's *reading* of two strings, and that reading can be wrong
+about any individual tree. `Tree.landContext` returns a `KnownLandContext` naming its own source
+rather than a bare `LandContext`, so a screen cannot show an inference with the confidence of an
+observation — BUILD-PLAN §5's requirement that every provenance fact be a queryable column rather than
+something a screen remembers.
+
+**The land context is derived for city rows, not stored.** Storing it would put Cypress's inference
+inside a table that otherwise holds San Francisco's record, create a derived column that can disagree
+with its own inputs, and make revising the mapping a 95 MB rebuild instead of a code change. It lives
+in `LandContext.inferred(from:)`, in `Core`, under test.
+
+**The seed grew 95.3 MB → 103.6 MB**, +8.7%, which is the honest price of six columns over 195,309
+rows and is stated rather than buried. Row counts did not move — 195,309 trees, 569 species — and
+`ANALYZE` still runs, so `sqlite_stat1` survives and E134's 14× map regression stays fixed. If bundle
+size later becomes the binding constraint, `legal_status`, `caretaker` and `plant_type` are 42
+distinct strings across 585,927 cells and normalise into a lookup table cleanly; that was not done now
+because nobody has asked for the bytes back.
+
+**A consequence #69 must know about, flagged and not fixed.** `ReportPresentation.showsHazardBranch`
+is `selection.hazard != nil` and nothing more. The 311 panel — *"This may be a public-safety hazard"*,
+`Call 311 now` — is gated on the chip alone; `ReportModel` holds a `treeID` and never looks at the
+tree. So a tree marked private property today gets the identical 311 handoff, and 311 is the city's
+line for *city* trees. Nobody can reach that state yet, because nothing writes `land_context` until
+#69 ships a picker — which is exactly why it is written down now. The moment a contributor can mark a
+tree private, screen 06 is routing them to a number that will not take the report. That is a product
+decision (does the panel change its copy, offer a different destination, or say plainly that the city
+does not handle this tree?) and belongs to whoever builds #69, not to this round.
