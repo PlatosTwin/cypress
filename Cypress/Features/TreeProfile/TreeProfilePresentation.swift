@@ -233,6 +233,9 @@ struct TreeProfilePresentation {
             }
         }
         parts.append(provenance)
+        // Coarse to fine, and each element narrower than the one before it: where the record came
+        // from, then who named the species on it, then how its coordinate was arrived at.
+        if let speciesClaimNote { parts.append(speciesClaimNote) }
         if let placementNote { parts.append(placementNote) }
         return parts.joined(separator: " · ")
     }
@@ -244,6 +247,55 @@ struct TreeProfilePresentation {
         case .community: return "community-added, unverified"
         }
     }
+
+    /// Who said what species this is, when the answer is "a contributor did".
+    ///
+    /// **NOT SPECIFIED.** SCREENS.md has no community tree carrying a species, because until now the
+    /// add flow could not record one: `VisitAddTreeModel.add()` sent no species on principle. It can
+    /// now, on the ruling that a species the *contributor* states is a different fact from a species
+    /// the *app* guesses, and this line is the second half of that ruling — the half that makes sure
+    /// the distinction survives to the screen. It sits on the provenance line for the same reason
+    /// `placementNote` does: BUILD-PLAN §5 makes provenance a property of the record, and this is
+    /// where `source` and `verification_state` are already read out.
+    ///
+    /// ── This one arm is stated and the other is not, and that is not the placement rule broken ──
+    /// `placementNote` prints **both** of its values, and argues at length that printing only the
+    /// unusual one turns a label into a warning. That argument was tested against this line and it
+    /// does not carry, because the two cases are not the same shape.
+    ///
+    /// A coordinate always exists and always came from one of two instruments, so `gps` and
+    /// `contributor_placed` are two provenances of one fact, and marking one of them ranks it against
+    /// the other. A species does not always exist. The alternative to "species named by a
+    /// contributor" is not a second way of arriving at a species — the client has no other way; there
+    /// is no organisation confirming botany in this app and no photograph being classified by one —
+    /// it is **no species at all**, which prints nothing here because there is nothing to attribute.
+    /// A symmetric second arm would have to be a sentence about a species that does not exist.
+    ///
+    /// The symmetry the placement rule is really about is honoured, one level up and already: a city
+    /// row's species reads `SF city inventory` and a community row's reads `community-added,
+    /// unverified`, both on this same line, and neither is the marked case. This element only says
+    /// *which part* of a community record the contributor authored — and it is not evaluative, in
+    /// exactly `placementNote`'s sense: it names the author, the way `SF city inventory` names a
+    /// source without praising it. It does not say "unconfirmed", "guess", or "may be wrong". A
+    /// contributor who planted the tree knows it better than any row in the seed does.
+    ///
+    /// **Community rows with a species only.** A city row's species is the city's and `provenance`
+    /// already says so; a community row with no species has nobody to attribute.
+    ///
+    /// No `verification_state` condition, and that is deliberate rather than overlooked: `provenance`
+    /// hardcodes `community-added, unverified` for every community row, so there is no state in which
+    /// this element and the one before it could disagree. If a community row ever becomes
+    /// org-verified on screen, both sentences change together or neither does.
+    var speciesClaimNote: String? {
+        guard tree.source == .community, species != nil else { return nil }
+        return TreeProfilePresentation.speciesNamedByContributor
+    }
+
+    /// "a contributor", not "the contributor". `community_trees` records no author — it has no
+    /// `user_id` and no `device_id` — so the record cannot say *which* person, and a line that said
+    /// "the contributor" would imply the one who added the tree and quietly be wrong the moment a
+    /// second person names the species on somebody else's row.
+    static let speciesNamedByContributor = "species named by a contributor"
 
     /// How this record's coordinate was arrived at — the fourth element of the subtitle, and the last
     /// one, because it is the finest-grained provenance fact the row carries.

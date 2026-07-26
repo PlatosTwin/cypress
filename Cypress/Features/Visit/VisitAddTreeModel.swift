@@ -61,6 +61,10 @@ final class VisitAddTreeModel {
         /// and a step would therefore throw away the photograph on the way to the map and back.
         /// This is the same screen, in a different state, holding the same draft.
         case placingPin
+        /// The species picker is up. A phase for exactly the reason `placingPin` is one — the flow
+        /// rebuilds this model per step, so a step would throw the photograph away on the way to the
+        /// catalogue and back.
+        case pickingSpecies
         /// `addTree` is running.
         case adding
         /// BUILD-PLAN §9 M2's "duplicate-proximity warning on add-a-tree". The candidates are the
@@ -109,6 +113,24 @@ final class VisitAddTreeModel {
 
     /// Where this tree is going down. `.gps` until the reader says otherwise.
     private(set) var placement: Placement = .gps
+
+    /// What the contributor says this tree is, or nil because nobody has said.
+    ///
+    /// ── Optional, and the reason is not convenience ────────────────────────────────────────────
+    /// BUILD-PLAN §6 already settled it at the boundary — "Community add: requires photo, species
+    /// optional" — and a screen stricter than its own endpoint is a screen inventing a rule. But the
+    /// argument that actually matters is what a required field would *produce*. This flow's whole
+    /// point is one tap after the photograph; put a mandatory 569-row picker in front of the CTA and
+    /// the contributor who does not know what they are looking at has two ways forward, and the
+    /// cheaper one is to pick something plausible. A required species field does not collect more
+    /// botany, it collects **guessed** botany — the exact thing BUILD-PLAN §15 forbids and the exact
+    /// reason `add()` sent no species at all until now. Optional is the setting under which "I'm not
+    /// sure" costs nothing, and an honest nil is worth more than a confident wrong genus.
+    ///
+    /// Sparse data is the price and it is the right one: a community row with no species still says
+    /// *there is a tree here*, which is the fact the city inventory is missing and the reason the add
+    /// flow exists at all.
+    private(set) var species: Species?
 
     init(api: any CypressAPI, location: VisitLocationProvider, attribution: Attribution) {
         self.api = api
@@ -172,6 +194,7 @@ final class VisitAddTreeModel {
     /// footer write a tree at the coordinate the reader is in the middle of changing.
     var canAdd: Bool {
         hasPhoto && coordinate != nil && phase != .adding && phase != .placingPin
+            && phase != .pickingSpecies
     }
 
     /// `GPS ±8 m`, in screen 02's own words so the two screens of one flow say it the same way.
@@ -288,6 +311,39 @@ final class VisitAddTreeModel {
         phase = .composing
     }
 
+    // MARK: - The species
+
+    /// Opens the catalogue. Unlike `beginPlacingPin` there is no gate: naming a species needs neither
+    /// a fix nor a photograph, and a reader who is waiting for one may as well spend the wait saying
+    /// what the tree is. The CTA still refuses for its own two reasons.
+    func beginPickingSpecies() {
+        guard phase == .composing else { return }
+        phase = .pickingSpecies
+    }
+
+    /// The contributor picked a row.
+    func chooseSpecies(_ species: Species) {
+        self.species = species
+        if phase == .pickingSpecies { phase = .composing }
+    }
+
+    /// "I'm not sure" — and note that this *clears* rather than merely closing. Somebody who opens
+    /// the catalogue over a species they had already named and comes back out saying they are not
+    /// sure has retracted the claim, and leaving the old one on the draft would keep a statement its
+    /// author has just withdrawn.
+    func skipSpecies() {
+        species = nil
+        if phase == .pickingSpecies { phase = .composing }
+    }
+
+    /// Left the picker by the back control. The draft is untouched — this is `cancelPlacingPin`'s
+    /// rule, and the distinction from `skipSpecies` is the whole reason both exist: backing out of a
+    /// screen is not an answer, and saying you are not sure is.
+    func cancelPickingSpecies() {
+        guard phase == .pickingSpecies else { return }
+        phase = .composing
+    }
+
     // MARK: - The add
 
     /// Calls `POST /trees` and reports what came back.
@@ -326,9 +382,24 @@ final class VisitAddTreeModel {
                     // moved pin and not the fact that it was moved would produce a row claiming the
                     // phone had measured a spot nobody stood on.
                     placement: treePlacement,
-                    // Species is optional on the endpoint, and the screen asks for none: a species
-                    // this app cannot confirm would be fabricated botany (BUILD-PLAN §15), and the
-                    // record it writes says `community-added, unverified` for exactly that reason.
+                    // ── The species, when the contributor named one ──────────────────────────────
+                    // This used to be omitted on principle, and the principle was right about the
+                    // case it was written for: BUILD-PLAN §15 forbids fabricated botany, and a
+                    // species *this app* inferred from a photograph would be exactly that — the app
+                    // cannot confirm an identification and must not write one.
+                    //
+                    // A species the **contributor** states is a different fact with a different
+                    // author. Somebody who planted the tree, or who simply knows a London plane on
+                    // sight, is a legitimate source, and refusing to record what they said is not
+                    // caution — it is discarding evidence to avoid having to say where it came from.
+                    // The row already says where it came from: `source = 'community'` and
+                    // `verification_state = 'unverified'` are on it by construction, which is the
+                    // schema saying *a person put this here and nobody has stood behind it*. That is
+                    // a claim, correctly filed as one, and `TreeProfilePresentation.speciesClaimNote`
+                    // is where it is said out loud on screen.
+                    //
+                    // Nil when nobody named one, which stays the common case and the fast path.
+                    speciesID: species?.id,
                     photoLocalPath: photoPath,
                     attribution: attribution
                 )
