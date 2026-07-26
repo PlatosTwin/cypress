@@ -129,7 +129,12 @@ struct VisitCameraView: View {
         if let snapshot = model.snapshot {
             // `PhotoFill`, not `scaledToFill` — a portrait photo measured 234 pt wider than the
             // phone and took the tray with it (ERRATA E125). See `PhotoFill`.
-            PhotoFill(image: snapshot, label: "The photo you just took")
+            //
+            // **`.centre`, against the component's default**, and it has to be: this frame, the
+            // ghost under it and the live `AVCaptureVideoPreviewLayer` behind both are three
+            // drawings of the same scene that only mean anything if they agree, and the preview
+            // layer's `.resizeAspectFill` centres. See `PhotoCropAnchor.centre`.
+            PhotoFill(image: snapshot, label: "The photo you just took", anchor: .centre)
         } else if model.camera.isLive, let session = model.camera.session {
             VisitCameraPreview(session: session)
         } else {
@@ -142,7 +147,9 @@ struct VisitCameraView: View {
     @ViewBuilder
     private var ghostLayer: some View {
         if let ghost = model.ghost, model.subjectTakesGhost {
-            PhotoFill(image: ghost)
+            // `.centre` for the same reason the snapshot above uses it, and it is the half that
+            // matters most: the ghost is what the new frame is lined up against.
+            PhotoFill(image: ghost, anchor: .centre)
                 .opacity(VisitMetrics.Camera.ghostOpacity)
                 .allowsHitTesting(false)
         } else if !model.camera.isLive, model.subjectTakesGhost {

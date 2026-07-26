@@ -86,7 +86,25 @@ struct RootView: View {
         // its own dimming and the live screen behind it — none of which is what the mocks draw.
         // `AppRouter.sheet` already distinguishes these from `path` for exactly this reason.
         .fullScreenCover(isPresented: presentingSheet) {
+            // ══════════════════════════════════════════════════════════════════════════════════
+            // **The environment is handed over explicitly, and it has to be.**
+            //
+            // A cover is presented in its own hosting context, and the `.environment(_:)` calls
+            // above are attached to the `NavigationStack` this modifier hangs off — they reach the
+            // pushed destinations and they do not reach here. Every sheet before the photo viewer
+            // took what it needed as an argument (`api`, `outbox`, `attribution`), so nothing had
+            // ever asked, and the gap was invisible.
+            //
+            // `PhotoViewerView` asks, because `PhotoImageStore` is a cache with one instance and
+            // threading it through as an argument is the thing the environment exists to avoid
+            // (see `PhotoImage`). Found by looking: the viewer came up with its close button, its
+            // caption and the sentence "That photograph could not be opened" across the middle,
+            // because an absent store and a photograph whose bytes are gone are the same state to
+            // a view that only has an optional. Every test passed. ERRATA E142.
+            // ══════════════════════════════════════════════════════════════════════════════════
             presentedSheet
+                .environment(router)
+                .environment(photoImages)
         }
         #if DEBUG
         // The UI test target's door into the screens behind the map (ERRATA E117). `#if DEBUG` here
@@ -231,8 +249,17 @@ struct RootView: View {
                 }
             )
 
+        case let .photoViewer(id, caption):
+            // One photograph, whole. Presented rather than pushed for the reason `PhotoViewerView`
+            // sets out: it is a closer look at what is already on screen, not a place in the app.
+            PhotoViewerView(
+                photoID: id,
+                caption: caption,
+                onClose: { router.sheet = nil }
+            )
+
         default:
-            // Nothing else is presentable. `AppRouter.present` is only ever called with the three
+            // Nothing else is presentable. `AppRouter.present` is only ever called with the four
             // above; anything else is a pushed destination and belongs on `path`.
             EmptyView()
         }
@@ -592,7 +619,11 @@ struct RootView: View {
         // a *pushed* care-log, share or account-ask route is a programming error rather than a
         // screen. They stay named here so that adding a `router.push(.share(id))` somewhere is
         // visible in review rather than silently pushing a scrim over the navigation stack.
-        case .careLog, .share, .accountAsk:
+        // 09, 10, 15 — and the photo viewer, which is presented for its own reason
+        // (`PhotoViewerView`: it is a closer look at what is already on screen, not a place in the
+        // app, and a pushed one would wear the navigation stack's light bar across its dark
+        // backdrop).
+        case .careLog, .share, .accountAsk, .photoViewer:
             NotBuiltYetView(route: route)
 
         // Every remaining route has a mocked screen but no built feature yet. Naming them here

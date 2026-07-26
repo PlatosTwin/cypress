@@ -402,6 +402,19 @@ struct TreeProfilePresentation {
         PhotoHero.choose(from: visiblePhotos.items, tallies: profile.photoTallies)
     }
 
+    /// The caption the viewer carries when the hero is pressed — `Route.photoViewer` explains why it
+    /// travels with the route instead of being read again at the other end.
+    ///
+    /// **`TreePhotosPresentation.caption`, not the eyebrow.** The eyebrow says `Best photo · Oct
+    /// 2025`, which is a claim about this photograph's *rank* and is true only for as long as
+    /// nobody votes; screen 20 captions the same picture `Full tree · 12 Oct 2025`, which is a claim
+    /// about what is in it. Two entrances to one viewer must not name one photograph two ways, and
+    /// of the two the browser's is the one that stays true. It is also the one D2 does not drop —
+    /// dark mode has no eyebrow to borrow.
+    var heroPhotoCaption: String? {
+        bestPhoto.map(TreePhotosPresentation.caption)
+    }
+
     /// 14's dashed well copy, verbatim.
     static let emptyPhotoWellText = "No photos of this tree yet"
 
@@ -418,11 +431,21 @@ struct TreeProfilePresentation {
     /// than relabelled with the next tap.
     static let emptyPhotoWellHint = "Opens the camera for this tree"
 
-    /// The hero as a control, and what pressing it does. **NOT SPECIFIED** — screen 20 has no mock
-    /// (ERRATA E125). The label names the thing rather than describing the picture: what is under
-    /// the finger is the tree's photographs, and the meta pill beside it already says how many.
-    static let heroLabel = "Photos of this tree"
-    static let heroHint = "Opens every photo of this tree"
+    /// The hero as a control, and what pressing it does. **NOT SPECIFIED** — neither screen 20
+    /// (ERRATA E125) nor the viewer has a mock.
+    ///
+    /// **Both strings changed when the hero stopped being one control.** They used to read `Photos
+    /// of this tree` / `Opens every photo of this tree`, because a press anywhere on the header
+    /// opened the browser. It now opens the photograph itself, whole, and the pill beside it opens
+    /// the set — so a label promising "every photo" would name the wrong one of the two. The label
+    /// names what is under the finger, which is one picture, and the hint names the difference
+    /// between pressing and not: that the hero is a crop and the viewer is not.
+    static let heroLabel = "Photo of this tree"
+    static let heroHint = "Opens the whole photo"
+
+    /// The pill as a control (see `HeroPhotoHeader.onMetaPillTap`). Its own text already says how
+    /// many photographs there are, so the hint says where the press goes and does not repeat it.
+    static let heroPillHint = "Opens every photo of this tree"
 
     // MARK: - Season strip (A5)
 
