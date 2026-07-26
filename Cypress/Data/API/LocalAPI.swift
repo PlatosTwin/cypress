@@ -363,6 +363,47 @@ public actor LocalAPI: CypressAPI {
         return tree
     }
 
+    /// Names the species on a community tree that has none. `SpeciesClaim` carries the argument for
+    /// why this is the only species write on device and why it refuses the other two cases.
+    ///
+    /// The species id is checked against the catalogue **first**. `community_trees.species_current`
+    /// is a bare TEXT column with no foreign key — it cannot have one, because the `species` table it
+    /// would point at is in an ATTACHed database and SQLite does not do cross-database references —
+    /// so nothing but this line stops a caller from writing a uuid that resolves to no species at
+    /// all. That row would decode fine and then render as a tree with a species nobody can look up.
+    public func claimSpecies(treeID: UUID, speciesID: UUID) async throws -> Tree {
+        _ = try await species(id: speciesID)
+        let moment = now()
+
+        let subject = try await store.queue.read { connection -> Tree? in
+            try communityTrees.tree(id: treeID, connection: connection)
+        }
+        guard let subject else {
+            // Not in `main`. If the seed has it then it is a city row, and the refusal is
+            // `.forbidden` rather than `.notFound` — the tree is real and this is not allowed, which
+            // is a different sentence from "there is no such tree" and the screen says both.
+            let isCityRow = try await store.queue.read { connection -> Bool in
+                let record = try treeQueries?.tree(id: treeID, connection: connection)
+                return record.flatMap { $0 } != nil
+            }
+            throw isCityRow ? APIError.forbidden : APIError.notFound
+        }
+        guard subject.speciesCurrentID == nil else { throw APIError.conflict }
+
+        try await store.queue.write { connection in
+            guard try communityTrees.claimSpecies(
+                treeID: treeID, speciesID: speciesID, at: moment, connection: connection
+            ) else {
+                // The UPDATE's own `species_current IS NULL` refused what the read above allowed:
+                // somebody claimed it in between, or the row is soft-deleted. Both are conflicts, and
+                // this branch is why the guard is in the SQL and not only in Swift.
+                throw APIError.conflict
+            }
+        }
+
+        return try await treeProfile(id: treeID).tree
+    }
+
     // MARK: - Species
 
     public func species(id: UUID) async throws -> Species {
@@ -1142,6 +1183,38 @@ public actor LocalAPI: CypressAPI {
     }
 
     #if DEBUG
+    /// Test seam (ERRATA E141): a community tree with a contributor's species on it, so the deep-link
+    /// harness can put the claim in front of a screenshot.
+    ///
+    /// **It goes through `addTree`, not around it.** The point of looking at this screen is to check
+    /// that a claim made the whole trip — screen, draft, boundary, column, presentation — so a seam
+    /// that inserted a row directly would be photographing a state the app cannot actually produce.
+    /// The species comes from `searchSpecies`, which is the path the picker takes.
+    ///
+    /// - Parameter query: what to look the species up by. Nil adds a tree with no species, which is
+    ///   the other state worth photographing: the one that offers to be named.
+    public func debugAddCommunityTree(
+        near coordinate: Coordinate,
+        speciesQuery query: String?
+    ) async throws -> UUID {
+        // `Optional.map` is `rethrows`, not `async`, so this is spelled out rather than chained.
+        var species: Species?
+        if let query { species = try await searchSpecies(query: query, limit: 1).first }
+        try FileManager.default.createDirectory(at: photoDirectory, withIntermediateDirectories: true)
+        let staged = photoDirectory.appendingPathComponent("\(UUID().uuidString).jpg")
+        try Self.debugJPEG(hue: 0.3).write(to: staged, options: .atomic)
+
+        let tree = try await addTree(
+            TreeDraft(
+                coordinate: coordinate,
+                speciesID: species?.id,
+                photoLocalPath: staged.path,
+                attribution: attribution
+            )
+        )
+        return tree.id
+    }
+
     /// Test seam (ERRATA E124-B): open a removal review on a real seed tree, returning its flag id, so
     /// the deep-link harness can put the moderation surface in front of a screenshot with a genuine
     /// record behind it. Inserts the same `appears_removed` flag a "Removed?" check-in would, without
