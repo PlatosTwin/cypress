@@ -61,14 +61,14 @@ fires `didUpdateLocations` once and never again.
 
 | file | condition |
 |---|---|
-| `e137-idle-before.txt` | one fix, idle, SwiftUI `Annotation` layer |
-| `e137-idle-after.txt` | one fix, idle, `MKMapView` layer |
-| `e137-walking-before.txt` | walking route, SwiftUI `Annotation` layer |
-| `e137-walking-after.txt` | walking route, `MKMapView` layer |
-| `e137-control-location-declined.txt` | **the control**: permission declined, nine markers |
-| `e137-ablation-no-gps-dot.txt` | idle, GPS-dot annotation removed |
-| `e137-ablation-no-pulse.txt` | idle, the amber pin's `repeatForever` pulse disabled |
-| `e137-idle-mkmapview-before-camera-fix.txt` | idle, `MKMapView` layer, camera loop still present |
+| `e139-idle-before.txt` | one fix, idle, SwiftUI `Annotation` layer |
+| `e139-idle-after.txt` | one fix, idle, `MKMapView` layer |
+| `e139-walking-before.txt` | walking route, SwiftUI `Annotation` layer |
+| `e139-walking-after.txt` | walking route, `MKMapView` layer |
+| `e139-control-location-declined.txt` | **the control**: permission declined, nine markers |
+| `e139-ablation-no-gps-dot.txt` | idle, GPS-dot annotation removed |
+| `e139-ablation-no-pulse.txt` | idle, the amber pin's `repeatForever` pulse disabled |
+| `e139-idle-mkmapview-before-camera-fix.txt` | idle, `MKMapView` layer, camera loop still present |
 
 ## What they say
 

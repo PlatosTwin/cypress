@@ -34,7 +34,7 @@
 //  **It is off unless it is asked for.** `CYPRESS_MAP_PROBE=1` in the environment turns it on, which
 //  is a thing only a `simctl launch` or a scheme does; there is no UI for it and no build ships with
 //  it running. It is `#if DEBUG` on top of that, so it is not in the release binary at all — see
-//  `.measurements/e137-compiled-out.txt` for the artifact comparison that proves it, taken the way
+//  `.measurements/e139-compiled-out.txt` for the artifact comparison that proves it, taken the way
 //  ERRATA E117 proved the same thing of `DebugDeepLink`.
 //
 //  What it still cannot tell you: read on a simulator, frames are composited by a Mac GPU and the
