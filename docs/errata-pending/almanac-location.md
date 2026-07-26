@@ -74,11 +74,24 @@ file is hold the test on the map until the map has finished its first read, whic
 between pressing `Journal` before CoreLocation has answered and pressing it after; the only skip is
 the one screen 12 itself justifies, and it is the prompt that decides it.
 
-**Verified by breaking it, in both directions.** With `xcrun simctl location … set 37.78485,-122.4215`
-both tests pass and tap through to the group screens they were written for (Western Addition: `Walk the
-two` → `Where eyes are needed`, `187 empty planting sites` → `Where a tree could go`). With the fix
-cleared, both skip, and the skip names the command that undoes it. The row assertions were then made to
-fail on purpose, with a fix set, by looking for a row the almanac does not draw — they report the row,
-at the caller, as they did before. The blank-almanac state was photographed rather than deduced: the
-app was installed and launched with `CYPRESS_SCREEN=journal` and screenshotted, showing `Almanac`, no
-pill, no prompt, no blocks; one press to `Map` and back to `Journal` filled it.
+**Verified in all three directions, on iPhone 16.** With location granted and `xcrun simctl location
+… set 37.78485,-122.4215`, both tests **pass** — 18.3 s and 19.1 s — and they tap through to the
+screens they were written for, which their own screenshot notes record: `Walk the two → …` and
+`187 empty planting sites → …`, in Western Addition. With location revoked from the app, both
+**skip** — `screen 12 drew "See your neighbourhood" instead of its neighbourhood, so neither counted
+row exists to tap — this needs a simulated GPS fix over San Francisco: xcrun simctl location <udid> set
+37.78485,-122.4215`. And with screen 12 deliberately broken — `vacantSitesBlock` and `coverageBlock`
+deleted from `AlmanacScreen.body`, leaving §3 and therefore a neighbourhood — both **fail**, at the
+caller, naming the row: `XCTAssertTrue failed - R10's row is not on the almanac, which does have a
+neighbourhood` and `… §4's CTA is not on the almanac, which does have a neighbourhood`. That is the
+one thing a skip must never do, done on purpose to check it does not. The break was reverted and the
+app tree is byte-identical to what it was before it.
+
+**One note for the next person who tries to reproduce the skip.** `xcrun simctl location <udid> clear`
+does not do it: the app keeps receiving the last fix and both tests went on passing. What produces a
+device with no fix is `xcrun simctl privacy <udid> revoke location app.cypress.Cypress`, which is the
+knob `MapRecentreUITests` already documents for the same purpose.
+
+The blank almanac was photographed rather than deduced: the app was installed and launched with
+`SIMCTL_CHILD_CYPRESS_SCREEN=journal`, and the screenshot shows `Almanac` with no pill, no prompt and
+no blocks; one press to `Map` and back to `Journal` filled the same screen with Western Addition.
