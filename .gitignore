@@ -31,3 +31,6 @@ Cypress/Resources/cypress-seed.sqlite
 
 # Worktrees created for parallel agent runs.
 .claude/
+
+# Per-agent DerivedData, kept inside the worktree so parallel agents cannot collide.
+.ddphoto/
