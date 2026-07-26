@@ -41,6 +41,20 @@
 //  on the project owner's ruling. See `Placement` for the mapping and `TreePlacement` for why the
 //  distinction is provenance rather than a grade.
 //
+//  ── The species the contributor names ─────────────────────────────────────────────────────
+//  `add()` used to send none, on the rule that this app cannot confirm a species from a photograph
+//  and that writing one anyway would be fabricated botany (BUILD-PLAN §15). That rule is intact and
+//  it is about the app: nothing here infers anything from the frame. What it never covered is a
+//  species a *person* states, and the owner's ask — "should be possible to add tree species after/at
+//  same time as adding a custom tree" — is exactly that person. So the screen asks, optionally
+//  (`species` carries the argument for why it must stay optional), and the row it writes files the
+//  answer as the claim it is: `source = 'community'`, `verification_state = 'unverified'`, and
+//  `TreeProfilePresentation.speciesClaimNote` saying out loud on screen who named it.
+//
+//  **No migration.** `community_trees.species_current` has existed since the table did, `TreeDraft`
+//  has always carried `speciesID` and `addTree` has always written it. The column had no caller, not
+//  no column. The `after` half is `CypressAPI.claimSpecies`, argued in `SpeciesClaim`.
+//
 //  No SwiftUI in this file.
 //
 

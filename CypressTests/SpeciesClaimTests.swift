@@ -166,8 +166,8 @@ struct SpeciesClaimTests {
     /// tap on the back chevron into a retraction.
     @MainActor
     @Test("leaving the picker by the back control keeps the species; I'm not sure clears it")
-    func backAndNotSureAreDifferentAnswers() throws {
-        let subject = Self.model(api: LocalAPI.previewUnavailable)
+    func backAndNotSureAreDifferentAnswers() async throws {
+        let subject = Self.model(api: LocalAPI(store: try await CypressStore.inMemory(), deviceID: Self.deviceID))
         let oak = try Self.coastLiveOak()
 
         subject.chooseSpecies(oak)
@@ -186,8 +186,8 @@ struct SpeciesClaimTests {
     /// is in the middle of deciding what it is.
     @MainActor
     @Test("the add is refused while the picker is up")
-    func theCTAIsDeadDuringThePick() throws {
-        let subject = Self.model(api: LocalAPI.previewUnavailable)
+    func theCTAIsDeadDuringThePick() async throws {
+        let subject = Self.model(api: LocalAPI(store: try await CypressStore.inMemory(), deviceID: Self.deviceID))
         subject.useLibraryImage(try Self.jpeg())
         #expect(subject.canAdd, "the screen was not ready before the picker opened")
 
@@ -203,8 +203,8 @@ struct SpeciesClaimTests {
     /// why it was not.
     @MainActor
     @Test("no species is not a blocking reason and never disables the add")
-    func theSpeciesIsNeverAGate() throws {
-        let subject = Self.model(api: LocalAPI.previewUnavailable)
+    func theSpeciesIsNeverAGate() async throws {
+        let subject = Self.model(api: LocalAPI(store: try await CypressStore.inMemory(), deviceID: Self.deviceID))
         subject.useLibraryImage(try Self.jpeg())
 
         #expect(subject.species == nil)
@@ -291,11 +291,152 @@ struct SpeciesClaimTests {
     func nothingElseIsAttributed() throws {
         let cityWithSpecies = Self.presentation(source: .cityImport, species: try Self.coastLiveOak())
         #expect(cityWithSpecies.speciesClaimNote == nil, "an inventory row was attributed to a contributor")
-        #expect(!cityWithSpecies.subtitle.contains("named by"), cityWithSpecies.subtitle)
+        let citySubtitle = cityWithSpecies.subtitle
+        #expect(!citySubtitle.contains("named by"), "an inventory row's subtitle attributes: \(citySubtitle)")
 
         let communityNoSpecies = Self.presentation(source: .community, species: nil)
         #expect(communityNoSpecies.speciesClaimNote == nil, "a tree with no species attributed one")
-        #expect(!communityNoSpecies.subtitle.contains("named by"), communityNoSpecies.subtitle)
+        let bareSubtitle = communityNoSpecies.subtitle
+        #expect(!bareSubtitle.contains("named by"), "a tree with no species attributes one: \(bareSubtitle)")
+    }
+
+    // MARK: - "After", not only "at the same time"
+
+    /// A store with the real catalogue attached. `claimSpecies` resolves the species before it writes
+    /// it — `community_trees.species_current` can carry no foreign key, because the `species` table is
+    /// in an ATTACHed database — so these cases need the seed the add-flow cases do not.
+    private static func seededStore() async throws -> CypressStore {
+        let seedURL = try #require(SeedContractTests.seedURL, "no seed database; set CYPRESS_SEED_PATH")
+        return try await CypressStore.inMemory(seedURL: seedURL)
+    }
+
+    /// Adds a tree with no species, the way the fast path does.
+    @MainActor
+    private static func addUnnamedTree(through api: LocalAPI) async throws -> UUID {
+        let subject = Self.model(api: api)
+        subject.useLibraryImage(try Self.jpeg())
+        return try #require(await subject.add(), "the add returned no tree")
+    }
+
+    /// **The "after" half of the request, end to end**, and it goes through the same species search
+    /// the picker uses rather than a hand-written uuid — so a catalogue that stopped answering would
+    /// fail this test rather than leaving it green against a constant.
+    @MainActor
+    @Test("a species named after the tree was added lands on the row and reads as a claim")
+    func aSpeciesCanBeNamedAfterTheAdd() async throws {
+        let store = try await Self.seededStore()
+        let api = LocalAPI(store: store, deviceID: Self.deviceID)
+        let id = try await Self.addUnnamedTree(through: api)
+        #expect(try await Self.storedSpecies(of: id, in: store) == nil, "the tree was added with a species")
+
+        let matches = try await api.searchSpecies(query: "Platanus", limit: SpeciesPickModel.resultLimit)
+        let chosen = try #require(matches.first, "the catalogue answered no Platanus")
+
+        let updated = try await api.claimSpecies(treeID: id, speciesID: chosen.id)
+        #expect(updated.speciesCurrentID == chosen.id)
+
+        let stored = try await Self.storedSpecies(of: id, in: store)
+        let expected = chosen.id.uuidString
+        #expect(
+            stored?.caseInsensitiveCompare(expected) == .orderedSame,
+            "community_trees.species_current holds \(stored ?? "NULL"), not \(expected)"
+        )
+
+        // And it arrives on the screen attributed, by the same line the at-the-same-time path uses.
+        let presentation = TreeProfilePresentation(profile: try await api.treeProfile(id: id))
+        let subtitle = presentation.subtitle
+        #expect(subtitle.contains("species named by a contributor"), "the claim is unattributed: \(subtitle)")
+        // The offer is gone: a species is claimed once, and correcting it needs the assertion chain.
+        #expect(!presentation.offersSpeciesClaim, "the screen still offers to name a species it has")
+    }
+
+    /// First claim wins, and the second is refused rather than swallowed. This is the rule
+    /// `species_assertions` would otherwise carry, kept honestly at the one place that can keep it.
+    @MainActor
+    @Test("a second species claim is refused and the first one survives")
+    func theFirstClaimWins() async throws {
+        let store = try await Self.seededStore()
+        let api = LocalAPI(store: store, deviceID: Self.deviceID)
+        let id = try await Self.addUnnamedTree(through: api)
+
+        let plane = try #require(await api.searchSpecies(query: "Platanus", limit: 5).first)
+        let oak = try #require(
+            await api.searchSpecies(query: "Quercus", limit: 5).first { $0.id != plane.id },
+            "the catalogue answered no second species"
+        )
+
+        _ = try await api.claimSpecies(treeID: id, speciesID: plane.id)
+        await #expect(throws: APIError.conflict) {
+            _ = try await api.claimSpecies(treeID: id, speciesID: oak.id)
+        }
+
+        let stored = try await Self.storedSpecies(of: id, in: store)
+        let kept = plane.id.uuidString
+        #expect(
+            stored?.caseInsensitiveCompare(kept) == .orderedSame,
+            "the second claim overwrote the first: the row holds \(stored ?? "NULL")"
+        )
+    }
+
+    /// A city row's species is the city's, in a read-only database. `.forbidden` and not `.notFound`:
+    /// the tree is real, and the two refusals say different things on screen.
+    @Test("naming the species on a city inventory tree is refused as forbidden, not as missing")
+    func aCityTreeRefusesTheClaim() async throws {
+        let store = try await Self.seededStore()
+        let api = LocalAPI(store: store, deviceID: Self.deviceID)
+
+        let cityTreeID = try await store.queue.read { connection -> UUID? in
+            let statement = try connection.prepare(
+                "SELECT uuid FROM \(SeedDatabase.schemaName).trees WHERE deleted_at IS NULL LIMIT 1"
+            )
+            defer { statement.finalize() }
+            return try statement.fetchOne { try $0.uuidIfPresent("uuid") } ?? nil
+        }
+        let target = try #require(cityTreeID, "the seed has no trees")
+        let species = try #require(await api.searchSpecies(query: "Quercus", limit: 5).first)
+
+        await #expect(throws: APIError.forbidden) {
+            _ = try await api.claimSpecies(treeID: target, speciesID: species.id)
+        }
+        // And a tree that is in neither table is a different answer.
+        await #expect(throws: APIError.notFound) {
+            _ = try await api.claimSpecies(treeID: UUID(), speciesID: species.id)
+        }
+    }
+
+    /// The offer and the boundary agree about who may do this. A control that appeared where
+    /// `claimSpecies` would refuse is the defect `VisitAddTreeModel.canAdd` exists to avoid.
+    @Test("the profile offers the claim exactly where the boundary would accept one")
+    func theOfferMatchesTheRefusals() throws {
+        #expect(Self.presentation(source: .community, species: nil).offersSpeciesClaim)
+        #expect(!Self.presentation(source: .cityImport, species: nil).offersSpeciesClaim)
+        #expect(!Self.presentation(source: .community, species: try Self.londonPlane()).offersSpeciesClaim)
+
+        // A memorial and a vacant site refuse every other write on this screen (E95); naming the
+        // species of a tree that is not there is the same kind of claim.
+        for status in [TreeStatus.removed, .vacantSite] {
+            let gone = TreeProfilePresentation(
+                profile: TreeProfile(
+                    tree: Tree(source: .community, coordinate: Self.fix, status: status)
+                )
+            )
+            #expect(!gone.offersSpeciesClaim, "a \(status.rawValue) record offered a species claim")
+        }
+    }
+
+    /// Three refusals, three sentences. One message for all of them would tell somebody their
+    /// contribution failed when in fact somebody else's succeeded.
+    @Test("each refusal says which refusal it was")
+    func theRefusalsAreDistinguishable() {
+        let conflict = TreeProfileCopy.speciesClaimFailure(.conflict)
+        let forbidden = TreeProfileCopy.speciesClaimFailure(.forbidden)
+        let missing = TreeProfileCopy.speciesClaimFailure(.notFound)
+
+        #expect(Set([conflict, forbidden, missing]).count == 3, "two refusals share a sentence")
+        #expect(conflict.contains("already"), "\(conflict)")
+        #expect(forbidden.contains("city"), "\(forbidden)")
+        // None of them blames the reader for a rule the app has not built yet.
+        #expect(conflict.contains("cannot record yet"), "\(conflict)")
     }
 
     /// The property `placementNote`'s own suite asserts by name — "neither placement line evaluates

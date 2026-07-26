@@ -297,6 +297,27 @@ struct TreeProfilePresentation {
     /// second person names the species on somebody else's row.
     static let speciesNamedByContributor = "species named by a contributor"
 
+    /// Whether this screen offers to name the species — the "after" half of the owner's request.
+    ///
+    /// **NOT SPECIFIED.** SCREENS.md has no such control, because until now there was no writable
+    /// species anywhere in the app.
+    ///
+    /// Three conditions, and each of them is a refusal `LocalAPI.claimSpecies` also enforces, drawn
+    /// rather than merely thrown. A control that offered an act the boundary would refuse is the
+    /// defect `VisitAddTreeModel.canAdd` exists to avoid on the other screen.
+    ///
+    /// - **Community rows only.** A city row's species belongs to an inventory in a read-only
+    ///   database. `SpeciesClaim` argues why overwriting it is a larger decision than this.
+    /// - **Only when there is none.** Correcting a claim needs the `species_assertions` chain, which
+    ///   is not writable on device. First claim wins, exactly as `tree_names` does for the given name
+    ///   (D15). So this control appears once per tree and then never again.
+    /// - **Only where a contribution is welcome.** A memorial and a vacant site refuse every other
+    ///   write on this screen (E95); naming the species of a tree that has been removed, or of a site
+    ///   that never had one, is the same kind of claim about a thing that is not there.
+    var offersSpeciesClaim: Bool {
+        tree.source == .community && species == nil && acceptsContributions
+    }
+
     /// How this record's coordinate was arrived at — the fourth element of the subtitle, and the last
     /// one, because it is the finest-grained provenance fact the row carries.
     ///
@@ -898,4 +919,36 @@ struct TreeProfilePresentation {
         "January", "February", "March", "April", "May", "June",
         "July", "August", "September", "October", "November", "December",
     ]
+}
+
+// MARK: - Copy this screen owns rather than derives
+
+/// Strings screen 03 renders that are not in SCREENS.md, kept out of the view for the reason every
+/// `*Presentation` in this app is: a sentence a state produces is a decision, and a decision is worth
+/// a test that does not have to render a `View` to read it.
+enum TreeProfileCopy {
+
+    /// The control that names a species on a tree that has none.
+    ///
+    /// It asks rather than instructs, and it says *you think* rather than *it is*, because the act it
+    /// starts records an opinion and the label should not promise more than the column stores.
+    static let claimSpeciesAction = "Say what species you think this is"
+
+    /// Why a claim did not land. Three refusals, three sentences — the mapping is here rather than in
+    /// the model because "already claimed" and "not allowed on a city tree" are entirely different
+    /// facts about the world, and an app that showed one message for both would be telling somebody
+    /// their contribution failed when it was in fact somebody else's that succeeded.
+    static func speciesClaimFailure(_ error: APIError) -> String {
+        switch error {
+        case .conflict:
+            return "Somebody has already said what this tree is. Changing that needs a correction, "
+                + "which this app cannot record yet."
+        case .forbidden:
+            return "This tree comes from the city inventory, and its species is the city's record."
+        case .notFound:
+            return "This tree could not be found. Nothing was recorded."
+        default:
+            return "That species could not be recorded. Nothing was changed."
+        }
+    }
 }

@@ -77,6 +77,11 @@ enum DebugDeepLink {
         case memorial           // 19 — reachable now via a local removal override (ERRATA E124-B)
         case photos             // 20 — the photo browser (ERRATA E125)
         case photoHero          // 03 with photographs on it, which the seed alone cannot produce
+        /// 03 over a **community** tree carrying a contributor's species (ERRATA E139) — the state
+        /// this project has no seed record for, because every one of them is added on the device.
+        case speciesClaim
+        /// The same, with no species: the state that offers to be named.
+        case speciesUnclaimed
         // Presented over the tab root.
         case careLog            // 09
         case share              // 10
@@ -210,6 +215,22 @@ enum DebugDeepLink {
                 let id = try await photographedTree(api)
                 try await api.debugSeedPhotos(treeID: id)
                 router.push(screen == .photos ? .photos(id) : .treeProfile(id))
+            case .speciesClaim, .speciesUnclaimed:
+                // The data changes here, like `.memorial` and `.photos`, and for the strongest form
+                // of the same reason: the seed contains no community trees at all, so there is no
+                // record to resolve and the only honest harness is one that adds one the way the app
+                // does. `debugAddCommunityTree` goes through `addTree`.
+                //
+                // Each case gets its **own** coordinate, well outside the other's 10 m dedupe circle
+                // and outside the seed's own trees, because the rule this file already keeps —
+                // a case that writes persistent state must not write it onto a record another case
+                // reads — applies twice over to a table whose write is refused by proximity.
+                let spot = screen == .speciesClaim ? claimedSpot : unclaimedSpot
+                let id = try await api.debugAddCommunityTree(
+                    near: spot,
+                    speciesQuery: screen == .speciesClaim ? "Platanus" : nil
+                )
+                router.push(.treeProfile(id))
             case .moderationReview:
                 // Put the lead's review queue in front of a screenshot: open a removal review on a real
                 // tree, promote this account to a lead, and show the You tab, where the section draws.
@@ -247,6 +268,17 @@ enum DebugDeepLink {
             return Failure(screen: screen.rawValue, reason: "\(error)")
         }
     }
+
+    /// Where the two community-tree cases put their trees.
+    ///
+    /// Ocean, west of Ocean Beach: the seed is the city's street-tree inventory, so nothing of the
+    /// city's is out here and neither case can trip the 10 m dedupe against a record it did not
+    /// write. They are ~200 m apart, which is well outside each other's circle, so running one case
+    /// after the other on one simulator does not refuse the second tree. A re-run of the *same* case
+    /// does refuse — the first tree is still there, 0 m away — which is correct behaviour and shows
+    /// as the deep link reporting a failure rather than as a screen quietly showing the wrong tree.
+    private static let claimedSpot = Coordinate(latitude: 37.7600, longitude: -122.5300)
+    private static let unclaimedSpot = Coordinate(latitude: 37.7618, longitude: -122.5300)
 
     /// The nearest tree to the map's opening centre that is actually standing.
     ///

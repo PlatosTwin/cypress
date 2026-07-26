@@ -5382,3 +5382,80 @@ can be the thing holding the property up.
 `community_trees` is insert-only by design, so a placement can now be recorded and still cannot be
 revised, and the same is true of the coordinate it describes. A contributor who realises afterwards
 that the pin went in the wrong place has nowhere to say so.
+
+### E139 — a contributor may now say what the tree is, and the record says who said it
+
+The project owner, from real use: *"Should be possible to add tree species after/at same time as
+adding a custom tree"*.
+
+`VisitAddTreeModel.add()` deliberately sent no species, and the comment saying why was on the record
+and was right about the case it was written for: this app cannot confirm a species from a photograph,
+BUILD-PLAN §15 forbids fabricated botany, and the row it writes says `community-added, unverified` for
+exactly that reason. **What that reasoning covers is a species the app guesses. It never covered a
+species the contributor states.** Somebody who planted the tree in their own yard, or who knows a
+London plane on sight, is a legitimate source, and declining to record what they said is not caution —
+it is discarding evidence to avoid having to say where it came from. The schema already had the place
+to say where it came from.
+
+**No migration, and establishing that was the first job.** `community_trees.species_current` has
+existed since the table did. `TreeDraft.speciesID` has always been on the boundary, `LocalAPI.addTree`
+has always copied it onto the `Tree`, and `CommunityTreeStore.insert` has always bound it. The column
+had no caller, not no column, and AppSchema stays at **v10**.
+
+A `species_source` column was considered and refused, with E136's caution applied in the direction it
+actually points here. On `community_trees` the provenance of a species claim is already two columns:
+`source` is CHECK-pinned to `'community'` and `verification_state` defaults to `'unverified'`, so every
+row says *a person put this here and nobody has stood behind it* by construction. A third column would
+have had exactly one reachable value in this client — there is no organisation confirming botany here
+and no classifier suggesting it — and a CHECK over a vocabulary guessed for futures that do not exist
+is E136's mistake written in advance rather than discovered afterwards.
+
+**Optional, and the reason is not convenience.** BUILD-PLAN §6 already settled it at the boundary
+("requires photo, species optional") and a screen stricter than its own endpoint is a screen inventing
+a rule. The argument that decides it is what a required field would *produce*: put a mandatory 569-row
+picker in front of the CTA and a contributor who does not know has two ways forward, and the cheaper
+one is to pick something plausible. A required species field does not collect more botany, it collects
+**guessed** botany — the exact thing the original omission existed to prevent. Optional is the setting
+under which "I'm not sure" costs nothing.
+
+**The symmetry rule from E138 was tested against this line and deliberately not applied.** E138 prints
+*both* arms of `placement` — "position from GPS" and "position placed by hand" — because marking only
+the unusual one turns a label into a warning. Here only one arm is printed, and the shapes differ. A
+coordinate always exists and always came from one of two instruments, so those are two provenances of
+one fact and marking one ranks it against the other. A species does not always exist: the alternative
+to "species named by a contributor" is not a second way of arriving at a species, it is **no species at
+all**, which prints nothing because there is nothing to attribute. A symmetric second arm would have to
+be a sentence about a species that does not exist. The symmetry E138 is really about is honoured one
+level up and already — a city row reads `SF city inventory` and a community row reads
+`community-added, unverified`, on the same line, neither of them the marked case. The new element only
+says which *part* of a community record the contributor authored, and it names an author without
+grading one, which is `placementNote`'s own test asserted again by name for this line.
+
+It is "a contributor", not "the contributor": `community_trees` records no author at all — no
+`user_id`, no `device_id` — so the row cannot say which person, and the definite article would imply
+the one who added the tree and be quietly wrong the moment somebody else names the species on it.
+
+**"After" was built, and the two refusals in it are the interesting part.** `CypressAPI.claimSpecies`
+is a real protocol requirement with a default in `SpeciesClaim.swift` — an extension-only method has no
+witness-table entry, dispatches statically, and would be unreachable through the `any CypressAPI` every
+caller in this app holds. It refuses a city row with `.forbidden` (the species is the city's, in a
+read-only ATTACHed database) and a second claim with `.conflict`. That second refusal is the honest
+one: §6's species write is `POST /trees/{id}/species-assertions`, appending to the versioned chain
+`SpeciesAssertion` models, and **`species_assertions` lives only in the seed** — `main` has no copy. So
+a *correction* cannot be recorded with history on device, and overwriting without history is precisely
+what the append-only chain exists to prevent. First claim wins, the way `tree_names` already rules for
+the given name (D15), and the `WHERE species_current IS NULL` is in the UPDATE rather than in a
+preceding SELECT so the rule is the engine's and not a race.
+
+**What was reused.** `CypressAPI.searchSpecies` — the same protocol requirement `MapModel` calls,
+backed by `SpeciesQueries.search`'s covering prefix scan over both names — and C20's own `SearchBar`.
+No second search and no second query were written. `MapSearch` itself was *not* reused: its states are
+claims about a viewport ("no sycamore in view", "showing 30 of 214 here") and a picker that borrowed
+them would be answering questions nobody asked it. The prefix gap is stated rather than hidden: the
+catalogue matches a prefix of either name, so the empty state says nothing *starts with* the query
+rather than claiming no such tree exists.
+
+**Not built, stated plainly.** Correcting a species already claimed, on any tree. It needs
+`species_assertions` in `main` and a moderation surface to resolve competing claims, and standing that
+up on a two-clause feature request would be inventing a product. `claimSpecies` returns `.conflict`
+and the screen says so in words rather than failing silently.
