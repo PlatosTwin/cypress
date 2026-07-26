@@ -109,6 +109,42 @@ public struct OutboxStore {
         _ = try statement.reset()
     }
 
+    /// Takes a staged binary out of every queued mutation still carrying it, because the person who
+    /// took it has deleted it (ERRATA E147).
+    ///
+    /// `removePhoto(atPath:from:)` above is the drain's version and names the row it just uploaded
+    /// for. This one does not know the row — a deletion starts from a `photos` id — and it must not
+    /// miss one, because the window this closes is a photograph deleted between the shutter and the
+    /// drain: remove the file and the row and leave the queue alone, and the next drain finds a
+    /// staged path, fails to read it, and retries a photograph that was supposed to be gone. Worse
+    /// on a real backend, where it would have already been uploaded.
+    ///
+    /// The mutation the binary rode on is left in the queue. A visit is not a photograph: the person
+    /// asked to delete the picture, not the record of having stood in front of the tree.
+    ///
+    /// - Returns: how many queued rows were carrying it.
+    @discardableResult
+    public func discardStagedPhoto(atPath path: String, at date: Date, connection: SQLiteConnection) throws -> Int {
+        let statement = try connection.cachedStatement("""
+            UPDATE outbox
+               SET photo_paths = (
+                     SELECT COALESCE(json_group_array(json(value)), json('[]'))
+                       FROM json_each(outbox.photo_paths)
+                      WHERE json_extract(value, '$.path') <> :path
+                   ),
+                   updated_at = :now
+             WHERE EXISTS (
+                     SELECT 1 FROM json_each(outbox.photo_paths)
+                      WHERE json_extract(value, '$.path') = :path
+                   )
+            """)
+        _ = try statement.bind([":path": path, ":now": date])
+        try statement.run()
+        let changed = connection.changes
+        _ = try statement.reset()
+        return changed
+    }
+
     /// Settles an item whose JSON and photos have both gone.
     ///
     /// The `WHERE` mirrors the table's own CHECK, so a bug that called this early would fail the

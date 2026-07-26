@@ -135,6 +135,22 @@ final class PhotoImageStore {
     /// does not outlive the screen that asked for it.
     func releaseViewer() { viewerSlot = nil }
 
+    /// Drops every trace of one photograph, because it has been deleted (ERRATA E147, task #78).
+    ///
+    /// This cache never evicts — deliberately, and the reason it gets away with it is that a
+    /// photograph is immutable once written, so a decoded copy can never disagree with the file.
+    /// A deletion is the one event that breaks that promise, and the consequence is not staleness:
+    /// somebody deleted a picture *because of what is in it*, and a hero that went on drawing it
+    /// from memory until the app was killed would be the app declining to do the thing it said it
+    /// had done. `missing` is set rather than merely cleared, so a view that asks again gets the
+    /// honest "there is nothing here" instead of starting a read that will fail.
+    func forget(_ id: UUID) {
+        images[id] = nil
+        if viewerSlot?.id == id { viewerSlot = nil }
+        inFlight.remove(id)
+        missing.insert(id)
+    }
+
     /// Decodes at the size wanted rather than decoding and then shrinking.
     ///
     /// `nonisolated` and `static` so it can run off the main actor: this is the expensive half, and
