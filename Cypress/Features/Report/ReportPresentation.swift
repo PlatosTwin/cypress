@@ -88,7 +88,7 @@ struct ReportPresentation: Equatable {
     /// column exist as of AppSchema v11 and `Tree.landContext` already answers the question for both
     /// city and community rows. Whether the panel changes its copy, offers a different destination,
     /// or says plainly that the city does not handle this tree is a product decision and belongs
-    /// with #69. Recorded in ERRATA (E142).
+    /// with #69. Recorded in ERRATA (E143).
     var showsHazardBranch: Bool { selection.hazard != nil }
 }
 

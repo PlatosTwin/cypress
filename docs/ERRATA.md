@@ -5622,7 +5622,7 @@ rather than claiming no such tree exists.
 up on a two-clause feature request would be inventing a product. `claimSpecies` returns `.conflict`
 and the screen says so in words rather than failing silently.
 
-### E142 — the six columns the seed was throwing away, and the mapping that would have mislabelled 150,000 street trees
+### E143 — the six columns the seed was throwing away, and the mapping that would have mislabelled 150,000 street trees
 
 The project owner asked for two things: *"Want to see more city details about trees e.g. when planted
 next pruning last pruning and others"* (#68), and a way for a new tree to say *"whether it stands on a
