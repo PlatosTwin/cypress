@@ -1070,9 +1070,23 @@ public actor LocalAPI: CypressAPI {
 
     // MARK: - Personal surfaces
 
+    /// `GET /me/grove`, Trees pill — the list of trees this contributor has a relationship with.
+    ///
+    /// The two reads run in **one** `read` block, so the rows and the tally they carry are answered
+    /// against the same snapshot of the database. Two blocks would leave a window in which a visit
+    /// saved between them appears in the tally of a tree the first read did not return — a small
+    /// inconsistency that would be indistinguishable from a counting bug and impossible to reproduce.
+    ///
+    /// Both are complete reads with no limit on either, which is what entitles the screen to print
+    /// the tally at all (ERRATA E38, and `GroveRecord`).
     public func grove() async throws -> [GroveEntry] {
-        let rows = try await store.queue.read { connection in
-            try contributions.groveTreeIDs(userID: userID, deviceID: deviceID, connection: connection)
+        let userID = userID
+        let deviceID = deviceID
+        let (rows, records) = try await store.queue.read { connection in
+            (
+                try contributions.groveTreeIDs(userID: userID, deviceID: deviceID, connection: connection),
+                try contributions.groveRecords(userID: userID, deviceID: deviceID, connection: connection)
+            )
         }
         var entries: [GroveEntry] = []
         entries.reserveCapacity(rows.count)
@@ -1084,7 +1098,12 @@ public actor LocalAPI: CypressAPI {
                     displayName: (try await displayNameIfPresent(for: row.treeID)) ?? "",
                     coordinate: profileTree.coordinate,
                     lastVisitedAt: row.lastVisitedAt,
-                    isFavorite: row.isFavorite
+                    isFavorite: row.isFavorite,
+                    // A tree with no key in the map has no contributions against it — a favourite
+                    // nobody has visited. `.none` and not nil: the read *did* answer for this tree,
+                    // and the answer is that there is nothing yet. Nil is reserved for an
+                    // implementation that could not answer at all.
+                    record: records[row.treeID] ?? .none
                 )
             )
         }

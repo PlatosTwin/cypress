@@ -87,7 +87,7 @@ final class GroveModel {
 
     var treesPresentation: GroveTreesPresentation? {
         guard case let .loaded(entries) = treesPhase else { return nil }
-        return GroveTreesPresentation(entries: entries, now: now())
+        return GroveTreesPresentation(entries: entries)
     }
 
     var treesHaveFailed: Bool { treesPhase == .failed }

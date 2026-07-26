@@ -61,19 +61,21 @@ struct GroveTreesTests {
         _ index: Int,
         name: String = "Grandmother Cypress",
         lastVisitedAt: Date? = GroveTreesTests.date(2026, 7, 12),
-        isFavorite: Bool = false
+        isFavorite: Bool = false,
+        record: GroveRecord? = GroveRecord(visits: 1)
     ) -> GroveEntry {
         GroveEntry(
             treeID: UUID(uuidString: String(format: "08100000-0000-4000-8000-%012d", index))!,
             displayName: name,
             coordinate: Coordinate(latitude: 37.7601, longitude: -122.5089),
             lastVisitedAt: lastVisitedAt,
-            isFavorite: isFavorite
+            isFavorite: isFavorite,
+            record: record
         )
     }
 
     static func presentation(_ entries: [GroveEntry]) -> GroveTreesPresentation {
-        GroveTreesPresentation(entries: entries, now: now, calendar: calendar, locale: locale)
+        GroveTreesPresentation(entries: entries)
     }
 
     // MARK: - The pills
@@ -130,19 +132,50 @@ struct GroveTreesTests {
 
     // MARK: - Rows
 
-    /// Both clauses come from the two arms of `ContributionStore.groveTreeIDs` — a visit and a
-    /// favourite — so the sentence can be checked against the query that produced the row.
-    @Test("a row says what put the tree in this grove, and leaves out what did not")
-    func subtitleNamesTheReason() {
+    /// **The line that used to be a date.** It read `Favorite · last visit Jul 12`, which is the
+    /// grammar the Journal also uses, which is why the two screens were indistinguishable.
+    ///
+    /// What it says now is the shape of the relationship: which acts, how many of each, and none of
+    /// the kinds that are zero — because a stated zero is a sentence about what somebody has not
+    /// done, and this screen has no opinion about that.
+    @Test("a row says what the relationship with the tree consists of")
+    func subtitleDescribesTheRelationship() {
         let rows = Self.presentation([
-            Self.entry(1, isFavorite: true),
-            Self.entry(2, isFavorite: false),
-            Self.entry(3, lastVisitedAt: nil, isFavorite: true)
+            Self.entry(1, isFavorite: true, record: GroveRecord(visits: 4, measurements: 1)),
+            Self.entry(2, isFavorite: false, record: GroveRecord(visits: 1)),
+            Self.entry(3, isFavorite: true, record: .none),
+            Self.entry(4, isFavorite: false, record: GroveRecord(checkIns: 2, careEvents: 1))
         ]).rows
 
-        #expect(rows[0].subtitle == "Favorite · last visit Jul 12")
-        #expect(rows[1].subtitle == "Last visit Jul 12")
+        #expect(rows[0].subtitle == "Favorite · 4 visits · 1 measurement")
+        #expect(rows[1].subtitle == "1 visit")
         #expect(rows[2].subtitle == "Favorite")
+        #expect(rows[3].subtitle == "2 check-ins · 1 care log")
+    }
+
+    /// **No date on this screen, at all.** The old clause is what made a set of trees read as a
+    /// chronology; recency now lives in the ordering and nowhere else.
+    ///
+    /// Asserted against a month name rather than against the old literal, so that reinstating the
+    /// clause in *any* format fails here.
+    @Test("nothing a grove row draws is a date")
+    func noDatesOnTheTreesPill() {
+        let rows = Self.presentation([
+            Self.entry(1, lastVisitedAt: Self.date(2026, 7, 12), isFavorite: true),
+            Self.entry(2, lastVisitedAt: Self.date(2024, 3, 4), record: GroveRecord(visits: 2))
+        ]).rows
+
+        let months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        for row in rows {
+            for month in months {
+                #expect(
+                    row.subtitle.contains(month) == false,
+                    "\(row.subtitle) dates a tree, which is the journal's job"
+                )
+            }
+            #expect(row.subtitle.contains("2024") == false)
+        }
     }
 
     /// The word is `QuadActionRow.Action.favorite.label`'s, not a second spelling of it: the list
@@ -150,8 +183,75 @@ struct GroveTreesTests {
     /// different one.
     @Test("the grove calls a favourite what the button that made it is called")
     func favoriteMatchesTheControl() {
-        let row = Self.presentation([Self.entry(1, lastVisitedAt: nil, isFavorite: true)]).rows[0]
+        let row = Self.presentation([Self.entry(1, lastVisitedAt: nil, isFavorite: true, record: .none)]).rows[0]
         #expect(row.subtitle == QuadActionRow.Action.favorite.label)
+    }
+
+    // MARK: - The tally, held to D1 and E38
+
+    /// **The assertion that separates a description from a score.** `GroveRecord` claims the tally is
+    /// never compared and never ordered on; this is the claim, executed.
+    ///
+    /// The fixture is built so that a `sorted(by: record)` slipped into the derivation — in either
+    /// direction — changes the answer: the tree with the most against it is in the middle, the one
+    /// with the least is at the top, and the store's own order is none of those. A list that ranked
+    /// a person's trees by how much they had done to them is a leaderboard with one player.
+    @Test("the tally does not sort the list, and the store's order still does")
+    func theTallyDoesNotSortTheList() {
+        let entries = [
+            Self.entry(1, name: "Zelkova", record: GroveRecord(visits: 1)),
+            Self.entry(2, name: "Almond", record: GroveRecord(visits: 40, careEvents: 12)),
+            Self.entry(3, name: "Magnolia", record: GroveRecord(visits: 7))
+        ]
+        let drawn = Self.presentation(entries).rows.map(\.treeID)
+        #expect(drawn == entries.map(\.treeID), "the grove is ordered by how much you have done")
+    }
+
+    /// **No total, anywhere.** A per-tree description becomes a score the moment something adds it
+    /// up, so the type carries no sum and the derivation produces no row that is about the grove
+    /// rather than about a tree.
+    ///
+    /// Checked two ways, because either alone is weak: no row's text may contain the sum of the
+    /// grove, and the number of rows is the number of trees rather than the number of acts.
+    @Test("nothing sums the tally across the grove")
+    func theTallyIsNeverATotal() {
+        let entries = [
+            Self.entry(1, record: GroveRecord(visits: 3)),
+            Self.entry(2, record: GroveRecord(visits: 4)),
+            Self.entry(3, record: GroveRecord(visits: 5))
+        ]
+        let presentation = Self.presentation(entries)
+        #expect(presentation.rows.count == 3, "the grove drew a row per act rather than per tree")
+        for row in presentation.rows {
+            #expect(row.subtitle.contains("12") == false, "a grove-wide total reached a row")
+        }
+        // And the type itself offers no sum to print. `GroveRecord.isEmpty` answers the only
+        // whole-record question the drawing asks, and it answers it without producing a number.
+        #expect(GroveRecord(visits: 3, checkIns: 1).isEmpty == false)
+        #expect(GroveRecord.none.isEmpty)
+    }
+
+    /// **ERRATA E38, at the row level.** An implementation that could not prove it counted everything
+    /// hands back `nil`, and nil must draw nothing — not `0 visits`, which is a claim about a
+    /// person's history that an unproven read is not entitled to make.
+    ///
+    /// The favourite clause survives, because it comes from a different fact that *was* proved.
+    @Test("a record that could not be proved prints no tally, and does not print a zero")
+    func anUnprovenRecordSaysNothing() {
+        let unproven = Self.presentation([
+            Self.entry(1, isFavorite: false, record: nil),
+            Self.entry(2, isFavorite: true, record: nil)
+        ]).rows
+
+        #expect(unproven[0].subtitle == "", "an unproven read printed a tally")
+        #expect(unproven[0].subtitle.contains("0") == false)
+        #expect(unproven[1].subtitle == "Favorite")
+
+        // And the proved-empty case is a different answer from the unproved one: a favourite with a
+        // read behind it saying "nothing yet" draws the same line here, but the two arrive by
+        // different routes and `.none` is the one that means zero.
+        let proved = Self.presentation([Self.entry(3, isFavorite: false, record: .none)]).rows
+        #expect(proved[0].subtitle == "")
     }
 
     /// The store orders by `last_visited DESC NULLS LAST` and this derivation must not re-sort:
@@ -182,26 +282,26 @@ struct GroveTreesTests {
         #expect(rows[0].title == TreeProfilePresentation.fallbackTitle)
     }
 
-    /// A grove spans years exactly as a journal does, and through the same function — so the two
-    /// personal lists cannot come to date the same record differently.
-    @Test("a visit outside this year carries its year")
-    func datesOutsideTheYearKeepTheirYear() {
-        let row = Self.presentation([Self.entry(1, lastVisitedAt: Self.date(2024, 7, 12))]).rows[0]
-        #expect(row.subtitle.contains("2024"), "two different Julys are drawn under the same label")
-    }
-
-    /// D1 again, on the second personal surface. The grove's own footnote — "Quiet collecting. There
-    /// are no streaks and no leaderboards." — is the specification of this list as much as of the
-    /// species grid above it.
-    @Test("nothing the Trees pill draws counts anything")
-    func noCountsOnTheTreesPill() {
-        let rows = Self.presentation((1...5).map { Self.entry($0, isFavorite: $0.isMultiple(of: 2)) }).rows
-        // The subtitles carry dates, which are identifiers and not quantities, so the digit check
-        // that guards the journal's copy cannot be run over them. What is checked is the strings the
-        // screen owns.
-        #expect(GroveCopy.treesEmptyState.rangeOfCharacter(from: .decimalDigits) == nil)
-        #expect(GroveCopy.treesLoadFailed.rangeOfCharacter(from: .decimalDigits) == nil)
-        #expect(rows.count == 5)
+    /// D1 on the strings this screen owns. The rows carry a tally now, argued at length in
+    /// `GroveRecord` and held by the three tests above; **the screen's own sentences still carry no
+    /// number at all**, which is the part of the blunt digit check that survives and should.
+    ///
+    /// A number in one of these would be a number about the grove rather than about a tree, and that
+    /// is the line the tally must not cross.
+    @Test("no sentence the Trees pill owns contains a number")
+    func noCountsInTheTreesCopy() {
+        let owned = [
+            GroveCopy.treesEmptyState,
+            GroveCopy.treesLoadFailed,
+            GroveCopy.treesExplanation,
+            GroveCopy.footnote
+        ]
+        for string in owned {
+            #expect(
+                string.rangeOfCharacter(from: .decimalDigits) == nil,
+                "\(string) counts something on the screen whose footnote forbids it"
+            )
+        }
     }
 
     @Test("an empty grove of trees says so, and a full one does not")

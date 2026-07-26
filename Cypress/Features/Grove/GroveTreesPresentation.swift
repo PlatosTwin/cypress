@@ -2,29 +2,35 @@
 //  GroveTreesPresentation.swift
 //  Cypress — Features/Grove
 //
-//  Screen 08's `Trees` pill, which was drawn and inert for the whole life of the app.
+//  Screen 08's `Trees` pill: **a set of nouns.**
 //
-//  ── What was wrong, and what "built" means here ───────────────────────────────────────────────
-//  SCREENS.md 08 §2 draws three pills and only `Species` had anything behind it. `Trees` and
-//  `Journal` were `Text` rather than `Button` — deliberately, and the reasoning was sound at the
-//  time: a control that looks pressable and does nothing is worse than a label (DECISIONS constraint
-//  21). What made that reasoning expire is that both destinations turned out to already exist.
-//  `CypressAPI.grove()` has returned `[GroveEntry]` since the protocol was written, and its doc
-//  comment on `groveSpecies` explains at length that "the two tabs of My Grove are keyed on
-//  different things — one on the contributor's trees, one on the species they have come to know".
-//  The list this pill wanted had been one call away the entire time.
+//  ── What this list is, next to the one it was mistaken for ────────────────────────────────────
+//  A row here is *one tree you have a relationship with*. A row in the Journal is *one thing you
+//  did*. A tree you visited twenty times is one row here and twenty rows there, and that is not a
+//  detail — it is the entire difference between the two surfaces, and the reason both exist.
+//
+//  They looked identical anyway, and the project owner said so. Both drew a tree's name in bold over
+//  a grey line ending in a date, which is one grammar for two meanings. Two things were changed to
+//  fix it structurally rather than with words:
+//
+//  - **the date is gone from the row.** Recency lives in the ordering (`last_visited DESC NULLS
+//    LAST`, the store's, unchanged), which is where a stable collection should keep it. Nothing on
+//    this screen is a chronology any more.
+//  - **the row carries the shape of the relationship instead** — `Favorite · 4 visits · 1
+//    measurement`. This is the one fact the journal cannot state without printing twenty rows, and
+//    it is what makes "one row per tree, forever" visible.
 //
 //  ── What this list is allowed to say ──────────────────────────────────────────────────────────
 //  **NOT SPECIFIED**: SCREENS.md 08 draws the pill and not the panel behind it, so there is no
 //  layout, no row and no copy. The nearest specified thing is the screen it sits on, and screen 08's
 //  own footnote is the specification: "Quiet collecting. There are no streaks and no leaderboards."
-//  So the row says which tree, and why it is in this grove, and nothing else — no visit tally, no
-//  first-met date, no ordering by how much you have done.
 //
-//  The subtitle's two clauses are the two arms of the query that produced the row.
-//  `ContributionStore.groveTreeIDs` puts a tree in this grove because you visited it or because you
-//  favourited it, and the sentence names whichever of those is true. That is a fact about the record
-//  rather than a judgement about the person, and it is checkable against the SQL that built it.
+//  The tally is the one thing here that had to be argued against that footnote rather than derived
+//  from it, and the argument is in `GroveRecord`, beside the type that carries it: never public,
+//  never compared, never a reward, never summed across the grove, and never the thing the list is
+//  ordered by. What is drawn is a description of one relationship with one tree, which is a
+//  different object from a total. `GroveTreesTests.theTallyDoesNotSortTheList` and
+//  `theTallyIsNeverATotal` are where that stops being a claim.
 //
 //  No SwiftUI in this file (`CypressTests/GroveTreesTests.swift`).
 //
@@ -53,16 +59,17 @@ struct GroveTreesPresentation: Equatable {
     /// grove against a read that failed — and that is `GroveModel`'s job, not this type's.
     var emptyState: String? { rows.isEmpty ? GroveCopy.treesEmptyState : nil }
 
-    init(
-        entries: [GroveEntry],
-        now: Date = .now,
-        calendar: Calendar = .current,
-        locale: Locale = .current
-    ) {
+    /// No clock, and it is worth saying why one is not taken: **nothing this list draws is a date**.
+    /// The parameters this used to carry (`now`, `calendar`, `locale`) existed to format `last visit
+    /// Jul 12`, and that clause is gone — see `GroveCopy.treeSubtitle`.
+    init(entries: [GroveEntry]) {
         // **The store's order, unchanged.** `groveTreeIDs` orders by `last_visited DESC NULLS LAST`,
         // which puts the tree you saw most recently at the top and the ones you have only favourited
         // at the bottom. Re-sorting here would be a second ordering, and two orderings is two
         // chances to disagree — the one in SQL is the one the index is built for.
+        //
+        // It is also the *only* place recency is now expressed, and the only ordering this list may
+        // have: sorting by the tally would turn a description into a ranking (D1, `GroveRecord`).
         self.rows = entries.map { entry in
             Row(
                 treeID: entry.treeID,
@@ -71,10 +78,7 @@ struct GroveTreesPresentation: Equatable {
                     : entry.displayName,
                 subtitle: GroveCopy.treeSubtitle(
                     isFavorite: entry.isFavorite,
-                    lastVisitedAt: entry.lastVisitedAt,
-                    now: now,
-                    calendar: calendar,
-                    locale: locale
+                    record: entry.record
                 )
             )
         }
@@ -114,40 +118,66 @@ extension GroveCopy {
     /// is the same event.
     static let treesLoadFailed = "Your trees could not be loaded."
 
-    /// `Favorite · last visit Jul 12`, `Last visit Jul 12`, or `Favorite`.
+    /// `Favorite · 4 visits · 1 measurement`, `3 visits`, `Favorite`.
     ///
-    /// The favourite clause uses `QuadActionRow.Action.favorite.label` rather than a second spelling
+    /// ── What this line is, and what it stopped being ──────────────────────────────────────
+    /// It used to read `Favorite · last visit Jul 12`, and that sentence is why the project owner
+    /// could not tell this screen from the Journal: both lists drew a tree's name in bold over a grey
+    /// line ending in a date. Two lists with one grammar are one list as far as a reader is concerned.
+    ///
+    /// **There is no date here now, and that is the point.** A grove is a set of nouns — which trees
+    /// are mine, where do I go back to — and a journal is a stream of verbs. Recency has not been
+    /// thrown away; it moved from the text into the *ordering*, which is `last_visited DESC NULLS
+    /// LAST` and was always the store's. The most recently seen tree is at the top, where it was
+    /// before, and it no longer has to say so in words the journal also uses.
+    ///
+    /// What takes the date's place is the one fact the journal cannot show without twenty rows: how
+    /// much of a relationship this is. See `GroveRecord` for why a per-tree, per-kind, never-summed,
+    /// never-sorted-on tally is a description rather than a score, and for the three D1 clauses it
+    /// has to satisfy.
+    ///
+    /// ── The clauses, and their order ──────────────────────────────────────────────────────
+    /// The favourite clause leads, because it is a thing you *chose* rather than a thing you
+    /// accumulated, and it uses `QuadActionRow.Action.favorite.label` rather than a second spelling
     /// of the word: this list describes what a button did, and a list that renamed the act would be
-    /// describing a different one. RULINGS R2 fixed that label as "the same string in every state",
-    /// which is exactly the property a list of past acts needs from it.
+    /// describing a different one. RULINGS R2 fixed that label as "the same string in every state".
     ///
-    /// The date is a day, not a duration — "last visit Jul 12" rather than "visited 8 days ago". A
-    /// duration is a quantity of time since you last did something, which is one rendering away from
-    /// a lapsed streak (D1); a date is an identifier for when a thing happened. It is the same
-    /// judgement `JournalCopy.day` makes, through the same function, so the two personal lists cannot
-    /// come to date the same record differently.
-    static func treeSubtitle(
-        isFavorite: Bool,
-        lastVisitedAt: Date?,
-        now: Date,
-        calendar: Calendar,
-        locale: Locale
-    ) -> String {
-        let visit = lastVisitedAt.map { date in
-            JournalCopy.day(date, now: now, calendar: calendar, locale: locale)
+    /// Then the kinds, in the order the acts sit in the app rather than by size — **by size would be
+    /// a ranking**, and a ranking inside the row is the first step to a ranking between rows.
+    ///
+    /// A `nil` record contributes nothing at all, not `0 visits`: see `GroveEntry.record`.
+    static func treeSubtitle(isFavorite: Bool, record: GroveRecord?) -> String {
+        var parts: [String] = []
+        if isFavorite { parts.append(QuadActionRow.Action.favorite.label) }
+        if let record {
+            parts.append(contentsOf: kindClauses(record))
         }
-        switch (isFavorite, visit) {
-        case let (true, .some(day)):
-            return "\(QuadActionRow.Action.favorite.label) · last visit \(day)"
-        case let (false, .some(day)):
-            return "Last visit \(day)"
-        case (true, .none):
-            return QuadActionRow.Action.favorite.label
-        case (false, .none):
-            // Unreachable through `groveTreeIDs`, which returns a row only when one of the two arms
-            // matched. Empty rather than invented: a row with nothing true about it should say
-            // nothing, not guess.
-            return ""
-        }
+        // Empty when there is nothing true to say — a row with a name and no second line, which C10
+        // draws without the gap. Reachable through `groveTreeIDs` only for a visited tree whose
+        // implementation returned no record.
+        return parts.joined(separator: " · ")
+    }
+
+    /// `4 visits`, `1 check-in`, `2 measurements`, `1 care log` — omitting every kind that is zero.
+    ///
+    /// Zeroes are left out rather than printed, for the reason every other absent clause in this app
+    /// is left out (`JournalCopy.subtitle`'s summary, screen 11's pills): a stated zero is a sentence
+    /// about what somebody has not done, and this screen does not have opinions about that.
+    ///
+    /// The nouns are the acts as the app's own controls name them — screen 05 is a check-in, screen
+    /// 09 is a care log, screen 16 a measurement — rather than the schema's table names, matching
+    /// `JournalCopy.verb` one screen over.
+    private static func kindClauses(_ record: GroveRecord) -> [String] {
+        [
+            clause(record.visits, "visit", "visits"),
+            clause(record.checkIns, "check-in", "check-ins"),
+            clause(record.measurements, "measurement", "measurements"),
+            clause(record.careEvents, "care log", "care logs")
+        ].compactMap { $0 }
+    }
+
+    private static func clause(_ count: Int, _ singular: String, _ plural: String) -> String? {
+        guard count > 0 else { return nil }
+        return "\(count) \(count == 1 ? singular : plural)"
     }
 }
