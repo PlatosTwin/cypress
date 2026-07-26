@@ -983,13 +983,31 @@ struct TreeProfilePresentation {
     /// who has just read `Prune Opt Out` on the card above; the general note second, because it is a
     /// fact about the dataset. Empty when there is no section.
     var cityRecordNotes: [String] {
-        guard let cityRecord else { return [] }
+        guard showsCityRecordSection else { return [] }
         var notes: [String] = []
-        if let optOut = cityRecord.maintenanceOptOutNote() { notes.append(optOut) }
+        if let optOut = cityRecord?.maintenanceOptOutNote() { notes.append(optOut) }
         notes.append(CityRecordPresentation.pruningNote)
         if let provenance = inventoryProvenanceNote { notes.append(provenance) }
         return notes
     }
+
+    /// Whether "What San Francisco has on file" draws.
+    ///
+    /// **Cards, or a provenance line.** It used to be cards alone, and `CityRecordPresentation`
+    /// still explains why: a header over an empty grid is worse than no header, so a record whose
+    /// only content the app declines to show — a bare permit number (E145) — draws nothing.
+    ///
+    /// That rule silently removed the entire section from every tree in the shipped seed when #91
+    /// switched sources. SF Public Works' own layer publishes exactly one of the six city columns,
+    /// `PlantType`, and `plantType == "Tree"` deliberately draws no card, so every one of the
+    /// 133,577 records produced an empty grid and the section vanished — taking the pruning answer
+    /// and the provenance line with it.
+    ///
+    /// A provenance line is not an empty grid. "This came from the city's street tree inventory, read
+    /// on 26 July 2026" is a fact about *this record* and is the one the section exists to carry
+    /// now that the inventory publishes so little else. The pruning note alone does not open the
+    /// section: it is a statement about the dataset and needs something of this tree's beside it.
+    var showsCityRecordSection: Bool { cityRecord != nil || inventoryProvenanceNote != nil }
 
     /// `From the SF Public Works street tree inventory, 26 July 2026.` — or nothing.
     ///
@@ -998,6 +1016,9 @@ struct TreeProfilePresentation {
     /// the one this line exists for; the app says nothing rather than implying the records are
     /// current. See `InventorySource` and `CityRecordCopy.provenanceNote`.
     var inventoryProvenanceNote: String? {
+        // Only for a record that came out of an inventory. A community-added tree is nobody's city
+        // record, and `LocalAPI` already withholds the source for one; this is the second lock.
+        guard tree.cityRecord != nil else { return nil }
         guard let source = profile.inventorySource, let snapshot = source.snapshotDate else { return nil }
         return CityRecordCopy.provenanceNote(
             source: source.name,
@@ -1009,7 +1030,7 @@ struct TreeProfilePresentation {
     ///
     /// The view asks this to decide which block closes the screen, so the 30 pt that SCREENS.md 03 §9
     /// puts under the stat grid keeps landing under whatever is genuinely last.
-    var showsCityDetails: Bool { landContextNote != nil || cityRecord != nil }
+    var showsCityDetails: Bool { landContextNote != nil || showsCityRecordSection }
 
     // MARK: - Cold-start footnote
 

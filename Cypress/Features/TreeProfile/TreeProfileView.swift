@@ -721,14 +721,17 @@ struct TreeProfileView: View {
                 .padding(.top, CypressSpacing.labelSectionTop)
         }
 
-        if let cityRecord = presentation.cityRecord {
+        // Cards, or a provenance line — see `TreeProfilePresentation.showsCityRecordSection`. The
+        // grid is empty for every record in the shipped seed, because the city's own layer publishes
+        // one column and the app declines to draw a card reading `Tree`.
+        if presentation.showsCityRecordSection {
             VStack(alignment: .leading, spacing: 0) {
                 Text(CityRecordCopy.header)
                     .cypressMicroLabel()
                     .padding(.bottom, CypressSpacing.gapVitality)
 
                 StatGrid {
-                    ForEach(cityRecord.facts) { fact in
+                    ForEach(presentation.cityRecord?.facts ?? []) { fact in
                         // `.cityRecord`, never `.text`. The badge is the whole reason this section is
                         // allowed to exist: a card that read `DPW Maintained` in plain mono would be
                         // Cypress asserting it, and a screenshot of it would carry no source at all.

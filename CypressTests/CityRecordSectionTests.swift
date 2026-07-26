@@ -233,6 +233,26 @@ struct CityRecordSectionTests {
         tree.plantedYear = nil
         let presentation = Self.presentation(TreeProfile(tree: tree))
         #expect(presentation.cityRecord == nil)
+        #expect(presentation.showsCityRecordSection == false)
+        #expect(presentation.cityRecordNotes.isEmpty)
+
+        // The section's second arm: a record with no drawable card still opens it once the seed can
+        // say where the record came from and when. That is the whole content of the section on the
+        // shipped seed, where `PlantType` is the only column the city publishes and it draws no card.
+        let dated = Self.presentation(
+            TreeProfile(
+                tree: tree,
+                inventorySource: InventorySource(
+                    id: "city",
+                    name: "SF Public Works street tree inventory",
+                    url: "https://example.invalid",
+                    snapshotDate: InventorySource.date(fromISODay: "2026-07-26")
+                )
+            )
+        )
+        #expect(dated.cityRecord == nil, "still no cards")
+        #expect(dated.showsCityRecordSection)
+        #expect(dated.cityRecordNotes.last == "From the SF Public Works street tree inventory, July 26, 2026.")
     }
 
     // MARK: - Pruning: answered on screen, once, about the dataset
