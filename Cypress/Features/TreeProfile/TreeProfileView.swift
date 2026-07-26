@@ -427,11 +427,27 @@ struct TreeProfileView: View {
                 .cypressLatinName(presentation.isCold ? CypressFont.latinName145 : CypressFont.latinName)
                 .fixedSize(horizontal: false, vertical: true)
 
+            showWhere(presentation)
             speciesClaim(presentation)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, presentation.isCold ? CypressSpacing.gutterLabel : CypressSpacing.gutter)
         .padding(.top, presentation.isCold ? TreeProfileMetrics.coldBlockGap : TreeProfileMetrics.blockGap)
+    }
+
+    /// "I have no idea where tree is" (ERRATA E142).
+    ///
+    /// **In the identity block, directly under the line that names the place.** The subtitle above
+    /// it ends in where the record came from and the H1 is, for most of the city's inventory, a
+    /// street address — so this is the one part of the screen already talking about location, and it
+    /// is above the fold on both variants without an extra block being invented for it. The same
+    /// argument `speciesClaim` below makes about the subtitle: the offer belongs against the line it
+    /// is about.
+    ///
+    /// It is drawn for every record this screen can render, including a memorial, because a record
+    /// nobody may contribute to is still somewhere.
+    private func showWhere(_ presentation: TreeProfilePresentation) -> some View {
+        ShowWhereButton { router?.push(.pinSet(presentation.locateSet)) }
     }
 
     /// The "after" half of "add tree species after/at same time as adding a custom tree".

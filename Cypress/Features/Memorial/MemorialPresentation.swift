@@ -124,6 +124,16 @@ struct MemorialPresentation: Equatable {
     /// §6.
     let stats: [Stat]
 
+    /// The map this screen can send the reader to (ERRATA E142).
+    ///
+    /// **A memorial gets it too, and the record is what makes it honest.** The tree is gone; the
+    /// place is not, and the coordinate is one of the few things about a removed tree that is still
+    /// exactly true. C19 draws the record as the grey dash-marked pin screen 01's own caption calls
+    /// a memorial (RULINGS R7), so the map states what kind of record it is without this screen
+    /// having to add a sentence about it — and a reader who came here from My Grove or the journal
+    /// can go and stand where it stood.
+    let locateSet: PinSet
+
     // MARK: - Derivation
 
     init(
@@ -162,6 +172,9 @@ struct MemorialPresentation: Equatable {
         // `status.isMemorial` ahead of every other badge, so a memorial cannot show `THRIVING`
         // because its last check-in was a five.
         self.badge = .removed
+
+        // Named with §3's H1, which is what the reader has just read.
+        self.locateSet = PinSet.locate(profile, name: MemorialCopy.title(profile: profile))
 
         self.moments = Self.moments(
             photos: photos,

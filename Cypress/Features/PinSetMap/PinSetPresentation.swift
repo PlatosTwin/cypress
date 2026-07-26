@@ -2,7 +2,18 @@
 //  PinSetPresentation.swift
 //  Cypress — Features/PinSetMap
 //
-//  **NOT SPECIFIED.** ERRATA E129.
+//  **NOT SPECIFIED.** ERRATA E129, and E142 for the group of one.
+//
+//  ── The group of one (E142) ───────────────────────────────────────────────────────────────
+//  The project owner, from their own iPhone: *"In almanac under this season need a way to find the
+//  tree mentioned. Right now clicking just takes to tree page but I have no idea where tree is"*.
+//
+//  That is the same sentence E129 answered for the two counted rows, one record smaller, so it gets
+//  the same screen rather than a second one. Three things differ and all three are argued where they
+//  are made: the camera is the 120 m floor centred on the record rather than a box around a group;
+//  the record is drawn **selected**, because a group of one is invisible in a street of thirty; and
+//  the rest of the block is drawn behind it as context, which is the one thing this screen reads for
+//  itself (`PinSetNeighbours`).
 //
 //  ── What this screen is, and what it is allowed to be ─────────────────────────────────────
 //  `docs/ARCHITECTURE.md` rule 8: a screen or state that is in neither SCREENS.md nor BUILD-PLAN §9
@@ -53,8 +64,11 @@ struct PinSetPresentation: Equatable {
     /// defect E38 is named for. So the page's size is stated, in the same breath, every time.
     let coverage: String
 
-    /// The records, in the order they arrived — nearest first.
+    /// The records, in the order they arrived — nearest first, then any context behind them.
     let pins: [TreePin]
+
+    /// The one pin drawn selected, or nil when the map is about all of them equally.
+    let focusPinID: UUID?
 
     /// The opening camera: a box that holds every pin, with room around it.
     let frame: BoundingBox
@@ -62,11 +76,32 @@ struct PinSetPresentation: Equatable {
     /// C1's trailing pill, or nil when the group named no area.
     let neighborhoodName: String?
 
-    init(set: PinSet, locale: Locale = .current) {
+    /// - Parameter context: records that are on the map but are **not** what the sentence above it
+    ///   counts — the rest of the block around a single record the reader asked to be shown. Empty
+    ///   for the two counted groups, and empty for a locate map until the read behind it returns.
+    ///
+    ///   It is a second argument rather than more pins on the `PinSet` for one reason, and it is
+    ///   E38's: `PinSet.count` is a claim about how many records there are, `PinSet.isComplete`
+    ///   compares the pins against it, and folding scenery into `pins` would make both of those
+    ///   sentences false about the two screens that already depend on them.
+    init(set: PinSet, context: [TreePin] = [], locale: Locale = .current) {
         self.title = PinSetCopy.title(for: set.subject)
         self.subject = PinSetCopy.subject(for: set, locale: locale)
-        self.coverage = PinSetCopy.coverage(shown: set.pins.count, of: set.count, locale: locale)
-        self.pins = set.pins
+        self.coverage = PinSetCopy.coverage(for: set, context: context, locale: locale)
+        // The set's own records first, and a context pin the set already holds is dropped rather
+        // than drawn twice. The order is load-bearing on the way in as well as out: the record the
+        // reader asked about must be in the array from the first frame, because the read that
+        // fetches its neighbours has not returned yet and a map that flies somewhere and shows
+        // nothing for a beat is exactly the failure this screen exists to avoid.
+        let known = Set(set.pins.map(\.id))
+        self.pins = set.pins + context.filter { !known.contains($0.id) }
+        self.focusPinID = set.focusPinID
+        // **Around the set, never around the context.** For a group this is the whole group, as it
+        // always was. For one record it is `frame(around:)`'s floor — `MapLayout.defaultSpanMetres`,
+        // the 120 m ERRATA E12 measured as the scale where San Francisco's street trees stop fusing
+        // into a mat — centred on the record itself. Framing the neighbours instead would pull the
+        // camera out to whatever the read happened to return and put the subject somewhere off
+        // centre, which is the opposite of the ask.
         self.frame = Self.frame(around: set.pins)
         self.neighborhoodName = set.neighborhoodName
     }
@@ -143,6 +178,10 @@ enum PinSetCopy {
         switch subject {
         case .coverageGap: return AlmanacCopy.coverageLabel
         case .vacantSites: return AlmanacCopy.vacantLabel
+        // The record's own display name, carried from the screen the reader pressed the control on.
+        // Same rule as the two above it: the title of this screen is a string that already existed
+        // and that the reader has just read, rather than one invented at the destination.
+        case let .oneRecord(name, _): return name
         }
     }
 
@@ -151,8 +190,45 @@ enum PinSetCopy {
         switch set.subject {
         case .coverageGap: return AlmanacCopy.coverageTitle(count: set.count, locale: locale)
         case .vacantSites: return AlmanacCopy.vacantTitle(count: set.count, locale: locale)
+        // **The street, because the reader is on foot.** A person holding this screen is trying to
+        // walk to the thing, and the address is the one fact that gets them onto the right block
+        // without reading the map at all. 8,943 of the seed's rows carry no address; that is said
+        // plainly rather than papered over with the neighbourhood, which is already in the pill
+        // beside the title and would answer a question nobody asked.
+        case let .oneRecord(_, address):
+            if let address, !address.isEmpty { return address }
+            return noAddress
         }
     }
+
+    /// What stands in for the street when the city recorded none.
+    static let noAddress = "The city recorded no street address for this one."
+
+    // MARK: The control that opens this screen
+
+    /// What the three screens that render one record press to get here (`ShowWhereButton`).
+    ///
+    /// The owner's own words, near enough: they wrote *"I have no idea where tree is"*. It says
+    /// **where** rather than "map", because the map is how the answer is delivered and the question
+    /// is about the street; and it cannot be misread as the profile hero's "show me more of this",
+    /// which is the one other thing on that screen somebody might press to see.
+    ///
+    /// One sentence for all three screens, including the memorial and the vacant site: *this* is a
+    /// pronoun and takes whatever the record is, where "Show me where this tree is" would be a claim
+    /// about 12,518 basins that have no tree in them (ERRATA E107, E113).
+    static let showWhereAction = "Show me where this is"
+
+    // MARK: The control that goes back to the subject
+
+    /// It names what it centres on rather than what it looks like, for `MapRecentreCopy.label`'s
+    /// reason: a reader who cannot see the crosshair learns nothing from the word "locate".
+    static func recentreLabel(_ name: String) -> String { "Centre the map on \(name)" }
+
+    static let recentreHint = "Returns to the larger pin at street level"
+
+    /// Said out loud after the press. The map has moved under a VoiceOver reader's finger and
+    /// nothing else reports it — `MapRecentreCopy.spokenCentred`'s argument, on the screen next door.
+    static let spokenRecentred = "The map is back on it, at street level."
 
     /// How much of the group is on the map (ERRATA E38).
     ///
@@ -166,6 +242,24 @@ enum PinSetCopy {
     ///
     /// It says what is on the map and stops (ARCHITECTURE §5.7). It does not apologise for the ones
     /// that are not, does not offer to load more, and does not tell anybody to pan.
+    static func coverage(for set: PinSet, context: [TreePin], locale: Locale) -> String {
+        guard case let .oneRecord(name, _) = set.subject else {
+            return coverage(shown: set.pins.count, of: set.count, locale: locale)
+        }
+        // **It names the mark, and it names it by the name at the top of the screen.** A selected
+        // pin is 1.25× its neighbours (`MapLayout.selectedPinScale`) and that is the app's whole
+        // vocabulary for "this one" — a second, louder highlight invented here would be a second
+        // vocabulary. What the sentence adds is the thing a size cannot say on its own: which of the
+        // pins is the larger one, in words, for a reader who is comparing thirty green dots on one
+        // block or who is not looking at the map at all.
+        //
+        // The second half is only true once the read behind it has returned, so it is only said
+        // then. Claiming the block is drawn while it is still one pin would be the same defect at
+        // one remove.
+        guard !context.isEmpty else { return "The larger pin is \(name)." }
+        return "The larger pin is \(name). The rest of the block is drawn around it."
+    }
+
     static func coverage(shown: Int, of total: Int, locale: Locale) -> String {
         guard shown < total else {
             return total == 1

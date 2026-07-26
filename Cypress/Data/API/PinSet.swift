@@ -39,6 +39,21 @@ public struct PinSet: Hashable, Sendable {
         case coverageGap
         /// `Where a tree could go`, the vacant planting sites (RULINGS R10).
         case vacantSites
+        /// **One record, because the reader asked where it is** (ERRATA E142).
+        ///
+        /// A group of one, which is what makes it belong here rather than in a screen of its own.
+        /// The almanac, My Grove, the journal, the species list and search all name records and all
+        /// hand the reader to a page that never says where the thing is; the answer to *where* is a
+        /// map with the record on it, which is the answer E129 already built for the two counted
+        /// rows. A second map screen for a group of one would be two answers to one question, and
+        /// they would drift.
+        ///
+        /// The two strings are carried rather than re-derived: `name` is the display name the
+        /// reader tapped, by whatever precedence the surface they came from used, and `address` is
+        /// the street the city recorded, or nil. Deriving either here would mean a second read that
+        /// can disagree with the screen the reader is looking at — the argument this whole type is
+        /// built on.
+        case oneRecord(name: String, address: String?)
     }
 
     public let subject: Subject
@@ -69,6 +84,64 @@ public struct PinSet: Hashable, Sendable {
     /// asking for one row more than you wanted — buys nothing: there is already a number to compare
     /// against.
     public var isComplete: Bool { pins.count >= count }
+
+    /// The one pin this set is *about*, when it is about one.
+    ///
+    /// Derived rather than stored, which is what makes it impossible to hold a focus that is not in
+    /// the set — the defect a second `UUID` field would have invited. `.oneRecord` is built from
+    /// exactly one pin, so `first` is that pin; the two counted groups are about all of their pins
+    /// equally and have no focus at all.
+    public var focusPinID: UUID? {
+        guard case .oneRecord = subject else { return nil }
+        return pins.first?.id
+    }
+
+    /// One record, asked about by name (ERRATA E142).
+    ///
+    /// `count` is 1 because there is one, and `isComplete` is therefore true: the map is showing the
+    /// whole of what the sentence above it claims. Any other record drawn beside it is context and
+    /// travels separately — see `PinSetPresentation.init(set:context:locale:)` — precisely so that
+    /// this type keeps meaning "the records the sentence counts" (ERRATA E38).
+    public static func locate(
+        _ pin: TreePin,
+        name: String,
+        address: String?,
+        neighborhoodName: String?
+    ) -> PinSet {
+        PinSet(
+            subject: .oneRecord(name: name, address: address),
+            pins: [pin],
+            count: 1,
+            neighborhoodName: neighborhoodName
+        )
+    }
+
+    /// One record, out of the payload the screen asking is already holding.
+    ///
+    /// The three screens a record can be rendered on — the profile, the memorial, the vacant site —
+    /// all derive from a `TreeProfile` and all now offer this, so the conversion into the map's
+    /// vocabulary is written once. Three copies of it is how a memorial comes to be drawn with a
+    /// living tree's pin (RULINGS R7) on one screen and not on another.
+    ///
+    /// - Parameter name: the display name the reader is looking at. It is a parameter rather than
+    ///   something derived here because each of the three screens has its own precedence for it —
+    ///   a given name on 03, the street address on a site — and this is the one place that must not
+    ///   have a fourth opinion.
+    public static func locate(_ profile: TreeProfile, name: String) -> PinSet {
+        locate(
+            TreePin(
+                id: profile.tree.id,
+                coordinate: profile.tree.coordinate,
+                status: profile.tree.status,
+                source: profile.tree.source,
+                verificationState: profile.tree.verificationState,
+                speciesID: profile.tree.speciesCurrentID
+            ),
+            name: name,
+            address: profile.tree.address,
+            neighborhoodName: profile.neighborhoodName
+        )
+    }
 
     public init(subject: Subject, pins: [TreePin], count: Int, neighborhoodName: String?) {
         self.subject = subject

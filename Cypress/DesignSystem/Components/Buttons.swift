@@ -178,3 +178,42 @@ struct SecondaryOutlineButton: View {
         .buttonStyle(.plain)
     }
 }
+
+// MARK: - ShowWhereButton
+
+/// The control that opens a map of one record, on every screen that renders one (ERRATA E142).
+///
+/// **NOT SPECIFIED.** No mock draws it, and its words, its destination and the argument for building
+/// one of these rather than six are `PinSetCopy.showWhereAction`,
+/// `TreeProfilePresentation.locateSet` and `PinSetPresentation`'s header respectively.
+///
+/// It is a component rather than three copies of a `Button` because it is the *same control on three
+/// screens* — the profile, the memorial and the vacant site — and the three are the surfaces a
+/// reader can be on when they ask the same question. Three copies is how one of them comes to say
+/// something slightly different, which is the defect ERRATA E129 spent a round removing from the
+/// almanac's two rows.
+///
+/// The shape is the inline action screen 03 already draws under its subtitle for the species claim:
+/// bold 13 in the CTA green, left-aligned, with `cypressHitArea` under it because the text is 17pt
+/// tall and a control is 44 (ARCHITECTURE §6 — no size, colour or weight is a literal here).
+struct ShowWhereButton: View {
+
+    let action: () -> Void
+
+    init(action: @escaping () -> Void) {
+        self.action = action
+    }
+
+    var body: some View {
+        Button(action: action) {
+            Text(PinSetCopy.showWhereAction)
+                .font(CypressFont.body13Bold)
+                .foregroundStyle(CypressColor.ctaFill)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .cypressHitArea()
+    }
+}

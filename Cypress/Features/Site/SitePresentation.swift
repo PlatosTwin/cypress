@@ -70,6 +70,15 @@ struct SitePresentation: Equatable {
     /// The closing line, in the place screen 14 puts its own footnote.
     let footnote: String
 
+    /// The map this screen can send the reader to (ERRATA E142).
+    ///
+    /// **A basin gets the same control a tree gets, and it is if anything the stronger case.** This
+    /// screen's H1 is a street address and its whole subject is a place with nothing standing on it
+    /// — "where is it" is the only question a reader can have about a vacant planting site, and
+    /// until now the answer was an address and a callout. The map draws it with C19's own basin pin
+    /// (RULINGS R7), so nothing here has to say a word about what kind of record it is.
+    let locateSet: PinSet
+
     // MARK: - Derivation
 
     init(profile: TreeProfile, nearest: NearbyTree? = nil) {
@@ -87,6 +96,9 @@ struct SitePresentation: Equatable {
         self.stats = Self.stats(profile: profile)
         self.neighbour = nearest.map(Neighbour.init(nearby:))
         self.footnote = SiteCopy.footnote
+        // Named with this screen's own H1 — the address — because that is the only thing that
+        // identifies a site, and the map's title should be what the reader just read.
+        self.locateSet = PinSet.locate(profile, name: SiteCopy.title(profile: profile))
     }
 
     // MARK: - The stat grid

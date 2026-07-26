@@ -213,6 +213,38 @@ struct TreeProfilePresentation {
 
     static let fallbackTitle = "Tree"
 
+    // MARK: - Where it is
+
+    /// The map this screen can send the reader to, as the payload it travels on.
+    ///
+    /// ── **NOT SPECIFIED** (ERRATA E142) ──────────────────────────────────────────────────────
+    /// SCREENS.md 03 and 14 draw no map affordance, and neither does any other screen that names a
+    /// record. The project owner reported the hole on the almanac — *"clicking just takes to tree
+    /// page but I have no idea where tree is"* — and it is worth being precise about where the hole
+    /// actually is, because the report names the entrance rather than the dead end.
+    ///
+    /// **Every surface in the app that names a record hands the reader to this screen.** The
+    /// almanac's season rows, My Grove, the journal, the species screen's nearby list, the map's own
+    /// card and search: all six push `.treeProfile`, `.site` or `.memorial`, and not one of those
+    /// three screens said where the record was. So the almanac is not a special case, it is the one
+    /// case somebody happened to be looking at, and an affordance built on the almanac's rows would
+    /// have to be built five more times — five more places to word it differently, and five more
+    /// destinations to drift apart.
+    ///
+    /// It is built here instead, on the junction, and the destination is the map E129 already built
+    /// for the almanac's two counted rows (`PinSet`). One control, one screen, and every list in the
+    /// app reaches it in the same two taps.
+    ///
+    /// **A memorial and a vacant planting site both get it, unchanged.** They are reachable from the
+    /// same lists, they are places in exactly the way a living tree is a place, and C19 already draws
+    /// each of them with its own pin (RULINGS R7, ERRATA E107) — so the map says what kind of record
+    /// stands there without a word of this screen's copy changing. "Where is it" is a question about
+    /// a coordinate, and a removed tree's coordinate is the last thing anybody knows about it.
+    /// Built from the payload this screen is already holding, so there is no read to disagree with
+    /// what is on the screen, and named with the H1 the reader is looking at rather than a second
+    /// derivation of it.
+    var locateSet: PinSet { PinSet.locate(profile, name: title) }
+
     /// The italic serif line under the name, `·`-joined.
     ///
     /// SCREENS.md draws two versions of this line — `Monterey Cypress · Hesperocyparis macrocarpa`
@@ -933,6 +965,11 @@ enum TreeProfileCopy {
     /// It asks rather than instructs, and it says *you think* rather than *it is*, because the act it
     /// starts records an opinion and the label should not promise more than the column stores.
     static let claimSpeciesAction = "Say what species you think this is"
+
+    // The control that answers *where is it* is `ShowWhereButton`, and its words are `PinSetCopy`'s
+    // — the screen it opens owns the sentence that names it, the same way `PinSetCopy.title` takes
+    // the almanac's own micro-labels rather than inventing two of its own. Why the control is on
+    // this screen at all is on `TreeProfilePresentation.locateSet` (ERRATA E142).
 
     /// Why a claim did not land. Three refusals, three sentences — the mapping is here rather than in
     /// the model because "already claimed" and "not allowed on a city tree" are entirely different
