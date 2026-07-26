@@ -39,3 +39,4 @@ Cypress/Resources/cypress-seed.sqlite
 # Per-worktree DerivedData for agent builds.
 .ddsnap/
 .ddspecies/
+.ddseed/
