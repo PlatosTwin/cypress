@@ -72,7 +72,15 @@ final class TreePinAnnotation: NSObject, MKAnnotation {
     let kind: MapPin.Kind
     /// What VoiceOver says. Computed here rather than in the view because it depends on the palette,
     /// and the palette is a fact about the screenful rather than about this tree.
-    let spokenLabel: String
+    ///
+    /// **It is a `var`, and that is the fix rather than an affordance.** The species *name* arrives
+    /// after the palette that ranked it — `MapModel.resolveSpeciesNamesForPalette` reads the catalogue
+    /// asynchronously — and a name arriving does not change any pin's `kind`, so `Coordinator.sync`'s
+    /// kind comparison correctly leaves every annotation in place. Stored once at init, the label
+    /// would therefore have said `City tree` for the whole life of the pin and the spoken channel
+    /// would never have named a species at all. `refreshSpokenLabel(palette:)` is called from the same
+    /// pass that would have retired it.
+    private(set) var spokenLabel: String
     @objc dynamic var coordinate: CLLocationCoordinate2D
 
     init(pin: TreePin, palette: MapSpeciesPalette = .empty) {
@@ -80,6 +88,18 @@ final class TreePinAnnotation: NSObject, MKAnnotation {
         self.kind = MapPinKind.kind(for: pin, palette: palette)
         self.spokenLabel = MapPinKind.accessibilityLabel(for: pin, palette: palette)
         self.coordinate = pin.coordinate.clLocationCoordinate
+    }
+
+    /// Recomputes the spoken label against the palette that is live now.
+    ///
+    /// Returns whether it moved, so the caller can leave a marker view alone in the overwhelmingly
+    /// common case where nothing was learnt about this tree's species since the last pass.
+    @discardableResult
+    func refreshSpokenLabel(palette: MapSpeciesPalette) -> Bool {
+        let next = MapPinKind.accessibilityLabel(for: pin, palette: palette)
+        guard next != spokenLabel else { return false }
+        spokenLabel = next
+        return true
     }
 }
 
@@ -446,6 +466,15 @@ struct MapAnnotationLayer: UIViewRepresentable {
                     pinAnnotations[id] = nil
                     continue
                 }
+                // The pin is staying, and its picture is right. Its *words* can still have changed
+                // without its kind changing: a species name landing turns `City tree` into
+                // `City tree, London Plane` on every pin of that species, and the kind comparison
+                // above cannot see it because the fill and the glyph were already correct. Nothing
+                // is added or removed for this — the label is read off the annotation.
+                if annotation.refreshSpokenLabel(palette: palette),
+                   let view = mapView.view(for: annotation) {
+                    view.accessibilityLabel = annotation.spokenLabel
+                }
             }
             var freshPins: [MKAnnotation] = []
             for pin in pins where pinAnnotations[pin.id] == nil {
@@ -499,6 +528,12 @@ struct MapAnnotationLayer: UIViewRepresentable {
             for annotation in mapView.annotations {
                 guard let view = mapView.view(for: annotation) as? MapMarkerView else { continue }
                 view.apply(annotation: annotation, isDark: isDark)
+                // `apply` resets `zPriority`, which selection now owns as well as the transform and
+                // the reticle — so a colour-scheme flip would otherwise drop the selected pin back
+                // behind its neighbours and leave a half-covered ring pointing at nothing.
+                if let pin = annotation as? TreePinAnnotation {
+                    view.setSelectedAppearance(pin.pin.id == selectedPinID)
+                }
             }
         }
 
@@ -545,7 +580,11 @@ final class MapMarkerView: MKAnnotationView {
 
     private var pulseLayer: CALayer?
     /// The two rings of the selection reticle. See `setSelectedAppearance`.
-    private var reticleLayers: [CALayer] = []
+    ///
+    /// Readable rather than private so `MapSpeciesColourTests` can assert the size these end up on the
+    /// glass at — the one number in the mark that a screenshot cannot check and a constant does not
+    /// tell you, because the view is also carrying a scale transform.
+    private(set) var reticleLayers: [CALayer] = []
 
     /// The 44 pt hit target every control in this app carries (ARCHITECTURE §6, SCREENS.md §5 gap
     /// 12). A drawn pin is 16–18 pt, so without this the tap target would shrink to the bitmap and
@@ -614,7 +653,7 @@ final class MapMarkerView: MKAnnotationView {
         }
     }
 
-    /// **The tapped pin, findable among thirty.** ERRATA E150, task #89.
+    /// **The tapped pin, findable among thirty.** Task #89.
     ///
     /// `MapLayout.selectedPinScale` on its own was 22.5 pt against 18 — the reader was being asked to
     /// find the marginally larger dot on a block that draws up to 288 of them. The scale stays,
@@ -626,8 +665,9 @@ final class MapMarkerView: MKAnnotationView {
     /// image comes out of a cache that must stay countable, and a selected variant of every pin kind
     /// would double it. Selection therefore costs zero cache entries.
     ///
-    /// The selected marker also comes to the front. Two pins 20 pt apart overlap at 44 pt of reticle,
-    /// and a reticle half-covered by the neighbour it is distinguishing itself from is not a mark.
+    /// The selected marker also comes to the front. Two pins 20 pt apart overlap inside 36 pt of
+    /// reticle, and a reticle half-covered by the neighbour it is distinguishing itself from is not a
+    /// mark.
     func setSelectedAppearance(_ isSelected: Bool) {
         let scale = isSelected ? MapLayout.selectedPinScale : 1
         transform = CGAffineTransform(scaleX: scale, y: scale)
@@ -643,6 +683,12 @@ final class MapMarkerView: MKAnnotationView {
         }
         guard reticleLayers.isEmpty, let pin = annotation as? TreePinAnnotation else { return }
         let diameter = pin.kind.diameter
+        // **Divided by the selection scale, because these layers are children of a view that is
+        // wearing it.** `setSelectedAppearance` puts `selectedPinScale` on the whole view, so a layer
+        // asked for 2.0 × 18 pt would land on the glass at 45 pt — past the 44 pt tap target, and not
+        // the number `MapLayout` states or the test asserts. Compensating here is what makes the
+        // documented geometry the drawn geometry.
+        let compensation = 1 / MapLayout.selectedPinScale
         // Outer in ink, inner in the ring colour — so whichever end of the ramp the basemap is at,
         // one of the two rings is the opposite of it. `resolvedColor` because a `CALayer` holds a
         // `CGColor` and cannot resolve a dynamic one itself; the view's own traits are the map's.
@@ -651,12 +697,12 @@ final class MapMarkerView: MKAnnotationView {
             (MapLayout.selectedReticleInnerScale, UIColor(CypressColor.pinRingStroke)),
         ]
         for ring in rings {
-            let size = diameter * ring.scale
+            let size = diameter * ring.scale * compensation
             let layer = CALayer()
             layer.bounds = CGRect(x: 0, y: 0, width: size, height: size)
             layer.position = CGPoint(x: bounds.midX, y: bounds.midY)
             layer.cornerRadius = size / 2
-            layer.borderWidth = MapLayout.selectedReticleStroke
+            layer.borderWidth = MapLayout.selectedReticleStroke * compensation
             layer.borderColor = ring.colour.resolvedColor(with: traitCollection).cgColor
             layer.backgroundColor = UIColor.clear.cgColor
             // Under the pin's own bitmap, so a ring can never eat into the dot it is pointing at.

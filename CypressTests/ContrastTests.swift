@@ -151,7 +151,7 @@ struct ContrastTests {
     /// something else entirely — and 01's own pins spend most of their time on the street band,
     /// because that is where street trees are.
     ///
-    /// So the four species slots (ERRATA E149) are measured against all seven, in both appearances:
+    /// So the four species slots (task #80) are measured against all seven, in both appearances:
     /// 56 pairs. The floor is WCAG 1.4.11's 3:1 — a pin is a non-text mark — and the binding grounds
     /// turned out to be the **water** in light and the **park inset ring** in dark, with the park
     /// block next in both. Neither is a ground anybody would have thought to check, and the paper —
@@ -161,7 +161,7 @@ struct ContrastTests {
     /// stated as one: the real ground is a MapKit basemap under `MapLayout.washOpacityLight`/`Dark`.
     /// The tokens are the palette that basemap was tuned toward, they span the same range from paper
     /// to park to water, and the honest other half of this check is looking at a screenshot — which
-    /// E149 did, on a booted simulator, in both appearances.
+    /// this task did, on a booted simulator, in both appearances.
     static let mapGrounds: [(name: String, color: Color)] = [
         ("map paper", CypressColor.surfaceMapPaper),
         ("map grid", CypressColor.surfaceMapGrid),
@@ -243,7 +243,7 @@ struct ContrastTests {
                         \(slot.name) is ΔE \(String(format: "%.3f", separation)) from \(what) in \
                         \(appearance). A species colour that can be taken for one of the map's \
                         existing fills lets a reader read a wrong answer off the map, which is the one \
-                        thing ERRATA E149's palette search was constrained to prevent.
+                        thing the species palette search was constrained to prevent.
                         """
                     )
                 }
@@ -276,7 +276,7 @@ struct ContrastTests {
         }
     }
 
-    /// Euclidean distance in OKLab — the space ERRATA E8's derivation and E149's palette search both
+    /// Euclidean distance in OKLab — the space ERRATA E8's derivation and the species palette search both
     /// work in. Written out here for the same reason `contrast` is: the design system carries no
     /// colour maths at runtime and does not need any.
     static func deltaE(_ a: Color, _ b: Color, _ traits: UITraitCollection) -> Double {

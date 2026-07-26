@@ -60,10 +60,16 @@ import SwiftUI
 /// One of the four colour slots a viewport can hand out. **Ordinal, not semantic** — slot `a` does
 /// not mean any particular species, it means "the most common species on this screen".
 ///
-/// `CaseIterable` in rank order: `MapSpeciesPalette` fills them in this order, so slot `a` is always
-/// the busiest species in view and slot `d` the fourth. The lightness of the four fills descends in
-/// the same order in light and ascends in dark, so the ranking is faintly visible as weight too —
-/// which is a third channel for free and costs nothing if a reader never notices it.
+/// `CaseIterable` in rank order, which is the order `MapSpeciesPalette` hands out **free** slots in —
+/// so on a viewport that has just been arrived at, `a` is the busiest species and `d` the fourth.
+///
+/// **It stops being true the moment the reader pans, and that is the design rather than a leak.**
+/// Stickiness deliberately outranks the ranking: a species that already holds `d` keeps `d` when it
+/// becomes the busiest, because a colour that changed under the reader's eye would cost more than an
+/// ordering they were never told about. So the descending lightness of the four fills is *not* a
+/// ranking channel — do not document it as one, and do not build anything on the assumption that `a`
+/// is the commonest. The channels that are always true are the hue and the glyph, and both say only
+/// "these pins are the same species as each other", which is the whole of what task #80 asked for.
 enum MapSpeciesSlot: String, CaseIterable, Hashable, Identifiable, Sendable {
     case a
     case b

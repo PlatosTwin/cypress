@@ -7,7 +7,7 @@ import UIKit
 
 /// **The species colouring on screen 01 (task #80), and the selected pin (task #89).**
 ///
-/// ERRATA E149 and E150. What these two changes can get wrong is not "the wrong hue" — a screenshot
+/// Tasks #80 and #89. What these two changes can get wrong is not "the wrong hue" — a screenshot
 /// finds that. It is the four things a screenshot cannot see:
 ///
 /// 1. **The bitmap count going unbounded.** The marker cache is keyed on `MapPin.Kind`, and the whole
@@ -296,7 +296,7 @@ struct MapSpeciesColourTests {
             """
             selecting a pin rasterised something. The reticle is a `CALayer` precisely so that a \
             selected variant of every kind does not double the cache — see MapLayout's note and \
-            ERRATA E150.
+            docs/errata-pending/species-pins.md.
             """
         )
         MapPinImage.flush()
@@ -323,6 +323,91 @@ struct MapSpeciesColourTests {
             last viewport's colours.
             """
         )
+    }
+
+    /// One `MKMapView` and the coordinator that syncs annotations into it, with the delegate left
+    /// off — every callback this test needs it invokes itself, in the order `updateUIView` does.
+    /// Modelled on `MapCameraOwnershipTests.Screen` for the same reason: MapKit's own callbacks would
+    /// turn an assertion into a race.
+    private static func layerAndMap() -> (MapAnnotationLayer.Coordinator, MKMapView) {
+        let opening = MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: 37.77, longitude: -122.42),
+            span: MKCoordinateSpan(latitudeDelta: 0.004, longitudeDelta: 0.004)
+        )
+        let box = Box(position: .opening(opening), region: opening)
+        let layer = MapAnnotationLayer(
+            position: Binding(get: { box.position }, set: { box.position = $0 }),
+            region: Binding(get: { box.region }, set: { box.region = $0 }),
+            clusters: [],
+            pins: [],
+            userCoordinate: nil,
+            selectedPinID: nil,
+            onCameraChange: { _, _ in },
+            onSelectPin: { _ in },
+            onSelectCluster: { _ in }
+        )
+        return (layer.makeCoordinator(), MKMapView(frame: CGRect(x: 0, y: 0, width: 430, height: 800)))
+    }
+
+    @MainActor
+    private final class Box {
+        var position: MapCameraRequest
+        var region: MKCoordinateRegion
+        init(position: MapCameraRequest, region: MKCoordinateRegion) {
+            self.position = position
+            self.region = region
+        }
+    }
+
+    /// **The spoken channel is the one that arrives late, and it used to arrive never.**
+    ///
+    /// `MapModel` ranks the palette from the pins synchronously and then reads the four species' names
+    /// asynchronously, so the palette a pin is *born* under has `name == nil` and the label it stores
+    /// is the plain `City tree`. A name landing changes no pin's kind — the fill and the glyph were
+    /// already right — so `sync`'s kind comparison leaves every annotation exactly where it is, and a
+    /// label stored once at init stays the label it was born with for the life of the pin.
+    ///
+    /// Which would mean the third channel, the only one that survives the screen being off, silently
+    /// did nothing in the running app while `voiceOverNamesTheSpecies` passed — because that test asks
+    /// `MapPinKind` directly and never goes through the layer.
+    @Test("a species name that lands after the pins are drawn reaches the pins that are already drawn")
+    func spokenLabelsCatchUpWithTheSpeciesRead() {
+        let id = UUID()
+        let pins = Self.pins(id, 4)
+        let (coordinator, mapView) = Self.layerAndMap()
+
+        // Pass one: the palette has ranked this species and has not yet learnt its name.
+        var palette = MapSpeciesPalette.assign(pins: pins)
+        #expect(palette.slot(for: id) == .a)
+        #expect(palette.unnamedSpeciesIDs == [id])
+        coordinator.sync(clusters: [], pins: pins, palette: palette, on: mapView)
+        let drawn = mapView.annotations.compactMap { $0 as? TreePinAnnotation }
+        #expect(drawn.count == 4)
+        for annotation in drawn { #expect(annotation.spokenLabel == "City tree") }
+
+        // Pass two: the species read landed. Nothing about the picture changed.
+        palette = palette.naming([id: "London Plane"])
+        coordinator.sync(clusters: [], pins: pins, palette: palette, on: mapView)
+        let after = mapView.annotations.compactMap { $0 as? TreePinAnnotation }
+        #expect(
+            after.count == 4,
+            "the naming pass churned the annotations; a word arriving is not a change in what is drawn"
+        )
+        #expect(
+            Set(after.map { ObjectIdentifier($0) }) == Set(drawn.map { ObjectIdentifier($0) }),
+            "the same four annotation objects should still be on the map"
+        )
+        for annotation in after {
+            #expect(
+                annotation.spokenLabel == "City tree, London Plane",
+                """
+                a pin that was already drawn when its species' name arrived still says \
+                "\(annotation.spokenLabel)". Every coloured pin in the running app is in exactly this \
+                position — the palette always ranks before it can name — so the spoken channel would \
+                have named nothing, ever.
+                """
+            )
+        }
     }
 
     // MARK: - The channels that are not colour
@@ -401,6 +486,46 @@ struct MapSpeciesColourTests {
         // …and inside the 44 pt tap target, so the mark never claims ground the finger does not own.
         let widest = CypressSpacing.Component.pinStandard * MapLayout.selectedReticleOuterScale
         #expect(widest <= CypressSpacing.minTapTarget)
+    }
+
+    /// **The constants are not the geometry, because the view is wearing a transform.**
+    ///
+    /// `setSelectedAppearance` scales the whole marker view by `selectedPinScale`, and the reticle
+    /// layers are children of that view — so a ring built at `2.0 × 18` lands on the glass at 45 pt,
+    /// past the 44 pt tap target the test above believes it has checked. This measures what is
+    /// actually drawn: the layer's own size *times* the transform it inherits.
+    @Test("the ring the reader sees is the size MapLayout says, not that size times the selection scale")
+    func theReticleIsDrawnAtTheDocumentedSize() {
+        let view = MapMarkerView(
+            annotation: TreePinAnnotation(pin: Self.pin(species: nil)),
+            reuseIdentifier: MapMarkerView.reuseIdentifier
+        )
+        view.setSelectedAppearance(true)
+        #expect(view.reticleLayers.count == 2, "the reticle is two rings; it drew \(view.reticleLayers.count)")
+
+        let pin = CypressSpacing.Component.pinStandard
+        let onGlass = view.reticleLayers
+            .map { $0.bounds.width * view.transform.a }
+            .sorted()
+        let wanted = [
+            pin * MapLayout.selectedReticleInnerScale,
+            pin * MapLayout.selectedReticleOuterScale,
+        ]
+        for (drawn, expected) in zip(onGlass, wanted) {
+            #expect(
+                abs(drawn - expected) < 0.01,
+                """
+                a reticle ring is \(drawn) pt on the glass where MapLayout says \(expected). The layers \
+                are children of a view carrying `selectedPinScale`, so their sizes have to be divided \
+                by it — otherwise the documented number, the asserted number and the drawn number are \
+                three different numbers.
+                """
+            )
+        }
+        #expect(
+            (onGlass.last ?? 0) <= CypressSpacing.minTapTarget,
+            "the outer ring is \(onGlass.last ?? 0) pt on the glass, outside the 44 pt the finger owns"
+        )
     }
 
     @Test("a selected pin comes to the front and lets go of it again")

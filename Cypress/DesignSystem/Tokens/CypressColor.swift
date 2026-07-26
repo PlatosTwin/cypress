@@ -630,7 +630,7 @@ enum CypressColor {
     /// Attention accent — Signal Amber `#B4711F` ↔ `dark.accent.amber` `#D99A4E`.
     static let accentAmber = dynamic(light: 0xB4711F, dark: 0xD99A4E)
 
-    // MARK: - The four species slots (01, task #80 · ERRATA E149)
+    // MARK: - The four species slots (01, task #80)
     //
     // ── These are the only tokens in this file whose *light* half is ours too ──────────────────
     // Every other `derived` token below is a documented light value with a computed dark
@@ -666,12 +666,17 @@ enum CypressColor {
     //    arcs are removed from the wheel, which is also why there are four slots and not six.
     // 4. **The ring colour reads on every fill**: `pinRingStroke` against each of the eight values
     //    is 5.4:1 or better, so the 3 pt ring and the glyph inside the dot both hold.
-    // 5. **Lightness descends A→D in light and ascends A→D in dark**, so the rank is faintly
-    //    legible as weight. It is not load-bearing; the glyph is.
+    // 5. **Lightness descends A→D in light and ascends A→D in dark**, which keeps the four separated
+    //    in luminance as well as in hue, so no pair collapses for a reader whose deficiency is
+    //    severe. It is *not* a ranking channel: slots are sticky, so `a` is the commonest species
+    //    only until the reader pans (see `MapSpeciesSlot`).
     //
-    // The tightest pair in the whole set is slot B after dark against the GPS dot (ΔE 0.110), and
-    // it is separated by three further channels: the dot carries no glyph, it is the only mark on
-    // the map with an 8 pt halo, and it is drawn *under* every tree (`zPriority = .min`).
+    // The tightest separation in the whole set is slot B in light against the **cluster badge**,
+    // ΔE 0.099 — and a badge is a filled 28 pt circle carrying a number, which is not a thing a
+    // reader confuses with an 18 pt dot at any hue. The tightest against another *pin* is slot B
+    // after dark against the GPS dot (ΔE 0.110), separated by three further channels: the dot
+    // carries no glyph, it is the only mark on the map with an 8 pt halo, and it is drawn *under*
+    // every tree (`zPriority = .min`). Both are reproduced by `Tools/map_species_palette.py`.
 
     /// Species slot A — plum `#7B226D` ↔ `#FC9FE9`. OKLCh 335°, L 0.42 ↔ 0.82, C 0.15 ↔ 0.14.
     /// Worst ground 5.34:1 light (ocean), 5.69:1 dark (park ring). Carries the **dot**.
@@ -1457,7 +1462,7 @@ extension CypressColor {
         .init("avatarRing", .derived, light: 0xFFFFFF, dark: 0x18251D,
               basis: "the ring is the card behind it; cf. pinRingStroke", color: avatarRing),
 
-        // The four species slots on screen 01 (task #80, ERRATA E149). Both halves computed — see
+        // The four species slots on screen 01 (task #80). Both halves computed — see
         // the block comment above `pinSpeciesA`. These are the four swatches a designer is most
         // likely to want to move, and the constraints they have to keep are listed there.
         .init("pinSpeciesA", .derived, light: 0x7B226D, dark: 0xFC9FE9,

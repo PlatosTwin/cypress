@@ -335,7 +335,7 @@ extension CypressSpacing {
         static let pinRemovedBarWidth: CGFloat = 8
         static let pinRemovedBarHeight: CGFloat = 2
 
-        // C19 · the species slot glyph (task #80, ERRATA E149)
+        // C19 · the species slot glyph (task #80)
         //
         // **Fractions of the pin, not points.** The same mark is drawn at 18 pt inside a pin and at
         // `chipSpeciesSwatch` inside a legend chip, and a mark tuned in points for one is a smear on
