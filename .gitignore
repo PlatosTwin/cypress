@@ -31,3 +31,6 @@ Cypress/Resources/cypress-seed.sqlite
 
 # Worktrees created for parallel agent runs.
 .claude/
+
+# DerivedData for this worktree's test runs.
+.ddspecies/
