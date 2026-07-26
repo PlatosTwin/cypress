@@ -141,7 +141,10 @@ enum GroveJournalShotFixtures {
             coordinate: Coordinate(latitude: 37.7628, longitude: -122.4990),
             lastVisitedAt: nil,
             isFavorite: true,
-            record: .none
+            // `GroveRecord.none` spelled out: against a `GroveRecord?` a leading `.none` is
+            // `Optional.none`, which is the opposite claim. It is the same one-character trap that
+            // shipped in `LocalAPI.grove()` and compiled.
+            record: GroveRecord.none
         )
     ]
 

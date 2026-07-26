@@ -2,15 +2,14 @@
 //  GroveTreesTests.swift
 //  CypressTests
 //
-//  Screen 08's `Trees` and `Journal` pills, which were drawn and inert for the whole life of the app.
+//  Screen 08's `Trees` pill, and the `Journal` pill that is no longer beside it.
 //
-//  ── What was wrong, and what "fixed" means here ───────────────────────────────────────────
-//  SCREENS.md 08 §2 draws three pills. `Species` had a screen; `Trees` and `Journal` were `Text`
-//  rather than `Button` — deliberately, because a control that looks pressable and does nothing is
-//  worse than a label. Meanwhile `CypressAPI.grove()` has returned `[GroveEntry]` since the protocol
-//  was written, with a doc comment explaining that the two tabs of My Grove "are keyed on different
-//  things", and `journal(cursor:limit:)` has returned a finished page to nobody for just as long.
-//  Both lists the pills wanted had been available the entire time.
+//  ── Where this started ────────────────────────────────────────────────────────────────────
+//  SCREENS.md 08 §2 draws three pills, and for most of the app's life only `Species` had a screen:
+//  `Trees` and `Journal` were `Text` rather than `Button`, on the sound grounds that a control which
+//  looks pressable and does nothing is worse than a label. Both destinations turned out to be built
+//  and merely unreachable, so both became controls — and then one of them turned out to be a second
+//  door onto a room the app already had.
 //
 //  ── The `Journal` pill, built and then cut ────────────────────────────────────────────────
 //  This suite used to assert three pills, and it carried a test — `theJournalPillIsOneListNotACopy`
@@ -38,7 +37,7 @@ import Foundation
 import Testing
 @testable import Cypress
 
-@Suite("My Grove · the Trees and Journal pills")
+@Suite("My Grove · the Trees pill, and the Journal pill that was cut")
 struct GroveTreesTests {
 
     // MARK: - Fixtures
@@ -143,7 +142,7 @@ struct GroveTreesTests {
         let rows = Self.presentation([
             Self.entry(1, isFavorite: true, record: GroveRecord(visits: 4, measurements: 1)),
             Self.entry(2, isFavorite: false, record: GroveRecord(visits: 1)),
-            Self.entry(3, isFavorite: true, record: .none),
+            Self.entry(3, isFavorite: true, record: GroveRecord.none),
             Self.entry(4, isFavorite: false, record: GroveRecord(checkIns: 2, careEvents: 1))
         ]).rows
 
@@ -183,7 +182,7 @@ struct GroveTreesTests {
     /// different one.
     @Test("the grove calls a favourite what the button that made it is called")
     func favoriteMatchesTheControl() {
-        let row = Self.presentation([Self.entry(1, lastVisitedAt: nil, isFavorite: true, record: .none)]).rows[0]
+        let row = Self.presentation([Self.entry(1, lastVisitedAt: nil, isFavorite: true, record: GroveRecord.none)]).rows[0]
         #expect(row.subtitle == QuadActionRow.Action.favorite.label)
     }
 
@@ -250,7 +249,7 @@ struct GroveTreesTests {
         // And the proved-empty case is a different answer from the unproved one: a favourite with a
         // read behind it saying "nothing yet" draws the same line here, but the two arrive by
         // different routes and `.none` is the one that means zero.
-        let proved = Self.presentation([Self.entry(3, isFavorite: false, record: .none)]).rows
+        let proved = Self.presentation([Self.entry(3, isFavorite: false, record: GroveRecord.none)]).rows
         #expect(proved[0].subtitle == "")
     }
 
