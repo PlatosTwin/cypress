@@ -39,9 +39,12 @@ public enum ModerationState: String, Codable, Sendable, Hashable, CaseIterable {
 ///
 /// This paragraph used to say "server-side", and it was a description of a thing nobody did: there
 /// is no server, and the local ingest path moved the camera's file across untouched. It is
-/// `PhotoBinary.writeStrippingMetadata`, called from `LocalAPI.uploadPhoto`, that makes the sentence
-/// true (ERRATA E40). `publicCoordinate` is deliberately left nil by everything that ships — not
-/// storing a location is the privacy-safe direction, and E42 says why.
+/// `PhotoBinary` that makes the sentence true (ERRATA E40), and the sentence stayed half-false until
+/// E148: the strip was on `LocalAPI.uploadPhoto`, and a community add's photograph never goes through
+/// an upload. It is stripped at the shutter now — `VisitPhotoStaging.write`, the funnel both capture
+/// screens use — with `uploadPhoto` and `addTree` both re-checking on the way into a record.
+/// `publicCoordinate` is deliberately left nil by everything that ships — not storing a location is
+/// the privacy-safe direction, and E42 says why.
 public struct Photo: CoreEntity, SoftDeletable {
     public let id: UUID
     public let treeID: UUID

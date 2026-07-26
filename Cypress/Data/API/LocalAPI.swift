@@ -343,6 +343,19 @@ public actor LocalAPI: CypressAPI {
             throw ProximityConflict(candidates: candidates)
         }
 
+        // ── The one ingest this method *is* ────────────────────────────────────────────────────────
+        // Every other photograph in the app becomes a record by being uploaded, and `uploadPhoto`
+        // strips it on the way past. This one never is: the row below keeps `local_path` pointing at
+        // the staged capture for the life of the installation, so nothing downstream was ever going
+        // to clean it and nothing did, from E127 until E148. The capture path strips at the shutter
+        // now, which makes this a header read that finds nothing — and it is here anyway,
+        // because the column belongs to this layer and a privacy invariant that lives only in the
+        // screen that happens to fill the field in is one the next screen will not know about.
+        //
+        // Deliberately after the dedupe: a photograph whose tree is a duplicate is not being ingested
+        // at all, and rewriting a file for a record that is about to be refused is work for nothing.
+        try PhotoBinary.stripMetadataInPlace(atPath: draft.photoLocalPath)
+
         let moment = now()
         let tree = Tree(
             source: .community,

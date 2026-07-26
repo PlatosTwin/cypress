@@ -209,8 +209,10 @@ enum VisitPreviewFixtures {
     @MainActor
     static func receipt(treeID: UUID = cypress.id) async throws -> VisitSaveReceipt {
         let visitID = UUID()
-        // A minimal valid JPEG (SOI + EOI), enough for a path to exist on disk.
-        let path = try VisitPhotoStaging.write(Data([0xFF, 0xD8, 0xFF, 0xD9]), for: visitID)
+        // A real 1×1 JPEG. Two bare markers used to do — a path on disk was all this needed — but
+        // staging rewrites the container to drop the metadata now (E148) and it refuses bytes that
+        // are not a container. Refusing them is the point of it, so the preview supplies a photograph.
+        let path = try VisitPhotoStaging.write(onePixelJPEG(), for: visitID)
         return try await VisitOutboxWriter.save(
             VisitDraft(
                 visitID: visitID,
@@ -243,6 +245,16 @@ enum VisitPreviewFixtures {
             onDone: {},
             onOpenTimeline: { _ in }
         )
+    }
+
+    /// One dark-grey pixel, encoded as a JPEG. What a preview needs of a photograph is that it be one.
+    static func onePixelJPEG() -> Data {
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1))
+        let image = renderer.image { context in
+            UIColor.darkGray.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 1, height: 1))
+        }
+        return image.jpegData(compressionQuality: 1) ?? Data()
     }
 
     /// A `UserDefaults` suite nothing else reads, so rendering 18 never touches D9's real counter.

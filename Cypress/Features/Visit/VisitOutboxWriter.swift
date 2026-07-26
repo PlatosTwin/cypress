@@ -147,6 +147,19 @@ enum VisitOutboxWriter {
 /// outbox is that a visit taken in a basement survives the app being killed, and iOS reclaims `tmp`
 /// whenever it likes. `LocalAPI.uploadPhoto` *moves* the file out of here into its own photo
 /// directory, so a file still present is a file still owed.
+///
+/// **The metadata is dropped here, at the shutter, and not further down.** This used to be
+/// `data.write(to:)` and nothing else, on the reading that `uploadPhoto` is the ingest path
+/// DECISIONS §3.10 requires the strip on. That reading was true of the check-in flow and false of the
+/// community add, which stages a capture the same way and then hands the *staged path* to
+/// `addTree` — no upload, no strip, and a `photos.local_path` pointing at the camera's original bytes
+/// with the exact GPS of somebody's front garden in them, in a directory iCloud backs up (E148).
+///
+/// A screen that stages bytes cannot know whether the path it is on ends in an upload. So the strip
+/// moved to the one place both capture screens already go through, where it is a property of *the
+/// staged file* rather than of a particular flow's onward journey. `uploadPhoto` still strips on the
+/// way into the photo directory: the second pass is a no-op on a clean file and it is what keeps
+/// files that reached the outbox by some other route honest.
 enum VisitPhotoStaging {
 
     static func directory() throws -> URL {
@@ -163,10 +176,15 @@ enum VisitPhotoStaging {
         try directory().appendingPathComponent("\(visitID.uuidString).jpg")
     }
 
+    /// Stages a capture, without its metadata sidecar.
+    ///
+    /// - Throws: whatever `PhotoBinary.write(_:strippingMetadataTo:)` throws for bytes it cannot
+    ///   rewrite, which both capture screens already handle as "that photo could not be saved" — the
+    ///   state a contributor answers by retaking. Nothing raw is left behind on that path.
     @discardableResult
     static func write(_ data: Data, for visitID: UUID) throws -> String {
         let url = try url(for: visitID)
-        try data.write(to: url, options: .atomic)
+        try PhotoBinary.write(data, strippingMetadataTo: url)
         return url.path
     }
 }

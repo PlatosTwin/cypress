@@ -6446,3 +6446,114 @@ controls, and a delete on the hero would act on whichever photograph the rule ha
 And an `addTree` photograph still never passes through `PhotoBinary.writeStrippingMetadata`, because
 that path stages a file and never calls `uploadPhoto` — so a community add's EXIF is stripped by
 nothing. That is a separate defect, found while reading this path, and it is not this entry's to fix.
+
+### E148 — the coordinate the app fuzzed to 25 m, shipped exactly, in the photograph
+
+E147's closing paragraph is this entry's brief, and it named the defect correctly:
+
+> And an `addTree` photograph still never passes through `PhotoBinary.writeStrippingMetadata`, because
+> that path stages a file and never calls `uploadPhoto` — so a community add's EXIF is stripped by
+> nothing.
+
+**What leaked, and through which path.** `VisitAddTreeModel.apply(imageData:)` stages the capture with
+`VisitPhotoStaging.write`, which was `data.write(to:)` and nothing else, and `LocalAPI.addTree` then
+inserted the photo row with `local_path` pointing at that staged file. There is no upload on that
+path — `addTree` is the only mutation in the app that is not enqueued, and `photos.storage_key` stays
+NULL for the life of the installation — so the one function that strips metadata was never reached,
+not late but *never*. The file on disk was the camera's own container: `GPS.Latitude`,
+`GPS.Longitude`, `GPS.TimeStamp`, `GPS.DateStamp`, `MakerApple`, `TIFF.Make`, `TIFF.Model`,
+`TIFF.DateTime`, `Exif.DateTimeOriginal`, `Exif.LensModel`, `Exif.BodySerialNumber`. Read off a real
+written file, before and after, with `CGImageSourceCopyPropertiesAtIndex`; all eleven are gone now and
+`Orientation` and `TIFF.Orientation` are not.
+
+**Why the fuzzing made this worse rather than better.** D11 snaps a photograph's public coordinate to
+a 25 m grid, and E42 went further and stores no photo coordinate at all, on the argument that a second
+independent record of where the contributor stood is the thing the fuzz exists to prevent. Every one
+of those decisions is about a *column*. The file sat beside them carrying a latitude good to about
+eleven centimetres. A mitigation is a claim about what the system will not reveal, and a system that
+rounds a number in one place while shipping it unrounded in another has not made the number private,
+it has made the rounding decorative — and it has done so in the way that misleads its own authors,
+because the code that reads as careful is the code that was audited. The community add is the worst
+place for it to have happened: a city tree's coordinate is already public in the city's inventory, but
+a tree somebody adds is by definition one the city does not have, which in this app usually means a
+garden. The photograph of a tree in a front yard carried the yard.
+
+Two further things make the exposure real rather than notional. Application Support is **backed up**,
+to iCloud and to any host the phone is plugged into, so the file leaves the device even though nothing
+in the app publishes it. And `RemoteAPI` is a stub that will one day upload what these rows point at.
+
+**The check-in path was not accused and was checked anyway.** It was *eventually* clean —
+`uploadPhoto` strips on the way into the photo directory — but it staged the camera's bytes first and
+served them from `local_path` for as long as the drain took, or failed for, and a queued visit on a
+bus is a designed state that can last days. Enumerated in full, the ways image bytes reach storage are:
+`VisitAddTreeModel` and `VisitCameraModel`, both through `VisitPhotoStaging.write`; `uploadPhoto`, on
+the way from staging into the photo directory; `VisitGhostStore.record`, which re-encodes a downscaled
+`UIImage` and so has never carried a sidecar; and `LocalAPI.debugSeedPhotos`/`debugAddCommunityTree`,
+DEBUG seams over generated images. Every one of them strips or never had anything to strip.
+
+**The strip moved to the shutter, because a screen cannot know whether its path ends in an upload.**
+`PhotoBinary.write(_:strippingMetadataTo:)` is the new entry point: it takes `Data`, so there is no
+step between "the camera handed us bytes" and "the bytes are clean on disk" for a caller to skip. It
+**throws** when the bytes are not a container ImageIO can rewrite, and that is deliberately the
+opposite of `uploadPhoto`'s documented fallback. `uploadPhoto` moves the original across rather than
+lose it, because by then the staged file is the only copy and the row exists; at the shutter neither is
+true, both capture screens already render "that photo could not be saved to this phone" with the CTA
+disabled, and a contributor answers that by taking the photograph again. Writing bytes we could not
+examine would be the leak with a comment on it.
+
+`addTree` also repairs, rather than trusts, the path it is handed —
+`PhotoBinary.stripMetadataInPlace` — because `photos.local_path` belongs to the `Data` layer and a
+privacy invariant that lives only in the screen that happens to fill a field in is one the next screen
+will not know about. It repairs instead of refusing: a refusal at that point is one the contributor
+can only answer by retaking a photograph that would be refused identically, which is a flow with no
+way out. On the shipping path it is one header read that finds nothing.
+
+**What the test now guarantees, and how it was made to fail.** `PhotoMetadataTests` builds a JPEG that
+genuinely carries a GPS fix, a maker note, camera identification and `Orientation = 6`, proves the
+fixture carries them (without which every later assertion passes trivially), and then asserts on
+**files, after paths**: the staged file, the file `photos.local_path` points at after a real
+`VisitAddTreeModel.useLibraryImage` → `add()`, the bytes `photoData` serves, and the file in the photo
+directory after a real outbox drain. Every assertion is a named key read back with
+`CGImageSourceCopyPropertiesAtIndex`, and the failure message prints every key the file does contain.
+Nothing spies on `writeStrippingMetadata` being called: a test on the call site would have been green
+against this bug for the whole of its life, which is not a hypothetical about the failure mode, it is
+the failure mode.
+
+Reverting the strip fails six of the seven tests with 57 issues, naming the eleven keys above on
+`the file photos.local_path points at`. And **E142 is asserted in the same breath as every GPS
+assertion**: setting `needsOrientationRestored` to `false` — deleting the second pass whose only job is
+to put `kCGImagePropertyOrientation` back — fails four tests with `orientation is nil and not 6`. That
+pass had **no test at all** before this entry. It could have been deleted as dead weight by anybody
+tidying the file, and the whole suite would have stayed green while every portrait photograph in the
+app went back on its side.
+
+**Two fixtures had to become photographs.** `CommunityAddTests` and `VisitPreviews` staged
+`Data([0xFF, 0xD8, 0xFF, 0xD9])` — two markers, chosen when staging only had to produce a path on
+disk. Staging refuses that now, which is the behaviour under test, so both supply a real 1×1 JPEG.
+
+**A misdiagnosis, recorded because it is ARCHITECTURE §7's own warning and it was walked into anyway.**
+The full suite came back red four times over the course of this work, always in
+`SpeciesClaimTests.theClaimIsDrawn`, always `SQLiteError(6922): disk I/O error` on a `SELECT` against
+the attached seed, always preceded by a storm of `invalidated open fd` from four threads at once, and
+never reproducible when that suite was run alone. 6922 is `SQLITE_IOERR_VNODE`. It was attributed to
+memory pressure — this suite's fixtures were 3024×4032, two 48 MB bitmaps in a host that has the 103 MB
+seed attached many times over — and the fixtures were duly shrunk, and two green runs followed, and the
+diagnosis looked confirmed.
+
+It was wrong. `ps` showed another agent running `xcodebuild test-without-building` against the **same
+iPhone 16 Pro**, with no `-only-testing`, so its install and its UI tests were landing on the device in
+the middle of these runs. That is precisely the failure ARCHITECTURE §7 describes — "a concurrent agent
+installing its build mid-run can crash the host out from under your tests", reported as "whichever suite
+was running", and "the slowest suite is the usual casualty" — and `theClaimIsDrawn` is the slowest test
+in the suite, at twelve seconds of off-screen SwiftUI rendering over a seeded store. The two green runs
+were quiet windows, not evidence for the theory they appeared to confirm.
+
+What makes it worth an entry rather than a shrug: the memory theory was *plausible, cheap to act on, and
+produced a passing suite*, which is everything a wrong diagnosis needs to become permanent. The check
+that settled it costs one command and was not run for an hour. **Before believing anything about a red
+suite, run `ps aux | grep xcodebuild`.** The fixtures stayed small, because small fixtures are right on
+their own merits, but not for the reason they were shrunk.
+
+The proving run was moved to its own simulator — a private device as well as a private DerivedData —
+which is what §7's "boot your own device" buys once you notice that the sentence about it only ruling
+out *looking* was written about sharing one device, not about having two.
