@@ -7,8 +7,15 @@ import UIKit
 ///
 /// `CityRecordTests` already owns the data half: the CHECK, the nullable column, the mapping and its
 /// distribution over all 195,309 seed rows. Nothing here re-derives any of that. This suite is about
-/// the half E143 deliberately left unbuilt — the picker that writes the column, the card that reads
+/// the half E143 deliberately left unbuilt — the picker that writes the column, the line that reads
 /// it back, and the safety handoff that the column makes reachable.
+///
+/// ── The profile tests were written against a stat card and now assert a sentence ──────────────
+/// E145 and E146 ran in parallel and each put the ground under the tree on screen 03: a
+/// `Where it stands` card and a sentence in §9b. The sentence won (see
+/// `TreeProfilePresentation.landContextNote`). Every assertion below kept its intent — *the profile
+/// states where the tree stands and names who concluded it* — and changed only what it reads it out
+/// of. `absentWhenNothingIsKnown` additionally asserts the card does not come back.
 ///
 /// ── The assertion that matters most is the one about what did *not* change ────────────────────
 /// `ReportPresentation` gained a reason to withhold the city's telephone number, and the failure mode
@@ -130,22 +137,26 @@ struct LandContextScreenTests {
 
     // MARK: - The tree profile
 
-    /// The card exists, on both variants, and names its source in the value rather than leaving a
-    /// reader to guess whether somebody looked or Cypress read two columns.
+    /// The profile states where the tree stands **and names who concluded it**, on both arms, rather
+    /// than leaving a reader to guess whether somebody looked or Cypress read two columns.
+    ///
+    /// **This began as an assertion about a `Where it stands` stat card.** Two parallel rounds each
+    /// put this fact on screen 03 — E146 as a card, E145 as a sentence — and the sentence won, so the
+    /// card is gone. The intent being protected did not change and is asserted here unchanged: the
+    /// fact appears, and its speaker is named. What changed is that the speaker is now a verb in a
+    /// sentence instead of four words after a middle dot.
     @Test("the profile shows the ground and says how it is known, on both arms")
-    func theCardNamesItsSource() {
+    func theNoteNamesItsSource() throws {
         let stated = Tree(
             id: Self.treeID,
             source: .community,
             coordinate: Self.spot,
             statedLandContext: .privateProperty
         )
-        let statedCard = try? #require(
-            TreeProfilePresentation(profile: TreeProfile(tree: stated)).landContextStat
+        let statedNote = try #require(
+            TreeProfilePresentation(profile: TreeProfile(tree: stated)).landContextNote
         )
-        #expect(statedCard?.label == "Where it stands")
-        #expect(statedCard?.destination == nil, "nothing in the app corrects this, so it is not a door")
-        #expect(cardText(statedCard) == "Private property · said by a contributor")
+        #expect(statedNote == "A contributor said this tree stands on private property.")
 
         let inferred = Tree(
             id: Self.treeID,
@@ -153,26 +164,50 @@ struct LandContextScreenTests {
             coordinate: Self.spot,
             cityRecord: CityRecord(legalStatus: "DPW Maintained", caretaker: "Private")
         )
-        let inferredCard = try? #require(
-            TreeProfilePresentation(profile: TreeProfile(tree: inferred)).landContextStat
+        let inferredNote = try #require(
+            TreeProfilePresentation(profile: TreeProfile(tree: inferred)).landContextNote
         )
-        #expect(cardText(inferredCard) == "Street or sidewalk · read from the city record")
+        #expect(inferredNote == "Cypress reads the city's record as a tree on a street.")
+
+        // The two ways of knowing may not be swapped for one another, which is the whole reason
+        // `KnownLandContext` exists (E143).
+        #expect(statedNote != inferredNote)
+        #expect(statedNote.contains("contributor"))
+        #expect(inferredNote.contains("Cypress reads"))
     }
 
-    /// Nothing known, nothing drawn. A card headed `Where it stands` over an empty value would claim
+    /// Nothing known, nothing said. A sentence about ground on a tree nobody asked about would claim
     /// the record answers a question it has never been asked.
-    @Test("an unanswered tree gets no card at all")
+    ///
+    /// The second and third expectations are the collision's tombstone: the fact must appear **once**,
+    /// so nothing may put a `landContext` card back into the stat grid beside the sentence.
+    @Test("an unanswered tree gets no line at all, and no tree ever gets a card")
     func absentWhenNothingIsKnown() {
         let bare = Tree(id: Self.treeID, source: .community, coordinate: Self.spot)
         let presentation = TreeProfilePresentation(profile: TreeProfile(tree: bare))
-        #expect(presentation.landContextStat == nil)
+        #expect(presentation.landContextNote == nil)
         #expect(!presentation.stats.contains { $0.id == "landContext" })
+
+        let answered = Tree(
+            id: Self.treeID,
+            source: .community,
+            coordinate: Self.spot,
+            statedLandContext: .cityPark
+        )
+        let drawn = TreeProfilePresentation(profile: TreeProfile(tree: answered))
+        #expect(drawn.landContextNote != nil)
+        #expect(
+            !drawn.stats.contains { $0.id == "landContext" },
+            "the ground is a sentence in §9b; a stat card beside it would say it twice"
+        )
+        #expect(!drawn.stats.contains { $0.label == "Where it stands" })
     }
 
-    /// All four render, including the one the picker never offers — 956 city rows carry it, and a
+    /// All four are said, including the one the picker never offers — 956 city rows carry it, and a
     /// screen that could not draw a stored value would be a hole shaped exactly like the fourth case.
+    /// Each value keeps its own phrase inside whichever of the two sentences names its speaker.
     @Test("every permitted value has words, including the one no picker offers")
-    func allFourValuesRender() {
+    func allFourValuesRender() throws {
         for context in LandContext.allCases {
             let tree = Tree(
                 id: UUID(),
@@ -180,17 +215,24 @@ struct LandContextScreenTests {
                 coordinate: Self.spot,
                 statedLandContext: context
             )
-            let card = TreeProfilePresentation(profile: TreeProfile(tree: tree)).landContextStat
-            let text = cardText(card) ?? ""
-            #expect(!text.isEmpty, "no words for \(context.rawValue)")
-            #expect(text.hasPrefix(LandContextCopy.noun(context)))
+            let note = try #require(
+                TreeProfilePresentation(profile: TreeProfile(tree: tree)).landContextNote,
+                "no words for \(context.rawValue)"
+            )
+            #expect(note.contains(TreeProfileCopy.landContextPlace(context)))
+            #expect(note.hasPrefix("A contributor said this tree stands "))
         }
+        #expect(TreeProfileCopy.landContextPlace(.otherPublic) == "on other public land")
+        // The composer's noun for the same value, which no screen ever shows for `.otherPublic`
+        // because the picker does not offer it — kept asserted so the column stays fully spelled.
         #expect(LandContextCopy.noun(.otherPublic) == "Other public land")
     }
 
-    /// The reason this is a card and not a sixth `·`-joined fragment: the line it would have joined
-    /// is already five elements long on a fully-described community tree.
-    @Test("the provenance line was already full, which is why the card exists")
+    /// Why the ground is not a sixth `·`-joined fragment: the line it would have joined is already
+    /// five elements long on a fully-described community tree. This was E146's argument for a stat
+    /// card, and it survives the card because it was never an argument *for* a card — it rules the
+    /// subtitle out, and §9b's sentence is the home that remains.
+    @Test("the provenance line was already full, which is why this is not on it")
     func theSubtitleCouldNotCarryIt() throws {
         let tree = Tree(
             id: Self.treeID,
@@ -214,7 +256,11 @@ struct LandContextScreenTests {
         #expect(subtitle.components(separatedBy: " · ").count == 5)
         #expect(
             !subtitle.contains(LandContextCopy.noun(.privateProperty)),
-            "the ground belongs in the stat grid, not on a line that is already five elements long"
+            "the ground belongs in §9b's sentence, not on a line already five elements long"
+        )
+        #expect(
+            !subtitle.contains(TreeProfileCopy.landContextPlace(.privateProperty)),
+            "nor the sentence's phrasing of it"
         )
     }
 
@@ -367,11 +413,6 @@ struct LandContextScreenTests {
     }
 
     // MARK: - Helpers
-
-    private func cardText(_ item: TreeProfilePresentation.StatItem?) -> String? {
-        guard case let .prose(text)? = item?.value else { return nil }
-        return text
-    }
 
     /// A real JPEG header, which is what `VisitAddTreeModel.useLibraryImage` decodes before it stages
     /// anything. A 1×1 PNG is the smallest thing `UIImage` will actually accept.

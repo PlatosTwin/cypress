@@ -242,8 +242,9 @@ enum ReportCopy {
     ///    parcel in San Francisco, and it has no business implying otherwise (DECISIONS constraint 3).
     ///
     /// It does not name the contributor's answer back at them ("you said private property") — the
-    /// tree page one screen back carries that under `Where it stands`, with its source, and a panel
-    /// that argued with the reader about their own answer would be picking a fight it cannot win.
+    /// tree page one screen back already says it in a sentence that names its speaker
+    /// (`TreeProfilePresentation.landContextNote`), and a panel that argued with the reader about
+    /// their own answer would be picking a fight it cannot win.
     static let notCityMaintainedBody = """
         Cypress does not dispatch emergency work. 311 is the city’s line for the trees the city \
         maintains, and this one is recorded as standing on private property — so the city is not \

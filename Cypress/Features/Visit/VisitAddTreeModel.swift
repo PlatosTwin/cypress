@@ -207,8 +207,9 @@ final class VisitAddTreeModel {
     /// confident-looking wrong answers this field is optional to avoid. Somebody who cannot fit their
     /// tree into the three leaves it unanswered, and unanswered is an honest record.
     ///
-    /// The profile still renders all four, because 956 city rows carry the fourth (`LandContextCopy`
-    /// spells every case). Display is not input, and this list is only input.
+    /// The profile still renders all four, because 956 city rows carry the fourth
+    /// (`TreeProfileCopy.landContextPlace` has a phrase for every case). Display is not input, and
+    /// this list is only input.
     static let offered: [LandContext] = [.street, .cityPark, .privateProperty]
 
     init(api: any CypressAPI, location: VisitLocationProvider, attribution: Attribution) {

@@ -64,8 +64,22 @@ struct LandContextShots {
         #expect(await ScreenSweepShots.pair("e146-1-report-stated-private") { Self.report(Self.statedPrivate) })
         #expect(await ScreenSweepShots.pair("e146-2-report-inferred-private") { Self.report(Self.inferredPrivate) })
         #expect(await ScreenSweepShots.pair("e146-3-report-street") { Self.report(Self.street) })
-        #expect(await ScreenSweepShots.pair("e146-4-profile-stated-private") { Self.profile(Self.statedPrivate) })
-        #expect(await ScreenSweepShots.pair("e146-5-profile-inferred-street") { Self.profile(Self.street) })
+        // A 1,500 pt window for the two profiles, `cityRecordStates`' own reason: the ground under the
+        // tree is a sentence in §9b, the last block on screen 03, and an off-screen `ScrollView`
+        // cannot be scrolled. At phone height these two photographed the stat grid and stopped above
+        // the sentence — which is what they were for when the fact was a card up in that grid.
+        #expect(
+            await ScreenSweepShots.pair(
+                "e146-4-profile-stated-private",
+                viewportHeight: ScreenSweepShots.tallViewport
+            ) { Self.profile(Self.statedPrivate) }
+        )
+        #expect(
+            await ScreenSweepShots.pair(
+                "e146-5-profile-inferred-street",
+                viewportHeight: ScreenSweepShots.tallViewport
+            ) { Self.profile(Self.street) }
+        )
     }
 
     private static func report(_ tree: Tree) -> some View {
