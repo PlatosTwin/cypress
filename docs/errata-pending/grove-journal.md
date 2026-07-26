@@ -153,6 +153,20 @@ at AX5 where three were tight. Neither was the point of the change.
 
 ---
 
+**One thing this round cost somebody else's tests, and it was not the code.** Two UI tests —
+`AlmanacGroupTapTests.testWalkTheNineOpensAMapOfThemAll` and
+`DeepLinkVoiceOverTests.testTheNudgeControlsActuallyMoveThePin` — failed on this branch and passed the
+moment the simulator's fix was moved. They had been run against a streaming `simctl location` route
+over the **Outer Sunset**, and E153's own skip message names the fix these tests want:
+`37.78485,-122.4215`. A neighbourhood with no young unvisited trees in it has no §4 coverage CTA, so
+the test failed on a *correctly* absent row — the state E153 was written to distinguish, one
+neighbourhood further out than it had been asked about. The same two failed on pristine `main` under
+the same conditions, which is how they were attributed.
+
+So: **a red UI test on this project is a question about the simulator's fix before it is a question
+about the diff**, and a *streamed* route is worse than a static fix here, because it is plausible,
+persistent across runs, and invisible in the failure message.
+
 **Open.** The `Trees` list still says nothing about *when* — deliberately, since that is the
 journal's job — which means a tree seen yesterday and a tree seen two years ago read alike unless you
 notice where they sit in the order. Ordering carries it today because the grove is short. If a grove
