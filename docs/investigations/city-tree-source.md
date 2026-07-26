@@ -467,3 +467,81 @@ read-only `query` requests to the public feature service.
 | `bystatus.py` | presence rate by `qLegalStatus`, site family, `PlantType` |
 | `final.py` | character of the above-ceiling block, caretaker presence, species triage |
 | `drift.py` | address/coordinate agreement among species disagreements |
+
+---
+
+## Addendum, 2026-07-25: the licence question, answered
+
+The report above left the licence "partially unestablished" and made it the blocker on #91. It is
+now established, and the answer is no.
+
+**The PDDL grant stops at the hostname.** DataSF's terms of use define their own scope: *Data*
+means "any of the data that is available through data.sfgov.org." Everything the seed is built from
+lives there — `tkzw-k3nq` carries `licenseId` `PDDL`, attribution "San Francisco Public Works", and
+the terms permit copying, redistribution, modification and commercial use with no attribution
+clause of their own. That is a clean grant, and it covers what we already ship.
+
+`services.arcgis.com/Zs2aNLFN00jrS4gG` is not `data.sfgov.org`. Re-checked directly at both levels:
+
+| field | FeatureServer root | layer 3 (`StreetTrees`) |
+|---|---|---|
+| `copyrightText` | empty string | empty string |
+| `description` | empty string | empty string |
+| `serviceDescription` | empty string | absent |
+| `licenseInfo` | absent | absent |
+| `accessInformation` | absent | absent |
+| terms / attribution text | absent | absent |
+
+`capabilities` is `Query,Extract`. **`Extract` is a server capability flag, not a grant of terms** —
+it says the software is willing, not that the city is. So there is no published permission for bulk
+extraction of this layer, and the licence that makes our current pipeline safe does not reach it.
+
+**Ruling: do not ingest the ArcGIS layer.** Not because it is forbidden — nobody has said either
+way — but because "no licence published" is not the same as permission, and a beta that ships
+132,000 records taken from an unlicensed endpoint has made a claim on the city's behalf that the
+city never made. That is the same error as the `Owner of Tree` field (E143) and the permit notes
+(E145): reading an absence as a licence to assert. If the owner wants this data, the route is an
+email to SF Public Works, and the answer goes in this file.
+
+## What the honesty problem actually is, and that it needs no permission
+
+The integrity complaint that started this — the city says ~125,000 street trees, our map shows
+records the city's map does not — survives the source question, and the part of it we can fix is
+entirely inside data we already hold under PDDL.
+
+Confirmed against the live API on 2026-07-25:
+
+- **TreeID 276198 is genuinely absent from `tkzw-k3nq`.** Not dropped by our pipeline — the live
+  dataset returns no record for it, while the city's own map shows it with a 2021 pruning date. The
+  gap is the source's, exactly as the report concluded.
+- **TreeIDs 266901 and 223762 are both present**, both `DPW Maintained`, both on Twin Peaks Blvd,
+  and both with `qSiteInfo` ending `: Yard`. They are real records; the neighbours the owner saw are
+  not phantoms.
+
+What our 195,309 rows are:
+
+| | count |
+|---|---|
+| `status = alive` | 182,791 |
+| `status = vacant_site` — a planting site with no tree in it | **12,518** |
+| `plant_type = Landscaping` — not a tree | 318 |
+| `legal_status = Undocumented` | 8,878 |
+| alive **and** `plant_type` tree | 182,639 |
+| alive **and** `DPW Maintained` — the comparable to the city's maintained count | **139,012** |
+
+So the "125,000" figure is not evidence of a defect: it is Proposition E's rounded 2016 count of
+*maintained* street trees, and our comparable is 139,012 against the city's live 133,577 — inside
+4%. What *is* a defect is calling all 195,309 "San Francisco's street trees" on a screen, when
+12,518 of them are empty holes in the pavement and 318 are shrubs.
+
+**Follow-up worth its own item:** `plant_type` is not normalised — 194,988 `Tree`, 318
+`Landscaping`, and **3 rows spelled `tree`** (TreeIDs 253212, 253634, 96598). Any filter written as
+`plant_type = 'Tree'` silently drops those three. That one is ours, not the city's.
+
+## A correction to an earlier claim in this file
+
+The report says our CSV matches the live dataset "row for row". The count still matches today —
+198,435 both sides — but `tkzw-k3nq` was last updated **2026-07-23**, two days before this addendum,
+and it publishes daily. An unchanged row count across an update proves only that additions and
+removals balanced; it is not evidence that the contents agree. "Not stale" was measured once and has
+a shelf life of about a day, and row-count equality was never the test it was used as.
