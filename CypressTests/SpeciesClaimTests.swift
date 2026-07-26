@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Testing
 import UIKit
 @testable import Cypress
@@ -452,6 +453,53 @@ struct SpeciesClaimTests {
         #expect(forbidden.contains("city"), "\(forbidden)")
         // None of them blames the reader for a rule the app has not built yet.
         #expect(conflict.contains("cannot record yet"), "\(conflict)")
+    }
+
+    // MARK: - On real pixels
+
+    /// Renders screen 03 over a real community tree and writes the PNGs, so the claim can be
+    /// *looked at* rather than only asserted on.
+    ///
+    /// **This exists because the simulator could not be used for it.** The deep-link harness case
+    /// (`CYPRESS_SCREEN=speciesClaim`) builds the right record and pushes the right screen, and the
+    /// system location alert lands on top of the identity block and cannot be dismissed by injected
+    /// input. `ScreenSweepShots.capture` renders the same `TreeProfileView` through a real
+    /// `UIHostingController` in a real off-screen window, over a real `LocalAPI` reading a real
+    /// store, with no SpringBoard in the way.
+    ///
+    /// Both states are drawn, because the pair is the point: one profile carrying a claim and one
+    /// offering to take one.
+    @MainActor
+    @Test("the claim and the offer are drawn, and the files are written to be looked at")
+    func theClaimIsDrawn() async throws {
+        let store = try await Self.seededStore()
+        // An explicit photo directory: an in-memory store's database URL is `:memory:`, so the
+        // default lands on `/Photos` and the write fails on a read-only volume. The other tests here
+        // never noticed because none of them stages a file.
+        let photos = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cypress-species-shots-\(UUID().uuidString)", isDirectory: true)
+        let api = LocalAPI(store: store, deviceID: Self.deviceID, photoDirectory: photos)
+
+        let claimed = try await api.debugAddCommunityTree(near: Self.offshore, speciesQuery: "Platanus")
+        let unclaimed = try await api.debugAddCommunityTree(
+            near: VisitPinAdjust.offset(Self.offshore, northM: 300, eastM: 0),
+            speciesQuery: nil
+        )
+        print("SHOT DIR \(ScreenSweepShots.outputDirectory.path)")
+
+        #expect(await ScreenSweepShots.pair("e141-species-claimed") {
+            NavigationStack { TreeProfileView(treeID: claimed, api: api) }.environment(AppRouter())
+        })
+        #expect(await ScreenSweepShots.pair("e141-species-unclaimed") {
+            NavigationStack { TreeProfileView(treeID: unclaimed, api: api) }.environment(AppRouter())
+        })
+
+        // The pixels are the point, but a shot test that only wrote files would pass over a blank
+        // screen. These are the two sentences the images have to contain.
+        let claimedSubtitle = TreeProfilePresentation(profile: try await api.treeProfile(id: claimed)).subtitle
+        #expect(claimedSubtitle.contains("species named by a contributor"), "\(claimedSubtitle)")
+        let offer = TreeProfilePresentation(profile: try await api.treeProfile(id: unclaimed))
+        #expect(offer.offersSpeciesClaim)
     }
 
     /// The property `placementNote`'s own suite asserts by name — "neither placement line evaluates
