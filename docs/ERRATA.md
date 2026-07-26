@@ -5874,3 +5874,74 @@ line for *city* trees. Nobody can reach that state yet, because nothing writes `
 tree private, screen 06 is routing them to a number that will not take the report. That is a product
 decision (does the panel change its copy, offer a different destination, or say plainly that the city
 does not handle this tree?) and belongs to whoever builds #69, not to this round.
+
+### E144 — every screen that named a record, and none of them said where it was
+
+The project owner, from real use on their own iPhone:
+
+> "In almanac under this season need a way to find the tree mentioned. Right now clicking just takes
+> to tree page but I have no idea where tree is"
+
+**The almanac is where it was noticed and not where it is.** Six surfaces in the app name a record —
+the almanac's season rows, My Grove, the journal, the species screen's nearby list, the map's own
+card, and search — and every one of them pushes the tree profile, the memorial or the vacant site.
+None of those three said where the record was. An affordance built on the almanac's rows would have
+had to be built five more times: five more places to word it differently, five more destinations to
+drift apart. So the control goes on the junction — one button, on the three screens a record can be
+drawn on — and there is one destination behind it.
+
+**The destination already existed.** E129 answered the identical sentence for screen 12's two
+*counted* rows and built `PinSetMapView` to do it. A group of one is a `PinSet`, so this is a third
+subject on that type rather than a second map screen; the alternative is two answers to one question,
+which is the shape of defect E129 was itself closing.
+
+**Three things separate a map from an answer**, and each is a defect that a correct-looking map still
+has:
+
+- **The camera opens at `MapLayout.defaultSpanMetres`** — E12's 120 m, measured as the scale where
+  San Francisco's street trees stop fusing into a mat — **centred on the record and never on what the
+  read returned.** Framing the neighbours instead opens at whatever they happen to span: with the
+  camera deliberately broken that way the assertion measured **1,080 m**, nine times out, with the
+  subject a dot among dots.
+- **The record is on the map from the first frame.** It travels on the route as a payload and is
+  drawn without any read having happened, so there is no window in which the camera has arrived and
+  the pin has not — a map that flies somewhere and shows nothing for a beat is the failure mode here,
+  and on a slow or failed read it would never fill in at all.
+- **The record is drawn selected**, through `selectedPinID` and `MapAnnotationLayer.applySelection`,
+  the app's existing 1.25×. No second highlight was invented: a second way to say "this one" is a
+  second thing to keep in step with C19.
+
+**The rest of the block is read, once, and is the only query this screen has ever made.** A single
+pin answers "which street" and stops; a person standing on that street is asking *which one*, and a
+pin drawn alone cannot be counted along a block. E129's rule against re-reading is not broken by
+this, and the reason is precise: that rule exists because the almanac's row has **printed a count**,
+and a second read can disagree with it. Nothing here is counted. The context is scenery, the sentence
+over the map only mentions it once it has arrived, and if the read fails the screen is the one-pin
+map it would have been anyway.
+
+**A basin and a memorial get the same control, unchanged.** Both are reachable from the same lists,
+both are places, and C19 already draws each in its own vocabulary (R7, E107) — so the map states what
+kind of record stands there without a word of copy changing. On the memorial it is also the only
+thing on screen 19 there is to press, which does not break 19's rule: everything else a profile
+offers *writes*, and there is nothing left to contribute to a felled tree. This writes nothing. It
+answers where the tree stood, which is a fact the record already holds.
+
+**The one camera write on this screen is a press.** A pushed map opens on `MapCameraRequest.opening`,
+sequence zero, because that getter runs on every pass and a ticket there would be a new request sixty
+times a second. What mints a ticket is the control that goes back to the subject after a pan —
+`.move(to:)`, from a main-thread gesture handler, exactly as the recentre press does (E140). Nothing
+in the file drives the camera off a state change, which is the property E140 paid for; checked by
+hand on the device with a ten-point drag, the map stayed where it was put and the press brought it
+back.
+
+**Found by looking rather than by asserting:** a vacant site's H1 *is* its street address, so the
+map's street line printed `601 Dolores St` one line under `601 Dolores St`. The line is absent now
+rather than paraphrased — the address is already on screen, and saying it differently the second time
+would be the app filling a slot instead of answering. It has a test now; it never would have had one,
+because nothing was wrong with either string.
+
+**Verified end to end on the simulator, location granted**, over the owner's own route: almanac →
+`The elder` → the profile → `Show me where this is` → a map of 21st St in the Mission with the
+Brazilian Pepper at 3426 21st St the larger pin among some thirty neighbours. The vacant site and the
+memorial were driven the same way and drew the basin pin and the grey dash-marked pin respectively,
+each enlarged, each centred.
