@@ -113,7 +113,7 @@ final class AlmanacGroupTapTests: XCTestCase {
     // MARK: - Harness
 
     /// **Screen 01, not `CYPRESS_SCREEN=journal`, and that is the whole of the second half of this
-    /// fix** (ERRATA — see docs/errata-pending/almanac-location.md).
+    /// fix** (ERRATA E153).
     ///
     /// These two tests used to deep link straight to the journal tab, and on that entrance they could
     /// not pass on any machine, with a fix or without one. `AlmanacView` builds its `@State` model from
