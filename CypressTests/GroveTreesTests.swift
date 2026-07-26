@@ -310,6 +310,131 @@ struct GroveTreesTests {
         #expect(Self.presentation([Self.entry(1)]).emptyState == nil)
     }
 
+    // MARK: - The tally, over a real database
+
+    /// **Everything above this point is a double.** The clauses, the ordering, the nil case — all of
+    /// it is asserted against `GroveEntry`s the test wrote, which proves the derivation and says
+    /// nothing about where the numbers come from. The numbers come from SQL that unions four tables,
+    /// filters on two owners and a tombstone column, and groups twice; that is the part with somewhere
+    /// to hide a mistake, and it is the part `GrovePreviewAPI` cannot exercise.
+    ///
+    /// So this goes through `LocalAPI` against an actual store with actual contributions in it, the
+    /// way `JournalPresentationTests.exportPayloadIsReal` does for the export.
+    ///
+    /// The fixture is built to fail four specific ways:
+    /// - **three kinds against one tree**, so a `GROUP BY` that lost the kind column would collapse
+    ///   them into one clause;
+    /// - **two trees**, so a query missing its per-tree grouping would give both the same figures;
+    /// - **a tombstoned visit**, which `deleted_at IS NULL` must exclude — a deleted contribution is
+    ///   not something a person did that still stands;
+    /// - **a tree with no contributions at all**, which must come back `.none` and draw nothing,
+    ///   rather than being dropped from the grove or arriving as nil.
+    @Test("the tally is what the database holds, counted by kind and by tree")
+    @MainActor
+    func theTallyComesFromTheStore() async throws {
+        let deviceID = UUID(uuidString: "D0000000-0000-4000-8000-0000000000C1")!
+        let attribution = Attribution.anonymous(deviceID: deviceID)
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: deviceID)
+
+        func addTree(_ latitude: Double) async throws -> UUID {
+            try await api.addTree(
+                TreeDraft(
+                    coordinate: Coordinate(latitude: latitude, longitude: -122.4464),
+                    photoLocalPath: "/tmp/cypress-grove-record-\(latitude).jpg",
+                    attribution: attribution
+                )
+            ).id
+        }
+
+        // Far enough apart to clear the 10 m any-species proximity dedupe.
+        let cypress = try await addTree(37.7761)
+        let ginkgo = try await addTree(37.7801)
+
+        try await store.queue.write { connection in
+            let contributions = ContributionStore()
+            for index in 0..<3 {
+                try contributions.insert(
+                    Visit(
+                        treeID: cypress,
+                        attribution: attribution,
+                        capturedAt: Self.date(2026, 7, 10 + index)
+                    ),
+                    connection: connection
+                )
+            }
+            try contributions.insert(
+                CareEvent(
+                    treeID: cypress,
+                    attribution: attribution,
+                    capturedAt: Self.date(2026, 7, 12),
+                    actions: [.watered]
+                ),
+                connection: connection
+            )
+            // A visit that was taken back. It is a row in the table and it must not be counted.
+            try contributions.insert(
+                Visit(
+                    treeID: cypress,
+                    attribution: attribution,
+                    capturedAt: Self.date(2026, 6, 1),
+                    deletedAt: Self.date(2026, 6, 2)
+                ),
+                connection: connection
+            )
+            try contributions.insert(
+                Visit(treeID: ginkgo, attribution: attribution, capturedAt: Self.date(2026, 7, 1)),
+                connection: connection
+            )
+        }
+
+        let grove = try await api.grove()
+        let records = Dictionary(uniqueKeysWithValues: grove.map { ($0.treeID, $0.record) })
+
+        #expect(records[cypress] == GroveRecord(visits: 3, careEvents: 1), "\(String(describing: records[cypress] ?? nil))")
+        #expect(records[ginkgo] == GroveRecord(visits: 1))
+
+        // And the sentence a reader sees, from the real read rather than from a fixture.
+        let rows = GroveTreesPresentation(entries: grove).rows
+        let cypressRow = try #require(rows.first { $0.treeID == cypress })
+        #expect(cypressRow.subtitle == "3 visits · 1 care log")
+    }
+
+    /// A tree in the grove that has never been contributed to — a favourite, the second arm of
+    /// `groveTreeIDs` — has **no key** in the records map, and that absence must read as `.none`
+    /// rather than as nil. Nil means "this read could not answer"; this read answered.
+    @Test("a favourite nobody has visited has a record, and it is empty")
+    @MainActor
+    func aFavouriteWithNoContributionsIsEmptyNotUnknown() async throws {
+        let deviceID = UUID(uuidString: "D0000000-0000-4000-8000-0000000000C2")!
+        let attribution = Attribution.anonymous(deviceID: deviceID)
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: deviceID)
+
+        let tree = try await api.addTree(
+            TreeDraft(
+                coordinate: Coordinate(latitude: 37.7841, longitude: -122.4464),
+                photoLocalPath: "/tmp/cypress-grove-record-favourite.jpg",
+                attribution: attribution
+            )
+        ).id
+        try await store.queue.write { connection in
+            try ContributionStore().applyFavoriteToggle(
+                owner: FavoriteOwner(attribution),
+                treeID: tree,
+                clientUUID: UUID(),
+                isFavorite: true,
+                at: Self.date(2026, 7, 12),
+                connection: connection
+            )
+        }
+
+        let entry = try #require(try await api.grove().first { $0.treeID == tree })
+        #expect(entry.record == GroveRecord.none, "an answered read came back as unknown")
+        #expect(entry.record?.isEmpty == true)
+        #expect(GroveTreesPresentation(entries: [entry]).rows[0].subtitle == "Favorite")
+    }
+
     // MARK: - The model
 
     /// **The E126 shape, on a read that did not exist when E126 was written.** The `Trees` pill has

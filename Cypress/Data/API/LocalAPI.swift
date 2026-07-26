@@ -1100,10 +1100,17 @@ public actor LocalAPI: CypressAPI {
                     lastVisitedAt: row.lastVisitedAt,
                     isFavorite: row.isFavorite,
                     // A tree with no key in the map has no contributions against it — a favourite
-                    // nobody has visited. `.none` and not nil: the read *did* answer for this tree,
-                    // and the answer is that there is nothing yet. Nil is reserved for an
+                    // nobody has visited. An empty record and not nil: the read *did* answer for
+                    // this tree, and the answer is that there is nothing yet. Nil is reserved for an
                     // implementation that could not answer at all.
-                    record: records[row.treeID] ?? .none
+                    //
+                    // **Spelled `GroveRecord.none`, and it has to be.** Written `?? .none` against a
+                    // `GroveRecord?` the leading dot resolves to `Optional.none`, so every favourite
+                    // nobody had visited came back as "could not answer" and drew nothing — the same
+                    // picture as an unproven read, which is the one distinction this field exists to
+                    // keep. It compiled, and `aFavouriteWithNoContributionsIsEmptyNotUnknown` is what
+                    // caught it.
+                    record: records[row.treeID] ?? GroveRecord.none
                 )
             )
         }

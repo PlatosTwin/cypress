@@ -114,27 +114,34 @@ enum GroveJournalShotFixtures {
 
     // ── The grove: three trees ───────────────────────────────────────────────────────────────
 
+    /// The records are the journal below, counted — three visits, a check-in and two care logs
+    /// against the cypress; a visit and a measurement against the ginkgo; nothing at all against the
+    /// zelkova, which is in the grove because somebody hearted it. Kept in step by hand here because
+    /// this is a double; `LocalAPI` derives both from the same tables in one read.
     static let trees: [GroveEntry] = [
         GroveEntry(
             treeID: cypress,
             displayName: "Grandmother Cypress",
             coordinate: Coordinate(latitude: 37.7601, longitude: -122.5089),
             lastVisitedAt: day(2),
-            isFavorite: true
+            isFavorite: true,
+            record: GroveRecord(visits: 3, checkIns: 1, careEvents: 2)
         ),
         GroveEntry(
             treeID: ginkgo,
             displayName: "Ginkgo on Judah",
             coordinate: Coordinate(latitude: 37.7615, longitude: -122.5040),
             lastVisitedAt: day(21),
-            isFavorite: false
+            isFavorite: false,
+            record: GroveRecord(visits: 1, measurements: 1)
         ),
         GroveEntry(
             treeID: zelkova,
             displayName: "Zelkova on 44th",
             coordinate: Coordinate(latitude: 37.7628, longitude: -122.4990),
             lastVisitedAt: nil,
-            isFavorite: true
+            isFavorite: true,
+            record: .none
         )
     ]
 
