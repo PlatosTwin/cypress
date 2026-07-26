@@ -112,6 +112,17 @@ enum VisitMetrics {
         static let shotTypeBottom: CGFloat = 150
         static let shotTypeGap: CGFloat = 8
 
+        /// The tick on a framing this session has already photographed (ERRATA E150). **NOT SPECIFIED**
+        /// — SCREENS 04 draws the three chips with no captured state, because when it was drawn a visit
+        /// held one photograph and the chips were three labels for it. Sized off screen 05's check
+        /// circle, which is the app's existing "this one is chosen" mark, at the smaller end because it
+        /// sits on the corner of a chip rather than in a row of its own.
+        static let capturedMark: CGFloat = 16
+        static let capturedMarkGlyph: CGFloat = 8
+        static let capturedMarkStroke: CGFloat = 2
+        /// Half the mark, so it straddles the chip's corner rather than being clipped by it.
+        static let capturedMarkInset: CGFloat = 5
+
         /// Shutter — 68×68 circle at `bottom:34px`, `box-shadow:0 0 0 6px rgba(255,255,255,.35)`
         /// (a solid ring, not a blur).
         static let shutterDiameter: CGFloat = 68

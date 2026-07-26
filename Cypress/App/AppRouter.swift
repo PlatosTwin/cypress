@@ -107,10 +107,55 @@ final class AppRouter {
     /// as bottom sheets over a dimmed profile, not as full screens.
     var sheet: Route?
 
-    func push(_ route: Route) { path.append(route) }
+    func push(_ route: Route) { push(route, unlessAlreadyOnTop: false) }
+
+    /// Pushes, optionally declining to stack a second copy of the screen already in front.
+    ///
+    /// The visit flow needs the second form (ERRATA E149). Screen 18's "See it on the tree's timeline"
+    /// is reached from two entrances, and one of them — the profile's own photo CTA — is *already on that
+    /// tree's profile*. Pushing unconditionally put a second, identical profile of the same tree on the
+    /// stack, so the way out got one chevron longer every time somebody photographed a tree from its own
+    /// page and then looked at what they had just added.
+    func push(_ route: Route, unlessAlreadyOnTop: Bool) {
+        if unlessAlreadyOnTop, path.last == route { return }
+        path.append(route)
+    }
+
     func present(_ route: Route) { sheet = route }
     func pop() { if !path.isEmpty { path.removeLast() } }
     func popToRoot() { path.removeAll() }
+
+    /// Back to the map, from wherever the app is — the one **absolute** destination in this router.
+    ///
+    /// ── Why this had to exist (ERRATA E149) ───────────────────────────────────────────────────
+    /// Every other way out of the capture flow is *relative*. `onExit` dismisses the cover to whatever
+    /// happened to be underneath it and `onSaved` pops one level, so "where does the app go when I have
+    /// finished" had no answer of its own — it was however many screens deep the person happened to be.
+    /// From the map's FAB that lands on the map and looks correct; from a tree's own photo CTA, which is
+    /// the app's own primary call to action on screen 03, it lands back on the tree profile, and from
+    /// there the map is another chevron away with nothing on screen naming it. The owner's report is
+    /// exactly that: "need a back to map button/functionality after taking photo/checking in".
+    ///
+    /// `popToRoot()` had been sitting in this file with **no caller anywhere in the app** — the operation
+    /// that means "back to the map" existed and nothing asked for it.
+    ///
+    /// All three fields, and the order matters. `sheet` first so the cover is on its way out before the
+    /// stack under it changes; `path` because a tab root is invisible beneath a pushed destination (see
+    /// `goToTab`); `tab` last because it is the thing being asked for.
+    func goToMap() { goToTab(.map) }
+
+    /// The same, for any tab root.
+    ///
+    /// **Clearing `path` is not optional here**, and that was a live defect: this router keeps *one*
+    /// `path` for all four tabs, so setting `tab` while something is pushed swaps the root underneath a
+    /// screen that stays on top of it. Screen 18's "Route done · see your grove" did exactly that — from
+    /// the profile entrance it dismissed the cover onto the tree profile, with the grove it had just been
+    /// asked for hidden beneath, and the only sign anything had happened was that Back went somewhere new.
+    func goToTab(_ destination: Tab) {
+        sheet = nil
+        path.removeAll()
+        tab = destination
+    }
 
     /// Swaps a pushed route for another one, in place.
     ///

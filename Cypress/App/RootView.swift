@@ -235,18 +235,27 @@ struct RootView: View {
                 // at the call site with an explicit capture list so the `@Sendable` closure carries
                 // only its two `Sendable` captures across the isolation boundary, not this view.
                 onLink: accountLink(),
+                // Abandoning the flow — the shortlist's back chevron, and the camera's ✕ on the
+                // profile entrance. Relative on purpose: nothing was contributed, so the honest place
+                // to land is the screen that opened the camera. `onDone` is the one that is finished,
+                // and it goes somewhere absolute (ERRATA E149).
                 onExit: { router.sheet = nil },
+                // "Done for today" — the end of a contribution rather than the abandoning of one, and
+                // the control whose label already promises what the owner asked for. It is the map's
+                // FAB that starts this flow and the map that a volunteer morning is conducted from, so
+                // finishing goes there rather than to whichever screen happened to be underneath.
+                onDone: { router.goToMap() },
                 onOpenTree: { id in
                     router.sheet = nil
-                    router.push(.treeProfile(id))
+                    // Not a second copy of the profile this flow may have been opened from (E149).
+                    router.push(.treeProfile(id), unlessAlreadyOnTop: true)
                 },
                 // PROTOTYPE-FLOW §1.6 rule 5: after the third tree the next-tree CTA reads
                 // `Route done · see your grove` and goes to the grove. It closes the camera flow
-                // and moves the bottom bar rather than pushing, because the grove is a tab root.
-                onOpenGrove: {
-                    router.sheet = nil
-                    router.tab = .grove
-                }
+                // and moves the bottom bar rather than pushing, because the grove is a tab root —
+                // and it has to clear the stack to do it, or the grove arrives underneath whatever
+                // is pushed and nothing appears to happen (`AppRouter.goToTab`).
+                onOpenGrove: { router.goToTab(.grove) }
             )
 
         case let .photoViewer(id, caption):

@@ -201,17 +201,67 @@ struct VisitCameraView: View {
         .accessibilityHidden(true)
     }
 
+    /// The three framings, and which of them this session has already photographed.
+    ///
+    /// ── Why the chips had to start reporting state (ERRATA E150) ───────────────────────────────
+    /// One session can take all three now, so these chips are no longer three ways of labelling one
+    /// photograph — they are three slots, and a contributor has to be able to see which are filled
+    /// without tapping each one to find out. The mark is a `CypressCheckmark`, the same shape screen 18's
+    /// success circle and screen 05's selected row draw, so nothing new is invented for it; it is a
+    /// `Shape` sized by its frame rather than by the type ramp, which is what keeps it inside a chip that
+    /// grows its label at AX sizes.
+    ///
+    /// `CypressChipFlow` and not an `HStack`, which is the part that would have broken: three chips with
+    /// checkmarks on them at AX5 are wider than the phone, and E125's tray already ran off the right edge
+    /// once. The flow wraps instead, and it is the same component screen 05's structure chips and the
+    /// add screen's land row use.
     private var shotTypeChips: some View {
-        HStack(spacing: VisitMetrics.Camera.shotTypeGap) {
+        CypressChipFlow(spacing: VisitMetrics.Camera.shotTypeGap) {
             ForEach(model.shotTypes, id: \.self) { type in
+                let isCaptured = model.capturedShotTypes.contains(type)
                 Chip(
                     model.label(for: type),
                     style: model.shotType == type ? .shotTypeOn : .shotTypeOff,
                     action: { model.shotType = type }
                 )
+                .overlay(alignment: .topTrailing) {
+                    if isCaptured { capturedMark }
+                }
+                // The chip is a control whose label no longer carries its whole meaning: "Trunk" and
+                // "Trunk, photographed" are different states and a mark is not read out.
+                .accessibilityLabel(
+                    isCaptured
+                        ? "\(model.label(for: type)), photographed"
+                        : "\(model.label(for: type)), not photographed yet"
+                )
             }
         }
+        .padding(.horizontal, VisitMetrics.Camera.trayPadding)
         .padding(.bottom, VisitMetrics.Camera.shotTypeBottom)
+    }
+
+    /// The tick on a framing that has been photographed. Decoration — `shotTypeChips` puts the same fact
+    /// into the chip's accessibility label, where it can actually be heard.
+    private var capturedMark: some View {
+        ZStack {
+            Circle().fill(CypressColor.selectionFill)
+            CypressCheckmark()
+                .stroke(
+                    CypressColor.onSelectionFill,
+                    style: StrokeStyle(
+                        lineWidth: VisitMetrics.Camera.capturedMarkStroke,
+                        lineCap: .round,
+                        lineJoin: .round
+                    )
+                )
+                .frame(
+                    width: VisitMetrics.Camera.capturedMarkGlyph,
+                    height: VisitMetrics.Camera.capturedMarkGlyph
+                )
+        }
+        .frame(width: VisitMetrics.Camera.capturedMark, height: VisitMetrics.Camera.capturedMark)
+        .offset(x: VisitMetrics.Camera.capturedMarkInset, y: -VisitMetrics.Camera.capturedMarkInset)
+        .accessibilityHidden(true)
     }
 
     @ViewBuilder
@@ -309,6 +359,17 @@ struct VisitCameraView: View {
 
     private var tray: some View {
         VStack(spacing: VisitMetrics.Camera.traySpacing) {
+            // What this session could still hold, once it holds something. In the tray rather than over
+            // the viewfinder because it is about the visit being composed, not about the frame being
+            // aimed — and because a second pill on the viewfinder is what E125's overflow was made of.
+            if let line = model.remainingShotsLine {
+                Text(line)
+                    .font(CypressFont.body125)
+                    .foregroundStyle(CypressColor.Dark.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
             noteField
 
             if !model.availablePhenologyTags.isEmpty {
@@ -387,7 +448,7 @@ struct VisitCameraView: View {
         // literal being introduced for a state the spec never drew.
         Group {
             if model.canLogVisit {
-                PrimaryButton("Log visit", style: .camera) {
+                PrimaryButton(model.logVisitLabel, style: .camera) {
                     Task {
                         if let receipt = await model.logVisit() { onSaved(receipt) }
                     }

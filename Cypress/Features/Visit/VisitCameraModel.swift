@@ -39,8 +39,10 @@ final class VisitCameraModel {
     // MARK: The draft
 
     private(set) var draft: VisitDraft
-    /// The frame just taken, shown in place of the live preview until it is replaced or saved.
-    private(set) var snapshot: UIImage?
+    /// The frames taken so far, by framing — each shown in place of the live preview while its own chip
+    /// is selected. A dictionary and not one `snapshot`, because all three photographs of a session are
+    /// live at once and switching chips has to be able to show you what you already have (E150).
+    private(set) var snapshots: [ShotType: UIImage] = [:]
     var shotType: ShotType = .fullTree
     var note: String = ""
     var selectedTags: Set<PhenologyTag> = []
@@ -71,9 +73,27 @@ final class VisitCameraModel {
 
     /// PROTOTYPE-FLOW §1.6.1, the one hard gate on this screen: "Log visit is disabled until
     /// `snapped`. Both visually and functionally."
+    ///
+    /// **Any** photograph, not all three. See `VisitOutboxWriter.enqueue` for why two of three is a
+    /// complete contribution rather than a draft.
     var canLogVisit: Bool { draft.hasPhoto && !isSaving }
 
-    var hasSnapped: Bool { draft.hasPhoto }
+    /// Whether the framing now selected has been photographed. This is the viewfinder's question — it
+    /// decides whether the screen shows a photograph or a live preview — and it is per framing, so
+    /// choosing `Trunk` after shooting the full tree opens the camera again rather than showing the
+    /// tree (E150).
+    var hasSnapped: Bool { draft.hasPhoto(shotType: shotType) }
+
+    /// The photograph for the framing now selected, if there is one.
+    var snapshot: UIImage? { snapshots[shotType] }
+
+    /// The framings photographed so far, in the order the chips are drawn. Read by the chip row so a
+    /// contributor can see what they already have without tapping through it.
+    var capturedShotTypes: Set<ShotType> { Set(draft.photos.map(\.shotType)) }
+
+    /// How many of this session's photographs are staged. Drives the CTA's own label, because the one
+    /// thing the screen must not do is let somebody save two photographs believing they saved three.
+    var capturedCount: Int { draft.photos.count }
 
     /// Whether the alignment layer means anything for the subject now selected.
     ///
@@ -121,8 +141,34 @@ final class VisitCameraModel {
     }
 
     /// The three shot types SCREENS 04 draws. `.other` is in the stored vocabulary but is not
-    /// offered — nothing on this screen means "other".
+    /// offered — nothing on this screen means "other". This is also the vocabulary one session can now
+    /// fill: three chips, up to three photographs, one per chip.
     var shotTypes: [ShotType] { [.fullTree, .trunk, .leaf] }
+
+    /// What "Log visit" says, which has to name how many photographs are about to be saved.
+    ///
+    /// Two of three is a complete contribution, so the button must not read as though it were waiting
+    /// for a third — but it must not hide the count either, because the whole failure this replaces was
+    /// a contributor believing they had three photographs when they had one. A count is not a score: it
+    /// describes the thing on screen, not the person, and D1 forbids the latter.
+    var logVisitLabel: String {
+        switch capturedCount {
+        case 0, 1: return "Log visit"
+        default: return "Log visit · \(capturedCount) photos"
+        }
+    }
+
+    /// The line under the chips that names the framings still open, or nothing once all three are taken.
+    ///
+    /// An invitation, not a requirement: it says what else this session *could* hold. It disappears
+    /// rather than turning into a tick, because a screen that congratulates somebody for taking three
+    /// photographs is a screen keeping score.
+    var remainingShotsLine: String? {
+        guard capturedCount > 0 else { return nil }
+        let remaining = shotTypes.filter { !capturedShotTypes.contains($0) }
+        guard !remaining.isEmpty else { return nil }
+        return "Also worth having: " + remaining.map { label(for: $0).lowercased() }.joined(separator: ", ")
+    }
 
     func label(for shotType: ShotType) -> String {
         switch shotType {
@@ -170,24 +216,36 @@ final class VisitCameraModel {
 
     private func apply(imageData: Data) {
         guard let image = UIImage(data: imageData) else { return }
+        // Frozen for the whole of this capture. The chip row stays tappable, and it used to be re-read
+        // at save — which was harmless when a visit held one photograph and is wrong now: with three
+        // staged files the framing is what names each one on disk, so the label has to be decided at
+        // the shutter or the file and the row can disagree about which photograph this is (E150).
+        let framing = shotType
         do {
-            let path = try VisitPhotoStaging.write(imageData, for: draft.visitID)
-            // The chip as it stands at capture. It is re-read at save, below, because the chip row
-            // stays live after the shutter and the last tap before "Log visit" is the answer.
-            draft.photo = OutboxPhoto(path: path, shotType: shotType)
+            let path = try VisitPhotoStaging.write(imageData, for: draft.visitID, shotType: framing)
+            draft.stage(OutboxPhoto(path: path, shotType: framing))
             draft.capturedAt = Date()
-            snapshot = image
+            snapshots[framing] = image
             saveError = nil
         } catch {
             // A photo that cannot be written to disk is a photo that cannot survive termination, so
-            // it is not a photo. `canLogVisit` stays false and the screen says why.
+            // it is not a photo. This framing stays unphotographed and the screen says why; any
+            // photographs already taken in this session are untouched and still saveable.
             saveError = "That photo could not be saved to this phone: \(error.localizedDescription)"
         }
     }
 
+    /// The shutter, when the selected framing already has a photograph: throw that one away and go back
+    /// to the viewfinder. Only that one — the other framings are separate photographs, and a retake of
+    /// the trunk has never meant "discard the full tree as well".
+    ///
+    /// The staged file is left where it is. A replacement writes to the same path (that is what the
+    /// framing in the filename buys), and if the contributor logs the visit without retaking, the row
+    /// no longer references it — `VisitPhotoStaging` is a staging directory, and an unreferenced file in
+    /// it is the same condition an abandoned draft has always left behind.
     func retake() {
-        draft.photo = nil
-        snapshot = nil
+        draft.discardPhoto(shotType: shotType)
+        snapshots[shotType] = nil
     }
 
     // MARK: - The write
@@ -203,11 +261,11 @@ final class VisitCameraModel {
 
         draft.note = note
         draft.phenologyTags = Array(selectedTags)
-        // The chips stay tappable after the shutter, so the framing is resolved here, where the note
-        // and the tags are, rather than being frozen at capture.
-        if let path = draft.photoPath {
-            draft.photo = OutboxPhoto(path: path, shotType: shotType)
-        }
+        // The framing is **not** re-read here any more. It used to be, on the argument that "the chip
+        // row stays live after the shutter and the last tap before Log visit is the answer" — true of
+        // one photograph, and destructive with three: it would relabel every staged photograph as
+        // whichever chip happened to be selected when the button was pressed. `apply(imageData:)` freezes
+        // it at the shutter now, which is also where the filename is decided (E150).
 
         do {
             let receipt = try await VisitOutboxWriter.save(
@@ -221,10 +279,18 @@ final class VisitCameraModel {
             // must not become the thing the next visit is lined up against. Read the staged file
             // back rather than holding the bytes: by now the drain may already have moved it, and
             // if it has, this tree's photo record is the ghost and the copy is redundant.
-            if let path = draft.photoPath, let data = try? Data(contentsOf: URL(fileURLWithPath: path)) {
-                VisitGhostStore.record(data, for: treeID, shotType: shotType)
-            } else if let snapshot, let data = snapshot.jpegData(compressionQuality: 0.9) {
-                VisitGhostStore.record(data, for: treeID, shotType: shotType)
+            //
+            // **The full-tree photograph specifically**, not "the one that was on screen". The ghost is
+            // the last full-tree photo and `VisitGhostStore.record` refuses anything else, so with three
+            // photographs in hand the right one has to be picked rather than guessed at: passing the
+            // selected chip would have made whether the alignment layer got recorded depend on which
+            // chip a contributor happened to leave selected (E150).
+            if let fullTree = draft.photo(shotType: .fullTree) {
+                if let data = try? Data(contentsOf: URL(fileURLWithPath: fullTree.path)) {
+                    VisitGhostStore.record(data, for: treeID, shotType: fullTree.shotType)
+                } else if let image = snapshots[.fullTree], let data = image.jpegData(compressionQuality: 0.9) {
+                    VisitGhostStore.record(data, for: treeID, shotType: fullTree.shotType)
+                }
             }
 
             return receipt
