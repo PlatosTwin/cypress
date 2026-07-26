@@ -5875,6 +5875,77 @@ tree private, screen 06 is routing them to a number that will not take the repor
 decision (does the panel change its copy, offer a different destination, or say plainly that the city
 does not handle this tree?) and belongs to whoever builds #69, not to this round.
 
+### E144 — every screen that named a record, and none of them said where it was
+
+The project owner, from real use on their own iPhone:
+
+> "In almanac under this season need a way to find the tree mentioned. Right now clicking just takes
+> to tree page but I have no idea where tree is"
+
+**The almanac is where it was noticed and not where it is.** Six surfaces in the app name a record —
+the almanac's season rows, My Grove, the journal, the species screen's nearby list, the map's own
+card, and search — and every one of them pushes the tree profile, the memorial or the vacant site.
+None of those three said where the record was. An affordance built on the almanac's rows would have
+had to be built five more times: five more places to word it differently, five more destinations to
+drift apart. So the control goes on the junction — one button, on the three screens a record can be
+drawn on — and there is one destination behind it.
+
+**The destination already existed.** E129 answered the identical sentence for screen 12's two
+*counted* rows and built `PinSetMapView` to do it. A group of one is a `PinSet`, so this is a third
+subject on that type rather than a second map screen; the alternative is two answers to one question,
+which is the shape of defect E129 was itself closing.
+
+**Three things separate a map from an answer**, and each is a defect that a correct-looking map still
+has:
+
+- **The camera opens at `MapLayout.defaultSpanMetres`** — E12's 120 m, measured as the scale where
+  San Francisco's street trees stop fusing into a mat — **centred on the record and never on what the
+  read returned.** Framing the neighbours instead opens at whatever they happen to span: with the
+  camera deliberately broken that way the assertion measured **1,080 m**, nine times out, with the
+  subject a dot among dots.
+- **The record is on the map from the first frame.** It travels on the route as a payload and is
+  drawn without any read having happened, so there is no window in which the camera has arrived and
+  the pin has not — a map that flies somewhere and shows nothing for a beat is the failure mode here,
+  and on a slow or failed read it would never fill in at all.
+- **The record is drawn selected**, through `selectedPinID` and `MapAnnotationLayer.applySelection`,
+  the app's existing 1.25×. No second highlight was invented: a second way to say "this one" is a
+  second thing to keep in step with C19.
+
+**The rest of the block is read, once, and is the only query this screen has ever made.** A single
+pin answers "which street" and stops; a person standing on that street is asking *which one*, and a
+pin drawn alone cannot be counted along a block. E129's rule against re-reading is not broken by
+this, and the reason is precise: that rule exists because the almanac's row has **printed a count**,
+and a second read can disagree with it. Nothing here is counted. The context is scenery, the sentence
+over the map only mentions it once it has arrived, and if the read fails the screen is the one-pin
+map it would have been anyway.
+
+**A basin and a memorial get the same control, unchanged.** Both are reachable from the same lists,
+both are places, and C19 already draws each in its own vocabulary (R7, E107) — so the map states what
+kind of record stands there without a word of copy changing. On the memorial it is also the only
+thing on screen 19 there is to press, which does not break 19's rule: everything else a profile
+offers *writes*, and there is nothing left to contribute to a felled tree. This writes nothing. It
+answers where the tree stood, which is a fact the record already holds.
+
+**The one camera write on this screen is a press.** A pushed map opens on `MapCameraRequest.opening`,
+sequence zero, because that getter runs on every pass and a ticket there would be a new request sixty
+times a second. What mints a ticket is the control that goes back to the subject after a pan —
+`.move(to:)`, from a main-thread gesture handler, exactly as the recentre press does (E140). Nothing
+in the file drives the camera off a state change, which is the property E140 paid for; checked by
+hand on the device with a ten-point drag, the map stayed where it was put and the press brought it
+back.
+
+**Found by looking rather than by asserting:** a vacant site's H1 *is* its street address, so the
+map's street line printed `601 Dolores St` one line under `601 Dolores St`. The line is absent now
+rather than paraphrased — the address is already on screen, and saying it differently the second time
+would be the app filling a slot instead of answering. It has a test now; it never would have had one,
+because nothing was wrong with either string.
+
+**Verified end to end on the simulator, location granted**, over the owner's own route: almanac →
+`The elder` → the profile → `Show me where this is` → a map of 21st St in the Mission with the
+Brazilian Pepper at 3426 21st St the larger pin among some thirty neighbours. The vacant site and the
+memorial were driven the same way and drew the basin pin and the grey dash-marked pin respectively,
+each enlarged, each centred.
+
 ### E145 — the city's record on the tree page, and the pruning answer the data cannot give
 
 The project owner asked for two things and this entry draws both. *"Want to see more city details
@@ -6006,3 +6077,156 @@ colour, so `sweep`/`pair` return false and the expectation fails. The AX5 shot s
 under the limit. The states are `c01`–`c05` light and dark, and `c06` across the type ramp.
 
 23 tests, 689 total.
+### E146 — the ground under the tree, and the telephone number that stopped being automatic
+
+The project owner asked for it twice, the second time from real use: *"When adding a tree need option
+to mark it as a tree on private property vs city park vs street tree. and need to see this distinction
+on tree's landing page too, along with other tree metadata"*, and then *"I don't see option to select
+city or park or private yard when adding tree. still being built?"*.
+
+**No migration and no new column.** E143 landed all of it — `community_trees.land_context` at
+AppSchema **v11**, CHECK-pinned to four values plus NULL, `TreeDraft.landContext` on the existing
+`addTree` requirement, `LandContext.inferred(from:)` in `Core`, and `Tree.landContext` returning a
+`KnownLandContext` that names its own source. This round is the three screens that were left
+deliberately unbuilt, plus the consequence E143 wrote down and handed forward (task #88).
+
+**Three chips on the composer, and not a fourth phase.** `VisitAddTreeModel` already has two phases
+that replace the whole screen — the pin map and the species catalogue — because each is a screen with
+its own interaction. Three chips are not, and a separate step between the photograph and the CTA that
+existed to hold three chips would be the second step this flow was told not to grow. The row is C4's
+chip flow in `CypressChipFlow`, sitting between `placementRow` and `speciesRow`, and the order is the
+argument: the pin decides the coordinate, this decides the ground under it, and only then does the
+screen ask what the tree *is*. It uses C4's neutral selected/idle pair rather than screen 06's amber
+one, because the amber means "this tree needs something" (§1.1) and a tree in a garden is not a worse
+tree than a tree on a kerb.
+
+**Optional — and E141's argument is not what decides it, which is worth saying plainly.** E141 made
+the species optional because a mandatory 569-row picker collects *guessed* botany: somebody who cannot
+name a tree has two ways forward and the cheaper is to pick something plausible. **That argument is
+genuinely weaker here.** A person standing at a tree can nearly always see whether they are on a
+pavement, in a park or in somebody's front garden; land context is not specialist knowledge the way
+botany is. If "they might not know" were the only consideration, this field would be required.
+
+Three other things decide it, and they are stronger than the one that does not apply:
+
+1. **A required picker cannot remove the unanswered state, only slow the flow down.** Every community
+   row written before v11 has `land_context` NULL, and a city row with neither `legal_status` nor
+   `caretaker` infers nothing. `Tree.landContext` is an optional forever, every reader already handles
+   nil, and a mandatory field buys the read side nothing while costing the field flow a tap.
+2. **A mandatory answer is the screen-level version of the column default v11 refused.** E143 gave the
+   column no DEFAULT because no tree written before v11 had ever been asked, and any default would be
+   Cypress putting words in a contributor's mouth. A picker nobody can leave produces a value for every
+   row whether or not anybody knew one — and it destroys the *not asked* / *street* distinction in the
+   harmful direction, because a wrong `street` is what routes somebody to 311 about a tree 311 does not
+   handle.
+3. **BUILD-PLAN §6's endpoint requires a photo and nothing else**, and a screen stricter than its own
+   boundary is a screen inventing a rule — E141's opening move, which does carry.
+
+**Optional is not the same as hidden, and that is the difference from the species row.** Naming a
+species costs a trip to a catalogue, so that row is a sentence and a link. This is three chips, always
+visible, one tap to answer and no taps to skip. The question is asked as plainly as a required field
+would ask it; only the refusal is free. Tapping the lit chip is the retraction — there is no second
+screen to back out of, so `skipSpecies`'s distinction between *leaving* and *saying you are not sure*
+has nothing here to attach to.
+
+**Three of the four values are offered, and `.otherPublic` is the one held back.** E143 settled the
+asymmetry — a permitted value no screen offers costs nothing, a forbidden value the data contains costs
+a migration. The three that are offered are answers to *look down*: pavement, park, garden.
+`Other public land` is a statement about which agency holds the parcel — a school's frontage strip, a
+Port pier, a PUC right-of-way — and a contributor standing on it sees grass or concrete, not a
+jurisdiction. Offering it would ask for a guess about a municipal fact, which is what optionality
+exists here to avoid. The **profile still renders all four**, because 956 city rows carry the fourth;
+display is not input, and `VisitAddTreeModel.offered` is only input. The model refuses a value outside
+that list rather than merely omitting it from a list the view reads.
+
+**On the profile it is a stat card, and the provenance line was measured before that was decided.**
+The `·`-joined subtitle was the obvious home — `placementNote` and `speciesClaimNote` both live there.
+A community tree with a given name, a species and a moved pin already renders **five** elements:
+`Monterey cypress · Hesperocyparis macrocarpa · community-added, unverified · species named by a
+contributor · position placed by hand`. That is three wrapped lines of italic serif before this adds
+anything, and a sixth element would push the two notes that *are* about authorship into the middle of
+a list that had stopped being one sentence. `theSubtitleCouldNotCarryIt` asserts the count of five, so
+the reason cannot rot. It goes into the stat grid — 03's own `Details`, already carrying `Site`,
+`Planted` and `City record` — where a label gives it the one thing the subtitle cannot: room to say
+*how Cypress knows*, in words, beside the answer.
+
+**Symmetric, and E138's rule does carry here where E141's did not.** All four values print and none is
+marked; `Street or sidewalk` renders exactly as `Private property` does. E141 refused E138's symmetry
+because the alternative to "a contributor named it" is *no species*, which has nothing to attribute.
+A land context that exists always came from one of exactly two ways of knowing, so both arms name
+themselves — `said by a contributor` / `read from the city record` — and marking one would rank it
+against the other. `read from`, not `from`: San Francisco wrote `qLegalStatus = 'Property Tree'`, and
+turning that into a place is Cypress's rule. The value is `StatCard.Value.prose` rather than
+`.cityRecord`, because that badge means *the city published this number*, which is true of a 5 cm DBH
+bucket and false of an inference. The card is not a door — nothing in the app corrects this field.
+
+---
+
+**The consequence E143 handed forward, which is the part that could have shipped confidently wrong.**
+`ReportPresentation.showsHazardBranch` was `selection.hazard != nil` and nothing else; `ReportModel`
+held a `treeID` and never read the tree. Every tree got the same `Call 311 now`, and 311 is the city's
+line for *city* trees. Unreachable only because nothing wrote the column — until this round.
+
+**311 is San Francisco's front door for city-owned anything**, so the split is not four-way. A street
+tree, a Rec/Park tree and an SFUSD yard tree all reach a crew through it, by queues the caller never
+sees. It is one bit: `LandContext.isPublicLand`, in `Core`, which knows about ground and not about
+telephone numbers.
+
+**Only an observation may redirect a safety call. An inference may only inform.** This is the rule, and
+it is `KnownLandContext` earning the reason E143 built it. **The seed says why, and the number was
+measured here rather than assumed.** 11,856 city rows infer `.privateProperty` — and **11,153 of them,
+94%, come from `caretaker == 'Private'` with no jurisdiction on file**: 8,126 whose `legal_status` reads
+`Undocumented`, 2,964 `Significant Tree`, 48 `Landmark tree`, 15 blank. Only **703** come from San
+Francisco recording `Private` or `Property Tree` as the legal status. E143 built the mapping so
+jurisdiction leads precisely because leading on `caretaker` mislabels ~152,000 street trees; for these
+11,153 rows there is no jurisdiction to lead and the caretaker decides alone. On the *Street* Tree List,
+"no legal status on file and a private party waters it" describes a great many ordinary street trees
+whose neighbour holds the hose.
+
+So the harms are not symmetric and the design follows the asymmetry. Suppressing the call on a misread
+street tree means somebody with a hanging limb over a pavement was told by an app that the city will
+not help — a safety harm. Showing the call on a genuinely private tree means a wasted call and an
+operator saying "not ours" — a friction harm. Three handoffs:
+
+| `hazardHandoff` | when | what changes |
+|---|---|---|
+| `.city` | every public context, **and every unknown one** | nothing at all |
+| `.cityWithInferredPrivateLand` | the *city's* record reads as private | `Call 311 now` untouched; one line under it says what was read |
+| `.notCityMaintained` | a *contributor* said private property | panel says the city is not the party that fixes it; the call demotes to `Call 311 anyway` |
+
+**Nothing is ever removed.** `Call 311` is reachable on all three branches, and a failed read falls back
+to `nil`, which is `.city`, which is the screen that shipped — *the failure mode of the new code is the
+old code*. Shipping this picker therefore cannot make a safety report harder for any tree in the app;
+`theNumberIsNeverUnreachable` asserts it over every context and both sources. `showsHazardBranch` itself
+is unchanged: a hazard is a hazard on any ground, and a branch that vanished for a private tree would
+delete the private reminder along with the call.
+
+**Naming the caretaker was considered and the seed refuses it.** `caretaker` is populated on 100% of
+city rows, which is what makes the idea attractive — and it collapses on exactly the branch it would
+serve: of the 11,856 rows that infer `.privateProperty`, **11,715 (98.8%) say `caretaker = 'Private'`**.
+A panel reading "the city says the caretaker is Private" names nobody. `care_assistant` is worse — 112 of
+the 703 jurisdiction-arm rows carry one and 80 of those say `FUF`, the volunteers who *planted* it, who
+are not a hazard line. So the private panel says what Cypress cannot do instead: *"Cypress has no way to
+reach whoever is"*. Leaving that sentence out would let a silence imply somebody is handling it.
+
+`ReportModel.load` reads through `CypressAPI.treeProfile`, the requirement the tree page already calls —
+no new protocol requirement, because E141's bar for adding one is that nothing existing answers the
+question, and one does. `logHazardRedirect` still fires on the private branch: the event carries the
+`treeID`, so *how often does a hazard land on a tree the city does not maintain* is a join rather than a
+gap, and suppressing it would silently delete the rows that measure this round.
+
+**Not built, stated plainly.** There is no way to *change* a land context after the save — no update
+path on `community_trees.land_context`, and a city row's context is derived in `Core` from a read-only
+database. The profile card is inert for that reason. Correcting it needs the same append-only assertion
+chain E141 wanted for the species and could not have, and standing that up here would be inventing a
+product on a two-clause request.
+
+**Verified on the simulator by walking it**: map → `What tree is this?` → `None of these? Add this tree`
+→ three chips visible where the owner said they were missing → `Private property` lit and the sentence
+above it changing → photo from the library → the 10 m dedupe refusing twice, honestly, until the pin was
+30 m east → save → the profile showing `WHERE IT STANDS · Private property · said by a contributor` →
+`Report` → `Blocking a sightline` → the panel saying the city does not fix this one, with `Call 311
+anyway` under it. A deep-linked city tree drew `Street or sidewalk · read from the city record` beside
+its `SITE` and `SF #229291` cards, and its report drew `Call 311 now` unchanged. Both appearances, and
+the three report branches are photographed by `LandContextShots` because two of them cannot be reached
+from the shipped seed by any deep link.

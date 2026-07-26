@@ -41,7 +41,9 @@ Cypress/Resources/cypress-seed.sqlite
 .ddsnap/
 .ddphoto/
 .ddspecies/
+.ddalmanac/
 .ddseed/
 .ddcity/
 # Build logs from a test run, written into the worktree root.
 *.log
+.ddland/

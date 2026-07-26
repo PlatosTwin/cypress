@@ -32,16 +32,22 @@ struct MemorialView: View {
     /// rather than a link. Left as a seam rather than invented (DECISIONS constraint 21).
     private let onOpenSuccessor: ((UUID) -> Void)?
 
+    /// Where "show me where this is" goes (ERRATA E144). Resolved by the composition root, like
+    /// every other destination this feature hands out.
+    private let onShowWhere: ((PinSet) -> Void)?
+
     init(
         treeID: UUID,
         api: any CypressAPI,
         now: @escaping @Sendable () -> Date = { Date() },
         onBack: (() -> Void)? = nil,
-        onOpenSuccessor: ((UUID) -> Void)? = nil
+        onOpenSuccessor: ((UUID) -> Void)? = nil,
+        onShowWhere: ((PinSet) -> Void)? = nil
     ) {
         _model = State(wrappedValue: MemorialModel(treeID: treeID, api: api, now: now))
         self.onBack = onBack
         self.onOpenSuccessor = onOpenSuccessor
+        self.onShowWhere = onShowWhere
     }
 
     var body: some View {
@@ -61,7 +67,11 @@ struct MemorialView: View {
             ProgressView()
         case .loaded:
             if let presentation = model.presentation {
-                MemorialScreen(presentation: presentation, onBack: onBack)
+                MemorialScreen(
+                    presentation: presentation,
+                    onBack: onBack,
+                    onShowWhere: onShowWhere
+                )
             }
         case .notMemorial:
             notMemorial
@@ -113,6 +123,9 @@ struct MemorialScreen: View {
 
     let presentation: MemorialPresentation
     var onBack: (() -> Void)?
+    /// Where "show me where this is" goes. A `PinSet` rather than an id, for the reason the route
+    /// carries one: the record travels, so the map cannot re-read it and disagree (ERRATA E129).
+    var onShowWhere: ((PinSet) -> Void)?
 
     var body: some View {
         ScrollView {
@@ -173,6 +186,14 @@ struct MemorialScreen: View {
                 Text(presentation.subtitle)
                     .cypressLatinName()
                     .fixedSize(horizontal: false, vertical: true)
+            }
+            // ERRATA E144. **The one thing on screen 19 there is to press**, and it does not break
+            // 19's rule that a memorial offers nothing: the screen's own note is that there is
+            // "deliberately nothing to press" because every other control on a profile *writes*
+            // something, and there is nothing left to contribute to. This writes nothing. It answers
+            // where the tree stood, which is a fact the record already holds.
+            if let onShowWhere {
+                ShowWhereButton { onShowWhere(presentation.locateSet) }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -51,7 +51,7 @@ struct ReportView: View {
                 // One branch, not three blocks: the panel, the reminder and the disclosure all
                 // depend on a hazard being selected. See `ReportPresentation.showsHazardBranch`.
                 if presentation.showsHazardBranch {
-                    hazardPanel
+                    hazardPanel(presentation)
                     reminderButton
                     disclosure
                 }
@@ -60,6 +60,10 @@ struct ReportView: View {
             .padding(.bottom, ReportMetrics.bottomInset)
         }
         .scrollBounceBehavior(.basedOnSize)
+        // Reads the tree, so the panel can know whether 311 is the right destination for it
+        // (ERRATA E146). The screen draws first and is correct while this is in flight: an
+        // unread tree is `HazardHandoff.city`, which is what 06 has always drawn.
+        .task { await model.load() }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(CypressColor.surfaceScreen)
         // C1 carries the back affordance and the `padding-top:62px` is the status-bar inset, so the
@@ -159,7 +163,15 @@ struct ReportView: View {
 
     // MARK: - The 311 panel
 
-    private var hazardPanel: some View {
+    /// The panel, in whichever of its three handoffs this tree gets (`HazardHandoff`, ERRATA E146).
+    ///
+    /// **The geometry, the amber circle and the phone glyph are unchanged on every branch.** The
+    /// amber is §1.1's "this tree needs something", which is true whoever owns the ground, and the
+    /// glyph would otherwise have to be replaced with one nobody has drawn — SCREENS.md gives this
+    /// panel no C-number and no second variant, so inventing a second illustration for it would be
+    /// redrawing a mocked screen. What changes is the body paragraph, the CTA, and one optional line
+    /// under it: the words, which are where a claim about who fixes this tree belongs.
+    private func hazardPanel(_ presentation: ReportPresentation) -> some View {
         VStack(spacing: 0) {
             Circle()
                 .fill(CypressColor.signalAmber)
@@ -178,14 +190,29 @@ struct ReportView: View {
                 .multilineTextAlignment(.center)
                 .padding(.bottom, ReportMetrics.panelTitleBottom)
 
-            Text(ReportCopy.hazardPanelBody)
+            Text(presentation.hazardPanelBody)
                 .font(CypressFont.body135)
                 .lineSpacing(CypressFont.LineSpacing.body135)
                 .foregroundStyle(CypressColor.hazardPanelText)
                 .multilineTextAlignment(.center)
                 .padding(.bottom, ReportMetrics.panelBodyBottom)
 
-            callButton
+            if presentation.showsCallCTA {
+                callButton
+            }
+
+            if presentation.showsDemotedCall {
+                demotedCallButton
+            }
+
+            if let note = presentation.cityRecordPrivateNote {
+                Text(note)
+                    .font(CypressFont.body125)
+                    .foregroundStyle(CypressColor.hazardPanelText)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, ReportMetrics.panelNoteTop)
+            }
         }
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity)
@@ -223,6 +250,32 @@ struct ReportView: View {
         }
         .buttonStyle(.plain)
         .cypressShadow(light: CypressShadow.hazard, dark: nil)
+    }
+
+    /// The same call, demoted (ERRATA E146).
+    ///
+    /// **The demotion is the entire mechanism and it had to be a demotion rather than a removal.**
+    /// The panel above has just said the city is not the party that fixes this tree; leaving an amber
+    /// filled button under that sentence would be a screen arguing with itself, and deleting the
+    /// number would be an app overruling somebody who is standing at the tree and can see the limb.
+    /// So it becomes what every other quiet action in this app is — `body13Bold` in `ctaFill` with a
+    /// 44 pt hit area, the shape `growthLink` and the species-claim control already use — and the
+    /// word `anyway` says out loud what the change of weight means.
+    ///
+    /// Centred rather than leading, because it sits inside a panel whose every other element is
+    /// centred; the leading alignment those other links use is a property of the column they live in.
+    private var demotedCallButton: some View {
+        Button {
+            Task { await model.callCity() }
+        } label: {
+            Text(ReportCopy.callAnyway)
+                .font(CypressFont.body13Bold)
+                .foregroundStyle(CypressColor.ctaFill)
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .cypressHitArea()
     }
 
     // MARK: - Reminder and disclosure
