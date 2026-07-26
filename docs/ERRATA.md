@@ -5993,9 +5993,16 @@ and a `ViewThatFits` drops it below the value when the two cannot share a line. 
 layout, and the section exists to show that string. Neither was visible to 689 passing tests, and both
 were obvious in the first contact sheet.
 
-`ScreenSweepShots.capture` gained a `viewportHeight`. The section is the last block on screen 03 and
-an off-screen `ScrollView` cannot be scrolled, so a phone-height capture of a cold profile stops just
-above the header — the harness was photographing every state of this section as empty space. The five
-states are `c01`–`c05`, light and dark.
+**`ScreenSweepShots.capture` gained a `viewportHeight`, and then a reason to distrust it.** The
+section is the last block on screen 03 and an off-screen `ScrollView` cannot be scrolled, so a
+phone-height capture of a cold profile stops just above the header — the harness was photographing
+every state of this section as empty space. Raising the window fixed that at 1,500 pt and broke
+silently at 3,600: `drawHierarchy` into an off-screen window stops producing pixels somewhere past
+8,192 px of backing store (3× a 2,730 pt window) and returns a **fully transparent image rather than
+failing**. Five 1,179 × 10,800 PNGs of nothing were written and every `#expect` around them passed,
+because this harness's only assertion was that a capture *happened* — which is not the same claim as
+a capture having a screen in it. `isNotBlank` now refuses a capture that comes back as one flat
+colour, so `sweep`/`pair` return false and the expectation fails. The AX5 shot sits at 2,700 pt,
+under the limit. The states are `c01`–`c05` light and dark, and `c06` across the type ramp.
 
 23 tests, 689 total.

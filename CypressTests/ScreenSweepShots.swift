@@ -114,9 +114,40 @@ struct ScreenSweepShots {
         window.isHidden = true
         window.rootViewController = nil
 
+        guard isNotBlank(image) else {
+            print("BLANK CAPTURE \(name) — \(Int(width))×\(Int(viewportHeight)) produced one flat colour")
+            return nil
+        }
         guard let data = image.pngData() else { return nil }
         try? data.write(to: outputDirectory.appendingPathComponent("\(name).png"))
         return image
+    }
+
+    /// Whether a capture drew anything at all.
+    ///
+    /// **This harness's one assertion was that a capture *happened*, and that is not the same claim
+    /// as a capture having a screen in it** (ERRATA E145). `drawHierarchy` into an off-screen window
+    /// stops producing pixels somewhere above 1,500 pt of window height and returns a fully
+    /// transparent image instead of failing — so raising `viewportHeight` to photograph a long screen
+    /// wrote five 1,179 × 10,800 PNGs of nothing, and every `#expect` around them passed. A suite
+    /// whose output is images has to be able to tell an image from an empty file.
+    ///
+    /// Sixteen-by-sixteen rather than the full bitmap: a 1,179 × 10,800 buffer is 50 MB and this runs
+    /// on every capture. No real screen in this app is one flat colour edge to edge — even the
+    /// darkest has a back circle on it — so a downscale that comes back uniform means nothing drew.
+    private static func isNotBlank(_ image: UIImage) -> Bool {
+        let side = 16
+        let size = CGSize(width: side, height: side)
+        let thumbnail = UIGraphicsImageRenderer(size: size).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }
+        guard let cgImage = thumbnail.cgImage,
+              let data = cgImage.dataProvider?.data,
+              let bytes = CFDataGetBytePtr(data) else { return true }
+        let count = CFDataGetLength(data)
+        guard count > 4 else { return true }
+        for index in 4..<count where bytes[index] != bytes[index % 4] { return true }
+        return false
     }
 
     /// Lays four captures out 2×2 under their labels and writes one PNG.
@@ -161,13 +192,18 @@ struct ScreenSweepShots {
 
     /// One screen, four ways, plus its contact sheet.
     @discardableResult
-    static func sweep(_ name: String, @ViewBuilder _ content: @escaping () -> some View) async -> Bool {
+    static func sweep(
+        _ name: String,
+        viewportHeight: CGFloat = height,
+        @ViewBuilder _ content: @escaping () -> some View
+    ) async -> Bool {
         var shots: [(label: String, image: UIImage)] = []
         for variant in variants {
             guard let image = await capture(
                 "\(name)-\(variant.suffix)",
                 size: variant.size,
                 scheme: variant.scheme,
+                viewportHeight: viewportHeight,
                 content
             ) else { return false }
             shots.append((variant.suffix, image))
@@ -476,10 +512,28 @@ struct ScreenSweepShots {
                 .environment(AppRouter())
             })
         }
+
+        // The fullest record at both ends of the type ramp as well. Five cards, three of which hold a
+        // value long enough to wrap beside a `.fixedSize()` badge, is where AX5 has something to say —
+        // it is the state that made C11's `ViewThatFits` necessary at the *drawn* size.
+        let full = TreeProfileSeedFixtures.fullCityRecord
+        #expect(await Self.sweep("c06-city-record-full-ramp", viewportHeight: Self.tallestViewport) {
+            NavigationStack {
+                TreeProfileView(treeID: full.tree.id, api: TreeProfilePreviewAPI(profile: full))
+            }
+            .environment(AppRouter())
+        })
     }
 
     /// Enough room for a cold profile's whole scroll, section included.
     static let tallViewport: CGFloat = 1_500
+    /// The same at AX5, where every block is several times its drawn height.
+    ///
+    /// **2,700 and not more.** At 3× this is 8,100 px, just under the 8,192 px limit above which
+    /// `drawHierarchy` returns a transparent image rather than failing — the limit `isNotBlank` now
+    /// catches. It is not enough for the whole of an AX5 profile; it reaches the section, which is
+    /// what this shot is for.
+    static let tallestViewport: CGFloat = 2_700
 
     // MARK: - The states a beta tester sees first
 
