@@ -302,11 +302,17 @@ struct PinSetDestinationTests {
         #expect(basinsWithSpecies == 0)
     }
 
-    /// The vacant read, at the numbers E115 measured: a total of 1,474 and a page of 20, every one of
-    /// them a basin in this neighbourhood with a coordinate a map can draw.
+    /// The vacant read, at the numbers the running corpus holds: a whole-neighbourhood count and a
+    /// page of it, every one of them a basin in this neighbourhood with a coordinate a map can draw.
+    ///
+    /// E115 measured 1,474 and a full page of 20 against the DataSF export. **Under `--source city`
+    /// Sunset/Parkside holds 7 basins**, because the city's own layer has no vacant-site category —
+    /// so the page is the whole set and the two-block radius the row limit was chosen against does
+    /// not hold. Both facts are pinned per source rather than relaxed to an inequality.
     @Test("the vacant read returns a page of placeable basins and the neighbourhood's whole count")
     func vacantReadReturnsPlaceablePins() async throws {
         let store = try await Self.store()
+        let corpus = try await SeedCorpus.current(store)
         let schema = try #require(store.seed)
         let queries = AlmanacQueries(schema: schema)
         let sunset = try await Self.scalar(
@@ -324,18 +330,23 @@ struct PinSetDestinationTests {
             )
         }
 
-        #expect(result.count == 1_474)
-        #expect(result.nearest.count == 20)
+        let expectedPage = min(corpus.sunsetVacantSites, AlmanacLimits.vacantSiteRowLimit)
+        #expect(result.count == corpus.sunsetVacantSites)
+        #expect(result.nearest.count == expectedPage)
         #expect(result.nearest.allSatisfy { $0.status == .vacantSite })
-        #expect(Set(result.nearest.map(\.id)).count == 20)
+        #expect(Set(result.nearest.map(\.id)).count == expectedPage)
 
         // Nearest first, which is the fact `The 20 nearest are on this map.` rests on.
         let distances = result.nearest.map { here.distance(to: $0.coordinate) }
         #expect(distances == distances.sorted(), "the page is not ordered by distance")
 
-        // And they are actually near: the 20 closest basins in Sunset/Parkside sit inside about two
-        // blocks, which is what `AlmanacLimits.vacantSiteRowLimit` was chosen against.
-        #expect((distances.max() ?? .infinity) < 400)
+        // And they are actually near — where there are enough of them to be. 400 m is about two
+        // blocks and is what `AlmanacLimits.vacantSiteRowLimit` was chosen against, on a corpus with
+        // 1,474 basins in this neighbourhood. With 7 the nearest twenty are simply all of them,
+        // spread across the whole of Sunset/Parkside, and a tight radius is not a property the read
+        // can have. The city-wide bound is what is left to assert.
+        let radius = corpus.sunsetVacantSites >= AlmanacLimits.vacantSiteRowLimit ? 400.0 : 12_000.0
+        #expect((distances.max() ?? .infinity) < radius)
 
         // The frame the destination opens on holds all twenty.
         let group = PinSet(
@@ -369,7 +380,15 @@ struct PinSetDestinationTests {
             )
         }
 
-        #expect(!young.isEmpty, "the control: this neighbourhood does have young trees")
+        // No `PlantDate` in the source means no young trees anywhere, so screen 12's coverage row
+        // is empty across the whole city under `--source city`. Asserted against the source's own
+        // column list, so an emptied column is still a failure rather than an expected zero.
+        let corpus = try await SeedCorpus.current(store)
+        #expect(
+            !young.isEmpty == corpus.publishes("PlantDate"),
+            "the coverage read returned \(young.count) trees, and the source "
+                + "\(corpus.publishes("PlantDate") ? "does" : "does not") publish PlantDate"
+        )
         #expect(young.allSatisfy { $0.status == .alive || $0.status == .declining })
         // Inside San Francisco, so nothing arrived at 0, 0 — the failure a dropped column produces.
         #expect(young.allSatisfy { $0.coordinate.latitude > 37 && $0.coordinate.longitude < -122 })

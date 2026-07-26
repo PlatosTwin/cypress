@@ -163,7 +163,17 @@ struct MapDetailTests {
         let (model, markers) = await Self.drawn(at: 16, around: Self.densest, api: api)
         let viewport = try #require(model.viewport)
 
-        #expect(trees > 5_000, "the fixture is no longer the densest screenful: \(trees) trees")
+        // A floor on how much the budget has to cope with, so it moves with the corpus rather than
+        // pinning a number the inventory owns. 5,000 under the DataSF export; 4,000 under the city's
+        // own layer, which holds 62,000 fewer records over the same streets. The assertion that
+        // matters is the `#require` below it — the budget must actually be exceeded, or nothing
+        // after this line is testing anything.
+        let seedURL = try #require(SeedContractTests.seedURL, "no seed database; set CYPRESS_SEED_PATH")
+        let corpus = try await SeedCorpus.current(try await CypressStore.inMemory(seedURL: seedURL))
+        #expect(
+            trees > corpus.densestScreenfulFloor,
+            "the fixture is no longer the densest screenful: \(trees) trees"
+        )
         try #require(trees > MapModel.pinLimit, "the budget is not exceeded, so nothing here is tested")
         #expect(markers < trees / 10, "zoom 16 drew \(markers) of \(trees) trees; the grid is not thinning")
         // The structural half of the bound, and the half a `LIMIT` cannot satisfy: past the budget
