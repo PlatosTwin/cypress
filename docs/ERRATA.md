@@ -5462,3 +5462,86 @@ a second at walking pace is a simulator artifact — no GNSS receiver produces a
 centimetres; a phone gives roughly 1 Hz. What transfers is the per-publish cost and the mechanism,
 not the absolute frame rate. The overlay exists precisely so that the claim can be checked on the
 owner's own hardware instead of inferred from a Mac, which is what went wrong twice.
+
+### E140 — the map could not be moved off the reader's own location
+
+The owner, on their own iPhone, on the build that shipped that morning:
+
+> "the center me on the map button PREVENTS THE MAP FROM BEING MOVED OFF THE CURRENT LOCATION. Every
+> time I moved the map, in a second I got brought back to where I am centered and there was no way I
+> could figure out around this. STUPID AND BAD"
+
+The default screen of the app could not be panned. It had shipped that way in the merge of two rounds
+that both touched the camera — the recentre control (#66) and the `MKMapView` rewrite (E139).
+
+**The gesture was landing all along.** The first reproduction attempts drew a blank: a synthetic drag
+left the geography unchanged and `mapViewDidChangeVisibleRegion` never fired, which looked like a
+swallowed gesture — a different defect. It was an artifact of the drag. A two-point swipe does nothing
+to MapKit; a ten-point path with 70 ms between points does. With one of those, and the counters on
+screen, the reproduction is unambiguous: **44 region changes during the drag, three app-driven camera
+writes after it, and a screenshot identical to the one before it.** The map moved and was driven back
+inside a frame.
+
+**What drove it back.** When the camera settled, the coordinator asked whether the map had drifted far
+from the last camera the app had requested, and if it had — a real pan — it cleared its record of that
+request. The intent was to stop a second press of the recentre control being swallowed as a duplicate
+value. But nothing upstream had changed: a pan writes `region`, never `position`, and `position` still
+held the one-shot centring on the first GPS fix. So the next `updateUIView` found a position that
+differed from an empty record, took it for a fresh request, and drove the camera to the fix. Ablating
+that single line, the same drag left the map on Shotwell St with no camera write at all.
+
+**Two fixes were wrong before the third was right, and the probe caught both.**
+
+The first made the two sides agree: write the reader's region into the coordinator's record *and* into
+`position`. It passed a test asserting the map stays panned. On the device it was worse than the bug —
+`mapViewDidChangeVisibleRegion` firing 2,196 times and the camera re-applied 527 times in a few idle
+seconds, the map drifting across the city untouched. Two independently constructed
+`MapCameraPosition.region` values do not compare equal; what had been established earlier was only the
+weaker claim that a *copy* equals its original.
+
+Copying one value fixed that and the map still came back — 39 camera writes per pan. The instrument
+answered the question directly: at the moment the guard let a write through, the record was **not**
+empty, and the two cameras were **147 metres apart**, which is the length of the pan. Reading
+`position` straight back after writing it returned exactly what had been written. The write was fine;
+the *reader* was stale. `updateUIView` is called with the view value from a body pass, and that pass
+read the app's state when it ran — so after a pan there is an update already in flight carrying the
+camera from before the pan. On this screen, at 240 body passes a second, there always is.
+
+**No comparison of camera values can survive that, so the fix does not make one.** A camera request
+now carries a monotonic ticket (`MapCameraRequest`), and the layer applies a request only when its
+ticket is newer than the last one it applied. A stale value carries a ticket already applied and is
+ignored on sight. The drift heuristic is gone entirely: a press mints a ticket whether or not it names
+the same place, so #66's second press works by construction and a settle has no opinion about the
+camera at all.
+
+**Measured, iPhone 16 simulator, location granted, 161 markers, the same ten-point drag:**
+
+| | before | after |
+|---|---|---|
+| region changes during the drag | 44 | 40 |
+| app-driven camera writes after it | 3 | **0** |
+| where the map ended up | back on the GPS fix | where it was put |
+| basemap body passes per second, at rest | 240 | **0** |
+| frame rate at rest / worst frame | 56 fps / 34 ms | **60 fps / 17 ms** |
+
+The last two rows were not the goal. E139 left it recorded that the basemap re-evaluated its body
+around 200 times a second at rest with `Self._printChanges()` blaming something at or above
+`RootView`, and called it cheap and still wrong. It was the camera: swapping the bound
+`MapCameraPosition` for a small `Equatable` struct took it to **zero**. E139 guessed these might share
+a root cause. They did.
+
+**The recentre control, checked by hand afterwards, four presses on the device.** Panned away at z15:
+first press centres and keeps z15, second press zooms to z18 — the 120 m opening scale, which is what
+`MapRecentre` specifies. Already at 120 m: both presses are honoured and drive the camera rather than
+being swallowed. A pinch produces no app-driven write at all.
+
+**Two other screens had the same defect and are fixed by the same change**, because they share the
+coordinator: the visit pin-adjust map (02) and the pin-set map. Neither had been reported, and neither
+had a test that would have found it.
+
+**What this cost, and the general form of it.** The bug was one line, and the two wrong fixes were
+each one line, and all three were defensible from reading the code. What separated them was an
+instrument — three counters drawn in the corner of the map — read off a screenshot. A test asserting
+"the map stays where it was put" passed against a build that was writing the camera 527 times a
+second. **An assertion about the outcome is not an assertion about the work done to reach it**, and on
+this screen the second one is where the defects live.

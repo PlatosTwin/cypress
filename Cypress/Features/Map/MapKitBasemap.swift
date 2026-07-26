@@ -24,9 +24,73 @@
 import MapKit
 import SwiftUI
 
+/// **A camera the app has asked for, and the ask it came from.**
+///
+/// This type is ERRATA E140. The basemap used to be handed a bare `MapCameraPosition`, and the layer
+/// decided whether to drive the camera by comparing the incoming value against the last one it had
+/// applied. That comparison cannot be made to work, and the reason is worth stating because it is not
+/// obvious from either side of the seam.
+///
+/// A `UIViewRepresentable`'s `updateUIView` is called with the view value from a body pass, and that
+/// pass read the app's state at the moment it ran. Screen 01 re-evaluates its basemap body **240
+/// times a second at rest** (E139's unexplained residual), so when the reader pans, there is always
+/// an update already in flight carrying the camera as it was *before* the pan. Whatever the settle
+/// handler writes, that in-flight value arrives afterwards holding the old camera, differs from
+/// whatever the layer recorded, and is taken for a fresh request. The map is driven back. Measured:
+/// with the two sides written to agree, a pan still produced 39 camera writes and the map returned to
+/// the reader's own location every time.
+///
+/// A sequence number settles it, because staleness is exactly what a sequence number can see. Every
+/// genuine ask takes the next ticket; a stale view value carries a ticket the layer has already
+/// applied and is ignored on sight. **No comparison of camera geometry is involved, so no amount of
+/// snapshot skew can turn an old request into a new one.**
+///
+/// It also retires the heuristic it replaces. The layer used to notice a pan by measuring how far the
+/// camera had drifted from the request, purely so that pressing the recentre control twice was not
+/// swallowed as a duplicate value (#66). A press now mints a ticket whether or not it asks for the
+/// same place, so the second press works by construction and the settle handler has nothing to say.
+struct MapCameraRequest: Equatable {
+
+    /// Where the app wants the camera.
+    var region: MKCoordinateRegion
+
+    /// Which ask this is. **Compared, never inspected** — see `==`.
+    var sequence: Int
+
+    /// Two requests are the same request when they are the same ask. Regions are deliberately not
+    /// compared: `MKCoordinateRegion` is a pair of doubles that MapKit never lands on exactly, and
+    /// comparing them is how the layer used to mistake an old value for a new one.
+    static func == (lhs: MapCameraRequest, rhs: MapCameraRequest) -> Bool {
+        lhs.sequence == rhs.sequence
+    }
+
+    /// Where a screen opens.
+    ///
+    /// Sequence zero, and it is a constant rather than a ticket on purpose: two of the three screens
+    /// that use this basemap build their opening camera inside a `Binding` getter, so the value is
+    /// reconstructed on every pass. A ticket there would be a new request sixty times a second. Zero
+    /// is applied once, when the map view is first made, and never again.
+    static func opening(_ region: MKCoordinateRegion) -> MapCameraRequest {
+        MapCameraRequest(region: region, sequence: 0)
+    }
+
+    /// A camera somebody asked for: a press of the recentre control, a cluster tap, a nudge of a
+    /// pin. Always a new request, even when it names the same place as the last one.
+    static func move(to region: MKCoordinateRegion) -> MapCameraRequest {
+        ticket += 1
+        return MapCameraRequest(region: region, sequence: ticket)
+    }
+
+    /// Monotonic for the life of the process. `nonisolated(unsafe)` and honest about it: every writer
+    /// is a SwiftUI view responding to a gesture, so this is only ever touched on the main thread,
+    /// and the alternative — actor isolation on a counter — would put an `await` between a button
+    /// press and the camera it moves.
+    private nonisolated(unsafe) static var ticket = 0
+}
+
 struct MapKitBasemap: View {
 
-    @Binding var position: MapCameraPosition
+    @Binding var position: MapCameraRequest
     /// The live region, echoed back out so a cluster tap knows what "two zoom levels in" means.
     @Binding var region: MKCoordinateRegion
     let clusters: [TreeCluster]
