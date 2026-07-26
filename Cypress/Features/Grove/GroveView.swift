@@ -5,10 +5,13 @@
 //  Screen 08 · Species you know (My Grove · Species tab). SCREENS.md lines 923–957.
 //
 //  Composed from C27 (ProgressRing), C29 (SpeciesTile / SpeciesGrid), C14 gradient (Callout) and
-//  C16 (BottomTabBar, the no-blur variant this screen specifies). The three-pill tab row under the
-//  title is screen-08-only — SCREENS.md §2 gives it no C-number and its geometry does not match C5,
-//  which is one bordered container with dividers rather than three separate pills with a gap
-//  between them (see ERRATA E46) — so it is built here from tokens.
+//  C16 (BottomTabBar, the no-blur variant this screen specifies). The pill row under the title is
+//  screen-08-only — SCREENS.md §2 gives it no C-number and its geometry does not match C5, which is
+//  one bordered container with dividers rather than separate pills with a gap between them (see
+//  ERRATA E46) — so it is built here from tokens.
+//
+//  **Two pills, where 08 §2 draws three.** The `Journal` pill embedded the Journal tab's own list;
+//  see `GroveTab` for the argument for removing it and the errata entry for this round.
 //
 //  Not a raw hex or a raw font size in the file (ARCHITECTURE §6). The numbers that remain are
 //  SCREENS.md 08's own margins, named in `GroveMetrics`.
@@ -21,18 +24,12 @@ struct GroveView: View {
     @State private var model: GroveModel
     @Environment(AppRouter.self) private var router: AppRouter?
 
-    /// Held as well as handed to the model, because the `Journal` pill mounts a view that builds its
-    /// own model out of it (`JournalSection`) — the same arrangement `JournalTabView` uses to host
-    /// the almanac.
-    private let api: any CypressAPI
-
     /// Tapping a species tile opens screen 07 — SCREENS.md 08's caption, verbatim: "Tapping a tile
     /// opens the species page." Handed in rather than pushed here so this folder does not construct
     /// another feature's view (ARCHITECTURE §3); the composition root resolves it.
     private let onOpenSpecies: ((UUID) -> Void)?
 
-    /// Where a row on the other two pills goes. Both the `Trees` list and the `Journal` list are
-    /// lists of things that happened to a tree, so both open that tree's profile.
+    /// Where a row on the `Trees` pill goes: the tree it names.
     private let onOpenTree: ((UUID) -> Void)?
 
     init(
@@ -43,7 +40,6 @@ struct GroveView: View {
         onOpenTree: ((UUID) -> Void)? = nil
     ) {
         _model = State(wrappedValue: GroveModel(api: api, now: now, tab: tab))
-        self.api = api
         self.onOpenSpecies = onOpenSpecies
         self.onOpenTree = onOpenTree
     }
@@ -61,13 +57,12 @@ struct GroveView: View {
                         switch model.tab {
                         case .species: speciesTab
                         case .trees: treesTab
-                        case .journal: journalTab
                         }
 
                         // §6's `margin-top:auto`. The footnote sits at the bottom of the column
                         // whether the column is full or empty, which is the whole layout of the
-                        // empty grove — and it is drawn on all three pills, because "there are no
-                        // streaks and no leaderboards" is the specification of every one of them.
+                        // empty grove — and it is drawn on both pills, because "there are no
+                        // streaks and no leaderboards" is the specification of each of them.
                         Spacer(minLength: 0)
                         footnote
                     }
@@ -95,7 +90,7 @@ struct GroveView: View {
         }
     }
 
-    // MARK: - The three pills
+    // MARK: - The two pills
 
     /// Screen 08 proper: the ring, the celebration and the grid.
     @ViewBuilder
@@ -110,6 +105,12 @@ struct GroveView: View {
     }
 
     /// The trees this contributor has touched. **NOT SPECIFIED** — see `GroveTreesPresentation`.
+    ///
+    /// The explanatory line above the list is the project owner's own ask — *"some small explanatory
+    /// note of what's on each page"* — and it is the thing that says out loud what the drawing now
+    /// also says: **one line per tree, however many times you have been.** Its opposite number is on
+    /// the Journal tab (`JournalTabView.explanation`), and the two are written to be read against
+    /// each other.
     @ViewBuilder
     private var treesTab: some View {
         if model.treesHaveFailed {
@@ -120,7 +121,12 @@ struct GroveView: View {
                     .padding(.top, CypressSpacing.labelSectionTop)
                     .padding(.horizontal, CypressSpacing.gutter)
             } else {
-                VStack(spacing: CypressSpacing.gapRows) {
+                VStack(alignment: .leading, spacing: CypressSpacing.gapRows) {
+                    Text(GroveCopy.treesExplanation)
+                        .font(CypressFont.body12)
+                        .foregroundStyle(CypressColor.textMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+
                     ForEach(presentation.rows) { row in
                         IconTextRow(
                             accent: .elder,
@@ -134,12 +140,6 @@ struct GroveView: View {
                 .padding(.horizontal, CypressSpacing.gutter)
             }
         }
-    }
-
-    /// This contributor's own record, which is the same list the Journal tab's `Yours` segment
-    /// draws — one implementation, two doors. See `JournalListView`.
-    private var journalTab: some View {
-        JournalSection(api: api, onOpenTree: onOpenTree)
     }
 
     // MARK: - Title
@@ -303,21 +303,22 @@ struct GroveView: View {
     }
 }
 
-// MARK: - The three-pill tab row
+// MARK: - The tab row
 
-/// SCREENS.md 08 §2: `padding:8px 18px 14px`, `gap:8px`, three `flex:1` pills, `padding:9px 2px`,
+/// SCREENS.md 08 §2: `padding:8px 18px 14px`, `gap:8px`, `flex:1` pills, `padding:9px 2px`,
 /// radius 11px, 13.5px.
 ///
-/// Not C5. C5 is one bordered container with `border-left` dividers and no gap; this is three
-/// separate bordered pills with 8px between them, at a different radius, and §2's C5 entry does not
-/// list 08 among its users. Building it as a C5 variant would have meant widening a shared component
-/// to hold a control it is not (ERRATA E46).
+/// Not C5. C5 is one bordered container with `border-left` dividers and no gap; this is separate
+/// bordered pills with 8px between them, at a different radius, and §2's C5 entry does not list 08
+/// among its users. Building it as a C5 variant would have meant widening a shared component to hold
+/// a control it is not (ERRATA E46).
 ///
-/// **All three pills are controls now.** This row shipped as three `Text`s, on the stated grounds
-/// that "a control that looks pressable and does nothing is worse than a label" — which was true
-/// while `Trees` and `Journal` had nowhere to go, and is the argument for making them work rather
-/// than for leaving them. Both destinations were already built and merely unreachable; see
-/// `GroveTab`.
+/// **Every pill is a control, and there are two of them where 08 draws three.** The row shipped as
+/// three `Text`s, on the stated grounds that "a control that looks pressable and does nothing is
+/// worse than a label". `Trees` became a button because its destination turned out to be built and
+/// merely unreachable; `Journal` is gone because its destination was the Journal tab, drawn a second
+/// time. `flex:1` still holds — the pills divide the width they are given — so the row's geometry is
+/// 08's with one cell fewer. See `GroveTab`.
 ///
 /// The drawn appearance is unchanged. What is added is the `Button`, a ≥44pt hit area (the pill is
 /// ~33pt as drawn, the same shortfall C5 solves the same way), and the `.isSelected` trait, which

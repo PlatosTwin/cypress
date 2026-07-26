@@ -188,6 +188,18 @@ enum JournalCopy {
     static let journalSegment = "Yours"
     static let almanacSegment = "Neighborhood"
 
+    /// The line above the list, saying what the list is.
+    ///
+    /// The other half of `GroveCopy.treesExplanation`, and the two are only worth anything as a pair:
+    /// **one line per tree** over there, **one line for each time** here. Same length, same shape,
+    /// opposite content — which is what makes the difference legible to somebody who has just come
+    /// from the other screen, which is the exact reader this round is for.
+    ///
+    /// "Newest first" rather than "in order": the ordering is the one thing a chronology has that a
+    /// collection does not, and it is worth one word.
+    static let explanation =
+        "One line for each thing you did, newest first, under the day it happened."
+
     /// The footnote, which is screen 08's own, verbatim.
     ///
     /// Borrowed rather than written because it is *already* the specification of every personal

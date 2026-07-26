@@ -7,7 +7,7 @@
 //  else — no store, no network (ARCHITECTURE §4).
 //
 //  ── Two reads, kept apart ─────────────────────────────────────────────────────────────────────
-//  The screen has two pills with data behind them and they are two different endpoints:
+//  The screen's two pills each have data behind them and they are two different endpoints:
 //  `groveSpecies()` for the species grid and `grove()` for the list of trees. Each therefore has its
 //  own way to fail, and a single `phase` would mean one failing read blanked the other pill — a
 //  reader whose species read failed would find an empty-looking Trees list and conclude they had no
@@ -44,11 +44,11 @@ final class GroveModel {
     private(set) var phase: Phase = .loading
     private(set) var treesPhase: TreesPhase = .idle
 
-    /// Which of the three pills SCREENS.md 08 §2 draws is showing.
+    /// Which pill is showing.
     ///
-    /// **It was a `let` fixed at `.species`**, on the grounds that the other two had nowhere to go.
-    /// Both now do — see `GroveTab` — so the screen is what its own mock draws it as: one screen with
-    /// three segments, rather than one segment with two labels beside it.
+    /// **It was a `let` fixed at `.species`**, on the grounds that the other pills had nowhere to go.
+    /// `Trees` now does — see `GroveTab` — so the screen is a screen with segments rather than one
+    /// segment with labels beside it.
     var tab: GroveTab
 
     private let api: any CypressAPI

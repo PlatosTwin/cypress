@@ -123,6 +123,18 @@ struct JournalTabView: View {
         GeometryReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
+                    // The owner's ask, and the reason it sits above the list rather than under the
+                    // title: a reader arriving here from My Grove is deciding which of two lists he
+                    // is looking at, and this is the sentence that answers him. Its opposite number
+                    // is `GroveCopy.treesExplanation`. It is on this segment only — the almanac is
+                    // not a thing anybody confuses with a journal.
+                    Text(JournalCopy.explanation)
+                        .font(CypressFont.body12)
+                        .foregroundStyle(CypressColor.textMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, CypressSpacing.labelSectionTop)
+                        .padding(.horizontal, CypressSpacing.gutter)
+
                     JournalSection(api: api, onOpenTree: onOpenTree)
 
                     Spacer(minLength: 0)

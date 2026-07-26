@@ -86,6 +86,19 @@ struct GroveTreesPresentation: Equatable {
 /// The `Trees` pill's strings. **Every one is NOT SPECIFIED** — see the file comment.
 extension GroveCopy {
 
+    /// The line above the list, saying what the list is.
+    ///
+    /// **The project owner asked for this in those words** — *"some small explanatory note of what's
+    /// on each page"* — after mistaking this pill for the Journal tab. Its opposite number is
+    /// `JournalCopy.explanation`, and the pair is written to be read against each other: this one says
+    /// *one line per tree*, that one says *one line per thing you did*. That is the whole difference
+    /// between the two surfaces, stated in the place where a reader is deciding which one they are on.
+    ///
+    /// The model for the tone is `JournalCopy.emptyState`, which does its whole job in one breath.
+    /// Two clauses: what a row is, and what governs how many there are. No adjectives, no invitation.
+    static let treesExplanation =
+        "One line per tree, however many times you have been back."
+
     /// A grove with no trees in it, which is what every device shows on day one.
     ///
     /// It names the two acts that would put a tree here, in the words of the controls that perform

@@ -12,18 +12,26 @@
 //  things", and `journal(cursor:limit:)` has returned a finished page to nobody for just as long.
 //  Both lists the pills wanted had been available the entire time.
 //
-//  ── The design this suite argues against, and why ─────────────────────────────────────────
-//  An earlier, abandoned round proposed shipping `Trees` and **cutting** `Journal`, asserting
-//  `GroveTab.allCases == [.trees, .species]`. Its reason was good: "what it could hold is the
-//  Journal tab's list, read for read and row for row, and two copies of a person's own record is two
-//  things that must agree forever."
+//  ── The `Journal` pill, built and then cut ────────────────────────────────────────────────
+//  This suite used to assert three pills, and it carried a test — `theJournalPillIsOneListNotACopy`
+//  — placed here so that a round proposing to cut the third had to answer for it first. This is that
+//  round, and the answer is not "the old objection was right after all".
 //
-//  That objection is answered rather than ignored, and it is answered structurally. There is one
-//  derivation (`JournalPresentation`), one model and one view (`JournalSection`), mounted in both
-//  places. The two surfaces cannot come to disagree because there is no second implementation to
-//  drift — and cutting a control the design actually draws would have been the larger invention of
-//  the two. `theJournalPillIsOneListNotACopy` is that argument, written where a future round has to
-//  answer it before undoing this.
+//  The objection the pill was built over was *drift*: "two copies of a person's own record is two
+//  things that must agree forever." That objection was answered and the answer still holds — one
+//  derivation (`JournalPresentation`), one model and one view (`JournalSection`), so there was never
+//  a second implementation that could disagree. Nothing about that has been discovered to be wrong.
+//
+//  What the answer did not establish is that a reader needs **two doors into one room**, and the
+//  project owner walked into exactly that: *"What's the diff between Trees and Journal? They look
+//  almost identical."* For the pill and the tab he was not confused, he was right — they were the
+//  same list. Safety from drift is not comprehensibility. The cost the earlier round weighed was a
+//  drawn control left unbuilt; the cost observed since is a person unable to tell two of his own
+//  screens apart, and that one is larger.
+//
+//  So the pill is gone, the journal keeps the tab C16 draws for it, and what replaces the old test is
+//  `theJournalHasOneDoorNotTwo` — the same guard pointed the other way, so a round that adds a
+//  second entrance has to answer for that instead.
 //
 
 import Foundation
@@ -68,47 +76,56 @@ struct GroveTreesTests {
         GroveTreesPresentation(entries: entries, now: now, calendar: calendar, locale: locale)
     }
 
-    // MARK: - The three pills
+    // MARK: - The pills
 
-    /// **A decision, asserted.** SCREENS.md 08 §2 draws three pills and all three now lead somewhere.
+    /// **A decision, asserted.** SCREENS.md 08 §2 draws three pills; this app draws two, and both
+    /// lead somewhere.
     ///
-    /// The check is on `hasDestination` rather than on the case list, because that property is the
-    /// question DECISIONS constraint 21 asks of any control — a fourth pill added without answering
-    /// it should fail here rather than ship inert.
-    @Test("all three of screen 08's pills lead somewhere")
+    /// The case list is asserted as well as `hasDestination`, because the deviation from the mock is
+    /// the decision and a decision that no test states is a decision the next reader has to
+    /// reconstruct. `hasDestination` remains the constraint-21 question a new pill has to answer.
+    @Test("screen 08's pills are Trees and Species, and both lead somewhere")
     func everyPillHasADestination() {
         // Hoisted out of `#expect`: a key-path `map` resolves to `Sequence.map`'s `rethrows`
         // overload inside the macro expansion, which the macro then reports as an uncaught throw.
         let labels = GroveTab.allCases.map(\.label)
         let allLeadSomewhere = GroveTab.allCases.allSatisfy(\.hasDestination)
 
-        #expect(GroveTab.allCases == [.trees, .journal, .species])
-        #expect(labels == ["Trees", "Journal", "Species"])
+        #expect(GroveTab.allCases == [.trees, .species])
+        #expect(labels == ["Trees", "Species"])
         #expect(allLeadSomewhere, "a pill is drawn and does nothing")
     }
 
-    /// The abandoned round's objection, answered. See the file comment.
+    /// **The old guard, pointed the other way.** See the file comment for the argument.
     ///
-    /// What makes two surfaces safe here is that there is only one of everything behind them: the
-    /// same presentation type derives both, so a change to what a journal row says lands on both
-    /// doors or on neither. If a later round splits them, this is the test that has to be deleted
-    /// deliberately rather than quietly broken.
-    @Test("the Journal pill and the Journal tab are one list, not two copies of one")
-    func theJournalPillIsOneListNotACopy() {
-        let entries = [
-            JournalPresentationTests.entry(1, kind: .visit),
-            JournalPresentationTests.entry(2, kind: .careEvent)
-        ]
-        // The derivation both mount points use, given the same read, produces the same rows.
-        let a = JournalPresentation(entries: entries, nextCursor: nil, now: Self.now, calendar: Self.calendar, locale: Self.locale)
-        let b = JournalPresentation(entries: entries, nextCursor: nil, now: Self.now, calendar: Self.calendar, locale: Self.locale)
-        let subtitlesA = a.rows.map(\.subtitle)
-        let subtitlesB = b.rows.map(\.subtitle)
-        #expect(a == b)
-        #expect(subtitlesA == subtitlesB)
-        // And the tab still holds the almanac, which is the thing that must not have been displaced
-        // to make room for it (ERRATA E57).
+    /// `theJournalPillIsOneListNotACopy` stood here to make a round that cut the pill answer for it.
+    /// This replaces it, and what it now protects is the property that round was after: the journal
+    /// is reachable from exactly one place. A second entrance — a fourth pill, a row on the You tab,
+    /// a card on the map — has to break this test to exist, which is the same forcing function
+    /// aimed at the failure that actually happened rather than at the one that did not.
+    @Test("the journal has one door, and it is the tab named after it")
+    func theJournalHasOneDoorNotTwo() {
+        // Nothing on My Grove is named after the journal any more.
+        let groveLabels = GroveTab.allCases.map(\.label)
+        #expect(groveLabels.contains(JournalCopy.screenTitle) == false, "the journal has two doors again")
+
+        // And the door it does have is still there, with the almanac still beside it — the thing that
+        // must not be displaced to make room for anything (ERRATA E57).
+        #expect(JournalSegment.allCases.contains(.journal), "the journal has no door at all")
         #expect(JournalSegment.allCases.contains(.almanac))
+    }
+
+    /// The two explanatory lines, which are the owner's own ask and are only worth anything as a
+    /// pair: they have to say different things, and each has to name the unit its own list counts in.
+    @Test("each list says what one of its lines is, and the two do not say the same thing")
+    func theExplanationsDistinguishTheTwoLists() {
+        #expect(GroveCopy.treesExplanation != JournalCopy.explanation)
+        #expect(GroveCopy.treesExplanation.contains("per tree"))
+        #expect(JournalCopy.explanation.contains("each thing you did"))
+        // Neither may count anything (D1). Dates are identifiers and live on rows; these two strings
+        // are the screen's own words and carry no digits at all.
+        #expect(GroveCopy.treesExplanation.rangeOfCharacter(from: .decimalDigits) == nil)
+        #expect(JournalCopy.explanation.rangeOfCharacter(from: .decimalDigits) == nil)
     }
 
     // MARK: - Rows
