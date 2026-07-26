@@ -18,6 +18,8 @@
 //
 
 #if canImport(UIKit)
+import CoreGraphics
+import Foundation
 import SwiftUI
 import Testing
 import UIKit
@@ -246,14 +248,21 @@ struct PixelSheet {
         width = source.width
         height = source.height
         var buffer = [UInt8](repeating: 0, count: width * height * 4)
-        guard let context = CGContext(
-            data: &buffer,
-            width: width, height: height,
-            bitsPerComponent: 8, bytesPerRow: width * 4,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else { return nil }
-        context.draw(source, in: CGRect(x: 0, y: 0, width: width, height: height))
+        // `withUnsafeMutableBytes`, not `&buffer`: a `CGContext` keeps the pointer it is given for
+        // as long as it lives, and an inout array argument is only guaranteed valid for the
+        // duration of the call it appears in.
+        let drawn = buffer.withUnsafeMutableBytes { raw -> Bool in
+            guard let context = CGContext(
+                data: raw.baseAddress,
+                width: width, height: height,
+                bitsPerComponent: 8, bytesPerRow: width * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return false }
+            context.draw(source, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        guard drawn else { return nil }
         bytes = buffer
     }
 
@@ -274,9 +283,9 @@ struct PixelSheet {
     /// Whether any pixel in the frame came from that band. Sampled on a grid rather than every
     /// pixel — a band that reached the screen at all occupies a full-width stripe, so a 60×60 net
     /// cannot pass through one.
-    func contains(_ band: PhotoBand) -> Bool {
+    func contains(_ wanted: PhotoBand) -> Bool {
         for row in stride(from: 0.005, to: 1.0, by: 1.0 / 60.0) {
-            for column in stride(from: 0.005, to: 1.0, by: 1.0 / 60.0) where self.band(x: column, y: row) == band {
+            for column in stride(from: 0.005, to: 1.0, by: 1.0 / 60.0) where band(x: column, y: row) == wanted {
                 return true
             }
         }
@@ -291,8 +300,8 @@ struct PixelSheet {
         let step = 1.0 / 200.0
         for row in stride(from: 0.0, to: 1.0, by: step) {
             for column in stride(from: 0.0, to: 1.0, by: step) {
-                let band = band(x: column, y: row)
-                guard band != .backdrop, band != .other else { continue }
+                let sample = band(x: column, y: row)
+                guard sample != .backdrop, sample != .other else { continue }
                 minX = min(minX, column); maxX = max(maxX, column)
                 minY = min(minY, row); maxY = max(maxY, row)
             }
