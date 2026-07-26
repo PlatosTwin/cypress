@@ -207,7 +207,18 @@ struct AlmanacLateFixTests {
     /// to draw. So there was an interval — brief on paper, permanent in practice, because the read
     /// that would end it was never started — in which screen 12 had nothing on it and nothing to say
     /// about that. E126's invariant is that this interval must not exist.
-    @Test("The location prompt is not withdrawn until the neighbourhood is there to replace it")
+    ///
+    /// **The time limit is not boilerplate.** This test waits on the read *beginning*, so an app that
+    /// has stopped re-reading altogether does not fail it — it never wakes it up. Measured: with the
+    /// re-read deliberately removed, this sat on its latch and took the whole run with it, and a suite
+    /// that hangs on a broken app reports nothing at all. Three minutes rather than Swift Testing's
+    /// minimum of one, because one minute is reachable by *load* — this machine has run these tests at
+    /// a load average of 300 with three agents on it, and a limit that a busy machine can trip is a
+    /// flake wearing a failure's clothes.
+    @Test(
+        "The location prompt is not withdrawn until the neighbourhood is there to replace it",
+        .timeLimit(.minutes(3))
+    )
     func promptSurvivesUntilContentArrives() async {
         let api = Held(payload: Self.neighbourhood)
         let model = AlmanacModel(api: api, coordinate: nil, now: { Self.now })
@@ -237,7 +248,7 @@ struct AlmanacLateFixTests {
     /// The stale answer must not land on top of the fresh one, and `displayedCoordinate` must end up
     /// naming the picture that is actually on screen; otherwise the prompt's condition is being
     /// computed from a read the reader is not looking at.
-    @Test("A superseded read does not overwrite the fix that replaced it")
+    @Test("A superseded read does not overwrite the fix that replaced it", .timeLimit(.minutes(3)))
     func supersededReadIsDropped() async {
         let api = Held(payload: Self.neighbourhood)
         let model = AlmanacModel(api: api, coordinate: nil, now: { Self.now })
@@ -305,15 +316,27 @@ struct AlmanacLateFixTests {
     /// — the blank, the prompt still standing, a half-drawn column — is a different picture. The
     /// control render below it proves the harness is byte-stable first, without which an equality
     /// assertion is just as void as an inequality one (ARCHITECTURE §7).
+    /// **The comparison is reduced to a `Bool` before `#expect` sees it, and it has to be.** Handing
+    /// `#expect` two `Data` values and letting it compare them is how this test spent its first life:
+    /// on a *failing* comparison Swift Testing builds a Myers diff of the two collections to describe
+    /// the mismatch, and a Myers diff of two hundred-kilobyte PNGs does not finish. Sampled on the
+    /// broken app: one hundred per cent of a core and three gigabytes resident, inside
+    /// `_myers(from:to:using:)`, with no failure ever reported. `FailedReadTests` never met this
+    /// because its picture assertions are *inequalities*, which pass and so never ask for a
+    /// description. An equality on large `Data` is a test that cannot fail — the exact defect this
+    /// project keeps finding — and the fix is to compare outside the macro and assert on the answer.
     @Test("Screen 12 ends up looking the same whether the fix was there at mount or arrived after")
     func lateFixDrawsTheSameScreen() async throws {
         let early = try #require(await Self.render(late: false))
         let earlyAgain = try #require(await Self.render(late: false))
         let late = try #require(await Self.render(late: true))
 
-        #expect(early == earlyAgain, "the renderer is not stable, so the comparison below is void")
+        let rendererIsStable = early == earlyAgain
+        let lateMatchesEarly = late == early
+
+        #expect(rendererIsStable, "the renderer is not stable, so the comparison below is void")
         #expect(
-            late == early,
+            lateMatchesEarly,
             "a late fix draws a different screen from one present at mount, which is this defect"
         )
     }
