@@ -5382,3 +5382,83 @@ can be the thing holding the property up.
 `community_trees` is insert-only by design, so a placement can now be recorded and still cannot be
 revised, and the same is true of the coordinate it describes. A contributor who realises afterwards
 that the pin went in the wrong place has nowhere to say so.
+
+---
+
+### E139 — the map was measured with the location turned off, twice
+
+E130 cut screen 01 from 1,300 markers to under 300 and measured a 2,061 ms frame down to 28. It was
+real and it helped. The project owner installed it on their own iPhone and said the map was still
+slow. E130's own note argued that rebuilding the annotation layer on every GPS fix "costs nothing
+SwiftUI cannot diff away". The owner's phone disproved that sentence, and it took a third round to
+find out why nobody had seen it.
+
+**Both prior measurements were taken with location permission declined.** That opens the camera at
+the fixed fallback centre — Mission Dolores **Park**, a park, in a *street* tree inventory — with ten
+markers on screen. Neither run was ever a measurement of a full screen of pins, and a static
+`simctl location` fires `didUpdateLocations` once and never again, so neither *could* have exercised
+the GPS path. With a fix granted and 167 markers, the same build idles at **1 fps with a worst frame
+of 862 ms**, rebuilding an annotation layer that has not changed, twelve to eighteen times a second,
+with nobody touching the glass.
+
+**Three defects, found in the order they were hiding behind each other.**
+
+**A `@State` default expression that opened a GPS session.** `MapHomeView` declared
+`@State private var location = MapLocationProvider()`. A SwiftUI `@State` default expression is
+re-evaluated on *every initialisation of the view struct*; `RootView.body` initialises this one on
+every pass; and `MapLocationProvider.init` called `startUpdatingLocation()` right there. So screen 01
+stood up and discarded roughly **fifty `CLLocationManager` sessions a second**, each delivering a
+cached fix and rewriting observable state on its way out — 336 provider instances in seven measured
+seconds. The provider now comes from the composition root, which `ARCHITECTURE.md` §3 already
+required; the app had been running two providers and two GPS sessions against that sentence.
+`RootView`'s own comment claiming its provider "is never `start()`ed here" had been false since it
+was written. **A comment asserting an invariant is not a test of it.**
+
+**`distanceFilter = 5` is not honoured.** Measured on a simulated 4 m/s walk: 24–42 fixes a second,
+one every fifteen centimetres. The fix is not to coarsen anything — `desiredAccuracy` stays at
+`Best` and `distanceFilter` stays at 5, because 5 m is what screen 02 needs to tell two trees on one
+block apart — but to keep, in the write, the promise the setting was already making.
+
+**And underneath both, ~200 SwiftUI-hosted annotations that never settle.** Ablations, each built,
+installed and run: remove the GPS dot, no change; disable the amber pin's `repeatForever` pulse, no
+change; decline location and draw nine markers, a flat 60 fps and zero rebuilds. The variable is the
+count of hosted views, and the failure is not "a bit more per pan" — it is a map that never comes to
+rest. `MapCanvas` has advertised a replaceable basemap since C18; `MapAnnotationLayer` takes that
+seam with an `MKMapView` and `dequeueReusableAnnotationView`, each marker a bitmap of the C19 pin
+rendered **once per kind** by `ImageRenderer`, so the design system stays the single source of truth
+and there is no hand-drawn second copy of the pin. MapKit's own `clusteringIdentifier` is declined
+and the reason is written where somebody will look for it: this app clusters in SQL on an absolute
+grid, and MapKit's is screen-space, so it would lay a second grid on top of the first and undo E130.
+
+**Verified independently of the agent that did the work**, because two rounds of measurement had
+already been believed and been wrong. The frame probe was cherry-picked alone onto *unmodified*
+`main`, both builds were driven over one route in the Mission at 4 m/s on the same simulator with
+location **granted**, and the overlay was read off screenshots:
+
+| | before (main) | after |
+|---|---|---|
+| frame rate | **1 fps** | **46 fps** |
+| worst frame | **862 ms** | **49 ms** |
+| GPS writes per second | 36 | 0 |
+| markers on screen | 167 | 159 |
+
+**The instrument moved onto the glass.** `MapFrameProbe` had the numbers and printed them to stdout;
+a person holding a phone has no stdout, which is exactly how two rounds of "measured on a simulator,
+stated as a limit" were believed anyway. It now publishes a one-second snapshot that
+`MapProbeOverlay` draws in the corner — fps, worst frame, marker count, zoom, and three counters
+(`gps` / `body` / `fetch`) that tell the three candidate causes apart from the outside. `#if DEBUG`
+in both files and at every call site, off unless `CYPRESS_MAP_PROBE=1`, and proved absent from
+Release against the right artifacts with a control that fires — the trap E117 records.
+
+**What is honestly still open.**
+
+The basemap still re-evaluates its body around 200 times a second at rest once a fix has arrived.
+`Self._printChanges()` puts the trigger at or above `RootView`, not in the map. It now costs about a
+fifth of the frame budget rather than ninety-eight per cent of it, because a pass is ~1 ms instead of
+~77 ms — so it is cheap, and it is still wrong. It is not fixed here.
+
+And the limit on every number above: these are **simulator** figures. The *rate* of 24–42 callbacks
+a second at walking pace is a simulator artifact — no GNSS receiver produces a fix every fifteen
+centimetres; a phone gives roughly 1 Hz. What transfers is the per-publish cost and the mechanism,
+not the absolute frame rate. The overlay exists precisely so that the claim can be checked on the
+owner's own hardware instead of inferred from a Mac, which is what went wrong twice.
