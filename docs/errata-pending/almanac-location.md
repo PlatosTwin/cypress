@@ -45,14 +45,34 @@ be smuggled into a test repair.
 
 **What the tests do instead is use the app's own front door.** They launch on screen 01, which is the
 one screen that asks for location on the shipping path (`MapHomeView.task` is the only caller of
-`start()`), wait for the recentre control to say `Centred on you`, and then press `Journal` and
-`Neighborhood`. Screen 12 is built at that press, from a coordinate that exists. This is not the test
-navigating around the blank screen — it is the sequence in which the app is actually used, and the
-skip lands in a better place for it: `Centred on you` is reached only through
-`camera.isCentred(on: coordinate)`, so it is the app saying out loud that it has a fix, which is
-something screen 12 can never be asked (a neighbourhood with nothing in it and a screen that could not
-be told where it is look identical on it). `Not centred` deliberately does not count — `MapRecentre.
-engagement` draws both "no fix yet" and "have one, camera elsewhere" as `away`.
+`start()`), wait until the map has drawn individual pins, and then press `Journal` and `Neighborhood`.
+Screen 12 is built at that press, from a coordinate that exists. This is not the test navigating around
+the blank screen — it is the sequence in which the app is actually used, and the skip lands in a better
+place for it: the map is the surface that knows whether there is a fix, and screen 12 is the one that
+cannot be asked, since a neighbourhood with nothing in it and a screen that could not be told where it
+is look identical on it.
+
+**The obvious better witness was tried first and does not work, which is a finding of its own.**
+`MapRecentreCopy.value` says `Centred on you` only by way of `camera.isCentred(on: coordinate)`, so it
+cannot be true without a coordinate — an exact statement of the thing being waited for, in the app's
+own words, with no basemap involved. Measured on a simulator with a fix set over Van Ness, the control
+reads `Not centred` for the whole of a 39-second run, and a screenshot of that same launch shows the
+camera sitting on the fix with the reader's blue dot in the middle of the screen. The control is
+describing a camera that is not the one on screen. It belongs to screen 01, it is not this task's, and
+it is filed rather than fixed here — but it means the recentre control's `accessibilityValue` is
+telling a VoiceOver reader the map is not on them while it is, and `MapRecentreUITests` cannot catch it
+because it only asserts the value is non-empty.
+
+**The other candidate turns out not to mean what the codebase thinks it means either.**
+`MapSearchUITests.requireAMapWithPins` treats "the map drew individual pins" as "there is a fix", on
+the reasoning that a fixless map opens on the whole city at a clustered zoom. It does not: screen 01
+opens at `MapLayout.defaultSpanMetres`, 120 m across, whether or not there is a fix — only the centre
+differs — and measured with location revoked outright for the app, the map opens on Dolores Park and
+draws pins there anyway. That skip cannot fire. It is harmless where it sits (those two tests then run
+and pass), but it is not a fix detector and it is not used as one here. What the pin wait does in this
+file is hold the test on the map until the map has finished its first read, which is the difference
+between pressing `Journal` before CoreLocation has answered and pressing it after; the only skip is
+the one screen 12 itself justifies, and it is the prompt that decides it.
 
 **Verified by breaking it, in both directions.** With `xcrun simctl location … set 37.78485,-122.4215`
 both tests pass and tap through to the group screens they were written for (Western Addition: `Walk the

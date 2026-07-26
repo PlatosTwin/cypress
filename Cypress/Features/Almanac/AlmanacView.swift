@@ -126,8 +126,8 @@ struct AlmanacScreen: View {
                     } else if let presentation {
                         seasonBlock(presentation)
                         compositionBlock(presentation)
-                        vacantSitesBlock(presentation)
-                        coverageBlock(presentation)
+                        // DELIBERATE BREAK — #63, to be reverted.
+
                     } else if hasFailed {
                         failure
                     }

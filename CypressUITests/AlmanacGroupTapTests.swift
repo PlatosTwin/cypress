@@ -182,11 +182,16 @@ final class AlmanacGroupTapTests: XCTestCase {
     /// control reads `Not centred` for a whole 39-second run, and a screenshot of that same launch has
     /// the camera on the fix and the reader's blue dot in the middle of the screen. Something between
     /// the settled region and `MapRecentre.Camera` disagrees with the picture; whatever it is, it
-    /// belongs to screen 01 and not here. Pins are what `MapSearchUITests.requireAMapWithPins` uses
-    /// instead, and
-    /// they are honest here for a reason that file does not state: with no fix the camera opens at
-    /// `MapLayout.defaultCentre`, in the middle of Dolores Park, where — as `defaultSpanMetres` says
-    /// out loud — a 120 m view holds no inventoried street tree at all.
+    /// belongs to screen 01 and not here.
+    ///
+    /// **And the pin wait below is not a fix detector, whatever its neighbour says.**
+    /// `MapSearchUITests.requireAMapWithPins` reads "individual pins are drawn" as "there is a fix",
+    /// because a fixless map supposedly opens on the whole city at a clustered zoom. It does not:
+    /// screen 01 opens at `MapLayout.defaultSpanMetres` — 120 m across — either way, and only the
+    /// centre differs. Measured with location revoked outright for this app, the map opens on Dolores
+    /// Park and draws pins there anyway. So the wait here claims nothing about a fix; it holds the test
+    /// on the map until the map has finished its first read, which is the difference between pressing
+    /// `Journal` before CoreLocation has answered and pressing it after.
     ///
     /// **The second wait is a race, and deliberately not a symmetric one.** What it used to be was
     /// `waitForExistence(timeout: 3)` on the prompt, which is a fixed wait on an *absence*: too long
@@ -206,13 +211,10 @@ final class AlmanacGroupTapTests: XCTestCase {
             allow.first { $0.exists }?.tap()
         }
 
-        guard wait(timeout: 30, for: { self.cityTreePins(app) > 0 }) else {
-            throw XCTSkip(
-                "the map drew no individual pins at launch, so there is no fix and screen 12 has no "
-                    + "neighbourhood to count anything in — this needs a simulated GPS fix over San "
-                    + "Francisco: xcrun simctl location <udid> set 37.78485,-122.4215"
-            )
-        }
+        XCTAssertTrue(
+            wait(timeout: 30, for: { self.cityTreePins(app) > 0 }),
+            "screen 01 drew no tree pins in thirty seconds, which it does with a fix and without one"
+        )
 
         app.buttons["Journal"].tap()
         let neighbourhood = app.buttons["Neighborhood"]
