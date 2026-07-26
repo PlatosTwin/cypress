@@ -336,6 +336,9 @@ struct MapAnnotationLayer: UIViewRepresentable {
             guard position != lastRequestedPosition else { return }
             lastRequestedPosition = position
             guard let requested = position.region else { return }
+            #if DEBUG
+            MapFrameProbe.shared.noteFetch()   // TEMPORARY INSTRUMENTATION (E140)
+            #endif
             // Reduce Motion snaps the camera instead of flying it. The zoom is the answer to a tap,
             // not the way the answer is delivered — `CypressMotion.resolved`'s rule, applied at the
             // one place on this screen where a camera actually moves.
@@ -347,6 +350,9 @@ struct MapAnnotationLayer: UIViewRepresentable {
         /// decides whether any given one of these is worth a database read, and it already ignores
         /// a camera that is still inside the box it fetched.
         func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
+            #if DEBUG
+            MapFrameProbe.shared.noteLocationPublish()   // TEMPORARY INSTRUMENTATION (E140)
+            #endif
             parent.onCameraChange(
                 BoundingBox(mapView.region),
                 MapZoom.level(
@@ -362,14 +368,14 @@ struct MapAnnotationLayer: UIViewRepresentable {
             parent.region = mapView.region
 
             // **The reader moved the map, so the last thing the app asked for is no longer where we
-            // are.** Without this, the recentre control (#66) has a dead second press: it centres,
-            // the reader pans away, and pressing it again produces the *same* `MapCameraPosition`
-            // value — same coordinate, same span — which the equality check above would swallow.
+            // are.** Without noticing that, the recentre control (#66) has a dead second press: it
+            // centres, the reader pans away, and pressing it again produces the *same*
+            // `MapCameraPosition` value — same coordinate, same span — which the equality check
+            // above would swallow.
             //
             // The threshold is a quarter of the visible span, which is far larger than the few
             // metres MapKit lands away from a region it was handed and far smaller than any pan
-            // worth calling one. That gap is what keeps this from becoming the loop its own note
-            // describes: a settle can never clear the request, only a real move can.
+            // worth calling one.
             guard let requested = lastRequestedPosition?.region else { return }
             let current = mapView.region
             let drifted = abs(current.center.latitude - requested.center.latitude)
@@ -378,7 +384,31 @@ struct MapAnnotationLayer: UIViewRepresentable {
                 > requested.span.longitudeDelta / 4
                 || abs(current.span.longitudeDelta - requested.span.longitudeDelta)
                 > requested.span.longitudeDelta / 4
-            if drifted { lastRequestedPosition = nil }
+            guard drifted else { return }
+
+            // **The pan is handed to the app as the camera it now asks for — both sides, together.**
+            //
+            // This line used to read `lastRequestedPosition = nil`, and that one word is ERRATA E140:
+            // the map could not be moved off the reader's own location. Clearing the record answers
+            // "is this request still outstanding?" with *no*, but `position` upstream still held the
+            // one-shot centring on the first GPS fix, and nothing up there had changed — no press, no
+            // cluster tap. So the very next `updateUIView` found a position that differed from a nil
+            // record, took that for a fresh request, and drove the camera back to the fix. And the
+            // next pass is never far away: measured on this screen with 161 markers, the basemap body
+            // runs **240 times a second** at rest (E139's unexplained residual), so the return trip
+            // was under a frame. Every pan, forever, exactly as reported: "there was no way I could
+            // figure out around this".
+            //
+            // Writing where the reader put it into *both* sides is what makes that impossible rather
+            // than unlikely. The record and the request now agree, so the equality check above sees
+            // no change and applies nothing; and because `position` genuinely holds the reader's
+            // camera, the next press of the recentre control produces a different value from it and
+            // is applied — which is the dead second press this block was written for, still fixed.
+            //
+            // The invariant, stated once: **an app-driven camera write happens only when something
+            // above this file asks for one.** A settle is not an ask.
+            lastRequestedPosition = .region(current)
+            parent.position = .region(current)
         }
 
         // MARK: The annotations
