@@ -242,28 +242,44 @@ enum PhotoBand: Equatable {
 
 /// A rendered frame, addressable in fractions of its own size so the assertions read in the same
 /// units the crop arithmetic is done in.
-struct PixelSheet {
+struct PixelSheet: CustomStringConvertible {
     private let bytes: [UInt8]
     private let width: Int
     private let height: Int
+
+    /// **Without this, a failure here is unreadable.** Swift Testing expands every sub-expression of
+    /// a failed `#expect` with `String(describing:)`, and the default for a struct holding a frame
+    /// buffer is every byte of it — the first run of this suite against a broken anchor produced a
+    /// 12.3 MB log for three assertions. A diagnostic nobody can scroll through is a diagnostic that
+    /// does not get read, so the sheet describes itself as its size and the three colours the crop
+    /// question actually turns on.
+    var description: String {
+        "PixelSheet(\(width)×\(height)px"
+            + ", top=\(band(x: 0.5, y: 0.03))"
+            + ", middle=\(band(x: 0.5, y: 0.5))"
+            + ", bottom=\(band(x: 0.5, y: 0.97)))"
+    }
 
     init?(_ image: UIImage) {
         guard let source = image.cgImage else { return nil }
         width = source.width
         height = source.height
-        var buffer = [UInt8](repeating: 0, count: width * height * 4)
+        // Locals, not `self.width`/`self.height`: the closure below would otherwise capture `self`
+        // while `bytes` is still uninitialised, which the compiler refuses.
+        let columns = source.width, rows = source.height
+        var buffer = [UInt8](repeating: 0, count: columns * rows * 4)
         // `withUnsafeMutableBytes`, not `&buffer`: a `CGContext` keeps the pointer it is given for
         // as long as it lives, and an inout array argument is only guaranteed valid for the
         // duration of the call it appears in.
         let drawn = buffer.withUnsafeMutableBytes { raw -> Bool in
             guard let context = CGContext(
                 data: raw.baseAddress,
-                width: width, height: height,
-                bitsPerComponent: 8, bytesPerRow: width * 4,
+                width: columns, height: rows,
+                bitsPerComponent: 8, bytesPerRow: columns * 4,
                 space: CGColorSpaceCreateDeviceRGB(),
                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
             ) else { return false }
-            context.draw(source, in: CGRect(x: 0, y: 0, width: width, height: height))
+            context.draw(source, in: CGRect(x: 0, y: 0, width: columns, height: rows))
             return true
         }
         guard drawn else { return nil }

@@ -166,7 +166,12 @@ struct ScreenEntranceTests {
         case .outbox:
             return "the You tab · the outbox row (specified, BUILD-PLAN §9)"
         case .photos:
-            return "03 · a tap on the hero photograph (invented, E125)"
+            // **The entrance moved within the hero** (ERRATA E141). It was the whole header; the
+            // header now has two controls, because it had two jobs and could do neither. The
+            // photograph opens the photograph and the pill opens the set it was chosen from.
+            return "03 · the hero's '3 photos · since 2024' pill (invented, E125, moved E141)"
+        case .photoViewer:
+            return "20 · a tap on any photograph · 03 · a tap on the hero photograph (invented, E141)"
         case .site:
             return "01 map · a pin with no tree behind it, or a pin on the group map (E107, E129)"
         case .pinSet:
@@ -198,6 +203,7 @@ struct ScreenEntranceTests {
         .site(treeID),
         .pinSet(pinSet),
         .accountAsk,
+        .photoViewer(id: treeID, caption: "Full tree · 12 Oct 2025"),
     ]
 
     /// A group of nine, as screen 12's coverage CTA hands one over (ERRATA E129).
