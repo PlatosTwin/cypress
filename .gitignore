@@ -1,6 +1,10 @@
 # Xcode
 build/
 DerivedData/
+# A worktree-local DerivedData, so parallel agent worktrees do not contend for the shared one's
+# build lock. It is a build product either way and must never be tracked.
+.dd/
+.ddrel/
 *.xcuserstate
 xcuserdata/
 *.xcscmblueprint
@@ -32,7 +36,9 @@ Cypress/Resources/cypress-seed.sqlite
 # Worktrees created for parallel agent runs.
 .claude/
 
-# Per-agent DerivedData, kept inside the worktree so parallel agents cannot collide.
+# Per-worktree DerivedData for agent builds. One directory per agent, inside that agent's
+# own worktree, so parallel builds cannot collide.
+.ddsnap/
 .ddphoto/
 
 # Build logs from a test run, written into the worktree root.

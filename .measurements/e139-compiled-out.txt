@@ -1,0 +1,17 @@
+Debug app code : /Users/nikitabogdanov/PycharmProjects/cypress/.claude/worktrees/agent-a40557843e598c9bc/.dd/Build/Products/Debug-iphonesimulator/Cypress.app/Cypress.debug.dylib
+Debug stub     : /Users/nikitabogdanov/PycharmProjects/cypress/.claude/worktrees/agent-a40557843e598c9bc/.dd/Build/Products/Debug-iphonesimulator/Cypress.app/Cypress
+Release binary : /Users/nikitabogdanov/PycharmProjects/cypress/.claude/worktrees/agent-a40557843e598c9bc/.ddrel/Build/Products/Release-iphonesimulator/Cypress.app/Cypress
+
+                                   DebugDylib  DebugStub    Release
+string: CYPRESS_MAP_PROBE                   1          0          0
+string: \[probe\]                           2          0          0
+string: MapProbeOverlay                     2          0          0
+string: MapFrameProbe                       2          0          0
+string: MapProbeLayout                      1          0          0
+symbol: MapProbeOverlay                   102          0          0
+symbol: MapFrameProbe                     365          0          0
+
+--- CONTROLS: must be non-zero wherever the app's own code is ---
+control: What tree is this?                 1          0          2
+control: MapAnnotationLayer                 3          0          6
+control: MapLocationProvider                5          0          8

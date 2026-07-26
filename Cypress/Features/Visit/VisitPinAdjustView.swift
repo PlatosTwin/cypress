@@ -45,7 +45,7 @@ struct VisitPinAdjustView: View {
     let onCancel: () -> Void
 
     @State private var pin: Coordinate
-    @State private var position: MapCameraPosition?
+    @State private var position: MapCameraRequest?
     @State private var region = MKCoordinateRegion()
     /// The last nudge was refused, and the qualifier under the placement says so until the pin moves
     /// again.
@@ -142,7 +142,10 @@ struct VisitPinAdjustView: View {
     private func map(_ presentation: VisitPinAdjustPresentation) -> some View {
         MapKitBasemap(
             position: Binding(
-                get: { position ?? .region(MapLayout.region(around: start, metres: VisitMetrics.PinAdjust.openingSpanM)) },
+                // `.opening`, not `.move(to:)`: this getter runs on every pass, and a request that
+                // took a fresh ticket here would be a new camera sixty times a second. See
+                // `MapCameraRequest`.
+                get: { position ?? .opening(MapLayout.region(around: start, metres: VisitMetrics.PinAdjust.openingSpanM)) },
                 set: { position = $0 }
             ),
             region: $region,
@@ -274,7 +277,7 @@ struct VisitPinAdjustView: View {
             : MapLayout.region(around: coordinate, metres: VisitMetrics.PinAdjust.openingSpanM).span
         refusedNudge = false
         pin = coordinate
-        position = .region(MKCoordinateRegion(center: coordinate.clLocationCoordinate, span: span))
+        position = .move(to: MKCoordinateRegion(center: coordinate.clLocationCoordinate, span: span))
     }
 
     /// Says the result out loud.

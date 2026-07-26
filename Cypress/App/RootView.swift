@@ -56,6 +56,12 @@ struct RootView: View {
     /// asked and been allowed, this provider receives the authorisation callback like any other and
     /// begins reporting fixes; until then it stays `.notAsked` and the screens that read it draw
     /// without a location.
+    ///
+    /// **That sentence was false until now, and worth reading as a warning.** Construction used to
+    /// call `startUpdatingLocation()` by way of `apply(authorization:)`, so on a device that had
+    /// already granted permission this provider opened a GPS session the instant the composition
+    /// root was built — never mind that nothing had asked it to. It is inert until `start()` now,
+    /// which is what makes the paragraph above true and what makes a stray construction harmless.
     @State private var location = MapLocationProvider()
 
     var body: some View {
@@ -259,7 +265,10 @@ struct RootView: View {
     private var tabRoot: some View {
         switch router.tab {
         case .map:
-            MapHomeView(api: data.api)
+            // The provider is handed over rather than made there. Screen 01 used to declare its own
+            // `@State` one, which SwiftUI re-initialises on every pass through this body — see
+            // `MapHomeView.location`.
+            MapHomeView(api: data.api, location: location)
         case .grove:
             // Screen 08. The species tile's destination is 07, which is the one entrance
             // SCREENS.md draws for it: "Tapping a tile opens the species page."
@@ -592,7 +601,11 @@ struct RootView: View {
         // a *pushed* care-log, share or account-ask route is a programming error rather than a
         // screen. They stay named here so that adding a `router.push(.share(id))` somewhere is
         // visible in review rather than silently pushing a scrim over the navigation stack.
-        case .careLog, .share, .accountAsk:
+        // 09, 10, 15 — and the photo viewer, which is presented for its own reason
+        // (`PhotoViewerView`: it is a closer look at what is already on screen, not a place in the
+        // app, and a pushed one would wear the navigation stack's light bar across its dark
+        // backdrop).
+        case .careLog, .share, .accountAsk, .photoViewer:
             NotBuiltYetView(route: route)
 
         // Every remaining route has a mocked screen but no built feature yet. Naming them here
