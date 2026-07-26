@@ -39,7 +39,7 @@ public struct PinSet: Hashable, Sendable {
         case coverageGap
         /// `Where a tree could go`, the vacant planting sites (RULINGS R10).
         case vacantSites
-        /// **One record, because the reader asked where it is** (ERRATA E142).
+        /// **One record, because the reader asked where it is** (ERRATA E144).
         ///
         /// A group of one, which is what makes it belong here rather than in a screen of its own.
         /// The almanac, My Grove, the journal, the species list and search all name records and all
@@ -96,7 +96,7 @@ public struct PinSet: Hashable, Sendable {
         return pins.first?.id
     }
 
-    /// One record, asked about by name (ERRATA E142).
+    /// One record, asked about by name (ERRATA E144).
     ///
     /// `count` is 1 because there is one, and `isComplete` is therefore true: the map is showing the
     /// whole of what the sentence above it claims. Any other record drawn beside it is context and

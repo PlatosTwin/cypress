@@ -88,10 +88,15 @@ struct PinSetMapView: View {
     /// nobody reads is a qualifier that is not there.
     private func statement(_ presentation: PinSetPresentation) -> some View {
         VStack(alignment: .leading, spacing: CypressSpacing.gapVitality) {
-            Text(presentation.subject)
-                .font(CypressFont.body145Bold)
-                .foregroundStyle(CypressColor.textInk)
-                .fixedSize(horizontal: false, vertical: true)
+            // Absent rather than empty when the claim is already the title — see
+            // `PinSetCopy.subject`. An empty `Text` would still take the stack's spacing and leave a
+            // gap nobody put there.
+            if !presentation.subject.isEmpty {
+                Text(presentation.subject)
+                    .font(CypressFont.body145Bold)
+                    .foregroundStyle(CypressColor.textInk)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             Text(presentation.coverage)
                 .font(CypressFont.body125)
@@ -132,7 +137,7 @@ struct PinSetMapView: View {
             pins: presentation.pins,
             userCoordinate: userCoordinate,
             // **The record the reader asked about is selected before they touch anything.** That is
-            // the whole of E142's "which of these thirty is it": `MapAnnotationLayer.applySelection`
+            // the whole of E144's "which of these thirty is it": `MapAnnotationLayer.applySelection`
             // draws a selected pin 1.25× its neighbours, and this screen has one candidate rather
             // than needing a tap to produce one. No new highlight was invented — a second way to
             // say "this one" is a second thing to keep in step with C19.
@@ -164,7 +169,7 @@ struct PinSetMapView: View {
 
     // MARK: - Back to the one it is about
 
-    /// **NOT SPECIFIED** (ERRATA E142). Drawn only for a map about one record.
+    /// **NOT SPECIFIED** (ERRATA E144). Drawn only for a map about one record.
     ///
     /// A screen whose entire promise is "here is where this one is" must survive a pan. Without this
     /// control, the reader who drags the map two blocks to read a street name has lost the thing

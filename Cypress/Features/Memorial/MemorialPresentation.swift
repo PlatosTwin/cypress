@@ -124,7 +124,7 @@ struct MemorialPresentation: Equatable {
     /// §6.
     let stats: [Stat]
 
-    /// The map this screen can send the reader to (ERRATA E142).
+    /// The map this screen can send the reader to (ERRATA E144).
     ///
     /// **A memorial gets it too, and the record is what makes it honest.** The tree is gone; the
     /// place is not, and the coordinate is one of the few things about a removed tree that is still

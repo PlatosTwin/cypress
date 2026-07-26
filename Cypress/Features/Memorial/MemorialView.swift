@@ -32,7 +32,7 @@ struct MemorialView: View {
     /// rather than a link. Left as a seam rather than invented (DECISIONS constraint 21).
     private let onOpenSuccessor: ((UUID) -> Void)?
 
-    /// Where "show me where this is" goes (ERRATA E142). Resolved by the composition root, like
+    /// Where "show me where this is" goes (ERRATA E144). Resolved by the composition root, like
     /// every other destination this feature hands out.
     private let onShowWhere: ((PinSet) -> Void)?
 
@@ -187,7 +187,7 @@ struct MemorialScreen: View {
                     .cypressLatinName()
                     .fixedSize(horizontal: false, vertical: true)
             }
-            // ERRATA E142. **The one thing on screen 19 there is to press**, and it does not break
+            // ERRATA E144. **The one thing on screen 19 there is to press**, and it does not break
             // 19's rule that a memorial offers nothing: the screen's own note is that there is
             // "deliberately nothing to press" because every other control on a profile *writes*
             // something, and there is nothing left to contribute to. This writes nothing. It answers

@@ -33,7 +33,7 @@ struct SiteView: View {
     /// feature folder uses one: features push routes, they do not construct each other's views.
     private let onOpenTree: ((UUID) -> Void)?
 
-    /// Where "show me where this is" goes (ERRATA E142). Resolved by the composition root, like
+    /// Where "show me where this is" goes (ERRATA E144). Resolved by the composition root, like
     /// every other destination this feature hands out.
     private let onShowWhere: ((PinSet) -> Void)?
 
@@ -162,7 +162,7 @@ struct SiteScreen: View {
             Text(presentation.subtitle)
                 .cypressLatinName(CypressFont.latinName145)
                 .fixedSize(horizontal: false, vertical: true)
-            // ERRATA E142, and see `SitePresentation.locateSet` for why a basin gets this control.
+            // ERRATA E144, and see `SitePresentation.locateSet` for why a basin gets this control.
             // Drawn only where the composition root gave it somewhere to go, exactly as the
             // neighbour row below is: a control with no closure would be a control that does nothing
             // in the previews and in the shot harness.

@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import Cypress
 
-/// **"I have no idea where tree is"** (ERRATA E142).
+/// **"I have no idea where tree is"** (ERRATA E144).
 ///
 /// The project owner, from their own iPhone: *"In almanac under this season need a way to find the
 /// tree mentioned. Right now clicking just takes to tree page but I have no idea where tree is"*.
@@ -27,7 +27,7 @@ struct ShowWhereTests {
 
     private static let locale = Locale(identifier: "en_US")
     private static let coordinate = Coordinate(latitude: 37.7601, longitude: -122.4014)
-    private static let treeID = UUID(uuidString: "E1420000-0000-4000-8000-000000000001")!
+    private static let treeID = UUID(uuidString: "E1440000-0000-4000-8000-000000000001")!
 
     private static func tree(
         status: TreeStatus = .alive,
@@ -54,7 +54,7 @@ struct ShowWhereTests {
     /// A neighbour on the same block, `metres` north of the subject.
     private static func neighbour(_ index: Int, metresNorth: Double) -> TreePin {
         TreePin(
-            id: UUID(uuidString: "E1420000-0000-4000-8000-00000000010\(index)")!,
+            id: UUID(uuidString: "E1440000-0000-4000-8000-00000000010\(index)")!,
             coordinate: Coordinate(
                 latitude: coordinate.latitude + metresNorth / 111_320,
                 longitude: coordinate.longitude
@@ -180,6 +180,17 @@ struct ShowWhereTests {
         #expect(presentation.title == "Lombard Elm")
         #expect(presentation.subject == "2576 Lombard St")
         #expect(presentation.neighborhoodName == "Marina")
+    }
+
+    /// A vacant site's H1 *is* its address, and a city tree with no species falls back to the same
+    /// string, so on those records the street line was the title printed twice. Seen on the
+    /// simulator: `601 Dolores St` under `601 Dolores St`.
+    @Test("the street line is absent when the title is already the street")
+    func theStreetIsNotSaidTwice() {
+        let site = SitePresentation(profile: Self.profile(status: .vacantSite, address: "601 Dolores St"))
+        let presentation = Self.present(site.locateSet)
+        #expect(presentation.title == "601 Dolores St")
+        #expect(presentation.subject.isEmpty)
     }
 
     @Test("a record the city gave no address says so rather than borrowing the neighbourhood")

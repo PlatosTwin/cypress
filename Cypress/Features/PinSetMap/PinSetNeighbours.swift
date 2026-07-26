@@ -2,7 +2,7 @@
 //  PinSetNeighbours.swift
 //  Cypress — Features/PinSetMap
 //
-//  **NOT SPECIFIED.** ERRATA E142. The one read this screen performs, and the argument for why a
+//  **NOT SPECIFIED.** ERRATA E144. The one read this screen performs, and the argument for why a
 //  screen whose own header says it "never calls `mapContent(in:)`" now does, for exactly one of its
 //  three subjects.
 //

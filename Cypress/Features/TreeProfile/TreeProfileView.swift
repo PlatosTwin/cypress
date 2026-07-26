@@ -435,7 +435,7 @@ struct TreeProfileView: View {
         .padding(.top, presentation.isCold ? TreeProfileMetrics.coldBlockGap : TreeProfileMetrics.blockGap)
     }
 
-    /// "I have no idea where tree is" (ERRATA E142).
+    /// "I have no idea where tree is" (ERRATA E144).
     ///
     /// **In the identity block, directly under the line that names the place.** The subtitle above
     /// it ends in where the record came from and the H1 is, for most of the city's inventory, a

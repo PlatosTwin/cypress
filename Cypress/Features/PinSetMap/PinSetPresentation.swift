@@ -2,9 +2,9 @@
 //  PinSetPresentation.swift
 //  Cypress — Features/PinSetMap
 //
-//  **NOT SPECIFIED.** ERRATA E129, and E142 for the group of one.
+//  **NOT SPECIFIED.** ERRATA E129, and E144 for the group of one.
 //
-//  ── The group of one (E142) ───────────────────────────────────────────────────────────────
+//  ── The group of one (E144) ───────────────────────────────────────────────────────────────
 //  The project owner, from their own iPhone: *"In almanac under this season need a way to find the
 //  tree mentioned. Right now clicking just takes to tree page but I have no idea where tree is"*.
 //
@@ -195,9 +195,15 @@ enum PinSetCopy {
         // without reading the map at all. 8,943 of the seed's rows carry no address; that is said
         // plainly rather than papered over with the neighbourhood, which is already in the pill
         // beside the title and would answer a question nobody asked.
-        case let .oneRecord(_, address):
-            if let address, !address.isEmpty { return address }
-            return noAddress
+        case let .oneRecord(name, address):
+            guard let address, !address.isEmpty else { return noAddress }
+            // **Nothing twice.** A vacant site's H1 *is* its street address (`SiteCopy.title`), and a
+            // city tree with no species falls back to the same string on the profile, so on those
+            // records this line was printing the title again one line below the title. Seen on the
+            // simulator: `601 Dolores St` under `601 Dolores St`. An empty string here draws no line
+            // at all rather than a paraphrase — the address is already on screen, and saying it
+            // differently the second time would be the app filling a slot instead of answering.
+            return address == name ? "" : address
         }
     }
 

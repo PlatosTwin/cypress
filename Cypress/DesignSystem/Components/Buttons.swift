@@ -181,7 +181,7 @@ struct SecondaryOutlineButton: View {
 
 // MARK: - ShowWhereButton
 
-/// The control that opens a map of one record, on every screen that renders one (ERRATA E142).
+/// The control that opens a map of one record, on every screen that renders one (ERRATA E144).
 ///
 /// **NOT SPECIFIED.** No mock draws it, and its words, its destination and the argument for building
 /// one of these rather than six are `PinSetCopy.showWhereAction`,

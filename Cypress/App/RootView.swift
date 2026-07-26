@@ -487,7 +487,7 @@ struct RootView: View {
                 treeID: id,
                 api: data.api,
                 onBack: { router.pop() },
-                // ERRATA E142. The one control on 19, and it writes nothing — see
+                // ERRATA E144. The one control on 19, and it writes nothing — see
                 // `MemorialPresentation.locateSet`.
                 onShowWhere: { set in router.push(.pinSet(set)) }
             )
@@ -507,7 +507,7 @@ struct RootView: View {
                 api: data.api,
                 onBack: { router.pop() },
                 onOpenTree: { treeID in router.push(.treeProfile(treeID)) },
-                // ERRATA E142, and the strongest case for it: a basin's only subject is where it is.
+                // ERRATA E144, and the strongest case for it: a basin's only subject is where it is.
                 onShowWhere: { set in router.push(.pinSet(set)) }
             )
 
@@ -542,7 +542,7 @@ struct RootView: View {
             // everything else to 03/14 — is E107's and E113's, and a second copy of it here is how
             // one of them comes to be right and the other stale.
             //
-            // Since E142 the same route also carries a group of one — "show me where this is", from
+            // Since E144 the same route also carries a group of one — "show me where this is", from
             // the profile of any record. The neighbours closure is resolved here for the reason
             // every other boundary call is: the feature gets the one operation it needs, not the
             // API. It is `PinSetNeighbours.around`, and the screen only calls it for a group of one.

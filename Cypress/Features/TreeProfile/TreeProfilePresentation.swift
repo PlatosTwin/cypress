@@ -217,7 +217,7 @@ struct TreeProfilePresentation {
 
     /// The map this screen can send the reader to, as the payload it travels on.
     ///
-    /// ── **NOT SPECIFIED** (ERRATA E142) ──────────────────────────────────────────────────────
+    /// ── **NOT SPECIFIED** (ERRATA E144) ──────────────────────────────────────────────────────
     /// SCREENS.md 03 and 14 draw no map affordance, and neither does any other screen that names a
     /// record. The project owner reported the hole on the almanac — *"clicking just takes to tree
     /// page but I have no idea where tree is"* — and it is worth being precise about where the hole
@@ -969,7 +969,7 @@ enum TreeProfileCopy {
     // The control that answers *where is it* is `ShowWhereButton`, and its words are `PinSetCopy`'s
     // — the screen it opens owns the sentence that names it, the same way `PinSetCopy.title` takes
     // the almanac's own micro-labels rather than inventing two of its own. Why the control is on
-    // this screen at all is on `TreeProfilePresentation.locateSet` (ERRATA E142).
+    // this screen at all is on `TreeProfilePresentation.locateSet` (ERRATA E144).
 
     /// Why a claim did not land. Three refusals, three sentences — the mapping is here rather than in
     /// the model because "already claimed" and "not allowed on a city tree" are entirely different

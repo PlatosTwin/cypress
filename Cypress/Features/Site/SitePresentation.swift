@@ -70,7 +70,7 @@ struct SitePresentation: Equatable {
     /// The closing line, in the place screen 14 puts its own footnote.
     let footnote: String
 
-    /// The map this screen can send the reader to (ERRATA E142).
+    /// The map this screen can send the reader to (ERRATA E144).
     ///
     /// **A basin gets the same control a tree gets, and it is if anything the stronger case.** This
     /// screen's H1 is a street address and its whole subject is a place with nothing standing on it
