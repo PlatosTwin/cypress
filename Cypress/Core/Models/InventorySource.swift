@@ -93,10 +93,12 @@ public struct InventorySource: Hashable, Sendable {
     public init?(id: String, seedMeta: [String: String]) {
         guard !id.isEmpty else { return nil }
         if let name = seedMeta["inventory_\(id)_name"], !name.isEmpty {
-            self.id = id
-            self.name = name
-            self.url = seedMeta["inventory_\(id)_url"] ?? ""
-            self.snapshotDate = (seedMeta["inventory_\(id)_snapshot_on"]).flatMap(Self.date(fromISODay:))
+            self.init(
+                id: id,
+                name: name,
+                url: seedMeta["inventory_\(id)_url"] ?? "",
+                snapshotDate: (seedMeta["inventory_\(id)_snapshot_on"]).flatMap(Self.date(fromISODay:))
+            )
             return
         }
         guard seedMeta["trees_source"] == id else { return nil }
