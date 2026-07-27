@@ -16,7 +16,7 @@ Maintained`) and sit on ordinary sidewalk sites**, and nothing in either schema 
 longer lists them. That residue is unresolved and is the largest thing the switch takes on faith.
 
 The owner has ruled that the city's own inventory decides which trees exist, and it now does:
-`Tools/build_seed.py --source city` is the default and ships 133,577 records. **`--source datasf`
+`Tools/build_seed.py --source city` is the default and ships all 133,577 of them. **`--source datasf`
 still builds the old seed and is still tested**, because reversal had to stay one command rather than
 one revert. `Tools/fetch_city_trees.py` caches the extract to `Fixtures/raw/` — 67 sequential pages, a
 second apart, resumable — and the build never touches the service.
