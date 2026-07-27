@@ -133,13 +133,20 @@ canonical-spelling pass over the species name, which is #95's mechanism applied 
 deliberately excluded, and it changes the corpus the species fixtures are sourced against. Its own
 task, not a rider on a decision about which rows exist.
 
-**One UI test is red on the revert path and it is nobody's regression.**
+**A third UI test was intermittently red, on both corpora, and the first explanation was wrong.**
 `MapSearchUITests.testTypingASpeciesNameNarrowsTheMap` types `Platanus` and asserts the map still
-draws pins. On the DataSF corpus it draws none, and the assertion reads `narrowing to the commonest
-species in San Francisco emptied the map`. It passes on the shipped city seed. Attributed rather than
-assumed: the same test fails identically against the **pre-switch DataSF seed** — a file built on
-2026-07-25, before any of this work, with no `inventory_source` column and no `trees_source` receipt
-at all — so it is a property of the 195,309-row corpus and the map's content budget in the default
-viewport, not of the source switch or of anything in this change. That run also exercised the
-backwards-compatible path, since a seed with neither the column nor the receipt still opened and drove
-the app.
+draws pins; it failed with `narrowing to the commonest species in San Francisco emptied the map`.
+The obvious reading was that the DataSF corpus is too dense for the default viewport — and it is
+wrong. Measured: the same test fails against the **pre-switch DataSF seed** built on 2026-07-25,
+before any of this work, with no `inventory_source` column and no `trees_source` receipt at all; and
+it *passed and then failed on the same 145,837-row city seed forty minutes apart*. Nothing about the
+corpus explains both.
+
+It is a sampling race in the test. Its wait returns on the first pin count that differs from the
+unnarrowed one, and the annotation layer passes through zero on its way between the two sets — it
+removes the old pins before it adds the new ones, and the accessibility tree is readable in between.
+The test now waits for the narrowed map to settle above zero rather than merely to change, which
+removes the race without weakening the check: a narrowing that genuinely empties the map never
+satisfies that wait and fails with the same sentence. The pre-switch run also exercised the
+backwards-compatible read path, since a seed carrying neither the column nor the receipt still opened
+and drove the app.
