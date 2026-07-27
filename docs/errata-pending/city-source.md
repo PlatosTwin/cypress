@@ -133,13 +133,22 @@ canonical-spelling pass over the species name, which is #95's mechanism applied 
 deliberately excluded, and it changes the corpus the species fixtures are sourced against. Its own
 task, not a rider on a decision about which rows exist.
 
-**One UI test is red on the revert path and it is nobody's regression.**
-`MapSearchUITests.testTypingASpeciesNameNarrowsTheMap` types `Platanus` and asserts the map still
-draws pins. On the DataSF corpus it draws none, and the assertion reads `narrowing to the commonest
-species in San Francisco emptied the map`. It passes on the shipped city seed. Attributed rather than
-assumed: the same test fails identically against the **pre-switch DataSF seed** — a file built on
-2026-07-25, before any of this work, with no `inventory_source` column and no `trees_source` receipt
-at all — so it is a property of the 195,309-row corpus and the map's content budget in the default
-viewport, not of the source switch or of anything in this change. That run also exercised the
-backwards-compatible path, since a seed with neither the column nor the receipt still opened and drove
-the app.
+**One UI test is intermittently red on both corpora, it is not this change's doing, and its cause is
+unresolved.** `MapSearchUITests.testTypingASpeciesNameNarrowsTheMap` types `Platanus` and asserts the
+map still draws pins; when it fails it says `narrowing to the commonest species in San Francisco
+emptied the map`. What is established:
+
+- It **passed** on the shipped 145,837-row city seed at 21:37 and **failed** on that same file at
+  22:01 and 22:04. So it is not decided by the corpus.
+- It fails against the **pre-switch DataSF seed** built 2026-07-25 — before any of this work, with no
+  `inventory_source` column and no `trees_source` receipt at all. So it is not this change's doing.
+  (That run is also the only exercise the backwards-compatible read path has had, and it passed: a
+  seed carrying neither the column nor the receipt still opened and drove the app.)
+- It is **not a sampling race in the test**, which was the first hypothesis and is refuted: adding a
+  thirty-second wait for the pin count to settle above zero still read zero, and the test then failed
+  on the wait rather than on the sample. That change was reverted rather than kept, because a wait
+  that does not fix it would have shipped a wrong explanation in a comment.
+
+What is left is that the map genuinely draws no pin for the commonest species in San Francisco, some
+of the time, on a build where the same search worked twenty minutes earlier. That is worth its own
+task and it is not one this round can close honestly.
