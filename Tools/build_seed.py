@@ -1956,8 +1956,9 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
         print(f"    already in, city lists it empty too "
               f"{stats['export_vacant_city_lists_site']:,}")
     print(f"  trees written          {stats['kept']:,}")
-    print(f"    from city layer      {stats['kept'] - stats['export_vacant_carried']:,}")
-    print(f"    from datasf export   {stats['export_vacant_carried']:,}")
+    if source == "city":
+        print(f"    from city layer      {stats['kept'] - stats['export_vacant_carried']:,}")
+        print(f"    from datasf export   {stats['export_vacant_carried']:,}")
     print(f"    status=alive         {stats['alive']:,}")
     print(f"    status=vacant_site   {stats['vacant_site']:,}")
     print(f"    alive, no species    {stats['non_taxon_rows']:,}  (qSpecies names no taxon)")
