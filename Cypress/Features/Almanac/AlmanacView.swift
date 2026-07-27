@@ -42,8 +42,15 @@ struct AlmanacView: View {
 
     private let onBack: (() -> Void)?
 
-    /// Shown when there is no fix — the one empty state a tap can fill (R11 residual, E123).
-    private let showsLocationPrompt: Bool
+    /// The composition root's fix as of **this** pass through the parent's body.
+    ///
+    /// Stored, where it used to be consumed by the initialiser and forgotten. `@State` runs its
+    /// initialiser exactly once, so the model below was built from whichever coordinate happened to
+    /// exist at first construction and never heard about another — and on a cold launch that is
+    /// `nil`, because CoreLocation has not answered yet. Keeping the parameter is what lets the
+    /// `.task(id:)` notice it change (ERRATA — see docs/errata-pending/almanac-blank.md).
+    private let coordinate: Coordinate?
+
     private let onRequestLocation: (() -> Void)?
 
     init(
@@ -56,12 +63,10 @@ struct AlmanacView: View {
         onRequestLocation: (() -> Void)? = nil
     ) {
         _model = State(wrappedValue: AlmanacModel(api: api, coordinate: coordinate, now: now))
+        self.coordinate = coordinate
         self.onBack = onBack
         self.onOpenTree = onOpenTree
         self.onShowGroup = onShowGroup
-        // The prompt shows exactly when there is no fix: a nil coordinate yields no neighbourhood and
-        // therefore an empty almanac, so this is the same condition as "the screen would be blank".
-        self.showsLocationPrompt = coordinate == nil
         self.onRequestLocation = onRequestLocation
     }
 
@@ -71,7 +76,12 @@ struct AlmanacView: View {
             onBack: onBack,
             onOpenTree: onOpenTree,
             onShowGroup: onShowGroup,
-            showsLocationPrompt: showsLocationPrompt,
+            // E123's prompt condition, asked of the model rather than of the parameter. The
+            // parameter answers "is there a fix"; the screen is asking "is this blank because there
+            // is no fix", and between the fix arriving and the neighbourhood being read those two
+            // give opposite answers — which is how the prompt came to be withdrawn from a screen
+            // that then had nothing on it. See `AlmanacModel.needsLocation`.
+            showsLocationPrompt: model.needsLocation,
             onRequestLocation: onRequestLocation,
             // Handed down as a value and a closure rather than read off the model inside the screen,
             // for the same reason the presentation is: a state the screen cannot be *given* is a
@@ -79,7 +89,12 @@ struct AlmanacView: View {
             hasFailed: model.hasFailed,
             onRetry: { Task { await model.retry() } }
         )
-        .task { await model.load() }
+        // `id:` and not a bare `.task`. The bare form runs once at mount, which is the same
+        // once-only that the `@State` initialiser has, so the first frame's coordinate would still
+        // be the only one this screen ever read from. Keyed on the coordinate, the read re-runs when
+        // — and only when — the fix changes, which on a cold launch is `nil` → San Francisco a
+        // second after the tab is pressed.
+        .task(id: coordinate) { await model.update(coordinate: coordinate) }
     }
 }
 
