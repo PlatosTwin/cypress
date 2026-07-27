@@ -37,7 +37,7 @@ struct VisitCameraSubjectTests {
         let model = VisitCameraModel(
             treeID: VisitPreviewFixtures.cypress.id,
             treeDisplayName: "Grandmother Cypress",
-            gpsAccuracyM: 9,
+            gpsAccuracyM: { 9 },
             api: VisitPreviewAPI(),
             outbox: VisitPreviewFixtures.outbox(),
             attribution: VisitPreviewFixtures.attribution
@@ -102,7 +102,7 @@ struct VisitCameraSubjectTests {
         let model = VisitCameraModel(
             treeID: treeID,
             treeDisplayName: "A tree with a history",
-            gpsAccuracyM: 9,
+            gpsAccuracyM: { 9 },
             api: VisitPreviewAPI(),
             outbox: VisitPreviewFixtures.outbox(),
             attribution: VisitPreviewFixtures.attribution

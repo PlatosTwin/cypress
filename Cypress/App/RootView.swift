@@ -195,10 +195,14 @@ struct RootView: View {
                 // root owns that choice, not the feature.
                 attribution: .anonymous(deviceID: data.deviceID),
                 // D6 wants the fix's accuracy stored with every field contribution, and the
-                // provider now carries one (E65 is resolved). It is genuinely nil only before the
-                // first fix, which is the honest answer then — D6 treats a missing accuracy as
-                // unusable rather than assuming it was good.
-                gpsAccuracyM: location.availability.accuracyM,
+                // provider now carries one (E65 is resolved).
+                //
+                // **Handed over as a question, not as an answer.** This used to read
+                // `location.availability.accuracyM` here, which `@State` then froze for the life of
+                // the sheet: open the care log before the first fix and the event recorded `nil`
+                // for ever, and a `nil` accuracy is excluded rather than assumed good. The sheet
+                // asks when it writes (ERRATA — see docs/errata-pending/gps-accuracy-at-submit.md).
+                gpsAccuracyM: { location.availability.accuracyM },
                 onClose: { router.sheet = nil },
                 onSaved: { _ in router.sheet = nil }
             )
@@ -483,7 +487,11 @@ struct RootView: View {
                 // parameter defaults to nil and was being defaulted away here, which is the quiet
                 // half of the same bug: a provider that drops the number and a composition root
                 // that never asks for it look identical from inside the feature.
-                gpsAccuracyM: location.availability.accuracyM,
+                //
+                // A closure, so the answer is the one that is true when the check-in is saved
+                // rather than when the screen was pushed
+                // (ERRATA — see docs/errata-pending/gps-accuracy-at-submit.md).
+                gpsAccuracyM: { location.availability.accuracyM },
                 onSaved: { _ in router.pop() }
             )
 
@@ -649,7 +657,12 @@ struct RootView: View {
                 // Anonymous under the device id until the account ask ships (D9); the composition
                 // root owns that choice, not the feature.
                 attribution: .anonymous(deviceID: data.deviceID),
-                gpsAccuracyM: location.availability.accuracyM,
+                // Asked at the tap rather than at the push, which is the whole of the argument
+                // above rather than a refinement of it: `@State` froze this number at the first
+                // frame, so a measure sheet opened before the fix landed wrote the very `nil` E65
+                // was recorded to prevent, on a phone that had a good fix by the time the number
+                // was typed (ERRATA — see docs/errata-pending/gps-accuracy-at-submit.md).
+                gpsAccuracyM: { location.availability.accuracyM },
                 // **Saving used to acknowledge nothing and go nowhere (ERRATA E131).** This call
                 // omitted `onSaved`, so `MeasureView`'s `{ _ in }` default applied: the screen has a
                 // failure line and no success line, and the model clears `draft.entry` on the way

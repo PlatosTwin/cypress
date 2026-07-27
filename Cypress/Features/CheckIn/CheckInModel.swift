@@ -37,7 +37,12 @@ final class CheckInModel {
     private let api: any CypressAPI
     private let outbox: OutboxQueue
     private let attribution: Attribution
-    private let gpsAccuracyM: Double?
+    /// D6's per-contribution accuracy, asked of the composition root's provider at the moment the
+    /// observation is written rather than when the screen was built
+    /// (ERRATA — see docs/errata-pending/gps-accuracy-at-submit.md). A closure for the same reason
+    /// `now` beside it is one: `@State` builds this model once, so a `Double?` handed in froze at
+    /// the first frame and recorded `nil` on any check-in opened before the first fix.
+    private let gpsAccuracyM: @MainActor () -> Double?
     private let now: () -> Date
     private let calendar: Calendar
     private let onSaved: (CheckInSaveReceipt) -> Void
@@ -51,7 +56,7 @@ final class CheckInModel {
         api: any CypressAPI,
         outbox: OutboxQueue,
         attribution: Attribution,
-        gpsAccuracyM: Double? = nil,
+        gpsAccuracyM: @escaping @MainActor () -> Double? = { nil },
         species: Species? = nil,
         initialDraft: CheckInDraft = CheckInDraft(),
         now: @escaping () -> Date = { Date() },
@@ -128,7 +133,7 @@ final class CheckInModel {
                 attribution: attribution,
                 outbox: outbox,
                 species: species,
-                gpsAccuracyM: gpsAccuracyM,
+                gpsAccuracyM: gpsAccuracyM(),
                 now: now(),
                 calendar: calendar
             )
