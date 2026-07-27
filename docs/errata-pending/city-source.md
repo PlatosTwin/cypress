@@ -38,11 +38,51 @@ they looked like harness flakiness. The shipped build takes the row set from the
 those seven columns from the export for the 130,070 records both list — 97% coverage, NULL on the
 3,507 the export has never heard of — and the controls fire again.
 
-The vacant-site collapse is the one loss that join cannot repair, because a vacant site is a *row*
-and rows come from the spine: **12,518 → 153**, with 17 of 41 neighbourhoods now holding none. The
-city's layer has no vacant-site category at all — `PlantType` is `Tree` on every one of its records.
-The state #11 designed, #31 redirects to and #32 counts still works and is still tested; it now
-describes a third fewer neighbourhoods than it has rows for.
+The vacant-site collapse was the one loss that join could not repair, because a vacant site is a
+*row* and rows come from the spine: **12,518 → 153**, with 17 of 41 neighbourhoods holding none. The
+state #11 designed, #31 redirects to and #32 counts still worked and was still tested; it described
+a third of the city and nothing else. **That has been undone, and the reason it could be undone
+without touching the tree row set is the part worth keeping.**
+
+**The city's layer is not disagreeing with us about vacant sites. It has no such category.**
+`PlantType` is `Tree` on all 133,577 of its records; there is no site-status column, no `qSiteInfo`,
+no `qLegalStatus`. Reading that silence as "a tree stands there now" would be inferring a fact about
+the world from the shape of a schema. That is a different claim from the one this switch makes about
+living trees, where the layer *is* the operational record and a tree it stopped listing is most
+likely gone. So the seed now carries the export's vacant planting sites as rows alongside the city's
+trees: **145,837 rows — 133,577 trees from the city's layer, 12,260 sites from the export** — and
+all 41 neighbourhoods hold at least one site again.
+
+The one place the two inventories genuinely contradict each other is a TreeID the export calls an
+empty basin and the layer lists as a planted tree. **128 rows**, measured rather than assumed, and
+there the city wins, exactly as it does for the tree row set. A further 130 the layer also holds as
+empty (`BOTANICAL = 'Potential Site'`) were already in the seed from the first pass. Nothing is
+double-counted and no `external_ref` appears twice, because the test is simply "did the city pass
+already emit this TreeID".
+
+**No uuid was ever at risk here either, and this was checked rather than reasoned about.** All 12,518
+of the export's vacant-site TreeIDs are rows in the new seed; 128 of them are `alive` rather than
+`vacant_site`, which is a change of status and not a change of identity. Across every simulator
+install on this machine, 23 contribution rows reference a tree and **none of them references a vacant
+site**, so the collapse orphaned nothing and the restoration un-orphans nothing. The only vacant-site
+uuid written down anywhere in the repo is `aa72e15a-…` in `TreeProfilePreviews`, a preview fixture
+constructed in code rather than read from the seed; its TreeID 271641 is back in the file regardless.
+
+**This is what `--source city` means now, not a third flag value.** A `--source` value answers which
+inventory the seed believes about the trees, and the export's sites are not a third answer to that
+question — no build that wants a working "where a tree could go" can decline them, and no build that
+has them is disagreeing with the city about anything. `--source datasf` still builds all 195,309 rows
+and is still tested against its own pinned numbers, so reverting is still one command.
+
+**Provenance is now a per-row fact, and it had to become one.** `trees.inventory_source` says which
+inventory listed each row, and `seed_meta` carries a name, a url and a snapshot date for each. The
+tree page's sentence — `From the SF Public Works street tree inventory, 26 July 2026.` — is true of
+every record that draws it, because only the city's trees reach that screen. The vacant site has its
+own screen and it used to say nothing at all about where its record came from, which was survivable
+while the file held one inventory and is not now: it draws
+`From the DataSF Street Tree List, 20 July 2026.` under its stat grid. The seed contract fails if a
+row names an inventory the receipt cannot describe, so the sentence can never be resolved to the
+other inventory's name by accident.
 
 The deeper defect was never the row count. It was that a 100 MB file shipped inside the app with
 **nothing anywhere saying where its contents came from or how old they were** — not on a screen, not
