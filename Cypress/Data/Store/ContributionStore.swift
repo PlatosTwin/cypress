@@ -942,6 +942,82 @@ public struct ContributionStore {
         }
     }
 
+    /// What this contributor has done to each tree in their grove, by kind.
+    ///
+    /// **`COUNT(*)` rather than a page's size**, so these are totals and may be rendered as such —
+    /// the engine answers the whole predicate, the same argument `deviceContributions` makes and the
+    /// distinction ERRATA E38 exists for. There is no limit on this statement and there must not be:
+    /// a limited read here would produce a plausible small number, and a plausible small number about
+    /// a person's own history is E38's exact failure.
+    ///
+    /// **Why counting here is not what `GroveQueries`' header forbids.** That file says "nothing here
+    /// counts contributions", on D1's grounds, and it is still true of that file: it feeds the species
+    /// ring, whose numerator is a count of *species*, and a `COUNT(*)` of contributions there would be
+    /// a tally of a person's activity with nothing else it could be. This is a different question with
+    /// a different subject — what one relationship with one tree consists of, never summed, never
+    /// ordered on, never compared. `GroveRecord` argues that at length, and it is the type that has to
+    /// hold the line, not this comment.
+    ///
+    /// Privacy is the shape of the query, as in `groveTreeIDs` above: the caller states who it is and
+    /// there is no form of this SQL that returns somebody else's rows (D11). Tombstones are excluded,
+    /// because a deleted contribution is not something a person did that still stands.
+    ///
+    /// Trees with no contributions at all — a favourite nobody has visited — are simply absent from
+    /// the result; the caller reads a missing key as `GroveRecord.none`, which is what it is.
+    public func groveRecords(
+        userID: UUID?,
+        deviceID: UUID,
+        connection: SQLiteConnection
+    ) throws -> [UUID: GroveRecord] {
+        let statement = try connection.cachedStatement("""
+            SELECT tree_uuid, kind, COUNT(*) AS n FROM (
+                SELECT tree_uuid, 'visit' AS kind, user_id, device_id, deleted_at FROM visits
+                UNION ALL
+                SELECT tree_uuid, 'observation', user_id, device_id, deleted_at FROM observations
+                UNION ALL
+                SELECT tree_uuid, 'measurement', user_id, device_id, deleted_at FROM measurements
+                UNION ALL
+                SELECT tree_uuid, 'care_event', user_id, device_id, deleted_at FROM care_events
+            )
+             WHERE deleted_at IS NULL
+               AND (device_id = :device COLLATE NOCASE
+                    OR (:user IS NOT NULL AND user_id = :user COLLATE NOCASE))
+             GROUP BY tree_uuid, kind
+            """)
+        _ = try statement.bind([":device": deviceID.uuidString, ":user": userID?.uuidString])
+
+        var visits: [UUID: Int] = [:]
+        var checkIns: [UUID: Int] = [:]
+        var measurements: [UUID: Int] = [:]
+        var careEvents: [UUID: Int] = [:]
+        _ = try statement.fetchAll { row -> Void in
+            let tree = try row.uuid("tree_uuid")
+            let count = try row.int("n")
+            switch try row.string("kind") {
+            case "visit": visits[tree] = count
+            case "observation": checkIns[tree] = count
+            case "measurement": measurements[tree] = count
+            default: careEvents[tree] = count
+            }
+        }
+
+        let trees = Set(visits.keys)
+            .union(checkIns.keys)
+            .union(measurements.keys)
+            .union(careEvents.keys)
+        return Dictionary(uniqueKeysWithValues: trees.map { tree in
+            (
+                tree,
+                GroveRecord(
+                    visits: visits[tree] ?? 0,
+                    checkIns: checkIns[tree] ?? 0,
+                    measurements: measurements[tree] ?? 0,
+                    careEvents: careEvents[tree] ?? 0
+                )
+            )
+        })
+    }
+
     /// `GET /me/journal`. One stream over the four contribution kinds, newest first.
     ///
     /// The cursor is the `captured_at` of the last row returned, which is stable under insertion —

@@ -28,35 +28,47 @@ import Foundation
 
 // MARK: - Sub-tabs
 
-/// The three pills SCREENS.md 08 §2 draws under the title: `Trees`, `Journal`, `Species`.
+/// The pills under the title. SCREENS.md 08 §2 draws three — `Trees`, `Journal`, `Species` — and
+/// **this app draws two.**
 ///
-/// **All three lead somewhere now, and none of them did for most of the app's life.** The entry that
-/// used to be here read: "Only `species` has a screen … they are drawn, because 08 draws them, and
-/// they do nothing, because there is nowhere for them to go (DECISIONS constraint 21)." That was the
-/// right call while it was true, and what made it stop being true is that both destinations turned
-/// out to be already built and unreachable rather than unbuilt:
+/// ── Why the mock's third pill is not built ────────────────────────────────────────────────
+/// The `Journal` pill mounted the Journal tab's `Yours` segment: the same read, the same rows, the
+/// same view. Two doors into one room. The round that built it argued, correctly, that the two
+/// surfaces could never *disagree* — one derivation (`JournalPresentation`), one model and one view
+/// (`JournalSection`), so there is no second implementation to drift — and concluded from that that
+/// keeping both was safe.
 ///
-/// - `Trees` is `CypressAPI.grove()`, which has returned `[GroveEntry]` since the protocol was
-///   written and had no caller. See `GroveTreesPresentation`.
-/// - `Journal` is `CypressAPI.journal(cursor:limit:)`, whose absence of a screen ERRATA E99 recorded
-///   as OPEN rather than guessed at. See `JournalPresentation` for the argument for what it became,
-///   and `JournalListView` for why the same list is also a segment of the Journal tab.
+/// It is safe. It is not comprehensible, and those are different properties. The project owner, using
+/// the app: *"What's the diff between Trees and Journal? They look almost identical."* He spent time
+/// working out why two things looked the same, and for one of the two pairs he was literally right —
+/// the pill and the tab **were** the same list. Drift-safety answers "will these ever tell me
+/// different things"; it does not answer "why am I being shown this twice". The cost the earlier
+/// round weighed was a control the design draws being left unbuilt. The cost actually observed was a
+/// person confused by his own app, and that one is larger.
 ///
-/// So constraint 21 is satisfied in the direction it points: nothing was invented to fill a pill.
-/// Two finished reads were given the surface the mock had already drawn for them. See ERRATA E46 for
-/// why this row is 08's own geometry and not C5.
+/// So this is not the old objection ("two copies must agree forever") being accepted late. That
+/// objection was answered and the answer holds. This is a different argument, on a different ground,
+/// with evidence the earlier round did not have.
+///
+/// ── What is left, and why constraint 21 is satisfied ──────────────────────────────────────
+/// - `Trees` is `CypressAPI.grove()` — one row per tree you have a relationship with, however many
+///   times you have been. See `GroveTreesPresentation`.
+/// - `Species` is screen 08 proper.
+///
+/// The journal keeps its own tab, where C16 draws it and where the export beside it lives. Nothing
+/// became unreachable: `journal(cursor:limit:)` still has exactly one caller, and it is the tab named
+/// after it (`ScreenEntranceTests.theSurfacesThatWereNotRoutes`). See ERRATA E46 for why this row is
+/// 08's own geometry and not C5, and the errata entry for this round for the deviation from 08 §2.
 enum GroveTab: String, CaseIterable, Identifiable {
     case trees
-    case journal
     case species
 
     var id: String { rawValue }
 
-    /// Verbatim from SCREENS.md 08 §2.
+    /// Verbatim from SCREENS.md 08 §2, for the two pills that survive.
     var label: String {
         switch self {
         case .trees: return "Trees"
-        case .journal: return "Journal"
         case .species: return "Species"
         }
     }
@@ -75,7 +87,7 @@ enum GroveTab: String, CaseIterable, Identifiable {
     /// the compiler: a new case does not build until somebody says, here, whether it goes anywhere.
     var hasDestination: Bool {
         switch self {
-        case .trees, .journal, .species: return true
+        case .trees, .species: return true
         }
     }
 }

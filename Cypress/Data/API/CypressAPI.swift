@@ -745,12 +745,30 @@ public struct GroveEntry: Hashable, Sendable, Identifiable {
     public let lastVisitedAt: Date?
     public let isFavorite: Bool
 
-    public init(treeID: UUID, displayName: String, coordinate: Coordinate, lastVisitedAt: Date?, isFavorite: Bool) {
+    /// What this contributor has done to this tree, by kind — or **nil when the implementation could
+    /// not prove it counted everything** (ERRATA E38). See `GroveRecord`, which is also where D1 is
+    /// argued.
+    ///
+    /// Optional and defaulted rather than required, so that an implementation with no contribution
+    /// store behind it says nothing instead of saying zero. Zero is a claim about a person's history;
+    /// nil is the truthful "this read did not answer that". The `Trees` list draws no tally when it
+    /// is nil, exactly as screen 08's ring vanishes when `Series.totalCount` is.
+    public let record: GroveRecord?
+
+    public init(
+        treeID: UUID,
+        displayName: String,
+        coordinate: Coordinate,
+        lastVisitedAt: Date?,
+        isFavorite: Bool,
+        record: GroveRecord? = nil
+    ) {
         self.treeID = treeID
         self.displayName = displayName
         self.coordinate = coordinate
         self.lastVisitedAt = lastVisitedAt
         self.isFavorite = isFavorite
+        self.record = record
     }
 }
 
