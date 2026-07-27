@@ -545,3 +545,423 @@ The report says our CSV matches the live dataset "row for row". The count still 
 and it publishes daily. An unchanged row count across an update proves only that additions and
 removals balanced; it is not evidence that the contents agree. "Not stale" was measured once and has
 a shelf life of about a day, and row-count equality was never the test it was used as.
+
+---
+
+# Addendum, 2026-07-26: the switch, built
+
+The licence ruling above has been **overridden by the project owner**, who has seen it and said:
+*"Just use the official city data. It's fine."* He has accepted the risk of ingesting a service that
+publishes no licence, for a local beta on his own phone. That settles it; the ruling in the previous
+addendum stands as a record of the reasoning and is no longer a blocker, and the question is not to
+be re-opened. Nothing about it goes in the app's UI.
+
+Issue #91 is therefore built. What follows is what was measured and done, replacing the report's
+estimates with exact counts.
+
+## What ships
+
+`Tools/build_seed.py` takes `--source`:
+
+| | rows | species | vacant sites | planting dates | seed |
+|---|---|---|---|---|---|
+| `--source city` **(default)** | **133,577** | 577 | **153** | 28,747 | 71.4 MB |
+| `--source datasf` | 195,309 | 569 | 12,518 | 70,067 | 103.6 MB |
+
+**The row set is the city's; seven of the attribute columns are the export's.** #91 asks which trees
+exist, and only SF Public Works' operational layer knows that — it is what its public map draws. It
+is a much poorer record of *facts*, publishing sixteen fields against the export's eighteen and
+dropping nine. So the spine is the city's layer (a record it does not list is not in the seed,
+whatever the export says) and `qLegalStatus`, `qSiteInfo`, `qCaretaker`, `qCareAssistant`,
+`PlantDate`, `PlotSize` and `PermitNotes` are joined on `TreeID` for the 130,070 records both list.
+Nothing is added by that join. The 3,507 records only the city has carry NULL in those seven.
+
+This was not the first design. A build that took the city's layer alone was measured first, and it
+is why the join exists:
+
+| | city layer alone | city rows + export attributes |
+|---|---|---|
+| `legal_status` | 0 | 130,029 |
+| `plot_size` | 0 | 111,326 |
+| planting dates | **0** | 28,747 |
+| trees `LandContext` can place | **0** | 130,071 |
+
+With no planting dates the almanac's elder, plantings and coverage reads return nothing **for the
+whole city**, screen 12 loses three rows, and `LandContext.inferred(from:)` can place no tree so the
+`Stands on` sentence never draws. Three test suites went green while asserting the exclusion of an
+empty set, and two UI tests failed outright because the rows they tap no longer render.
+
+**Extraction, 2026-07-26.** 67 sequential POSTs to the feature service, `resultRecordCount=2000` at
+the layer's own `maxRecordCount`, a second between pages, ordered by `OBJECTID`, each page written to
+its own file so a re-run skips what is already cached. 133,577 features, 0 duplicate `TREEID`s, no
+retries needed. `editingInfo.lastEditDate` was 2026-07-20. `Tools/fetch_city_trees.py` is the only
+thing in the repo that talks to the service; `build_seed.py` reads the cache and never makes a
+request, so a rebuild costs the city nothing and works offline. The cache lands in `Fixtures/raw/`,
+which `.gitignore` already excludes for the same reason it excludes the DataSF CSV.
+
+## The gap, exactly — no longer an estimate
+
+The report's samples gave ≈3,300 and ≈68,800. The full extract gives:
+
+| | count |
+|---|---|
+| TreeIDs in **both** inventories | **130,070** |
+| In DataSF, **not** in the city's layer | **65,239** |
+| In the city's layer, **not** in DataSF | **3,507** |
+
+### What the 65,239 dropped rows are
+
+Non-overlapping and exhaustive:
+
+| bucket | count | what it is |
+|---|---|---|
+| `Permitted Site`, `alive` | 29,050 | a permit was issued for a planting site; the tree may not exist |
+| `Permitted Site`, vacant site | 8,657 | same, with no species recorded either |
+| **other legal status, `alive`** | **17,443** | **the crux — see below** |
+| `Undocumented`, `alive` | 6,486 | observed, never adopted into the maintenance inventory |
+| other legal status, vacant site | 2,733 | empty basins the city does not list |
+| `Undocumented`, vacant site | 870 | |
+
+**The crux bucket, 17,443 rows**, is the one that can be wrong rather than merely different. They are
+`alive`, carry an ordinary legal status and sit on ordinary sites: 15,348 `DPW Maintained`, 940
+`Significant Tree`, 341 `Planning Code 138.1 required`, 18 `Landmark tree`; by site family 14,593
+`Sidewalk`, 1,600 `Median`, 762 `Front Yard`. The report could not determine what separates them from
+the 84.8% of `DPW Maintained` rows the city does list, and neither could this round. They are either
+trees removed since the export last agreed with the operational layer, or records the city's pipeline
+drops for a reason neither schema exposes. **Unresolved, and the largest thing this switch takes on
+faith.**
+
+**Vacant planting sites are the visible casualty: 12,518 → 153.** The city's layer has no vacant-site
+category — `PlantType` is `Tree` on all 133,577 records — and the only empty sites that survive are
+the 136 whose `BOTANICAL` reads literally `Potential Site` plus a handful with no species at all.
+Features #11 (the vacant-site state), #31 (the redirect off the tree profile) and #32 (the almanac's
+empty-site count) still work and are still tested, but they now describe 153 sites, and **17 of the
+41 neighbourhoods have none**, so screen 12's empty-site row is absent across a third of the city.
+This is the one loss the join cannot repair: a vacant site is a *row*, and rows come from the spine.
+If that surface matters more than agreeing with the city's map, `--source datasf` is one command
+away.
+
+### Is 133,577 a loss of 62,000 trees, or a more truthful number?
+
+**A more truthful number, and the arithmetic says so rather than the vibe.** Of the 65,239 rows that
+leave, **47,796 (73%) are not living street trees by their own labels**:
+
+| | count | why it is not a maintained street tree |
+|---|---|---|
+| vacant planting sites | 12,260 | a hole in the pavement; there is no tree |
+| `Permitted Site`, `alive` | 29,050 | a permit was issued; the tree may not exist yet |
+| `Undocumented`, `alive` | 6,486 | observed, never adopted into the maintenance inventory |
+| **not-a-maintained-tree subtotal** | **47,796** | |
+| the crux bucket | 17,443 | genuinely ambiguous — see above |
+
+So the honest statement is not "we lost 62,000 trees". It is "we stopped counting 47,796 records that
+were never living maintained street trees, and we took a position on 17,443 more that nobody can
+currently adjudicate". The residual uncertainty is 13% of the new total, not 33% of the old one.
+
+Two independent estimates of *maintained street trees* agree with each other and with the city:
+
+| | count |
+|---|---|
+| The city's own quoted figure (Prop E, 2016, still quoted in 2026) | ~125,000 |
+| The city's live operational layer, 2026-07-26 | **133,577** |
+| Our old DataSF seed, `alive` **and** `DPW Maintained` | **139,012** |
+| Our old DataSF seed, all rows | 195,309 |
+
+133,577 sits 7% above a figure fixed in 2016, which is what nine years of planting looks like, and
+within 4% of the comparable we could already compute from the export. **195,309 was never an estimate
+of that quantity** — it was every row of an open-data table, planting permits and empty basins
+included. The number got smaller and more accurate at the same time.
+
+### What the 3,507 additions are
+
+Pure gain, and the reason the owner opened this. All 3,507 are inside the seed's SF bounding box and
+none has a null or zero coordinate. 1,338 carry `TREEID > 276035`, exactly the maximum id the DataSF
+export has ever published — a ceiling in the export pipeline, not staleness in our copy. **TreeID
+276198, `1 TWIN PEAKS BLVD`, the 36-inch Monterey Pine the owner found on the city's map, is among
+them and is now in the seed.**
+
+## Identity survived, which is what makes the revert safe
+
+Measured directly, old seed against new:
+
+```
+TreeIDs in both       130,070
+uuids that MOVED            0
+```
+
+Both paths derive `trees.uuid` as `uuid5(NS_TREE, <TreeID as ASCII>)` and both inventories use the
+same `TreeID` space, so every shared record kept its identity byte for byte — in both directions.
+`266901` is `62b2911f-c0f1-5876-9922-c92a69e94bcc` and `223762` is
+`69a3c876-d64a-51da-8575-54e1f47bc146` in both files. Species uuids likewise: 503 species are in both
+seeds and none moved. No grove entry, journal note, favourite, photograph or check-in on a tree both
+inventories list is touched by the switch, or by switching back.
+
+## Contributions orphaned
+
+Counted across every simulator install on this machine — 36 contribution rows, all left by test runs:
+
+| | rows |
+|---|---|
+| contribution rows found anywhere | 36 |
+| orphaned by the switch | 10 |
+| orphaned by switching back | 2 |
+
+Nothing has reached the owner's phone, so on the device that matters the answer is **zero**: fresh
+install, nothing to orphan. Per the owner's ruling — *"fine that some observations might disappear;
+it's just testing mode now anyhow"* — no preservation scheme, tombstone table or migration was built.
+
+## What the seed now says about itself
+
+The deeper defect was never the row count. It was that a 100 MB file shipped inside the app with
+nothing anywhere saying where its contents came from or how old they were, which is why "is our data
+stale?" could only be settled by re-downloading the source and diffing. `seed_meta` now carries
+`trees_source`, `trees_source_url`, `trees_source_map_url`, `trees_snapshot_on`,
+`trees_source_last_edit_on`, `attributes_source`, `attributes_snapshot_on`, `rows_enriched` and
+`rows_city_only`. The date is written from the extraction's own record, never a clock at build time,
+so rebuilding this seed in 2030 still reports 2026-07-26.
+
+`CypressStore` reads it once at open (the same pattern as `seedHasSoftDeletedTrees`), it travels on
+`TreeProfile.inventorySource`, and the tree page's city-record section ends with:
+
+> From the SF Public Works street tree inventory, July 26, 2026.
+
+The seed contract fails if that date is absent or unparseable.
+
+**One gate had to move for it.** `CityRecordPresentation.isEmpty` is `facts.isEmpty`, so a record
+producing no card suppressed the whole section — correctly, to avoid a header over an empty grid. On
+a first city-only build that removed the section from every tree in the seed, taking the pruning
+answer and the provenance line with it. `TreeProfilePresentation.showsCityRecordSection` now opens
+the section for cards **or** for a provenance line; the pruning note alone still does not, because it
+is a statement about the dataset rather than about this tree.
+
+### What #68's section actually looks like now — looked at, not reasoned about
+
+Two shapes, both checked on a running build against the shipped seed:
+
+- **A record both inventories list** (130,070 of 133,577, 97.4%): unchanged from before the switch.
+  `Legal status · DPW Maintained`, `Cared for by · A private party`, `Plot size · 3 ft wide`, the
+  `Stands on` sentence above it, then the pruning note and the provenance line. Verified on
+  SF #239636 and SF #229291.
+- **A record only the city lists** (3,507): the header renders, **no cards at all**, then the two
+  sentences. Verified on SF #69746, `750 VISITACION AVE`:
+
+  > WHAT SAN FRANCISCO HAS ON FILE
+  > The city's street tree inventory records pruning by block, not by tree, so it says nothing about
+  > when this tree was last pruned.
+  > From the SF Public Works street tree inventory, July 26, 2026.
+
+  No `Stands on` sentence either — `LandContext.inferred(from:)` reads `qLegalStatus` and
+  `qCaretaker`, and those records have neither.
+
+So #68's feature does **not** disappear and does **not** draw an empty grid. It renders in full for
+97.4% of records and as a header over two true sentences for the rest, which is a fair account of what
+the city has on file for a tree it has only recently begun listing.
+
+## Pruning: cached, deliberately not shipped
+
+The city's layer carries `Prune_Status`, `Prune_Year`, `Prune_TreeCount` and `keymap`, and the cached
+extract holds all four. **None is in the seed.** `Prune_Year` is a property of the keymap grid: 133,577
+records share **106 distinct values**, 9,387 of them `Active 2026` and 5,147 `Completed 20210601` —
+the string the owner saw under 276198. A column named `prune_year` in `trees` gets rendered under a
+tree's name sooner or later, and that is E143's mistake with a different column.
+`CityRecordTests.thereIsNoPruningData` is now the place that decision is written down, and it fails if
+anybody ingests them.
+
+The sentence on the tree page changed, because the old one became false. It read `The city's street
+tree inventory records no pruning dates or schedule.` — true of the export, not of the layer we now
+ship. It now reads:
+
+> The city's street tree inventory records pruning by block, not by tree, so it says nothing about
+> when this tree was last pruned.
+
+A better answer to #68 than the old one, and still not a per-tree pruning claim.
+
+## Reverting to the DataSF export
+
+Literal commands. Assumes `Fixtures/raw/street_tree_list.csv` is present — it is gitignored, and
+`--fetch` re-downloads it (~53 MB).
+
+```sh
+# 1. Rebuild the seed from the DataSF export instead of the city's layer.
+python3 Tools/build_seed.py --source datasf
+
+# 2. Ship it. BOTH paths, or the app and the tests disagree about what is in the seed.
+cp Fixtures/seed/cypress-seed.sqlite Cypress/Resources/cypress-seed.sqlite
+
+# 3. Rerun the suite. Its corpus numbers are keyed on `seed_meta.trees_source`
+#    (CypressTests/SeedCorpus.swift), so they follow the rebuild without being edited.
+xcodebuild -project Cypress.xcodeproj -scheme Cypress \
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro Max' \
+  -derivedDataPath /tmp/cypress-revert -configuration Debug test
+```
+
+No commit needs reverting and no code changes. `--source` is an input; both paths are supported and
+both are tested by the same suites against their own pinned numbers; `Fixtures/seed/schema.sql` is
+byte-identical between them, so **there is no schema change and no `AppSchema` migration** — the two
+inventories differ in which columns are populated, not in which columns exist.
+
+**What changes when you revert.** 145,837 rows become 195,309; 12,413 vacant sites become 12,518;
+577 species become 569; the seed grows from 78 MB to 104 MB; 37,962 planting dates become 70,067;
+every row's provenance names the DataSF export rather than only the sites' rows doing so; and TreeID
+276198 with 3,506 others the city's own map shows disappear from ours again. Every uuid present in
+both files is unchanged in either direction.
+
+**Two side effects.** `Fixtures/sf_species_map.csv` is regenerated by every build and will show a
+large diff — correct, it is the mapping for whichever seed you just built. And
+`Fixtures/seed/cypress-seed.sqlite` is gitignored, so **a merge does not carry the seed**: whoever
+takes this branch must rebuild or copy it.
+
+## Corrections to the report above
+
+1. **The gap estimates were close but not exact.** ≈3,300 / ≈68,800 measured against a full extract
+   are 3,507 / 65,239. The intersection estimate of ≈130,000 was very good: 130,070.
+2. **Section 6's "Option B — do not"** is superseded by the owner's ruling, and what shipped is
+   nearer Option C inverted: the city's layer as the spine, the export as enrichment, rather than the
+   other way round. Its costs are all itemised above; the owner has read them and chosen it anyway.
+3. **475 city records put the botanical name in `COMMON` and leave `BOTANICAL` null**
+   (`Laurus nobilis 'Saratoga'`, `Lophostemon confertus`, `Pistacia chinensis`). Not noted in the
+   report. `build_seed.py` swaps the halves when `BOTANICAL` is empty and `COMMON` reads as a
+   binomial; without that each would mint a stub species beside the real species it names. Stub share
+   with the swap: 0.0487%, against a 2% ceiling.
+4. **The city layer holds species DataSF does not.** 577 against 569, with 74 added and 66 dropped.
+   The species fixtures are sourced against the DataSF corpus, so 66 sourced entries name a species
+   the city-built seed does not carry. That is an absence in the corpus, not drift between fixtures
+   and parser, and the build reports the count rather than failing on it.
+5. **Section 4's `PlantType` line is superseded by #95.** The three rows spelled lowercase `tree` are
+   gone: `build_seed.py` now folds case-variant spellings in the five columns the app compares
+   against literals, and the seed contract fails if any return. `address`, `plot_size` and
+   `permit_notes` are deliberately left alone — they are free text shown as the city wrote it, and
+   one of `McAllister St` / `MCALLISTER ST` is a real spelling.
+
+---
+
+# Addendum, 2026-07-26 (second round): the vacant sites, kept
+
+The switch above cost one feature outright, and the owner has ruled it back. What follows is what
+was measured and built, in the same terms as the addendum before it.
+
+## The ruling, and why it is a different claim from the one about trees
+
+The 17,443 "crux" rows stay dropped. The owner accepted the reasoning as written: the city's layer is
+the operational record, and a tree Public Works stopped listing is most likely gone.
+
+Vacant sites are not that argument. **The city's layer has no vacant-site category at all** —
+`PlantType` is `Tree` on all 133,577 of its records, and there is no `qSiteInfo`, no `qLegalStatus`,
+no site-status column of any kind. It is not contradicting the export about an empty basin; it has
+nothing to say about one. Dropping 12,518 sites to 153 was therefore not deference to a better
+source, it was a feature (#11, #31, #32) becoming vestigial as a side effect of a decision about
+trees. So the sites are carried across, and the tree row set is untouched: the map still agrees with
+the city's map about every tree on it.
+
+## What ships now
+
+| | rows | trees | vacant sites | species | planting dates | seed |
+|---|---|---|---|---|---|---|
+| `--source city` **(default)** | **145,837** | 133,424 | **12,413** | 577 | 37,962 | 77.9 MB |
+| `--source datasf` | 195,309 | 182,791 | 12,518 | 569 | 70,067 | 103.6 MB |
+
+`--source city` now means the city's layer for the trees and the export for the sites. **It is not a
+third flag value**, and the reasoning is in `build_seed.py`'s own header: a `--source` value answers
+which inventory the seed believes about the trees, and the export's sites are not a third answer to
+that question. No build that wants a working "where a tree could go" declines them, and no build that
+has them disagrees with the city about anything, so a `city-no-sites` value would be a third path to
+test forever, selected only by somebody reproducing a number in this file.
+
+## The exclusion, measured
+
+Of the export's 12,518 vacant sites, **258 carry a TreeID the city's layer also lists**:
+
+| | count | what it is |
+|---|---|---|
+| carried through | **12,260** | the city's layer has never heard of this TreeID |
+| excluded — the city lists a living tree there | **128** | the one real contradiction; the city wins |
+| already in the seed — the city lists it empty too | **130** | `BOTANICAL = 'Potential Site'`; both agree |
+
+The 128 are the whole of the disagreement between the two inventories about vacant sites, and they
+are resolved the same way the tree row set is: the city's layer decides. The test in the build is
+"did the first pass already emit this TreeID", which makes a duplicate `external_ref` unrepresentable
+rather than merely unlikely. Nothing in the second pass can add a *tree*: `parse_qspecies` has already
+called the row a placeholder, and every placeholder gets `status = 'vacant_site'` and no species.
+
+## Neighbourhood coverage: 17 of 41 empty, now 0 of 41
+
+The number that made this worth doing. Under `--source city` before this round, 17 of the city's 41
+analysis neighbourhoods held no vacant planting site at all, so screen 12's empty-site row was absent
+across a third of the city and #11's state was unreachable there. **All 41 hold at least one now**,
+which is what the DataSF export gave. Sunset/Parkside, the neighbourhood the almanac suites read,
+goes from 7 sites to 1,436 (1,474 under the export).
+
+## Dropped vacant-site uuids: none, and it was checked rather than reasoned about
+
+- **Every one of the export's 12,518 vacant-site TreeIDs is a row in the new seed.** 12,260 as
+  `vacant_site`, 258 as rows the city's layer also lists — of which 128 are `alive`. A record whose
+  status changed has not lost its identity: `uuid5(NS_TREE, TreeID)` is unchanged, so nothing
+  dangles, and the 128 are reachable as trees.
+- **Nothing references a vacant site by uuid.** Across all seven simulator installs on this machine,
+  23 contribution rows reference a tree (9 photos, 5 measurements, 5 review flags, 3 status
+  overrides, 1 visit) and **none of them points at a vacant site**. The collapse orphaned no site and
+  the restoration un-orphans none.
+- The only vacant-site uuid written down anywhere in the repo is `aa72e15a-f8b2-5711-9735-95338a27104f`
+  in `TreeProfilePreviews`, which is a preview fixture constructed in code rather than read from the
+  seed. Its TreeID is 271641, a `Permitted Site` the city does not list, so it is back in the file.
+- `trees.site_lineage` is NULL for every row the build writes, in both sources, so the one
+  self-reference the schema has could not dangle either.
+
+## Provenance had to become a per-row fact
+
+The seed is now built from two inventories, so `seed_meta.trees_source` is a property of the *file*
+and is the wrong answer for 12,260 of its rows. `trees.inventory_source` (`city` | `datasf`) carries
+the row's own answer, `seed_meta` carries an `inventory_<id>_name` / `_url` / `_snapshot_on` triple
+for each, and `LocalAPI.provenance(of:in:)` resolves one to the other. A seed built before the column
+existed reports nil and falls back to the file-wide answer, which is correct for it because every row
+in it came from one place.
+
+**One correction to how this was briefed.** The sentence that was said to be false on a vacant site —
+`From the SF Public Works street tree inventory, July 26, 2026.` — is not drawn on one today. It
+belongs to the tree page's city-record section, and a vacant site never reaches the tree page:
+`TreeProfileDestination` redirects it to `Route.site`, which `VacantSiteRedirectTests` pins as an
+invariant ("a vacant site never becomes a tree profile"). The site screen said nothing at all about
+where its record came from. That was survivable while the file held one inventory and is not now, so
+the site screen draws its own line under its stat grid —
+`From the DataSF Street Tree List, 20 July 2026.` — resolved from the row rather than the file. The
+defect was an absent sentence, not a false one, and the fix is the same fix.
+
+The seed contract now fails if a row names an inventory the receipt cannot describe, or if the named
+inventory carries no readable snapshot date. That is what keeps the line from ever resolving to the
+other inventory's name.
+
+## The 475 `COMMON`/`BOTANICAL` records were already handled
+
+The brief carried these forward as an open defect that "would mint a stub species beside the real
+species it names". They do not. `city_qspecies` swaps the halves when `BOTANICAL` is empty and
+`COMMON` reads as a binomial, and correction 3 above records it as shipped. Verified on the built
+seed: of 540 city records with a blank `BOTANICAL` and a non-blank `COMMON`, **410 are swapped and
+land on the real species row** — `Pistacia chinensis` on species 39 with 431 trees, `Lophostemon
+confertus` on species 13 with 6,695, `Magnolia grandiflora 'Little Gem'` on species 18 with 850.
+
+What is real is a smaller residue the correction did not claim to cover. 65 of the remaining 130 rows
+mint 15 stub species, and **8 of those 15 shadow a species already in the corpus, covering 30 tree
+rows** (0.021% of the seed): `:: lophostemon confertus` (11 rows), `:: platanus hispanica 'columbia'`
+(8), `:: Ceanothus 'Ray Hartman'` (4), `:: Arbutus 'Marina'` (2), `:: Ulmus 'Frontier'` (2), and one
+row each of `:: Podocarpus Gracilor`, `:: agonis flexuosa`, `:: eriobotrya deflexa`. Two causes, both
+outside the binomial test: a lowercase genus, and a genus-plus-cultivar with no epithet. The other 7
+stubs shadow nothing — `:: Zelkova 'Village Green'` (25 rows), `:: 9662`, `:: Magnolia` — and are
+correctly stubs.
+
+**Not fixed here, deliberately.** The fix is a canonical-spelling pass over the species name, which is
+#95's mechanism applied to a column #95 deliberately excluded, and it changes the species corpus the
+fixtures are sourced against. That is its own task with its own rebuild, not a rider on a decision
+about which rows exist.
+
+## Corrections to the addendum above
+
+1. **"12,518 → 153, with 17 of 41 neighbourhoods holding none"** described one round of the switch and
+   no longer describes what ships. 12,413 sites, 0 of 41 empty.
+2. **"This is the one loss the join cannot repair: a vacant site is a *row*, and rows come from the
+   spine."** True of a build with one spine, and it framed the sites as unrecoverable without
+   reverting. A seed can have rows from two inventories where the two are answering different
+   questions, and this one does.
+3. **The seed is 77.9 MB, not 71.4 MB**, and `--source city` reads the DataSF CSV twice: once for the
+   seven enrichment columns and once for the sites.
+4. **`Tools/build_seed.py --limit N` now bounds both passes**, so a smoke build exercises the second
+   one instead of skipping it.

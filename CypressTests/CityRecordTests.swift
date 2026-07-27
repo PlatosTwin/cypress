@@ -31,25 +31,41 @@ struct CityRecordTests {
     /// still exists and has gone half empty — a `.strip()` that starts eating values, a CSV whose
     /// header drifts. A column that emptied completely is the easy case; these numbers catch the
     /// other one.
+    ///
+    /// **The counts move with the source**, so they come from `SeedCorpus` rather than from literals
+    /// here. Under `--source city` five of the six are carried across from the DataSF export for the
+    /// 130,070 records both inventories list, so they land at ~97% rather than 100%; the shortfall is
+    /// the 3,507 records only SF Public Works lists.
+    ///
+    /// A zero is additionally checked against `seed_meta.columns_absent_from_source`, so a column
+    /// that empties by accident under a source that *does* publish it still fails here rather than
+    /// turning this test into six comparisons of nothing against nothing.
     @Test("the seed carries all six city columns, populated as measured at ingest")
     func theSixColumnsArePopulated() async throws {
         let store = try await Self.store()
-        let expected: [(String, Int)] = [
-            ("legal_status", 195_252),
-            ("caretaker", 195_309),
-            ("care_assistant", 25_199),
-            ("plant_type", 195_309),
-            ("plot_size", 146_951),
-            ("permit_notes", 52_580)
+        let corpus = try await SeedCorpus.current(store)
+        let dataSFNames = [
+            "legal_status": "qLegalStatus", "caretaker": "qCaretaker",
+            "care_assistant": "qCareAssistant", "plant_type": "PlantType",
+            "plot_size": "PlotSize", "permit_notes": "PermitNotes"
         ]
 
         try await store.queue.read { connection in
-            for (column, count) in expected {
+            for (column, count) in corpus.cityColumnRows.sorted(by: { $0.key < $1.key }) {
                 let statement = try connection.cachedStatement(
                     "SELECT count(\(column)) AS n FROM \(SeedDatabase.schemaName).trees"
                 )
                 let actual = try statement.fetchOne { try $0.int("n") } ?? -1
-                #expect(actual == count, "\(column) holds \(actual) values, expected \(count)")
+                #expect(
+                    actual == count,
+                    "\(column) holds \(actual) values, expected \(count) under --source \(corpus.source)"
+                )
+                if count == 0, let upstream = dataSFNames[column] {
+                    #expect(
+                        !corpus.publishes(upstream),
+                        "\(column) is empty, but \(corpus.source) does publish \(upstream): a lost column, not an absent one"
+                    )
+                }
             }
         }
     }
@@ -57,34 +73,45 @@ struct CityRecordTests {
     /// The columns reach a decoded `Tree`, not just the file. `treeColumns` selects them and
     /// `TreeQueries.decodeCityRecord` assembles them; either could be dropped without the file
     /// changing at all.
+    ///
+    /// The row it looks for carries every column the *running source* publishes rather than all six
+    /// unconditionally, so a source that drops one fails on the dropped column rather than on an
+    /// empty result set. The assertions follow the same rule in both directions.
     @Test("a city tree's record reaches the profile payload")
     func theRecordReachesTheProfile() async throws {
         let store = try await Self.store()
+        let corpus = try await SeedCorpus.current(store)
         let queries = TreeQueries(
             schema: try #require(store.seed),
             seedHasSoftDeletedTrees: store.seedHasSoftDeletedTrees
         )
 
+        let published = [
+            ("legal_status", "qLegalStatus"), ("caretaker", "qCaretaker"),
+            ("care_assistant", "qCareAssistant"), ("plant_type", "PlantType"),
+            ("plot_size", "PlotSize"), ("permit_notes", "PermitNotes")
+        ].filter { corpus.publishes($0.1) }
+        #expect(!published.isEmpty, "no source publishes none of the six; the seed carries no city record at all")
+        let predicate = published.map { "\($0.0) IS NOT NULL" }.joined(separator: " AND ")
+
         let record = try await store.queue.read { connection -> CityRecord? in
             let statement = try connection.cachedStatement("""
                 SELECT uuid FROM \(SeedDatabase.schemaName).trees
-                 WHERE legal_status IS NOT NULL AND caretaker IS NOT NULL
-                   AND care_assistant IS NOT NULL AND plot_size IS NOT NULL
-                   AND permit_notes IS NOT NULL AND plant_type IS NOT NULL
+                 WHERE \(predicate)
                  LIMIT 1
                 """)
             let uuid = try #require(try statement.fetchOne { try $0.uuid("uuid") })
             return try queries.tree(id: uuid, connection: connection)?.tree.cityRecord
         }
 
-        let unwrapped = try #require(record, "a row with all six columns set decoded to no city record")
+        let unwrapped = try #require(record, "a row with every published column set decoded to no city record")
         #expect(unwrapped.isEmpty == false)
-        #expect(unwrapped.legalStatus != nil)
-        #expect(unwrapped.caretaker != nil)
-        #expect(unwrapped.careAssistant != nil)
+        #expect((unwrapped.legalStatus != nil) == corpus.publishes("qLegalStatus"))
+        #expect((unwrapped.caretaker != nil) == corpus.publishes("qCaretaker"))
+        #expect((unwrapped.careAssistant != nil) == corpus.publishes("qCareAssistant"))
         #expect(unwrapped.plantType != nil)
-        #expect(unwrapped.plotSize != nil)
-        #expect(unwrapped.permitNotes != nil)
+        #expect((unwrapped.plotSize != nil) == corpus.publishes("PlotSize"))
+        #expect((unwrapped.permitNotes != nil) == corpus.publishes("PermitNotes"))
     }
 
     // MARK: - There is no pruning data, and saying so is the answer
@@ -100,15 +127,28 @@ struct CityRecordTests {
     @Test("no column in the seed records a pruning event, and the two that say 'prune' are opt-outs")
     func thereIsNoPruningData() async throws {
         let store = try await Self.store()
+        let corpus = try await SeedCorpus.current(store)
 
         try await store.queue.read { connection in
             let columns = try connection.columnNames(ofTable: "trees", in: SeedDatabase.schemaName)
             let pruning = columns.filter { $0.lowercased().contains("prun") }
+            // **This assertion became load-bearing with #91.** It used to guard against a column
+            // DataSF might one day add. The inventory we ship now carries `Prune_Status` and
+            // `Prune_Year` on every record, and `Tools/fetch_city_trees.py` has them cached on disk
+            // — so the only thing standing between them and a tree page is a decision not to ingest
+            // them, and this is where that decision is written down.
+            //
+            // They are properties of the **keymap grid**, not the tree: 133,577 records share 106
+            // distinct `Prune_Year` values, 5,147 of them the single string `Completed 20210601`.
+            // A column named `prune_year` in this table gets rendered under a tree's name sooner or
+            // later, and that is E143's mistake with a different column. If this fails, somebody has
+            // ingested them and #68 has been reopened by accident rather than on purpose.
             #expect(
                 pruning.isEmpty,
                 """
-                seed.trees now has \(pruning) — if DataSF has started publishing pruning data, \
-                task #68's "next pruning / last pruning" is answerable and should be reopened
+                seed.trees now has \(pruning). The city's layer publishes pruning at BLOCK grain \
+                (106 distinct values over 133,577 records); nothing here may present it as this \
+                tree's pruning date. Reopen #68 deliberately or drop the column.
                 """
             )
 
@@ -117,7 +157,13 @@ struct CityRecordTests {
                  WHERE legal_status LIKE '%rune%' ORDER BY legal_status
                 """)
             let values = try statement.fetchAll { try $0.stringIfPresent("value") }.compactMap { $0 }
-            #expect(values == ["Prune Opt Out", "Street Tree Maintenance Opt Out"].filter { $0.contains("rune") })
+            // `legal_status` is a DataSF column. Under `--source city` there is none, so there is
+            // no status mentioning pruning either — and the reason must be the absent column rather
+            // than a vocabulary that quietly changed.
+            let expected = corpus.publishes("qLegalStatus")
+                ? ["Prune Opt Out", "Street Tree Maintenance Opt Out"].filter { $0.contains("rune") }
+                : []
+            #expect(values == expected)
         }
     }
 
@@ -182,9 +228,10 @@ struct CityRecordTests {
     /// This is the assertion #69 will actually lean on: it says the mapping covers the whole
     /// inventory and says how much lands in each bucket, so a picker built on three buckets knows
     /// exactly what it is leaving out.
-    @Test("the mapping covers all 195,309 rows in the documented proportions")
+    @Test("the mapping covers every row of the inventory, in the documented proportions")
     func bucketsMatchTheDocumentedDistribution() async throws {
         let store = try await Self.store()
+        let corpus = try await SeedCorpus.current(store)
 
         var counts: [LandContext?: Int] = [:]
         try await store.queue.read { connection in
@@ -206,12 +253,39 @@ struct CityRecordTests {
             }
         }
 
-        #expect(counts[.street] == 182_320)
-        #expect(counts[.privateProperty] == 11_856)
-        #expect(counts[.otherPublic] == 956)
-        #expect(counts[.cityPark] == 177)
-        #expect(counts[LandContext?.none] == nil, "some row resolved to no context; the mapping used to cover every row")
-        #expect(counts.values.reduce(0, +) == 195_309)
+        #expect((counts[.street] ?? 0) == corpus.landContextStreet)
+        #expect((counts[.privateProperty] ?? 0) == corpus.landContextPrivate)
+        #expect((counts[.otherPublic] ?? 0) == corpus.landContextOtherPublic)
+        #expect((counts[.cityPark] ?? 0) == corpus.landContextCityPark)
+
+        // **Under `--source city` every row is unplaced, and that is the whole cost of the switch
+        // for #69.** `LandContext.inferred(from:)` reads `qLegalStatus` and `qCaretaker`; SF Public
+        // Works' own layer publishes neither, so no row can be placed and the `Stands on` sentence
+        // draws for nobody. The mapping is not broken — it has nothing to read.
+        //
+        // Pinned as an exact number rather than tolerated, and cross-checked against the source's
+        // own column list, so a mapping that started failing on a corpus that *does* carry those
+        // columns still fails here.
+        #expect(
+            (counts[LandContext?.none] ?? 0) == corpus.landContextUnplaced,
+            "\(counts[LandContext?.none] ?? 0) rows resolved to no context, expected \(corpus.landContextUnplaced)"
+        )
+        // An unplaced row must be one that says neither thing, never one the mapping failed on. The
+        // 3,506 under `--source city` are records only SF Public Works lists, so the DataSF export
+        // has no row to carry `qLegalStatus` or `qCaretaker` across from.
+        let saysNeither = try await store.queue.read { connection -> Int in
+            let statement = try connection.prepare("""
+                SELECT COUNT(*) AS n FROM \(SeedDatabase.schemaName).trees
+                 WHERE COALESCE(legal_status, '') = '' AND COALESCE(caretaker, '') = ''
+                """)
+            defer { statement.finalize() }
+            return try statement.fetchOne { try $0.int("n") } ?? -1
+        }
+        #expect(
+            saysNeither == corpus.landContextUnplaced,
+            "\(corpus.landContextUnplaced) rows are unplaced but \(saysNeither) say neither thing; the mapping failed on the difference"
+        )
+        #expect(counts.values.reduce(0, +) == corpus.trees)
     }
 
     // MARK: - Stated beats inferred, and says so

@@ -6,7 +6,8 @@
 //  E107 closes E11 and is where the reasoning for every sentence below lives.
 //
 //  ── Why this is not screen 14 ─────────────────────────────────────────────────────────────
-//  12,518 of the seed's 195,309 rows — 6.4% of the map — are planting basins with no tree in them.
+//  12,413 of the shipped seed's 145,837 rows — 8.5% of the map — are planting basins with no tree
+//  in them.
 //  Rendered as a cold profile they offered "be the first to photograph this tree" and a photo well,
 //  both of which assert a tree. Deleting those two elements leaves a tree profile with fields
 //  missing, and **a tree profile with fields missing still asserts a tree.** So a site is its own
@@ -63,6 +64,21 @@ struct SitePresentation: Equatable {
     /// What the city recorded, and nothing else.
     let stats: [Stat]
 
+    /// `From the DataSF Street Tree List, 20 July 2026.` — under the stat grid, or nothing.
+    ///
+    /// **This screen needs its own, and the reason is the whole of #91's second round.** The seed
+    /// draws its living trees from SF Public Works' operational layer and its vacant planting sites
+    /// from the DataSF export, because the layer has no vacant-site category and has therefore never
+    /// listed one of these records. So the sentence the tree page draws — naming the city's
+    /// inventory and the day it was read — is *false of every site on this screen*, and a screen
+    /// whose entire content is a claim that nothing is growing here is the worst place in the app
+    /// to be vague about who says so.
+    ///
+    /// Same two rules the tree page's line follows (`CityRecordCopy.provenanceNote`): the inventory
+    /// is named, never "San Francisco" alone, and the sentence is absent rather than dateless when
+    /// the seed cannot say when its records were read.
+    let provenanceNote: String?
+
     /// The nearest standing tree, or nil when none is within reach — in which case the row is
     /// absent rather than reworded.
     let neighbour: Neighbour?
@@ -94,6 +110,7 @@ struct SitePresentation: Equatable {
         self.statementBody = SiteCopy.statementBody
 
         self.stats = Self.stats(profile: profile)
+        self.provenanceNote = Self.provenanceNote(profile: profile)
         self.neighbour = nearest.map(Neighbour.init(nearby:))
         self.footnote = SiteCopy.footnote
         // Named with this screen's own H1 — the address — because that is the only thing that
@@ -133,6 +150,22 @@ struct SitePresentation: Equatable {
         }
 
         return stats
+    }
+
+    /// The line under the grid, or nil.
+    ///
+    /// Gated on `tree.source == .cityImport` rather than on the profile carrying an inventory,
+    /// which is the same lock the tree page applies from the other side: a community-added record is
+    /// nobody's inventory row, and crediting one for it would be inventing a provenance rather than
+    /// reporting one. `LocalAPI` already withholds the source for such a record; this is the second
+    /// gate, so a future writer that forgets cannot put an inventory's name on a stranger's basin.
+    private static func provenanceNote(profile: TreeProfile) -> String? {
+        guard profile.tree.source == .cityImport else { return nil }
+        guard let source = profile.inventorySource, let snapshot = source.snapshotDate else { return nil }
+        return CityRecordCopy.provenanceNote(
+            source: source.name,
+            snapshot: TreeProfilePresentation.snapshotDay.string(from: snapshot)
+        )
     }
 }
 

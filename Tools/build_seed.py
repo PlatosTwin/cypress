@@ -5,10 +5,14 @@ build_seed.py -- build the Cypress on-device seed SQLite database from DataSF.
 Implements BUILD-PLAN.md section 7 (Ingest spec, DataSF) against the schema of
 section 4, adapted to SQLite-on-device (no PostGIS).
 
-Sources (verified live 2026-07-21):
+Sources (verified live 2026-07-21; the city layer 2026-07-26):
   trees          DataSF "Street Tree List"        dataset id tkzw-k3nq
                  https://data.sfgov.org/api/views/tkzw-k3nq/rows.csv?accessType=DOWNLOAD
                  (the id `tuvn-fjcn` quoted in BUILD-PLAN 7 returns HTTP 404)
+  city layer     SF Public Works' OWN street-tree inventory, the one drawn by
+                 https://bsm.sfdpw.org/urbanforestry/ -- BUF_Street_Trees layer 3.
+                 Cached to Fixtures/raw/ by Tools/fetch_city_trees.py; this script
+                 never talks to the service. See `load_city_layer`.
   neighborhoods  DataSF "Analysis Neighborhoods"  dataset id j2bu-swwd
                  (the commonly cited p5b7-5n3h is a map visualisation whose
                   backing tabular view is j2bu-swwd; only the tabular view
@@ -33,14 +37,55 @@ Identity model (two keys, on purpose):
               fixed namespace and the DataSF TreeID, so a rebuild reproduces
               byte-identical uuids and a tree's public URL never changes.
 
-Usage:
-    python3 Tools/build_seed.py [--fetch] [--with-city-raw] [--repo-root PATH] [--limit N]
+TWO INVENTORIES, ONE FLAG. `--source` picks which of San Francisco's two
+street-tree inventories the seed is built from:
 
-    --fetch           re-download both raw files before building
+    --source city     SF Public Works' own operational layer, the one its public
+                      map at bsm.sfdpw.org/urbanforestry draws -- 133,577 rows,
+                      every living tree in the seed -- PLUS the DataSF export's
+                      12,260 vacant planting sites, which the layer has no
+                      category for and therefore no opinion about. ~145,837 rows.
+                      THE DEFAULT, per issue #91: our map is supposed to agree
+                      with the city's map.
+    --source datasf   The DataSF open-data export `tkzw-k3nq`. ~195,309 rows.
+                      What shipped before #91, kept working and kept tested.
+
+THERE IS NO THIRD VALUE, AND THE VACANT SITES ARE NOT ONE. A `--source` value
+answers "which inventory does this seed believe about the trees", and on that the
+two possible answers are the city's layer and the export. The export's vacant
+sites are not a third answer to that question: they are rows about *sites*, and
+the city's layer publishes no site records at all, so no build that wants a
+working "where a tree could go" can decline them and no build that has them is
+disagreeing with the city about anything. A `city-no-sites` flag would only ever
+be selected by somebody reproducing a measurement in an errata entry, and the
+cost of it is a third path to test forever. `--source city` means what it says
+now; the numbers it used to produce are in docs/errata-pending/city-source.md.
+
+Both paths are live and both are tested. Reverting to the export is one command:
+
+    python3 Tools/build_seed.py --source datasf
+    cp Fixtures/seed/cypress-seed.sqlite Cypress/Resources/cypress-seed.sqlite
+
+See docs/investigations/city-tree-source.md for what changes when you do.
+
+**trees.uuid does not move between the two.** Both derive it as
+uuid5(NS_TREE, <TreeID as ASCII>), and the two sources use the same TreeID
+space (verified over 130,070 shared ids, median coordinate disagreement 0.04 m),
+so a tree present in both keeps one identity across the switch and back.
+
+Usage:
+    python3 Tools/build_seed.py [--source city|datasf] [--fetch] [--with-city-raw]
+                                [--repo-root PATH] [--limit N]
+
+    --source          which inventory to build from (default: city)
+    --fetch           re-download the raw files before building. For --source city
+                      this is Tools/fetch_city_trees.py's job, not this script's --
+                      run it separately, politely, once.
     --with-city-raw   populate trees.city_raw with the DataSF passthrough JSON.
                       Off by default: it costs ~74 MB (~380 bytes/row) and is
                       fully regenerable from Fixtures/raw/street_tree_list.csv.
-    --limit           build from only the first N CSV rows (smoke tests)
+                      Meaningless under --source city, which has no CSV.
+    --limit           build from only the first N source rows (smoke tests)
 
 Exit codes:
     0  seed built and all row rules satisfied
@@ -78,6 +123,20 @@ NEIGHBORHOODS_DATASET_ID = "j2bu-swwd"
 NEIGHBORHOODS_GEOJSON_URL = (
     f"https://data.sfgov.org/resource/{NEIGHBORHOODS_DATASET_ID}.geojson?$limit=200"
 )
+
+# The city's own inventory, cached by Tools/fetch_city_trees.py. This script only
+# ever reads the cache; it never touches the service, so a rebuild costs the city
+# nothing and is offline-reproducible.
+CITY_LAYER_SERVICE = (
+    "https://services.arcgis.com/Zs2aNLFN00jrS4gG/arcgis/rest/services/"
+    "BUF_Street_Trees/FeatureServer/3"
+)
+CITY_LAYER_MAP_URL = "https://bsm.sfdpw.org/urbanforestry/"
+CITY_NDJSON_NAME = "city_street_trees.ndjson"
+CITY_META_NAME = "city_street_trees.meta.json"
+
+SOURCES = ("city", "datasf")
+DEFAULT_SOURCE = "city"
 
 # San Francisco bounding box used to reject null-island rows, state-plane
 # leakage and out-of-county geocodes. Deliberately a little generous: it spans
@@ -228,6 +287,191 @@ CITY_RECORD_COLUMNS = [
     ("plot_size", "PlotSize"),
     ("permit_notes", "PermitNotes"),
 ]
+
+# ---------------------------------------------------------------------------
+# Case normalisation (issue #95)
+# ---------------------------------------------------------------------------
+# The seed columns whose values the APP COMPARES AGAINST A LITERAL, and which are
+# therefore normalised to one spelling per case-folded value at ingest.
+#
+# The bug: `PlantType` held 'Tree' 194,988 times and 'tree' 3 times (TreeIDs
+# 253212, 253634, 96598), so `WHERE plant_type = 'Tree'` silently dropped three
+# rows and `CityRecordPresentation.plantTypeTree` had to case-fold by hand to see
+# them. That is not a tidiness complaint: a closed vocabulary that holds two
+# spellings of one value is a filter that lies, and it lies quietly.
+#
+# The previous comment here argued the opposite -- that correcting the case would
+# be "editing the city's record to make it tidier, which is not this file's job".
+# It is this file's job, for these columns only, because these are the columns the
+# app matches on: `LandContext.inferred(from:)` reads legal_status and caretaker,
+# `CityRecordCopy.agencyGlossary` keys on caretaker, and
+# `CityRecordCopy.pruneOptOutStatus` compares legal_status to a literal.
+#
+# WHAT IS DELIBERATELY NOT NORMALISED, with today's counts, so the exclusion is a
+# stated decision rather than an oversight:
+#   address       87,388 distinct values, 2,277 case-variant groups
+#                 ('1 Church St' / '1 CHURCH ST'). Free text, never compared,
+#                 shown as the city wrote it. Case-folding it would also have to
+#                 pick between 'McAllister St' (146) and 'MCALLISTER ST' (37) --
+#                 the city writes both -- and one of those is a real spelling.
+#   plot_size     588 distinct, 61 case-variant groups ('10x10' / '10X10'). Shown
+#                 verbatim and never parsed; see the schema comment.
+#   permit_notes  35,623 distinct, 2 case-variant groups. A key into a permitting
+#                 system, not a vocabulary.
+# The seed contract asserts the absence of case-variant duplicates over the
+# normalised columns and NOT over these three, and says so.
+NORMALISED_SEED_COLUMNS = [
+    "legal_status", "caretaker", "care_assistant", "plant_type", "site_type",
+]
+
+
+def canonical_case_map(counts: dict) -> dict:
+    """{observed value: count} -> {observed value: the spelling to store}.
+
+    The winner of a case-variant group is the commonest spelling; ties break
+    lexicographically, so the map is a pure function of the input and a rebuild
+    reproduces it. Values with no variant map to themselves.
+    """
+    groups = {}
+    for value, count in counts.items():
+        groups.setdefault(" ".join(value.lower().split()), []).append((value, count))
+    mapping = {}
+    for variants in groups.values():
+        winner = sorted(variants, key=lambda vc: (-vc[1], vc[0]))[0][0]
+        for value, _ in variants:
+            mapping[value] = winner
+    return mapping
+
+
+def city_qspecies(botanical: str, common: str) -> str:
+    """The city layer's two name fields -> one DataSF-convention qSpecies string.
+
+    DataSF writes `Scientific name :: Common name` in a single column and the whole
+    species pipeline is built on that convention, so the city's `BOTANICAL` and
+    `COMMON` are rejoined into it rather than given a second parser.
+
+    ONE CORRECTION IS APPLIED, AND IT MOVES NO INFORMATION. 475 of the city's
+    133,577 rows leave `BOTANICAL` null and put the botanical name in `COMMON`:
+    `Laurus nobilis 'Saratoga'`, `Lophostemon confertus`, `Pistacia chinensis`.
+    Left alone those parse as `:: <string>`, which the qSpecies parser correctly
+    refuses to read as a taxon, and each one would mint a stub species of its own
+    beside the real species it names. Swapping the halves when `BOTANICAL` is
+    empty and `COMMON` reads as a binomial -- capitalised genus, lowercase
+    alphabetic epithet -- puts the string the city already wrote on the side of
+    the separator that means what it says. Nothing is invented and no name is
+    changed; the two columns are read in the order the values are in.
+    """
+    botanical = " ".join((botanical or "").strip().split())
+    common = " ".join((common or "").strip().split())
+    if not botanical and common:
+        tokens = common.split()
+        if (
+            len(tokens) >= 2
+            and tokens[0][:1].isupper()
+            and tokens[0].replace("-", "").isalpha()
+            and tokens[1][:1].islower()
+            and tokens[1].replace("-", "").isalpha()
+        ):
+            botanical, common = common, ""
+    return f"{botanical} :: {common}".strip()
+
+
+# The DataSF columns the city's own layer does not publish, which are carried across
+# for the records both inventories list. See `load_datasf_attributes`.
+ENRICHED_COLUMNS = (
+    "qLegalStatus", "qSiteInfo", "qCaretaker", "qCareAssistant",
+    "PlantDate", "PlotSize", "PermitNotes",
+)
+
+
+def load_datasf_attributes(csv_path: str) -> dict:
+    """`Fixtures/raw/street_tree_list.csv` -> {TreeID: {column: value}}, seven columns.
+
+    WHY THE CITY BUILD READS THE EXPORT AT ALL.
+
+    #91 is about *which trees exist*: our map is supposed to draw what the city's
+    own map draws, and only SF Public Works' operational layer knows that. It is
+    not about which facts we hold, and on that the layer is much the poorer of the
+    two -- it publishes sixteen fields against the export's eighteen and drops
+    nine of them, including every planting date.
+
+    Taking the row set from one and those nine columns from the other is not a
+    compromise between two answers; it is two different questions answered by
+    whichever source knows. The spine is the city's layer: a record it does not
+    list is not in the seed, whatever the export says about it. The attributes are
+    the export's, for the 130,070 records both list, because for those records the
+    two are describing the same tree -- verified over that whole intersection at a
+    median coordinate disagreement of 0.04 m.
+
+    What this does NOT do: add a row. A TreeID in the export and not in the layer
+    stays out, which is the entire point of the switch. The 3,507 records only the
+    city has simply carry NULL in these seven columns, and `seed_meta` says how
+    many.
+
+    Dropping this join would cost, measurably: no planting dates at all, so screen
+    12's elder, plantings and coverage rows are empty for the whole city and
+    `LandContext.inferred(from:)` can place no tree, so the `Stands on` sentence
+    never draws. That was measured on a build without it.
+    """
+    index = {}
+    with open(csv_path, "r", encoding="utf-8", newline="") as fh:
+        reader = csv.DictReader(fh)
+        missing = set(ENRICHED_COLUMNS) - set(reader.fieldnames or [])
+        if missing:
+            die(f"the DataSF export is missing {sorted(missing)}; the city build carries "
+                f"those columns across and cannot silently ship without them")
+        for row in reader:
+            ref = (row.get("TreeID") or "").strip()
+            if not ref or ref in index:
+                continue
+            index[ref] = {column: (row.get(column) or "").strip() or None
+                          for column in ENRICHED_COLUMNS}
+    return index
+
+
+def load_city_layer(raw_dir: str):
+    """Fixtures/raw/city_street_trees.{ndjson,meta.json} -> (rows, meta).
+
+    Written by `Tools/fetch_city_trees.py`, which is the only thing in this repo
+    that talks to the city's server. If the cache is absent the build stops and
+    says so rather than fetching 67 pages as a side effect of a seed rebuild.
+    """
+    ndjson_path = os.path.join(raw_dir, CITY_NDJSON_NAME)
+    meta_path = os.path.join(raw_dir, CITY_META_NAME)
+    for path in (ndjson_path, meta_path):
+        if not os.path.exists(path):
+            die(f"missing {path}. Build it once with:\n"
+                f"    python3 Tools/fetch_city_trees.py\n"
+                f"It pages the city's public layer sequentially and caches it; this "
+                f"script never touches the service itself.")
+    with open(meta_path, "r", encoding="utf-8") as fh:
+        meta = json.load(fh)
+    rows = []
+    with open(ndjson_path, "r", encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if line:
+                rows.append(json.loads(line))
+    if meta.get("rows_written") != len(rows):
+        die(f"{CITY_NDJSON_NAME} holds {len(rows)} rows but its meta says "
+            f"{meta.get('rows_written')}; the cache is inconsistent. Re-run "
+            f"Tools/fetch_city_trees.py.")
+    if not meta.get("extracted_on"):
+        die(f"{CITY_META_NAME} carries no extraction date. A snapshot with no date "
+            f"is the thing that made 'is our data stale' unanswerable last time.")
+    # TREEID is the join key with DataSF and therefore with every existing uuid.
+    # A null or duplicate one is not something to paper over.
+    seen = set()
+    for row in rows:
+        key = row.get("TREEID")
+        if key is None:
+            die(f"{CITY_NDJSON_NAME} holds a feature with no TREEID")
+        if key in seen:
+            die(f"{CITY_NDJSON_NAME} holds TREEID {key} twice")
+        seen.add(key)
+    # Sorted by TREEID so integer tree ids are a pure function of the cache.
+    rows.sort(key=lambda r: r["TREEID"])
+    return rows, meta
 
 # ---------------------------------------------------------------------------
 # UUIDv5 namespaces. THESE ARE FROZEN CONSTANTS -- changing one silently
@@ -440,6 +684,20 @@ CREATE TABLE trees (
     uuid               TEXT NOT NULL UNIQUE,    -- stable citable identity
     external_ref       INTEGER UNIQUE,          -- DataSF TreeID
     source             TEXT NOT NULL,           -- city_import | community
+    -- WHICH OF SAN FRANCISCO'S TWO INVENTORIES LISTED THIS RECORD. 'city' or
+    -- 'datasf', matching `--source` and `seed_meta.trees_source`.
+    --
+    -- Under `--source datasf` every row says 'datasf' and the column is
+    -- redundant. Under `--source city` it is not: the row set is the city's
+    -- operational layer, but that layer has no vacant-site category at all
+    -- (`PlantType` is `Tree` on all 133,577 of its records), so the seed's
+    -- vacant planting sites are carried across from the DataSF export and are
+    -- the only rows in the file the city's layer does not list. A seed built
+    -- from two inventories owes every reader the ability to ask which one a
+    -- given row came from -- otherwise the provenance sentence on screen is a
+    -- claim about the file rather than about the record, and for 12,260 of
+    -- them it would be the wrong inventory's name.
+    inventory_source   TEXT NOT NULL,           -- city | datasf
     lat                REAL NOT NULL,
     lon                REAL NOT NULL,
     address            TEXT,
@@ -468,6 +726,7 @@ CREATE TABLE trees (
     updated_at         TEXT NOT NULL,
     deleted_at         TEXT,
     CHECK (status IN ('alive','declining','dead_reported','removed','vacant_site')),
+    CHECK (inventory_source IN ('city','datasf')),
     CHECK (verification_state IN ('unverified','org_verified','city_record')),
     CHECK ((dbh_city_cm_min IS NULL) = (dbh_city_cm_max IS NULL)),
     CHECK (city_raw IS NULL OR json_valid(city_raw)),
@@ -885,7 +1144,10 @@ def load_neighborhoods(path: str):
 # --------------------------------------------------------------------------
 
 
-def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool) -> int:
+def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
+          source: str = DEFAULT_SOURCE) -> int:
+    if source not in SOURCES:
+        die(f"--source must be one of {', '.join(SOURCES)}, got {source!r}")
     raw_dir = os.path.join(repo_root, "Fixtures", "raw")
     seed_dir = os.path.join(repo_root, "Fixtures", "seed")
     fixtures_dir = os.path.join(repo_root, "Fixtures")
@@ -905,6 +1167,15 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool) -> in
 
     if not os.path.exists(csv_path):
         die(f"missing {csv_path}; rerun with --fetch")
+
+    city_rows, city_meta, enrichment = [], {}, {}
+    if source == "city":
+        city_rows, city_meta = load_city_layer(raw_dir)
+        log(f"city layer: {len(city_rows):,} features, extracted "
+            f"{city_meta['extracted_on']}, server last edit "
+            f"{city_meta.get('server_last_edit_date')}")
+        enrichment = load_datasf_attributes(csv_path)
+        log(f"enrichment index: {len(enrichment):,} DataSF rows by TreeID")
 
     # ---------------------------------------------------------- neighborhoods
     neighborhoods = []
@@ -942,7 +1213,7 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool) -> in
 
     # ------------------------------------------------------------ ingest pass
     stats = {
-        "csv_rows": 0,
+        "source_rows": 0,
         "dropped_no_coords": 0,
         "dropped_out_of_bbox": 0,
         "dropped_dupe_treeid": 0,
@@ -956,48 +1227,294 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool) -> in
         "no_neighborhood": 0,
         "planted_year_present": 0,
         "dbh_present": 0,
+        "enriched_rows": 0,
+        "city_only_rows": 0,
+        # The export's vacant planting sites, under `--source city` only.
+        "export_vacant_rows": 0,
+        "export_vacant_carried": 0,
+        "export_vacant_city_lists_tree": 0,
+        "export_vacant_city_lists_site": 0,
         **{"city_" + csv_column: 0 for _, csv_column in CITY_RECORD_COLUMNS},
     }
 
     species_by_key = {}      # normalised scientific name -> species row dict
     qspecies_stats = {}      # raw qSpecies string -> dict
     seen_external_refs = set()
+    city_kind_by_ref = {}    # TreeID -> parse_qspecies kind, city rows only
 
     tree_rows = []
     rtree_rows = []
     assertion_rows = []
-    tree_id = 0
-    assertion_id = 0
+    ids = {"tree": 0, "assertion": 0}
     t0 = time.time()
 
-    with open(csv_path, "r", encoding="utf-8", newline="") as fh:
-        reader = csv.DictReader(fh)
-        header = reader.fieldnames or []
-        required = {"TreeID", "qSpecies", "qAddress", "Latitude", "Longitude"}
-        missing = required - set(header)
-        if missing:
-            die(f"CSV is missing expected columns: {sorted(missing)}")
-        raw_columns = [c for c in header if c and c not in MAPPED_COLUMNS]
+    # ---- #95: one spelling per case-folded value, over the columns the app
+    # matches on. Built from a pre-pass over the whole source, because the
+    # commonest spelling is not knowable from one row. See NORMALISED_SEED_COLUMNS.
+    case_counts = {column: {} for column in NORMALISED_SEED_COLUMNS}
 
-        for row in reader:
-            stats["csv_rows"] += 1
-            if limit and stats["csv_rows"] > limit:
-                stats["csv_rows"] -= 1
+    def observe_case(column: str, value):
+        if value:
+            case_counts[column][value] = case_counts[column].get(value, 0) + 1
+
+    def emit(
+        external_ref,
+        uuid_seed: str,
+        lat: float,
+        lon: float,
+        qspecies: str,
+        address,
+        site_type,
+        planted_date,
+        dbh_raw,
+        city_record: list,
+        city_raw,
+        inventory_source: str,
+    ) -> None:
+        """One inventory record -> the seed's row shapes.
+
+        Shared by both sources on purpose: identity, the species pipeline, the
+        vacant-site rule, the DBH bucket and the neighbourhood stamp are the seed's
+        rules and not any one upstream's, so `--source city` and `--source datasf`
+        cannot drift in what they mean by a row.
+
+        `inventory_source` is which inventory listed this record, and it is a
+        parameter rather than a closed-over constant because the city build reads
+        both: its living trees are the city layer's and its vacant planting sites
+        are the export's. See the `inventory_source` column comment.
+        """
+        tree_uuid = str(uuid.uuid5(NS_TREE, uuid_seed))
+
+        # ---- row rule: species / placeholder
+        kind, sci, common, conf = parse_qspecies(qspecies)
+
+        qs = qspecies_stats.setdefault(
+            qspecies,
+            {"kind": kind, "confidence": conf, "species_id": None,
+             "species_uuid": None, "count": 0},
+        )
+        qs["count"] += 1
+
+        species_id = None
+        if kind == "non_taxon":
+            stats["non_taxon_rows"] += 1
+        elif kind != "placeholder":
+            key = normalise_species_key(sci)
+            sp = species_by_key.get(key)
+            if sp is None:
+                sp = {
+                    "id": len(species_by_key) + 1,
+                    "uuid": str(uuid.uuid5(NS_SPECIES, key)),
+                    "scientific_name": sci,
+                    "common_name": common,
+                    "stub": kind == "stub",
+                }
+                species_by_key[key] = sp
+            elif sp["common_name"] is None and common:
+                sp["common_name"] = common
+            species_id = sp["id"]
+            qs["species_id"] = species_id
+            qs["species_uuid"] = sp["uuid"]
+            if kind == "stub":
+                stats["stub_rows"] += 1
+            else:
+                stats["parsed_rows"] += 1
+
+        status = "vacant_site" if kind == "placeholder" else "alive"
+        if status == "vacant_site":
+            stats["vacant_site"] += 1
+        else:
+            stats["alive"] += 1
+
+        planted_year = planted_date.year if planted_date else None
+        planted_on = planted_date.isoformat() if planted_date else None
+        if planted_year:
+            stats["planted_year_present"] += 1
+        dbh_min, dbh_max = parse_dbh_bucket(dbh_raw)
+        if dbh_min is not None:
+            stats["dbh_present"] += 1
+
+        # ---- neighborhood stamp
+        neighborhood_id = None
+        if strtree is not None:
+            pt = Point(lon, lat)
+            for idx in strtree.query(pt):
+                nid, prepared = nb_by_index[int(idx)]
+                if prepared.contains(pt):
+                    neighborhood_id = nid
+                    break
+            if neighborhood_id is None:
+                stats["no_neighborhood"] += 1
+
+        ids["tree"] += 1
+        tree_id = ids["tree"]
+        observe_case("site_type", site_type)
+        for (seed_column, _), value in zip(CITY_RECORD_COLUMNS, city_record):
+            if seed_column in case_counts:
+                observe_case(seed_column, value)
+        tree_rows.append(
+            [
+                tree_id,
+                tree_uuid,
+                external_ref,
+                "city_import",
+                inventory_source,
+                lat,
+                lon,
+                address,
+                site_type,
+                neighborhood_id,
+                status,
+                species_id,
+                planted_year,
+                planted_on,
+                dbh_min,
+                dbh_max,
+                None,
+                "city_record",
+                *city_record,
+                city_raw,
+                NOW,
+                NOW,
+                None,
+            ]
+        )
+        rtree_rows.append((tree_id, lat, lat, lon, lon))
+
+        if species_id is not None:
+            ids["assertion"] += 1
+            assertion_rows.append(
+                (ids["assertion"], tree_id, species_id, "city_import", conf,
+                 None, None, NOW)
+            )
+            stats["assertions"] += 1
+
+        stats["kept"] += 1
+
+    # `emit` appends to `tree_rows` and the case-normalisation pass below rewrites
+    # columns inside those rows, so rows are held until the whole source has been
+    # read rather than flushed in 20,000-row batches. Peak resident size is about
+    # 250 MB for the DataSF export and 170 MB for the city layer; the batching it
+    # replaces existed to bound exactly that, and a normalisation that can only be
+    # computed from the whole corpus is worth the memory.
+    if source == "datasf":
+        with open(csv_path, "r", encoding="utf-8", newline="") as fh:
+            reader = csv.DictReader(fh)
+            header = reader.fieldnames or []
+            required = {"TreeID", "qSpecies", "qAddress", "Latitude", "Longitude"}
+            missing = required - set(header)
+            if missing:
+                die(f"CSV is missing expected columns: {sorted(missing)}")
+            raw_columns = [c for c in header if c and c not in MAPPED_COLUMNS]
+
+            for row in reader:
+                stats["source_rows"] += 1
+                if limit and stats["source_rows"] > limit:
+                    stats["source_rows"] -= 1
+                    break
+
+                # ---- row rule: coordinates
+                lat_s = (row.get("Latitude") or "").strip()
+                lon_s = (row.get("Longitude") or "").strip()
+                if not lat_s or not lon_s:
+                    stats["dropped_no_coords"] += 1
+                    continue
+                try:
+                    lat = float(lat_s)
+                    lon = float(lon_s)
+                except ValueError:
+                    stats["dropped_no_coords"] += 1
+                    continue
+                if lat != lat or lon != lon:  # NaN
+                    stats["dropped_no_coords"] += 1
+                    continue
+                if not (
+                    SF_BBOX["min_lat"] <= lat <= SF_BBOX["max_lat"]
+                    and SF_BBOX["min_lon"] <= lon <= SF_BBOX["max_lon"]
+                ):
+                    stats["dropped_out_of_bbox"] += 1
+                    continue
+
+                # ---- identity
+                ref_str = (row.get("TreeID") or "").strip()
+                qspecies = (row.get("qSpecies") or "").strip()
+                if not ref_str:
+                    # No TreeID: no stable external identity is derivable from the
+                    # city record, so key the uuid on the immutable facts instead.
+                    external_ref = None
+                    uuid_seed = f"{lat:.7f},{lon:.7f},{qspecies}"
+                else:
+                    if ref_str in seen_external_refs:
+                        stats["dropped_dupe_treeid"] += 1
+                        continue
+                    seen_external_refs.add(ref_str)
+                    external_ref = int(ref_str) if ref_str.isdigit() else ref_str
+                    uuid_seed = ref_str
+
+                city_raw = None
+                if with_city_raw:
+                    payload = {}
+                    for col in raw_columns:
+                        val = (row.get(col) or "").strip()
+                        if val:
+                            payload[col] = val
+                    city_raw = json.dumps(payload, separators=(",", ":"))
+
+                # The city's own record, verbatim except for the case
+                # normalisation applied below (#95). Blank becomes NULL -- an empty
+                # string in this CSV means the city recorded nothing, and storing ''
+                # would make "no value" and "the value is nothing" indistinguishable
+                # to every reader downstream.
+                city_record = []
+                for _, csv_column in CITY_RECORD_COLUMNS:
+                    value = (row.get(csv_column) or "").strip()
+                    city_record.append(value or None)
+                    if value:
+                        stats["city_" + csv_column] += 1
+
+                emit(
+                    external_ref=external_ref,
+                    uuid_seed=uuid_seed,
+                    lat=lat,
+                    lon=lon,
+                    qspecies=qspecies,
+                    address=(row.get("qAddress") or "").strip() or None,
+                    site_type=(row.get("qSiteInfo") or "").strip() or None,
+                    planted_date=parse_planted_date(row.get("PlantDate")),
+                    dbh_raw=row.get("DBH"),
+                    city_record=city_record,
+                    city_raw=city_raw,
+                    inventory_source="datasf",
+                )
+
+                if stats["source_rows"] % 20000 == 0:
+                    log(f"  {stats['source_rows']:,} rows read / {stats['kept']:,} kept "
+                        f"({time.time() - t0:.0f}s)")
+    else:
+        # ---- the city's own inventory.
+        #
+        # Nine of the DataSF export's columns have no counterpart here and are
+        # NULL for every row: qLegalStatus, qSiteInfo, qCaretaker, qCareAssistant,
+        # PlantDate, PlotSize, PermitNotes, and the two state-plane coordinates.
+        # That is the cost of the switch, and it is recorded in seed_meta rather
+        # than filled in with a guess.
+        #
+        # Addresses are stored EXACTLY as the city writes them, which here means
+        # mostly uppercase (`1 TWIN PEAKS BLVD`). Title-casing them would read
+        # better and would also turn `MCALLISTER ST` into `Mcallister St`, which
+        # is a spelling of that street nobody uses; the DataSF export itself
+        # carries both `McAllister St` (146 rows) and `MCALLISTER ST` (37), so
+        # uppercase is not even foreign to the column. Verbatim is the rule the
+        # six city columns already follow and it is the rule here too.
+        for record in city_rows:
+            stats["source_rows"] += 1
+            if limit and stats["source_rows"] > limit:
+                stats["source_rows"] -= 1
                 break
 
-            # ---- row rule: coordinates
-            lat_s = (row.get("Latitude") or "").strip()
-            lon_s = (row.get("Longitude") or "").strip()
-            if not lat_s or not lon_s:
-                stats["dropped_no_coords"] += 1
-                continue
-            try:
-                lat = float(lat_s)
-                lon = float(lon_s)
-            except ValueError:
-                stats["dropped_no_coords"] += 1
-                continue
-            if lat != lat or lon != lon:  # NaN
+            lat = record.get("Latitude")
+            lon = record.get("Longitude")
+            if lat is None or lon is None or lat != lat or lon != lon:
                 stats["dropped_no_coords"] += 1
                 continue
             if not (
@@ -1007,153 +1524,197 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool) -> in
                 stats["dropped_out_of_bbox"] += 1
                 continue
 
-            # ---- identity
-            ref_str = (row.get("TreeID") or "").strip()
-            if not ref_str:
-                # No TreeID: no stable external identity is derivable from the
-                # city record, so key the uuid on the immutable facts instead.
-                external_ref = None
-                uuid_seed = f"{lat:.7f},{lon:.7f},{(row.get('qSpecies') or '').strip()}"
+            ref = record["TREEID"]
+            ref_str = str(ref)
+            if ref_str in seen_external_refs:
+                stats["dropped_dupe_treeid"] += 1
+                continue
+            seen_external_refs.add(ref_str)
+
+            # `PlantType` is the city layer's own; the other five come from the
+            # export's row for this same TreeID, or are NULL for a record only the
+            # city has. See `load_datasf_attributes` for why that join exists.
+            extra = enrichment.get(ref_str)
+            if extra is None:
+                stats["city_only_rows"] += 1
             else:
-                if ref_str in seen_external_refs:
-                    stats["dropped_dupe_treeid"] += 1
-                    continue
-                seen_external_refs.add(ref_str)
-                external_ref = int(ref_str) if ref_str.isdigit() else ref_str
-                uuid_seed = ref_str
-            tree_uuid = str(uuid.uuid5(NS_TREE, uuid_seed))
-
-            # ---- row rule: species / placeholder
-            qspecies = (row.get("qSpecies") or "").strip()
-            kind, sci, common, conf = parse_qspecies(qspecies)
-
-            qs = qspecies_stats.setdefault(
-                qspecies,
-                {"kind": kind, "confidence": conf, "species_id": None,
-                 "species_uuid": None, "count": 0},
-            )
-            qs["count"] += 1
-
-            species_id = None
-            if kind == "non_taxon":
-                stats["non_taxon_rows"] += 1
-            elif kind != "placeholder":
-                key = normalise_species_key(sci)
-                sp = species_by_key.get(key)
-                if sp is None:
-                    sp = {
-                        "id": len(species_by_key) + 1,
-                        "uuid": str(uuid.uuid5(NS_SPECIES, key)),
-                        "scientific_name": sci,
-                        "common_name": common,
-                        "stub": kind == "stub",
-                    }
-                    species_by_key[key] = sp
-                elif sp["common_name"] is None and common:
-                    sp["common_name"] = common
-                species_id = sp["id"]
-                qs["species_id"] = species_id
-                qs["species_uuid"] = sp["uuid"]
-                if kind == "stub":
-                    stats["stub_rows"] += 1
-                else:
-                    stats["parsed_rows"] += 1
-
-            status = "vacant_site" if kind == "placeholder" else "alive"
-            if status == "vacant_site":
-                stats["vacant_site"] += 1
-            else:
-                stats["alive"] += 1
-
-            planted_date = parse_planted_date(row.get("PlantDate"))
-            planted_year = planted_date.year if planted_date else None
-            planted_on = planted_date.isoformat() if planted_date else None
-            if planted_year:
-                stats["planted_year_present"] += 1
-            dbh_min, dbh_max = parse_dbh_bucket(row.get("DBH"))
-            if dbh_min is not None:
-                stats["dbh_present"] += 1
-
-            # ---- neighborhood stamp
-            neighborhood_id = None
-            if strtree is not None:
-                pt = Point(lon, lat)
-                for idx in strtree.query(pt):
-                    nid, prepared = nb_by_index[int(idx)]
-                    if prepared.contains(pt):
-                        neighborhood_id = nid
-                        break
-                if neighborhood_id is None:
-                    stats["no_neighborhood"] += 1
-
-            city_raw = None
-            if with_city_raw:
-                payload = {}
-                for col in raw_columns:
-                    val = (row.get(col) or "").strip()
-                    if val:
-                        payload[col] = val
-                city_raw = json.dumps(payload, separators=(",", ":"))
-
-            # The city's own record, verbatim. Blank becomes NULL -- an empty
-            # string in this CSV means the city recorded nothing, and storing ''
-            # would make "no value" and "the value is nothing" indistinguishable
-            # to every reader downstream. Nothing else is normalised: PlantType
-            # holds 'Tree' 194,988 times and 'tree' 3 times, and correcting that
-            # case would be editing the city's record to make it tidier, which
-            # is not this file's job. A reader that cares compares case-folded.
+                stats["enriched_rows"] += 1
+            plant_type = (record.get("PlantType") or "").strip() or None
             city_record = []
-            for _, csv_column in CITY_RECORD_COLUMNS:
-                value = (row.get(csv_column) or "").strip()
-                city_record.append(value or None)
+            for seed_column, csv_column in CITY_RECORD_COLUMNS:
+                value = plant_type if seed_column == "plant_type" else (extra or {}).get(csv_column)
+                city_record.append(value)
                 if value:
                     stats["city_" + csv_column] += 1
 
-            tree_id += 1
-            tree_rows.append(
-                (
-                    tree_id,
-                    tree_uuid,
-                    external_ref,
-                    "city_import",
-                    lat,
-                    lon,
-                    (row.get("qAddress") or "").strip() or None,
-                    (row.get("qSiteInfo") or "").strip() or None,
-                    neighborhood_id,
-                    status,
-                    species_id,
-                    planted_year,
-                    planted_on,
-                    dbh_min,
-                    dbh_max,
-                    None,
-                    "city_record",
-                    *city_record,
-                    city_raw,
-                    NOW,
-                    NOW,
-                    None,
-                )
+            # Kept so the second pass can say which kind of overlap it found when
+            # the export calls a site empty and the city's layer lists it at all.
+            qspecies = city_qspecies(record.get("BOTANICAL"), record.get("COMMON"))
+            city_kind_by_ref[ref_str] = parse_qspecies(qspecies)[0]
+
+            emit(
+                external_ref=ref,
+                uuid_seed=ref_str,
+                lat=lat,
+                lon=lon,
+                qspecies=qspecies,
+                address=(record.get("Address") or "").strip() or None,
+                site_type=(extra or {}).get("qSiteInfo"),
+                planted_date=parse_planted_date((extra or {}).get("PlantDate")),
+                dbh_raw=str(record["DBH"]) if record.get("DBH") is not None else "",
+                city_record=city_record,
+                city_raw=None,
+                inventory_source="city",
             )
-            rtree_rows.append((tree_id, lat, lat, lon, lon))
 
-            if species_id is not None:
-                assertion_id += 1
-                assertion_rows.append(
-                    (assertion_id, tree_id, species_id, "city_import", conf,
-                     None, None, NOW)
+            if stats["source_rows"] % 20000 == 0:
+                log(f"  {stats['source_rows']:,} rows read / {stats['kept']:,} kept "
+                    f"({time.time() - t0:.0f}s)")
+
+        # ---- second pass: the export's vacant planting sites.
+        #
+        # WHY A ROW SET THAT IS OTHERWISE THE CITY'S TAKES ROWS FROM THE EXPORT.
+        #
+        # The city's layer publishes no vacant-site category. `PlantType` is
+        # `Tree` on all 133,577 of its records; there is no `qSiteInfo`, no
+        # `qLegalStatus`, no site-status column of any kind. So on a vacant site
+        # the two inventories are not disagreeing -- the city's layer has no
+        # opinion to disagree with, and reading its silence as "there is a tree
+        # there now" would be inferring a fact from a schema.
+        #
+        # That is a different claim from the one the switch makes about living
+        # trees, where the layer IS the operational record and a tree it stopped
+        # listing is most likely gone. Here the export is the only source that
+        # has ever described these 12,518 sites, and dropping them to 153 took a
+        # whole feature (#11, #31, #32) down to a vestige across 17 of the city's
+        # 41 neighbourhoods.
+        #
+        # THE ONE PLACE THE TWO REALLY DO DISAGREE, AND WHO WINS. A TreeID the
+        # export calls an empty basin and the city's layer lists as a planted
+        # tree is a genuine contradiction, and there the city wins -- the same
+        # rule the living-tree spine follows. Those rows are already in the seed
+        # as `alive` from the first pass, so the test is simply "did the first
+        # pass already emit this TreeID", which also makes a duplicate
+        # `external_ref` unrepresentable rather than merely unlikely. Measured on
+        # this extract: 258 of the export's 12,518 sites are listed by the city,
+        # 128 of them as a living tree and 130 as an empty site the city's own
+        # `BOTANICAL = 'Potential Site'` also calls empty. 12,260 carry through.
+        #
+        # Nothing here can add a *tree*: `parse_qspecies` has already decided the
+        # row is a placeholder, and `emit` gives every placeholder
+        # `status = 'vacant_site'` and no species. A row that stopped parsing as
+        # a placeholder would stop being carried, not become a tree.
+        with open(csv_path, "r", encoding="utf-8", newline="") as fh:
+            reader = csv.DictReader(fh)
+            raw_columns = [c for c in (reader.fieldnames or []) if c and c not in MAPPED_COLUMNS]
+            for row in reader:
+                qspecies = (row.get("qSpecies") or "").strip()
+                if parse_qspecies(qspecies)[0] != "placeholder":
+                    continue
+                stats["export_vacant_rows"] += 1
+                # `--limit` is for smoke tests and bounds both passes, so a
+                # limited build still exercises this one instead of skipping it.
+                if limit and stats["export_vacant_carried"] >= limit:
+                    break
+
+                lat_s = (row.get("Latitude") or "").strip()
+                lon_s = (row.get("Longitude") or "").strip()
+                try:
+                    lat = float(lat_s)
+                    lon = float(lon_s)
+                except ValueError:
+                    stats["dropped_no_coords"] += 1
+                    continue
+                if lat != lat or lon != lon:
+                    stats["dropped_no_coords"] += 1
+                    continue
+                if not (
+                    SF_BBOX["min_lat"] <= lat <= SF_BBOX["max_lat"]
+                    and SF_BBOX["min_lon"] <= lon <= SF_BBOX["max_lon"]
+                ):
+                    stats["dropped_out_of_bbox"] += 1
+                    continue
+
+                ref_str = (row.get("TreeID") or "").strip()
+                if not ref_str:
+                    external_ref = None
+                    uuid_seed = f"{lat:.7f},{lon:.7f},{qspecies}"
+                else:
+                    if ref_str in seen_external_refs:
+                        # The city's layer already listed this TreeID and the
+                        # first pass emitted it. Which of the two cases this is
+                        # -- a contradiction the city won, or an empty site both
+                        # inventories agree about -- is counted for the record.
+                        if city_kind_by_ref.get(ref_str) == "placeholder":
+                            stats["export_vacant_city_lists_site"] += 1
+                        else:
+                            stats["export_vacant_city_lists_tree"] += 1
+                        continue
+                    seen_external_refs.add(ref_str)
+                    external_ref = int(ref_str) if ref_str.isdigit() else ref_str
+                    uuid_seed = ref_str
+
+                city_raw = None
+                if with_city_raw:
+                    payload = {}
+                    for col in raw_columns:
+                        val = (row.get(col) or "").strip()
+                        if val:
+                            payload[col] = val
+                    city_raw = json.dumps(payload, separators=(",", ":"))
+
+                city_record = []
+                for _, csv_column in CITY_RECORD_COLUMNS:
+                    value = (row.get(csv_column) or "").strip()
+                    city_record.append(value or None)
+                    if value:
+                        stats["city_" + csv_column] += 1
+
+                stats["export_vacant_carried"] += 1
+                emit(
+                    external_ref=external_ref,
+                    uuid_seed=uuid_seed,
+                    lat=lat,
+                    lon=lon,
+                    qspecies=qspecies,
+                    address=(row.get("qAddress") or "").strip() or None,
+                    site_type=(row.get("qSiteInfo") or "").strip() or None,
+                    planted_date=parse_planted_date(row.get("PlantDate")),
+                    dbh_raw=row.get("DBH"),
+                    city_record=city_record,
+                    city_raw=city_raw,
+                    inventory_source="datasf",
                 )
-                stats["assertions"] += 1
 
-            stats["kept"] += 1
+        log(f"vacant planting sites from the export: {stats['export_vacant_carried']:,} carried, "
+            f"{stats['export_vacant_city_lists_tree']:,} excluded because the city's layer lists "
+            f"a living tree at that TreeID, {stats['export_vacant_city_lists_site']:,} already "
+            f"in the seed as the city's own empty site")
 
-            if len(tree_rows) >= 20000:
-                flush(conn, species_by_key, tree_rows, rtree_rows, assertion_rows)
-                log(
-                    f"  {stats['csv_rows']:,} rows read / {stats['kept']:,} kept "
-                    f"({time.time() - t0:.0f}s)"
-                )
+    # ---- #95, applied. One spelling per case-folded value in the columns the app
+    # compares against a literal. `WHERE plant_type = 'Tree'` used to drop three
+    # rows spelled `tree`; the seed contract now fails if any such pair returns.
+    stats["case_normalised_values"] = 0
+    column_index = {name: index for index, name in enumerate(
+        ["id", "uuid", "external_ref", "source", "inventory_source", "lat", "lon", "address", "site_type",
+         "neighborhood_id", "status", "species_current", "planted_year", "planted_on",
+         "dbh_city_cm_min", "dbh_city_cm_max", "site_lineage", "verification_state"]
+        + [name for name, _ in CITY_RECORD_COLUMNS]
+    )}
+    for column in NORMALISED_SEED_COLUMNS:
+        mapping = {k: v for k, v in canonical_case_map(case_counts[column]).items() if k != v}
+        if not mapping:
+            continue
+        index = column_index[column]
+        changed = 0
+        for row in tree_rows:
+            replacement = mapping.get(row[index])
+            if replacement is not None:
+                row[index] = replacement
+                changed += 1
+        stats["case_normalised_values"] += changed
+        log(f"#95 {column}: folded {len(mapping)} case-variant spelling(s) over "
+            f"{changed:,} rows -> {sorted(set(mapping.values()))}")
 
     flush(conn, species_by_key, tree_rows, rtree_rows, assertion_rows)
 
@@ -1165,9 +1726,21 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool) -> in
     conn.commit()
 
     # ------------------------------------------------- species content (sec 8)
+    # `strict` demands that every fixture entry lands on a species the seed carries.
+    # That holds for the DataSF export, which is what the fixtures were sourced
+    # against. It cannot hold for the city layer: it inventories 62,000 fewer
+    # records and simply does not contain some of those species, so 75 of the 577
+    # sourced entries have nothing to attach to. Those are absences in the corpus,
+    # not drift between the fixtures and the parser, and the count is reported
+    # rather than swallowed. The name-mismatch check stays strict on both paths --
+    # a fixture claiming a different name for a uuid the seed does carry is still a
+    # build failure.
     species_content, content_stats = load_species_content(
-        fixtures_dir, species_by_key, strict=not limit
+        fixtures_dir, species_by_key, strict=(source == "datasf" and not limit)
     )
+    if content_stats["absent"]:
+        log(f"species fixtures: {content_stats['absent']} sourced entries name a species "
+            f"this seed does not carry (source={source})")
     id_by_uuid = {sp["uuid"]: sp["id"] for sp in species_by_key.values()}
     conn.executemany(
         "UPDATE species SET family=?, leaf_retention=?, id_tips=?, seasonal=?, "
@@ -1241,18 +1814,90 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool) -> in
             w.writerow([qs_string, suuid or "", f"{conf:.2f}"])
     log(f"wrote {map_path} ({len(map_rows)} distinct qSpecies strings)")
 
+    # ---- which inventory this seed is, and WHEN it was taken.
+    #
+    # `trees_snapshot_on` is the one key nothing else can substitute for. A seed
+    # with no snapshot date is what made "is our data stale" unanswerable the last
+    # time it was asked: the file could be a day old or a year old and no reader,
+    # inside the app or outside it, could tell. It is a date the *source* was read,
+    # never a clock reading at build time, so rebuilding this seed in 2030 from the
+    # same cache still says 2026.
+    if source == "city":
+        source_meta = {
+            "trees_source": "city",
+            "trees_source_name": "SF Public Works street tree inventory",
+            "trees_source_url": CITY_LAYER_SERVICE,
+            "trees_source_map_url": CITY_LAYER_MAP_URL,
+            "trees_snapshot_on": city_meta["extracted_on"],
+            "trees_source_last_edit_on": str(city_meta.get("server_last_edit_date") or ""),
+            "trees_source_feature_count": str(city_meta.get("server_feature_count") or ""),
+            # Which trees exist is the city's answer; these seven columns are the
+            # export's, for the records both list. See `load_datasf_attributes`.
+            "attributes_source": "datasf",
+            "attributes_dataset_id": TREES_DATASET_ID,
+            "attributes_snapshot_on": NOW[:10],
+            "attributes_columns": ",".join(ENRICHED_COLUMNS),
+            "rows_enriched": str(stats["enriched_rows"]),
+            "rows_city_only": str(stats["city_only_rows"]),
+            # The vacant planting sites, which are the export's rows and not the
+            # layer's -- it has no such category. `trees.inventory_source` says
+            # which inventory each row came from; these are the totals.
+            "sites_source": "datasf",
+            # The second pass's own row accounting, so the seed contract can close
+            # the arithmetic over both passes: rows read = rows shipped + rows
+            # dropped, with nothing unexplained on either side.
+            "export_vacant_rows_read": str(stats["export_vacant_rows"]),
+            "rows_from_city": str(stats["kept"] - stats["export_vacant_carried"]),
+            "rows_from_datasf": str(stats["export_vacant_carried"]),
+            "export_vacant_sites_excluded_city_lists_tree":
+                str(stats["export_vacant_city_lists_tree"]),
+            "export_vacant_sites_already_city_listed":
+                str(stats["export_vacant_city_lists_site"]),
+            # One name/url/date triple per inventory the file actually holds rows
+            # from, keyed by the same identifier `trees.inventory_source` stores.
+            # The app resolves a row's provenance line through these, so a seed
+            # built from two inventories can say which one each record came from
+            # instead of putting one name over all of them.
+            "inventory_city_name": "SF Public Works street tree inventory",
+            "inventory_city_url": CITY_LAYER_SERVICE,
+            "inventory_city_snapshot_on": city_meta["extracted_on"],
+            "inventory_datasf_name": "DataSF Street Tree List",
+            "inventory_datasf_url": TREES_CSV_URL,
+            "inventory_datasf_snapshot_on": NOW[:10],
+            # Nothing is unavailable outright: the two state-plane coordinates are
+            # the same point as lat/lon and were never ingested from either source.
+            "columns_absent_from_source": "",
+        }
+    else:
+        source_meta = {
+            "trees_source": "datasf",
+            "trees_source_name": "DataSF Street Tree List",
+            "trees_dataset_id": TREES_DATASET_ID,
+            "trees_source_url": TREES_CSV_URL,
+            # The DataSF export publishes no per-row as-of date; the snapshot date
+            # is the dataset's own last update, which is what SEED_EPOCH is set to
+            # (ERRATA E1). Stated rather than left to be inferred from `generated_at`.
+            "trees_snapshot_on": NOW[:10],
+            "rows_from_datasf": str(stats["kept"]),
+            "inventory_datasf_name": "DataSF Street Tree List",
+            "inventory_datasf_url": TREES_CSV_URL,
+            "inventory_datasf_snapshot_on": NOW[:10],
+            "columns_absent_from_source": "",
+        }
+
     meta = {
         "generator": "Tools/build_seed.py",
         "generated_at": NOW,
-        "trees_dataset_id": TREES_DATASET_ID,
-        "trees_source_url": TREES_CSV_URL,
+        **source_meta,
         "neighborhoods_dataset_id": NEIGHBORHOODS_DATASET_ID,
         "neighborhoods_source_url": NEIGHBORHOODS_GEOJSON_URL,
         "sf_bbox": json.dumps(SF_BBOX),
         "ns_tree_uuid": str(NS_TREE),
         "ns_species_uuid": str(NS_SPECIES),
         "city_raw_populated": "1" if with_city_raw else "0",
-        "csv_rows": str(stats["csv_rows"]),
+        "source_rows": str(stats["source_rows"]),
+        "case_normalised_values": str(stats["case_normalised_values"]),
+        "case_normalised_columns": ",".join(NORMALISED_SEED_COLUMNS),
         "rows_kept": str(stats["kept"]),
         "dropped_no_coords": str(stats["dropped_no_coords"]),
         "dropped_out_of_bbox": str(stats["dropped_out_of_bbox"]),
@@ -1292,16 +1937,28 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool) -> in
     print("=" * 66)
     print("BUILD SUMMARY")
     print("=" * 66)
-    print(f"  trees dataset          {TREES_DATASET_ID}")
+    print(f"  source                 --source {source}  ({meta['trees_source_name']})")
+    print(f"  snapshot taken         {meta['trees_snapshot_on']}")
+    print(f"  source url             {meta['trees_source_url']}")
     print(f"  neighborhoods dataset  {NEIGHBORHOODS_DATASET_ID} ({len(neighborhoods)} polygons)")
     print(f"  SF bbox                lat [{SF_BBOX['min_lat']}, {SF_BBOX['max_lat']}]  "
           f"lon [{SF_BBOX['min_lon']}, {SF_BBOX['max_lon']}]")
     print(f"  city_raw               {'populated' if with_city_raw else 'NULL (--with-city-raw to populate)'}")
-    print(f"  CSV rows read          {stats['csv_rows']:,}")
+    print(f"  source rows read       {stats['source_rows']:,}")
     print(f"    dropped, no coords   {stats['dropped_no_coords']:,}")
     print(f"    dropped, out of bbox {stats['dropped_out_of_bbox']:,}")
     print(f"    dropped, dup TreeID  {stats['dropped_dupe_treeid']:,}")
+    if source == "city":
+        print(f"  export vacant sites    {stats['export_vacant_rows']:,} read")
+        print(f"    carried through      {stats['export_vacant_carried']:,}")
+        print(f"    excluded, city lists a tree there "
+              f"{stats['export_vacant_city_lists_tree']:,}")
+        print(f"    already in, city lists it empty too "
+              f"{stats['export_vacant_city_lists_site']:,}")
     print(f"  trees written          {stats['kept']:,}")
+    if source == "city":
+        print(f"    from city layer      {stats['kept'] - stats['export_vacant_carried']:,}")
+        print(f"    from datasf export   {stats['export_vacant_carried']:,}")
     print(f"    status=alive         {stats['alive']:,}")
     print(f"    status=vacant_site   {stats['vacant_site']:,}")
     print(f"    alive, no species    {stats['non_taxon_rows']:,}  (qSpecies names no taxon)")
@@ -1350,9 +2007,9 @@ def flush(conn, species_by_key, tree_rows, rtree_rows, assertion_rows) -> None:
         ],
     )
     city_columns = ",".join(name for name, _ in CITY_RECORD_COLUMNS)
-    placeholders = ",".join("?" * (21 + len(CITY_RECORD_COLUMNS)))
+    placeholders = ",".join("?" * (22 + len(CITY_RECORD_COLUMNS)))
     conn.executemany(
-        "INSERT INTO trees(id,uuid,external_ref,source,lat,lon,address,site_type,"
+        "INSERT INTO trees(id,uuid,external_ref,source,inventory_source,lat,lon,address,site_type,"
         "neighborhood_id,status,species_current,planted_year,planted_on,"
         "dbh_city_cm_min,dbh_city_cm_max,site_lineage,verification_state,"
         f"{city_columns},city_raw,"
@@ -1386,9 +2043,19 @@ def main() -> int:
         "--repo-root",
         default=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     )
-    ap.add_argument("--limit", type=int, default=0, help="only read the first N CSV rows")
+    ap.add_argument("--limit", type=int, default=0, help="only read the first N source rows")
+    ap.add_argument(
+        "--source",
+        choices=SOURCES,
+        default=DEFAULT_SOURCE,
+        help="which street-tree inventory to build from. `city` is SF Public Works' "
+             "own layer, the one its public map draws (~133,577 rows, the default "
+             "since #91). `datasf` is the open-data export tkzw-k3nq (~195,309 rows, "
+             "what shipped before #91). Both paths are supported and tested; see "
+             "docs/investigations/city-tree-source.md for what changes between them.",
+    )
     args = ap.parse_args()
-    return build(args.repo_root, args.fetch, args.limit, args.with_city_raw)
+    return build(args.repo_root, args.fetch, args.limit, args.with_city_raw, args.source)
 
 
 if __name__ == "__main__":

@@ -627,6 +627,9 @@ public struct TreeQueries {
         public let species: Species?
         public let neighborhoodName: String?
         public let siteLineageID: UUID?
+        /// `trees.inventory_source` — which of the city's two inventories listed **this row**, or
+        /// nil for a seed built before the column existed. See `InventorySource`.
+        public let inventorySourceID: String?
     }
 
     /// `GET /trees/{id}`, the inventory half. `LocalAPI` adds the contributions.
@@ -642,7 +645,8 @@ public struct TreeQueries {
         SELECT \(treeColumns),
                \(SpeciesQueries.projection(identityColumn: schema.speciesIdentityColumn)),
                n.name AS neighborhood_name,
-               lin.\(schema.treeIdentityColumn) AS site_lineage_uuid
+               lin.\(schema.treeIdentityColumn) AS site_lineage_uuid,
+               \(schema.hasInventorySource ? "t.inventory_source" : "NULL") AS inventory_source
           FROM \(seed).trees t
           LEFT JOIN \(seed).species s ON s.id = t.species_current
           LEFT JOIN \(seed).neighborhoods n ON n.id = t.neighborhood_id
@@ -658,7 +662,8 @@ public struct TreeQueries {
                 tree: try Self.decodeTree(row),
                 species: try SpeciesQueries.decodeIfPresent(row),
                 neighborhoodName: try row.stringIfPresent("neighborhood_name"),
-                siteLineageID: try row.uuidIfPresent("site_lineage_uuid")
+                siteLineageID: try row.uuidIfPresent("site_lineage_uuid"),
+                inventorySourceID: try row.stringIfPresent("inventory_source")
             )
         }
     }

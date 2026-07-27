@@ -90,9 +90,16 @@ struct CityRecordSectionTests {
     /// affects rather than quietly dropping them. The two totals are what the design rests on: 86% of
     /// populated rows render, and the 14% that do not are the three documented classes and nothing
     /// else.
+    ///
+    /// **`--source city` publishes no `PlotSize` at all**, so all three numbers are zero there and
+    /// the notation triage has nothing to run against. That is asserted rather than skipped, and it
+    /// is checked against the source's own column list so an emptied column is still a failure —
+    /// but it does mean the *behaviour* here is exercised by the `--source datasf` corpus and by the
+    /// unit cases above, not by the shipped seed.
     @Test("every plot size in the seed is either shown or refused on purpose")
     func everyPlotSizeInTheSeedIsShownOrRefusedOnPurpose() async throws {
         let store = try await Self.store()
+        let corpus = try await SeedCorpus.current(store)
 
         let values: [(String, Int)] = try await store.queue.read { connection in
             let statement = try connection.cachedStatement("""
@@ -104,7 +111,16 @@ struct CityRecordSectionTests {
             return try statement.fetchAll { (try $0.string("value"), try $0.int("n")) }
         }
 
-        #expect(values.count == 588, "the seed holds \(values.count) distinct plot sizes, expected 588")
+        #expect(
+            values.count == corpus.distinctPlotSizes,
+            "the seed holds \(values.count) distinct plot sizes, expected \(corpus.distinctPlotSizes) under --source \(corpus.source)"
+        )
+        if values.isEmpty {
+            #expect(
+                !corpus.publishes("PlotSize"),
+                "the seed holds no plot sizes while \(corpus.source) publishes PlotSize"
+            )
+        }
 
         var shown = 0
         var refused = 0
@@ -112,9 +128,12 @@ struct CityRecordSectionTests {
             if CityRecordPresentation.plotSizeText(value) == nil { refused += count } else { shown += count }
         }
 
-        #expect(shown + refused == 146_951, "the populated rows do not add up: \(shown + refused)")
-        #expect(shown == 126_411, "\(shown) rows render a plot size, expected 126,411")
-        #expect(refused == 20_540, "\(refused) rows refuse to render one, expected 20,540")
+        #expect(
+            shown + refused == corpus.cityColumnRows["plot_size"],
+            "the populated rows do not add up: \(shown + refused)"
+        )
+        #expect(shown == corpus.plotSizesShown, "\(shown) rows render a plot size, expected \(corpus.plotSizesShown)")
+        #expect(refused == corpus.plotSizesRefused, "\(refused) rows refuse to render one, expected \(corpus.plotSizesRefused)")
     }
 
     // MARK: - `plantType`: the column that only speaks when it disagrees with the screen
@@ -214,6 +233,26 @@ struct CityRecordSectionTests {
         tree.plantedYear = nil
         let presentation = Self.presentation(TreeProfile(tree: tree))
         #expect(presentation.cityRecord == nil)
+        #expect(presentation.showsCityRecordSection == false)
+        #expect(presentation.cityRecordNotes.isEmpty)
+
+        // The section's second arm: a record with no drawable card still opens it once the seed can
+        // say where the record came from and when. That is the whole content of the section on the
+        // shipped seed, where `PlantType` is the only column the city publishes and it draws no card.
+        let dated = Self.presentation(
+            TreeProfile(
+                tree: tree,
+                inventorySource: InventorySource(
+                    id: "city",
+                    name: "SF Public Works street tree inventory",
+                    url: "https://example.invalid",
+                    snapshotDate: InventorySource.date(fromISODay: "2026-07-26")
+                )
+            )
+        )
+        #expect(dated.cityRecord == nil, "still no cards")
+        #expect(dated.showsCityRecordSection)
+        #expect(dated.cityRecordNotes.last == "From the SF Public Works street tree inventory, July 26, 2026.")
     }
 
     // MARK: - Pruning: answered on screen, once, about the dataset
@@ -270,6 +309,7 @@ struct CityRecordSectionTests {
     @Test("exactly two of the city's legal statuses carry a standing-arrangement sentence")
     func onlyTheTwoOptOutsCarryASentence() async throws {
         let store = try await Self.store()
+        let corpus = try await SeedCorpus.current(store)
         let statuses: [String] = try await store.queue.read { connection in
             let statement = try connection.cachedStatement("""
                 SELECT DISTINCT legal_status AS value FROM \(SeedDatabase.schemaName).trees
@@ -281,9 +321,15 @@ struct CityRecordSectionTests {
         let withSentence = statuses.filter {
             CityRecordPresentation(CityRecord(legalStatus: $0)).maintenanceOptOutNote() != nil
         }
+        // No `qLegalStatus` in the source means no statuses to filter, so the expected set is empty
+        // and the *reason* is the absent column rather than a rule that stopped firing. The rule
+        // itself is covered by the unit cases in this suite, which do not read the seed.
+        let expected: Set<String> = corpus.publishes("qLegalStatus")
+            ? [CityRecordCopy.pruneOptOutStatus, CityRecordCopy.maintenanceOptOutStatus]
+            : []
         #expect(
-            Set(withSentence) == [CityRecordCopy.pruneOptOutStatus, CityRecordCopy.maintenanceOptOutStatus],
-            "statuses carrying a sentence: \(withSentence.sorted())"
+            Set(withSentence) == expected,
+            "statuses carrying a sentence: \(withSentence.sorted()) under --source \(corpus.source)"
         )
     }
 
@@ -379,31 +425,130 @@ struct CityRecordSectionTests {
     /// The section derived from a real row read through the real store, rather than from a fixture:
     /// `TreeQueries` selects the six columns, `decodeCityRecord` assembles them and this reads them
     /// out. Any link in that chain could break without a fixture noticing.
+    ///
+    /// The row it picks depends on the source, because the chain can only be followed through
+    /// columns the source publishes. Under `--source datasf` that is the rich row it always used —
+    /// an FUF-assisted tree with a width-notation plot size. Under `--source city` the only one of
+    /// the six the layer carries is `PlantType`, so the section it produces has **no cards at all**,
+    /// and what it must still carry is the two sentences: the block-grain pruning note, and the
+    /// provenance line naming the inventory and the day it was read. Those are the section's whole
+    /// content under this source and are the thing worth asserting reaches the screen.
     @Test("a real seed row produces a real section")
     func aRealSeedRowProducesARealSection() async throws {
         let store = try await Self.store()
+        let corpus = try await SeedCorpus.current(store)
         let queries = TreeQueries(
             schema: try #require(store.seed),
             seedHasSoftDeletedTrees: store.seedHasSoftDeletedTrees
         )
+        let rich = corpus.publishes("qCareAssistant") && corpus.publishes("PlotSize")
+        let predicate = rich
+            ? "care_assistant = 'FUF' AND plot_size LIKE 'Width %ft' AND plot_size <> 'Width 0ft'"
+            : "plant_type IS NOT NULL"
 
         let tree = try await store.queue.read { connection -> Tree in
             let statement = try connection.cachedStatement("""
                 SELECT uuid FROM \(SeedDatabase.schemaName).trees
-                 WHERE care_assistant = 'FUF' AND plot_size LIKE 'Width %ft' AND plot_size <> 'Width 0ft'
+                 WHERE \(predicate)
                  LIMIT 1
                 """)
             let uuid = try #require(try statement.fetchOne { try $0.uuid("uuid") })
             return try #require(try queries.tree(id: uuid, connection: connection)?.tree)
         }
 
-        let presentation = Self.presentation(TreeProfile(tree: tree))
-        let facts = try #require(presentation.cityRecord?.facts)
+        let presentation = Self.presentation(
+            TreeProfile(tree: tree, inventorySource: store.seedProvenance)
+        )
+        // Not `#require`: under a source that publishes only `PlantType` there are no cards, so
+        // `cityRecord` is nil by design and the section is its notes. See `showsCityRecordSection`.
+        let facts = presentation.cityRecord?.facts ?? []
+        #expect(presentation.showsCityRecordSection)
 
-        #expect(facts.contains { $0.value == "Friends of the Urban Forest" })
-        #expect(facts.contains { $0.id == "plotSize" && $0.value.hasSuffix(" ft wide") })
+        if rich {
+            #expect(facts.contains { $0.value == "Friends of the Urban Forest" })
+            #expect(facts.contains { $0.id == "plotSize" && $0.value.hasSuffix(" ft wide") })
+            #expect(presentation.landContextNote != nil)
+        } else {
+            // `plantType == "Tree"` draws no card by design (`listedAsText`), so a source that
+            // publishes only that column produces a section made entirely of its notes.
+            #expect(facts.isEmpty, "expected no cards from PlantType alone, got \(facts.map(\.id))")
+            #expect(presentation.landContextNote == nil)
+        }
         #expect(facts.contains { $0.id == "permitNotes" } == false)
         #expect(presentation.cityRecordNotes.contains(CityRecordPresentation.pruningNote))
-        #expect(presentation.landContextNote != nil)
+
+        // The provenance line, end to end: `seed_meta` → `CypressStore.seedProvenance` →
+        // `TreeProfile` → the section's last sentence. This is the fix for the defect that made
+        // "is our data stale?" unanswerable, and it is only real if it survives the whole chain.
+        let provenance = try #require(
+            presentation.inventoryProvenanceNote,
+            "the section says nothing about where these facts came from or when"
+        )
+        #expect(provenance.contains(try #require(store.seedProvenance).name))
+        #expect(presentation.cityRecordNotes.last == provenance)
+    }
+
+    /// **A vacant planting site credits the inventory that actually listed it.**
+    ///
+    /// The shipped seed is built from both of San Francisco's street-tree inventories. The living
+    /// trees are SF Public Works' operational layer; the empty basins are the DataSF export's rows,
+    /// because that layer has no vacant-site category at all and has therefore never held one of
+    /// these records. `CypressStore.seedProvenance` is a property of the *file* and names the city
+    /// for all 145,837 rows, so a screen that reads it puts the city's name and the city's snapshot
+    /// date over 12,260 records the city has never seen.
+    ///
+    /// This follows the fix end to end on real rows: `trees.inventory_source` → `TreeQueries` →
+    /// `LocalAPI.provenance(of:in:)` → `SitePresentation.provenanceNote`. **Both halves matter.**
+    /// The site asserts the export's name; the tree beside it asserts the city's, which is the
+    /// control — without it a resolver that returned the same answer for everything would pass the
+    /// first assertion and the whole point would be lost.
+    ///
+    /// Skipped on a seed built from one inventory (`--source datasf`), where the file-wide answer is
+    /// the right answer for every row and there is no second name to distinguish.
+    @Test("a vacant site names its own inventory, not the file's")
+    func aVacantSiteNamesItsOwnInventory() async throws {
+        let store = try await Self.store()
+        let schema = try #require(store.seed)
+        guard schema.hasInventorySource, store.seedInventories.count > 1 else { return }
+
+        let queries = TreeQueries(
+            schema: schema,
+            seedHasSoftDeletedTrees: store.seedHasSoftDeletedTrees
+        )
+        let picked = try await store.queue.read { connection -> (TreeQueries.TreeRecord, TreeQueries.TreeRecord) in
+            func row(_ predicate: String) throws -> TreeQueries.TreeRecord {
+                let statement = try connection.cachedStatement("""
+                    SELECT uuid FROM \(SeedDatabase.schemaName).trees
+                     WHERE \(predicate) LIMIT 1
+                    """)
+                let uuid = try #require(try statement.fetchOne { try $0.uuid("uuid") })
+                return try #require(try queries.tree(id: uuid, connection: connection))
+            }
+            return (
+                try row("status = 'vacant_site' AND inventory_source = 'datasf'"),
+                try row("status = 'alive' AND inventory_source = 'city'")
+            )
+        }
+
+        let site = picked.0
+        let tree = picked.1
+        #expect(site.inventorySourceID == "datasf")
+        #expect(tree.inventorySourceID == "city")
+
+        let siteSource = try #require(LocalAPI.provenance(of: site, in: store))
+        let treeSource = try #require(LocalAPI.provenance(of: tree, in: store))
+        #expect(siteSource.id == "datasf")
+        #expect(treeSource.id == "city")
+        #expect(siteSource.name != treeSource.name, "two inventories, one name")
+
+        let note = try #require(
+            SitePresentation(profile: TreeProfile(tree: site.tree, inventorySource: siteSource)).provenanceNote,
+            "the site screen says nothing about where its record came from"
+        )
+        #expect(note.contains(siteSource.name))
+        #expect(
+            note.contains(treeSource.name) == false,
+            "the site credits the inventory that has never listed it: \(note)"
+        )
     }
 }

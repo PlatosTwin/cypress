@@ -573,6 +573,17 @@ public struct TreeProfile: Hashable, Sendable {
     /// voted on are simply absent; `PhotoHero` reads a missing entry as zero.
     public let photoTallies: [UUID: PhotoTally]
 
+    /// Which city inventory this record came out of, and when that inventory was read.
+    ///
+    /// A property of the seed rather than of the tree, so every profile in one build carries the
+    /// same value; it travels on the payload because the presentation layer may not reach past
+    /// `CypressAPI` for it (ARCHITECTURE §4).
+    ///
+    /// `nil` for a community-added tree — nobody's inventory lists it, and the honest surface for
+    /// that is no provenance line rather than one naming a source the record did not come from.
+    /// Also nil for a seed built before the receipt carried these keys.
+    public let inventorySource: InventorySource?
+
     public init(
         tree: Tree,
         activeName: TreeName? = nil,
@@ -588,7 +599,8 @@ public struct TreeProfile: Hashable, Sendable {
         siteLineageTreeID: UUID? = nil,
         ownPhotoIDs: Set<UUID> = [],
         deletablePhotoIDs: Set<UUID> = [],
-        photoTallies: [UUID: PhotoTally] = [:]
+        photoTallies: [UUID: PhotoTally] = [:],
+        inventorySource: InventorySource? = nil
     ) {
         self.tree = tree
         self.activeName = activeName
@@ -605,6 +617,7 @@ public struct TreeProfile: Hashable, Sendable {
         self.ownPhotoIDs = ownPhotoIDs
         self.deletablePhotoIDs = deletablePhotoIDs
         self.photoTallies = photoTallies
+        self.inventorySource = inventorySource
     }
 
     /// Whether this device contributed the photo, and may therefore show it to the person who took

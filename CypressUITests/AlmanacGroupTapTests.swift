@@ -38,8 +38,22 @@ final class AlmanacGroupTapTests: XCTestCase {
     func testWalkTheNineOpensAMapOfThemAll() throws {
         let app = launch()
 
+        // `Walk `, not `Walk the ` — **the anchor was count-sensitive and the corpus moved under
+        // it.** `AlmanacPresentation.coverageCTA` reads `Walk to it` for one tree and
+        // `Walk the <n>` for more, because "walk the one" is not a sentence. Under the DataSF export
+        // the neighbourhood these tests land in (Western Addition, from the simulated fix at
+        // 37.78485,-122.4215) held two young trees, so the plural branch was the only one anybody
+        // saw. #91 cut the seed's planting dates from 70,067 to 28,747 and that count fell to one, so
+        // the CTA started rendering in its singular voice and this test began failing on a screen
+        // that was drawing the button correctly.
+        //
+        // It failed with `§4's CTA is not on the almanac`, which is a true sentence about the
+        // predicate and a false one about the app — the exact "blame the almanac for something else"
+        // failure E153 removed from these tests one round earlier. The count belongs in the
+        // assertions below, which read `ctaLabel` and the destination's own sentence; it does not
+        // belong in the locator that decides whether the control exists at all.
         let walk = app.buttons
-            .matching(NSPredicate(format: "label BEGINSWITH %@", "Walk the "))
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "Walk "))
             .firstMatch
         try reachAlmanac(app, waitingFor: walk)
 

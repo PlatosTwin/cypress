@@ -159,8 +159,21 @@ enum DebugDeepLink {
     /// Where records are looked for: the map's own opening camera, so the trees these tests read are
     /// the trees a tester sees on launch.
     private static let centre = MapLayout.defaultCentre
-    /// Wide enough to hold both statuses (of the 500 nearest to the centre, 456 are standing and 44
-    /// are vacant sites) and narrow enough to stay one index scan.
+    /// Wide enough to hold every status the cases below ask for, and narrow enough to stay one index
+    /// scan.
+    ///
+    /// **500, and it went to 4,000 and back — the round trip is the useful part of this comment.**
+    /// #91's first round took the row set from SF Public Works' own layer, which has no vacant-site
+    /// category at all, so the city's 12,518 basins became 153 and the nearest one to the map's
+    /// opening centre was the 1,181st record by distance. `site` stopped resolving, and it failed
+    /// exactly as E117 designed it to: `none among the 500 records nearest 37.7596, -122.4269`,
+    /// rather than quietly opening some other screen. Widening the window to 4,000 made the harness
+    /// green while the product surface behind it stayed vestigial, which is the wrong repair —
+    /// the window was reporting a real thing.
+    ///
+    /// The seed now carries the export's sites again, 65 of the nearest 500 records are basins and
+    /// the nearest is the 16th, so the window goes back to what it was. If the sites thin out again
+    /// this fails again and says so, which is the property worth keeping.
     private static let radiusM: Double = 3_000
     private static let candidateLimit = 500
 
@@ -390,7 +403,8 @@ enum DebugDeepLink {
         return standing[standing.count / 2].tree.id
     }
 
-    /// The nearest vacant planting site — the 12,518 records with no tree in them (E107).
+    /// The nearest vacant planting site — a record with no tree in it (E107). 12,413 of them in the
+    /// city-sourced seed, 12,518 in a DataSF-sourced one; see `candidateLimit`.
     private static func vacantSite(_ api: LocalAPI) async throws -> UUID {
         try await firstTree(matching: { $0.status == .vacantSite }, api: api, wanted: "a vacant planting site")
     }

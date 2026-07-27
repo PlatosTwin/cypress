@@ -72,15 +72,16 @@ struct AlmanacVacantSiteTests {
     /// If a seed rebuild ever stops producing these rows — BUILD-PLAN §7 makes them out of the
     /// `qSpecies` placeholder strings, which is exactly the kind of mapping that gets "cleaned up" —
     /// screen 12, screen 01's site card and the whole of E107 go quiet with nothing failing.
-    @Test("the seed holds 12,518 vacant planting sites, every one of them inside a neighbourhood")
+    @Test("the seed holds every vacant planting site inside a neighbourhood")
     func population() async throws {
         let store = try await Self.store()
+        let corpus = try await SeedCorpus.current(store)
 
         let total = try await Self.count(
             "SELECT COUNT(*) AS n FROM \(Self.seed).trees WHERE status = 'vacant_site'",
             on: store
         )
-        #expect(total == 12_518)
+        #expect(total == corpus.vacantSites)
 
         // The almanac reads `neighborhood_id = ? AND deleted_at IS NULL`, so a site outside that
         // scope is a site no neighbourhood surface could ever count.
@@ -91,7 +92,7 @@ struct AlmanacVacantSiteTests {
             """,
             on: store
         )
-        #expect(inScope == 12_518)
+        #expect(inScope == corpus.vacantSites)
 
         // A site has no species. This is the fact the inner join is wrongly credited with acting on.
         let withSpecies = try await Self.count(
@@ -103,8 +104,13 @@ struct AlmanacVacantSiteTests {
         )
         #expect(withSpecies == 0)
 
-        // Every one of the 41 neighbourhoods has some, so the block E115 proposes would not be
-        // below a cold-start floor anywhere in the city (ARCHITECTURE §5.6).
+        // **This is the number the switch cost most.** Under the DataSF export every one of the 41
+        // neighbourhoods held vacant sites, so the block E115 proposes cleared a cold-start floor
+        // everywhere in the city (ARCHITECTURE §5.6). SF Public Works' own layer has no vacant-site
+        // category at all — `PlantType` is `Tree` on all 133,577 of its records — so 12,518 sites
+        // become 153 and **17 neighbourhoods now have none**. Screen 12's empty-site row will be
+        // absent or tiny across most of the city. Pinned rather than relaxed, so the day the number
+        // moves again somebody has to say why.
         let neighborhoodsWithNone = try await Self.count(
             """
             SELECT COUNT(*) AS n FROM (
@@ -115,7 +121,7 @@ struct AlmanacVacantSiteTests {
             """,
             on: store
         )
-        #expect(neighborhoodsWithNone == 0)
+        #expect(neighborhoodsWithNone == corpus.neighborhoodsWithNoVacantSite)
 
         let sunset = try await Self.neighborhoodID(named: "Sunset/Parkside", on: store)
         let here = try await Self.count(
@@ -125,7 +131,7 @@ struct AlmanacVacantSiteTests {
             """,
             on: store
         )
-        #expect(here == 1_474)
+        #expect(here == corpus.sunsetVacantSites)
     }
 
     // MARK: - What actually excludes them
@@ -140,6 +146,7 @@ struct AlmanacVacantSiteTests {
     @Test("widening the species join admits no vacant site and 52 non-taxon trees")
     func theJoinIsNotTheExclusion() async throws {
         let store = try await Self.store()
+        let corpus = try await SeedCorpus.current(store)
         let sunset = try await Self.neighborhoodID(named: "Sunset/Parkside", on: store)
         let scope = "t.neighborhood_id = \(sunset) AND t.deleted_at IS NULL"
 
@@ -184,9 +191,13 @@ struct AlmanacVacantSiteTests {
             """,
             on: store
         )
-        #expect(innerTrees == 11_026)
-        #expect(leftTrees == 11_078)
-        #expect(leftTrees - innerTrees == 52, "the widened join gains non-taxon trees, never sites")
+        #expect(innerTrees == corpus.sunsetTreesWithSpecies)
+        #expect(leftTrees == corpus.sunsetTreesLeftJoined)
+        #expect(
+            leftTrees - innerTrees == corpus.sunsetTreesLeftJoined - corpus.sunsetTreesWithSpecies,
+            "the widened join gains non-taxon trees, never sites"
+        )
+        #expect(leftTrees > innerTrees, "the control: this neighbourhood does hold non-taxon trees")
 
         // And the group it would add cannot name itself: `SpeciesShare.name` is not optional and
         // `row.uuid("species_uuid")` on this row raises `unexpectedNull`, so `speciesMix` throws,
@@ -210,9 +221,10 @@ struct AlmanacVacantSiteTests {
     /// 215 is RULINGS **R5**, which ruled screen 08's denominator is 215 and stays there. Screen 12
     /// and screen 08 count the same population, so a join widened here silently reopens a ruling
     /// taken somewhere else.
-    @Test("the live species mix is 215 species over 11,026 trees, all of them named")
+    @Test("the live species mix is unchanged and complete")
     func speciesMixIsUnchangedAndComplete() async throws {
         let store = try await Self.store()
+        let corpus = try await SeedCorpus.current(store)
         let schema = try #require(store.seed)
         let queries = AlmanacQueries(schema: schema)
         let sunset = try await Self.neighborhoodID(named: "Sunset/Parkside", on: store)
@@ -221,22 +233,33 @@ struct AlmanacVacantSiteTests {
             try queries.speciesMix(neighborhoodID: sunset, connection: connection)
         }
 
-        #expect(mix.count == 215)
-        #expect(mix.reduce(0) { $0 + $1.treeCount } == 11_026)
+        #expect(mix.count == corpus.sunsetSpeciesInMix)
+        #expect(mix.reduce(0) { $0 + $1.treeCount } == corpus.sunsetTreesWithSpecies)
         #expect(mix.allSatisfy { !$0.name.isEmpty })
     }
 
     // MARK: - The four inventory reads
 
     /// A site is not an elder, not a newcomer and not a young tree anybody can go and look at — and
-    /// this is not incidental: **9,294 of the 12,518 carry a planting date**, so `planted_on` alone
-    /// would put basins in two of screen 12's three season rows and in the coverage card.
-    @Test("no inventory read returns a vacant site, and 9,294 of them carry a planting date")
+    /// under the DataSF export that was not incidental: **9,294 of the 12,518 sites carried a
+    /// planting date**, so `planted_on` alone would put basins in two of screen 12's three season
+    /// rows and in the coverage card.
+    ///
+    /// **Under `--source city` the three planting reads return nothing at all**, because SF Public
+    /// Works' own layer publishes no `PlantDate` for any record. Every control in this test then
+    /// fails to fire, so the exclusion it checks would be true of an empty answer and the test would
+    /// pass having measured nothing. That is stated here rather than allowed to happen quietly: the
+    /// controls run only where the source can support them, the darkness is asserted against
+    /// `seed_meta.columns_absent_from_source`, and screen 12's elder, plantings and coverage rows are
+    /// **empty for the whole city** on the shipped seed. It is one of the two real costs of #91.
+    @Test("no inventory read returns a vacant site")
     func inventoryReadsExcludeSites() async throws {
         let store = try await Self.store()
+        let corpus = try await SeedCorpus.current(store)
         let schema = try #require(store.seed)
         let queries = AlmanacQueries(schema: schema)
         let sunset = try await Self.neighborhoodID(named: "Sunset/Parkside", on: store)
+        let hasPlantingDates = corpus.publishes("PlantDate")
 
         let datedSites = try await Self.count(
             """
@@ -245,7 +268,11 @@ struct AlmanacVacantSiteTests {
             """,
             on: store
         )
-        #expect(datedSites == 9_294)
+        // 9,294 under the DataSF export; 22 under the city's row set, because the export gives a
+        // planting date to a site the city no longer lists as anything. Still non-zero, so the
+        // exclusion below is still doing work rather than agreeing with an empty set.
+        #expect(datedSites == corpus.datedVacantSites)
+        #expect(corpus.datedVacantSites > 0, "the control: `planted_on` alone would put basins in the season rows")
 
         let vacantIDs = Set(try await Self.uuids(
             """
@@ -254,7 +281,7 @@ struct AlmanacVacantSiteTests {
             """,
             on: store
         ))
-        #expect(vacantIDs.count == 1_474)
+        #expect(vacantIDs.count == corpus.sunsetVacantSites)
 
         // Every spring the seed knows about, not just the current one, so this does not pass by
         // landing outside the data.
@@ -270,8 +297,14 @@ struct AlmanacVacantSiteTests {
         let elder = try await store.queue.read { connection in
             try queries.elder(neighborhoodID: sunset, connection: connection)
         }
-        #expect(elder != nil, "the control: Sunset/Parkside does have an elder")
-        #expect(elder.map { !vacantIDs.contains($0.treeID) } ?? false)
+        // `elder` is `MIN(planted_on)` within the neighbourhood, so it is nil for every
+        // neighbourhood in a seed with no planting dates. Where the source has them, its being
+        // non-nil is the control that makes the exclusion below mean something.
+        #expect(
+            (elder != nil) == hasPlantingDates,
+            "elder is \(elder == nil ? "nil" : "set") while the source \(hasPlantingDates ? "does" : "does not") publish PlantDate"
+        )
+        #expect(elder.map { !vacantIDs.contains($0.treeID) } ?? !hasPlantingDates)
 
         let planted = try await store.queue.read { connection in
             try queries.plantings(
@@ -283,7 +316,10 @@ struct AlmanacVacantSiteTests {
         }
         let plantedTotal = planted.reduce(0) { $0 + $1.treeCount }
         #expect(plantedTotal == standingWithDate)
-        #expect(plantedTotal > 0, "the control: this neighbourhood does have dated plantings")
+        #expect(
+            (plantedTotal > 0) == hasPlantingDates,
+            "the control: dated plantings are \(plantedTotal), and the source \(hasPlantingDates ? "does" : "does not") publish PlantDate"
+        )
 
         let young = try await store.queue.read { connection in
             try queries.youngTreesWithoutVisits(
@@ -294,7 +330,10 @@ struct AlmanacVacantSiteTests {
             )
         }
         #expect(young.allSatisfy { !vacantIDs.contains($0.id) })
-        #expect(!young.isEmpty, "the control: the coverage read does return trees")
+        #expect(
+            !young.isEmpty == hasPlantingDates,
+            "the control: the coverage read returned \(young.count) trees, and the source \(hasPlantingDates ? "does" : "does not") publish PlantDate"
+        )
     }
 
     // MARK: - The read that was actually broken
@@ -386,6 +425,7 @@ struct AlmanacVacantSiteTests {
     @Test("the vacant-sites read counts the neighbourhood's basins and its nearest is one of them")
     func vacantSitesQuery() async throws {
         let store = try await Self.store()
+        let corpus = try await SeedCorpus.current(store)
         let schema = try #require(store.seed)
         let queries = AlmanacQueries(schema: schema)
         let sunset = try await Self.neighborhoodID(named: "Sunset/Parkside", on: store)
@@ -403,8 +443,11 @@ struct AlmanacVacantSiteTests {
 
         // The count is the whole set and the rows are a page of it, which is the shape ERRATA E129
         // needs and ERRATA E38 governs: 1,474 is a `COUNT(*)`, 20 is what a map can hold.
-        #expect(result.count == 1_474)
-        #expect(result.nearest.count == AlmanacLimits.vacantSiteRowLimit)
+        #expect(result.count == corpus.sunsetVacantSites)
+        // A page of the whole set, or the whole set when it is smaller than a page. Under
+        // `--source city` this neighbourhood holds 7 basins, fewer than the 20-row limit, so the
+        // page *is* everything — the shape E129 needs either way.
+        #expect(result.nearest.count == min(corpus.sunsetVacantSites, AlmanacLimits.vacantSiteRowLimit))
         #expect(result.nearest.allSatisfy { $0.status == .vacantSite })
         let nearest = try #require(result.nearest.first?.id)
 
