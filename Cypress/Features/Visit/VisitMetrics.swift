@@ -148,6 +148,48 @@ enum VisitMetrics {
             shotTypeBottom - shutterBottom - shutterDiameter
         }
 
+        // ── The accessibility variant (R14; ERRATA — see docs/errata-pending/screen04-ax.md) ──
+        //
+        // SCREENS 04 draws this screen at default type only. R14 ruled that at accessibility sizes
+        // the viewfinder shrinks to a fixed minimum and the controls beneath it scroll, and left the
+        // minimum, the switch and the shutter's fate to be decided against the running layout. These
+        // two values are that decision; `SCREENS.md` §3 · 04 now draws the result.
+
+        /// The aspect ratio of every frame this screen captures.
+        ///
+        /// **Not a chosen number — read off the capture path.** `VisitCameraController` configures
+        /// `sessionPreset = .photo`, which is 4:3 on every iPhone, and `VisitCameraPreview` sets the
+        /// preview layer to `.resizeAspectFill` so that a full-bleed viewfinder never letterboxes.
+        static let captureAspectRatio: CGFloat = 4.0 / 3.0
+
+        /// How little of the display the controls may ever be left with.
+        ///
+        /// A backstop for a display too short to give the viewfinder its floor *and* leave a tray —
+        /// the note field at rest inside the tray's own padding, which is the least that still reads
+        /// as "there is a form down here". It does not bind on any phone measured (see
+        /// `viewfinderFloor`); it exists so that a shorter one degrades to a squeezed viewfinder over
+        /// scrolling controls rather than to no controls at all.
+        static var controlsFloor: CGFloat { trayPadding + noteMinHeight + traySpacing + trayBottom }
+
+        /// The height below which the viewfinder does not shrink, whatever the type size (R14).
+        ///
+        /// **Derived from the photograph, not picked.** With a 4:3 capture behind a `.resizeAspectFill`
+        /// layer, a viewfinder `width` points wide shows the *whole* frame at exactly
+        /// `width × 4/3`. Taller than that and the preview crops the sides; **shorter, and it crops the
+        /// top and the bottom** — and on a street tree the first thing off the top is the crown. So
+        /// this is the exact height at which the viewfinder stops showing the photograph it is about to
+        /// take, which is where R14's reasoning — nobody can compose a shot they cannot see — stops
+        /// being a matter of comfort and becomes a matter of fact.
+        ///
+        /// On the 393 × 852 pt phone this was built against that is **524 pt**, and the measurements
+        /// that make it a floor rather than a redesign are: the viewfinder is 583 pt at the drawn
+        /// size and 550 pt at `xxxLarge`, both above it, and 503 pt at AX1, below it. The floor
+        /// therefore first binds exactly where `isAccessibilitySize` first turns true, which is why
+        /// that is the switch and not a number of its own.
+        static func viewfinderFloor(width: CGFloat, available: CGFloat) -> CGFloat {
+            min(width * captureAspectRatio, max(0, available - controlsFloor))
+        }
+
         /// Ghost caption — `bottom:44px; left:34px`, `max-width:80px`, `line-height:1.4`.
         static let ghostCaptionBottom: CGFloat = 44
         static let ghostCaptionLeading: CGFloat = 34

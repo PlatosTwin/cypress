@@ -20,6 +20,7 @@ struct VisitCameraView: View {
     /// The capture whose flash has already been faded out. See `shutterFlash`.
     @State private var fadedCaptureTick = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let onSaved: (VisitSaveReceipt) -> Void
     let onClose: () -> Void
@@ -46,10 +47,43 @@ struct VisitCameraView: View {
         self.onClose = onClose
     }
 
+    // ══════════════════════════════════════════════════════════════════════════════════════════════
+    // THE ACCESSIBILITY VARIANT (R14; ERRATA — see docs/errata-pending/screen04-ax.md)
+    //
+    // Below the accessibility sizes this screen is exactly what SCREENS 04 draws: a viewfinder that
+    // takes what is left after the tray, with the framing chips and the shutter overlaid on its
+    // bottom edge. Nothing in the drawn layout moves.
+    //
+    // At the accessibility sizes the tray outgrows the display, and the *overlay* is what breaks:
+    // an overlay aligned `.bottom` pins its bottom edge to the viewfinder's, so when the viewfinder
+    // is squeezed shorter than the overlay the chip row grows **upward, off the top of the screen**
+    // — under the status bar and the Dynamic Island, where it cannot be read and does not answer a
+    // tap. That is E152 — one session, three framings — becoming unreachable, and it is the defect
+    // this variant exists to close.
+    //
+    // R14's answer, and the rule this code applies: the viewfinder keeps a floor and everything else
+    // scrolls. What that means concretely is that **the viewfinder carries only furniture whose size
+    // does not depend on the type ramp** — the close button, the framing corners, the shutter — and
+    // every element that grows with the ramp moves into the scrolling controls below it. The one
+    // deliberate exception is the guidance pill, because with the chips moved down it is the only
+    // thing left saying which framing you are aiming at; it is top-anchored, so it grows down into
+    // the frame rather than off the display, and it is hit-transparent.
+    // ══════════════════════════════════════════════════════════════════════════════════════════════
+
+    /// Whether this is the accessibility variant. `isAccessibilitySize` — AX1 and up — and not a
+    /// number of its own: measured on a 393 × 852 pt phone, the viewfinder is 583 pt at the drawn
+    /// size, 550 pt at `xxxLarge` and 503 pt at AX1, so the floor (524 pt) first binds exactly where
+    /// this predicate first turns true. It is also the switch every other adaptive component in the
+    /// app already uses; a ninth spelling of "large text" would be drift.
+    private var controlsScroll: Bool { dynamicTypeSize.isAccessibilitySize }
+
     var body: some View {
-        VStack(spacing: 0) {
-            viewfinder
-            tray
+        Group {
+            if controlsScroll {
+                accessibilityLayout
+            } else {
+                drawnLayout
+            }
         }
         .background(CypressColor.Dark.bgCamera)
         .ignoresSafeArea(edges: .top)
@@ -63,6 +97,45 @@ struct VisitCameraView: View {
                     model.useLibraryImage(data)
                 }
                 libraryItem = nil
+            }
+        }
+    }
+
+    // MARK: - The two layouts
+
+    /// SCREENS 04, unchanged: `flex:1` viewfinder over a `flex:none` tray.
+    private var drawnLayout: some View {
+        VStack(spacing: 0) {
+            viewfinder
+            controls
+                .background(CypressColor.Dark.bgCameraTray)
+        }
+    }
+
+    /// R14's variant: the viewfinder at its floor, the controls scrolling under it.
+    ///
+    /// A `GeometryReader` rather than two flexible frames in a `VStack`, because two flexible
+    /// children split the space between them and what is wanted here is a split at a *stated* line —
+    /// the floor — with the remainder going to the scroll. Both halves are computed from one height,
+    /// so they always sum to it and neither can be pushed off the display by the other.
+    private var accessibilityLayout: some View {
+        GeometryReader { geo in
+            let floor = VisitMetrics.Camera.viewfinderFloor(
+                width: geo.size.width,
+                available: geo.size.height
+            )
+            VStack(spacing: 0) {
+                viewfinder
+                    .frame(height: floor)
+                ScrollView {
+                    controls
+                }
+                .frame(height: max(0, geo.size.height - floor))
+                // Only bounce when there is something to bounce to: on a display roomy enough to
+                // hold every control, a scroll view that rubber-bands is claiming content it has not
+                // got.
+                .scrollBounceBehavior(.basedOnSize)
+                .background(CypressColor.Dark.bgCameraTray)
             }
         }
     }
@@ -171,6 +244,19 @@ struct VisitCameraView: View {
         }
     }
 
+    /// The one growing element the accessibility variant keeps on the viewfinder.
+    ///
+    /// It stays because with the chip row moved into the scroll it is the only thing left that says
+    /// which framing is being aimed, and it can stay because it is anchored to the *top*: it grows
+    /// down into the frame rather than off the display, and it is hit-transparent, so nothing behind
+    /// it is put out of reach.
+    ///
+    /// **Its inset is the one number that has to move.** At the drawn sizes the pill is narrow and sits
+    /// beside the ✕; at AX5 it is the full width of the phone and covers it completely — the ✕ is
+    /// still tappable, because the pill takes no hits, but a control you cannot see is a control you
+    /// cannot find, and this one is how you leave the screen. So at accessibility sizes the pill drops
+    /// below the close button's row instead of sharing it. Composed from the two tokens that decide
+    /// where that row is, so it stays correct if either moves.
     private var guidancePill: some View {
         Text(model.guidance)
             .font(CypressFont.body13)
@@ -182,8 +268,13 @@ struct VisitCameraView: View {
                     .fill(VisitColor.guidancePillFill)
                     .background { Capsule().fill(.ultraThinMaterial) }
             }
-            .padding(.top, VisitMetrics.Camera.guidancePillTop)
+            .padding(.top, controlsScroll ? guidancePillTopBelowClose : VisitMetrics.Camera.guidancePillTop)
             .allowsHitTesting(false)
+    }
+
+    /// Clear of the ✕ rather than across it — see `guidancePill`.
+    private var guidancePillTopBelowClose: CGFloat {
+        CypressSpacing.Device.statusBarInset + VisitMetrics.Camera.closeButton + CypressSpacing.gapRows
     }
 
     private var framingCorners: some View {
@@ -209,9 +300,30 @@ struct VisitCameraView: View {
     }
 
     /// The chip row and the shutter, in one stack, anchored to the bottom of the viewfinder.
+    ///
+    /// **At accessibility sizes only the shutter is here**, and that is the answer to the third
+    /// question R14 left open. The shutter *pins*; the chips travel.
+    ///
+    /// The shutter pins because it is the half of the viewfinder that is not a picture. A person on
+    /// this screen is holding a phone up at a tree, and aiming and firing are one gesture: a shutter
+    /// you have to scroll to find is a shot you lose your aim to reach, which is the same argument
+    /// that keeps the viewfinder on screen at all. It costs a constant 68 pt at every text size,
+    /// where the controls' cost grows without bound, so it is also the cheapest thing on the screen
+    /// to keep. And it does not change house between size classes — it is bottom-anchored on the
+    /// viewfinder at 34 pt whatever the ramp says, so a reader who learns where it is at one size
+    /// finds it at every other. SCREENS.md §5's own gap 11 already reads this way for the rest of the
+    /// app: "scrollable content with a pinned CTA".
+    ///
+    /// The argument the other way, so that it is on the record rather than merely lost: those 68 pt
+    /// plus 34 are viewport the scrolling controls could have, and once all three framings are
+    /// photographed the shutter has nothing left to do. It is refused because the screen cannot know
+    /// when a contributor is finished — `retake` is one tap away on every framing — and because a
+    /// control that is sometimes pinned and sometimes not is worse than one that is always pinned.
     private var bottomControls: some View {
         VStack(spacing: VisitMetrics.Camera.shotTypeGapAboveShutter) {
-            shotTypeChips
+            if !controlsScroll {
+                shotTypeChips
+            }
             shutter
         }
         .padding(.bottom, VisitMetrics.Camera.shutterBottom)
@@ -229,15 +341,23 @@ struct VisitCameraView: View {
             },
             select: { model.shotType = $0 }
         )
-        .padding(.horizontal, VisitMetrics.Camera.trayPadding)
+        // The gutter is the overlay's own when the row is on the viewfinder; in the scroll the
+        // controls column has already applied it, and applying it twice would inset this row past
+        // every other control in the column.
+        .padding(.horizontal, controlsScroll ? 0 : VisitMetrics.Camera.trayPadding)
     }
 
     @ViewBuilder
     private var shutter: some View {
         VStack(spacing: CypressSpacing.gapRows) {
-            if model.camera.needsLibraryFallback {
+            if model.camera.needsLibraryFallback, !controlsScroll {
                 // Same treatment as the guidance pill: this sentence sits on the viewfinder, and
                 // plain text there is unreadable against a photograph.
+                //
+                // At accessibility sizes it is not here at all — see `fallbackLine`. It is the
+                // sentence E152 already had to rescue once from growing up through the chip row, and
+                // it is the clearest case of the rule this variant follows: it is copy, it grows with
+                // the ramp, and copy on a viewfinder that cannot grow has nowhere to go.
                 Text(fallbackReason)
                     .font(CypressFont.body125)
                     .foregroundStyle(VisitColor.guidancePillText)
@@ -288,9 +408,15 @@ struct VisitCameraView: View {
         }
     }
 
+    /// The caption on the ghost layer, in the corner SCREENS 04 puts it.
+    ///
+    /// Absent at accessibility sizes, where `ghostCaptionLine` says the same words in the scroll.
+    /// Its `max-width:80px` is what makes it impossible to keep here: at AX5 that is a column of
+    /// single stacked syllables running the height of the viewfinder and straight through the
+    /// shutter, which is what the before-shots of this defect show.
     @ViewBuilder
     private var ghostCaption: some View {
-        if !model.hasSnapped {
+        if !model.hasSnapped, !controlsScroll {
             Text(model.ghostCaption)
                 .font(CypressFont.mono105)
                 .foregroundStyle(VisitColor.ghostCaption)
@@ -324,10 +450,24 @@ struct VisitCameraView: View {
         .accessibilityLabel("Close the camera")
     }
 
-    // MARK: - Tray
+    // MARK: - Controls
 
-    private var tray: some View {
+    /// Everything that is not the viewfinder: the tray SCREENS 04 draws, and — at accessibility
+    /// sizes only — the three elements that come down off the viewfinder to join it.
+    ///
+    /// The order of those three is deliberate. **The chip row is first**, immediately under the frame
+    /// it aims, because this whole variant exists because the chips were unreachable and the
+    /// strongest discharge of that is a chip row nobody has to scroll to. The fallback sentence is
+    /// second, directly beneath the pinned shutter it explains. The ghost caption is third: it is a
+    /// legend for the layer above, and the least urgent thing on the screen.
+    private var controls: some View {
         VStack(spacing: VisitMetrics.Camera.traySpacing) {
+            if controlsScroll {
+                shotTypeChips
+                fallbackLine
+                ghostCaptionLine
+            }
+
             // What this session could still hold, once it holds something. In the tray rather than over
             // the viewfinder because it is about the visit being composed, not about the frame being
             // aimed — and because a second pill on the viewfinder is what E125's overflow was made of.
@@ -359,7 +499,44 @@ struct VisitCameraView: View {
         .padding(.horizontal, VisitMetrics.Camera.trayPadding)
         .padding(.top, VisitMetrics.Camera.trayPadding)
         .padding(.bottom, VisitMetrics.Camera.trayBottom)
-        .background(CypressColor.Dark.bgCameraTray)
+        // The fill belongs to whatever is hosting this: the tray itself in the drawn layout, the
+        // scroll view in the accessibility one, so that the colour reaches the bottom of the display
+        // whether or not the content does.
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The camera-denied sentence, as tray copy rather than as a pill on a photograph
+    /// (accessibility sizes only; see `shutter` for where it lives otherwise).
+    ///
+    /// No capsule and no material here. That treatment exists to make the sentence legible *over a
+    /// photograph*; on the tray it would be a floating pill in a column of left-aligned copy. It
+    /// takes the tray's own primary ink instead — it explains why the primary action is a library
+    /// picker, which is not muted information.
+    @ViewBuilder
+    private var fallbackLine: some View {
+        if model.camera.needsLibraryFallback {
+            Text(fallbackReason)
+                .font(CypressFont.body125)
+                .foregroundStyle(CypressColor.Dark.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// `ghost overlay 30%`, in the scroll (accessibility sizes only; see `ghostCaption`).
+    ///
+    /// It keeps its mono face and its colour, so it is recognisably the same caption, and drops the
+    /// 80 pt width cap that is the only part of it the type ramp cannot survive.
+    @ViewBuilder
+    private var ghostCaptionLine: some View {
+        if !model.hasSnapped {
+            Text(model.ghostCaption)
+                .font(CypressFont.mono105)
+                .foregroundStyle(VisitColor.ghostCaption)
+                .lineSpacing(VisitMetrics.Camera.ghostCaptionLineSpacing)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     private var noteField: some View {
