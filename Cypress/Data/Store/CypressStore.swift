@@ -23,6 +23,18 @@ public final class CypressStore: Sendable {
     /// page would be 133,577 identical queries a day. `nil` when no seed is attached, or when the
     /// attached seed predates the receipt keys — see `InventorySource`.
     public let seedProvenance: InventorySource?
+    /// **Every inventory the attached seed holds rows from**, keyed by the identifier
+    /// `trees.inventory_source` stores.
+    ///
+    /// The shipped seed is built from two: SF Public Works' operational layer decides which trees
+    /// exist, and the DataSF export supplies the vacant planting sites, which the layer has no
+    /// category for. `seedProvenance` above is the file's *primary* inventory and is the wrong
+    /// answer for 12,260 of its rows, so a per-row provenance line resolves through here instead.
+    ///
+    /// Read once at open with the rest of the receipt. Empty for a seed built before the
+    /// `inventory_<id>_*` keys existed, in which case `seedProvenance` is the only answer there is
+    /// and it is the right one, because such a seed came from one inventory.
+    public let seedInventories: [String: InventorySource]
     /// Where `main` lives, for diagnostics and for the "delete my data" path.
     public let databaseURL: URL
 
@@ -30,13 +42,14 @@ public final class CypressStore: Sendable {
         queue: DatabaseQueue,
         seed: SeedSchema?,
         seedHasSoftDeletedTrees: Bool,
-        seedProvenance: InventorySource?,
+        seedMeta: [String: String],
         databaseURL: URL
     ) {
         self.queue = queue
         self.seed = seed
         self.seedHasSoftDeletedTrees = seedHasSoftDeletedTrees
-        self.seedProvenance = seedProvenance
+        self.seedProvenance = InventorySource(seedMeta: seedMeta)
+        self.seedInventories = Self.inventories(in: seedMeta)
         self.databaseURL = databaseURL
     }
 
@@ -50,6 +63,24 @@ public final class CypressStore: Sendable {
         guard let rows = try? statement.fetchAll({ (try $0.string("key"), try $0.string("value")) })
         else { return [:] }
         return Dictionary(rows, uniquingKeysWith: { first, _ in first })
+    }
+
+    /// Every `inventory_<id>_name` key in the receipt, resolved. Plus the file's primary inventory,
+    /// so a seed that predates those keys still answers for its own rows.
+    ///
+    /// Key-driven rather than a fixed list of two: the identifiers belong to `Tools/build_seed.py`,
+    /// and a build that one day sources a third thing should not need this file edited to be able
+    /// to name it.
+    static func inventories(in seedMeta: [String: String]) -> [String: InventorySource] {
+        var found: [String: InventorySource] = [:]
+        for key in seedMeta.keys where key.hasPrefix("inventory_") && key.hasSuffix("_name") {
+            let id = String(key.dropFirst("inventory_".count).dropLast("_name".count))
+            if let source = InventorySource(id: id, seedMeta: seedMeta) { found[id] = source }
+        }
+        if let primary = InventorySource(seedMeta: seedMeta), found[primary.id] == nil {
+            found[primary.id] = primary
+        }
+        return found
     }
 
     // MARK: - Opening
@@ -85,11 +116,11 @@ public final class CypressStore: Sendable {
         let url = try databaseURL ?? defaultDatabaseURL()
         let queue = try DatabaseQueue(url: url)
 
-        let (schema, hasSoftDeletes, provenance) = try await queue.withConnection {
-            connection -> (SeedSchema?, Bool, InventorySource?) in
+        let (schema, hasSoftDeletes, seedMeta) = try await queue.withConnection {
+            connection -> (SeedSchema?, Bool, [String: String]) in
             try SchemaMigrator.migrate(migrations, on: connection)
 
-            guard let seedURL else { return (nil, false, nil) }
+            guard let seedURL else { return (nil, false, [:]) }
             let schema = try SeedDatabase.attach(seedURL, to: connection)
 
             let statement = try connection.prepare(
@@ -97,14 +128,14 @@ public final class CypressStore: Sendable {
             )
             defer { statement.finalize() }
             let present = try statement.fetchOne { try $0.bool("present") } ?? false
-            return (schema, present, InventorySource(seedMeta: readSeedMeta(connection: connection)))
+            return (schema, present, readSeedMeta(connection: connection))
         }
 
         return CypressStore(
             queue: queue,
             seed: schema,
             seedHasSoftDeletedTrees: hasSoftDeletes,
-            seedProvenance: provenance,
+            seedMeta: seedMeta,
             databaseURL: url
         )
     }
@@ -116,23 +147,23 @@ public final class CypressStore: Sendable {
         migrations: [Migration] = AppSchema.migrations
     ) async throws -> CypressStore {
         let queue = try DatabaseQueue.inMemory()
-        let (schema, hasSoftDeletes, provenance) = try await queue.withConnection {
-            connection -> (SeedSchema?, Bool, InventorySource?) in
+        let (schema, hasSoftDeletes, seedMeta) = try await queue.withConnection {
+            connection -> (SeedSchema?, Bool, [String: String]) in
             try SchemaMigrator.migrate(migrations, on: connection)
-            guard let seedURL else { return (nil, false, nil) }
+            guard let seedURL else { return (nil, false, [:]) }
             let schema = try SeedDatabase.attach(seedURL, to: connection)
             let statement = try connection.prepare(
                 "SELECT EXISTS(SELECT 1 FROM \(SeedDatabase.schemaName).trees WHERE deleted_at IS NOT NULL) AS present"
             )
             defer { statement.finalize() }
             let present = try statement.fetchOne { try $0.bool("present") } ?? false
-            return (schema, present, InventorySource(seedMeta: readSeedMeta(connection: connection)))
+            return (schema, present, readSeedMeta(connection: connection))
         }
         return CypressStore(
             queue: queue,
             seed: schema,
             seedHasSoftDeletedTrees: hasSoftDeletes,
-            seedProvenance: provenance,
+            seedMeta: seedMeta,
             databaseURL: URL(fileURLWithPath: ":memory:")
         )
     }

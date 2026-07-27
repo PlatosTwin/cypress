@@ -131,6 +131,15 @@ public struct SeedSchema: Equatable, Sendable {
     /// ~74 MB and is regenerable — so nothing in this layer reads it; the flag exists so the
     /// contract test can pin its presence rather than its content.
     public let hasCityRaw: Bool
+    /// Whether `trees.inventory_source` is present — which of San Francisco's two street-tree
+    /// inventories listed each row.
+    ///
+    /// It is a per-row column because the shipped seed is built from both: the living trees are SF
+    /// Public Works' operational layer, and the vacant planting sites are the DataSF export, which
+    /// is the only one of the two that has a vacant-site category at all. A seed built before #91's
+    /// second round has no such column and every row in it came from one inventory, so the flag
+    /// exists to let the read layer fall back to the seed-wide answer rather than fail.
+    public let hasInventorySource: Bool
     /// Whether the identity model is the current INTEGER-PK one.
     public var usesIntegerPrimaryKeys: Bool { treeIdentityColumn == "uuid" }
 
@@ -168,7 +177,8 @@ public struct SeedSchema: Equatable, Sendable {
             treeIdentityColumn: treeColumns.contains("uuid") ? "uuid" : "id",
             speciesIdentityColumn: speciesColumns.contains("uuid") ? "uuid" : "id",
             rtreeJoinColumn: treeColumns.contains("rt_id") ? "rt_id" : "id",
-            hasCityRaw: treeColumns.contains("city_raw")
+            hasCityRaw: treeColumns.contains("city_raw"),
+            hasInventorySource: treeColumns.contains("inventory_source")
         )
     }
 }

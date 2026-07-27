@@ -19,7 +19,7 @@ import Foundation
 /// San Francisco publishes its street trees twice and the two do not agree:
 ///
 /// - **`city`** — SF Public Works' own operational layer, the one its public map at
-///   <https://bsm.sfdpw.org/urbanforestry/> draws. 133,577 records. What ships today (#91).
+///   <https://bsm.sfdpw.org/urbanforestry/> draws. 133,577 records, every one of them a tree.
 /// - **`datasf`** — the open-data export `tkzw-k3nq`. 195,309 records, nine more columns, and
 ///   ~65,000 rows the city's own map does not show. What shipped before #91, still buildable with
 ///   `Tools/build_seed.py --source datasf`.
@@ -27,6 +27,12 @@ import Foundation
 /// Both are the city's; neither is a superset of the other. `name` is the phrase the app puts on
 /// screen and it names the *inventory*, never "San Francisco" alone — the distinction between the
 /// two lists is the whole reason this type exists.
+///
+/// **The shipped seed holds rows from both**, which is why `init(id:seedMeta:)` exists beside
+/// `init(seedMeta:)`. The city's layer decides which *trees* exist; it has no vacant-site category
+/// at all, so the 12,260 empty planting sites are the export's rows and say so. A row's own source
+/// is `trees.inventory_source`, and the seed-wide value is only the right answer for a seed built
+/// from one inventory.
 public struct InventorySource: Hashable, Sendable {
 
     /// The identifier `Tools/build_seed.py` was invoked with — `city` or `datasf`. Not shown to
@@ -67,6 +73,34 @@ public struct InventorySource: Hashable, Sendable {
         self.name = seedMeta["trees_source_name"] ?? id
         self.url = seedMeta["trees_source_url"] ?? ""
         self.snapshotDate = (seedMeta["trees_snapshot_on"]).flatMap(Self.date(fromISODay:))
+    }
+
+    /// **The inventory a single row came from**, by the identifier `trees.inventory_source` stores.
+    ///
+    /// The seed is no longer one inventory's file. Its living trees are SF Public Works' operational
+    /// layer, and its 12,260 vacant planting sites are the DataSF export's, because the layer
+    /// publishes no vacant-site category and so has nothing to say about them. Two inventories in
+    /// one file means the seed-wide answer above is the wrong answer for some of its rows, and a
+    /// provenance line is a claim about **this record** — putting the city's name and the city's
+    /// snapshot date over a row the city has never listed is exactly the kind of quiet falsehood
+    /// this type was added to end.
+    ///
+    /// Resolved from the `inventory_<id>_*` keys the build writes for every inventory the file
+    /// actually holds rows from. A seed built before those keys existed falls back to the
+    /// `trees_source_*` keys, which are right for it because every row in it came from one place.
+    /// Nil when the receipt names neither, for the same reason the initializer above is failable:
+    /// an unknown provenance must read as unknown.
+    public init?(id: String, seedMeta: [String: String]) {
+        guard !id.isEmpty else { return nil }
+        if let name = seedMeta["inventory_\(id)_name"], !name.isEmpty {
+            self.id = id
+            self.name = name
+            self.url = seedMeta["inventory_\(id)_url"] ?? ""
+            self.snapshotDate = (seedMeta["inventory_\(id)_snapshot_on"]).flatMap(Self.date(fromISODay:))
+            return
+        }
+        guard seedMeta["trees_source"] == id else { return nil }
+        self.init(seedMeta: seedMeta)
     }
 
     /// `2026-07-26` → a `Date` at UTC midnight. Nil for anything else, including an empty string.

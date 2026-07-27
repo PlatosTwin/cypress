@@ -170,6 +170,20 @@ CREATE TABLE trees (
     uuid               TEXT NOT NULL UNIQUE,    -- stable citable identity
     external_ref       INTEGER UNIQUE,          -- DataSF TreeID
     source             TEXT NOT NULL,           -- city_import | community
+    -- WHICH OF SAN FRANCISCO'S TWO INVENTORIES LISTED THIS RECORD. 'city' or
+    -- 'datasf', matching `--source` and `seed_meta.trees_source`.
+    --
+    -- Under `--source datasf` every row says 'datasf' and the column is
+    -- redundant. Under `--source city` it is not: the row set is the city's
+    -- operational layer, but that layer has no vacant-site category at all
+    -- (`PlantType` is `Tree` on all 133,577 of its records), so the seed's
+    -- vacant planting sites are carried across from the DataSF export and are
+    -- the only rows in the file the city's layer does not list. A seed built
+    -- from two inventories owes every reader the ability to ask which one a
+    -- given row came from -- otherwise the provenance sentence on screen is a
+    -- claim about the file rather than about the record, and for 12,260 of
+    -- them it would be the wrong inventory's name.
+    inventory_source   TEXT NOT NULL,           -- city | datasf
     lat                REAL NOT NULL,
     lon                REAL NOT NULL,
     address            TEXT,
@@ -198,6 +212,7 @@ CREATE TABLE trees (
     updated_at         TEXT NOT NULL,
     deleted_at         TEXT,
     CHECK (status IN ('alive','declining','dead_reported','removed','vacant_site')),
+    CHECK (inventory_source IN ('city','datasf')),
     CHECK (verification_state IN ('unverified','org_verified','city_record')),
     CHECK ((dbh_city_cm_min IS NULL) = (dbh_city_cm_max IS NULL)),
     CHECK (city_raw IS NULL OR json_valid(city_raw)),

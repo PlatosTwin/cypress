@@ -311,9 +311,30 @@ public actor LocalAPI: CypressAPI {
                 // receipt. `record` is nil for a community-added tree — that one is nobody's city
                 // record and gets no provenance line, rather than one crediting an inventory it was
                 // never in.
-                inventorySource: record == nil ? nil : store.seedProvenance
+                //
+                // **This row's inventory, not the file's.** The seed holds rows from both of San
+                // Francisco's street-tree inventories: the living trees are SF Public Works'
+                // operational layer, and the 12,260 vacant planting sites are the DataSF export's,
+                // because the layer has no vacant-site category to have listed them in. The
+                // seed-wide `seedProvenance` would put the city's name and the city's snapshot date
+                // over every one of those sites, which is a sentence about a record the city has
+                // never held. A seed built before `trees.inventory_source` existed reports nil there
+                // and falls back to the file's answer, which is correct for it.
+                inventorySource: Self.provenance(of: record, in: store)
             )
         }
+    }
+
+    /// The inventory that listed one seed row, or nil for a tree no inventory listed.
+    ///
+    /// Nil for a community-added tree (`record` is nil) for the reason at the call site. Nil also
+    /// when the row names an inventory the receipt does not describe, which is a seed built by a
+    /// pipeline this build has never seen: an unnameable source renders as no provenance line at
+    /// all, never as the other inventory's name.
+    static func provenance(of record: TreeQueries.TreeRecord?, in store: CypressStore) -> InventorySource? {
+        guard let record else { return nil }
+        guard let id = record.inventorySourceID else { return store.seedProvenance }
+        return store.seedInventories[id]
     }
 
     private static func resolveSpecies(

@@ -1,4 +1,5 @@
 qSpecies_string,species_id,confidence
+Tree(s) ::,,0.00
 "Platanus x hispanica :: Sycamore, London Plane",7d22dcda-354d-5f7d-9be0-3739ea8c6688,0.75
 Metrosideros excelsa :: New Zealand Xmas Tree,678a3e0f-9a5a-55f1-8588-293dc1a4c5d7,1.00
 Lophostemon confertus :: Brisbane Box,ea4f4595-b255-56a6-bfe9-b57d41267457,1.00
@@ -20,6 +21,7 @@ Ulmus parvifolia :: Chinese Elm,b4ad0a9f-7aa9-5eee-b136-8d3622a32dc1,1.00
 Eriobotrya deflexa :: Bronze Loquat,a99e44cc-fdd9-5147-9ef1-e6566de12c8e,1.00
 Cupressus macrocarpa :: Monterey Cypress,f909a9ee-939c-5933-8220-66bb56d0c923,1.00
 Ligustrum lucidum :: Glossy Privet,43c56960-4385-59fe-9936-9fd9907f1c11,1.00
+::,,0.00
 Pinus radiata :: Monterey Pine,c288cf24-60f6-597f-bf66-2b9b445a1a25,1.00
 Cordyline australis :: Dracena Palm,1630d455-2bd8-5f77-8388-9dd70b2621bb,1.00
 Prunus serrulata :: Ornamental Cherry,9596b71d-aa14-5032-88d9-b9c5b5feee99,1.00
@@ -106,6 +108,7 @@ Prunus blireiana :: Flowering Plum,34f2861c-9d3f-513b-bec5-e05242de512b,1.00
 Celtis sinensis :: Chinese Hackberry,c398e6a4-bc69-5582-a0a6-2e46927e4a59,1.00
 Eriobotrya japonica :: Edible Loquat,dd7d680f-4ea9-5688-a7a6-1b7135cbb608,1.00
 Magnolia doltsopa :: Himalayan Magnolia,ea46a5d1-90d4-50e9-ab9a-dccb2a1b1a2c,1.00
+Potential Site :: Potential Site,,0.00
 Agonis flexuosa 'After Dark' :: Peppermint willow 'After Dark',ef4313e5-af9c-5670-a06b-7d0f8561f53e,0.90
 Ligustrum japonicum :: Japanese Privet,019ebbdf-5dea-5d3f-af72-0ecdbf4d6515,1.00
 Acer x freemanii :: Freeman Maple,10abcc98-d512-5a8d-b1a5-18324788bb40,0.75
@@ -115,12 +118,12 @@ Thuja occidentalis 'Emerald' :: Emerald Arborvitae,90a75445-29f1-5c6b-b3bc-f6bd0
 "Citrus spp :: Lemon, Orange, Lime",921d9fd8-249c-59d3-bc45-01ee2f516d5b,0.75
 Ceanothus Sps :: California lilac,cbafe513-1c4f-5235-be32-e00b84a0b4f7,0.60
 Pittosporum eugenioides :: Tarata,ce496566-e0ca-5039-8790-3bf0c59a52a0,1.00
-Potential Site :: Potential Site,,0.00
 Betula pendula :: European White Birch,042da646-e57d-5253-bf49-2b77052bc40d,1.00
 patanus racemosa ::,887bf022-3b31-549c-8400-9b6f371d0293,0.90
 Ficus nitida :: Laurel Fig,cea2a378-3b2f-5e4c-9337-e17432005f32,1.00
 Hymenosporum flavum :: Sweetshade,e74755e9-3911-5683-92a2-489472b23300,1.00
 Tilia cordata :: Littleleaf Linden,d4c85034-f65a-58ba-b069-b2b837e634b7,1.00
+Tree :: Tree,,0.00
 Chitalpa tashkentensis ::,552029fb-02ad-5648-9044-01e01fc1f19c,1.00
 Cedrus deodara :: Deodar Cedar,c8746368-65ad-528c-92b2-4a8503dfe5ef,1.00
 "Malus floribunda :: Showy Crab Apple, Japanese Crabapple",acdd30d8-7680-5a54-a719-a414482d9392,1.00
@@ -262,7 +265,6 @@ Quercus tomentella ::,5b864858-ac3b-57d3-ae31-e820ea8fd920,1.00
 Robinia pseudoacacia :: Black Locust,e6d5c938-c52c-5152-8aa6-406118c692b2,1.00
 Salix spp :: Willow,6feb1ea9-d4f3-50a6-9f83-8c66e161bffe,0.75
 Yucca elephantipes :: Giant Yucca,dcb807b4-2f38-56fc-9dc7-558423b9882e,1.00
-::,,0.00
 Arecastrum romanzoffianum :: Queen Palm,1e7e28e6-ba55-5663-8cdd-bd5fa8f0bbd4,1.00
 Metasequoia glyplostroboides :: Dawn Redwood,cb2d8d47-b403-5d9b-89d4-3b4579666ccb,1.00
 Olea europaea 'Swan Hill' :: Olive,b5e390bb-666b-597b-b333-d1af19efbfd1,0.90
@@ -522,6 +524,7 @@ Xylosma congestum :: Brush holly,8cbd8f4a-f5fe-56af-9abe-d69eb3016f43,1.00
 :: Chitalpatashkentensis,4252ec18-4112-55e3-acf9-f779dbc1dfd9,0.30
 :: Magnolia Little Gem,b4e5ee74-46a9-5500-9475-9e19bc432594,0.30
 :: Podocarpus Gracilor,877e5469-c589-5693-bdf3-2430284f8ffb,0.30
+:: Tree,,0.00
 :: agonis flexuosa,4925d6ec-4900-5257-9f93-7e589d988161,0.30
 :: eriobotrya deflexa,37e97555-e5d2-598a-a018-22c36161ee74,0.30
 Acer campestre :: Hedge Maple,4113058e-62f3-56fe-a34c-d728254892b3,1.00

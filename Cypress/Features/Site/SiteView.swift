@@ -133,6 +133,7 @@ struct SiteScreen: View {
                 identity
                 statement
                 stats
+                provenance
                 neighbour
                 footnote
             }
@@ -200,6 +201,23 @@ struct SiteScreen: View {
             }
             .padding(.horizontal, CypressSpacing.gutter)
             .padding(.top, SiteMetrics.calloutTop)
+        }
+    }
+
+    // MARK: - Where this record came from
+
+    /// Directly under the grid, in the same place and the same muted body the tree page's city
+    /// section puts its own provenance line — because it is the same sentence about the same kind of
+    /// fact, and the two screens should not disagree about how a source is credited.
+    @ViewBuilder
+    private var provenance: some View {
+        if let note = presentation.provenanceNote {
+            Text(note)
+                .cypressBody135(color: CypressColor.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, CypressSpacing.gutter)
+                .padding(.top, SiteMetrics.calloutTop)
         }
     }
 
