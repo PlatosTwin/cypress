@@ -96,7 +96,18 @@ missing or unparseable. One gate had to move to make room for it: `CityRecordPre
 silently removed the entire section from every tree in the seed. The section now opens for cards
 **or** for a provenance line.
 
-Two smaller repairs rode along. `plant_type` held `Tree` 194,988 times and `tree` three times (TreeIDs
+**A UI test had been red since the first round and was not read as such.** `AlmanacGroupTapTests`
+locates screen 12's coverage CTA with `label BEGINSWITH "Walk the "`, but
+`AlmanacPresentation.coverageCTA` renders `Walk to it` when the count is one, because "walk the one"
+is not a sentence. The neighbourhood these tests land in from the simulated fix — Western Addition —
+held two young trees under the DataSF export and holds one under the city's, because the switch cut
+the seed's planting dates from 70,067 to 28,747. So the button was drawn correctly and the locator
+could not see it, and the failure read `§4's CTA is not on the almanac`: a true sentence about the
+predicate and a false one about the app. That is the same "blame the almanac for something else"
+shape E153 had just removed from these tests. The locator now matches `Walk `, and the count is left
+to the assertions that were always about it.
+
+Three smaller repairs rode along. `plant_type` held `Tree` 194,988 times and `tree` three times (TreeIDs
 253212, 253634, 96598), so every `WHERE plant_type = 'Tree'` in the product silently dropped three
 rows; the build now folds case-variant spellings in the five columns the app compares against
 literals, and the seed contract fails if any return. Free text is deliberately left alone —
@@ -107,3 +118,17 @@ ship: it carries `Prune_Year` on every record. That field belongs to the **keyma
 — 133,577 records share 106 distinct values, 5,147 of them the exact string the owner saw under 276198
 — so the seed does not carry it and the sentence now says the city records pruning by block and not by
 tree.
+And the debug harness's candidate window, widened from 500 to 4,000 in the first round because the
+nearest vacant site to the map's opening centre had become the 1,181st record by distance, goes back
+to 500: it is the 16th again, and the widening was making a harness green over a surface that had
+gone vestigial.
+
+**The 475 records the city writes backwards were already fixed and are recorded here so nobody
+inherits them as open.** `city_qspecies` swaps `COMMON` into the botanical half when `BOTANICAL` is
+empty and `COMMON` reads as a binomial; measured on the built seed, 410 of 540 such rows are swapped
+and land on the real species row rather than minting one beside it. What is left is smaller and
+different: 8 stub species shadow a species already in the corpus over 30 tree rows (0.021%), because
+the city wrote the genus in lowercase or gave a cultivar with no epithet. Fixing that means a
+canonical-spelling pass over the species name, which is #95's mechanism applied to a column #95
+deliberately excluded, and it changes the corpus the species fixtures are sourced against. Its own
+task, not a rider on a decision about which rows exist.
