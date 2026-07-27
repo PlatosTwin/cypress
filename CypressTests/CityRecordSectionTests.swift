@@ -487,4 +487,68 @@ struct CityRecordSectionTests {
         #expect(provenance.contains(try #require(store.seedProvenance).name))
         #expect(presentation.cityRecordNotes.last == provenance)
     }
+
+    /// **A vacant planting site credits the inventory that actually listed it.**
+    ///
+    /// The shipped seed is built from both of San Francisco's street-tree inventories. The living
+    /// trees are SF Public Works' operational layer; the empty basins are the DataSF export's rows,
+    /// because that layer has no vacant-site category at all and has therefore never held one of
+    /// these records. `CypressStore.seedProvenance` is a property of the *file* and names the city
+    /// for all 145,837 rows, so a screen that reads it puts the city's name and the city's snapshot
+    /// date over 12,260 records the city has never seen.
+    ///
+    /// This follows the fix end to end on real rows: `trees.inventory_source` → `TreeQueries` →
+    /// `LocalAPI.provenance(of:in:)` → `SitePresentation.provenanceNote`. **Both halves matter.**
+    /// The site asserts the export's name; the tree beside it asserts the city's, which is the
+    /// control — without it a resolver that returned the same answer for everything would pass the
+    /// first assertion and the whole point would be lost.
+    ///
+    /// Skipped on a seed built from one inventory (`--source datasf`), where the file-wide answer is
+    /// the right answer for every row and there is no second name to distinguish.
+    @Test("a vacant site names its own inventory, not the file's")
+    func aVacantSiteNamesItsOwnInventory() async throws {
+        let store = try await Self.store()
+        let schema = try #require(store.seed)
+        guard schema.hasInventorySource, store.seedInventories.count > 1 else { return }
+
+        let queries = TreeQueries(
+            schema: schema,
+            seedHasSoftDeletedTrees: store.seedHasSoftDeletedTrees
+        )
+        let picked = try await store.queue.read { connection -> (TreeQueries.TreeRecord, TreeQueries.TreeRecord) in
+            func row(_ predicate: String) throws -> TreeQueries.TreeRecord {
+                let statement = try connection.cachedStatement("""
+                    SELECT uuid FROM \(SeedDatabase.schemaName).trees
+                     WHERE \(predicate) LIMIT 1
+                    """)
+                let uuid = try #require(try statement.fetchOne { try $0.uuid("uuid") })
+                return try #require(try queries.tree(id: uuid, connection: connection))
+            }
+            return (
+                try row("status = 'vacant_site' AND inventory_source = 'datasf'"),
+                try row("status = 'alive' AND inventory_source = 'city'")
+            )
+        }
+
+        let site = picked.0
+        let tree = picked.1
+        #expect(site.inventorySourceID == "datasf")
+        #expect(tree.inventorySourceID == "city")
+
+        let siteSource = try #require(LocalAPI.provenance(of: site, in: store))
+        let treeSource = try #require(LocalAPI.provenance(of: tree, in: store))
+        #expect(siteSource.id == "datasf")
+        #expect(treeSource.id == "city")
+        #expect(siteSource.name != treeSource.name, "two inventories, one name")
+
+        let note = try #require(
+            SitePresentation(profile: TreeProfile(tree: site.tree, inventorySource: siteSource)).provenanceNote,
+            "the site screen says nothing about where its record came from"
+        )
+        #expect(note.contains(siteSource.name))
+        #expect(
+            note.contains(treeSource.name) == false,
+            "the site credits the inventory that has never listed it: \(note)"
+        )
+    }
 }

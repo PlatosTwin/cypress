@@ -162,19 +162,20 @@ enum DebugDeepLink {
     /// Wide enough to hold every status the cases below ask for, and narrow enough to stay one index
     /// scan.
     ///
-    /// **4,000, raised from 500 by #91.** Under the DataSF export 44 of the 500 records nearest the
-    /// map's opening centre were vacant planting sites, so 500 was ample. The seed is now built from
-    /// SF Public Works' own inventory, which has no vacant-site category at all — 153 sites in the
-    /// whole city against 12,518 — and the nearest one to the centre is the **1,181st** record by
-    /// distance. `site` therefore failed to resolve, loudly and correctly (E117): the harness said
-    /// `none among the 500 records nearest 37.7596, -122.4269` rather than quietly opening some other
-    /// screen, which is exactly what that failure message was written for.
+    /// **500, and it went to 4,000 and back — the round trip is the useful part of this comment.**
+    /// #91's first round took the row set from SF Public Works' own layer, which has no vacant-site
+    /// category at all, so the city's 12,518 basins became 153 and the nearest one to the map's
+    /// opening centre was the 1,181st record by distance. `site` stopped resolving, and it failed
+    /// exactly as E117 designed it to: `none among the 500 records nearest 37.7596, -122.4269`,
+    /// rather than quietly opening some other screen. Widening the window to 4,000 made the harness
+    /// green while the product surface behind it stayed vestigial, which is the wrong repair —
+    /// the window was reporting a real thing.
     ///
-    /// The fix is the window, not the assertion. 4,000 holds the nearest site with room to spare and
-    /// still resolves in a few milliseconds; if the number of sites falls further, this fails again
-    /// and says so, which is the property worth keeping.
+    /// The seed now carries the export's sites again, 65 of the nearest 500 records are basins and
+    /// the nearest is the 16th, so the window goes back to what it was. If the sites thin out again
+    /// this fails again and says so, which is the property worth keeping.
     private static let radiusM: Double = 3_000
-    private static let candidateLimit = 4_000
+    private static let candidateLimit = 500
 
     /// Opens `screen`, resolving whatever record it needs out of the seed.
     ///
@@ -402,7 +403,7 @@ enum DebugDeepLink {
         return standing[standing.count / 2].tree.id
     }
 
-    /// The nearest vacant planting site — a record with no tree in it (E107). 153 of them in the
+    /// The nearest vacant planting site — a record with no tree in it (E107). 12,413 of them in the
     /// city-sourced seed, 12,518 in a DataSF-sourced one; see `candidateLimit`.
     private static func vacantSite(_ api: LocalAPI) async throws -> UUID {
         try await firstTree(matching: { $0.status == .vacantSite }, api: api, wanted: "a vacant planting site")

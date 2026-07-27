@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import Cypress
 
-/// The vacant planting site — 12,518 of the seed's 195,309 records, no mocked screen, decided in
+/// The vacant planting site — 12,413 of the shipped seed's 145,837 records, no mocked screen, decided in
 /// ERRATA E107 (closing E11).
 ///
 /// What this suite is here to hold, in the order the screen would betray it:

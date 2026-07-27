@@ -6,7 +6,8 @@
 //  E107 closes E11 and is where the reasoning for every sentence below lives.
 //
 //  ── Why this is not screen 14 ─────────────────────────────────────────────────────────────
-//  12,518 of the seed's 195,309 rows — 6.4% of the map — are planting basins with no tree in them.
+//  12,413 of the shipped seed's 145,837 rows — 8.5% of the map — are planting basins with no tree
+//  in them.
 //  Rendered as a cold profile they offered "be the first to photograph this tree" and a photo well,
 //  both of which assert a tree. Deleting those two elements leaves a tree profile with fields
 //  missing, and **a tree profile with fields missing still asserts a tree.** So a site is its own
