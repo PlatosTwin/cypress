@@ -334,8 +334,7 @@ public actor LocalAPI: CypressAPI {
     static func provenance(of record: TreeQueries.TreeRecord?, in store: CypressStore) -> InventorySource? {
         guard let record else { return nil }
         guard let id = record.inventorySourceID else { return store.seedProvenance }
-        _ = id
-        return store.seedProvenance // DELIBERATE BREAK — restore me
+        return store.seedInventories[id]
     }
 
     private static func resolveSpecies(
