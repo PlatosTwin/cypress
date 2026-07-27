@@ -606,5 +606,181 @@ struct VisitCameraSessionTests {
         router.push(.treeProfile(other))
         #expect(router.path.count == 3)
     }
+
+    // MARK: - 8 · The accessibility variant (R14; ERRATA — see docs/errata-pending/screen04-ax.md)
+
+    /// The floor is arithmetic on the capture, and it can be checked as arithmetic.
+    ///
+    /// What it pins is the *derivation*, not a number somebody liked: 4:3 is the `.photo` preset's own
+    /// aspect and `width × 4/3` is the height at which a `.resizeAspectFill` preview stops cropping the
+    /// top and bottom off the frame. A later tidy-up that rounds this to 520 or 540 fails here.
+    @Test("the viewfinder's floor is the height at which it stops cropping the photograph")
+    func theViewfinderFloorIsTheCaptureFrame() {
+        let phone = CGSize(width: 393, height: 852)
+        let floor = VisitMetrics.Camera.viewfinderFloor(width: phone.width, available: phone.height)
+
+        #expect(floor == phone.width * 4 / 3, "the floor is \(floor), not the 3:4 frame's height")
+        #expect(floor == 524, "the floor on a 393 pt phone is \(floor)")
+
+        // It is a *floor*, not a redesign: it has to sit under the height the viewfinder already has
+        // at the sizes SCREENS 04 draws, or it would be moving the drawn layout. Measured on the
+        // running app on a 393 × 852 pt iPhone 16: 583 pt at the drawn size, 550 pt at `xxxLarge`,
+        // 503 pt at AX1 — so the floor binds first exactly where `isAccessibilitySize` does.
+        #expect(floor < 550, "the floor would bind at xxxLarge, which the drawn layout does not expect")
+        #expect(floor > 503, "the floor is below AX1's natural height, so it would never bind at all")
+
+        // And it yields on a display too short to hold it and a tray both, rather than taking the
+        // whole screen and leaving the controls nowhere.
+        let short = VisitMetrics.Camera.viewfinderFloor(width: phone.width, available: 400)
+        #expect(short == 400 - VisitMetrics.Camera.controlsFloor, "the clamp did not bind: \(short)")
+        #expect(short < floor)
+    }
+
+    /// **The one that had to be able to see the thing that changed.**
+    ///
+    /// E152's own note is the warning: the chip row is an `.overlay`, an overlay never enlarges what it
+    /// is over, and a measurement of the *parent* therefore cannot observe the row at all — the test
+    /// that tried it stayed green with the defect restored. So this does not measure the screen. It
+    /// hosts the whole of screen 04 at AX5 in a real window at a real phone's size and then asks the
+    /// UIKit layer three questions it can actually answer: where the scroll view starts, whether it has
+    /// content past its own viewport, and which side of it each control ended up on.
+    ///
+    /// That last one is the fix stated as a property. R14's argument is that *a control reachable by
+    /// scrolling is reachable* — so "the three framings are in the scroll" is the whole of E152 being
+    /// reachable again, and "the shutter is not" is the answer to R14's third open question written
+    /// down where a later edit has to trip over it.
+    @Test("at AX5 the three framings are inside the scrolling controls and the shutter is not")
+    func theFramingsAreReachableAtAX5() async throws {
+        let phone = CGSize(width: 393, height: 852)
+        let hosted = try await Self.host(VisitPreviewFixtures.camera(), at: .accessibility5, in: phone)
+        defer { hosted.dismiss() }
+
+        let scroll = try #require(
+            Self.firstScrollView(in: hosted.root),
+            "screen 04 at AX5 has no scroll view, so nothing below the fold is reachable"
+        )
+
+        // The viewfinder took exactly its floor, and the scroll took the rest.
+        let floor = VisitMetrics.Camera.viewfinderFloor(width: phone.width, available: hosted.root.bounds.height)
+        #expect(
+            abs(scroll.frame.minY - floor) < 1,
+            "the controls start at \(scroll.frame.minY) pt, and the viewfinder's floor is \(floor)"
+        )
+
+        // There is content past the viewport — which is what makes this a fix rather than a
+        // rearrangement. If everything fitted, the chips were never off the screen to begin with.
+        #expect(
+            scroll.contentSize.height > scroll.bounds.height,
+            "the controls measured \(scroll.contentSize.height) pt in a \(scroll.bounds.height) pt viewport"
+        )
+
+        let inScroll = Self.accessibilityLabels(under: scroll)
+        for framing in ["Full tree", "Trunk", "Leaf close-up"] {
+            #expect(
+                inScroll.contains(where: { $0.hasPrefix(framing) }),
+                "\(framing) is not in the scrolling controls — labels there were \(inScroll)"
+            )
+        }
+
+        // The shutter is on the other side of that line, which is what "pinned" means here. On a
+        // simulator the camera is always unavailable, so it is the library form of the control — the
+        // state BUILD-PLAN §9 requires and the only one this host can reach.
+        let shutter = "Choose a photo from your library"
+        #expect(
+            !inScroll.contains(shutter),
+            "the shutter travelled with the controls instead of pinning to the viewfinder"
+        )
+        #expect(
+            Self.accessibilityLabels(under: hosted.root).contains(shutter),
+            "the shutter is not on the screen at all"
+        )
+    }
+
+    /// The other half, and the one that keeps this from becoming a redesign: below the accessibility
+    /// sizes screen 04 is what SCREENS 04 draws, with no scroll view and the chip row back on the
+    /// viewfinder where the mock puts it.
+    @Test("at the drawn size the controls do not scroll and the chips are back on the viewfinder")
+    func theDrawnLayoutIsUntouched() async throws {
+        let phone = CGSize(width: 393, height: 852)
+        let hosted = try await Self.host(VisitPreviewFixtures.camera(), at: .large, in: phone)
+        defer { hosted.dismiss() }
+
+        #expect(
+            Self.firstScrollView(in: hosted.root) == nil,
+            "the drawn layout grew a scroll view"
+        )
+        let labels = Self.accessibilityLabels(under: hosted.root)
+        for framing in ["Full tree", "Trunk", "Leaf close-up"] {
+            #expect(labels.contains(where: { $0.hasPrefix(framing) }), "\(framing) is not on the screen")
+        }
+    }
+
+    // MARK: - Hosting a screen so UIKit can be asked about it
+
+    /// A screen standing in a real off-screen window, which is the only way `ScrollView` reports a
+    /// content size and accessibility elements exist to be found. Same technique and the same reasons
+    /// as `DynamicTypeScreenshotTests.render`.
+    struct Hosted {
+        let root: UIView
+        let dismiss: () -> Void
+    }
+
+    static func host(
+        _ content: some View,
+        at size: DynamicTypeSize,
+        in frame: CGSize
+    ) async throws -> Hosted {
+        let host = UIHostingController(
+            rootView: AnyView(content.environment(\.dynamicTypeSize, size))
+        )
+        let bounds = CGRect(origin: .zero, size: frame)
+        host.view.frame = bounds
+        let window = UIWindow(frame: CGRect(x: -2_000, y: 0, width: frame.width, height: frame.height))
+        window.rootViewController = host
+        window.isHidden = false
+        // `await`, not a run-loop spin: the screen's `.task` loads through an actor, and until it
+        // lands the camera reports `.idle` and the fallback branch has not been chosen yet.
+        for _ in 0..<8 {
+            try? await Task.sleep(for: .milliseconds(120))
+            host.view.setNeedsLayout()
+            host.view.layoutIfNeeded()
+        }
+        return Hosted(root: host.view, dismiss: {
+            window.isHidden = true
+            window.rootViewController = nil
+        })
+    }
+
+    static func firstScrollView(in view: UIView) -> UIScrollView? {
+        if let scroll = view as? UIScrollView { return scroll }
+        for subview in view.subviews {
+            if let found = firstScrollView(in: subview) { return found }
+        }
+        return nil
+    }
+
+    /// Every accessibility label reachable under `view`, through both the view tree and the
+    /// `accessibilityElements` SwiftUI vends off its hosting layers — a SwiftUI control is usually the
+    /// second of those, not the first, so walking subviews alone finds nothing.
+    static func accessibilityLabels(under view: UIView) -> [String] {
+        var found: [String] = []
+        var seen = Set<ObjectIdentifier>()
+
+        func visit(_ object: NSObject) {
+            guard seen.insert(ObjectIdentifier(object)).inserted else { return }
+            if object.isAccessibilityElement, let label = object.accessibilityLabel {
+                found.append(label)
+            }
+            for element in (object.accessibilityElements as? [NSObject]) ?? [] {
+                visit(element)
+            }
+            for subview in (object as? UIView)?.subviews ?? [] {
+                visit(subview)
+            }
+        }
+
+        visit(view)
+        return found
+    }
 }
 #endif
