@@ -108,21 +108,7 @@ final class MapSearchUITests: XCTestCase {
             wait { self.cityTreePins(app) != before },
             "typing a real species name into the search bar changed nothing on the map (it drew \(before) pins before and after)"
         )
-        // **Wait for the narrowed map to settle, not merely to change.** The wait above returns on
-        // the first count that differs from `before`, and the annotation layer passes through zero on
-        // its way from the unnarrowed set to the narrowed one — it removes the old pins, then adds
-        // the new ones, and the accessibility tree is readable in between. Reading `narrowed`
-        // straight after the change therefore sampled a redraw in progress, and this test failed
-        // intermittently on **both** corpora for that reason: it passed and then failed on the same
-        // 145,837-row city seed forty minutes apart, and failed on a DataSF seed built before any of
-        // #91 existed.
-        //
-        // This does not weaken the assertion below. A narrowing that genuinely empties the map never
-        // satisfies this wait, so it fails here after the timeout and then fails the same assertion,
-        // with the same meaning — what is gone is the sampling race, not the check.
-        let settled = wait { self.cityTreePins(app) > 0 }
         let narrowed = cityTreePins(app)
-        XCTAssertTrue(settled, "narrowing to the commonest species in San Francisco emptied the map")
         XCTAssertGreaterThan(narrowed, 0, "narrowing to the commonest species in San Francisco emptied the map")
 
         // Clearing it puts the neighbourhood back. `typeText` cannot delete, so the field is cleared
