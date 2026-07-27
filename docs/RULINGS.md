@@ -398,6 +398,60 @@ levels there are, what each signifies — and a conflict there (a level added or
 `SCREENS.md`, because that is product, not copy. This splits cleanly: **meaning is `PRODUCT.md`'s,
 wording is `SCREENS.md`'s.**
 
+### R14 — screen 04 keeps its viewfinder at accessibility sizes and scrolls everything else
+
+The open question was what screen 04 does at large Dynamic Type. `SCREENS.md` draws it at default type
+only, so there was no specified variant, and ARCHITECTURE §5.8 says stop rather than invent one. This
+is that stop, answered under the standing delegation.
+
+**The finding.** At AX5 the screen cannot hold the viewfinder, the three framing chips, the note field,
+the phenology chips and the Log visit button at once, and the framing chips end up *below the bottom of
+the display*. So E152's feature — one camera session taking a full tree, a trunk and a leaf — is not
+merely cramped at that size, it is **unreachable**. AX1 is already at the limit: the viewfinder is
+squeezed to roughly a third of the screen.
+
+**The ruling: the viewfinder shrinks to a fixed minimum, and the controls beneath it scroll.**
+
+The reasoning, which is what should govern the details this entry does not fix. A person on screen 04
+is *aiming a camera*, and nobody can compose a shot they cannot see — so the viewfinder must stay
+visible at every text size, which rules out letting the whole screen scroll it away. Everything else on
+the screen is a control, and a control reachable by scrolling **is** reachable, where a control below
+the bottom edge is not. So the viewfinder keeps a floor and the controls get a scroll view. This
+follows R11's principle rather than departing from it: R11 required every empty state to name what
+would fill it, on the reasoning that a person must never be left unable to tell what the app wants from
+them. A control that has silently left the screen is the same failure by a different route.
+
+**Deliberately not fixed here**, because they are judgments better made against the running layout than
+from a document: the viewfinder's minimum height (derive it from the capture's own aspect ratio or the
+default-size proportion, not a round number), the size class at which the behaviour switches on (not
+AX5 alone — AX1 is already cramped), and whether the shutter pins above the scroll or travels with it.
+Whoever builds this draws the result in `SCREENS.md` as screen 04's accessibility variant, so the next
+person inherits a spec rather than a precedent.
+
+## The owner's own decisions, recorded here so they are not re-opened
+
+These are **not** delegated rulings — they were made by the project owner directly, and are written
+down for the same reason the rulings are: so a later reader can find the decision rather than
+rediscover the question.
+
+**2026-07-26 · anonymised means anonymous, permanently (#74).** Deleting an account offers two doors,
+and the default leaves records unattributed. Anonymising cleared `user_id` but kept `device_id`, so
+D9's device-scoped ownership let `claimDevice` re-adopt those rows onto the next account signed in on
+that phone — a real re-identification on a shared or handed-down device. The owner ruled for a
+**tombstone**: rows anonymised by a deletion are marked and `claimDevice` skips them forever.
+`device_id` is *not* cleared, because that would also break the legitimate D9 case of an unsigned-in
+contributor keeping their own work. **The accepted cost, stated so nobody re-litigates it:** someone who
+deletes an account and signs back in on their own phone does not get their own work back. The owner
+weighed that against the re-identification risk and chose this. The deletion copy must say so.
+
+**2026-07-26 · the species legend stays as it is (#96).** The legend renders as two rows of chips under
+the search field and filter row, and at a dense local zoom it occludes a band of pins. The owner looked
+at it on his own iPhone and ruled it acceptable: *"Legend is good for now."* Not fixed, deliberately.
+If it is revisited, the options considered were collapsing to one row with a `+2 more`, tap to
+expand/dismiss, moving it below the CTA, or auto-hiding shortly after the palette changes — and the
+binding constraint is the widest chip, since DataSF's double-name format means `Sycamore: London Plane`
+nearly fills a row on its own.
+
 ## What is still design's, and was not delegated
 
 - Everything constraint 21 covers. The one-time exception for the six entrances (E98) is spent.
