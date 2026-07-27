@@ -295,11 +295,16 @@ struct DeletionTombstoneTests {
         )
 
         #expect(try await api.journal(cursor: nil, limit: 20).items.count == 4, "fixture: the journal has them")
-        #expect(try await api.deviceContributions().total == 4, "fixture: the count sees them")
+
+        // Zero, and not because the count is broken: `deviceContributions` counts rows that are
+        // *still unattributed*, and these belong to an account. That is what makes the number after
+        // the deletion interesting — nulling `user_id` is exactly what would move these four rows
+        // into this count, as the phone's to hand to the next person who signs in.
+        #expect(try await api.deviceContributions() == .none, "fixture: they are the account's, not the device's")
 
         try await api.deleteAccount(.leaveRecords)
 
-        // Screen 15's number and the claim have to be one rule read twice: a count that still said
+        // Screen 15's number and the claim have to be one rule read twice: a count that now said
         // four would offer to keep records the claim then declines to move.
         #expect(try await api.deviceContributions() == .none)
 
