@@ -131,6 +131,7 @@ struct JournalPresentationTests {
             JournalCopy.screenTitle,
             JournalCopy.journalSegment,
             JournalCopy.almanacSegment,
+            JournalCopy.explanation,
             JournalCopy.footnote,
             JournalCopy.olderNote,
             JournalCopy.olderAction,
@@ -165,10 +166,14 @@ struct JournalPresentationTests {
             nextCursor: nil
         ).rows
 
-        #expect(rows[0].subtitle.hasPrefix("Visited"))
-        #expect(rows[1].subtitle.hasPrefix("Observed"))
-        #expect(rows[2].subtitle.hasPrefix("Measured"))
-        #expect(rows[3].subtitle.hasPrefix("Cared for"))
+        // **The verb is the title now, not a clause inside a grey second line.** A journal row is a
+        // sentence about something that happened; My Grove's rows are titled with a tree's name, and
+        // when these were too, the two lists read as one.
+        #expect(rows[0].title.hasPrefix("Visited"))
+        #expect(rows[1].title.hasPrefix("Observed"))
+        #expect(rows[2].title.hasPrefix("Measured"))
+        #expect(rows[3].title.hasPrefix("Cared for"))
+        #expect(rows[0].title == "Visited Grandmother Cypress")
 
         // Three of the four are screen 13's own assignments, so the same kind of contribution is the
         // same colour on both screens. The fourth may not be `vacantSite`, which R7 reserves for a
@@ -180,13 +185,55 @@ struct JournalPresentationTests {
         #expect(noVacantSite)
     }
 
-    @Test("the summary is a clause that is left out rather than a placeholder")
+    @Test("the note is a line that is left out rather than a placeholder")
     func absentSummaryIsAbsent() {
         let withNote = Self.presentation([Self.entry(1, summary: "Fog on the crown")], nextCursor: nil)
         let without = Self.presentation([Self.entry(1, summary: "   ")], nextCursor: nil)
 
-        #expect(withNote.rows[0].subtitle.hasSuffix("Fog on the crown"))
-        #expect(without.rows[0].subtitle == "Visited · Jul 12")
+        #expect(withNote.rows[0].subtitle == "Fog on the crown")
+        // Empty, not a placeholder and not the date the header now carries. `IconTextRow` draws no
+        // second line at all for this, rather than reserving a line's height for nothing.
+        #expect(without.rows[0].subtitle == "")
+    }
+
+    // MARK: - Days
+
+    /// **The structural half of telling a chronology from a collection.** My Grove's list has no
+    /// dates on it at all now; this one is organised by nothing else.
+    ///
+    /// Grouping is by *consecutive run* rather than by key, which is what keeps the store's order
+    /// (`captured_at DESC`) intact — see `JournalPresentation.Day`. The fixture is deliberately not
+    /// in date order within a day and not one-row-per-day: three acts on one day, then one on
+    /// another, then one back on the first date, which a `Dictionary(grouping:)` would silently
+    /// merge into two sections and reorder. It must draw three.
+    @Test("rows are grouped under the day they happened, by run and not by key")
+    func rowsAreGroupedByDay() {
+        let entries = [
+            Self.entry(1, at: Self.date(2026, 7, 12)),
+            Self.entry(2, kind: .careEvent, at: Self.date(2026, 7, 12)),
+            Self.entry(3, kind: .measurement, at: Self.date(2026, 7, 3)),
+            // Out of order in the read, which the derivation must not repair by regrouping.
+            Self.entry(4, at: Self.date(2026, 7, 12))
+        ]
+        let days = Self.presentation(entries, nextCursor: nil).days
+
+        #expect(days.count == 3, "the days were merged by key, which reorders the reader's list")
+        #expect(days.map(\.rows.count) == [2, 1, 1])
+        #expect(days[0].header == "Jul 12")
+        #expect(days[1].header == "Jul 3")
+        #expect(days[2].header == "Jul 12")
+        // Flat order is the store's, and the groups are that same sequence cut into runs.
+        #expect(days.flatMap(\.rows).map(\.id) == entries.map(\.id))
+    }
+
+    /// Two records on one day are one header, not two — which is the whole point of a header rather
+    /// than a per-row date, and is also what makes a page boundary inside a day invisible.
+    @Test("a day with several acts on it is written once")
+    func oneHeaderPerDay() {
+        let entries = (1...4).map { Self.entry($0, at: Self.date(2026, 7, 12)) }
+        let days = Self.presentation(entries, nextCursor: nil).days
+        #expect(days.count == 1)
+        #expect(days[0].rows.count == 4)
     }
 
     @Test("a journal spans years, so a day outside this one carries its year")
@@ -200,9 +247,9 @@ struct JournalPresentationTests {
             nextCursor: nil
         )
 
-        #expect(thisYear.rows[0].subtitle == "Visited · Jul 12")
+        #expect(thisYear.days[0].header == "Jul 12")
         #expect(
-            lastYear.rows[0].subtitle.contains("2025"),
+            lastYear.days[0].header.contains("2025"),
             "two different Julys are drawn under the same label"
         )
     }
@@ -210,7 +257,7 @@ struct JournalPresentationTests {
     @Test("a tree the city named neither way is called what its own page calls it")
     func unnamedTreeUsesTheProfileFallback() {
         let rows = Self.presentation([Self.entry(1, tree: "")], nextCursor: nil).rows
-        #expect(rows[0].title == TreeProfilePresentation.fallbackTitle)
+        #expect(rows[0].title == "Visited \(TreeProfilePresentation.fallbackTitle)")
     }
 
     @Test("every row carries the tree it is about, so every row has somewhere to go")

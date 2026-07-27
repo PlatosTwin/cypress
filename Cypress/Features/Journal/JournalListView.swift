@@ -5,18 +5,18 @@
 //  The contributions journal, drawn. **NOT SPECIFIED** — the argument for what it is allowed to be
 //  is in `JournalPresentation`, which is also where E38 and D1 are enforced.
 //
-//  ── One list, two doors ───────────────────────────────────────────────────────────────────────
-//  This view is mounted twice: as the `Yours` segment of the `Journal` tab, and behind screen 08's
-//  `Journal` pill. Both are places the design itself names — C16's bar draws a `Journal` tab and
-//  SCREENS.md 08 §2 draws a `Journal` pill — and a person who taps either is asking the same
-//  question about the same records.
+//  ── One list, one door ────────────────────────────────────────────────────────────────────────
+//  This view is mounted **once**, as the `Yours` segment of the `Journal` tab.
 //
-//  An earlier round proposed cutting the pill instead, on the grounds that "two surfaces showing one
-//  record have to agree forever, and the first time they did not, one of them would be lying to
-//  somebody about what they had done." That objection is correct and it is answered here
-//  structurally rather than by discipline: there is one derivation, one model and one view, so the
-//  two mount points cannot come to disagree — there is no second implementation to drift. Cutting a
-//  drawn control would have been the larger invention of the two.
+//  It was mounted twice — there and behind screen 08's `Journal` pill — and the argument for that was
+//  that the two could not drift, there being one derivation, one model and one view behind both. The
+//  argument was sound and the conclusion did not follow. Two doors into one room cannot disagree with
+//  each other and can still leave a reader working out why he is being shown the same list twice,
+//  which is what happened. The pill is gone; see `GroveTab` for the whole of it.
+//
+//  What that leaves is a list that has to look like what it is, next to `GroveTreesPresentation`,
+//  which is a list of a different thing: **this is a stream of verbs and that is a set of nouns.**
+//  The day sections and the verb-first titles below are that distinction, drawn.
 //
 //  No chrome of its own: no header, no tab bar, no scroll view. Each host already owns those, and a
 //  list that brought its own would nest a scroll view inside one. It draws a column and stops.
@@ -60,21 +60,39 @@ struct JournalListView: View {
         .padding(.horizontal, CypressSpacing.gutter)
     }
 
-    // MARK: - The rows
+    // MARK: - The rows, under their days
 
+    /// **The date leads.** Each day is a `micro.label` rule across the column — the treatment
+    /// SCREENS.md §1.3 assigns to "section headers inside screens", and the one screens 03, 07, 13
+    /// and 17 already use — with that day's acts under it.
+    ///
+    /// This is the structural half of telling a chronology from a collection. My Grove's list has no
+    /// headers and no dates at all; this one is organised by nothing else. A reader who has just come
+    /// from the other screen can see which he is on before reading a word of either.
+    ///
+    /// `.cypressMicroLabel()` carries `.cypressTypographicFurniture()`, which clamps at AX1 — so the
+    /// headers stay rules rather than becoming large cramped uppercase that outruns the phone, which
+    /// is the failure that modifier exists for. The rows above and below scale the whole way.
     private func rows(_ presentation: JournalPresentation) -> some View {
-        VStack(spacing: JournalMetrics.rowGap) {
-            ForEach(presentation.rows) { row in
-                IconTextRow(
-                    accent: row.accent,
-                    title: row.title,
-                    subtitle: row.subtitle,
-                    // Every row is about a tree, so every row has somewhere to go. Nil only when the
-                    // host supplies no destination, in which case C10 draws a card rather than a
-                    // button — a control that looked pressable and did nothing is the thing this
-                    // whole round is about.
-                    action: onOpenTree.map { open in { open(row.treeID) } }
-                )
+        VStack(alignment: .leading, spacing: JournalMetrics.dayGap) {
+            ForEach(presentation.days) { day in
+                VStack(alignment: .leading, spacing: JournalMetrics.rowGap) {
+                    Text(day.header)
+                        .cypressMicroLabel()
+                        .padding(.horizontal, JournalMetrics.dayHeaderInset)
+
+                    ForEach(day.rows) { row in
+                        IconTextRow(
+                            accent: row.accent,
+                            title: row.title,
+                            subtitle: row.subtitle,
+                            // Every row is about a tree, so every row has somewhere to go. Nil only
+                            // when the host supplies no destination, in which case C10 draws a card
+                            // rather than a button.
+                            action: onOpenTree.map { open in { open(row.treeID) } }
+                        )
+                    }
+                }
             }
         }
     }
