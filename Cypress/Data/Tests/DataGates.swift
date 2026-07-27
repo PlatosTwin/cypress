@@ -1333,8 +1333,22 @@ public enum DataGates {
             // receipt names. A seed that lost 40,000 rows to a parse bug and said nothing would
             // otherwise pass every assertion above this one, because they all compare the file
             // against its own receipt and the receipt would have been written by the same bug.
-            let read = meta["source_rows"].flatMap(Int.init) ?? -1
-            let dropped = ["dropped_no_coords", "dropped_out_of_bbox", "dropped_dupe_treeid"]
+            //
+            // **Two passes under `--source city`, and both are counted.** The row set is the city
+            // layer's, but that layer publishes no vacant-site category at all, so the seed's empty
+            // planting sites are a second read of the DataSF export. Its rows are read, shipped and
+            // skipped on exactly the same terms, and a `city` seed whose second pass silently
+            // stopped carrying sites would otherwise balance its books without them.
+            let spineRead = meta["source_rows"].flatMap(Int.init) ?? -1
+            let read = spineRead + (meta["export_vacant_rows_read"].flatMap(Int.init) ?? 0)
+            let dropped = [
+                "dropped_no_coords", "dropped_out_of_bbox", "dropped_dupe_treeid",
+                // A site the city's layer lists as a living tree — the one case where the two
+                // inventories genuinely contradict each other, and the city wins.
+                "export_vacant_sites_excluded_city_lists_tree",
+                // A site the city's layer also holds, already shipped by the first pass.
+                "export_vacant_sites_already_city_listed"
+            ]
                 .compactMap { meta[$0].flatMap(Int.init) }
                 .reduce(0, +)
             expect(
@@ -1346,11 +1360,49 @@ public enum DataGates {
             // …and the count it read is the count the source said it had. This is the only
             // assertion in this gate that reaches past the build receipt to something the *city*
             // asserted, which is what makes a truncated extract fail rather than pass consistently.
+            // The spine's own count, not the two passes together: the number the city's server
+            // reported is a claim about the city's layer, and the export's vacant sites are not in
+            // it.
             if let claimed = meta["trees_source_feature_count"].flatMap(Int.init) {
                 expect(
-                    read == claimed,
+                    spineRead == claimed,
                     "seed contract: the source reported \(claimed) records and the build read "
-                        + "\(read); the extract is incomplete",
+                        + "\(spineRead); the extract is incomplete",
+                    into: &failures
+                )
+            }
+        }
+
+        // --- Per-row provenance. Every row names an inventory, and every inventory it names is one
+        // the receipt can describe.
+        //
+        // **This is the gate that keeps the provenance sentence from being fiction.** The shipped
+        // seed is built from two inventories — the city's operational layer for the trees, the
+        // DataSF export for the vacant planting sites the layer has no category for — and the app
+        // prints one of their names, with one of their snapshot dates, under a record. A row whose
+        // `inventory_source` the receipt cannot name would draw either nothing or, if anybody ever
+        // made the resolution lenient, the *other* inventory's name over a record it never held.
+        if schema.hasInventorySource {
+            let named = CypressStore.inventories(in: meta)
+            let sources = try await store.queue.read { connection -> [String] in
+                let statement = try connection.prepare(
+                    "SELECT DISTINCT inventory_source AS v FROM \(SeedDatabase.schemaName).trees"
+                )
+                defer { statement.finalize() }
+                return try statement.fetchAll { try $0.string("v") }
+            }
+            for source in sources.sorted() {
+                expect(
+                    named[source] != nil,
+                    "seed contract: trees.inventory_source holds '\(source)', which the build "
+                        + "receipt does not describe (no inventory_\(source)_name), so no row from "
+                        + "it can say where it came from",
+                    into: &failures
+                )
+                expect(
+                    named[source]?.snapshotDate != nil,
+                    "seed contract: inventory '\(source)' carries no readable snapshot date, so "
+                        + "every row from it draws no provenance line at all",
                     into: &failures
                 )
             }

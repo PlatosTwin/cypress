@@ -10,7 +10,9 @@ import Testing
 /// that starts eating values or a join that quietly widens; "greater than zero" would catch none of
 /// it. But they were written when there was one possible seed, and since #91 there are two:
 ///
-/// - `city`   — SF Public Works' own operational layer, 133,577 records. What ships.
+/// - `city`   — SF Public Works' own operational layer for the trees, 133,577 records, plus the
+///              export's 12,260 vacant planting sites, which that layer has no category for.
+///              145,837 records. What ships.
 /// - `datasf` — the open-data export `tkzw-k3nq`, 195,309 records. Still buildable with
 ///              `Tools/build_seed.py --source datasf`, and still required to work, because the
 ///              owner may default back to it.
@@ -101,44 +103,55 @@ struct SeedCorpus: Sendable {
         }
     }
 
-    /// **SF Public Works' own street tree inventory**, extracted 2026-07-26. What ships.
+    /// **SF Public Works' own street tree inventory for the trees, the DataSF export for the
+    /// sites.** What ships, extracted 2026-07-26.
     ///
-    /// The row set is the city's: 133,577 records, exactly what its public map draws. The seven
-    /// columns its layer does not publish are carried across from the DataSF export for the 130,070
-    /// records both inventories list, so `legal_status`, `plot_size` and the planting dates are
-    /// populated on 97% of rows rather than none. The shortfall is the **3,507 records only the city
-    /// has**, which carry NULL there — including TreeID 276198, the tree that started #91.
+    /// The *tree* row set is the city's: 133,577 records, exactly what its public map draws. The
+    /// seven columns its layer does not publish are carried across from the DataSF export for the
+    /// 130,070 records both inventories list, so `legal_status`, `plot_size` and the planting dates
+    /// are populated on 97% of those rows rather than none. The shortfall is the **3,507 records
+    /// only the city has**, which carry NULL there — including TreeID 276198, the tree that
+    /// started #91.
     ///
     /// `landContextUnplaced` is therefore 3,506 rather than 0: `LandContext.inferred(from:)` reads
     /// `qLegalStatus` and `qCaretaker`, and those 3,506 have neither, so the `Stands on` sentence
     /// does not draw for them. (3,506 and not 3,507: one of the city-only records does carry a
     /// caretaker, because DataSF holds a row for it that the seed's coordinate rules had dropped.)
+    ///
+    /// **The 12,260 vacant planting sites are the export's rows, and they are not a compromise.**
+    /// The city's layer has no vacant-site category at all — `PlantType` is `Tree` on every one of
+    /// its records — so on an empty basin it is not contradicting the export, it has nothing to say.
+    /// The one place the two really do disagree is a TreeID the export calls empty and the layer
+    /// lists as a planted tree: **128 rows**, and there the city wins, consistently with the rule
+    /// that decides the tree row set. A further 130 sites the layer also holds as empty are already
+    /// in from the first pass. So `vacantSites` is 12,413: 12,260 from the export and 153 the
+    /// city's own `BOTANICAL = 'Potential Site'` yields.
     static func city(absentColumns: Set<String>) -> SeedCorpus {
         SeedCorpus(
             source: "city",
             absentColumns: absentColumns,
-            trees: 133_577,
+            trees: 145_837,
             species: 577,
-            vacantSites: 153,
+            vacantSites: 12_413,
             cityColumnRows: [
-                "legal_status": 130_029,
-                "caretaker": 130_071,
-                "care_assistant": 10_112,
-                "plant_type": 133_577,
-                "plot_size": 111_326,
-                "permit_notes": 17_737
+                "legal_status": 142_282,
+                "caretaker": 142_331,
+                "care_assistant": 10_595,
+                "plant_type": 145_837,
+                "plot_size": 115_196,
+                "permit_notes": 27_046
             ],
-            distinctPlotSizes: 330,
-            plotSizesShown: 94_033,
-            plotSizesRefused: 17_293,
-            landContextStreet: 126_172,
-            landContextPrivate: 3_465,
-            landContextOtherPublic: 422,
-            landContextCityPark: 12,
+            distinctPlotSizes: 407,
+            plotSizesShown: 96_566,
+            plotSizesRefused: 18_630,
+            landContextStreet: 137_204,
+            landContextPrivate: 4_596,
+            landContextOtherPublic: 460,
+            landContextCityPark: 71,
             landContextUnplaced: 3_506,
-            neighborhoodsWithNoVacantSite: 17,
-            datedVacantSites: 22,
-            sunsetVacantSites: 7,
+            neighborhoodsWithNoVacantSite: 0,
+            datedVacantSites: 9_237,
+            sunsetVacantSites: 1_436,
             sunsetTreesWithSpecies: 9_504,
             sunsetTreesLeftJoined: 9_512,
             sunsetSpeciesInMix: 201,

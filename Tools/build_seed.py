@@ -1843,6 +1843,10 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             # layer's -- it has no such category. `trees.inventory_source` says
             # which inventory each row came from; these are the totals.
             "sites_source": "datasf",
+            # The second pass's own row accounting, so the seed contract can close
+            # the arithmetic over both passes: rows read = rows shipped + rows
+            # dropped, with nothing unexplained on either side.
+            "export_vacant_rows_read": str(stats["export_vacant_rows"]),
             "rows_from_city": str(stats["kept"] - stats["export_vacant_carried"]),
             "rows_from_datasf": str(stats["export_vacant_carried"]),
             "export_vacant_sites_excluded_city_lists_tree":
