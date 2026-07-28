@@ -56,8 +56,16 @@ public struct SpeciesQueries {
     /// INDEX`, not a range `SEARCH`: `COLLATE NOCASE` on the comparison does not match the `BINARY`
     /// collation the seed's two name indexes were built with, so SQLite could not turn the range
     /// into a seek and walked the whole index anyway. The plan above is the same walk with a
-    /// different predicate on each row, and it measures the same. `SPECIES-SEARCH.md` in
-    /// `.measurements/` has the numbers, taken against the full 145,837-row seed.
+    /// different predicate on each row.
+    ///
+    /// Measured against the full seed (`.measurements/species-search-108.txt`): the **SQL** goes
+    /// from 0.08–0.25 ms to 0.13–0.83 ms — roughly double, for four `LIKE` evaluations a row where
+    /// there were two comparisons, and still under a millisecond at its worst. The **whole read** is
+    /// unchanged where the two return the same rows (`quercus` 2.60 → 2.67 ms, `c` 14.95 → 15.31 ms)
+    /// because it is dominated by decoding `species`' four JSON columns at ~0.15 ms a row. Where it
+    /// costs more it is because the search found more: `oak` goes from 1 species to 21, and 3.3 ms
+    /// is the price of the twenty Oaks it should have been finding all along. None of this is on a
+    /// frame budget — it runs off the main actor behind `MapModel.searchDebounce`'s 300 ms.
     ///
     /// What is load-bearing is the **shape**, not the predicate: both branches select `id` and one
     /// name, so both stay *covering* — the 577-row `species` table, with its four JSON columns, is
