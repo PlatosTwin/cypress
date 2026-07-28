@@ -564,10 +564,38 @@ struct VisitCameraView: View {
         }
     }
 
+    /// SCREENS 04 §2's phenology row.
+    ///
+    /// ── Why this is a flow and not an `HStack` (ERRATA — see docs/errata-pending/screen-04-capture.md) ──
+    /// **This row was broken at the default text size, not merely at AX5**, and that is the whole of
+    /// the report behind it: *"The photo check in labels are too narrow. Text gets all compressed in
+    /// them as they're currently implemented."*
+    ///
+    /// The mechanism is the one `VisitShotTypeChips` already wrote down for the row above — an
+    /// `HStack` compresses its children rather than overflowing its proposal, so a row wider than the
+    /// space it is given does not spill off the phone, it *squeezes every chip until the labels wrap*.
+    /// That note even named this row as the place still doing it ("which is what the phenology row
+    /// below already looks like at AX5"), and it was wrong about only one thing: the size. It does not
+    /// wait for AX5.
+    ///
+    /// A curated deciduous species — London Plane, which is the commonest street tree in San
+    /// Francisco — offers all six tags, and six chips want about 537 pt in the 361 pt this row has.
+    /// At `.large`, on a 393 pt phone, the result read `Leaf/out · Full/leaf · Flow/ering ·
+    /// Fruit/ing · Fall/colo/r · Bar/e`: every label broken mid-word, one of them across three lines.
+    /// It never showed up before because the fixtures and the shipped seed reach it so rarely —
+    /// `VisitPhenologyVocabulary` offers the row "for the curated 40 and nobody else", and no preview
+    /// stood screen 04 over one of the 40 with a habit on it.
+    ///
+    /// `CypressChipFlow` is the component the other three chip rows in this app already use (screen
+    /// 05's structure flags, the add screen's land row, and the framing row above), and it is the
+    /// same fix for the same reason: it asks every chip for its natural size, gives it exactly that,
+    /// and puts what does not fit on the next line. No `Spacer` — the flow already reports the width
+    /// it was proposed, so the row is left-aligned without one, and a `Spacer` inside a `Layout` is a
+    /// subview competing with the chips for the row.
     @ViewBuilder
     private var phenologyChips: some View {
         if let species = model.species {
-            HStack(spacing: VisitMetrics.Camera.chipGap) {
+            CypressChipFlow(spacing: VisitMetrics.Camera.chipGap) {
                 // D5, enforced by the component itself: `Chip.phenology(_:for:isOn:)` renders
                 // nothing for a tag outside `species.availablePhenologyTags`, and there is no
                 // String initializer that could get around it. An evergreen is never asked about
@@ -580,7 +608,6 @@ struct VisitCameraView: View {
                         action: { model.toggle(tag) }
                     )
                 }
-                Spacer(minLength: 0)
             }
         }
     }

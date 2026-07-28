@@ -98,7 +98,7 @@ struct ScratchCaptureShots {
                 Text("well as built").font(.caption)
                 RoundedRectangle(cornerRadius: CypressRadius.cardLg, style: .continuous)
                     .fill(CypressColor.surfaceEmptyThumb)
-                    .frame(height: VisitMetrics.AddTree.wellHeight)
+                    .aspectRatio(VisitMetrics.AddTree.wellAspectRatio, contentMode: .fit)
                     .overlay { PhotoFit(image: portrait) }
                     .clipShape(RoundedRectangle(cornerRadius: CypressRadius.cardLg, style: .continuous))
                 Spacer()

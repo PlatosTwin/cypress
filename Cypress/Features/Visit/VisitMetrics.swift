@@ -52,11 +52,40 @@ enum VisitMetrics {
     // MARK: - The community add (ERRATA E127)
 
     enum AddTree {
-        /// **Not a spec value** — the screen has no mock (see `VisitAddTreeView`). Screen 14 §2's
-        /// well is 170pt, which is a caption's height; this one holds a viewfinder and then the
-        /// photograph taken through it, so it is the 4:3 frame that photograph will be, at the
-        /// gutter's width on the drawn 393pt frame.
-        static let wellHeight: CGFloat = 268
+        /// The photo well's shape, as **width ÷ height** — the shape of the photograph it holds.
+        ///
+        /// ── The aspect this replaces was upside down (ERRATA — see docs/errata-pending/screen-04-capture.md) ──
+        /// This was `wellHeight: CGFloat = 268`, a constant whose own comment said it was "the 4:3
+        /// frame that photograph will be, at the gutter's width" — 361 × 3/4 ≈ 271. That is a 4:3
+        /// frame lying **on its side**. A phone held upright captures 3:4 *portrait*, which at 361 pt
+        /// wide is 481 pt tall, and 268 is what you get by dividing where the photograph multiplies.
+        /// One inverted ratio, and the well has been a landscape letterbox ever since.
+        ///
+        /// What that cost, in the two states the well has. Reported by the project owner: *"Add this
+        /// tree photo window is still awkwardly horizontal and doesn't capture full view on vertical
+        /// orientation."*
+        ///
+        /// - **Live**, the well holds `VisitCameraPreview`, whose layer is `.resizeAspectFill`. A 3:4
+        ///   frame filling a 361 × 268 landscape box is scaled until it covers, which crops 44 % off
+        ///   the top and the bottom — so a volunteer aiming at a street tree could not see the crown
+        ///   they were framing. That is the half "doesn't capture full view" names, and it is the
+        ///   worse half: it is a viewfinder that does not show the shot.
+        /// - **Still**, the well holds `PhotoFit` since #79, so the photograph is whole — but whole
+        ///   inside a box the wrong shape for it, drawn at 201 × 268 with a third of the well
+        ///   standing empty on either side. #79 fixed the crop and left the frame.
+        ///
+        /// Derived from `Camera.captureAspectRatio` rather than restated, so the well and screen
+        /// 04's viewfinder floor cannot drift apart: they are two views of the same photograph, and
+        /// that value is read off the capture path (`sessionPreset = .photo`) rather than chosen.
+        /// Inverted here because SwiftUI's `aspectRatio(_:contentMode:)` takes width ÷ height where
+        /// the floor takes height ÷ width.
+        ///
+        /// **No fixed height and no cap.** The well takes the width it is given and derives the rest,
+        /// so it is the right shape on a phone this was never measured on. A cap would be a return to
+        /// the letterbox by a smaller margin — any well shorter than its own capture crops the live
+        /// preview again, which is the defect. The composer scrolls (`VisitAddTreeView.composer`) and
+        /// the CTA is pinned outside that scroll, so a taller well costs scrolling, never reach.
+        static var wellAspectRatio: CGFloat { 1 / Camera.captureAspectRatio }
     }
 
     // MARK: - Moving the pin
