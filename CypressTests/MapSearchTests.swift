@@ -547,7 +547,11 @@ struct MapSearchTests {
     func anUnderfullSearchIsNotTruncated() throws {
         func species(_ n: Int) throws -> [Species] {
             try (0..<n).map { i in
-                try Species(scientificName: "Genus species\(i)", commonName: "Common \(i)")
+                try Species(
+                    scientificName: "Genus species\(i)",
+                    commonName: "Common \(i)",
+                    leafRetention: nil
+                )
             }
         }
 
