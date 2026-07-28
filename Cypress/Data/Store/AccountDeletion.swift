@@ -341,6 +341,16 @@ public struct AccountDeletion {
     /// carry if there had never been one. The "device link" §3.12 severs is the `device.user_id` row,
     /// which is the only place this installation is tied to this person.
     ///
+    /// **And leaving it alone is exactly what a tombstone had to be added for** (`AppSchema` v13,
+    /// ERRATA — see `docs/errata-pending/deletion-tombstone.md`). A row with `user_id IS NULL` and a
+    /// `device_id` is, to every other query in this app, *this device's unclaimed work*:
+    /// `claimDevice` adopts it onto the next account signed in on the phone, and the journal, the
+    /// grove and screen 15's count all show it as the current holder's. So the four `INSERT`s below
+    /// record each row's `client_uuid` in `anonymized_contributions`, which those queries read as
+    /// *nobody's*. The accepted cost is stated in RULINGS and is not softened anywhere: the person
+    /// who deletes their account and signs back in on their own phone does not get their own work
+    /// back. `AccountDeletionCopy.leaveRecordsBody` says so on screen.
+    ///
     /// Photographs **are** named here, since `AppSchema` v12 gave them an owner (ERRATA E147). This
     /// paragraph used to say the opposite and used to be right: with no owner column, nulling the
     /// visit's `user_id` un-named every photograph taken on it, and naming `photos` would have been
@@ -364,6 +374,19 @@ public struct AccountDeletion {
         let userAndNow: [String: SQLiteBindable?] = [":user": userID.uuidString, ":now": date]
 
         for table in ["visits", "observations", "measurements", "care_events"] {
+            // The tombstone goes down **before** the owner comes off, and the order is not a
+            // preference: the predicate that names these rows is `user_id = :user`, and the UPDATE
+            // below is what stops it matching. Written first, it reads the set the person is asking
+            // to be unlinked from; written second it would read nothing at all and the whole
+            // guarantee would be a table of zero rows.
+            try run(
+                """
+                INSERT OR IGNORE INTO anonymized_contributions (client_uuid, anonymized_at)
+                SELECT client_uuid, :now FROM \(table) WHERE user_id = :user COLLATE NOCASE
+                """,
+                userAndNow, on: connection
+            )
+
             outcome.anonymizedContributions += try run(
                 "UPDATE \(table) SET user_id = NULL, updated_at = :now WHERE user_id = :user COLLATE NOCASE",
                 userAndNow, on: connection

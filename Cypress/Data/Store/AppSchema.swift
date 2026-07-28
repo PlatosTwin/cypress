@@ -41,7 +41,8 @@ public enum AppSchema {
         Migration(version: 9, name: "a vote can outlive the voter", migrate: applyV9),
         Migration(version: 10, name: "a coordinate says how it was arrived at", migrate: applyV10),
         Migration(version: 11, name: "a new tree says what ground it stands on", migrate: applyV11),
-        Migration(version: 12, name: "a photograph says whose it is", migrate: applyV12)
+        Migration(version: 12, name: "a photograph says whose it is", migrate: applyV12),
+        Migration(version: 13, name: "anonymised means anonymous, permanently", sql: v13)
     ]
 
     /// The version a freshly migrated database reports.
@@ -1160,6 +1161,78 @@ public enum AppSchema {
              WHERE visit_id IS NULL AND user_id IS NULL;
             """)
     }
+
+    // MARK: - v13
+
+    /// The tombstone that makes the leaving door's promise permanent (ERRATA — see
+    /// `docs/errata-pending/deletion-tombstone.md`).
+    ///
+    /// **The hole.** `leaveRecords` nulls `user_id` on the four contribution tables and leaves
+    /// `device_id`, which is correct — `device_id` is `NOT NULL` there and always was — but it
+    /// leaves the row in exactly the state D9 defines as *this device's unclaimed work*.
+    /// `claimDevice` then adopts it onto the **next** account signed in on the phone, and the same
+    /// shape appears in every device-scoped read: the journal, the grove, and the count screen 15
+    /// states. A person deliberately unlinked their records from themselves and the phone relinked
+    /// them to whoever came next. On a shared or handed-down device that is a re-identification, and
+    /// nothing on screen said it could happen.
+    ///
+    /// The project owner ruled for a tombstone (RULINGS, "the owner's own decisions", 2026-07-26):
+    /// rows anonymised by a deletion are marked and are skipped for ever.
+    ///
+    /// **Why not clear `device_id` instead.** It is one `UPDATE` and it is wrong. `device_id IS NULL
+    /// AND user_id IS NULL` is not a state those tables can hold (`device_id` is `NOT NULL`), and
+    /// even if it were, it destroys the distinction the whole fix rests on: *anonymised by a
+    /// deletion* and *never had an account* look identical afterwards, so the legitimate D9 case —
+    /// an unsigned-in contributor keeping their own work on their own phone — becomes
+    /// indistinguishable from a stranger's withdrawn records. The tombstone is the only thing that
+    /// tells those two apart.
+    ///
+    /// **Why a side table keyed on `client_uuid`, rather than a column on each table.** A column
+    /// would have been the house's usual move (`deleted_at` is exactly that), and it closes the
+    /// four tables. It does not close the outbox, and the outbox is where a partial tombstone would
+    /// have shipped looking finished. A contribution lives in the queue between being written and
+    /// being applied: `OutboxStore.forgetAccount` strips `$.userID` from the queued payload, and the
+    /// row is *inserted* — for the first time — after the deletion has already run. A column-based
+    /// tombstone has nothing to write on, because the row does not exist yet; it would be born
+    /// unmarked and adopted by the next account, which is the original defect with one extra step in
+    /// front of it.
+    ///
+    /// `client_uuid` is the key both halves already share. It is the idempotency key (BUILD-PLAN §4,
+    /// DECISIONS §3.8), it is `NOT NULL UNIQUE` on all four tables, and it is a top-level key on all
+    /// four payloads — so a deletion can tombstone a record that has not been stored yet, and the
+    /// mark is waiting when the queue drains. That is the property a column cannot have.
+    ///
+    /// **Nothing is ever removed from here.** "Permanently" is the ruling, so this table only grows,
+    /// and it grows by the number of contributions one deleted account made — tens of rows on a real
+    /// install. It holds no `user_id`, no `device_id` and no tree: a `client_uuid` and a timestamp,
+    /// which says *this record is nobody's* and nothing else. Storing the account it came from would
+    /// re-create the joining key `AccountDeletionChoice` refuses a sentinel id for.
+    ///
+    /// **`PRIMARY KEY` and `INSERT OR IGNORE`.** A deletion that runs twice, or a queued row whose
+    /// stored twin was already tombstoned, must be a no-op rather than a constraint failure inside a
+    /// deletion transaction.
+    ///
+    /// **Idempotent** in v1's shape — `CREATE TABLE IF NOT EXISTS` — so a run interrupted between
+    /// the DDL and the version bump replays cleanly.
+    private static let v13 = """
+    -- The records an account deletion unlinked from their author, named by the one key that
+    -- identifies a contribution before and after it is stored.
+    --
+    -- Read by `ContributionStore.claimDevice` and by every device-scoped read beside it; written by
+    -- `AccountDeletion.anonymizeContributions` and `OutboxStore.forgetAccount`. A row here means the
+    -- contribution belongs to nobody — not to the account that is going, and not to the phone it
+    -- was made on.
+    --
+    -- `COLLATE NOCASE` on the key rather than on every reader: a UUID reaches this table by two
+    -- routes — `SQLiteValue`'s uppercase `uuidString` from a stored row, and `JSONEncoder`'s from a
+    -- queued payload — and the whole guarantee would turn on those two agreeing about case for ever.
+    -- Declared on the column, the index itself is case-insensitive, so `INSERT OR IGNORE` deduplicates
+    -- and every lookup matches without a reader having to remember.
+    CREATE TABLE IF NOT EXISTS anonymized_contributions (
+        client_uuid   TEXT PRIMARY KEY COLLATE NOCASE,
+        anonymized_at TEXT NOT NULL
+    );
+    """
 
     /// The `CREATE TABLE` text SQLite holds for `outbox`, which is where the `kind` vocabulary
     /// actually lives — `pragma_table_info` reports columns, not their CHECKs.
