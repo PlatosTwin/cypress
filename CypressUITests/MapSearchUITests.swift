@@ -111,15 +111,73 @@ final class MapSearchUITests: XCTestCase {
         let narrowed = cityTreePins(app)
         XCTAssertGreaterThan(narrowed, 0, "narrowing to the commonest species in San Francisco emptied the map")
 
-        // Clearing it puts the neighbourhood back. `typeText` cannot delete, so the field is cleared
-        // one keystroke at a time — there is no clear button in C20 and SCREENS.md draws none.
-        for _ in 0..<"Platanus".count {
-            field.typeText(XCUIKeyboardKey.delete.rawValue)
-        }
+        // Clearing it puts the neighbourhood back — through the ✕ the bar now draws (task #110,
+        // ruling R15), which is also the only way a person without a hardware keyboard could do it.
+        app.buttons["Clear search"].tap()
         XCTAssertTrue(
             wait { self.cityTreePins(app) == before },
             "clearing the search left the map narrowed (\(self.cityTreePins(app)) pins, expected \(before))"
         )
+    }
+
+    /// **The keyboard has a drawn way out.** The owner: "it's possible to get stuck in the search bar
+    /// — cursor active and no way to exit out of keyboard". Screen 01 has nothing behind the bar that
+    /// can be tapped to dismiss it: the map is an `MKMapView`, and a tap-catcher over it would take
+    /// the pan and the pinch with it. So the bar provides two, and this checks the visible one.
+    func testTheKeyboardCanBeDismissed() throws {
+        let app = launch()
+        let field = app.textFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 20), "the map's search field never appeared")
+
+        field.tap()
+        field.typeText("cy")
+        XCTAssertTrue(
+            wait(timeout: 10) { app.keyboards.count > 0 },
+            "the keyboard never came up, so there is nothing to dismiss"
+        )
+
+        let done = app.buttons["Done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 10), "there is no drawn way out of the keyboard")
+        XCTAssertTrue(done.isHittable, "the way out of the keyboard is in the tree but cannot be tapped")
+        done.tap()
+
+        XCTAssertTrue(
+            wait(timeout: 10) { app.keyboards.count == 0 },
+            "dismissing the keyboard left it on screen"
+        )
+        // And it did not clear the query on the way out: leaving the keyboard is not abandoning the
+        // search, and a map that un-narrowed itself here would lose what the reader just typed.
+        XCTAssertEqual(field.value as? String, "cy", "dismissing the keyboard changed the query")
+    }
+
+    /// The ✕ the owner asked for: present only when there is something to clear, labelled for
+    /// VoiceOver, and genuinely touchable. That last clause is not a formality — a control has
+    /// reported `isHittable` true on this project while sitting under a `.clipped()` that made it
+    /// untouchable, and task #100 is open on a map control that lies to VoiceOver about its state.
+    func testTheClearControlAppearsOnlyWithTextAndCanBeTapped() throws {
+        let app = launch()
+        let field = app.textFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 20), "the map's search field never appeared")
+
+        let clear = app.buttons["Clear search"]
+        XCTAssertFalse(clear.exists, "the clear control is drawn over an empty field, with nothing to clear")
+
+        field.tap()
+        field.typeText("cypress")
+        XCTAssertTrue(clear.waitForExistence(timeout: 10), "typing drew no clear control")
+        XCTAssertTrue(clear.isHittable, "the clear control is in the tree but nothing can touch it")
+
+        // A 44 pt target, ARCHITECTURE §6 — measured, because the glyph is 16 pt and the enlargement
+        // is the whole reason a thumb can hit it.
+        XCTAssertGreaterThanOrEqual(clear.frame.width, 44, "the clear control's hit area is \(clear.frame.width) pt wide")
+        XCTAssertGreaterThanOrEqual(clear.frame.height, 44, "the clear control's hit area is \(clear.frame.height) pt tall")
+
+        clear.tap()
+        XCTAssertTrue(
+            wait(timeout: 10) { (field.value as? String ?? "").isEmpty || field.value as? String == field.placeholderValue },
+            "tapping the clear control left “\(field.value as? String ?? "")” in the field"
+        )
+        XCTAssertFalse(clear.exists, "the clear control stayed on screen over an empty field")
     }
 
     /// A word no species matches empties the map **and says so**. An empty map with no explanation is

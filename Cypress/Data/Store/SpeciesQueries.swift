@@ -89,7 +89,24 @@ public struct SpeciesQueries {
         guard !trimmed.isEmpty else { return [] }
         let pattern = Self.escapedForLike(trimmed)
 
-        let sql = """
+        let statement = try connection.cachedStatement(searchSQL())
+        _ = try statement.bind([
+            ":anywhere": "%\(pattern)%",
+            ":head": "\(pattern)%",
+            ":afterSpace": "% \(pattern)%",
+            ":afterHyphen": "%-\(pattern)%",
+            ":limit": limit
+        ])
+        return try statement.fetchAll { try Self.decodeIfPresent($0) }.compactMap { $0 }
+    }
+
+    /// The statement `search(query:limit:connection:)` runs, exposed so a plan gate can explain the
+    /// text the app actually executes rather than a paraphrase of it copied into a test.
+    ///
+    /// That distinction is `MapQueryPlanTests`' whole subject: the gates it replaced explained SQL
+    /// hand-copied into `DataGates`, so changing the real query left them explaining the copy.
+    func searchSQL() -> String {
+        """
         SELECT \(Self.projection(identityColumn: schema.speciesIdentityColumn))
           FROM \(seed).species s
           JOIN (
@@ -109,16 +126,6 @@ public struct SpeciesQueries {
          ORDER BY m.match_rank, s.curated DESC, s.scientific_name
          LIMIT :limit
         """
-
-        let statement = try connection.cachedStatement(sql)
-        _ = try statement.bind([
-            ":anywhere": "%\(pattern)%",
-            ":head": "\(pattern)%",
-            ":afterSpace": "% \(pattern)%",
-            ":afterHyphen": "%-\(pattern)%",
-            ":limit": limit
-        ])
-        return try statement.fetchAll { try Self.decodeIfPresent($0) }.compactMap { $0 }
     }
 
     /// The three-band rank of `search(query:limit:connection:)`, over one name column.
