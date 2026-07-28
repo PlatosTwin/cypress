@@ -329,6 +329,17 @@ public struct OutboxStore {
     ///    a null; the mutation's `client_uuid`, its photos, its retry state and its place in the FIFO
     ///    are untouched.
     ///
+    /// **And rule 2 is why the tombstone is keyed on `client_uuid`** (`AppSchema` v13, ERRATA — see
+    /// `docs/errata-pending/deletion-tombstone.md`). A stripped payload lands as a row with
+    /// `user_id IS NULL` and a `device_id`, which is D9's description of *this device's unclaimed
+    /// work* — so `claimDevice` adopts it onto the next account signed in on the phone, and the
+    /// person who asked to be unlinked is relinked by the tail of their own queue. The row cannot be
+    /// marked when it is stored, because at deletion time it does not exist and after the drain the
+    /// deletion is long over. It can be marked *now*, by the key it will be stored under: the
+    /// `client_uuid` is in the payload, it is the same value the eventual row carries, and the
+    /// tombstone is simply waiting for it. This is the case a tombstone written as a column on the
+    /// four tables would have missed while looking complete.
+    ///
     /// **Every state, not just the pending ones.** A `done` row is screen 17's receipt, and its
     /// payload is a second copy of the attribution sitting on disk — anonymizing the table and
     /// leaving the receipt would leave the account's id on the device. A `done` favourite's receipt
@@ -376,6 +387,21 @@ public struct OutboxStore {
 
         switch choice {
         case .leaveRecords:
+            // The tombstone for a row that does not exist yet, written before the payload stops
+            // naming the account — the same ordering `AccountDeletion.anonymizeContributions` keeps,
+            // and for the same reason: `\(mine)` is the predicate, and the statement below is what
+            // stops it matching.
+            let tombstone = try connection.cachedStatement("""
+                INSERT OR IGNORE INTO anonymized_contributions (client_uuid, anonymized_at)
+                SELECT json_extract(payload, '$.clientUUID'), :now
+                  FROM outbox
+                 WHERE \(contributions) AND \(mine)
+                   AND json_extract(payload, '$.clientUUID') IS NOT NULL
+                """)
+            _ = try tombstone.bind([":now": date, ":user": userID.uuidString])
+            try tombstone.run()
+            _ = try tombstone.reset()
+
             let anonymize = try connection.cachedStatement("""
                 UPDATE outbox
                    SET payload = json_remove(payload, '$.userID'), updated_at = :now
