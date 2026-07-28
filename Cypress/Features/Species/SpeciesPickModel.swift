@@ -14,8 +14,8 @@
 //  ── What is reused, and what is deliberately not ─────────────────────────────────────────────────
 //  Reused, whole:
 //    · `CypressAPI.searchSpecies(query:limit:)` — the same protocol requirement `MapModel` calls,
-//      backed by `SpeciesQueries.search`'s covering prefix scan over both the scientific and the
-//      common name. No second search was written, and no second query was written either.
+//      backed by `SpeciesQueries.search`'s covering substring scan over both the scientific and
+//      the common name. No second search was written, and no second query was written either.
 //    · `SearchBar` (C20) — the same field, with its own placeholder, because a species field that
 //      looked different from the app's other species field would be a second vocabulary for one act.
 //    · `MapModel.searchDidChange`'s shape: cancel, debounce, refuse to debounce a *clear*. Copied as
@@ -32,12 +32,14 @@
 //  to read: past a couple of dozen rows the answer to "which of these is it" is not more rows, it is
 //  a better query. See `resultLimit`.
 //
-//  ── The prefix gap is stated, not hidden ────────────────────────────────────────────────────────
-//  `SpeciesQueries.search` matches a **prefix** of either name; the trigram matching BUILD-PLAN §6
-//  specifies needs an FTS5 index the seed does not carry. So "oak" does not find "Coast Live Oak",
-//  and `.noMatch` therefore says the catalogue has nothing *starting with* what was typed rather than
-//  claiming no such tree exists. A picker that said "no such species" over a prefix miss would be
-//  telling the contributor their tree is not real, which is the opposite of this screen's job.
+//  ── The matching gap is stated, not hidden ──────────────────────────────────────────────────────
+//  `SpeciesQueries.search` matches a word **anywhere** in either name and ranks head matches above
+//  interior ones (task #108), so "oak" does find "Coast Live Oak". What it still is not is the
+//  trigram matching BUILD-PLAN §6 specifies, which needs an FTS5 index the seed does not carry: a
+//  typo misses, and so does a name the catalogue spells another way. So `.noMatch` says the
+//  catalogue has nothing *matching* what was typed rather than claiming no such tree exists. A
+//  picker that said "no such species" over a spelling miss would be telling the contributor their
+//  tree is not real, which is the opposite of this screen's job.
 //
 //  No SwiftUI in this file.
 //
@@ -54,7 +56,7 @@ enum SpeciesPickState: Equatable {
     case searching
     /// At least one match, in the catalogue's own ranking.
     case matched([Species])
-    /// The catalogue has nothing beginning with this. Carries the query so the sentence can quote it.
+    /// The catalogue has nothing matching this. Carries the query so the sentence can quote it.
     case noMatch(query: String)
 }
 
@@ -79,7 +81,7 @@ final class SpeciesPickModel {
     /// How many rows one query may offer. See the file header for why this is not the map's 100.
     static let resultLimit = 25
 
-    /// The same debounce the map's bar uses. A species catalogue answers a prefix in 0.1 ms, so this
+    /// The same debounce the map's bar uses. A 577-row species catalogue answers in 0.1 ms, so this
     /// is not about the database — it is about not redrawing a list under somebody's thumb while they
     /// are still typing the word.
     static let searchDebounce = Duration.milliseconds(180)
@@ -143,11 +145,17 @@ enum SpeciesPickCopy {
 
     static let searching = "Looking…"
 
-    /// A prefix miss, quoting the query back. It says *starts with* because that is what the search
-    /// actually does (`SpeciesQueries.search`), and a picker that said "no such species" over a
-    /// prefix miss would be telling a contributor their tree does not exist.
+    /// A miss, quoting the query back.
+    ///
+    /// It said *starts with* for as long as the search was a prefix scan. Task #108 made the search
+    /// match a word anywhere in either name, and this sentence had to move with it: telling somebody
+    /// to "try the first word of either name" when the search no longer cares which word it is sends
+    /// them to retype a query that already worked. It still stops short of "no such species" — the
+    /// match is a substring one, not a trigram one, so a typo or a name the catalogue spells
+    /// differently still misses, and a picker that called that miss non-existence would be telling a
+    /// contributor their tree is not real.
     static func noMatch(query: String) -> String {
-        "Nothing in the catalogue starts with “\(query)”. Try the first word of either name."
+        "Nothing in the catalogue matches “\(query)”. Try part of either name, or check the spelling."
     }
 
     /// A chosen row, restated where the choice was made. Common name first when there is one, by

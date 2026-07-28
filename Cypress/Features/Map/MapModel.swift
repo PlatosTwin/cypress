@@ -398,8 +398,8 @@ final class MapModel {
 
     /// Resolves what was typed to a set of species, then refetches the map through it.
     ///
-    /// The catalogue read and the map read are deliberately two steps rather than one: 569 species
-    /// answer a prefix in 0.1 ms and 195,309 trees do not, so the narrow thing is resolved first and
+    /// The catalogue read and the map read are deliberately two steps rather than one: 577 species
+    /// answer a substring in 0.1 ms and 195,309 trees do not, so the narrow thing is resolved first and
     /// the wide query is asked once, already narrowed.
     private func searchDidChange() {
         searchTask?.cancel()

@@ -42,7 +42,7 @@ enum MapSearch: Equatable {
     /// Nothing typed. The map is the whole neighbourhood.
     case off
 
-    /// A query the species catalogue has no prefix match for.
+    /// A query the species catalogue has no match for.
     ///
     /// Carries the query so the message can quote it back — "No species called *sycamore*" is a
     /// different sentence from "no results", and the difference is that the first one tells the
@@ -54,19 +54,35 @@ enum MapSearch: Equatable {
 
     /// A resolved search, and how much of it the current viewport is showing.
     struct Narrowed: Equatable {
-        /// Every species the prefix matched. More than one is common and correct: `Prunus` is a
+        /// Every species the query matched. More than one is common and correct: `Prunus` is a
         /// genus, and narrowing to all of it is what the reader asked for.
         let speciesIDs: Set<UUID>
         /// For the message. The first few names, in the order the catalogue ranked them.
         let names: [String]
+        /// Whether the catalogue had more matches than `speciesLimit` and this is the first page.
+        ///
+        /// **This is E38 applied one level up from the pins.** The other counts on this struct are
+        /// about trees; this one is about species, and it became reachable the moment matching
+        /// stopped being prefix-only — "a" prefix-matches 97 species and *contains* in 555, well
+        /// over the 100 the map asks for. Without this flag the status line reads "Showing 100
+        /// species" for a query that matched five and a half times that, which is a page wearing a
+        /// total's clothes.
+        let isTruncated: Bool
         /// Pins actually drawn, once an answer has arrived. `nil` before the first fetch settles.
         var drawn: Int?
         /// Trees that matched inside the viewport, which is `drawn` unless the grid thinned them.
         var matched: Int?
 
-        init(speciesIDs: Set<UUID>, names: [String], drawn: Int? = nil, matched: Int? = nil) {
+        init(
+            speciesIDs: Set<UUID>,
+            names: [String],
+            isTruncated: Bool = false,
+            drawn: Int? = nil,
+            matched: Int? = nil
+        ) {
             self.speciesIDs = speciesIDs
             self.names = names
+            self.isTruncated = isTruncated
             self.drawn = drawn
             self.matched = matched
         }
@@ -97,7 +113,11 @@ enum MapSearch: Equatable {
             speciesIDs: Set(matches.map(\.id)),
             // "the species common name is the fallback display everywhere" (D15) — and the other way
             // round here, because a species with no common name still has a scientific one.
-            names: matches.map { $0.commonName.isEmpty ? $0.scientificName : $0.commonName }
+            names: matches.map { $0.commonName.isEmpty ? $0.scientificName : $0.commonName },
+            // A full page is the only signal the catalogue gives that there were more; it cannot
+            // distinguish "exactly 100 matched" from "500 did", so it claims the weaker of the two.
+            // Saying "the first 100" of exactly 100 is a true sentence; the reverse is not.
+            isTruncated: matches.count >= MapSearch.speciesLimit
         ))
     }
 
@@ -147,27 +167,35 @@ enum MapSearchCopy {
 
         case let .narrowed(narrowed):
             let subject = subject(narrowed.names)
+            let page = "the first \(narrowed.names.count) matching species"
             guard let drawn = narrowed.drawn, let matched = narrowed.matched else {
                 // A clustered viewport, or the first frame before an answer landed. The badges are
                 // already narrowed and already carry counts, so this only has to name the subject.
-                return "Showing \(subject)"
+                return narrowed.isTruncated ? "Showing \(page)" : "Showing \(subject)"
             }
             if matched == 0 {
                 // The species exists; there are none of it here. Naming the viewport is the whole
                 // point — it tells the reader to move the map rather than to doubt the spelling.
-                return "No \(subject) in view"
+                return narrowed.isTruncated
+                    ? "None of \(page) are in view"
+                    : "No \(subject) in view"
             }
             if matched > drawn {
                 // ERRATA E38: a sample must say it is one, and say how much of one.
-                return "Showing \(drawn) of \(matched) \(subject) here"
+                return narrowed.isTruncated
+                    ? "Showing \(drawn) of \(matched) trees here, from \(page)"
+                    : "Showing \(drawn) of \(matched) \(subject) here"
             }
-            return nil
+            // A complete answer normally says nothing: the map is the answer. It cannot stay silent
+            // when the *species* set behind it was itself a page, because then the map is complete
+            // only with respect to a subset the reader was never told about (E38).
+            return narrowed.isTruncated ? "Showing every tree of \(page)" : nil
         }
     }
 
     /// What to call the thing being searched for.
     ///
-    /// One species is its name. Two are both named, because a prefix that matches exactly two is
+    /// One species is its name. Two are both named, because a query that matches exactly two is
     /// usually a real ambiguity the reader wants to see. Beyond that the names stop being useful and
     /// the count is the honest summary — nobody reads seven species names off a map.
     static func subject(_ names: [String]) -> String {
