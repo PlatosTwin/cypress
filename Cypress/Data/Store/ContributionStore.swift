@@ -917,6 +917,11 @@ public struct ContributionStore {
                      WHERE deleted_at IS NULL
                        AND (device_id = :device COLLATE NOCASE
                             OR (:user IS NOT NULL AND user_id = :user COLLATE NOCASE))
+                       -- A visit an account deletion anonymised is nobody's, including this
+                       -- phone's, so it does not put a tree in the next person's grove
+                       -- (`AppSchema` v13). The favourites arm below needs no such clause: a
+                       -- favourite is deleted with its account under both doors.
+                       AND \(Self.notAnonymized("visits"))
                      GROUP BY tree_uuid
                     UNION ALL
                     -- Both owners, for the reason the visits arm above reads both: a favourite saved
@@ -971,17 +976,19 @@ public struct ContributionStore {
     ) throws -> [UUID: GroveRecord] {
         let statement = try connection.cachedStatement("""
             SELECT tree_uuid, kind, COUNT(*) AS n FROM (
-                SELECT tree_uuid, 'visit' AS kind, user_id, device_id, deleted_at FROM visits
+                SELECT tree_uuid, 'visit' AS kind, user_id, device_id, client_uuid, deleted_at FROM visits
                 UNION ALL
-                SELECT tree_uuid, 'observation', user_id, device_id, deleted_at FROM observations
+                SELECT tree_uuid, 'observation', user_id, device_id, client_uuid, deleted_at FROM observations
                 UNION ALL
-                SELECT tree_uuid, 'measurement', user_id, device_id, deleted_at FROM measurements
+                SELECT tree_uuid, 'measurement', user_id, device_id, client_uuid, deleted_at FROM measurements
                 UNION ALL
-                SELECT tree_uuid, 'care_event', user_id, device_id, deleted_at FROM care_events
-            )
+                SELECT tree_uuid, 'care_event', user_id, device_id, client_uuid, deleted_at FROM care_events
+            ) record
              WHERE deleted_at IS NULL
                AND (device_id = :device COLLATE NOCASE
                     OR (:user IS NOT NULL AND user_id = :user COLLATE NOCASE))
+               -- `journal`'s clause, for the same reason (`AppSchema` v13).
+               AND \(Self.notAnonymized("record"))
              GROUP BY tree_uuid, kind
             """)
         _ = try statement.bind([":device": deviceID.uuidString, ":user": userID?.uuidString])
@@ -1022,6 +1029,13 @@ public struct ContributionStore {
     ///
     /// The cursor is the `captured_at` of the last row returned, which is stable under insertion —
     /// contributions are append-only and are never back-dated past a page boundary.
+    ///
+    /// **The device arm reads "this phone's own unclaimed work", and a record an account deletion
+    /// anonymised is not that** (`AppSchema` v13). Without the tombstone clause, the person who signs
+    /// in on a handed-down phone opens their journal and reads a stranger's visits — the rows kept
+    /// their `device_id`, which is the whole of what the device arm asks for. The user arm cannot
+    /// reach them either way, because an anonymised row has no `user_id`; the clause is written once
+    /// at the top rather than inside the device arm for that reason.
     public func journal(
         userID: UUID?,
         deviceID: UUID,
@@ -1032,23 +1046,24 @@ public struct ContributionStore {
         let statement = try connection.cachedStatement("""
             SELECT id, kind, tree_uuid, captured_at, summary FROM (
                 SELECT id, 'visit' AS kind, tree_uuid, captured_at, COALESCE(note, '') AS summary,
-                       user_id, device_id, deleted_at FROM visits
+                       user_id, device_id, client_uuid, deleted_at FROM visits
                 UNION ALL
                 SELECT id, 'observation', tree_uuid, captured_at,
                        COALESCE(status, '') || CASE WHEN vitality IS NULL THEN ''
                                                     ELSE ' · vitality ' || vitality END,
-                       user_id, device_id, deleted_at FROM observations
+                       user_id, device_id, client_uuid, deleted_at FROM observations
                 UNION ALL
                 SELECT id, 'measurement', tree_uuid, captured_at,
                        kind || ' ' || value || ' ' || unit_entered || ', ' || method,
-                       user_id, device_id, deleted_at FROM measurements
+                       user_id, device_id, client_uuid, deleted_at FROM measurements
                 UNION ALL
                 SELECT id, 'careEvent', tree_uuid, captured_at, actions,
-                       user_id, device_id, deleted_at FROM care_events
-            )
+                       user_id, device_id, client_uuid, deleted_at FROM care_events
+            ) entry
             WHERE deleted_at IS NULL
               AND (device_id = :device COLLATE NOCASE
                    OR (:user IS NOT NULL AND user_id = :user COLLATE NOCASE))
+              AND \(Self.notAnonymized("entry"))
               AND (:cursor IS NULL OR captured_at < :cursor)
             ORDER BY captured_at DESC
             LIMIT :limit
@@ -1080,11 +1095,25 @@ public struct ContributionStore {
     /// deletes, so nothing can be orphaned. A second claim by the same user matches zero rows, and a
     /// claim by a *different* user leaves already-attributed rows alone rather than stealing them —
     /// the `user_id IS NULL` guard is what makes both true.
+    ///
+    /// **What it will not adopt, ever: a record a deletion anonymised** (`AppSchema` v13, ERRATA —
+    /// see `docs/errata-pending/deletion-tombstone.md`). `user_id IS NULL AND device_id = :device`
+    /// used to be the whole definition of *this device's unclaimed work*, and it was one state too
+    /// broad. `leaveRecords` nulls `user_id` and — correctly — leaves `device_id`, so a record its
+    /// author deliberately unlinked from themselves matched this predicate exactly and was adopted
+    /// by the **next** account signed in on the phone. On a shared or handed-down device that is a
+    /// re-identification of somebody who asked not to be identifiable.
+    ///
+    /// `Self.notAnonymized` is the difference between *anonymised by a deletion* and *never had an
+    /// account*, which are two states this predicate could not previously tell apart. Both halves
+    /// still matter: the second is D9's own case — an unsigned-in contributor keeping their own work
+    /// on their own phone — and it is precisely why the fix is not "clear `device_id` as well".
     public func claimDevice(deviceUUID: UUID, userID: UUID, at date: Date, connection: SQLiteConnection) throws {
         for table in ["visits", "observations", "measurements", "care_events"] {
             let statement = try connection.cachedStatement("""
                 UPDATE \(table) SET user_id = :user, updated_at = :now
                  WHERE device_id = :device COLLATE NOCASE AND user_id IS NULL
+                   AND \(Self.notAnonymized(table))
                 """)
             _ = try statement.bind([":user": userID, ":now": date, ":device": deviceUUID.uuidString])
             try statement.run()
@@ -1302,16 +1331,28 @@ public struct ContributionStore {
     ///
     /// Tombstoned rows are excluded — `deleted_at IS NULL` — because the sentence this feeds is
     /// about what a person would keep, and a deleted row is not something they have.
+    ///
+    /// So is a record an account deletion anonymised (`AppSchema` v13). This number is the promise
+    /// screen 15 makes and `claimDevice` keeps, and the two have to be counted by the same
+    /// predicate: leave the tombstone out here and the screen offers to keep three visits that the
+    /// claim then declines to move — a broken promise made *by the count*, on the one surface where
+    /// a person could notice. `deviceContributions` and `claimDevice` are one rule read twice.
     public func deviceContributions(
         deviceUUID: UUID,
         connection: SQLiteConnection
     ) throws -> DeviceContributions {
-        func count(_ table: String, deviceColumn: String = "device_id") throws -> Int {
+        func count(_ table: String, canBeAnonymized: Bool = false) throws -> Int {
+            // The four append-only kinds carry a `client_uuid` and survive a deletion unattributed,
+            // so they are the four that can hold a v13 tombstone. `private_reminders` has no
+            // `client_uuid` at all and `favorites` is deleted with its account under both doors, so
+            // neither can — and asking would be a SQL error on the first of them.
+            let tombstone = canBeAnonymized ? "AND \(Self.notAnonymized(table))" : ""
             let statement = try connection.cachedStatement("""
                 SELECT COUNT(*) AS n FROM \(table)
-                 WHERE \(deviceColumn) = :device COLLATE NOCASE
+                 WHERE device_id = :device COLLATE NOCASE
                    AND user_id IS NULL
                    AND deleted_at IS NULL
+                   \(tombstone)
                 """)
             _ = try statement.bind([":device": deviceUUID.uuidString])
             defer { _ = try? statement.reset() }
@@ -1319,10 +1360,10 @@ public struct ContributionStore {
         }
 
         return DeviceContributions(
-            visits: try count("visits"),
-            checkIns: try count("observations"),
-            measurements: try count("measurements"),
-            careEvents: try count("care_events"),
+            visits: try count("visits", canBeAnonymized: true),
+            checkIns: try count("observations", canBeAnonymized: true),
+            measurements: try count("measurements", canBeAnonymized: true),
+            careEvents: try count("care_events", canBeAnonymized: true),
             // Exclusive ownership (E23): a device-owned reminder has `user_id IS NULL` and a
             // `device_id`, so the same predicate reads it correctly.
             privateReminders: try count("private_reminders"),
@@ -1334,6 +1375,41 @@ public struct ContributionStore {
     }
 
     // MARK: - Paging
+
+    // MARK: - The tombstone (AppSchema v13)
+
+    /// "This record is still somebody's to claim" — the clause that keeps a contribution anonymised
+    /// by an account deletion out of every device-scoped predicate in this file.
+    ///
+    /// **Why it is a constant and not five hand-written subqueries.** The guarantee is only worth
+    /// what its least careful reader honours. `user_id IS NULL AND device_id = :device` appears in
+    /// `claimDevice`, in `deviceContributions`, in `journal`, in `groveTreeIDs` and in
+    /// `groveRecords`, and it means the same thing in all five: *the work of the phone in your hand*.
+    /// A tombstone applied to the claim alone would stop the rows being adopted and go on showing
+    /// them, so the next person to sign in would read a stranger's visits in their own journal and be
+    /// offered a count of records the claim then refuses to move — the promise visibly broken in the
+    /// one place a person can see it. One clause, named once, is what makes "all five" checkable.
+    ///
+    /// It reads `client_uuid` rather than `id` because that is the key a contribution has before it
+    /// is stored as well as after: the tombstone for a queued mutation is written from its payload
+    /// while it is still in the outbox (`OutboxStore.forgetAccount`), and is waiting when the drain
+    /// finally inserts the row.
+    ///
+    /// `NOT EXISTS` over a one-column primary key, so the plan is a point lookup per candidate row on
+    /// a table that holds tens of rows at most, against tables that hold tens to hundreds.
+    ///
+    /// **The qualifier is required and is not a style choice.** Written
+    /// `WHERE t.client_uuid = client_uuid`, SQLite resolves the bare name in the *inner* scope first
+    /// and the condition becomes `t.client_uuid = t.client_uuid` — true for every row of a non-empty
+    /// table, so `NOT EXISTS` is false for every candidate and the claim silently adopts nothing at
+    /// all. A guarantee that fails closed on a name-resolution rule is not one, so the caller names
+    /// the table it is filtering.
+    static func notAnonymized(_ qualifier: String) -> String {
+        """
+        NOT EXISTS (SELECT 1 FROM anonymized_contributions tomb
+                     WHERE tomb.client_uuid = \(qualifier).client_uuid)
+        """
+    }
 
     /// How many rows to ask SQLite for, given what the caller wants.
     ///

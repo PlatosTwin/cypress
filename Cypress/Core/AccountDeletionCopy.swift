@@ -57,14 +57,31 @@ public enum AccountDeletionCopy {
 
     /// The default door, whole.
     ///
-    /// The last clause is the one that makes this a real privacy answer rather than a soft refusal:
-    /// the rows are not merely unsigned, they are unlinkable to each other. See
+    /// The second sentence is the one that makes this a real privacy answer rather than a soft
+    /// refusal: the rows are not merely unsigned, they are unlinkable to each other. See
     /// `AccountDeletionChoice` for why that is true — the owner column is nulled and no stand-in id
     /// is written in its place.
+    ///
+    /// **The last clause was added because the sentence before it was not true** (ERRATA — see
+    /// `docs/errata-pending/deletion-tombstone.md`). Anonymising nulls the account and leaves the
+    /// installation id the row has always carried, and `claimDevice` read that as *this phone's
+    /// unclaimed work* — so the records were adopted by the next account signed in here, and
+    /// "nothing left on them saying they were yours" lasted until somebody signed in. `AppSchema`
+    /// v13's tombstone makes the promise permanent, and the project owner weighed and accepted the
+    /// price of that: it applies to the person themselves as much as to a stranger. So the copy says
+    /// it, in the same breath as the promise, rather than leaving somebody to find out by signing in
+    /// again and seeing an empty journal.
+    ///
+    /// It is written as a consequence of the promise ("and that includes this phone") rather than as
+    /// a separate warning, because it is the same fact seen from the other side, and a person who
+    /// reads the first sentence and believes it should not need a second paragraph to learn what
+    /// believing it costs. "You" rather than "your account": the reader has no other account, and
+    /// naming the mechanism here would explain the database instead of the outcome.
     public static let leaveRecordsBody = """
         Your visits, check-ins, measurements, care notes, photographs and photo votes stay on the \
         trees they were made about, with nothing left on them saying they were yours. Nobody can \
-        tell afterwards that they were all one person's.
+        tell afterwards that they were all one person's, and that includes this phone: if you make \
+        a new account here, they do not come back to you.
         """
 
     /// The destructive door's label. First person, and a verb, because this is the sentence a person
