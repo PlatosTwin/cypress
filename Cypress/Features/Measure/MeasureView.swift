@@ -33,7 +33,11 @@ struct MeasureView: View {
         api: any CypressAPI,
         outbox: OutboxQueue,
         attribution: Attribution,
-        gpsAccuracyM: Double? = nil,
+        // A closure, because `@State` runs its initialiser exactly once and a `Double?` passed
+        // through it is frozen at the first frame — on a cold launch, `nil`, which D6 treats as
+        // unusable (ERRATA — see docs/errata-pending/gps-accuracy-at-submit.md). The model asks
+        // this at the moment it needs an answer; see `MeasureModel.gpsAccuracyM`.
+        gpsAccuracyM: @escaping @MainActor () -> Double? = { nil },
         now: @escaping () -> Date = { Date() },
         calendar: Calendar = .current,
         onSaved: @escaping (MeasureSaveReceipt) -> Void = { _ in }

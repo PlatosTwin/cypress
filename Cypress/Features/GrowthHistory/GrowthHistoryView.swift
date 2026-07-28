@@ -84,8 +84,11 @@ struct GrowthHistoryView: View {
                     // The line that explains a missing chart sits where the chart would have been,
                     // above the readings it is about — under the log it reads as a footnote to the
                     // list rather than as the reason the cards are absent.
-                    if presentation.hasRecordButNoChart {
-                        emptyState(GrowthHistoryCopy.noChartableState)
+                    // Which sentence is `noChartReason`'s to decide: a fix too poor and no fix at
+                    // all are different facts, and screen 16 already distinguishes them before the
+                    // save.
+                    if let reason = presentation.noChartReason {
+                        emptyState(reason)
                     }
 
                     // 5 · The measurement log — the record, wider than the charts by design.
