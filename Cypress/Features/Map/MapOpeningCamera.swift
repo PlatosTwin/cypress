@@ -330,9 +330,9 @@ enum MapOpeningCopy {
     /// one is fixed by the recentre control, which asks. The hint on that control says so
     /// (`MapRecentreCopy.hint(.askable)`).
     static let notAskedTitle = "Cypress has not been given your location"
-    static func notAskedMessage(_ showing: MapOpening.Showing) -> String {
+    static func notAskedMessage(_ place: MapOpening.Showing) -> String {
         "Nothing has answered the location request yet, so there is nowhere to centre the map. "
-            + showing(showing)
+            + showing(place)
     }
 
     /// Granted and still looking.
@@ -342,8 +342,8 @@ enum MapOpeningCopy {
     /// doing instead, and it promises the move — a promise `MapHomeView` keeps, because the same
     /// first fix that ends this state is the one that centres the camera.
     static let searchingTitle = "Finding you"
-    static func searchingMessage(_ showing: MapOpening.Showing) -> String {
-        "Cypress has permission and is still waiting for a first fix. " + showing(showing)
+    static func searchingMessage(_ place: MapOpening.Showing) -> String {
+        "Cypress has permission and is still waiting for a first fix. " + showing(place)
             + " It will move to you as soon as one arrives."
     }
 }

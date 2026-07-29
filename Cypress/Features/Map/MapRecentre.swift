@@ -127,12 +127,29 @@ enum MapRecentre {
     }
 
     /// How the control draws itself, which is a continuous answer rather than a reaction to a press.
+    ///
+    /// **Five cases, and it used to be three (#100).** `away` carried all of "I know where you are
+    /// and the map is not there", "nobody has answered the permission ask" and "I am still looking",
+    /// and `MapRecentreCopy.value` spoke one word — `Not centred` — over all three. For a sighted
+    /// reader that word is a caption on a picture they can also see. For a VoiceOver reader it is the
+    /// *entire* report on where the map is, and in two of the three states it is not merely thin, it
+    /// is wrong: there is no "centred" to be short of, because the app does not know where the reader
+    /// is and pressing the control will not move the camera at all.
+    ///
+    /// That is ERRATA E126's rule — a screen showing something other than what you asked for must say
+    /// why — arriving at the one control whose whole reason for existing is that no press is ever
+    /// silent. A control that cannot move the camera has to say so *before* it is pressed, not only
+    /// after.
     enum Engagement: Equatable {
         /// There is a fix and the camera is on it.
         case centred
-        /// There is somewhere to go.
+        /// There is a fix, and it is somewhere other than the middle of the map. A press moves it.
         case away
-        /// There is no fix to go to, and pressing will say so rather than move anything.
+        /// Nobody has answered the permission ask. A press asks.
+        case askable
+        /// Permission granted, no fix yet. A press promises the move and keeps the promise.
+        case searching
+        /// Refused, or Location Services off. Pressing explains rather than moving anything.
         case unavailable
     }
 
@@ -168,14 +185,27 @@ enum MapRecentre {
     }
 
     /// What the button draws, before anybody presses it.
+    ///
+    /// It answers the same five-way question `press(availability:camera:)` does, and deliberately
+    /// mirrors its shape: every state in which a press produces something different is a state the
+    /// control reports differently, which is what makes the spoken value a prediction of the press
+    /// rather than a decoration on it.
+    ///
+    /// **`askable` and `searching` are still not drawn struck through.** That is unchanged from when
+    /// they were both `away`, and it is still right: pressing in either state is a reasonable thing
+    /// to do and gets a real answer, so the *picture* must not tell the reader not to bother. Only
+    /// the words got more precise — see `Engagement` and #100.
     static func engagement(availability: MapLocationProvider.Availability, camera: Camera) -> Engagement {
-        guard let coordinate = availability.coordinate else {
-            // `notAsked` and `waitingForFix` are drawn as `away` rather than as `unavailable`: both
-            // are states where pressing is a reasonable thing to do and gets a real answer, and a
-            // struck-through control would be telling the reader not to bother.
-            return availability.isRefused ? .unavailable : .away
+        switch availability {
+        case .notAsked:
+            return .askable
+        case .waitingForFix:
+            return .searching
+        case .denied, .servicesOff:
+            return .unavailable
+        case let .located(coordinate, _):
+            return camera.isCentred(on: coordinate) ? .centred : .away
         }
-        return camera.isCentred(on: coordinate) ? .centred : .away
     }
 }
 
@@ -196,19 +226,33 @@ enum MapRecentreCopy {
 
     /// The state, spoken. `accessibilityValue` rather than a second label, so VoiceOver reads
     /// "Centre the map on you, centred on you" — the control, then what it is currently doing.
+    ///
+    /// **Five sentences for five states (#100).** `Not centred` is kept for the one state it was ever
+    /// true of — there is a fix, and the map is not on it — and the two states it used to be borrowed
+    /// for now say what is actually the case. Neither of them is a degree of "centred": in both, the
+    /// app does not know where the reader is, so there is nothing to be off-centre from.
     static func value(_ engagement: MapRecentre.Engagement) -> String {
         switch engagement {
         case .centred: return "Centred on you"
         case .away: return "Not centred"
+        case .askable: return "Cypress has not been given your location"
+        case .searching: return "Finding you"
         case .unavailable: return "Location is off"
         }
     }
 
     /// What the next press will do, when that is not obvious from the value.
+    ///
+    /// `away` is the one state with nothing to add: the label already says the control centres the
+    /// map on you and the value says it is not centred, so a hint would be the same sentence a third
+    /// time. The other four each promise something the label does not — a zoom, a permission sheet, a
+    /// held press, an explanation.
     static func hint(_ engagement: MapRecentre.Engagement) -> String? {
         switch engagement {
         case .centred: return "Zooms in to street level"
         case .away: return nil
+        case .askable: return "Asks for permission to use your location"
+        case .searching: return "The map moves to you as soon as a first fix arrives"
         case .unavailable: return "Explains why the map cannot find you"
         }
     }
