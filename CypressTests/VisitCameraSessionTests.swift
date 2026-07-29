@@ -607,7 +607,7 @@ struct VisitCameraSessionTests {
         #expect(router.path.count == 3)
     }
 
-    // MARK: - 8 · The accessibility variant (R14; ERRATA — see docs/errata-pending/screen04-ax.md)
+    // MARK: - 8 · The accessibility variant (R14; ERRATA — see docs/errata-pending/screen-04-capture.md)
 
     /// The floor is arithmetic on the capture, and it can be checked as arithmetic.
     ///
@@ -884,11 +884,6 @@ struct VisitCameraSessionTests {
         }
         defer { window.isHidden = true; window.rootViewController = nil }
         return host.sizeThatFits(in: CGSize(width: width, height: .greatestFiniteMagnitude))
-    }
-
-    /// What `content` measures with nothing constraining it — a chip's own idea of its size.
-    static func naturalSize(_ content: some View) async -> CGSize {
-        await measure(content, at: .large, width: .greatestFiniteMagnitude)
     }
 
     /// The scroll view R14's variant puts the controls in.

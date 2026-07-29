@@ -48,7 +48,7 @@ struct VisitCameraView: View {
     }
 
     // ══════════════════════════════════════════════════════════════════════════════════════════════
-    // THE ACCESSIBILITY VARIANT (R14; ERRATA — see docs/errata-pending/screen04-ax.md)
+    // THE ACCESSIBILITY VARIANT (R14; ERRATA — see docs/errata-pending/screen-04-capture.md)
     //
     // Below the accessibility sizes this screen is exactly what SCREENS 04 draws: a viewfinder that
     // takes what is left after the tray, with the framing chips and the shutter overlaid on its

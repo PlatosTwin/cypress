@@ -177,7 +177,7 @@ enum VisitMetrics {
             shotTypeBottom - shutterBottom - shutterDiameter
         }
 
-        // ── The accessibility variant (R14; ERRATA — see docs/errata-pending/screen04-ax.md) ──
+        // ── The accessibility variant (R14; ERRATA — see docs/errata-pending/screen-04-capture.md) ──
         //
         // SCREENS 04 draws this screen at default type only. R14 ruled that at accessibility sizes
         // the viewfinder shrinks to a fixed minimum and the controls beneath it scroll, and left the

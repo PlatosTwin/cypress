@@ -800,6 +800,37 @@ the tree profile"); activity row → the observation behind it.
 **States:** the prototype gates `Log visit` on having snapped a photo (per README); the spec draws
 only the enabled state. **NOT SPECIFIED:** disabled CTA styling, the post-shutter review UI.
 
+**Accessibility variant** (R14; everything above is the layout at the default type size). At
+`isAccessibilitySize` and above — AX1 up — the `flex:1` viewfinder becomes a **fixed floor** and the
+tray becomes a **scroll view** filling whatever is left of the display. The two are computed from one
+height, so they always sum to it.
+
+- **The floor** is `viewfinder width × 4/3` — 524pt on a 393pt phone. Not a chosen number: the
+  capture is 4:3 (`sessionPreset = .photo`) behind a `.resizeAspectFill` layer, so this is the exact
+  height below which the preview stops showing the whole frame it is about to take. The viewfinder is
+  583pt at the drawn size and 550pt at `xxxLarge`, both above the floor, so it first binds precisely
+  where the accessibility sizes begin.
+- **On the viewfinder, still:** the ✕, the four framing corners, the shutter, and the guidance pill.
+  Only furniture whose size does not depend on the type ramp, plus the pill — which stays because
+  with the chips moved down it is the only thing naming the framing being aimed, and which can stay
+  because it is top-anchored and hit-transparent. Its inset moves: at these sizes it drops **below**
+  the ✕'s row rather than sharing it, because at AX5 it is the full width of the phone and would
+  otherwise hide the only way off the screen.
+- **Into the scroll, in this order:** the shot-type chips (first, immediately under the frame they
+  aim), the camera-denied sentence, the ghost caption, then the tray exactly as drawn above — note
+  field, phenology chips, `Log visit`, offline line.
+- **The shutter does not travel.** It stays pinned to the viewfinder's bottom edge at `bottom:34px`
+  at every text size: aiming and firing are one gesture, and it costs a constant 68pt where the
+  controls' cost grows without bound. §5's gap 11 already reads this way for the rest of the app —
+  "scrollable content with a pinned CTA".
+- The two elements that lose a property in the move: the camera-denied sentence drops its capsule and
+  material (that treatment exists to make it legible *over a photograph*; on the tray it takes the
+  tray's own primary ink), and the ghost caption drops its `max-width:80px` while keeping its mono
+  face and colour. That cap is the one part of it the type ramp cannot survive — at AX5 it is a
+  column of single stacked syllables running the height of the viewfinder.
+- Chip rows here are **flow** rows, not `HStack`s, at every size: a chip row given less width than it
+  asks for is compressed until its labels break mid-word rather than wrapping onto a second line.
+
 ---
 
 #### 05 · Light check-in
