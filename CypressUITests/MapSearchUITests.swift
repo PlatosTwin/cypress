@@ -65,6 +65,22 @@ final class MapSearchUITests: XCTestCase {
     /// honest form: a skip says "not checked here", which is true, where a failure says "broken",
     /// which is not. Run with a fix — as the live verification for ERRATA E134 did — and they check
     /// the thing they were written for.
+    ///
+    /// ── This guard is the wrong guard for `testTypingASpeciesNameNarrowsTheMap` (task #104) ──────
+    /// **Not fixed here** — recorded because it was reproduced rather than theorised. This asks "did
+    /// the map draw any pins", and the test below needs "does this viewport hold any *London
+    /// Planes*". Those come apart, and by a lot: with the fix at `37.7505,-122.4950` — Sunset Blvd
+    /// at 37th, a screenful of Monterey Cypress and Monterey Pine — the seed holds **0** London
+    /// Planes in view and `testTypingASpeciesNameNarrowsTheMap` fails on
+    /// `narrowing … emptied the map`, having sailed through this guard on forty-odd pins of the
+    /// wrong species. Move the fix to `37.78485,-122.4215` and the same box holds **488**, and it
+    /// passes. Both runs are on this branch, minutes apart, with no code change between them.
+    ///
+    /// So #104's "intermittent and unexplained" is neither: it is deterministic in the simulator's
+    /// last `simctl location`, which no code in this file reads and nothing in CI pins. The fix is a
+    /// second guard that skips when the *species being typed* has nothing in view — which is a
+    /// change to what these tests assume, and belongs to #104 rather than to a search-matching
+    /// branch.
     private func requireAMapWithPins(_ app: XCUIApplication) throws {
         guard wait(timeout: 25, for: { self.cityTreePins(app) > 0 }) else {
             throw XCTSkip(
