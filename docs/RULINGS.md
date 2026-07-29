@@ -495,6 +495,74 @@ taste, which is why both can be right.
 `GrowthHistoryPresentation.offersAddReading` decides whether 11 draws the link. Deleting the second and
 dropping the payload from the first restores the E74/E98 arrangement exactly.
 
+### R16 — C20 gains a clear control and two ways out of the keyboard (task #110)
+
+The open question was what screen 01's search bar does about being *left*. `SCREENS.md` §2 draws C20
+as a pill with one glyph — the leading magnifier — and a placeholder; screen 01 lists the bar at
+`top:68px` and says of its behaviour only that "search opens species/street/neighborhood search",
+three lines above "**NOT SPECIFIED:** search results". Nothing anywhere draws a clear affordance, a
+Cancel, or any dismissal of the keyboard. So there was no specified variant, and DECISIONS constraint
+21 says stop rather than invent one. This is that stop, answered under the standing delegation.
+
+**The finding, which is two owner reports about one control.** *"On search, it's possible to get stuck
+in the search bar — cursor active and no way to exit out of keyboard"* and *"On search, I want a
+little x in far right of bar to clear contents"*. The component was a `TextField` and a `Shape` in an
+`HStack` with no clear button, no `submitLabel`, no `FocusState` and no `scrollDismissesKeyboard`,
+and its only map caller added none of them.
+
+**One of those two reports is literally true and the other is not, and the correction changes what
+the fix is.** There was no clear control — that half is exactly as reported. There was no keyboard
+*trap*: measured on the simulator against `SearchBar` exactly as it shipped, with no `FocusState`, no
+`submitLabel` and no `onSubmit`, pressing return already resigned focus, because that is SwiftUI's
+default for a single-line `TextField`. A test written to prove the return key had been fixed passed
+against the unfixed component, which is how this was caught.
+
+So the defect is **discoverability, not capability**, and it is still a real defect. The key that
+worked is labelled `return`, which reads as "insert a newline" rather than "I am finished". Nothing
+else on screen 01 dismisses the keyboard: tapping the map does not, because an `MKMapView` does not
+resign anyone's first responder, and covering it with a transparent tap-catcher takes the pan and the
+pinch with it — the map would stop being a map for as long as the keyboard was up. Dismissing on
+camera movement was the other candidate and was rejected for the opposite reason: the keyboard
+animating in is itself a layout change, so the bar would have thrown away focus on the frame it
+gained it. Meanwhile the keyboard covers the FAB, the bottom card and the tab bar. A person who has
+not been taught to reach for `return` is, for every practical purpose, stuck.
+
+**The ruling: a ✕ at the trailing edge, and a visible way out of the keyboard beside the invisible
+one that already worked.**
+
+- **The ✕** appears only when there is text, sits hard against the bar's own 18 pt inset where the
+  owner asked for it, carries the VoiceOver label `Clear search`, and has the 44 pt target
+  ARCHITECTURE §6 requires — grown leftwards and outwards from the glyph rather than centred around
+  it, and drawn as an overlay so that growing it cannot change the bar's ~45 pt height. It clears the
+  text and **keeps focus**: clearing is the start of the next query far more often than it is the end
+  of searching, and a ✕ that did both would do neither predictably.
+- **The return key is relabelled**, `Search` instead of `return` (`submitLabel(.search)`). This costs
+  no pixels and changes nothing about what the key *does* — it changes what it says, which is the
+  whole of what was wrong with it. There is deliberately **no** `onSubmit` resigning focus: it was
+  written, measured, found to change nothing, and removed. A line that appears to cause behaviour it
+  merely coincides with is how a comment ends up ratifying a defect.
+- **A `Done` above the keyboard**, because a relabelled key is still a key on a keyboard, and "no way
+  to exit" is a report about what a person could *find*. It lives on the keyboard, so nothing screen
+  01 positions moves.
+
+The glyph is hand-drawn — a ring with an ✕ inside it, at C20's own 1.8 stroke and in C20's own glyph
+colour, so the bar carries the same line weight at both ends. There are no SF Symbols and no icon
+font in this app (`ShareDestinationGlyph` states the policy), and the ring rather than a bare ✕ is
+what makes it read as a control: an unringed ✕ at 16 pt beside a 14.5 pt field is the weight of a
+letter.
+
+**What this overrules:** nothing. §2's C20 is a description of a bar that did nothing, and this adds
+to it rather than contradicting it — the magnifier, the pill, the fill, the border, the radius, the
+padding and the placeholder are all untouched, and the ✕ occupies space §2 left empty. Whoever draws
+C20 next should draw the ✕ into it and give screen 01 a focused variant.
+
+**Deliberately not decided here**, because they are judgments better made against a running screen
+than from a document: whether the bar should also gain a Cancel *beside* it while focused (the iOS
+convention, and a real layout change to screen 01 that a mock should make rather than an
+implementation), and whether a query short enough to match most of the catalogue should narrow the
+map at all — one character now matches 555 of 577 species, and the status line says so under E38
+rather than the bar refusing to search. Both belong to whoever revisits screen 01's search surface.
+
 ## The owner's own decisions, recorded here so they are not re-opened
 
 These are **not** delegated rulings — they were made by the project owner directly, and are written

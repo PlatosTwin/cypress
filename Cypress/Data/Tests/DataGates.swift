@@ -1186,10 +1186,16 @@ public enum DataGates {
         }
         expect(!matches.isEmpty, "species search: 'Quercus' matched nothing in a 569-species seed", into: &failures)
         expect(
-            matches.allSatisfy { $0.scientificName.lowercased().hasPrefix("quercus") || $0.commonName.lowercased().hasPrefix("quercus") },
-            "species search: a match starts with neither name",
+            matches.allSatisfy {
+                $0.scientificName.lowercased().contains("quercus") || $0.commonName.lowercased().contains("quercus")
+            },
+            "species search: a match contains the query in neither name",
             into: &failures
         )
+        // `contains`, not `hasPrefix`: the search matches a word anywhere in either name, so "oak"
+        // reaches `Coast Live Oak` (task #108). The rank that keeps a head match above an interior
+        // one is asserted in `SpeciesSearchTests`, which can name the expected order; this gate is
+        // only here to catch a search that returns something unrelated at all.
 
         // --- The species content pipeline (BUILD-PLAN §8) has run, and its coverage is pinned to
         // the build receipt rather than to a literal, so a content rebuild updates both halves at

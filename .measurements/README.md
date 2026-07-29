@@ -131,3 +131,77 @@ Product → Scheme → Edit Scheme → Run → Arguments → Environment Variabl
 = `1`, then Run onto the phone. The map draws a small dark badge under the filter chips with rolling
 fps, the worst frame in the last second, the marker count and zoom, and the three counters. The fps
 line turns amber whenever the worst frame in that second missed the display's cadence.
+
+---
+
+# The species search, before and after it stopped matching prefixes only (task #108)
+
+`species-search-108.txt`. The map's search bar matched a **prefix** of `scientific_name` or
+`common_name`, so "cypress" matched exactly one of the seed's 577 species — `Cypress species /
+Cupressus spp` — and missed Monterey, Italian, Leyland, Hinoki and Montezuma Cypress. The
+replacement matches a substring of either name and ranks head matches above word matches above
+matches inside a word.
+
+The reason this needed measuring at all is the standing objection to a leading `%`: it forfeits the
+index. Here it forfeits nothing, and the plan is why.
+
+## How it was taken
+
+- iPhone 16 Pro Max simulator (`DE8E11AE-…`), Debug build, the shipped 77 MB seed attached
+  read-only (145,837 trees, 577 species).
+- A throwaway `@Suite` in `CypressTests`, run through `xcodebuild test`, deleted afterwards. Both
+  statements run on the same connection, in the same process, back to back, 200 iterations each,
+  after a warm-up pass over every query so neither pays a cold page cache or a statement compile.
+- Two numbers per query: the **whole read** (`fetchAll` + `Species` decoding — what
+  `LocalAPI.searchSpecies` actually pays) and **SQL only** (every row stepped, nothing decoded —
+  the part the index plan governs).
+
+## The plans, which are the point
+
+| | before | after |
+|---|---|---|
+| scientific name | `SCAN … USING COVERING INDEX idx_species_scientific_name` | *the same* |
+| common name | `SCAN … USING COVERING INDEX idx_species_common_name` | *the same* |
+| the matched rows | `SEARCH s USING INTEGER PRIMARY KEY (rowid=?)` | *the same* |
+
+**The range scan was never seeking.** `COLLATE NOCASE` on the comparison does not match the `BINARY`
+collation the seed's two name indexes were built with, so SQLite could not turn `name >= :q AND name
+< :q || U+FFFF` into a range `SEARCH` and walked the whole index anyway. So there was no seek for a
+leading wildcard to forfeit: the after plan is the same two covering walks with a different predicate
+evaluated on each row, plus a `GROUP BY` to take a species' better rank when both names match.
+
+## The numbers
+
+| query | rows before | rows after | whole read before | whole read after | SQL only before | SQL only after |
+|---|---|---|---|---|---|---|
+| `c` | 100 | 100 | 14.950 ms | 15.308 ms | 0.254 ms | 0.699 ms |
+| `cy` | 3 | 10 | 0.541 ms | 1.675 ms | 0.086 ms | 0.149 ms |
+| `cyp` | 1 | 8 | 0.244 ms | 1.357 ms | 0.084 ms | 0.150 ms |
+| `cypress` | 1 | 6 | 0.240 ms | **1.069 ms** | 0.083 ms | 0.140 ms |
+| `oak` | 1 | 21 | 0.226 ms | 3.282 ms | 0.079 ms | 0.177 ms |
+| `quercus` | 17 | 17 | 2.600 ms | 2.665 ms | 0.091 ms | 0.134 ms |
+| `a` | 97 | 100 | 14.335 ms | 15.486 ms | 0.204 ms | **0.825 ms** |
+| `platanus` | 10 | 11 | 1.567 ms | 1.832 ms | 0.088 ms | 0.153 ms |
+
+## What it says
+
+**The SQL cost roughly doubles and stays under a millisecond.** 0.08–0.25 ms becomes 0.13–0.83 ms
+over the same 577-row covering walk; the extra is four `LIKE` evaluations per row where there were
+two comparisons. The worst case is the one-letter query, which is also the one nobody means.
+
+**The whole read is dominated by decoding, not by matching, and it always was.** `species` carries
+four JSON columns, and decoding costs about 0.15 ms a row. Where the two queries return the same
+rows they cost the same — `quercus` 2.600 → 2.665 ms, `c` 14.950 → 15.308 ms. Where the after column
+is larger it is because the search **found more**: `oak` goes from one species to twenty-one, and
+3.3 ms is the price of the twenty extra Oaks it was supposed to have been finding all along.
+
+**Nothing here is on a frame budget.** This runs off the main actor behind
+`MapModel.searchDebounce`'s 300 ms, and the one number a person could feel — the 15 ms single-letter
+read — is unchanged, because it was already returning a full page of 100.
+
+## What it is not
+
+A device measurement, for the same reason every other file here is not: a simulator runs the main
+thread on a desktop core and reads the seed through the Mac's page cache. What transfers is the
+*plan*, which is the database's and not the machine's, and the *ratio* between two statements timed
+in the same process.

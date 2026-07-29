@@ -173,6 +173,34 @@ struct CypressSearchGlyph: Shape {
     }
 }
 
+/// C20's clear mark — a ring the size of the search glyph's circle with an ✕ inside it, drawn at the
+/// same 1.8 stroke so the bar carries the same line weight at both ends.
+///
+/// **NOT SPECIFIED.** SCREENS.md §2 draws C20 with one glyph, the leading magnifier, and screen 01
+/// lists nothing else in the bar; `docs/RULINGS.md` R16 is where the decision to add this one is
+/// recorded and reasoned. Hand-drawn like every other mark in the app — there are no SF Symbols and
+/// no icon font here (§2 C16, and `ShareDestinationGlyph` for the statement of the policy).
+///
+/// The ring is what makes it read as a control rather than as punctuation: an unringed ✕ at 16 pt
+/// beside a 14.5 pt field is the same weight as a letter.
+struct CypressClearGlyph: Shape {
+    func path(in rect: CGRect) -> Path {
+        // Drawn in the same 16×16 box as `CypressSearchGlyph`, then scaled to `rect`.
+        let scale = min(rect.width, rect.height) / 16
+        var path = Path()
+        // The ring: r=7 centred, inset by half the stroke so the outer edge lands on the box.
+        path.addEllipse(
+            in: CGRect(x: 1 * scale, y: 1 * scale, width: 14 * scale, height: 14 * scale)
+        )
+        // The ✕, inset far enough not to touch the ring.
+        path.move(to: CGPoint(x: 5.5 * scale, y: 5.5 * scale))
+        path.addLine(to: CGPoint(x: 10.5 * scale, y: 10.5 * scale))
+        path.move(to: CGPoint(x: 10.5 * scale, y: 5.5 * scale))
+        path.addLine(to: CGPoint(x: 5.5 * scale, y: 10.5 * scale))
+        return path.offsetBy(dx: rect.minX, dy: rect.minY)
+    }
+}
+
 // MARK: - Text composition
 
 /// The `<b>lead-in</b> rest of the sentence` pattern used by C9 and C14.

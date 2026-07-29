@@ -407,6 +407,34 @@ struct MapSearchTests {
         #expect(model.pins.count == before, "clearing the search did not restore the map")
     }
 
+    /// **The owner's own query, through the model he types into.**
+    ///
+    /// `SpeciesSearchTests` proves the catalogue answers "cypress" with six species; this proves the
+    /// map's search state carries all six, which is the claim the owner's report was actually about.
+    /// It ran against the previous prefix scan and would have found one.
+    @MainActor
+    @Test("typing cypress narrows the map to every Cypress, not to the one called Cypress")
+    func typingCypressNarrowsToAllOfThem() async throws {
+        let store = try await Self.store()
+        let model = MapModel(api: LocalAPI(store: store, deviceID: Self.deviceID))
+
+        model.cameraDidChange(bounds: Self.bounds, zoom: 16)
+        model.searchText = "cypress"
+        try await Self.waitUntil { model.search.isActive }
+
+        guard case let .narrowed(narrowed) = model.search else {
+            Issue.record("“cypress” left the model at \(model.search)")
+            return
+        }
+        #expect(
+            narrowed.speciesIDs.count >= 6,
+            "“cypress” narrowed to \(narrowed.speciesIDs.count) species: \(narrowed.names)"
+        )
+        #expect(narrowed.names.contains("Monterey Cypress"), "the map's search missed Monterey Cypress: \(narrowed.names)")
+        #expect(narrowed.names.first == "Cypress species", "the genus was not ranked first: \(narrowed.names)")
+        #expect(!narrowed.isTruncated, "six species is not a page")
+    }
+
     /// A word the catalogue has never heard of narrows the map to nothing, and says so.
     @MainActor
     @Test("typing a word no species matches empties the map and reports it")
@@ -473,12 +501,116 @@ struct MapSearchTests {
         #expect(MapSearchCopy.status(for: sampled) == "Showing 151 of 1458 Ginkgo here")
     }
 
+    /// **E38, one level up from the pins.** The counts above are about trees; this one is about
+    /// species, and it became reachable when task #108 stopped the catalogue matching prefixes only.
+    /// "a" prefix-matches 97 of the seed's 577 species and *contains* in 555, so a single keystroke
+    /// on the way to a real word now overruns the 100 the map asks for. Every sentence the status
+    /// line can produce has to say so, because in every one of them the map is complete with respect
+    /// to a species set the reader was never told was a page.
+    @Test("a species set that was itself a page never reads as the whole match")
+    func aTruncatedSpeciesSetSaysSo() {
+        let names = (0..<MapSearch.speciesLimit).map { "Species \($0)" }
+        func truncated(drawn: Int? = nil, matched: Int? = nil) -> MapSearch {
+            .narrowed(.init(
+                speciesIDs: Set(names.map { _ in UUID() }),
+                names: names,
+                isTruncated: true,
+                drawn: drawn,
+                matched: matched
+            ))
+        }
+
+        // Before an answer lands, and on a clustered viewport.
+        #expect(MapSearchCopy.status(for: truncated()) == "Showing the first 100 matching species")
+        // A complete answer, which for an untruncated search says nothing at all.
+        #expect(
+            MapSearchCopy.status(for: truncated(drawn: 12, matched: 12))
+                == "Showing every tree of the first 100 matching species"
+        )
+        // A thinned answer keeps its own numbers and adds the species page to them.
+        #expect(
+            MapSearchCopy.status(for: truncated(drawn: 151, matched: 1_458))
+                == "Showing 151 of 1458 trees here, from the first 100 matching species"
+        )
+        // Nothing in view. "No the first 100 matching species in view" is why this is not the
+        // untruncated sentence with a substitution.
+        #expect(
+            MapSearchCopy.status(for: truncated(drawn: 0, matched: 0))
+                == "None of the first 100 matching species are in view"
+        )
+    }
+
+    /// The flag is set from the one signal the catalogue gives — a full page — and only from it. A
+    /// search that came back under the limit is complete, and must go on saying nothing when the map
+    /// has drawn all of it.
+    @Test("a search under the limit is not reported as a page")
+    func anUnderfullSearchIsNotTruncated() throws {
+        func species(_ n: Int) throws -> [Species] {
+            try (0..<n).map { i in
+                try Species(
+                    scientificName: "Genus species\(i)",
+                    commonName: "Common \(i)",
+                    leafRetention: nil
+                )
+            }
+        }
+
+        guard case let .narrowed(few) = try MapSearch(query: "x", matches: species(3)) else {
+            Issue.record("three matches did not resolve to a narrowed search")
+            return
+        }
+        #expect(!few.isTruncated)
+
+        guard case let .narrowed(full) = try MapSearch(query: "a", matches: species(MapSearch.speciesLimit)) else {
+            Issue.record("a full page did not resolve to a narrowed search")
+            return
+        }
+        #expect(full.isTruncated, "a full page of species did not report itself as one")
+    }
+
     @Test("the subject names one or two species and counts the rest")
     func theSubjectStaysReadable() {
         #expect(MapSearchCopy.subject([]) == "trees")
         #expect(MapSearchCopy.subject(["Ginkgo"]) == "Ginkgo")
         #expect(MapSearchCopy.subject(["Ginkgo", "Cherry Plum"]) == "Ginkgo and Cherry Plum")
-        #expect(MapSearchCopy.subject(["A", "B", "C"]) == "3 species")
+        // Counted subjects carry their own article, so every sentence that takes one reads.
+        #expect(MapSearchCopy.subject(["A", "B", "C"]) == "the 3 matching species")
+        #expect(MapSearchCopy.subject(["A", "B", "C"], truncated: true) == "the first 3 matching species")
+    }
+
+    /// **The sentence the simulator caught.** Typing "cypress" resolves to six species, and screen 01
+    /// drew `No 6 species in view` — the count substituted into a slot that wanted a name.
+    ///
+    /// It was latent before task #108 (a genus like `Quercus` prefix-matched seventeen species and
+    /// produced `No 17 species in view` the same way) and it became the *ordinary* case the moment
+    /// one common word started matching six. Every sentence a counted subject can reach is pinned
+    /// here, because the defect was never in the phrase — it was in substituting one phrase into four
+    /// sentences that do not all take it.
+    @Test("a counted subject gets sentences a count fits in")
+    func aCountedSubjectReads() {
+        let six = ["Cypress species", "Monterey Cypress", "Hinoki cypress",
+                   "Italian Cypress", "Leyland Cypress", "Montezuma Cypress"]
+        func search(drawn: Int? = nil, matched: Int? = nil) -> MapSearch {
+            .narrowed(.init(speciesIDs: [UUID()], names: six, drawn: drawn, matched: matched))
+        }
+
+        #expect(MapSearchCopy.status(for: search()) == "Showing the 6 matching species")
+        #expect(
+            MapSearchCopy.status(for: search(drawn: 0, matched: 0))
+                == "None of the 6 matching species are in view"
+        )
+        #expect(
+            MapSearchCopy.status(for: search(drawn: 12, matched: 40))
+                == "Showing 12 of 40 trees here, from the 6 matching species"
+        )
+        // Complete and untruncated still says nothing: the map is the answer.
+        #expect(MapSearchCopy.status(for: search(drawn: 12, matched: 12)) == nil)
+
+        // Two names is the boundary, and it is still named rather than counted.
+        let two = MapSearch.narrowed(.init(
+            speciesIDs: [UUID()], names: ["Cypress species", "Monterey Cypress"], drawn: 0, matched: 0
+        ))
+        #expect(MapSearchCopy.status(for: two) == "No Cypress species and Monterey Cypress in view")
     }
 
     /// `PinAnswer` may not describe a complete answer as a sample, whatever it is handed — the whole

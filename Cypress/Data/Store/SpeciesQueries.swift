@@ -27,63 +27,153 @@ public struct SpeciesQueries {
         return try statement.fetchOne { try Self.decodeIfPresent($0) }.flatMap { $0 }
     }
 
-    /// `GET /species?query=` — autocomplete over both names.
+    /// `GET /species?query=` — autocomplete over both names, matching the word **anywhere** in
+    /// either of them.
     ///
     /// BUILD-PLAN §6 specifies a trigram index on both names, which Postgres has and SQLite does
-    /// not. The on-device equivalent is a **prefix** range scan against the two B-tree indexes the
-    /// seed already carries, unioned:
+    /// not. The on-device equivalent is a substring match against the two B-tree indexes the seed
+    /// already carries, unioned, with a rank computed in the same pass:
     ///
     /// ```
+    /// CO-ROUTINE m
+    ///   CO-ROUTINE (subquery-2)
+    ///     COMPOUND QUERY
+    ///       LEFT-MOST SUBQUERY
+    ///         SCAN species USING COVERING INDEX idx_species_scientific_name
+    ///       UNION ALL
+    ///         SCAN species USING COVERING INDEX idx_species_common_name
+    ///   SCAN (subquery-2)
+    ///   USE TEMP B-TREE FOR GROUP BY
+    /// SCAN m
     /// SEARCH s USING INTEGER PRIMARY KEY (rowid=?)
-    /// LIST SUBQUERY 2
-    ///   COMPOUND QUERY
-    ///     LEFT-MOST SUBQUERY
-    ///       SCAN species USING COVERING INDEX idx_species_scientific_name
-    ///     UNION USING TEMP B-TREE
-    ///       SCAN species USING COVERING INDEX idx_species_common_name
     /// USE TEMP B-TREE FOR ORDER BY
     /// ```
     ///
-    /// The upper bound of each range is the query with `U+FFFF` appended: every string starting
-    /// with the query sorts below it.
+    /// ── Why `LIKE '%q%'` costs nothing here, which is not the usual answer ───────────────────────
+    /// The usual objection to a leading wildcard is that it throws away an index. It does not throw
+    /// away anything here, because **this query was never seeking**. The shape it replaces was a
+    /// range scan — `name >= :q AND name < :q || U+FFFF` — and its plan said `SCAN … USING COVERING
+    /// INDEX`, not a range `SEARCH`: `COLLATE NOCASE` on the comparison does not match the `BINARY`
+    /// collation the seed's two name indexes were built with, so SQLite could not turn the range
+    /// into a seek and walked the whole index anyway. The plan above is the same walk with a
+    /// different predicate on each row.
     ///
-    /// **Note what the plan actually says: `SCAN … USING COVERING INDEX`, not a range `SEARCH`.**
-    /// `COLLATE NOCASE` on the comparison does not match the `BINARY` collation the seed's indexes
-    /// were built with, so SQLite cannot turn the range into a seek and walks the index instead. It
-    /// is still a *covering* walk — the `species` table itself is never touched — over 569 rows, and
-    /// it measures 0.1 ms. Dropping `COLLATE NOCASE` would restore the seek and break "quercus"
-    /// matching "Quercus", which is the whole point of an autocomplete field. Rebuilding the seed's
-    /// two name indexes `COLLATE NOCASE` would give both, and belongs in `Tools/build_seed.py`
-    /// rather than in a client-side workaround; at 569 rows it buys nothing measurable today.
+    /// Measured against the full seed (`.measurements/species-search-108.txt`): the **SQL** goes
+    /// from 0.08–0.25 ms to 0.13–0.83 ms — roughly double, for four `LIKE` evaluations a row where
+    /// there were two comparisons, and still under a millisecond at its worst. The **whole read** is
+    /// unchanged where the two return the same rows (`quercus` 2.60 → 2.67 ms, `c` 14.95 → 15.31 ms)
+    /// because it is dominated by decoding `species`' four JSON columns at ~0.15 ms a row. Where it
+    /// costs more it is because the search found more: `oak` goes from 1 species to 21, and 3.3 ms
+    /// is the price of the twenty Oaks it should have been finding all along. None of this is on a
+    /// frame budget — it runs off the main actor behind `MapModel.searchDebounce`'s 300 ms.
     ///
-    /// **The gap versus §6.** Trigram matching finds "oak" inside "Coast Live Oak"; a prefix scan
-    /// does not. Closing it needs an FTS5 index the seed does not carry, and building one on device
-    /// over 569 rows at first launch is cheap — but the seed is read-only and the index belongs
-    /// beside the data, so this is the ingest pipeline's to add, not the client's to fake.
-    /// Recorded here rather than silently approximated.
+    /// What is load-bearing is the **shape**, not the predicate: both branches select `id` and one
+    /// name, so both stay *covering* — the 577-row `species` table, with its four JSON columns, is
+    /// never touched except for the rows that matched. Widening either branch to select anything
+    /// else turns a covering walk into a probe per row, which is the rule `MapQueryPlanTests`
+    /// gates. `speciesSearchStaysOnItsCoveringIndexes` is that gate for this statement.
+    ///
+    /// ── The rank, and why it is a rank and not an ordering ───────────────────────────────────────
+    /// Matching anywhere makes "cypress" find all six Cypresses in the seed instead of the one
+    /// called `Cypress species`, which is the defect. But it also makes "oak" find `Silkoak
+    /// species`, where the letters are simply inside a longer word. So the match carries a rank:
+    ///
+    ///     0  the name *starts* with the query        `Oak`, `Cypress species`
+    ///     1  a *word* in the name starts with it     `Coast Live Oak`, `Monterey Cypress`
+    ///     2  the letters appear inside a word        `Silkoak species`
+    ///
+    /// A species matching on both names takes its better rank (`min`). Ties fall through to the
+    /// ordering this query always had — curated first, then scientific name — so `Monterey Cypress`,
+    /// the one curated Cypress, heads its band. Word starts are recognised after a space or a
+    /// hyphen: DataSF's own double-name format is comma-separated (`Sycamore, London Plane`) and
+    /// hyphenated common names are everywhere in the seed (`Drooping She-Oak`, `Purple-Leaf Plum`).
+    ///
+    /// ── What this still is not ──────────────────────────────────────────────────────────────────
+    /// It is a substring match, not a trigram one: it does not tolerate a typo and it does not match
+    /// across word order. An FTS5 index would, and the seed does not carry one; that remains
+    /// `Tools/build_seed.py`'s to add rather than the client's to fake at launch.
     public func search(query: String, limit: Int, connection: SQLiteConnection) throws -> [Species] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
-        let upperBound = trimmed + "\u{FFFF}"
+        let pattern = Self.escapedForLike(trimmed)
 
-        let sql = """
+        let statement = try connection.cachedStatement(searchSQL())
+        _ = try statement.bind([
+            ":anywhere": "%\(pattern)%",
+            ":head": "\(pattern)%",
+            ":afterSpace": "% \(pattern)%",
+            ":afterHyphen": "%-\(pattern)%",
+            ":limit": limit
+        ])
+        return try statement.fetchAll { try Self.decodeIfPresent($0) }.compactMap { $0 }
+    }
+
+    /// The statement `search(query:limit:connection:)` runs, exposed so a plan gate can explain the
+    /// text the app actually executes rather than a paraphrase of it copied into a test.
+    ///
+    /// That distinction is `MapQueryPlanTests`' whole subject: the gates it replaced explained SQL
+    /// hand-copied into `DataGates`, so changing the real query left them explaining the copy.
+    func searchSQL() -> String {
+        """
         SELECT \(Self.projection(identityColumn: schema.speciesIdentityColumn))
           FROM \(seed).species s
-         WHERE s.id IN (
-                 SELECT id FROM \(seed).species
-                  WHERE scientific_name >= :q COLLATE NOCASE AND scientific_name < :qHi COLLATE NOCASE
-                 UNION
-                 SELECT id FROM \(seed).species
-                  WHERE common_name >= :q COLLATE NOCASE AND common_name < :qHi COLLATE NOCASE
-               )
-           AND s.deleted_at IS NULL
-         ORDER BY s.curated DESC, s.scientific_name
+          JOIN (
+                 SELECT id, min(match_rank) AS match_rank
+                   FROM (
+                          SELECT id, \(Self.rankExpression(column: "scientific_name")) AS match_rank
+                            FROM \(seed).species
+                           WHERE scientific_name LIKE :anywhere ESCAPE '\\'
+                          UNION ALL
+                          SELECT id, \(Self.rankExpression(column: "common_name")) AS match_rank
+                            FROM \(seed).species
+                           WHERE common_name LIKE :anywhere ESCAPE '\\'
+                        )
+                  GROUP BY id
+               ) m ON m.id = s.id
+         WHERE s.deleted_at IS NULL
+         ORDER BY m.match_rank, s.curated DESC, s.scientific_name
          LIMIT :limit
         """
+    }
 
-        let statement = try connection.cachedStatement(sql)
-        _ = try statement.bind([":q": trimmed, ":qHi": upperBound, ":limit": limit])
-        return try statement.fetchAll { try Self.decodeIfPresent($0) }.compactMap { $0 }
+    /// The three-band rank of `search(query:limit:connection:)`, over one name column.
+    ///
+    /// Written once and interpolated twice so the two branches of the union cannot drift; the
+    /// column name is a literal from this file, never anything a caller supplied.
+    static func rankExpression(column: String) -> String {
+        "CASE WHEN \(column) LIKE :head ESCAPE '\\' THEN \(MatchRank.head) "
+            + "WHEN \(column) LIKE :afterSpace ESCAPE '\\' "
+            + "OR \(column) LIKE :afterHyphen ESCAPE '\\' THEN \(MatchRank.word) "
+            + "ELSE \(MatchRank.interior) END"
+    }
+
+    /// The rank bands `search` sorts by. Named so the SQL above and the tests that assert the
+    /// resulting order are reading the same numbers.
+    enum MatchRank {
+        /// The name begins with the query.
+        static let head = 0
+        /// A word inside the name begins with it.
+        static let word = 1
+        /// The letters appear inside a word.
+        static let interior = 2
+    }
+
+    /// Escapes a user-typed query for use inside a `LIKE` pattern with `ESCAPE '\'`.
+    ///
+    /// Without this, typing `%` matches every species and typing `_` matches any character — a
+    /// person searching for a cultivar with an underscore in it would get the whole catalogue back
+    /// and no way to tell why. The escape character escapes itself first, or `\%` typed literally
+    /// would come out as an unescaped wildcard.
+    static func escapedForLike(_ query: String) -> String {
+        var escaped = ""
+        escaped.reserveCapacity(query.count)
+        for character in query {
+            if character == "\\" || character == "%" || character == "_" {
+                escaped.append("\\")
+            }
+            escaped.append(character)
+        }
+        return escaped
     }
 
     /// The curated field-guide list (BUILD-PLAN §8), for screen 08.

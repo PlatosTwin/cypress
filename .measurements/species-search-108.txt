@@ -1,0 +1,36 @@
+=====MEASUREMENT=====
+PLAN (after):
+  CO-ROUTINE m
+  CO-ROUTINE (subquery-2)
+  COMPOUND QUERY
+  LEFT-MOST SUBQUERY
+  SCAN seed.species USING COVERING INDEX idx_species_scientific_name
+  UNION ALL
+  SCAN seed.species USING COVERING INDEX idx_species_common_name
+  SCAN (subquery-2)
+  USE TEMP B-TREE FOR GROUP BY
+  SCAN m
+  SEARCH s USING INTEGER PRIMARY KEY (rowid=?)
+  USE TEMP B-TREE FOR ORDER BY
+PLAN (before):
+  SEARCH s USING INTEGER PRIMARY KEY (rowid=?)
+  LIST SUBQUERY 2
+  COMPOUND QUERY
+  LEFT-MOST SUBQUERY
+  SCAN seed.species USING COVERING INDEX idx_species_scientific_name
+  UNION USING TEMP B-TREE
+  SCAN seed.species USING COVERING INDEX idx_species_common_name
+  USE TEMP B-TREE FOR ORDER BY
+
+                   ── rows returned ──   ── whole read, ms ──   ── SQL only, ms ──
+query        before   after   before  after   before  after
+c     100     100   14.950 15.308    0.254  0.699
+cy       3      10    0.541  1.675    0.086  0.149
+cyp       1       8    0.244  1.357    0.084  0.150
+cypress       1       6    0.240  1.069    0.083  0.140
+oak       1      21    0.226  3.282    0.079  0.177
+quercus      17      17    2.600  2.665    0.091  0.134
+a      97     100   14.335 15.486    0.204  0.825
+platanus      10      11    1.567  1.832    0.088  0.153
+
+=====END=====
