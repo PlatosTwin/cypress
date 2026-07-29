@@ -624,7 +624,7 @@ struct TreeProfileView: View {
                     // (11), a card without one opens the sheet that writes it (16). Which is which
                     // is `TreeProfilePresentation.StatDestination`'s decision, not this view's.
                     Button {
-                        router?.push(route(for: destination))
+                        router?.push(Self.route(for: destination, treeID: model.treeID))
                     } label: {
                         // The city's site vocabulary is free text (BUILD-PLAN §7) and can run to
                         // three lines; `maxHeight` keeps the two cards of a row the same height
@@ -785,10 +785,24 @@ struct TreeProfileView: View {
 
     // MARK: - Affordances
 
-    private func route(for destination: TreeProfilePresentation.StatDestination) -> Route {
+    /// The last hop: a stat card's destination becomes a `Route`.
+    ///
+    /// **`static`, and taking the tree id rather than reading `model`, so that a test can call it**
+    /// — the shape `MapHomeView.route(for:)` already uses, for the reason `PinSetDestinationTests`
+    /// gives there: a mapping only the renderer can reach is a mapping nothing checks.
+    ///
+    /// That mattered here immediately. Rewrite the case below as
+    /// `case .measure: return .measure(treeID, .dbh)` and the owner's original defect is back —
+    /// tap `HEIGHT · Add a reading`, get a trunk-diameter sheet in metres — with **the whole suite
+    /// green**, which is exactly what happened when this was a private instance method and the R15
+    /// tests stopped at `StatDestination`. The comment on that case says which layer owns the
+    /// decision; nothing made this layer honour it. `MeasureEntranceKindTests` now does.
+    static func route(for destination: TreeProfilePresentation.StatDestination, treeID: UUID) -> Route {
         switch destination {
-        case .growthHistory: return .growthHistory(model.treeID)
-        case .measure: return .measure(model.treeID)
+        case .growthHistory: return .growthHistory(treeID)
+        // The card's own measurement travels with the route. Which card means which kind is the
+        // presentation's call, not this view's — see `StatDestination.measure` (RULINGS R15).
+        case let .measure(kind): return .measure(treeID, kind)
         }
     }
 

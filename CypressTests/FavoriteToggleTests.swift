@@ -360,7 +360,7 @@ struct FavoriteToggleTests {
         // door to screen 16 — is not offered either.
         #expect(!memorial.acceptsContributions)
         #expect(!memorial.offersCheckIn)
-        #expect(!memorial.stats.contains { $0.destination == .measure })
+        #expect(!memorial.stats.contains { $0.destination?.isMeasure == true })
     }
 
     // MARK: - The composition root's write

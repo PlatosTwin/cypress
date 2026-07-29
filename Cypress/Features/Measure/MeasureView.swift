@@ -30,6 +30,10 @@ struct MeasureView: View {
 
     init(
         treeID: UUID,
+        /// Which of 16 §2's two segments this screen opens on — the measurement whichever control
+        /// pushed it was a control *for* (RULINGS R15). `.dbh` is the drawn selection and stays the
+        /// default, for the one entrance that names no measure: screen 11's general link.
+        kind: MeasurementKind = .dbh,
         api: any CypressAPI,
         outbox: OutboxQueue,
         attribution: Attribution,
@@ -49,6 +53,10 @@ struct MeasureView: View {
                 outbox: outbox,
                 attribution: attribution,
                 gpsAccuracyM: gpsAccuracyM,
+                // Through `MeasureDraft(kind:)` rather than by setting `kind` alone, because the
+                // unit under the keypad is a function of the kind — a height drafted in centimetres
+                // is the same class of silent error this parameter exists to close.
+                initialDraft: MeasureDraft(kind: kind),
                 now: now,
                 calendar: calendar,
                 onSaved: onSaved

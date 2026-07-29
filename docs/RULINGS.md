@@ -428,6 +428,73 @@ AX5 alone — AX1 is already cramped), and whether the shutter pins above the sc
 Whoever builds this draws the result in `SCREENS.md` as screen 04's accessibility variant, so the next
 person inherits a spec rather than a precedent.
 
+### R15 — the empty stat slot is a per-measure door; screen 11 carries the general one
+
+The open question was where a general "add a reading" action belongs, and what an *empty* measurement
+stat card on screen 03 means. `SCREENS.md` 03 draws four filled stat cards and lists
+`DBH/Height cards → 11`; it specifies no add control at all. `SCREENS.md` 11 enumerates its parts —
+two charts, a legend, a log, a footnote — and specifies none either. So there was no drawn answer,
+ARCHITECTURE §5.8 says stop rather than invent, and this is that stop.
+
+**The finding, which is two findings.** The project owner walked the app and reported both in one
+sentence: *"'add a reading' is misleading because it's in a box for Height … and if you wanted to add
+a reading for height on a tree that already had height you'd be confused how to do it."*
+
+1. **The routing was simply wrong.** `Route.measure` carried a tree id and nothing else, and
+   `MeasureDraft.kind` defaults to `.dbh`. Every entrance to screen 16 therefore opened on trunk
+   diameter, including the empty `Height` card whose entire meaning is that this tree has no height.
+   Somebody entering under the word `Height` and typing the number off the tape wrote a DBH in
+   metres, and nothing downstream was positioned to notice: 16's sanity pill compares a draft against
+   previous readings *of the drafted kind*, of which there were none.
+2. **The general action had been drawn as a per-measure one.** An empty slot exists only while its own
+   measurement is missing, so a tree carrying both a height and a DBH has no slot, and — because the
+   slot was the app's only door to 16 — no route to the measure sheet from anywhere. The trees with
+   the most growth left to record were exactly the trees with no way to record it. That is E74's
+   original gap, a built screen with no entrance, reopened for the case that matters most, and it sat
+   under 819 passing tests for weeks.
+
+**The ruling: two entrances, each meaning one thing.**
+
+**A stat slot is a door to its own measurement.** `Route.measure` carries a `MeasurementKind` and the
+profile hands it the kind of the card that was tapped: `Height` opens 16 on height, `DBH` on DBH. Half
+of this is just the bug, and it is recorded here anyway, because it is what makes the slot's framing
+honest — once the Height card opens a height form, "Add a reading" inside a box labelled `Height`
+means *add a height*, which is true — and because a designer reversing this entry needs both halves in
+one place.
+
+**The general entrance goes on screen 11, under the measurement log.** Those are E74's own words for
+the control it declined to invent, which makes it the least-invented thing available. It draws
+wherever 11 draws and the record accepts contributions, including over the empty state.
+
+**What this overrules.** E74's resolution paragraph, in one clause: *"11 keeps its enumerated parts
+and gains no control."* Everything else in E74 and E98 stands, including the empty slot on 03 and its
+copy.
+
+**Why E74's argument survives being half-reversed**, which is the part worth reading before reversing
+this. E74 chose the profile over the history screen because "the tree profile is where every other
+field action in this app starts" and "a contributor holding a tape has no reason to have opened a
+history screen first." That is an argument about a **first** reading, and it still holds — the empty
+slots are still on the profile, still the first thing a person at the tree sees. What E74 did not have
+in view is the **repeat** reading. Somebody recording a second height on a tree that already has one is
+by definition interested in the series, and 11 is the screen that draws the series; it is one tap from
+the profile via `See every reading`. The two entrances split by what the person is doing rather than by
+taste, which is why both can be right.
+
+**Deliberately not changed**, so that the next reader does not re-open them:
+
+- **The copy stays `Add a reading` in both places** — E74's own phrase, and already the string on 03's
+  slot. `Add a height` was considered and declined: the box's label says `Height` two lines above, and
+  a card that says the same word twice is arguing with nobody.
+- **The general control opens 16 on DBH**, `SCREENS.md` 16 §2's drawn selection. It is the one
+  entrance in the app that names no measurement, so it has none to carry, and 16's kind control is the
+  first thing under its header.
+- **Filled stat cards still open 11, not 16.** That is specified, and not this entry's to touch.
+
+**Where to reverse it.** Both halves are decided in two properties, in two files:
+`TreeProfilePresentation.StatDestination` carries the kind, and
+`GrowthHistoryPresentation.offersAddReading` decides whether 11 draws the link. Deleting the second and
+dropping the payload from the first restores the E74/E98 arrangement exactly.
+
 ## The owner's own decisions, recorded here so they are not re-opened
 
 These are **not** delegated rulings — they were made by the project owner directly, and are written

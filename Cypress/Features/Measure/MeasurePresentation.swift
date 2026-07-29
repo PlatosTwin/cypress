@@ -51,6 +51,17 @@ struct MeasureDraft: Equatable {
     /// The digits as typed, in `unit`. Never converted (see `switchUnit`).
     var entry: String = ""
 
+    /// A draft opened on a given measurement, with the unit that measurement is entered in.
+    ///
+    /// The pair is the point. `kind` and `unit` are two stored properties that must agree, and the
+    /// memberwise initialiser will happily let a caller set one and not the other — a height draft
+    /// in centimetres, which is exactly the silent error `select(kind:)` exists to prevent once the
+    /// screen is open. This is that rule applied to the moment the screen *opens* (RULINGS R15).
+    init(kind: MeasurementKind = .dbh) {
+        self.kind = kind
+        self.unit = MeasureMetrics.defaultUnit(for: kind)
+    }
+
     /// The number, or nil while there is nothing to read.
     ///
     /// A bare `0` is not a measurement of anything, so it does not parse into one. This is not the

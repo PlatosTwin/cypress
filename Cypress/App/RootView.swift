@@ -640,7 +640,7 @@ struct RootView: View {
                 neighbours: .around(data.api)
             )
 
-        case .measure(let id):
+        case .measure(let id, let kind):
             // Screen 16. **Reached from an empty measurement stat card on screen 03** — the same
             // control that opens 11 when the card has a reading in it. Invented under the one-time
             // authorization and decided in `TreeProfilePresentation.StatDestination`, which is also
@@ -657,6 +657,14 @@ struct RootView: View {
             // carries the number it needs.
             MeasureView(
                 treeID: id,
+                // **Which measurement, from whichever control opened this** (RULINGS R15). The
+                // empty `Height` card used to open a DBH form, because the route carried a tree and
+                // nothing else and `MeasureDraft.kind` defaults to `.dbh`. A contributor who typed
+                // the number off the tape without re-reading a segmented control further up the
+                // screen wrote a trunk diameter in metres, and the sanity pill could not catch it:
+                // it compares against previous readings *of the drafted kind*, of which there were
+                // none.
+                kind: kind,
                 api: data.api,
                 outbox: data.outbox,
                 // Anonymous under the device id until the account ask ships (D9); the composition
