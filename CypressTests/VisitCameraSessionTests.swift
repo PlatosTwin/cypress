@@ -668,10 +668,16 @@ struct VisitCameraSessionTests {
         )
 
         // The viewfinder took exactly its floor, and the scroll took the rest.
+        //
+        // **In the root's coordinates, not the scroll view's own frame.** SwiftUI wraps a `ScrollView`
+        // in a `PlatformContainer` and positions *that*, leaving the scroll view at the origin of it —
+        // so `scroll.frame.minY` is 0 on a scroll view sitting 524 pt down the screen, and an
+        // assertion against it fails while the layout is correct.
         let floor = VisitMetrics.Camera.viewfinderFloor(width: phone.width, available: phone.height)
+        let inRoot = scroll.convert(scroll.bounds, to: hosted.root)
         #expect(
-            abs(scroll.frame.minY - floor) < 1,
-            "the controls start at \(scroll.frame.minY) pt, and the viewfinder's floor is \(floor)"
+            abs(inRoot.minY - floor) < 1,
+            "the controls start at \(inRoot.minY) pt, and the viewfinder's floor is \(floor)"
         )
         #expect(
             abs(scroll.bounds.height - (phone.height - floor)) < 1,
@@ -730,12 +736,17 @@ struct VisitCameraSessionTests {
     /// than the width it was given. What it spends to get there is the chips: each is squeezed below
     /// the width its own label needs, and the label wraps mid-word.
     ///
-    /// So the measurement is the row's **height**, against the height a flow of naturally-sized chips
-    /// must have. `CypressChipFlow` gives every chip the size it asks for and puts the overflow on the
-    /// next line, so its height is exactly `lines × chipHeight + gaps` — and a chip whose label has
-    /// wrapped is taller than `chipHeight`, which no packing of whole chips can produce. The line
-    /// count is computed here by the same greedy rule the flow documents, from widths measured off
-    /// real chips rather than guessed.
+    /// So the measurement is the row's **height**, and the property is that the row is a whole number
+    /// of single-line chips tall. `CypressChipFlow` hands every chip the size it asks for and puts the
+    /// overflow on the next line, so its height is exactly `lines x chipHeight + gaps` for some whole
+    /// `lines`. A chip whose label has wrapped is taller than one line, and no packing of whole chips
+    /// can produce that height — the ratio comes out fractional.
+    ///
+    /// **The single-line height is measured off this same row given room to spread**, not off a chip
+    /// hosted on its own. A lone `Chip` through `UIHostingController.sizeThatFits` reports 83.67 pt
+    /// where the flow lays the same chip out at 56.67; measuring the row against that number failed by
+    /// exactly the difference and said the layout was broken when the ruler was. One view, one
+    /// measuring path, two widths.
     ///
     /// At **`.large`**, deliberately. The owner reported this at the default text size; a test pinned
     /// to AX5 would have been green on the morning the report came in.
@@ -748,54 +759,31 @@ struct VisitCameraSessionTests {
         let tags = VisitPhenologyVocabulary.tags(for: species)
         #expect(tags.count == 6, "the vocabulary offered \(tags.count) tags, not the whole six")
 
-        // Every chip measured alone, proposed nothing, so nothing can squeeze it. This is the size the
-        // flow is required to hand back to it.
-        var natural: [CGSize] = []
-        for tag in tags {
-            natural.append(
-                await Self.naturalSize(
-                    Chip(PhenologyTagLabel.text(for: tag), style: .phenologyOff, action: {})
-                )
-            )
-        }
-        let chipHeight = try #require(natural.map(\.height).max())
-        #expect(chipHeight > 0, "a chip measured no height at all")
+        let row = VisitPhenologyChips(species: species, tags: tags)
 
-        // The premise: the six chips genuinely do want more than the row has. Without this the test
-        // could pass on a row that was never under pressure — the other way a layout test ratifies a
-        // defect it was written to catch.
-        let demanded = natural.map(\.width).reduce(0, +) + gap * CGFloat(tags.count - 1)
+        // The same row given far more width than it can use: every chip on one line, at the height a
+        // chip is when nothing is squeezing it.
+        let oneLine = await Self.measure(row, at: .large, width: 4_000)
+        #expect(oneLine.height > 0, "the row measured no height at all")
+
+        // And the row at the width the tray actually gives it.
+        let measured = await Self.measure(row, at: .large, width: available)
+
+        let lines = (measured.height + gap) / (oneLine.height + gap)
         #expect(
-            demanded > available,
-            "the six chips want \(demanded) pt and the row has \(available) — nothing is under pressure"
+            abs(lines - lines.rounded()) < 0.02,
+            """
+            the row is \(measured.height) pt tall where one line of chips is \(oneLine.height) — \
+            that is \(lines) lines, and a fractional line is a chip whose label has wrapped
+            """
         )
 
-        // `CypressChipFlow`'s own rule, applied to those widths: fill a line, break when the next chip
-        // would not fit.
-        var lines = 1
-        var used: CGFloat = 0
-        for size in natural {
-            let candidate = used == 0 ? size.width : used + gap + size.width
-            if used > 0, candidate > available {
-                lines += 1
-                used = size.width
-            } else {
-                used = candidate
-            }
-        }
-        let expected = CGFloat(lines) * chipHeight + CGFloat(lines - 1) * gap
-
-        let measured = await Self.measure(
-            VisitPhenologyChips(species: species, tags: tags),
-            at: .large,
-            width: available
-        )
+        // The premise: the six chips genuinely do not fit on one line here. Without this the test
+        // would pass on a row that was never under pressure, which is the other way a layout test
+        // ratifies the defect it was written to catch.
         #expect(
-            abs(measured.height - expected) < 1,
-            """
-            the row measured \(measured.height) pt where \(lines) lines of whole \(chipHeight) pt \
-            chips is \(expected) pt — the chips have been squeezed and their labels have wrapped
-            """
+            lines.rounded() >= 2,
+            "the row took \(lines.rounded()) line(s) in \(available) pt — nothing was under pressure"
         )
         #expect(measured.width > 0, "the row measured \(measured) — it drew nothing")
     }
@@ -876,8 +864,15 @@ struct VisitCameraSessionTests {
     }
 
     /// What `content` measures at `width`, with height unbounded.
+    ///
+    /// **`safeAreaRegions = []` is load-bearing, not tidiness.** A `UIHostingController` in a bare
+    /// window still resolves a safe area, and `sizeThatFits` folds it into the answer: measured with
+    /// it, one phenology chip came back 83.67 pt tall where the layout draws it at 56.67, and the
+    /// add-tree well came back 535 pt where it draws 481. Both are the same 54 pt of inset, and both
+    /// would have been read as the view being wrong rather than the ruler.
     static func measure(_ content: some View, at size: DynamicTypeSize, width: CGFloat) async -> CGSize {
         let host = UIHostingController(rootView: AnyView(content.environment(\.dynamicTypeSize, size)))
+        host.safeAreaRegions = []
         host.view.frame = CGRect(x: 0, y: 0, width: width, height: 2_000)
         let window = UIWindow(frame: CGRect(x: -2_000, y: 0, width: width, height: 2_000))
         window.rootViewController = host
