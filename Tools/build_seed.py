@@ -207,7 +207,6 @@ from inventory_contract import (  # noqa: E402
     INVENTORIES,
     KindBasis,
     require_inventory,
-    validate_or_raise,
 )
 from inventory_adapters import (  # noqa: E402
     CITY_RECORD_COLUMNS,
@@ -230,12 +229,13 @@ from inventory_adapters import (  # noqa: E402
 #
 # `KIND_NOT_A_TREE` has no status of its own. The seed's CHECK constraint permits
 # alive / declining / dead_reported / removed / vacant_site, and none of those
-# means "the source says the thing growing here is a shrub". So 85 records whose
-# source said exactly that become `alive` -- they are counted under
-# `records_not_a_tree` in the build receipt, and the count is the size of half of
-# #94. This mapping is deliberately a dict rather than an `if`: the fact has
-# somewhere to be, the seed cannot yet hold it, and that mismatch is visible in
-# one line instead of being absent from the code entirely.
+# means "the source says the thing growing here is a shrub". So the records whose
+# source said exactly that become `alive` -- 85 under `--source city`, 312 under
+# `--source datasf`. They are counted under `records_not_a_tree` in the build
+# receipt, and that count is the size of half of #94. This mapping is deliberately
+# a dict rather than an `if`: the fact has somewhere to be, the seed cannot yet
+# hold it, and that mismatch is visible in one line instead of being absent from
+# the code entirely.
 STATUS_FOR_KIND = {
     KIND_TREE: "alive",
     KIND_PLANTING_SITE: "vacant_site",
