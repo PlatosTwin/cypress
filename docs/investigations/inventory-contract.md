@@ -1,6 +1,6 @@
 # The normalized tree-inventory record
 
-Design note, 2026-07-28. Task #105. Written alongside `city-tree-source.md`, which is the input
+Design note, 2026-07-28/29. Task #105. Written alongside `city-tree-source.md`, which is the input
 this rests on and should be read first.
 
 The owner asked for trees from other California cities and added the constraint that matters more
