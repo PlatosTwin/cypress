@@ -439,19 +439,29 @@ Cancel, or any dismissal of the keyboard. So there was no specified variant, and
 
 **The finding, which is two owner reports about one control.** *"On search, it's possible to get stuck
 in the search bar — cursor active and no way to exit out of keyboard"* and *"On search, I want a
-little x in far right of bar to clear contents"*. Both were literally true of the component: it was a
-`TextField` and a `Shape` in an `HStack` with no clear button, no `submitLabel`, no `FocusState` and
-no `scrollDismissesKeyboard`, and its only map caller added none of them.
+little x in far right of bar to clear contents"*. The component was a `TextField` and a `Shape` in an
+`HStack` with no clear button, no `submitLabel`, no `FocusState` and no `scrollDismissesKeyboard`,
+and its only map caller added none of them.
 
-The keyboard half is the one worth stating carefully, because the usual answer does not exist here.
-On most screens the way out of a keyboard is to tap what is behind it. Screen 01's behind is an
-`MKMapView`, and covering it with a transparent tap-catcher to dismiss on tap takes the pan and the
+**One of those two reports is literally true and the other is not, and the correction changes what
+the fix is.** There was no clear control — that half is exactly as reported. There was no keyboard
+*trap*: measured on the simulator against `SearchBar` exactly as it shipped, with no `FocusState`, no
+`submitLabel` and no `onSubmit`, pressing return already resigned focus, because that is SwiftUI's
+default for a single-line `TextField`. A test written to prove the return key had been fixed passed
+against the unfixed component, which is how this was caught.
+
+So the defect is **discoverability, not capability**, and it is still a real defect. The key that
+worked is labelled `return`, which reads as "insert a newline" rather than "I am finished". Nothing
+else on screen 01 dismisses the keyboard: tapping the map does not, because an `MKMapView` does not
+resign anyone's first responder, and covering it with a transparent tap-catcher takes the pan and the
 pinch with it — the map would stop being a map for as long as the keyboard was up. Dismissing on
 camera movement was the other candidate and was rejected for the opposite reason: the keyboard
 animating in is itself a layout change, so the bar would have thrown away focus on the frame it
-gained it.
+gained it. Meanwhile the keyboard covers the FAB, the bottom card and the tab bar. A person who has
+not been taught to reach for `return` is, for every practical purpose, stuck.
 
-**The ruling: a ✕ at the trailing edge, and two ways out of the keyboard rather than one.**
+**The ruling: a ✕ at the trailing edge, and a visible way out of the keyboard beside the invisible
+one that already worked.**
 
 - **The ✕** appears only when there is text, sits hard against the bar's own 18 pt inset where the
   owner asked for it, carries the VoiceOver label `Clear search`, and has the 44 pt target
@@ -459,12 +469,14 @@ gained it.
   it, and drawn as an overlay so that growing it cannot change the bar's ~45 pt height. It clears the
   text and **keeps focus**: clearing is the start of the next query far more often than it is the end
   of searching, and a ✕ that did both would do neither predictably.
-- **The return key** says `Search` and dismisses (`submitLabel(.search)` + `onSubmit`). This costs no
-  pixels and is the platform's own answer — and it is the more damning half of the report, because
-  the key was *already there*, already drawn on the keyboard, and already did nothing.
-- **A `Done` above the keyboard**, because the return key is invisible to anyone who has not been
-  taught to reach for it, and "no way to exit" is a report about what a person could *find*, not
-  about what existed. It lives on the keyboard, so nothing screen 01 positions moves.
+- **The return key is relabelled**, `Search` instead of `return` (`submitLabel(.search)`). This costs
+  no pixels and changes nothing about what the key *does* — it changes what it says, which is the
+  whole of what was wrong with it. There is deliberately **no** `onSubmit` resigning focus: it was
+  written, measured, found to change nothing, and removed. A line that appears to cause behaviour it
+  merely coincides with is how a comment ends up ratifying a defect.
+- **A `Done` above the keyboard**, because a relabelled key is still a key on a keyboard, and "no way
+  to exit" is a report about what a person could *find*. It lives on the keyboard, so nothing screen
+  01 positions moves.
 
 The glyph is hand-drawn — a ring with an ✕ inside it, at C20's own 1.8 stroke and in C20's own glyph
 colour, so the bar carries the same line weight at both ends. There are no SF Symbols and no icon

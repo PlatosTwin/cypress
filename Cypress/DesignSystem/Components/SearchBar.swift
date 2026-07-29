@@ -32,21 +32,32 @@
 //  ── The clear control and the way out of the keyboard (task #110, ruling R15) ────────────────────
 //  Two owner reports about this one control: "it's possible to get stuck in the search bar — cursor
 //  active and no way to exit out of keyboard", and "I want a little x in far right of bar to clear
-//  contents". Both were true of the component as drawn. It was a `TextField` and a glyph in an
-//  `HStack` with no clear button, no `submitLabel`, no `FocusState` and no dismissal of any kind,
-//  and on screen 01 there is nothing behind it to tap that would put the keyboard away: the map is
-//  an `MKMapView`, and covering it with a tap-catcher to dismiss on tap would take the pan and the
-//  pinch with it.
+//  contents".
+//
+//  **The second is literally true; the first is not, and the difference is worth stating because it
+//  changes what the fix is.** The bar had no clear control at all. It was *not* a keyboard trap:
+//  measured on the simulator against this component exactly as it shipped — no `FocusState`, no
+//  `submitLabel`, no `onSubmit` — pressing return already resigned focus, because that is SwiftUI's
+//  default for a single-line `TextField` and always was. So there was a way out. What there was not
+//  was a way out anybody could *see*: the key is labelled `return`, which reads as "insert a
+//  newline" rather than "I am finished", and nothing else on screen 01 dismisses the keyboard —
+//  tapping the map does not, because an `MKMapView` does not resign anyone's first responder, and
+//  covering it with a tap-catcher that would takes the pan and the pinch with it. Meanwhile the
+//  keyboard covers the FAB, the bottom card and the tab bar. A person who has not been taught to
+//  reach for `return` is, for every practical purpose, stuck — which is the report.
 //
 //  SCREENS.md §2 draws C20 with one glyph and screen 01 lists nothing else in the bar, so neither
 //  affordance is specified and DECISIONS constraint 21 applies. `docs/RULINGS.md` R15 records what
-//  was chosen and why; the short form is that there are now **two** ways out, because the one that
-//  costs no pixels is also the one nobody finds:
+//  was chosen and why. What is added here is therefore **visibility**, not capability:
 //
-//    · the return key says `Search` and dismisses (`submitLabel` + `onSubmit`). It was already a key
-//      on the keyboard doing nothing at all, which is the worst of both.
-//    · a `Done` above the keyboard, for the reader who does not think of the return key. It lives on
+//    · `submitLabel(.search)` relabels the key that already worked, from `return` to `Search`, so it
+//      reads as an exit instead of as a newline.
+//    · a `Done` above the keyboard, which is the affordance the report was asking for. It lives on
 //      the keyboard rather than on screen 01, so nothing the mock positions moves.
+//
+//  There is deliberately **no** `onSubmit` resigning focus. It was written, and then removed once the
+//  measurement above showed it changed nothing: a line that appears to cause the behaviour it merely
+//  coincides with is how a comment ends up ratifying a defect on this project.
 //
 //  The ✕ is drawn where the owner asked for it — hard against the trailing edge, on the bar's own
 //  18 pt inset — while its *hit area* is the 44 pt ARCHITECTURE §6 requires, grown leftwards and
@@ -96,10 +107,11 @@ struct SearchBar: View {
             .foregroundStyle(CypressColor.textInk)
             .textFieldStyle(.plain)
             .focused($isFocused)
-            // The key was always there; now it does something. `.search` is what it is for, and the
-            // word on it is the one iOS draws for that role in the reader's own language.
+            // The key already dismissed the keyboard (see the file comment — it was measured, not
+            // assumed). This changes what it *says*: `Search` rather than `return`, which is the
+            // difference between a key that reads as an exit and one that reads as a newline. iOS
+            // draws the word for that role in the reader's own language.
             .submitLabel(.search)
-            .onSubmit { isFocused = false }
             .accessibilityLabel(SearchBarCopy.field)
 
             if showsClear {

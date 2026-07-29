@@ -168,26 +168,19 @@ final class MapSearchUITests: XCTestCase {
         XCTAssertEqual(field.value as? String, "cy", "dismissing the keyboard changed the query")
     }
 
-    /// The other way out, which costs no pixels and is the one the report was really about: the
-    /// return key was **already on the keyboard** and already did nothing. It now says `Search` and
-    /// resigns focus.
-    func testTheReturnKeyAlsoLeavesTheKeyboard() throws {
-        let app = launch()
-        let field = app.textFields.firstMatch
-        XCTAssertTrue(field.waitForExistence(timeout: 20), "the map's search field never appeared")
-
-        field.tap()
-        field.typeText("cy")
-        let done = app.buttons["Done"]
-        XCTAssertTrue(done.waitForExistence(timeout: 10), "the field never took focus")
-
-        field.typeText("\n")
-        XCTAssertTrue(
-            wait(timeout: 10) { !done.exists },
-            "submitting the field left it focused; the return key still does nothing"
-        )
-        XCTAssertEqual(field.value as? String, "cy", "submitting the search changed the query")
-    }
+    // **There is deliberately no test for the return key here, and that is a finding.**
+    //
+    // One was written — type, press return, assert the field lost focus — and it passed. It also
+    // passed with `onSubmit` deleted, and then with `focused`, `submitLabel` and `onSubmit` all
+    // deleted, which is `SearchBar` exactly as it shipped before task #110. So the return key was
+    // never broken: SwiftUI resigns focus on submit for a single-line `TextField` by default, and
+    // the test was asserting the platform's behaviour, not this app's. It could not fail, and a test
+    // that cannot fail is worse than no test on a project where a green suite has ratified a real
+    // defect before.
+    //
+    // What #110 actually changes about that key is its *label* — `Search` instead of `return` —
+    // which XCUITest cannot read off the keyboard. `testTheKeyboardCanBeDismissed` covers the part
+    // that is ours and can fail: the `Done` affordance.
 
     /// The ✕ the owner asked for: present only when there is something to clear, labelled for
     /// VoiceOver, and genuinely touchable. That last clause is not a formality — a control has
