@@ -169,6 +169,61 @@ struct MeasureEntranceKindTests {
         #expect(Self.destination("dbh", in: subject) == nil, "the city's bucket became tappable")
     }
 
+    // MARK: - The last hop, which the first version of these tests could not reach
+
+    /// **The gap this suite shipped with, found by breaking the half it did not cover.**
+    ///
+    /// Every assertion above stops at `StatDestination`. Between that and the screen there is one
+    /// more hop — the view turning a destination into a `Route` — and it was a private instance
+    /// method, so nothing could call it. Rewriting that one line as
+    /// `case .measure: return .measure(treeID, .dbh)` reinstates the owner's exact bug (tap
+    /// `HEIGHT · Add a reading`, get a trunk-diameter sheet in metres) **with the whole suite
+    /// green**, which is what happened.
+    ///
+    /// The remedy is the one `MapHomeView.route(for:)` already uses and
+    /// `PinSetDestinationTests` already exercises: make the mapping `static`, hand it the id, and
+    /// call it from here. A mapping only the renderer can reach is a mapping nothing checks — and
+    /// "which layer owns this decision" being written down in a comment is not the same as the
+    /// other layer being made to honour it.
+    @Test("the profile's own card-to-route mapping carries the kind through")
+    func theViewsMappingCarriesTheKind() {
+        let id = Self.treeID
+
+        #expect(TreeProfileView.route(for: .measure(.height), treeID: id) == .measure(id, .height))
+        #expect(TreeProfileView.route(for: .measure(.dbh), treeID: id) == .measure(id, .dbh))
+        #expect(TreeProfileView.route(for: .growthHistory, treeID: id) == .growthHistory(id))
+    }
+
+    /// The same hop for every card the profile actually draws, taken end to end: from the
+    /// presentation's stats, through the view's mapping, to the `Route` the router receives. This
+    /// is the assertion that would have caught the break in either half on its own.
+    @Test("every drawn measurement card routes to its own measurement, end to end")
+    func everyDrawnCardRoutesToItsOwnKind() {
+        let subject = Self.presentation()
+        let id = Self.treeID
+
+        let routes = subject.stats.compactMap { stat in
+            stat.destination.map { (stat.id, TreeProfileView.route(for: $0, treeID: id)) }
+        }
+
+        #expect(routes.first { $0.0 == "height" }?.1 == .measure(id, .height))
+        #expect(routes.first { $0.0 == "dbh" }?.1 == .measure(id, .dbh))
+    }
+
+    /// Screen 11's link had the identical shape of gap — a `Route` built inline in a view body,
+    /// with a hardcoded `.dbh` nothing could reach. Same remedy, same assertion.
+    @Test("screen 11's add-a-reading link routes to the measure sheet")
+    func elevensLinkRoutesToTheMeasureSheet() {
+        let id = Self.treeID
+
+        #expect(GrowthHistoryView.route(forAddReading: id) == .measure(id, .dbh))
+        #expect(
+            GrowthHistoryView.route(forAddReading: id)
+                == .measure(id, GrowthHistoryPresentation.addReadingKind),
+            "the link stopped honouring the kind the presentation names"
+        )
+    }
+
     // MARK: - What the screen actually opens on
 
     /// The presentation naming a kind is only half of it; the screen has to open on that kind. This

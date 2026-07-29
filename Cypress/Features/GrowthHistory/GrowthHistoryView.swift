@@ -216,7 +216,7 @@ struct GrowthHistoryView: View {
     /// control is the first thing under its header.
     private var addReadingLink: some View {
         Button {
-            router?.push(.measure(model.treeID, .dbh))
+            router?.push(Self.route(forAddReading: model.treeID))
         } label: {
             Text(GrowthHistoryCopy.addReadingTitle)
                 .font(CypressFont.body13Bold)
@@ -228,6 +228,14 @@ struct GrowthHistoryView: View {
         .cypressHitArea()
         .padding(.horizontal, CypressSpacing.gutter)
         .padding(.top, GrowthHistoryMetrics.logTop)
+    }
+
+    /// Where `Add a reading` goes. `static` and taking the id, so a test can call it — the shape
+    /// `MapHomeView.route(for:)` and `TreeProfileView.route(for:treeID:)` use, and for the reason
+    /// the latter's comment gives: this project has already shipped one defect that lived in a
+    /// `Route` built inside a view body, where nothing could reach it.
+    static func route(forAddReading treeID: UUID) -> Route {
+        .measure(treeID, GrowthHistoryPresentation.addReadingKind)
     }
 
     // MARK: - The states SCREENS.md does not draw

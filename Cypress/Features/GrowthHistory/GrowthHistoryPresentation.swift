@@ -299,6 +299,17 @@ struct GrowthHistoryPresentation {
     /// a removed tree (a memorial's readings are still readings), and a read-only record must not be
     /// handed a write.
     var offersAddReading: Bool { profile.tree.status.acceptsNewContributions }
+
+    /// Which of 16 §2's two segments the general link opens on.
+    ///
+    /// `.dbh`, which is SCREENS.md 16 §2's drawn selection — this is the one entrance in the app
+    /// that names no measurement, so it has none to carry.
+    ///
+    /// **Named here rather than written into the view's `Button`**, for the reason
+    /// `TreeProfileView.route(for:treeID:)` is `static`: a kind that only the renderer can reach is
+    /// a kind nothing checks, and a hardcoded one in a view body is exactly the hop that let R15's
+    /// defect survive its first fix.
+    static let addReadingKind: MeasurementKind = .dbh
 }
 
 // MARK: - Copy
