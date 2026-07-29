@@ -193,22 +193,64 @@ struct InventoryContractTests {
         }
     }
 
-    @Test("a DBH bucket is a measurement or nothing; the source's zero never became a trunk")
-    func noZeroWidthTrunks() async throws {
-        let (store, _) = try await Self.openSeed()
-        // Both SF inventories write DBH = 0 for "not recorded". Only an adapter can know that, so
-        // the contract refuses a non-positive measurement and `parse_dbh_inches` resolves it first.
-        // A [0,5) bucket in the seed would mean the sentinel got through and 2,647 city records
-        // acquired a trunk nobody measured.
-        let zeroBuckets = try await store.queue.read { connection -> Int in
+    @Test("the source's DBH=0 became no measurement, not a zero-width trunk")
+    func theDBHSentinelDidNotLeak() async throws {
+        let (store, meta) = try await Self.openSeed()
+
+        // ── What this is measuring, and the mistake it replaces ─────────────────────────────
+        // Both SF inventories write `DBH = 0` for "not recorded". The contract refuses a
+        // non-positive `dbh_in` and `inventory_adapters.parse_dbh_inches` resolves the sentinel to
+        // None first, so those rows must reach the seed with NO bucket at all.
+        //
+        // The obvious check — "no row sits in the [0,5) cm bucket" — is WRONG, and it failed here
+        // before this comment existed. A 1-inch trunk is 2.54 cm and lands in [0,5) legitimately;
+        // 5,673 city rows do. The bucket a leaked zero would land in is already occupied by real
+        // measurements, so the leak is not visible from that side.
+        //
+        // It is visible from the other side. The city layer's own field distribution
+        // (docs/investigations/city-tree-source.md §2) is 2,647 rows with `DBH = 0` and 6,372 with
+        // `DBH` null. If the sentinel leaked, the zeros would acquire a bucket and only the 6,372
+        // nulls would lack one. So the count of city rows with NO bucket is the discriminator, and
+        // it has to be the sum.
+        let source = meta["trees_source"] ?? "datasf"
+
+        let noBucket = try await store.queue.read { connection -> Int in
             let statement = try connection.prepare("""
                 SELECT COUNT(*) AS n FROM \(SeedDatabase.schemaName).trees
-                 WHERE dbh_city_cm_min IS NOT NULL AND dbh_city_cm_min < 1
+                 WHERE inventory_source = ? AND dbh_city_cm_min IS NULL
+                """)
+            defer { statement.finalize() }
+            try statement.bind(source, at: 1)
+            return try statement.fetchOne { try $0.int("n") } ?? -1
+        }
+
+        if source == "city" {
+            #expect(
+                noBucket == 9_019,
+                "\(noBucket) city rows carry no DBH bucket, expected 2,647 zeros + 6,372 nulls = 9,019. Below 9,019 means the 'not recorded' zero was read as a measurement."
+            )
+        } else {
+            // The export's own zeros and blanks, measured on the rebuilt corpus.
+            #expect(
+                noBucket == 44_584,
+                "\(noBucket) export rows carry no DBH bucket, expected 44,584"
+            )
+        }
+
+        // The ladder itself: every rung is a half-open 5 cm interval on a multiple of 5. A bucket
+        // that is not is a corrupted ladder, which no count above would notice.
+        let malformed = try await store.queue.read { connection -> Int in
+            let statement = try connection.prepare("""
+                SELECT COUNT(*) AS n FROM \(SeedDatabase.schemaName).trees
+                 WHERE dbh_city_cm_min IS NOT NULL
+                   AND (dbh_city_cm_max <> dbh_city_cm_min + 5
+                        OR dbh_city_cm_min < 0
+                        OR dbh_city_cm_min % 5 <> 0)
                 """)
             defer { statement.finalize() }
             return try statement.fetchOne { try $0.int("n") } ?? -1
         }
-        #expect(zeroBuckets == 0, "\(zeroBuckets) trees carry a DBH bucket starting below 1 cm")
+        #expect(malformed == 0, "\(malformed) trees carry a DBH bucket that is not a 5 cm rung")
     }
 
     // MARK: - What the contract made countable (task #94)
