@@ -191,9 +191,70 @@ struct MapRecentreTests {
         // pressing cannot ever move the camera without the reader going to Settings first.
         #expect(MapRecentre.engagement(availability: .denied, camera: Self.camera(metres: 400)) == .unavailable)
         #expect(MapRecentre.engagement(availability: .servicesOff, camera: Self.camera(metres: 400)) == .unavailable)
-        // Not struck through: pressing these is a reasonable thing to do and gets a real answer.
-        #expect(MapRecentre.engagement(availability: .notAsked, camera: Self.camera(metres: 400)) == .away)
-        #expect(MapRecentre.engagement(availability: .waitingForFix, camera: Self.camera(metres: 400)) == .away)
+    }
+
+    // MARK: - What the button says it is doing (#100)
+
+    /// **The two states that used to borrow the word "centred" from a state they are not in.**
+    ///
+    /// `notAsked` and `waitingForFix` were both drawn — and both *spoken* — as `away`, so VoiceOver
+    /// said `Not centred` over a map that had no reader to be centred on. A sighted reader gets that
+    /// word as a caption on a picture; a VoiceOver reader gets it as the entire report, and in these
+    /// two states it describes a relationship that does not exist.
+    @Test("not-asked and still-looking are not reported as an off-centre map")
+    func theTwoUnknownStatesAreNotJustOffCentre() {
+        let camera = Self.camera(metres: 400)
+        #expect(MapRecentre.engagement(availability: .notAsked, camera: camera) == .askable)
+        #expect(MapRecentre.engagement(availability: .waitingForFix, camera: camera) == .searching)
+        #expect(
+            MapRecentreCopy.value(.askable) != MapRecentreCopy.value(.away),
+            "an unanswered permission ask is still spoken as an off-centre map"
+        )
+        #expect(
+            MapRecentreCopy.value(.searching) != MapRecentreCopy.value(.away),
+            "a phone that has not answered yet is still spoken as an off-centre map"
+        )
+    }
+
+    /// The structural claim, so a sixth engagement cannot be added and left mute: every state the
+    /// control can be in says something, no two of them say the same thing, and each is the state the
+    /// *press* in that situation would produce.
+    @Test("every engagement speaks, and no two speak alike")
+    func everyEngagementSpeaksDistinctly() {
+        let all: [MapRecentre.Engagement] = [.centred, .away, .askable, .searching, .unavailable]
+        let spoken = all.map { MapRecentreCopy.value($0) }
+        #expect(spoken.allSatisfy { !$0.isEmpty })
+        #expect(
+            Set(spoken).count == all.count,
+            "two states of the recentre control tell a VoiceOver reader the same thing: \(spoken)"
+        )
+        // `away` is the one with nothing to add — the label and the value already say it all.
+        for engagement in all where engagement != .away {
+            #expect(MapRecentreCopy.hint(engagement) != nil, "\(engagement) promises nothing")
+        }
+    }
+
+    /// The spoken state has to be a prediction of the press, or it is decoration. Every availability
+    /// that produces a *different* press produces a different engagement, and the two that a press
+    /// cannot distinguish — the only pair here is the two refusals — are the two the standing notice
+    /// tells apart instead (`MapLocationCopy.title`).
+    @Test("the spoken state predicts what pressing will do")
+    func engagementTracksThePress() {
+        let camera = Self.camera(metres: 400, offsetLatitude: 0.002)
+        let cases: [(MapLocationProvider.Availability, MapRecentre.Press, MapRecentre.Engagement)] = [
+            (.notAsked, .ask, .askable),
+            (.waitingForFix, .waitForFix, .searching),
+            (.denied, .explainRefusal, .unavailable),
+            (.servicesOff, .explainRefusal, .unavailable),
+            (.located(Self.user, accuracyM: 8), .centre(Self.user), .away)
+        ]
+        for (availability, press, engagement) in cases {
+            #expect(MapRecentre.press(availability: availability, camera: camera) == press)
+            #expect(
+                MapRecentre.engagement(availability: availability, camera: camera) == engagement,
+                "\(availability) presses as \(press) but describes itself as something else"
+            )
+        }
     }
 
     // MARK: - The words
@@ -206,7 +267,7 @@ struct MapRecentreTests {
     func everyStateSpeaks() {
         #expect(!MapRecentreCopy.label.isEmpty)
         #expect(MapRecentreCopy.label.lowercased().contains("centre"))
-        for engagement in [MapRecentre.Engagement.centred, .away, .unavailable] {
+        for engagement in [MapRecentre.Engagement.centred, .away, .askable, .searching, .unavailable] {
             #expect(!MapRecentreCopy.value(engagement).isEmpty, "\(engagement) has no spoken state")
         }
         #expect(MapRecentreCopy.hint(.centred) != nil)
