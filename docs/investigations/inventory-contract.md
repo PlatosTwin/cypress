@@ -397,6 +397,37 @@ it removes are the silent ones, which is the only kind worth removing before the
 
 ---
 
+## 8a. Was the adapter layer more than this stage needs?
+
+Partly, and it is worth separating the three pieces because they do not earn their keep equally.
+
+**`inventory_contract.py` — clearly justified.** It is the whole of the argument. Required `kind`,
+`kind_basis` with a name for the guess, two species fields instead of one packed string,
+`None`-means-absent enforced, and identity qualified by id space. That is what makes #94 and #103
+unrepresentable rather than merely fixed, and it produced the 1,777 figure that nobody had.
+
+**Moving the source-specific vocabulary out of `build_seed.py` — clearly justified, and it is the
+part that actually decides whether city two is cheap.** `PLACEHOLDER_SPECIES`, `NON_TAXON_SPECIES`,
+`QSPECIES_NAME_CORRECTIONS`, `parse_qspecies`, the DataSF column maps and the three sentinel
+parsers were at module scope in the shared ingest. They were the contract, by default, and a new
+city would have inherited San Francisco's spelling habits by being compiled into the same file.
+Relocating them needed somewhere to put them, and "a module per source family" is that somewhere.
+
+**The `InventoryAdapter` base class — speculative, and I would not defend it hard.** With one city
+it is fifteen lines wrapping two generator functions and a stats dict. Its only present value is
+that it writes down, in one docstring, which decisions belong to an adapter and which belong to the
+seed — which is real but is documentation, not structure. If a reviewer wanted it deleted and the
+two adapters left as plain classes, nothing would be lost today.
+
+So the shape I would defend is: **the contract plus the relocation, which is most of the diff, and
+a base class that is currently a comment with a `class` keyword in front of it.** The brief offered
+"a documented record plus a validation pass" as the smaller alternative. That would have got the
+contract but left the vocabulary where it was — and the vocabulary is the half that bites. One
+implementation of an adapter interface proves little; two modules that no longer share one city's
+placeholder list prove something.
+
+---
+
 ## 9. What I did not establish
 
 1. **Whether the city adapter reproduces the shipped seed.** Unit-tested, not rebuilt. §6.
