@@ -39,7 +39,7 @@ final class CheckInModel {
     private let attribution: Attribution
     /// D6's per-contribution accuracy, asked of the composition root's provider at the moment the
     /// observation is written rather than when the screen was built
-    /// (ERRATA — see docs/errata-pending/gps-accuracy-at-submit.md). A closure for the same reason
+    /// (ERRATA E158). A closure for the same reason
     /// `now` beside it is one: `@State` builds this model once, so a `Double?` handed in froze at
     /// the first frame and recorded `nil` on any check-in opened before the first fix.
     private let gpsAccuracyM: @MainActor () -> Double?

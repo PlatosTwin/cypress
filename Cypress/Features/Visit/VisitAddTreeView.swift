@@ -289,7 +289,13 @@ struct VisitAddTreeView: View {
 
     // MARK: - The photo
 
-    /// 14 §2's dashed well, at the height a viewfinder needs rather than a caption's.
+    /// 14 §2's dashed well, in the shape of the photograph it holds rather than a caption's height.
+    ///
+    /// **It is a portrait 3:4 frame, and it used to be a landscape one** — see
+    /// `VisitMetrics.AddTree.wellAspectRatio` for the inverted ratio that made it so and what that
+    /// cost the live viewfinder. `.aspectRatio(_:contentMode: .fit)` rather than a stated height, so
+    /// the well is derived from whatever width it is given on whatever phone; the shape is the
+    /// invariant, not the number.
     ///
     /// **The card is the base and the contents are an overlay, not a `ZStack`.** A `scaledToFill`
     /// photograph reports a size far larger than the frame it is drawn in, and a `frame(maxWidth:
@@ -299,19 +305,7 @@ struct VisitAddTreeView: View {
     /// and lets the excess hang, so the layout is the card's and only the drawing overflows. Seen by
     /// looking, on the simulator, after the tests were green.
     private var photoWell: some View {
-        RoundedRectangle(cornerRadius: CypressRadius.cardLg, style: .continuous)
-            .fill(CypressColor.surfaceEmptyThumb)
-            .frame(height: VisitMetrics.AddTree.wellHeight)
-            .overlay { wellContents }
-            // `.clipShape`, not `.clipped()`: ERRATA E114 is this codebase's own record of an overhang
-            // that clipped its drawing and kept its touches, swallowing every control beneath it.
-            // Clipping to the shape clips both.
-            .clipShape(RoundedRectangle(cornerRadius: CypressRadius.cardLg, style: .continuous))
-            .cypressDashedBorder(
-                CypressColor.borderDashedStrong,
-                radius: CypressRadius.cardLg,
-                width: CypressSpacing.Component.outlineWidth
-            )
+        VisitAddTreePhotoWell { wellContents }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(model.hasPhoto ? VisitAddTreeCopy.wellFilled : VisitAddTreeCopy.wellEmpty)
     }
@@ -323,10 +317,18 @@ struct VisitAddTreeView: View {
             // **Fitted, not filled — this is the second half of the reported defect.**
             //
             // Reported from the field: *"photo for custom tree should be standard photo style,
-            // right now it's horizontal and cuts off vertical frame."* The well is 268 pt tall and
+            // right now it's horizontal and cuts off vertical frame."* The well was 268 pt tall and
             // about 361 wide; `scaledToFill` scaled a 3:4 photograph to 481 pt and drew the middle
             // 268 of it, so a volunteer who had just photographed a tree in portrait — the correct
             // orientation for a tree — was shown a landscape band of its trunk.
+            //
+            // **That report had a second half this fix did not reach, and the owner sent it back:**
+            // *"Add this tree photo window is still awkwardly horizontal and doesn't capture full
+            // view on vertical orientation."* `PhotoFit` stopped the crop but the well stayed a
+            // landscape box, so the photograph was merely letterboxed inside it and the *live*
+            // preview — which fills rather than fits — went on cropping. The well is now the 3:4
+            // frame itself (`VisitMetrics.AddTree.wellAspectRatio`), which is what makes `PhotoFit`
+            // here draw edge to edge instead of with bars beside it.
             //
             // That is worse here than anywhere else in the app, because of what this particular
             // picture is *for*. Every other frame is a photograph being displayed; this one is a
@@ -336,13 +338,14 @@ struct VisitAddTreeView: View {
             // finger over the lens, a cut-off crown, or the fact that the shot is of next door's
             // tree. `PhotoFit` shows the file.
             //
-            // **The jump from viewfinder to still is intended.** The live preview above is
-            // `.resizeAspectFill` and this is not, so the frame appears to pull back at the moment
-            // of capture. That is the iPhone camera's own behaviour going from a 4:3 viewfinder to
-            // the photograph, and here it carries information: what pulls into view is the part of
-            // the frame the well was never going to show. Screen 04 keeps `PhotoFill` for the
-            // opposite reason — it has a ghost overlay to line up against the preview, and
-            // `PhotoCropAnchor.centre` says why.
+            // **There is no longer a jump from viewfinder to still, and that is the point.** This
+            // used to read as a deliberate feature — the live preview fills, the still fits, so the
+            // frame "pulls back" at the moment of capture and shows what the well was never going to
+            // show. With the well the same shape as the capture, fill and fit are the same drawing:
+            // what you aimed at is what you are shown. The old behaviour was a symptom being read as
+            // a design, and what it really told a volunteer was that the viewfinder had been lying.
+            // Screen 04 keeps `PhotoFill` for its own reason — it has a ghost overlay to line up
+            // against the preview, and `PhotoCropAnchor.centre` says why.
             // ══════════════════════════════════════════════════════════════════════════════════
             PhotoFit(image: snapshot)
         } else if model.camera.isLive, let session = model.camera.session {
@@ -446,6 +449,46 @@ struct VisitAddTreeView: View {
         .padding(.horizontal, CypressSpacing.gutter)
         .padding(.top, VisitMetrics.Identify.footerTop)
         .padding(.bottom, CypressSpacing.bottomCTA)
+    }
+}
+
+// MARK: - The photo well
+
+/// Screen 14 §2's dashed well, at the shape of the photograph it holds.
+///
+/// ── Why this is its own type ───────────────────────────────────────────────────────────────
+/// Because its shape is the whole of #113 and a `private var` on the screen cannot be measured.
+/// `VisitPhenologyChips` was pulled out for the same reason on the same day, and `VisitShotTypeChips`
+/// before both — a row or a frame whose geometry is the defect has to be hostable on its own, or the
+/// test that guards it is a test of its parent. See `theAddTreeWellIsAPortraitCaptureFrame`.
+///
+/// **The card is the base and the contents are an overlay, not a `ZStack`.** A `scaledToFill`
+/// photograph reports a size far larger than the frame it is drawn in, and a `frame(maxWidth:
+/// .infinity)` wrapped around it takes *that* size rather than the proposal — which is what this
+/// screen did on its first run: choosing a photo pushed the whole column wider than the phone and
+/// dragged the header and the CTA off to the left. `.overlay` sizes its content against the base and
+/// lets the excess hang, so the layout is the card's and only the drawing overflows. Seen by looking,
+/// on the simulator, after the tests were green.
+struct VisitAddTreePhotoWell<Content: View>: View {
+
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: CypressRadius.cardLg, style: .continuous)
+            .fill(CypressColor.surfaceEmptyThumb)
+            // The shape, and the reason it is a ratio rather than a height, are in
+            // `VisitMetrics.AddTree.wellAspectRatio`.
+            .aspectRatio(VisitMetrics.AddTree.wellAspectRatio, contentMode: .fit)
+            .overlay { content() }
+            // `.clipShape`, not `.clipped()`: ERRATA E114 is this codebase's own record of an overhang
+            // that clipped its drawing and kept its touches, swallowing every control beneath it.
+            // Clipping to the shape clips both.
+            .clipShape(RoundedRectangle(cornerRadius: CypressRadius.cardLg, style: .continuous))
+            .cypressDashedBorder(
+                CypressColor.borderDashedStrong,
+                radius: CypressRadius.cardLg,
+                width: CypressSpacing.Component.outlineWidth
+            )
     }
 }
 

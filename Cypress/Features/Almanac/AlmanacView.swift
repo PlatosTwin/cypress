@@ -48,7 +48,7 @@ struct AlmanacView: View {
     /// initialiser exactly once, so the model below was built from whichever coordinate happened to
     /// exist at first construction and never heard about another — and on a cold launch that is
     /// `nil`, because CoreLocation has not answered yet. Keeping the parameter is what lets the
-    /// `.task(id:)` notice it change (ERRATA — see docs/errata-pending/almanac-blank.md).
+    /// `.task(id:)` notice it change (ERRATA E155).
     private let coordinate: Coordinate?
 
     private let onRequestLocation: (() -> Void)?

@@ -35,7 +35,7 @@ final class AlmanacModel {
     /// a fix there is no area and the almanac has no subject at all (A4, ERRATA E44).
     ///
     /// **It is a `var` now, and that is the whole of this defect's fix**
-    /// (ERRATA — see docs/errata-pending/almanac-blank.md). It used to be a `let` set once, from a
+    /// (ERRATA E155). It used to be a `let` set once, from a
     /// view whose `@State` initialiser runs exactly once — so an almanac built before CoreLocation
     /// answered read `almanac(near: nil)`, got `.empty` by contract, and stayed empty for the life
     /// of the view.

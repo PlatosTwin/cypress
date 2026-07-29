@@ -29,7 +29,7 @@ struct CheckInView: View {
         outbox: OutboxQueue,
         attribution: Attribution,
         // A closure, not a number: `@State` runs its initialiser once, so a value handed in here is
-        // frozen at the screen's first frame (ERRATA — see docs/errata-pending/gps-accuracy-at-submit.md).
+        // frozen at the screen's first frame (ERRATA E158).
         gpsAccuracyM: @escaping @MainActor () -> Double? = { nil },
         species: Species? = nil,
         initialDraft: CheckInDraft = CheckInDraft(),

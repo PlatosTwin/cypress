@@ -4,7 +4,7 @@ import Testing
 
 /// "Anonymised means anonymous, permanently" — the project owner's ruling on #74, made checkable
 /// (RULINGS, "the owner's own decisions", 2026-07-26; ERRATA — see
-/// `docs/errata-pending/deletion-tombstone.md`).
+/// E157).
 ///
 /// The defect this suite exists for is a collision between two correct designs. D9 says a
 /// contribution with `user_id IS NULL` and this phone's `device_id` is the phone's own unclaimed
