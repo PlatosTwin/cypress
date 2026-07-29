@@ -606,5 +606,300 @@ struct VisitCameraSessionTests {
         router.push(.treeProfile(other))
         #expect(router.path.count == 3)
     }
+
+    // MARK: - 8 · The accessibility variant (R14; ERRATA — see docs/errata-pending/screen-04-capture.md)
+
+    /// The floor is arithmetic on the capture, and it can be checked as arithmetic.
+    ///
+    /// What it pins is the *derivation*, not a number somebody liked: 4:3 is the `.photo` preset's own
+    /// aspect and `width × 4/3` is the height at which a `.resizeAspectFill` preview stops cropping the
+    /// top and bottom off the frame. A later tidy-up that rounds this to 520 or 540 fails here.
+    @Test("the viewfinder's floor is the height at which it stops cropping the photograph")
+    func theViewfinderFloorIsTheCaptureFrame() {
+        let phone = CGSize(width: 393, height: 852)
+        let floor = VisitMetrics.Camera.viewfinderFloor(width: phone.width, available: phone.height)
+
+        #expect(floor == phone.width * 4 / 3, "the floor is \(floor), not the 3:4 frame's height")
+        #expect(floor == 524, "the floor on a 393 pt phone is \(floor)")
+
+        // It is a *floor*, not a redesign: it has to sit under the height the viewfinder already has
+        // at the sizes SCREENS 04 draws, or it would be moving the drawn layout. Measured on the
+        // running app on a 393 × 852 pt iPhone 16: 583 pt at the drawn size, 550 pt at `xxxLarge`,
+        // 503 pt at AX1 — so the floor binds first exactly where `isAccessibilitySize` does.
+        #expect(floor < 550, "the floor would bind at xxxLarge, which the drawn layout does not expect")
+        #expect(floor > 503, "the floor is below AX1's natural height, so it would never bind at all")
+
+        // And it yields on a display too short to hold it and a tray both, rather than taking the
+        // whole screen and leaving the controls nowhere.
+        let short = VisitMetrics.Camera.viewfinderFloor(width: phone.width, available: 400)
+        #expect(short == 400 - VisitMetrics.Camera.controlsFloor, "the clamp did not bind: \(short)")
+        #expect(short < floor)
+    }
+
+    /// **R14's split, measured on the running layout: the viewfinder takes its floor and what is left
+    /// is a scroll view with more in it than fits.**
+    ///
+    /// ── The version of this test that could not run, let alone fail ────────────────────────────
+    /// This was first written to host screen 04 and read the *accessibility tree* — which control ended
+    /// up on which side of the fold, by label. It never passed, because it was never run: a hosted
+    /// SwiftUI tree in an off-screen window vends **no accessibility elements at all**. Probed
+    /// directly, a bare `Button("Hello button")` in a `UIHostingController` reports
+    /// `accessibilityElementCount() == 0` and no elements anywhere in its hierarchy; SwiftUI builds
+    /// that tree lazily for a real assistive client, and a unit test host is not one. So every
+    /// `accessibilityLabels(under:)` lookup came back empty and every assertion over it was vacuous or
+    /// false. That helper is gone rather than fixed — a helper that always answers "nothing" is the
+    /// exact shape of the green suite this project keeps catching itself in.
+    ///
+    /// What is left is what UIKit *will* answer for a hosted tree: geometry. That is enough for the
+    /// ruling, because R14's split is geometric — "the viewfinder keeps a floor and the controls get a
+    /// scroll view" is a statement about where one ends and the other begins, and about there being
+    /// something below the fold to scroll to. **Which** control is on which side is verified by
+    /// looking, per ARCHITECTURE §7 and exactly as `theChipRowFitsTheWidthItIsGivenAtAX5` already says
+    /// of the row above it; the screenshots are in this branch's report.
+    @Test("at AX5 the viewfinder takes its floor and the controls scroll beneath it")
+    func theControlsScrollBeneathTheFloorAtAX5() async throws {
+        let phone = CGSize(width: 393, height: 852)
+        let hosted = try await Self.host(VisitPreviewFixtures.camera(), at: .accessibility5, in: phone)
+        defer { hosted.dismiss() }
+
+        let scroll = try #require(
+            Self.controlsScrollView(in: hosted.root),
+            "screen 04 at AX5 has no scroll view, so nothing below the fold is reachable"
+        )
+
+        // The viewfinder took exactly its floor, and the scroll took the rest.
+        //
+        // **In the root's coordinates, not the scroll view's own frame.** SwiftUI wraps a `ScrollView`
+        // in a `PlatformContainer` and positions *that*, leaving the scroll view at the origin of it —
+        // so `scroll.frame.minY` is 0 on a scroll view sitting 524 pt down the screen, and an
+        // assertion against it fails while the layout is correct.
+        let floor = VisitMetrics.Camera.viewfinderFloor(width: phone.width, available: phone.height)
+        let inRoot = scroll.convert(scroll.bounds, to: hosted.root)
+        #expect(
+            abs(inRoot.minY - floor) < 1,
+            "the controls start at \(inRoot.minY) pt, and the viewfinder's floor is \(floor)"
+        )
+        #expect(
+            abs(scroll.bounds.height - (phone.height - floor)) < 1,
+            "the controls got \(scroll.bounds.height) pt of the \(phone.height - floor) pt left over"
+        )
+
+        // There is content past the viewport — which is what makes this a fix rather than a
+        // rearrangement. If everything fitted, nothing was ever off the screen to begin with.
+        #expect(
+            scroll.contentSize.height > scroll.bounds.height,
+            "the controls measured \(scroll.contentSize.height) pt in a \(scroll.bounds.height) pt viewport"
+        )
+    }
+
+    /// The other half, and the one that keeps this from becoming a redesign: below the accessibility
+    /// sizes screen 04 is what SCREENS 04 draws, with no scroll view anywhere on it.
+    @Test("at the drawn size the controls do not scroll")
+    func theDrawnLayoutIsUntouched() async throws {
+        let phone = CGSize(width: 393, height: 852)
+        let hosted = try await Self.host(VisitPreviewFixtures.camera(), at: .large, in: phone)
+        defer { hosted.dismiss() }
+
+        #expect(
+            Self.controlsScrollView(in: hosted.root) == nil,
+            "the drawn layout grew a scroll view"
+        )
+    }
+
+    // MARK: - 9 · The two reports of 2026-07-27 (#112, #113)
+
+    /// A curated species with a sourced deciduous habit and both calendars — the state that offers the
+    /// whole phenology vocabulary, and the state no fixture in this project had ever reached.
+    ///
+    /// `VisitPhenologyVocabulary` offers the row "for the curated 40 and nobody else", so almost
+    /// nothing reaches it; London Plane is both one of the 40 and the commonest street tree in San
+    /// Francisco, which is exactly why the owner met this defect and the suite never did.
+    static let londonPlane = try! Species(
+        scientificName: "Platanus × acerifolia",
+        commonName: "London Plane",
+        family: "Platanaceae",
+        leafRetention: .deciduous,
+        seasonal: SeasonalCalendar(
+            bloomMonths: [4, 5],
+            fallColorMonths: [10, 11],
+            fruitMonths: [9, 10],
+            newGrowthMonths: [3, 4]
+        ),
+        curated: true
+    )
+
+    /// **#112, stated as the property that was actually violated.**
+    ///
+    /// Not "the row fits" — it always fitted, and that is precisely the trap the row above fell into
+    /// (see `theChipRowFitsTheWidthItIsGivenAtAX5`, whose first version could not fail). SwiftUI's
+    /// `HStack` *compresses* rather than overflowing, so a row far too wide still measures no wider
+    /// than the width it was given. What it spends to get there is the chips: each is squeezed below
+    /// the width its own label needs, and the label wraps mid-word.
+    ///
+    /// So the measurement is the row's **height**, and the property is that the row is a whole number
+    /// of single-line chips tall. `CypressChipFlow` hands every chip the size it asks for and puts the
+    /// overflow on the next line, so its height is exactly `lines x chipHeight + gaps` for some whole
+    /// `lines`. A chip whose label has wrapped is taller than one line, and no packing of whole chips
+    /// can produce that height — the ratio comes out fractional.
+    ///
+    /// **The single-line height is measured off this same row given room to spread**, not off a chip
+    /// hosted on its own. A lone `Chip` through `UIHostingController.sizeThatFits` reports 83.67 pt
+    /// where the flow lays the same chip out at 56.67; measuring the row against that number failed by
+    /// exactly the difference and said the layout was broken when the ruler was. One view, one
+    /// measuring path, two widths.
+    ///
+    /// At **`.large`**, deliberately. The owner reported this at the default text size; a test pinned
+    /// to AX5 would have been green on the morning the report came in.
+    @Test("the phenology row draws whole chips at the default text size, not squeezed ones")
+    func thePhenologyRowDoesNotSqueezeItsChips() async throws {
+        // What `VisitCameraView`'s tray leaves the row: the phone, less its two gutters.
+        let available: CGFloat = 393 - VisitMetrics.Camera.trayPadding * 2
+        let gap = VisitMetrics.Camera.chipGap
+        let species = Self.londonPlane
+        let tags = VisitPhenologyVocabulary.tags(for: species)
+        #expect(tags.count == 6, "the vocabulary offered \(tags.count) tags, not the whole six")
+
+        let row = VisitPhenologyChips(species: species, tags: tags)
+
+        // The same row given far more width than it can use: every chip on one line, at the height a
+        // chip is when nothing is squeezing it.
+        let oneLine = await Self.measure(row, at: .large, width: 4_000)
+        #expect(oneLine.height > 0, "the row measured no height at all")
+
+        // And the row at the width the tray actually gives it.
+        let measured = await Self.measure(row, at: .large, width: available)
+
+        let lines = (measured.height + gap) / (oneLine.height + gap)
+        #expect(
+            abs(lines - lines.rounded()) < 0.02,
+            """
+            the row is \(measured.height) pt tall where one line of chips is \(oneLine.height) — \
+            that is \(lines) lines, and a fractional line is a chip whose label has wrapped
+            """
+        )
+
+        // The premise: the six chips genuinely do not fit on one line here. Without this the test
+        // would pass on a row that was never under pressure, which is the other way a layout test
+        // ratifies the defect it was written to catch.
+        #expect(
+            lines.rounded() >= 2,
+            "the row took \(lines.rounded()) line(s) in \(available) pt — nothing was under pressure"
+        )
+        #expect(measured.width > 0, "the row measured \(measured) — it drew nothing")
+    }
+
+    /// **#113.** The add-tree well is the shape of the photograph it holds, and that shape is portrait.
+    ///
+    /// Two halves, because the constant and the view can each be wrong on their own. The first is the
+    /// derivation — the well's ratio is the capture's, inverted for SwiftUI's width ÷ height
+    /// convention — so a later edit restating it as a rounded literal fails here, the way the
+    /// viewfinder floor's test is meant to fail. The second is the drawing, measured off
+    /// `VisitAddTreePhotoWell` itself, because a token nothing applies is just a token: the well was
+    /// wrong for its whole life while `wellHeight` sat there looking deliberate.
+    @Test("the add-tree photo well is the portrait frame the camera captures")
+    func theAddTreeWellIsAPortraitCaptureFrame() async throws {
+        let ratio = VisitMetrics.AddTree.wellAspectRatio
+
+        #expect(ratio < 1, "the well is still landscape — width ÷ height is \(ratio)")
+        #expect(
+            ratio == 1 / VisitMetrics.Camera.captureAspectRatio,
+            "the well's shape is \(ratio) and the capture's is \(VisitMetrics.Camera.captureAspectRatio)"
+        )
+        #expect(ratio == 3.0 / 4.0, "the well is \(ratio), not the 3:4 frame a phone held upright takes")
+
+        // The number the old constant got wrong, kept so the mistake cannot come back quietly: at the
+        // gutter's width on a 393 pt phone the well is 481 pt tall, not 268.
+        let width: CGFloat = 393 - CypressSpacing.gutter * 2
+        #expect(abs(width / ratio - 481) < 1, "the well is \(width / ratio) pt tall at \(width) pt wide")
+
+        // And the well itself draws that shape when it is given that width.
+        let measured = await Self.measure(
+            VisitAddTreePhotoWell { Color.clear },
+            at: .large,
+            width: width
+        )
+        #expect(measured.height > measured.width, "the well was drawn wider than it is tall: \(measured)")
+        #expect(
+            abs(measured.width / measured.height - ratio) < 0.01,
+            "the well was drawn \(measured), a ratio of \(measured.width / measured.height)"
+        )
+    }
+
+    // MARK: - Hosting a screen so UIKit can be asked about it
+
+    /// A screen standing in a real off-screen window, which is the only way `ScrollView` reports a
+    /// content size and a laid-out frame. Same technique and the same reasons as
+    /// `DynamicTypeScreenshotTests.render`.
+    ///
+    /// **What it cannot be asked** is anything about accessibility — see
+    /// `theControlsScrollBeneathTheFloorAtAX5`. A hosted SwiftUI tree vends no elements at all.
+    struct Hosted {
+        let root: UIView
+        let dismiss: () -> Void
+    }
+
+    static func host(
+        _ content: some View,
+        at size: DynamicTypeSize,
+        in frame: CGSize
+    ) async throws -> Hosted {
+        let host = UIHostingController(
+            rootView: AnyView(content.environment(\.dynamicTypeSize, size))
+        )
+        host.view.frame = CGRect(origin: .zero, size: frame)
+        let window = UIWindow(frame: CGRect(x: -2_000, y: 0, width: frame.width, height: frame.height))
+        window.rootViewController = host
+        window.isHidden = false
+        // `await`, not a run-loop spin: the screen's `.task` loads through an actor, and until it
+        // lands the camera reports `.idle` and the fallback branch has not been chosen yet.
+        for _ in 0..<8 {
+            try? await Task.sleep(for: .milliseconds(120))
+            host.view.setNeedsLayout()
+            host.view.layoutIfNeeded()
+        }
+        return Hosted(root: host.view, dismiss: {
+            window.isHidden = true
+            window.rootViewController = nil
+        })
+    }
+
+    /// What `content` measures at `width`, with height unbounded.
+    ///
+    /// **`safeAreaRegions = []` is load-bearing, not tidiness.** A `UIHostingController` in a bare
+    /// window still resolves a safe area, and `sizeThatFits` folds it into the answer: measured with
+    /// it, one phenology chip came back 83.67 pt tall where the layout draws it at 56.67, and the
+    /// add-tree well came back 535 pt where it draws 481. Both are the same 54 pt of inset, and both
+    /// would have been read as the view being wrong rather than the ruler.
+    static func measure(_ content: some View, at size: DynamicTypeSize, width: CGFloat) async -> CGSize {
+        let host = UIHostingController(rootView: AnyView(content.environment(\.dynamicTypeSize, size)))
+        host.safeAreaRegions = []
+        host.view.frame = CGRect(x: 0, y: 0, width: width, height: 2_000)
+        let window = UIWindow(frame: CGRect(x: -2_000, y: 0, width: width, height: 2_000))
+        window.rootViewController = host
+        window.isHidden = false
+        for _ in 0..<4 {
+            try? await Task.sleep(for: .milliseconds(60))
+            host.view.setNeedsLayout()
+            host.view.layoutIfNeeded()
+        }
+        defer { window.isHidden = true; window.rootViewController = nil }
+        return host.sizeThatFits(in: CGSize(width: width, height: .greatestFiniteMagnitude))
+    }
+
+    /// The scroll view R14's variant puts the controls in.
+    ///
+    /// **Not any `UIScrollView`**, and that distinction is the whole of the helper. `UITextView` is a
+    /// scroll view, screen 04's note field is a `TextField(axis: .vertical)` which UIKit backs with
+    /// one, and it sits *inside* the controls — so a depth-first search that accepts the first
+    /// `UIScrollView` it meets answers "yes, the controls scroll" on the drawn layout, where they do
+    /// not, and reports the note field's origin as the viewfinder's floor. Both of those were live
+    /// failures of the version of these tests that shipped in this branch unreviewed.
+    static func controlsScrollView(in view: UIView) -> UIScrollView? {
+        if let scroll = view as? UIScrollView, !(scroll is UITextView) { return scroll }
+        for subview in view.subviews {
+            if let found = controlsScrollView(in: subview) { return found }
+        }
+        return nil
+    }
 }
 #endif
