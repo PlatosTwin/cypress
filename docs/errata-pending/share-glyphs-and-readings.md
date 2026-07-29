@@ -64,3 +64,23 @@ fully-measured tree with no door to screen 16 at all — E74's original gap, reo
 trees that have most to record. R15 splits the two entrances: the empty stat slot stays 03's door for
 a *first* reading of its own kind, and screen 11 gains E74's own named candidate — an `Add a reading`
 control under the measurement log — as the door for a repeat one. R15 states what it overrules.
+
+**The first fix passed a test suite that could not see half of it, and that is the part worth
+keeping.** The tests written for the routing defect all stopped at `TreeProfilePresentation
+.StatDestination`. One hop further on — `TreeProfileView.route(for:)`, a private instance method
+turning that destination into a `Route` — was reachable only by the renderer. Rewriting that single
+line as `case .measure: return .measure(treeID, .dbh)` reinstates the original defect exactly, and
+the whole suite stays green while it does. Screen 11's new link had the same shape: its `Route` was
+built inside a `Button` closure with a hardcoded kind.
+
+The remedy was already in the codebase and is now applied to both: `MapHomeView.route(for:)` is
+`static` and `PinSetDestinationTests` calls it directly, on the reasoning that a second copy of a
+mapping is how a basin comes to open a tree's profile (E113). Both of screen 16's entrances are now
+`static` mappings a test can call — `TreeProfileView.route(for:treeID:)` and
+`GrowthHistoryView.route(forAddReading:)` — and the kind screen 11 opens on has moved out of the view
+into `GrowthHistoryPresentation.addReadingKind`.
+
+The general rule this is the third instance of: **a comment naming which layer owns a decision is not
+a mechanism that makes the other layer honour it.** The comment on the line above this bug said, in as
+many words, "which card means which kind is the presentation's call, not this view's" — and the view
+was free to ignore it, because nothing could call the view.
