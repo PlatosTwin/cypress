@@ -255,7 +255,7 @@ struct GrowthHistoryPresentation {
     ///
     /// It was reachable, and until this round it was the *common* case: every one of these four
     /// forms froze its accuracy at mount, so a contribution begun before the first fix carried a
-    /// `nil` for ever (ERRATA — see docs/errata-pending/gps-accuracy-at-submit.md).
+    /// `nil` for ever (ERRATA E158).
     var noChartReason: String? {
         guard hasRecordButNoChart else { return nil }
         // Any recorded accuracy at all means at least one of these readings really was measured and

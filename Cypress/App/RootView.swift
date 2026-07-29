@@ -201,7 +201,7 @@ struct RootView: View {
                 // `location.availability.accuracyM` here, which `@State` then froze for the life of
                 // the sheet: open the care log before the first fix and the event recorded `nil`
                 // for ever, and a `nil` accuracy is excluded rather than assumed good. The sheet
-                // asks when it writes (ERRATA — see docs/errata-pending/gps-accuracy-at-submit.md).
+                // asks when it writes (ERRATA E158).
                 //
                 // The capture list is the point: the closure holds the **provider**, which is one
                 // object for the life of the app, and reads `availability` off it when called. It
@@ -494,7 +494,7 @@ struct RootView: View {
                 //
                 // A closure, so the answer is the one that is true when the check-in is saved
                 // rather than when the screen was pushed
-                // (ERRATA — see docs/errata-pending/gps-accuracy-at-submit.md). The closure holds
+                // (ERRATA E158). The closure holds
                 // the provider itself; see the care log's call above.
                 gpsAccuracyM: { [location] in location.availability.accuracyM },
                 onSaved: { _ in router.pop() }
@@ -666,7 +666,7 @@ struct RootView: View {
                 // above rather than a refinement of it: `@State` froze this number at the first
                 // frame, so a measure sheet opened before the fix landed wrote the very `nil` E65
                 // was recorded to prevent, on a phone that had a good fix by the time the number
-                // was typed (ERRATA — see docs/errata-pending/gps-accuracy-at-submit.md).
+                // was typed (ERRATA E158).
                 gpsAccuracyM: { [location] in location.availability.accuracyM },
                 // **Saving used to acknowledge nothing and go nowhere (ERRATA E131).** This call
                 // omitted `onSaved`, so `MeasureView`'s `{ _ in }` default applied: the screen has a

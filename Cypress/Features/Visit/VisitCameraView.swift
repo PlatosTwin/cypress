@@ -30,7 +30,7 @@ struct VisitCameraView: View {
         treeDisplayName: String,
         // A closure, not a number: `@State` runs its initialiser once, and a camera session is the
         // longest a contribution form stays open in this app
-        // (ERRATA — see docs/errata-pending/gps-accuracy-at-submit.md).
+        // (ERRATA E158).
         gpsAccuracyM: @escaping @MainActor () -> Double?,
         api: any CypressAPI,
         outbox: OutboxQueue,
@@ -51,7 +51,7 @@ struct VisitCameraView: View {
     }
 
     // ══════════════════════════════════════════════════════════════════════════════════════════════
-    // THE ACCESSIBILITY VARIANT (R14; ERRATA — see docs/errata-pending/screen-04-capture.md)
+    // THE ACCESSIBILITY VARIANT (R14; ERRATA E159)
     //
     // Below the accessibility sizes this screen is exactly what SCREENS 04 draws: a viewfinder that
     // takes what is left after the tray, with the framing chips and the shutter overlaid on its
@@ -658,7 +658,7 @@ struct VisitCameraView: View {
 /// verified by looking instead.
 /// SCREENS 04 §2's phenology row — the tags this species can honestly be asked about (D5).
 ///
-/// ── Why this is a flow and not an `HStack` (ERRATA — see docs/errata-pending/screen-04-capture.md) ──
+/// ── Why this is a flow and not an `HStack` (ERRATA E161) ──
 /// **This row was broken at the default text size, not merely at AX5**, and that is the whole of the
 /// report behind it: *"The photo check in labels are too narrow. Text gets all compressed in them as
 /// they're currently implemented."*

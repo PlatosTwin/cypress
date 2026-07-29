@@ -607,7 +607,7 @@ struct VisitCameraSessionTests {
         #expect(router.path.count == 3)
     }
 
-    // MARK: - 8 · The accessibility variant (R14; ERRATA — see docs/errata-pending/screen-04-capture.md)
+    // MARK: - 8 · The accessibility variant (R14; ERRATA E159, E160)
 
     /// The floor is arithmetic on the capture, and it can be checked as arithmetic.
     ///

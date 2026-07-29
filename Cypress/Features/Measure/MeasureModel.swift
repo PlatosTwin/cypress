@@ -41,7 +41,7 @@ final class MeasureModel {
     private let attribution: Attribution
     /// D6's per-contribution accuracy, asked of the composition root's shared location provider
     /// **at the moment it is needed** rather than handed over once when the screen was built
-    /// (ERRATA — see docs/errata-pending/gps-accuracy-at-submit.md).
+    /// (ERRATA E158).
     ///
     /// A closure and not a `Double?`, for the same reason `now` is a closure and not a `Date`: this
     /// screen is a form somebody fills in over a minute or two, and the value that belongs on the

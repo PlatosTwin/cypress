@@ -3,7 +3,7 @@
 //  CypressTests
 //
 //  A contribution form opened before CoreLocation has answered.
-//  ERRATA — see docs/errata-pending/gps-accuracy-at-submit.md.
+//  ERRATA E158.
 //
 //  ── The defect these tests are the assertion form of ──────────────────────────────────────
 //  Four views carried D6's per-contribution GPS accuracy into a model built in a `@State`

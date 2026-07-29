@@ -32,7 +32,7 @@ struct CareLogView: View {
         outbox: OutboxQueue,
         attribution: Attribution,
         // A closure, not a number: `@State` runs its initialiser once, so a value handed in here is
-        // frozen at the sheet's first frame (ERRATA — see docs/errata-pending/gps-accuracy-at-submit.md).
+        // frozen at the sheet's first frame (ERRATA E158).
         gpsAccuracyM: @escaping @MainActor () -> Double? = { nil },
         treeDisplayName: String? = nil,
         initialDraft: CareLogDraft = CareLogDraft(),

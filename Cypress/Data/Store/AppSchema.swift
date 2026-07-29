@@ -1165,7 +1165,7 @@ public enum AppSchema {
     // MARK: - v13
 
     /// The tombstone that makes the leaving door's promise permanent (ERRATA — see
-    /// `docs/errata-pending/deletion-tombstone.md`).
+    /// E157).
     ///
     /// **The hole.** `leaveRecords` nulls `user_id` on the four contribution tables and leaves
     /// `device_id`, which is correct — `device_id` is `NOT NULL` there and always was — but it

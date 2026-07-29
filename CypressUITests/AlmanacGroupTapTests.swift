@@ -270,8 +270,7 @@ final class AlmanacGroupTapTests: XCTestCase {
             XCTFail(
                 "screen 12 drew neither its neighbourhood nor “\(Self.locationPrompt)”: a blank "
                     + "almanac, which is what a coordinate arriving after `AlmanacModel` was built "
-                    + "leaves behind (E123's known limitation; ERRATA — see "
-                    + "docs/errata-pending/almanac-location.md)"
+                    + "leaves behind (E123's known limitation; ERRATA E155)"
             )
         }
     }

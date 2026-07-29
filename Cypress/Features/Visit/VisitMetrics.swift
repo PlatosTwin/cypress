@@ -54,7 +54,7 @@ enum VisitMetrics {
     enum AddTree {
         /// The photo well's shape, as **width ÷ height** — the shape of the photograph it holds.
         ///
-        /// ── The aspect this replaces was upside down (ERRATA — see docs/errata-pending/screen-04-capture.md) ──
+        /// ── The aspect this replaces was upside down (ERRATA E162) ──
         /// This was `wellHeight: CGFloat = 268`, a constant whose own comment said it was "the 4:3
         /// frame that photograph will be, at the gutter's width" — 361 × 3/4 ≈ 271. That is a 4:3
         /// frame lying **on its side**. A phone held upright captures 3:4 *portrait*, which at 361 pt
@@ -177,7 +177,7 @@ enum VisitMetrics {
             shotTypeBottom - shutterBottom - shutterDiameter
         }
 
-        // ── The accessibility variant (R14; ERRATA — see docs/errata-pending/screen-04-capture.md) ──
+        // ── The accessibility variant (R14; ERRATA E159) ──
         //
         // SCREENS 04 draws this screen at default type only. R14 ruled that at accessibility sizes
         // the viewfinder shrinks to a fixed minimum and the controls beneath it scroll, and left the

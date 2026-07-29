@@ -171,7 +171,7 @@ struct VisitFlowView: View {
                 // The provider, asked at the shutter's end rather than read out here at the
                 // camera's beginning. `VisitIdentifyView` above already takes the live object for
                 // the same reason; this screen only needs one number, and only once, so it takes a
-                // question instead (ERRATA — see docs/errata-pending/gps-accuracy-at-submit.md).
+                // question instead (ERRATA E158).
                 gpsAccuracyM: { [location] in location.fix.accuracyM },
                 api: api,
                 outbox: outbox,

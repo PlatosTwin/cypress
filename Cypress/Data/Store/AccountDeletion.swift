@@ -342,7 +342,7 @@ public struct AccountDeletion {
     /// which is the only place this installation is tied to this person.
     ///
     /// **And leaving it alone is exactly what a tombstone had to be added for** (`AppSchema` v13,
-    /// ERRATA — see `docs/errata-pending/deletion-tombstone.md`). A row with `user_id IS NULL` and a
+    /// ERRATA E157). A row with `user_id IS NULL` and a
     /// `device_id` is, to every other query in this app, *this device's unclaimed work*:
     /// `claimDevice` adopts it onto the next account signed in on the phone, and the journal, the
     /// grove and screen 15's count all show it as the current holder's. So the four `INSERT`s below

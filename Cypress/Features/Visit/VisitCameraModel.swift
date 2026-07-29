@@ -20,7 +20,7 @@ final class VisitCameraModel {
     private let outbox: OutboxQueue
     private let attribution: Attribution
     /// D6's per-contribution accuracy, asked of the flow's provider when the visit is logged rather
-    /// than when the camera opened (ERRATA — see docs/errata-pending/gps-accuracy-at-submit.md).
+    /// than when the camera opened (ERRATA E158).
     ///
     /// This screen is the longest-lived of the four that carry one: a session runs from the
     /// viewfinder opening through up to three framings, a note and a chip row. `@State` builds the
@@ -300,7 +300,7 @@ final class VisitCameraModel {
         // are: it is a property of the contribution being made, and this is the moment the
         // contribution exists. Set at init it was the fix from before the viewfinder had drawn a
         // frame — `nil` on a cold launch, and a `nil` accuracy is excluded, not assumed good
-        // (ERRATA — see docs/errata-pending/gps-accuracy-at-submit.md).
+        // (ERRATA E158).
         draft.gpsAccuracyM = gpsAccuracyM()
         // The framing is **not** re-read here any more. It used to be, on the argument that "the chip
         // row stays live after the shutter and the last tap before Log visit is the answer" — true of
