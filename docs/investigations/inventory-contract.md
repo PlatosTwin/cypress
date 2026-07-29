@@ -38,10 +38,8 @@ The rows that really are shrubs-called-trees in the shipped seed are a different
 **85** rows whose species text reads `Shrub :: Shrub`, `Private shrub` or `Privet`, which are
 `status = 'alive'` with no species at all. In the DataSF corpus that population is **312**.
 
-**And the defect runs the other way too, which nobody had counted.** 153 rows in the shipped seed
-are `status = 'vacant_site'` although the city's own layer says `PlantType = 'Tree'` on every one
-of its 133,577 records. In the DataSF corpus the same mechanism produces **1,777 rows**, and they
-are not obscure:
+**And the defect runs the other way too, which nobody had counted.** In the DataSF corpus the same
+mechanism produces **1,777 rows**, and they are not obscure:
 
 | species text | rows in the export | what the source is saying |
 |---|---:|---|
@@ -53,6 +51,15 @@ are not obscure:
 The first two are a source describing a planting site. The last two are our ingest describing one.
 1,326 rows say the city maintains a street tree at that address, and our map draws a hole in the
 pavement.
+
+The shipped `--source city` seed has **153** vacant sites of its own, on rows where the city layer
+says `PlantType = 'Tree'`. How those 153 split between the layer's literal `BOTANICAL =
+'Potential Site'` (a stated vacancy, and correct) and its silence (inferred, and the defect) is
+computed by the build and **is not measured here**: the split needs the layer's own species text,
+the cached extract is absent from this machine, and the seed does not retain it. See §6. It is
+somewhere between 0 and 153, and the investigation's field table (136 rows literally
+`Potential Site`) suggests the inferred share is small — but "suggests" is not a measurement and
+this file does not print one.
 
 So #94 is two defects with one cause, and neither of them is "the count is too high".
 
@@ -274,9 +281,10 @@ python3 Tools/build_seed.py --source city
 cp Fixtures/seed/cypress-seed.sqlite Cypress/Resources/cypress-seed.sqlite
 ```
 
-Expected: 145,837 rows unchanged, and the receipt gains `planting_sites_stated_by_source`,
-`planting_sites_inferred_from_absent_species` (**153**, the rows described in §1),
-`records_not_a_tree` (**85**), `identity_id_space`, `identity_prefix` and `ingest_contract`.
+Expected: 145,837 rows unchanged, `records_not_a_tree` = **85** (that one is checkable from the
+shipped seed today: 85 rows are `alive` with no species), and the receipt gains
+`planting_sites_stated_by_source` + `planting_sites_inferred_from_absent_species`, which sum to
+12,413 and whose split is the number §1 declines to guess.
 
 ---
 
@@ -293,8 +301,9 @@ From the `--source datasf` rebuild, which is the corpus that could be rebuilt:
 | `records_not_a_tree` | 312 |
 | `identity_id_space` / `identity_prefix` | `sf` / *(empty)* |
 
-Same numbers for the shipped `--source city` seed, computed from the seed and the export but not
-yet written into a receipt: **153** inferred vacancies and **85** not-a-tree records.
+For the shipped `--source city` seed, read out of the file rather than from a receipt: 12,413
+vacant sites (153 of them the city layer's own, split unmeasured — §1) and **85** rows that are
+`alive` with no species, which is the not-a-tree population.
 
 ---
 

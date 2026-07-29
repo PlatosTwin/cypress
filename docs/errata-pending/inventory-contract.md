@@ -14,10 +14,14 @@ of something else. That produces two errors at once, and both are in the shipped
 **1,777** of the 12,518 vacant planting sites are ours, not the export's: their `qSpecies` is blank
 (`::`, 1,657 rows) or reads `Tree :: Tree` (131). **1,326 of the blank ones carry
 `qLegalStatus = DPW Maintained`** — the city saying it maintains a street tree at that address —
-and our map draws a planting site there. In the shipped `--source city` seed the same mechanism
-produces **153** rows, every one of which the city's own layer lists with `PlantType = 'Tree'`.
-The remaining 10,741 are genuine: `Tree(s) ::` on a `Permitted Site` and the literal
-`Potential Site` are the source describing a site, and those are correct.
+and our map draws a planting site there. The remaining 10,741 are genuine: `Tree(s) ::` on a
+`Permitted Site` and the literal `Potential Site` are the source describing a site, and those are
+correct.
+
+The shipped `--source city` seed has 153 vacant sites of its own, on rows the city layer lists with
+`PlantType = 'Tree'`. Their split between stated and inferred was **not measured** — it needs the
+layer's species text, and the cached extract is absent from this machine — so no number for it is
+recorded here.
 
 **A source that names a shrub describes a street tree.** `Shrub :: Shrub`, `Private shrub` and
 `Privet` are the city telling us, in the only field it has, that the thing growing there is not a

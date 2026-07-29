@@ -125,11 +125,15 @@ struct InventoryContractTests {
     @Test("the seed's rows all come from one id space, and it is the one its uuids were derived in")
     func everyRowIsInTheSeedsDeclaredIdSpace() async throws {
         let (store, meta) = try await Self.openSeed()
-        // A seed built before the contract existed declares no id space. That is a legitimate
-        // state and not a failure — it was built from one, in one, with an empty prefix — and it
-        // is the same accommodation `InventorySource.init(id:seedMeta:)` already makes for a
-        // receipt that predates per-row provenance. The check below is what a *rebuilt* seed owes.
-        guard let declared = meta["identity_id_space"] else { return }
+        // `identity_id_space` is absent on a seed built before the contract. That is a legitimate
+        // state — it was built from one inventory family, in one space, with an empty prefix — and
+        // it is the same accommodation `InventorySource.init(id:seedMeta:)` already makes for a
+        // receipt that predates per-row provenance.
+        //
+        // The half that does NOT depend on it runs either way, and it is the half with teeth: a row
+        // whose inventory the receipt cannot describe draws another inventory's name and snapshot
+        // date on screen, which is exactly the defect per-row provenance was added to end.
+        let declared = meta["identity_id_space"]
 
         let inventories = try await store.queue.read { connection -> [String] in
             let statement = try connection.prepare(
@@ -141,19 +145,18 @@ struct InventoryContractTests {
         #expect(!inventories.isEmpty, "no row names an inventory")
 
         for inventory in inventories {
-            // Two claims, and both matter. The row's inventory must be one the receipt can
-            // describe — otherwise the provenance line on screen draws another inventory's name and
-            // snapshot date, which is the defect per-row provenance was added to end. And its id
-            // space must be the one the file's uuids were derived in — a seed mixing two spaces has
-            // uuids derived two ways, and half of them are wrong.
+            // Runs against every seed, old receipt or new.
+            #expect(
+                InventorySource(id: inventory, seedMeta: meta) != nil,
+                "no inventory named '\(inventory)' can be described from this seed's receipt"
+            )
+            // And on a seed the contract built, its id space must be the one the file's uuids were
+            // derived in. A seed mixing two spaces has uuids derived two ways and half are wrong.
+            guard let declared else { continue }
             let space = meta["inventory_\(inventory)_id_space"]
             #expect(
                 space == declared,
                 "rows say inventory_source='\(inventory)', whose id space is \(space ?? "undeclared") but whose uuids were derived in '\(declared)'"
-            )
-            #expect(
-                InventorySource(id: inventory, seedMeta: meta) != nil,
-                "no inventory named '\(inventory)' can be described from this seed's receipt"
             )
         }
     }
@@ -258,11 +261,6 @@ struct InventoryContractTests {
     @Test("the receipt accounts for every vacant site by who said it was one")
     func vacancyIsAccountedForByWhoSaidSo() async throws {
         let (store, meta) = try await Self.openSeed()
-        // Absent on a seed built before the contract; see `everyRowIsInTheSeedsDeclaredIdSpace`.
-        guard let statedText = meta["planting_sites_stated_by_source"],
-              let inferredText = meta["planting_sites_inferred_from_absent_species"] else { return }
-        let stated = try #require(Int(statedText))
-        let inferred = try #require(Int(inferredText))
 
         let vacant = try await store.queue.read { connection -> Int in
             let statement = try connection.prepare("""
@@ -271,6 +269,20 @@ struct InventoryContractTests {
             defer { statement.finalize() }
             return try statement.fetchOne { try $0.int("n") } ?? -1
         }
+
+        // Runs against every seed: the rows and the receipt's own total must agree. This is the
+        // half that catches an ingest whose accounting has drifted from what it wrote.
+        #expect(
+            meta["vacant_site_rows"] == String(vacant),
+            "\(vacant) rows are vacant sites but the receipt says \(meta["vacant_site_rows"] ?? "nothing")"
+        )
+
+        // The split by who said so needs a receipt the contract wrote; absent on an older seed,
+        // see `everyRowIsInTheSeedsDeclaredIdSpace`.
+        guard let statedText = meta["planting_sites_stated_by_source"],
+              let inferredText = meta["planting_sites_inferred_from_absent_species"] else { return }
+        let stated = try #require(Int(statedText))
+        let inferred = try #require(Int(inferredText))
 
         // The arithmetic has to close, or the split is decoration rather than an account.
         #expect(
@@ -296,10 +308,10 @@ struct InventoryContractTests {
     @Test("records the source calls not-a-tree are counted, not hidden")
     func shrubsAreCounted() async throws {
         let (store, meta) = try await Self.openSeed()
-        guard let text = meta["records_not_a_tree"], let notATree = Int(text) else { return }
         // `trees.status` has no value meaning "the source says this is a shrub", so
         // `build_seed.STATUS_FOR_KIND` maps them to `alive` and the count is written down instead.
-        // These are exactly the rows with no species and a living status.
+        // These are exactly the rows with no species and a living status, and that population is
+        // readable from any seed — it does not need a receipt the contract wrote.
         let aliveWithNoSpecies = try await store.queue.read { connection -> Int in
             let statement = try connection.prepare("""
                 SELECT COUNT(*) AS n FROM \(SeedDatabase.schemaName).trees
@@ -308,11 +320,23 @@ struct InventoryContractTests {
             defer { statement.finalize() }
             return try statement.fetchOne { try $0.int("n") } ?? -1
         }
+        // `non_taxon_rows` predates this task and is in every receipt. It is the same population
+        // counted at ingest, so the two must agree — and if they ever stop, one of "the source
+        // named no taxon" and "the seed has no species for this row" has quietly changed meaning.
+        #expect(
+            meta["non_taxon_rows"] == String(aliveWithNoSpecies),
+            "\(aliveWithNoSpecies) rows are alive with no species but the receipt counts \(meta["non_taxon_rows"] ?? "nothing") non-taxon rows"
+        )
+        #expect(
+            aliveWithNoSpecies > 0,
+            "no row is alive with no species; either #94 landed — update this and the errata — or the classifier broke"
+        )
+
+        guard let text = meta["records_not_a_tree"], let notATree = Int(text) else { return }
         #expect(
             notATree == aliveWithNoSpecies,
             "the receipt counts \(notATree) not-a-tree records but \(aliveWithNoSpecies) rows are alive with no species; one of the two has drifted"
         )
-        #expect(notATree > 0, "no record is classified not-a-tree; either #94 landed or the classifier broke")
     }
 
     @Test("a receipt that names a contract names this one")
