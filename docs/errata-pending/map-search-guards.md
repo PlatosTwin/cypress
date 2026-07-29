@@ -23,8 +23,11 @@ Measured on this branch, twice, minutes apart, with no code change between:
 | `37.78485,-122.4215` | 156 | **47** | green |
 | location revoked outright (opens on Dolores Park) | pins drawn | **0** | red |
 
-The counts are from the seed, queried directly against the box the map opens on, not inferred from
-pin counts. So the failure is deterministic in whatever `xcrun simctl location` the device was last
+The counts are from the seed, queried directly against a 120 × 261 m box at each fix —
+`MapLayout.defaultSpanMetres` on this phone's aspect — rather than inferred from pin counts. The
+map's settled viewport is slightly wider than that box, so the pins it draws run a little above these
+numbers (56 planes drawn at the second fix against 47 in the box); the zeroes are the load-bearing
+part and they are zero either way. So the failure is deterministic in whatever `xcrun simctl location` the device was last
 left at — which no code in the file read, no failure message mentioned, and every agent had set
 differently. That is why it read as a flake across three machines.
 
