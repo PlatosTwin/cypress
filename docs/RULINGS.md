@@ -428,6 +428,62 @@ AX5 alone — AX1 is already cramped), and whether the shutter pins above the sc
 Whoever builds this draws the result in `SCREENS.md` as screen 04's accessibility variant, so the next
 person inherits a spec rather than a precedent.
 
+### R15 — C20 gains a clear control and two ways out of the keyboard (task #110)
+
+The open question was what screen 01's search bar does about being *left*. `SCREENS.md` §2 draws C20
+as a pill with one glyph — the leading magnifier — and a placeholder; screen 01 lists the bar at
+`top:68px` and says of its behaviour only that "search opens species/street/neighborhood search",
+three lines above "**NOT SPECIFIED:** search results". Nothing anywhere draws a clear affordance, a
+Cancel, or any dismissal of the keyboard. So there was no specified variant, and DECISIONS constraint
+21 says stop rather than invent one. This is that stop, answered under the standing delegation.
+
+**The finding, which is two owner reports about one control.** *"On search, it's possible to get stuck
+in the search bar — cursor active and no way to exit out of keyboard"* and *"On search, I want a
+little x in far right of bar to clear contents"*. Both were literally true of the component: it was a
+`TextField` and a `Shape` in an `HStack` with no clear button, no `submitLabel`, no `FocusState` and
+no `scrollDismissesKeyboard`, and its only map caller added none of them.
+
+The keyboard half is the one worth stating carefully, because the usual answer does not exist here.
+On most screens the way out of a keyboard is to tap what is behind it. Screen 01's behind is an
+`MKMapView`, and covering it with a transparent tap-catcher to dismiss on tap takes the pan and the
+pinch with it — the map would stop being a map for as long as the keyboard was up. Dismissing on
+camera movement was the other candidate and was rejected for the opposite reason: the keyboard
+animating in is itself a layout change, so the bar would have thrown away focus on the frame it
+gained it.
+
+**The ruling: a ✕ at the trailing edge, and two ways out of the keyboard rather than one.**
+
+- **The ✕** appears only when there is text, sits hard against the bar's own 18 pt inset where the
+  owner asked for it, carries the VoiceOver label `Clear search`, and has the 44 pt target
+  ARCHITECTURE §6 requires — grown leftwards and outwards from the glyph rather than centred around
+  it, and drawn as an overlay so that growing it cannot change the bar's ~45 pt height. It clears the
+  text and **keeps focus**: clearing is the start of the next query far more often than it is the end
+  of searching, and a ✕ that did both would do neither predictably.
+- **The return key** says `Search` and dismisses (`submitLabel(.search)` + `onSubmit`). This costs no
+  pixels and is the platform's own answer — and it is the more damning half of the report, because
+  the key was *already there*, already drawn on the keyboard, and already did nothing.
+- **A `Done` above the keyboard**, because the return key is invisible to anyone who has not been
+  taught to reach for it, and "no way to exit" is a report about what a person could *find*, not
+  about what existed. It lives on the keyboard, so nothing screen 01 positions moves.
+
+The glyph is hand-drawn — a ring with an ✕ inside it, at C20's own 1.8 stroke and in C20's own glyph
+colour, so the bar carries the same line weight at both ends. There are no SF Symbols and no icon
+font in this app (`ShareDestinationGlyph` states the policy), and the ring rather than a bare ✕ is
+what makes it read as a control: an unringed ✕ at 16 pt beside a 14.5 pt field is the weight of a
+letter.
+
+**What this overrules:** nothing. §2's C20 is a description of a bar that did nothing, and this adds
+to it rather than contradicting it — the magnifier, the pill, the fill, the border, the radius, the
+padding and the placeholder are all untouched, and the ✕ occupies space §2 left empty. Whoever draws
+C20 next should draw the ✕ into it and give screen 01 a focused variant.
+
+**Deliberately not decided here**, because they are judgments better made against a running screen
+than from a document: whether the bar should also gain a Cancel *beside* it while focused (the iOS
+convention, and a real layout change to screen 01 that a mock should make rather than an
+implementation), and whether a query short enough to match most of the catalogue should narrow the
+map at all — one character now matches 555 of 577 species, and the status line says so under E38
+rather than the bar refusing to search. Both belong to whoever revisits screen 01's search surface.
+
 ## The owner's own decisions, recorded here so they are not re-opened
 
 These are **not** delegated rulings — they were made by the project owner directly, and are written
