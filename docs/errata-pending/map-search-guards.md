@@ -72,8 +72,19 @@ a GPS fix.
 
 ---
 
-**What the rework did *not* find.** The state #104 kept landing in — a real species with none of it
-in the current viewport — is one screen 01 already handles: `MapSearchCopy.status` answers `No
-Sycamore, London Plane in view`, and names the viewport deliberately so the reader moves the map
-rather than doubting the spelling. The empty map the test was reporting was never silent. It is the
-test that could not tell that state from a broken one.
+**The product behaviour the red test was actually finding, checked on the device rather than read off
+the source.** The obvious suspicion is that a search narrowing to zero visible pins draws an empty map
+and says nothing — which would be a real defect, and the one worth finding here. It does not. Typed
+into a running build at `37.7505,-122.4950`, `Platanus` empties the map and draws, under the search
+bar:
+
+> None of the 11 matching species are in view
+
+`MapSearchCopy.status`' `matched == 0` branch, in its counted form — eleven because matching has been
+`LIKE '%query%'` over both names since E165, and E38's rule that a page must not wear a total's
+clothes applies to the species set as well as the trees. Naming the *viewport* rather than the query
+is deliberate: it tells the reader to move the map rather than doubt the spelling.
+
+So the empty map was never silent, and there is no product defect behind #104. What there was is a
+test that could not tell that state from a broken one — it read "no pins" and reported "broken",
+which is exactly the mistake the app's own copy exists to stop a *person* making.
