@@ -243,6 +243,29 @@ struct GrowthHistoryPresentation {
     /// Measurements exist but D6 admits none of them to a chart. Distinct from `isEmpty`: the log
     /// renders, the charts do not, and neither fact is an error.
     var hasRecordButNoChart: Bool { charts.isEmpty && !logRows.isEmpty }
+
+    /// The sentence that stands where the cards would have been, or nil when there are cards.
+    ///
+    /// **Two sentences and not one**, for exactly the reason `MeasurePresentation.ChartEligibility`
+    /// has three cases and not two: "no fix" and "a fix too poor to use" are different facts about
+    /// the world although `isEligibleForGrowthCharting` treats them the same, and screen 16 already
+    /// says which of them applies *before* the save. This screen said `too weak` over readings whose
+    /// accuracy was never recorded at all — describing a bad fix to somebody whose phone had not
+    /// answered yet, which is a claim about their GPS the app is not entitled to make.
+    ///
+    /// It was reachable, and until this round it was the *common* case: every one of these four
+    /// forms froze its accuracy at mount, so a contribution begun before the first fix carried a
+    /// `nil` for ever (ERRATA — see docs/errata-pending/gps-accuracy-at-submit.md).
+    var noChartReason: String? {
+        guard hasRecordButNoChart else { return nil }
+        // Any recorded accuracy at all means at least one of these readings really was measured and
+        // really was too poor; with none, nothing here was ever weighed.
+        let anyFixRecorded = profile.measurements
+            .contains { $0.deletedAt == nil && $0.gpsAccuracyM != nil }
+        return anyFixRecorded
+            ? GrowthHistoryCopy.noChartableState
+            : GrowthHistoryCopy.noFixRecordedState
+    }
 }
 
 // MARK: - Copy
@@ -278,9 +301,16 @@ enum GrowthHistoryCopy {
     /// (E63).
     static let emptyState = "No measurements on this tree yet."
 
-    /// **NOT SPECIFIED**, same reasoning. Readings exist and none of them may be charted.
+    /// **NOT SPECIFIED**, same reasoning. Readings exist, at least one carries a real fix, and none
+    /// of them is good enough to chart.
     static let noChartableState =
         "These readings were taken with a GPS fix too weak to attribute them to this tree, so none of them is charted."
+
+    /// **NOT SPECIFIED**, same reasoning again — and a separate sentence because a reading with no
+    /// accuracy at all was not taken on a weak fix, it was taken before the phone had one. Saying
+    /// `too weak` over it describes a measurement nobody made. See `noChartReason`.
+    static let noFixRecordedState =
+        "These readings were saved before the phone had a location fix, so none of them can be attributed to this tree and none is charted."
 
     /// 11 §6's footnote is **deliberately not rendered**. It reads `Tap any point to open the
     /// observation behind it.`, and there is nothing behind a point to open: a measurement is not an

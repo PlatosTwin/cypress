@@ -28,7 +28,10 @@ struct VisitCameraView: View {
     init(
         treeID: UUID,
         treeDisplayName: String,
-        gpsAccuracyM: Double?,
+        // A closure, not a number: `@State` runs its initialiser once, and a camera session is the
+        // longest a contribution form stays open in this app
+        // (ERRATA — see docs/errata-pending/gps-accuracy-at-submit.md).
+        gpsAccuracyM: @escaping @MainActor () -> Double?,
         api: any CypressAPI,
         outbox: OutboxQueue,
         attribution: Attribution,

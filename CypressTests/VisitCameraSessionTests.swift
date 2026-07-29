@@ -71,7 +71,7 @@ struct VisitCameraSessionTests {
         VisitCameraModel(
             treeID: treeID,
             treeDisplayName: "Grandmother Cypress",
-            gpsAccuracyM: 9,
+            gpsAccuracyM: { 9 },
             api: VisitPreviewAPI(),
             outbox: outbox,
             attribution: VisitPreviewFixtures.attribution

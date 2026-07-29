@@ -190,7 +190,7 @@ enum VisitPreviewFixtures {
         VisitCameraView(
             treeID: cypress.id,
             treeDisplayName: displayName,
-            gpsAccuracyM: 9,
+            gpsAccuracyM: { 9 },
             api: VisitPreviewAPI(),
             outbox: outbox(),
             attribution: attribution,
