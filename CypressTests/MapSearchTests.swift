@@ -573,7 +573,44 @@ struct MapSearchTests {
         #expect(MapSearchCopy.subject([]) == "trees")
         #expect(MapSearchCopy.subject(["Ginkgo"]) == "Ginkgo")
         #expect(MapSearchCopy.subject(["Ginkgo", "Cherry Plum"]) == "Ginkgo and Cherry Plum")
-        #expect(MapSearchCopy.subject(["A", "B", "C"]) == "3 species")
+        // Counted subjects carry their own article, so every sentence that takes one reads.
+        #expect(MapSearchCopy.subject(["A", "B", "C"]) == "the 3 matching species")
+        #expect(MapSearchCopy.subject(["A", "B", "C"], truncated: true) == "the first 3 matching species")
+    }
+
+    /// **The sentence the simulator caught.** Typing "cypress" resolves to six species, and screen 01
+    /// drew `No 6 species in view` — the count substituted into a slot that wanted a name.
+    ///
+    /// It was latent before task #108 (a genus like `Quercus` prefix-matched seventeen species and
+    /// produced `No 17 species in view` the same way) and it became the *ordinary* case the moment
+    /// one common word started matching six. Every sentence a counted subject can reach is pinned
+    /// here, because the defect was never in the phrase — it was in substituting one phrase into four
+    /// sentences that do not all take it.
+    @Test("a counted subject gets sentences a count fits in")
+    func aCountedSubjectReads() {
+        let six = ["Cypress species", "Monterey Cypress", "Hinoki cypress",
+                   "Italian Cypress", "Leyland Cypress", "Montezuma Cypress"]
+        func search(drawn: Int? = nil, matched: Int? = nil) -> MapSearch {
+            .narrowed(.init(speciesIDs: [UUID()], names: six, drawn: drawn, matched: matched))
+        }
+
+        #expect(MapSearchCopy.status(for: search()) == "Showing the 6 matching species")
+        #expect(
+            MapSearchCopy.status(for: search(drawn: 0, matched: 0))
+                == "None of the 6 matching species are in view"
+        )
+        #expect(
+            MapSearchCopy.status(for: search(drawn: 12, matched: 40))
+                == "Showing 12 of 40 trees here, from the 6 matching species"
+        )
+        // Complete and untruncated still says nothing: the map is the answer.
+        #expect(MapSearchCopy.status(for: search(drawn: 12, matched: 12)) == nil)
+
+        // Two names is the boundary, and it is still named rather than counted.
+        let two = MapSearch.narrowed(.init(
+            speciesIDs: [UUID()], names: ["Cypress species", "Monterey Cypress"], drawn: 0, matched: 0
+        ))
+        #expect(MapSearchCopy.status(for: two) == "No Cypress species and Monterey Cypress in view")
     }
 
     /// `PinAnswer` may not describe a complete answer as a sample, whatever it is handed — the whole

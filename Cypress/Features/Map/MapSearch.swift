@@ -166,31 +166,43 @@ enum MapSearchCopy {
             return "No species matches “\(query)”"
 
         case let .narrowed(narrowed):
-            let subject = subject(narrowed.names)
-            let page = "the first \(narrowed.names.count) matching species"
+            let subject = subject(narrowed.names, truncated: narrowed.isTruncated)
+            let counted = isCounted(narrowed)
             guard let drawn = narrowed.drawn, let matched = narrowed.matched else {
                 // A clustered viewport, or the first frame before an answer landed. The badges are
                 // already narrowed and already carry counts, so this only has to name the subject.
-                return narrowed.isTruncated ? "Showing \(page)" : "Showing \(subject)"
+                return "Showing \(subject)"
             }
             if matched == 0 {
                 // The species exists; there are none of it here. Naming the viewport is the whole
                 // point — it tells the reader to move the map rather than to doubt the spelling.
-                return narrowed.isTruncated
-                    ? "None of \(page) are in view"
-                    : "No \(subject) in view"
+                return counted ? "None of \(subject) are in view" : "No \(subject) in view"
             }
             if matched > drawn {
-                // ERRATA E38: a sample must say it is one, and say how much of one.
-                return narrowed.isTruncated
-                    ? "Showing \(drawn) of \(matched) trees here, from \(page)"
+                // ERRATA E38: a sample must say it is one, and say how much of one. A counted
+                // subject cannot be the noun those numbers count — "151 of 1458 the 6 matching
+                // species" — so the trees are named and the species set follows the comma.
+                return counted
+                    ? "Showing \(drawn) of \(matched) trees here, from \(subject)"
                     : "Showing \(drawn) of \(matched) \(subject) here"
             }
             // A complete answer normally says nothing: the map is the answer. It cannot stay silent
             // when the *species* set behind it was itself a page, because then the map is complete
             // only with respect to a subset the reader was never told about (E38).
-            return narrowed.isTruncated ? "Showing every tree of \(page)" : nil
+            return narrowed.isTruncated ? "Showing every tree of \(subject)" : nil
         }
+    }
+
+    /// Whether `subject` counted the species rather than naming them.
+    ///
+    /// The sentences above cannot substitute a count everywhere a name goes, and the day the search
+    /// stopped matching prefixes only is the day that started showing: typing "cypress" resolves to
+    /// six species, and screen 01 drew **"No 6 species in view"** on the simulator. Naming a subject
+    /// and counting one are different parts of speech, so they get different sentences.
+    ///
+    /// A page is always counted, however few names came back with it.
+    static func isCounted(_ narrowed: MapSearch.Narrowed) -> Bool {
+        narrowed.isTruncated || narrowed.names.count > MapSearch.namesShown
     }
 
     /// What to call the thing being searched for.
@@ -198,12 +210,19 @@ enum MapSearchCopy {
     /// One species is its name. Two are both named, because a query that matches exactly two is
     /// usually a real ambiguity the reader wants to see. Beyond that the names stop being useful and
     /// the count is the honest summary — nobody reads seven species names off a map.
-    static func subject(_ names: [String]) -> String {
+    ///
+    /// The counted forms carry their own article — "**the** 6 matching species" — because every
+    /// sentence that takes them needs one, and a phrase that has to be assembled at four call sites
+    /// is a phrase that will read wrongly at one of them.
+    static func subject(_ names: [String], truncated: Bool = false) -> String {
+        // A page says so before it says anything else: the count is of what came back, not of what
+        // matched, and "the first N" is the only honest article for it (E38).
+        if truncated { return "the first \(names.count) matching species" }
         switch names.count {
         case 0: return "trees"
         case 1: return names[0]
         case 2: return "\(names[0]) and \(names[1])"
-        default: return "\(names.count) species"
+        default: return "the \(names.count) matching species"
         }
     }
 }
