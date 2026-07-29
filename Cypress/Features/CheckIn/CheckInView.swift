@@ -28,7 +28,9 @@ struct CheckInView: View {
         api: any CypressAPI,
         outbox: OutboxQueue,
         attribution: Attribution,
-        gpsAccuracyM: Double? = nil,
+        // A closure, not a number: `@State` runs its initialiser once, so a value handed in here is
+        // frozen at the screen's first frame (ERRATA E158).
+        gpsAccuracyM: @escaping @MainActor () -> Double? = { nil },
         species: Species? = nil,
         initialDraft: CheckInDraft = CheckInDraft(),
         now: @escaping () -> Date = { Date() },

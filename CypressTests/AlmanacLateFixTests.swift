@@ -2,7 +2,7 @@
 //  AlmanacLateFixTests.swift
 //  CypressTests
 //
-//  Screen 12 opened before CoreLocation has answered. ERRATA — see docs/errata-pending/almanac-blank.md.
+//  Screen 12 opened before CoreLocation has answered. ERRATA E155.
 //
 //  ── The defect these tests are the assertion form of ──────────────────────────────────────
 //  `AlmanacView` built its model in a `@State` initialiser, which runs exactly once, so the almanac

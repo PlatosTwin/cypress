@@ -31,7 +31,14 @@ enum Route: Hashable {
     /// variant the view picks internally, but a memorial is a different screen — different copy,
     /// and deliberately nothing to press.
     case memorial(UUID)         // 19
-    case measure(UUID)          // 16
+    /// 16, and **which measurement it opens on**.
+    ///
+    /// The kind is carried rather than defaulted because every entrance to this screen names one:
+    /// an empty `Height` stat card on 03 means this tree has no height, and a form that opened on
+    /// trunk diameter under it was a route with a correct entrance and a wrong argument (RULINGS
+    /// R15). `MeasureDraft.kind` still defaults to `.dbh` — SCREENS.md 16 §2's drawn selection —
+    /// for the entrance that genuinely names no measure, which is screen 11's.
+    case measure(UUID, MeasurementKind)     // 16
     case outbox                 // 17
     /// The vacant planting site. **No mocked screen** — decided in ERRATA E107, which closes E11.
     ///

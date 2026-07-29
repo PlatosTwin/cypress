@@ -71,12 +71,21 @@ struct ShareDestinationGlyph: View {
     private var airDrop: some View {
         ZStack {
             ShareAirDropArcs().stroke(tint, style: strokeStyle)
-            // Below the inner arc rather than inside it: at 24pt the two touch otherwise and the
-            // mark reads as a wi-fi glyph with a thick arc rather than as arcs over a dot.
+            // **At the arcs' own centre of curvature**, which is the thing that makes two arcs and a
+            // dot read as one mark rather than as three marks sharing a box.
+            //
+            // This used to be pushed `0.30 · side` *below* the arcs, on the stated reasoning that at
+            // 24pt a centred dot touches the inner arc. It does not, and never did: the inner arc's
+            // nearest point to that centre is `radius − stroke/2 = 5.1pt` away and the dot's own
+            // radius is under 2. What actually touched was the **chord** `ShareAirDropArcs` was
+            // drawing between its two arcs — see that shape — which crossed the box 4.4pt above the
+            // centre and merged with the inner arc into a blob. The dot was moved to escape a
+            // defect that was somewhere else, and the mark ended up with a detached full stop under
+            // it. See E163.
             Circle()
                 .fill(tint)
-                .frame(width: Self.side * 0.14, height: Self.side * 0.14)
-                .offset(y: Self.side * 0.30)
+                .frame(width: Self.side * 0.16, height: Self.side * 0.16)
+                .offset(y: Self.side * ShareAirDropArcs.centreOffsetFraction)
         }
     }
 
@@ -106,18 +115,48 @@ private struct ShareSpeechBubble: Shape {
     }
 }
 
-/// Two concentric arcs opening upward over a dot — the AirDrop mark's shape, drawn in a 24×24 box.
+/// Two concentric arcs over a dot — the AirDrop mark's shape, drawn in a 24×24 box.
+///
+/// SCREENS.md 10 §4 names this one `AirDrop` (arcs + dot), so a dot is what it has. Apple's own
+/// AirDrop mark puts an upward triangle under the arcs; substituting one here would be changing a
+/// transcribed description rather than drawing it, which is the design's call and not this file's.
 private struct ShareAirDropArcs: Shape {
+
+    /// The centre of curvature both arcs share, in the 24×24 box. The dot goes here too.
+    static let centre = CGPoint(x: 12.0, y: 16.5)
+    static let radii: [CGFloat] = [6, 10]
+    /// A 120° fan, wide enough that the inner arc reads as an arc and not as a dash.
+    static let sweep = (start: 210.0, end: 330.0)
+
+    /// `centre` as an offset from the middle of the box, in units of the box's side — what a
+    /// `.offset(y:)` on a centred `Circle` needs to land the dot on `centre`.
+    static let centreOffsetFraction: CGFloat = (centre.y - 12) / 24
+
     func path(in rect: CGRect) -> Path {
         let s = min(rect.width, rect.height) / 24
-        let centre = CGPoint(x: rect.minX + 12 * s, y: rect.minY + 17.5 * s)
+        let centre = CGPoint(
+            x: rect.minX + Self.centre.x * s,
+            y: rect.minY + Self.centre.y * s
+        )
+        let startRadians = CGFloat(Angle.degrees(Self.sweep.start).radians)
         var path = Path()
-        for radius in [6.0, 10.5] {
+        for radius in Self.radii {
+            // **`move(to:)` first, and this is the whole of the defect this shape had.** `addArc`
+            // appends to the current subpath, so the second call joined the first arc's end to the
+            // second arc's start with a straight line — a chord clean across the mark, which at
+            // 1.8pt merged with the inner arc and drew a filled-looking blob. Two arcs are two
+            // subpaths.
+            path.move(
+                to: CGPoint(
+                    x: centre.x + radius * s * cos(startRadians),
+                    y: centre.y + radius * s * sin(startRadians)
+                )
+            )
             path.addArc(
                 center: centre,
                 radius: radius * s,
-                startAngle: .degrees(215),
-                endAngle: .degrees(325),
+                startAngle: .degrees(Self.sweep.start),
+                endAngle: .degrees(Self.sweep.end),
                 clockwise: false
             )
         }
@@ -126,33 +165,47 @@ private struct ShareAirDropArcs: Shape {
 }
 
 /// Two rounded link halves overlapping at the centre, drawn in a 24×24 box.
+///
+/// ── The construction, because the numbers below are not arbitrary ──────────────────────────
+/// Both halves are the same capsule end — a **half turn** of a `3.54pt` cap plus two straight arms
+/// of the same length — sitting on the box's leading diagonal, one rotated 180° about the centre
+/// `(12, 12)`. The cap centres are `(18, 8)` and `(6, 16)`, each `3.54pt` off the diagonal on
+/// opposite sides, so the two halves read as two rings hooked through each other rather than as one
+/// ring cut in half. The bar runs *on* the diagonal, between the two inner arms, and joins them.
+///
+/// ── What was wrong (ERRATA E163) ─────────
+/// Each cap swept **90° instead of 180°**, so it stopped at the top of its circle instead of at the
+/// far side of it, and the arm that followed was then drawn from that wrong point back across the
+/// mark. The result was two lopsided hooks with a stroke cutting through each, which at 24pt reads
+/// as a paintbrush. The arms' own endpoints were right all along; only the sweep and the point the
+/// second arm started from were not.
 private struct ShareChainLink: Shape {
     func path(in rect: CGRect) -> Path {
         let s = min(rect.width, rect.height) / 24
         var path = Path()
-        // Upper-right half: a capsule end that stops at the middle bar.
+        // Upper-right half: an arm in, a half turn, an arm back out.
         path.move(to: CGPoint(x: 13 * s, y: 8 * s))
         path.addLine(to: CGPoint(x: 15.5 * s, y: 5.5 * s))
         path.addArc(
             center: CGPoint(x: 18 * s, y: 8 * s),
             radius: 3.54 * s,
             startAngle: .degrees(225),
-            endAngle: .degrees(-45),
+            endAngle: .degrees(45),
             clockwise: false
         )
-        path.addLine(to: CGPoint(x: 16 * s, y: 11 * s))
-        // Lower-left half, the same shape rotated a half turn.
+        path.addLine(to: CGPoint(x: 18 * s, y: 13 * s))
+        // Lower-left half, the same shape rotated a half turn about (12, 12).
         path.move(to: CGPoint(x: 11 * s, y: 16 * s))
         path.addLine(to: CGPoint(x: 8.5 * s, y: 18.5 * s))
         path.addArc(
             center: CGPoint(x: 6 * s, y: 16 * s),
             radius: 3.54 * s,
             startAngle: .degrees(45),
-            endAngle: .degrees(135),
+            endAngle: .degrees(225),
             clockwise: false
         )
-        path.addLine(to: CGPoint(x: 8 * s, y: 13 * s))
-        // The bar that joins them.
+        path.addLine(to: CGPoint(x: 6 * s, y: 11 * s))
+        // The bar that joins them, on the diagonal between the two inner arms.
         path.move(to: CGPoint(x: 9.5 * s, y: 14.5 * s))
         path.addLine(to: CGPoint(x: 14.5 * s, y: 9.5 * s))
         return path.offsetBy(dx: rect.minX, dy: rect.minY)

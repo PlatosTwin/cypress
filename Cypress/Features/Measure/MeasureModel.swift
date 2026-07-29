@@ -39,9 +39,23 @@ final class MeasureModel {
     private let api: any CypressAPI
     private let outbox: OutboxQueue
     private let attribution: Attribution
-    /// D6's per-contribution accuracy, from the composition root's shared location provider. Nil
-    /// before the first fix, which is the honest answer then (ERRATA E65).
-    private let gpsAccuracyM: Double?
+    /// D6's per-contribution accuracy, asked of the composition root's shared location provider
+    /// **at the moment it is needed** rather than handed over once when the screen was built
+    /// (ERRATA E158).
+    ///
+    /// A closure and not a `Double?`, for the same reason `now` is a closure and not a `Date`: this
+    /// screen is a form somebody fills in over a minute or two, and the value that belongs on the
+    /// contribution is the one that was true when the contribution existed. Handed over at build
+    /// time it froze at whatever the provider had published in the first frame — on a cold launch,
+    /// nothing, and `isEligibleForGrowthCharting` treats a missing accuracy as unusable rather than
+    /// good, so a careful reading taken thirty seconds after a perfectly good fix arrived was
+    /// excluded from screen 11 for the lifetime of the record.
+    ///
+    /// **Not made live in the other direction either.** The reading still carries the accuracy of a
+    /// fix that actually existed while it was being taken — `save()` reads this once, at the tap —
+    /// rather than tracking the best fix the phone ever went on to get, which would stamp the
+    /// contribution with a precision it was not taken at.
+    private let gpsAccuracyM: @MainActor () -> Double?
     private let now: () -> Date
     private let calendar: Calendar
     private let onSaved: (MeasureSaveReceipt) -> Void
@@ -51,7 +65,7 @@ final class MeasureModel {
         api: any CypressAPI,
         outbox: OutboxQueue,
         attribution: Attribution,
-        gpsAccuracyM: Double? = nil,
+        gpsAccuracyM: @escaping @MainActor () -> Double? = { nil },
         treeDisplayName: String? = nil,
         measurements: [TreeMeasurement] = [],
         initialDraft: MeasureDraft = MeasureDraft(),
@@ -77,7 +91,13 @@ final class MeasureModel {
             draft: draft,
             treeDisplayName: treeDisplayName,
             previous: previousMeasurement,
-            gpsAccuracyM: gpsAccuracyM,
+            // Read on every pass, so the sentence under the CTA describes what would happen to a
+            // reading saved *now*. It is a prediction about the next tap, and a prediction made
+            // from a minute-old fix is the defect this file's `gpsAccuracyM` documents. When the
+            // first fix lands under a form that is still being filled in, the notice withdraws
+            // itself — which is correct here, and is not E155's withdrawal: what it explained has
+            // actually stopped being true.
+            gpsAccuracyM: gpsAccuracyM(),
             now: now(),
             calendar: calendar
         )
@@ -133,7 +153,10 @@ final class MeasureModel {
                 treeID: treeID,
                 attribution: attribution,
                 outbox: outbox,
-                gpsAccuracyM: gpsAccuracyM,
+                // The one read that ends up on the record, taken here rather than at mount. By the
+                // time somebody has chosen a kind, a method and typed a number, a fix that was not
+                // there when the screen opened almost always is.
+                gpsAccuracyM: gpsAccuracyM(),
                 now: now()
             )
             // The reading is now part of this tree's record, so the sanity pill has to be able to

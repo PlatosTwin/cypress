@@ -63,7 +63,7 @@ public enum AccountDeletionCopy {
     /// is written in its place.
     ///
     /// **The last clause was added because the sentence before it was not true** (ERRATA — see
-    /// `docs/errata-pending/deletion-tombstone.md`). Anonymising nulls the account and leaves the
+    /// E157). Anonymising nulls the account and leaves the
     /// installation id the row has always carried, and `claimDevice` read that as *this phone's
     /// unclaimed work* — so the records were adopted by the next account signed in here, and
     /// "nothing left on them saying they were yours" lasted until somebody signed in. `AppSchema`

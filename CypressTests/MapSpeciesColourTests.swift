@@ -296,7 +296,7 @@ struct MapSpeciesColourTests {
             """
             selecting a pin rasterised something. The reticle is a `CALayer` precisely so that a \
             selected variant of every kind does not double the cache — see MapLayout's note and \
-            docs/errata-pending/species-pins.md.
+            E149.
             """
         )
         MapPinImage.flush()

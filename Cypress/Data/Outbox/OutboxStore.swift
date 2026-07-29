@@ -330,7 +330,7 @@ public struct OutboxStore {
     ///    are untouched.
     ///
     /// **And rule 2 is why the tombstone is keyed on `client_uuid`** (`AppSchema` v13, ERRATA — see
-    /// `docs/errata-pending/deletion-tombstone.md`). A stripped payload lands as a row with
+    /// E157). A stripped payload lands as a row with
     /// `user_id IS NULL` and a `device_id`, which is D9's description of *this device's unclaimed
     /// work* — so `claimDevice` adopts it onto the next account signed in on the phone, and the
     /// person who asked to be unlinked is relinked by the tail of their own queue. The row cannot be

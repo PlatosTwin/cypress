@@ -19,6 +19,18 @@ final class VisitCameraModel {
     private let api: any CypressAPI
     private let outbox: OutboxQueue
     private let attribution: Attribution
+    /// D6's per-contribution accuracy, asked of the flow's provider when the visit is logged rather
+    /// than when the camera opened (ERRATA E158).
+    ///
+    /// This screen is the longest-lived of the four that carry one: a session runs from the
+    /// viewfinder opening through up to three framings, a note and a chip row. `@State` builds the
+    /// model once, so the `Double?` this used to be was the accuracy of the fix that existed before
+    /// the first photograph — `nil` on a cold launch, which `isEligibleForGrowthCharting` treats as
+    /// unusable rather than good.
+    ///
+    /// Read once, at the tap, and not tracked continuously: the visit carries the accuracy of a fix
+    /// that was real while it was being made, not the best one the walk ever produced.
+    private let gpsAccuracyM: @MainActor () -> Double?
     let camera = VisitCameraController()
 
     // MARK: Subject
@@ -65,18 +77,20 @@ final class VisitCameraModel {
     init(
         treeID: UUID,
         treeDisplayName: String,
-        gpsAccuracyM: Double?,
+        gpsAccuracyM: @escaping @MainActor () -> Double?,
         api: any CypressAPI,
         outbox: OutboxQueue,
         attribution: Attribution
     ) {
         self.treeID = treeID
         self.treeDisplayName = treeDisplayName
+        self.gpsAccuracyM = gpsAccuracyM
         self.api = api
         self.outbox = outbox
         self.attribution = attribution
         // The visit id exists before the shutter does: it names the file the photo is written to.
-        self.draft = VisitDraft(treeID: treeID, gpsAccuracyM: gpsAccuracyM)
+        // The accuracy deliberately does **not**: see `gpsAccuracyM` and `logVisit()`.
+        self.draft = VisitDraft(treeID: treeID)
     }
 
     // MARK: - Derived
@@ -282,6 +296,12 @@ final class VisitCameraModel {
 
         draft.note = note
         draft.phenologyTags = Array(selectedTags)
+        // D6's accuracy is read here, beside the note and the chips, and for the same reason they
+        // are: it is a property of the contribution being made, and this is the moment the
+        // contribution exists. Set at init it was the fix from before the viewfinder had drawn a
+        // frame — `nil` on a cold launch, and a `nil` accuracy is excluded, not assumed good
+        // (ERRATA E158).
+        draft.gpsAccuracyM = gpsAccuracyM()
         // The framing is **not** re-read here any more. It used to be, on the argument that "the chip
         // row stays live after the shutter and the last tap before Log visit is the answer" — true of
         // one photograph, and destructive with three: it would relabel every staged photograph as

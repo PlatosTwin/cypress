@@ -31,7 +31,9 @@ struct CareLogView: View {
         api: any CypressAPI,
         outbox: OutboxQueue,
         attribution: Attribution,
-        gpsAccuracyM: Double? = nil,
+        // A closure, not a number: `@State` runs its initialiser once, so a value handed in here is
+        // frozen at the sheet's first frame (ERRATA E158).
+        gpsAccuracyM: @escaping @MainActor () -> Double? = { nil },
         treeDisplayName: String? = nil,
         initialDraft: CareLogDraft = CareLogDraft(),
         now: @escaping () -> Date = { Date() },

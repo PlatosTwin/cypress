@@ -84,8 +84,11 @@ struct GrowthHistoryView: View {
                     // The line that explains a missing chart sits where the chart would have been,
                     // above the readings it is about — under the log it reads as a footnote to the
                     // list rather than as the reason the cards are absent.
-                    if presentation.hasRecordButNoChart {
-                        emptyState(GrowthHistoryCopy.noChartableState)
+                    // Which sentence is `noChartReason`'s to decide: a fix too poor and no fix at
+                    // all are different facts, and screen 16 already distinguishes them before the
+                    // save.
+                    if let reason = presentation.noChartReason {
+                        emptyState(reason)
                     }
 
                     // 5 · The measurement log — the record, wider than the charts by design.
@@ -95,6 +98,13 @@ struct GrowthHistoryView: View {
 
                     if presentation.isEmpty {
                         emptyState(GrowthHistoryCopy.emptyState)
+                    }
+
+                    // 5b · Screen 16's general entrance — the one that is not tied to a measurement
+                    // and does not vanish once the tree has both. See
+                    // `GrowthHistoryPresentation.offersAddReading` and RULINGS R15.
+                    if presentation.offersAddReading {
+                        addReadingLink
                     }
 
                     // 6 · SCREENS.md's footnote is deliberately absent. See
@@ -191,6 +201,41 @@ struct GrowthHistoryView: View {
         }
         .cypressBorder(CypressColor.borderCool, radius: CypressRadius.control)
         .accessibilityElement(children: .combine)
+    }
+
+    // MARK: - 5b · Add a reading (screen 16's general entrance, RULINGS R15)
+
+    /// Built exactly like `TreeProfileView.growthLink`, which is the control this one answers: same
+    /// font, same colour, same 44pt hit area, a quiet text link under the block it belongs to. The
+    /// two are a pair — one reads the series back, one adds to it — and a reader who has used either
+    /// should recognise the other. C1–C30 is a closed catalogue with no link in it, so a screen-local
+    /// control from tokens is what this codebase does here (ERRATA E46).
+    ///
+    /// It opens 16 on `MeasurementKind.dbh`, SCREENS.md 16 §2's drawn selection. This is the one
+    /// entrance in the app that names no measurement, so there is none to carry — and 16's kind
+    /// control is the first thing under its header.
+    private var addReadingLink: some View {
+        Button {
+            router?.push(Self.route(forAddReading: model.treeID))
+        } label: {
+            Text(GrowthHistoryCopy.addReadingTitle)
+                .font(CypressFont.body13Bold)
+                .foregroundStyle(CypressColor.ctaFill)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .cypressHitArea()
+        .padding(.horizontal, CypressSpacing.gutter)
+        .padding(.top, GrowthHistoryMetrics.logTop)
+    }
+
+    /// Where `Add a reading` goes. `static` and taking the id, so a test can call it — the shape
+    /// `MapHomeView.route(for:)` and `TreeProfileView.route(for:treeID:)` use, and for the reason
+    /// the latter's comment gives: this project has already shipped one defect that lived in a
+    /// `Route` built inside a view body, where nothing could reach it.
+    static func route(forAddReading treeID: UUID) -> Route {
+        .measure(treeID, GrowthHistoryPresentation.addReadingKind)
     }
 
     // MARK: - The states SCREENS.md does not draw

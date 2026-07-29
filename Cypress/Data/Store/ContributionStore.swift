@@ -1097,7 +1097,7 @@ public struct ContributionStore {
     /// the `user_id IS NULL` guard is what makes both true.
     ///
     /// **What it will not adopt, ever: a record a deletion anonymised** (`AppSchema` v13, ERRATA —
-    /// see `docs/errata-pending/deletion-tombstone.md`). `user_id IS NULL AND device_id = :device`
+    /// see E157). `user_id IS NULL AND device_id = :device`
     /// used to be the whole definition of *this device's unclaimed work*, and it was one state too
     /// broad. `leaveRecords` nulls `user_id` and — correctly — leaves `device_id`, so a record its
     /// author deliberately unlinked from themselves matched this predicate exactly and was adopted

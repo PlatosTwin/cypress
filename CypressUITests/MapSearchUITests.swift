@@ -128,7 +128,7 @@ final class MapSearchUITests: XCTestCase {
         XCTAssertGreaterThan(narrowed, 0, "narrowing to the commonest species in San Francisco emptied the map")
 
         // Clearing it puts the neighbourhood back — through the ✕ the bar now draws (task #110,
-        // ruling R15), which is also the only way a person without a hardware keyboard could do it.
+        // ruling R16), which is also the only way a person without a hardware keyboard could do it.
         app.buttons["Clear search"].tap()
         XCTAssertTrue(
             wait { self.cityTreePins(app) == before },

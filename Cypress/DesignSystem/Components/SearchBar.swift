@@ -29,7 +29,7 @@
 //  a bar that offers one, because a reader who types a street and sees the map empty out has been
 //  told, wrongly, that their street has no trees.
 //
-//  ── The clear control and the way out of the keyboard (task #110, ruling R15) ────────────────────
+//  ── The clear control and the way out of the keyboard (task #110, ruling R16) ────────────────────
 //  Two owner reports about this one control: "it's possible to get stuck in the search bar — cursor
 //  active and no way to exit out of keyboard", and "I want a little x in far right of bar to clear
 //  contents".
@@ -47,7 +47,7 @@
 //  reach for `return` is, for every practical purpose, stuck — which is the report.
 //
 //  SCREENS.md §2 draws C20 with one glyph and screen 01 lists nothing else in the bar, so neither
-//  affordance is specified and DECISIONS constraint 21 applies. `docs/RULINGS.md` R15 records what
+//  affordance is specified and DECISIONS constraint 21 applies. `docs/RULINGS.md` R16 records what
 //  was chosen and why. What is added here is therefore **visibility**, not capability:
 //
 //    · `submitLabel(.search)` relabels the key that already worked, from `return` to `Search`, so it

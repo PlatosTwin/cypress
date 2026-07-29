@@ -7837,3 +7837,365 @@ photograph keeps its place, the vote still counts toward the hero. What the tomb
 ownership, not existence. And `AccountDeletion.Outcome` gained no counter for it — the number of
 tombstones is the number of anonymised contributions, already reported, and a second field carrying
 the same total is a field that will one day disagree with the first.
+
+---
+
+### E158 — Four contribution forms recorded the GPS accuracy from before the phone had one (#102)
+
+Found while fixing E155, and it is the same mechanism read a second time. `@State` runs its
+initialiser exactly once for the lifetime of a view's identity, so anything a view carries into a
+model built there is the value that existed in the first frame and no other. E155 was a coordinate.
+This is D6's per-contribution GPS accuracy, on the four views that carry one:
+
+    Cypress/Features/CareLog/CareLogView.swift        — 09, the care log
+    Cypress/Features/CheckIn/CheckInView.swift        — 05, the check-in
+    Cypress/Features/Measure/MeasureView.swift        — 16, the measure sheet
+    Cypress/Features/Visit/VisitCameraView.swift      — 04, the visit camera
+
+Each took `gpsAccuracyM: Double?` and each was handed `location.availability.accuracyM` (or
+`location.fix.accuracyM`) by its composition root, read once, at the instant the screen was built.
+
+**Why this is not simply E155 again.** There the snapshot was straightforwardly wrong — an almanac
+is a picture of where you are now, and freezing the coordinate froze the picture. Here the snapshot
+is arguably *right*, and the argument for it has to be answered rather than ignored: a contribution
+should carry the accuracy of the fix it was actually taken on, not a better one that arrived
+afterwards. Attaching the newest accuracy to an append-only record would be a false claim about a
+reading's provenance, and a quieter defect than the one being fixed — D6 exists so that a
+measurement can be trusted to belong to the tree it names, and a precision the reading was never
+taken at defeats exactly that. So the fix is **not** to make the value live.
+
+**The defect is the cold launch.** The composition root's `MapLocationProvider` is inert until
+screen 01 asks it to start, and CoreLocation then takes its own time; `VisitLocationProvider` is the
+same. Open any of these four forms before the first fix lands and the model froze `nil`. A usable
+fix then arrives while the form is still being filled in — a measure sheet is a kind, a method, a
+unit and a number typed on a keypad; a camera session is up to three framings, a note and a chip
+row — and the arrival was an event nothing in those screens could observe.
+
+A `nil` accuracy is not a blank field. `FieldCaptured.isEligibleForGrowthCharting` treats it as
+unusable rather than assumed good, deliberately and correctly ("unknown accuracy is treated as
+unusable rather than assumed good", `CoreEntity`). So on screen 16 the whole of it lands: the person
+walked to the tree, put a tape around the trunk at 1.4 m, typed the number, and the reading was
+excluded from that tree's growth chart for the lifetime of the record, on a phone that had a
+perfectly good fix by the time they pressed Save.
+
+**What changed.** The parameter is a closure — `@escaping @MainActor () -> Double?` — which is the
+shape `now` already has beside it in all four initialisers, and for the same reason: it is a
+question about the present, and a form is a thing somebody fills in over a minute. Each model asks
+it once, at the moment the contribution is written:
+
+- `MeasureModel.save()`, `CareLogModel.save()` and `CheckInModel.save()` read it where they used to
+  read the stored `Double?`.
+- `VisitCameraModel.logVisit()` sets `draft.gpsAccuracyM` beside `draft.note` and
+  `draft.phenologyTags`, which is where the other two properties of the contribution are already
+  taken. The draft is built without one; the visit id still is minted at init, because that names
+  the file the photograph is written to and has to exist before the shutter.
+
+Submission is the moment the contribution exists, so this preserves the "accuracy of the fix it was
+taken on" intent rather than trading it away — and it fixes the `nil`, because by the time a form
+has been filled in a fix has almost always arrived.
+
+`MeasureModel.presentation` reads it on every pass, which makes screen 16's chart notice — the
+sentence under the CTA — track the fix. That sentence is a prediction about the next tap and has to
+be made from the fix that tap would use. It withdraws itself when the first fix lands, which is
+**not** E155's withdrawal: what it explained has actually stopped being true, and the screen it sits
+on is full either way.
+
+There is a race left, and it is the right one: the notice can say "chartable" and the fix can then
+degrade in the second before Save, so the reading is stamped 40 m after being promised a dot. Both
+sentences are true at the moment they are made, and any alternative freezes something.
+
+**On whether D6's exclusion is silent, which was the second question.** It is not, and the premise
+should be retired rather than acted on.
+
+- Before the save, `MeasurePresentation.chartNotice` prints `Without a location fix the reading is
+  saved but stays off the growth chart.` — and a separate sentence naming the metres when the fix
+  is real and too poor. `ChartEligibility` has three cases and not two precisely so that the screen
+  can say which.
+- After the save, the reading is on screen 11's log. D6 excludes a reading from *charting*; it does
+  not delete it, and `GrowthHistoryPresentation.logRows` carries every non-deleted measurement,
+  dot or no dot. When nothing is chartable the screen prints a sentence where the cards would have
+  been.
+
+So E126's invariant — a screen showing nothing must say why — was already honoured at both ends.
+What was wrong is one word of it. Screen 11's sentence read `taken with a GPS fix too weak to
+attribute them to this tree`, which describes a bad fix to somebody whose phone had not answered
+yet, and on the broken app that was not an edge case: the cold-launch population was the *whole*
+population of nil-accuracy readings. `GrowthHistoryPresentation.noChartReason` now picks between
+that sentence and `saved before the phone had a location fix`, on whether any reading in the record
+carries an accuracy at all. This is screen 16's own rule — "no fix" and "a poor fix" are different
+facts about the world although D6 treats them the same — applied to the screen that reports the
+consequence.
+
+Nothing was added to 04, 05 or 09. Growth charting reads measurements and only measurements
+(`TreeMeasurement.isChartable` is its one gate), so a visit, a check-in and a care event lose
+nothing by carrying a `nil`; a notice on those three would be a warning about a consequence that
+does not exist.
+
+**What the tests are.** `CypressTests/GPSAccuracyAtSubmitTests.swift`. Every warm-path assertion
+passes either way — `MeasurementAccuracyTests` walks an accuracy end to end and was green against
+this bug for the whole of its life — so each test here moves the fix *between* mount and submit and
+asserts which of the two the record ends up carrying. One asserts the opposite direction: two
+readings taken in one standing, either side of the fix improving, each keeping its own moment. That
+one is the guard against a later round replacing the closure with a live value.
+
+---
+
+### E159 — Screen 04 lost its framing chips off the top of the display at the accessibility sizes
+
+SCREENS 04 draws a `flex:1` viewfinder over a `flex:none` tray, with the framing chips and the
+shutter as an `.overlay` on the viewfinder's bottom edge. That is drawn at the default type size and
+at no other, and R14 is the ruling that says what the screen does at the rest of the ramp.
+
+What went wrong is the overlay, not the tray. An overlay aligned `.bottom` pins its bottom edge to
+the viewfinder's, so as the tray grows with the type ramp and squeezes the viewfinder shorter than
+the overlay, the chip row grows **upward, off the top of the screen** — under the status bar and the
+Dynamic Island, where it cannot be read and does not answer a tap. E152's feature, one session taking
+a full tree, a trunk and a leaf, was not merely cramped at AX5. It was unreachable.
+
+R14's answer: the viewfinder keeps a floor and the controls beneath it scroll. Three things it
+deliberately left to be decided against the running layout, and what they were decided as.
+
+**The floor is 524 pt on a 393 pt phone, and it is read off the capture rather than chosen.**
+`VisitCameraController` sets `sessionPreset = .photo`, which is 4:3 on every iPhone, and
+`VisitCameraPreview` sets the layer to `.resizeAspectFill`. A viewfinder `width` points wide
+therefore shows the whole frame at exactly `width × 4/3`; taller than that and the preview crops the
+sides, shorter and it crops the top and the bottom — and on a street tree the first thing off the top
+is the crown. So the floor is the height at which the viewfinder stops showing the photograph it is
+about to take, which is where R14's reasoning stops being comfort and becomes fact.
+
+**The switch is `isAccessibilitySize`, and it is not a number of its own.** Measured on the running
+app: the viewfinder is 583 pt at the drawn size, 550 at `xxxLarge`, 503 at AX1. The floor first binds
+exactly where that predicate first turns true, so no second spelling of "large text" was invented.
+
+**The shutter pins and the chips travel.** A person on this screen is holding a phone up at a tree,
+and aiming and firing are one gesture: a shutter you have to scroll to find is a shot you lose your
+aim to reach. It also costs a constant 68 pt at every text size where the controls' cost grows
+without bound. The argument the other way, so it is on the record rather than lost: those points are
+viewport the controls could have had, and once all three framings are photographed the shutter has
+nothing left to do. Refused because the screen cannot know when a contributor is finished, and
+because a control that is sometimes pinned and sometimes not is worse than one that always is.
+
+The rule the variant follows, stated so the next person does not have to derive it: **the viewfinder
+carries only furniture whose size does not depend on the type ramp** — the close button, the framing
+corners, the shutter. Everything that grows with the ramp moves into the scrolling controls. The one
+exception is the guidance pill, because with the chips moved down it is the only thing left saying
+which framing is being aimed; it is top-anchored, so it grows down into the frame rather than off the
+display, and it is hit-transparent.
+
+`SCREENS.md` §3 · 04 now draws the result as screen 04's accessibility variant, per R14's own
+instruction that whoever builds it leaves a spec rather than a precedent.
+
+---
+
+---
+
+### E160 — The tests written for that variant could not run, and had never been run
+
+Worth recording separately from the fix, because the fix was sound and the tests were not, and the
+combination is the exact shape this project keeps catching itself in.
+
+Two tests were written to host screen 04 and ask which control ended up on which side of the fold, by
+**accessibility label**. Every one of those lookups came back empty. A hosted SwiftUI tree in an
+off-screen window vends no accessibility elements at all: probed directly, a bare
+`Button("Hello button")` inside a `UIHostingController` reports `accessibilityElementCount() == 0`,
+and there are no elements anywhere in its hierarchy — SwiftUI builds that tree lazily for a real
+assistive client, and a unit-test host is not one. So both tests failed on the first run they ever
+got. They had been committed unreviewed after the agent writing them was killed mid-run, in the
+window between writing them and running them.
+
+The same helper had a second, independent fault. `firstScrollView(in:)` returned the first
+`UIScrollView` in the hierarchy, and `UITextView` **is** a `UIScrollView` — screen 04's note field is
+a `TextField(axis: .vertical)`, which UIKit backs with one, and it sits inside the controls. So the
+helper answered "yes, the controls scroll" on the drawn layout, where they do not, and reported the
+note field's origin as the viewfinder's floor.
+
+Rewritten on geometry, which UIKit will answer for a hosted tree, and which is what R14's split
+actually is: the viewfinder ends at its floor, the scroll view begins exactly there, and it holds
+more than fits in it. **Which** control is on which side is verified by looking, per ARCHITECTURE §7
+and exactly as `theChipRowFitsTheWidthItIsGivenAtAX5` already says of the row above it.
+
+Two measuring traps found on the way, written down because both would have been read as the view
+being wrong rather than the ruler:
+
+- `UIHostingController` resolves a safe area even in a bare window and folds it into
+  `sizeThatFits`. A phenology chip measured 83.67 pt tall where the layout draws it at 56.67, and the
+  add-tree well measured 535 pt where it draws 481 — the same 54 pt of inset both times.
+  `safeAreaRegions = []` is the fix and it is load-bearing.
+- SwiftUI wraps a `ScrollView` in a `PlatformContainer` and positions *that*, leaving the scroll view
+  at its parent's origin. `scroll.frame.minY` is therefore 0 on a scroll view sitting 524 pt down the
+  screen; the measurement has to be converted into the root's coordinate space.
+
+---
+
+---
+
+### E161 — The phenology chips on screen 04 were squeezed until their labels broke mid-word
+
+Reported by the project owner: *"The photo check in labels are too narrow. Text gets all compressed
+in them as they're currently implemented."* **At the default text size**, which is the part that
+matters — this was not an accessibility-size defect.
+
+The phenology row was an `HStack`, and an `HStack` compresses its children rather than overflowing
+its proposal. A row wider than the space it is given does not spill off the phone; it squeezes every
+chip below the width its own label needs, and the labels wrap. A curated deciduous species offers all
+six tags, and six chips want about 537 pt in the 361 pt the tray leaves them. On a 393 pt phone at
+`.large` the row read:
+
+> `Leaf/out · Full/leaf · Flow/ering · Fruit/ing · Fall/colo/r · Bar/e`
+
+Every label broken mid-word, one of them across three lines.
+
+**Why it survived so long.** `VisitPhenologyVocabulary` offers this row "for the curated 40 and
+nobody else" — a species needs a curated field-guide entry *and* a sourced `leaf_retention` before a
+single chip appears. No preview and no fixture in the project had ever stood screen 04 over one of
+the 40 with a habit on it, so every rendering of this screen the suite had ever made showed an empty
+phenology row. The owner met it immediately, because London Plane is both one of the 40 and the
+commonest street tree in San Francisco.
+
+The fix is `CypressChipFlow`, the component the app's other three chip rows already use. The
+mechanism was already written down in this codebase, in `VisitShotTypeChips`' own note explaining why
+*that* row had stopped being an `HStack` — and that note even named this row as the place still doing
+it, "which is what the phenology row below already looks like at AX5". It was wrong about one thing
+only, and it is the thing that made this a live defect rather than a known rough edge: it does not
+wait for AX5.
+
+The row is now its own type, `VisitPhenologyChips`, for the reason `VisitShotTypeChips` already
+established: a row whose geometry is the defect has to be hostable on its own, or the test guarding
+it is a test of its parent.
+
+---
+
+---
+
+### E162 — The "Add this tree" photo well was a landscape frame, so the viewfinder cropped the shot
+
+Reported by the project owner: *"Add this tree photo window is still awkwardly horizontal and doesn't
+capture full view on vertical orientation."*
+
+"Still" is exact. #79 had already fixed the reported half of this — *"photo for custom tree should be
+standard photo style, right now it's horizontal and cuts off vertical frame"* — by drawing the
+captured still with `PhotoFit` instead of `scaledToFill`. That stopped the crop. It did not change
+the **well**, and the well was the actual defect.
+
+`VisitMetrics.AddTree.wellHeight` was `268`, and its own comment said what it was meant to be: "the
+4:3 frame that photograph will be, at the gutter's width on the drawn 393 pt frame". 361 × 3/4 ≈ 271.
+That is a 4:3 frame lying on its side. A phone held upright captures **3:4 portrait**, which at 361 pt
+wide is 481 pt tall. One inverted ratio — dividing where the photograph multiplies — and the well had
+been a landscape letterbox for its whole life.
+
+What it cost, in each of the well's two states:
+
+- **Live.** The well holds `VisitCameraPreview`, whose layer is `.resizeAspectFill`. A 3:4 frame
+  filling a 361 × 268 landscape box is scaled until it covers, cropping 44 % off the top and the
+  bottom. A volunteer aiming at a street tree could not see the crown they were framing. This is the
+  half the owner's "doesn't capture full view" names, and it is the worse half: a viewfinder that
+  does not show the shot.
+- **Still.** After #79 the photograph was whole, but whole inside a box the wrong shape for it —
+  drawn at 201 × 268 with a third of the well standing empty on either side.
+
+The well now takes its shape from `Camera.captureAspectRatio`, inverted for SwiftUI's width ÷ height
+convention, so the well and screen 04's viewfinder floor cannot drift apart: they are two views of
+the same photograph, and that value is read off the capture path rather than chosen. It is an aspect
+ratio and not a height, so the well is right on a phone this was never measured on.
+
+**No cap, deliberately.** A maximum height would be a return to the letterbox by a smaller margin:
+any well shorter than its own capture crops the live preview again, which is the defect. The composer
+scrolls and the CTA is pinned outside that scroll, so a taller well costs scrolling, never reach.
+
+One consequence worth naming, because the old behaviour had been written up as a feature. The code
+argued that the jump from a filling viewfinder to a fitted still was intended — the frame "pulls
+back" at the moment of capture and shows what the well was never going to show. With the well the
+same shape as the capture there is no jump: fill and fit are the same drawing, and what you aimed at
+is what you are shown. The old behaviour was a symptom being read as a design, and what it really
+told a volunteer was that the viewfinder had been lying to them.
+
+---
+
+### E163 — Two of screen 10's four glyphs were drawn with path defects, not with the wrong geometry
+
+Reported by the project owner walking the app on 2026-07-27: *"On share screen airdrop symbol is
+malformed and link symbol looks weird."* Both marks are hand-drawn `Shape`s — this app has no SF
+Symbols and no icon font (SCREENS.md §2 C16) — so there was no wrong symbol name to find. There were
+two bugs in two paths, and both of them are the same class of mistake: a `Path` API that appends to a
+current point being used as though it started a fresh one.
+
+**AirDrop — two arcs joined by a chord.** `ShareAirDropArcs` drew its two concentric arcs in a `for`
+loop of `path.addArc`, with no `path.move(to:)` between them. `addArc` appends to the current
+subpath, so the second call first drew a **straight line** from the inner arc's right-hand end
+`(16.9, 14.1)` to the outer arc's left-hand start `(3.4, 11.5)` — a chord clean across the mark.
+At `1.8pt` that chord ran within a stroke-width of the inner arc for most of its length and the two
+merged into a filled-looking blob with a spur out of the lower left. What the owner saw was not a
+questionable mark, it was a broken one.
+
+**The dot had already been moved to escape it, which is the part worth recording.** The dot was
+offset `0.30 · side` *below* the arcs, under a comment stating that at 24pt a centred dot touches the
+inner arc. It does not, and could not: the inner arc's nearest point to its own centre of curvature
+is `radius − stroke/2 = 5.1pt` away and the dot's radius is under 2. What the dot would have touched
+is the **chord**, which crossed 4.4pt above that centre. So a real defect was diagnosed in the wrong
+element, and the repair — a full stop floating below the mark — was carried in the file as a
+deliberate decision, with a reason that reads plausibly and is false. The dot is now at the arcs'
+centre of curvature, where it belongs, and the chord is gone.
+
+**The mark stays `arcs + dot`.** Apple's own AirDrop glyph is an upward triangle under the arcs, and
+the fixed mark still reads closer to a wi-fi symbol than to Apple's. That is what SCREENS.md 10 §4
+transcribes — `AirDrop` (arcs + dot) — and swapping the dot for a triangle would be changing a
+transcribed description rather than drawing it, which is the design's call. Flagged here rather than
+taken.
+
+**Copy link — each cap swept a quarter turn instead of a half.** `ShareChainLink` is two capsule ends
+on the box's leading diagonal, each an arm in, a half turn, and an arm back out, plus a bar on the
+diagonal joining them. The upper cap was written `startAngle: 225, endAngle: -45`, which is a **90°**
+sweep, not the 180° the construction needs: it stopped at the top of its circle instead of at the far
+side of it, and the arm that followed was then drawn from that wrong point diagonally back across the
+mark. The lower cap had the same defect mirrored (`45 → 135`). The result was two lopsided hooks each
+with a stroke cutting through it, which at 24pt reads as a paintbrush — which is what the owner was
+looking at. The arms' own endpoints were correct all along; the fix is the two sweeps and the two
+points the second arm starts from.
+
+**Neither defect was visible to the test suite and neither ever could be.** 819 tests pass over these
+files; `ScreenSweepShots` photographs screen 10 in four appearances and asserts only that an image
+came out. Both were found by cropping the 24pt icon well out of that image and looking at it.
+
+---
+
+### E164 — `Add a reading` sat in the Height box and opened the DBH form
+
+Reported by the project owner the same day: *"'add a reading' is misleading because it's in a box for
+Height … if adding a reading for height the height sub screen should open, not dbh."* Two defects
+under one sentence.
+
+**The routing was a plain bug.** `Route.measure` carried a tree id and nothing else, and
+`MeasureDraft.kind` defaults to `.dbh` — SCREENS.md 16 §2's drawn selection. So every entrance to
+screen 16 opened on DBH, including the empty `Height` stat card whose whole meaning is that this
+tree has no height on it. A contributor entering from the Height box and typing a number without
+looking at the segmented control wrote a **trunk diameter in metres**, and nothing downstream would
+have caught it: `MeasurePresentation`'s sanity pill compares against previous readings *of the
+drafted kind*, of which there were none. The route now carries a `MeasurementKind` and the profile
+hands it the kind of the card that was tapped.
+
+**The framing was a design question, and is answered in RULINGS R15.** A general "add any reading"
+action was drawn inside a per-measure box and vanished once the tree had both measures, which left a
+fully-measured tree with no door to screen 16 at all — E74's original gap, reopened for exactly the
+trees that have most to record. R15 splits the two entrances: the empty stat slot stays 03's door for
+a *first* reading of its own kind, and screen 11 gains E74's own named candidate — an `Add a reading`
+control under the measurement log — as the door for a repeat one. R15 states what it overrules.
+
+**The first fix passed a test suite that could not see half of it, and that is the part worth
+keeping.** The tests written for the routing defect all stopped at `TreeProfilePresentation
+.StatDestination`. One hop further on — `TreeProfileView.route(for:)`, a private instance method
+turning that destination into a `Route` — was reachable only by the renderer. Rewriting that single
+line as `case .measure: return .measure(treeID, .dbh)` reinstates the original defect exactly, and
+the whole suite stays green while it does. Screen 11's new link had the same shape: its `Route` was
+built inside a `Button` closure with a hardcoded kind.
+
+The remedy was already in the codebase and is now applied to both: `MapHomeView.route(for:)` is
+`static` and `PinSetDestinationTests` calls it directly, on the reasoning that a second copy of a
+mapping is how a basin comes to open a tree's profile (E113). Both of screen 16's entrances are now
+`static` mappings a test can call — `TreeProfileView.route(for:treeID:)` and
+`GrowthHistoryView.route(forAddReading:)` — and the kind screen 11 opens on has moved out of the view
+into `GrowthHistoryPresentation.addReadingKind`.
+
+The general rule this is the third instance of: **a comment naming which layer owns a decision is not
+a mechanism that makes the other layer honour it.** The comment on the line above this bug said, in as
+many words, "which card means which kind is the presentation's call, not this view's" — and the view
+was free to ignore it, because nothing could call the view.

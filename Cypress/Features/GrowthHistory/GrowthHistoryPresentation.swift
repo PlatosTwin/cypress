@@ -243,6 +243,73 @@ struct GrowthHistoryPresentation {
     /// Measurements exist but D6 admits none of them to a chart. Distinct from `isEmpty`: the log
     /// renders, the charts do not, and neither fact is an error.
     var hasRecordButNoChart: Bool { charts.isEmpty && !logRows.isEmpty }
+
+    /// The sentence that stands where the cards would have been, or nil when there are cards.
+    ///
+    /// **Two sentences and not one**, for exactly the reason `MeasurePresentation.ChartEligibility`
+    /// has three cases and not two: "no fix" and "a fix too poor to use" are different facts about
+    /// the world although `isEligibleForGrowthCharting` treats them the same, and screen 16 already
+    /// says which of them applies *before* the save. This screen said `too weak` over readings whose
+    /// accuracy was never recorded at all — describing a bad fix to somebody whose phone had not
+    /// answered yet, which is a claim about their GPS the app is not entitled to make.
+    ///
+    /// It was reachable, and until this round it was the *common* case: every one of these four
+    /// forms froze its accuracy at mount, so a contribution begun before the first fix carried a
+    /// `nil` for ever (ERRATA E158).
+    var noChartReason: String? {
+        guard hasRecordButNoChart else { return nil }
+        // Any recorded accuracy at all means at least one of these readings really was measured and
+        // really was too poor; with none, nothing here was ever weighed.
+        let anyFixRecorded = profile.measurements
+            .contains { $0.deletedAt == nil && $0.gpsAccuracyM != nil }
+        return anyFixRecorded
+            ? GrowthHistoryCopy.noChartableState
+            : GrowthHistoryCopy.noFixRecordedState
+    }
+
+    // MARK: The general entrance to screen 16 (RULINGS R15)
+
+    /// Whether this screen offers to add a reading — **the app's only measure entrance that is not
+    /// tied to one measurement, and the only one that survives a fully measured tree.**
+    ///
+    /// ── Why it is here and not on 03 ──────────────────────────────────────────────────────────
+    /// E74 named this exact control — "an 'add a reading' control under 11's measurement log" — as
+    /// the least-invented candidate, and E74/E98 then resolved against it, putting the entrance on
+    /// screen 03 as an *empty* measurement stat card. That argument was about a **first** reading and
+    /// it still holds: somebody standing at a tree with a tape should not have to find a history
+    /// screen, and does not, because the empty slots are on the profile where every other field
+    /// action starts.
+    ///
+    /// What it left unanswered is the **repeat** reading. An empty slot is drawn only while its
+    /// measurement is missing, so a tree carrying both a height and a DBH has no slot, no door and no
+    /// route to 16 anywhere in the app — the trees with the most growth to record being precisely the
+    /// ones with no way to record it. That is E74's own gap reopened, and it passed 819 tests for
+    /// weeks. Somebody adding a second height is by definition interested in the series, and this is
+    /// the screen that draws the series. See RULINGS R15.
+    ///
+    /// ── When it draws ─────────────────────────────────────────────────────────────────────────
+    /// Whenever the record can take a contribution, including over the empty state: `isEmpty` is the
+    /// state every tree in the shipped inventory is in, and a screen that says
+    /// `No measurements on this tree yet.` with no way to add one is the emptiest room in the app.
+    /// This is R11's rule — an empty state must name what would fill it — with the naming made into
+    /// a control.
+    ///
+    /// Gated on `acceptsNewContributions` and nothing else, which is E95's rule and the same gate
+    /// `TreeProfilePresentation.offersMeasurement` applies from the other side: 11 is reachable with
+    /// a removed tree (a memorial's readings are still readings), and a read-only record must not be
+    /// handed a write.
+    var offersAddReading: Bool { profile.tree.status.acceptsNewContributions }
+
+    /// Which of 16 §2's two segments the general link opens on.
+    ///
+    /// `.dbh`, which is SCREENS.md 16 §2's drawn selection — this is the one entrance in the app
+    /// that names no measurement, so it has none to carry.
+    ///
+    /// **Named here rather than written into the view's `Button`**, for the reason
+    /// `TreeProfileView.route(for:treeID:)` is `static`: a kind that only the renderer can reach is
+    /// a kind nothing checks, and a hardcoded one in a view body is exactly the hop that let R15's
+    /// defect survive its first fix.
+    static let addReadingKind: MeasurementKind = .dbh
 }
 
 // MARK: - Copy
@@ -278,9 +345,16 @@ enum GrowthHistoryCopy {
     /// (E63).
     static let emptyState = "No measurements on this tree yet."
 
-    /// **NOT SPECIFIED**, same reasoning. Readings exist and none of them may be charted.
+    /// **NOT SPECIFIED**, same reasoning. Readings exist, at least one carries a real fix, and none
+    /// of them is good enough to chart.
     static let noChartableState =
         "These readings were taken with a GPS fix too weak to attribute them to this tree, so none of them is charted."
+
+    /// **NOT SPECIFIED**, same reasoning again — and a separate sentence because a reading with no
+    /// accuracy at all was not taken on a weak fix, it was taken before the phone had one. Saying
+    /// `too weak` over it describes a measurement nobody made. See `noChartReason`.
+    static let noFixRecordedState =
+        "These readings were saved before the phone had a location fix, so none of them can be attributed to this tree and none is charted."
 
     /// 11 §6's footnote is **deliberately not rendered**. It reads `Tap any point to open the
     /// observation behind it.`, and there is nothing behind a point to open: a measurement is not an
@@ -290,6 +364,13 @@ enum GrowthHistoryCopy {
     /// not keep. Recorded in ERRATA (E64), with the string kept here so it returns unedited the day
     /// the destination is designed.
     static let unrenderedFootnote = "Tap any point to open the observation behind it."
+
+    /// **NOT SPECIFIED**; decided in RULINGS R15, see `GrowthHistoryPresentation.offersAddReading`.
+    ///
+    /// E74's own phrase, which is also `TreeProfilePresentation.emptyMeasurementValue` — so the two
+    /// controls that write a reading call the thing by the same name, as
+    /// `TreeProfilePresentation.growthLinkTitle` already does for the control that reads them back.
+    static let addReadingTitle = "Add a reading"
 }
 
 // MARK: - Screen metrics
