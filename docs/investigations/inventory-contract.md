@@ -242,10 +242,23 @@ refactored code, into two separate roots:
 1d454cad9f3c00a2ead020e5028381a0c31758f7ac11687583b28188072b755c  new/seed/schema.sql
 ```
 
-Byte for byte, 195,309 rows, same species map, same schema. After the six receipt keys were added
-the file necessarily differs, and the tables still do not: `trees`, `species`,
-`species_assertions`, `neighborhoods` and `trees_rtree` all hash identically, and `seed_meta`
-differs by exactly six added keys with no changed values.
+Byte for byte, 195,309 rows, same species map, same schema. Once the receipt keys were added the
+whole file necessarily differs, and the tables still do not — rerun after every later change:
+
+```
+trees               IDENTICAL  5841a9dfc94ce9c112e7
+species             IDENTICAL  7cf0701a7a13e1c182e4
+species_assertions  IDENTICAL  d653dd719f020666fceb
+neighborhoods       IDENTICAL  94da18d9830860fcbe21
+trees_rtree         IDENTICAL  8cdabd49d0752d320215
+seed_meta           + identity_id_space, identity_prefix, ingest_contract,
+                      inventory_datasf_id_space, planting_sites_stated_by_source,
+                      planting_sites_inferred_from_absent_species, records_not_a_tree
+                    - nothing removed, no shared key's value changed
+```
+
+All 145,837 rows of the shipped seed carry an `external_ref`, and the Swift suite re-derives every
+one of their uuids rather than pinning a sample.
 
 ### Not proved: the city adapter end to end
 
@@ -268,10 +281,12 @@ What that costs, precisely:
   _fields`) over a hand-built five-record layer including the `BOTANICAL`-null swap, the city's
   literal `Potential Site`, a record with no species text at all, and a positionless record. It is
   not covered against 133,577 real ones.
-- The Swift suite's three receipt-dependent tests **return without asserting** on a seed built
-  before the contract, the same accommodation `InventorySource.init(id:seedMeta:)` already makes
-  for a receipt that predates per-row provenance. The identity, id-space and absent-is-NULL tests
-  do not need a rebuild and run against the shipped file today.
+- **Seven of the nine Swift tests assert against the shipped seed and are proven able to fail**
+  (§7a). The other two — that the receipt names this contract, and that `sf`'s declared prefix is
+  empty — activate only on a seed the contract built, and return without asserting otherwise. That
+  is the same accommodation `InventorySource.init(id:seedMeta:)` already makes for a receipt
+  predating per-row provenance, but it is worth saying plainly: **two of the nine are inert until
+  someone rebuilds.**
 
 The one command that closes this, when someone with the owner's authority wants it:
 
@@ -285,6 +300,47 @@ Expected: 145,837 rows unchanged, `records_not_a_tree` = **85** (that one is che
 shipped seed today: 85 rows are `alive` with no species), and the receipt gains
 `planting_sites_stated_by_source` + `planting_sites_inferred_from_absent_species`, which sum to
 12,413 and whose split is the number §1 declines to guess.
+
+---
+
+## 7a. Every new test was broken deliberately and watched go red
+
+A test whose failure mode nobody has seen is a test nobody should trust. Each break below was
+applied, run, and reverted; the worktree is clean.
+
+**Python — `Tools/test_inventory_contract.py`, 103 checks.** Baseline 103 passed / 0 failed.
+
+| break | result |
+|---|---|
+| give `sf` a non-empty `identity_prefix` | 100 / **3 failed** — uuid derivation moved, prefix no longer empty, the two SF inventories stopped agreeing |
+| let a planting site name a species | 102 / **1** |
+| accept the source's `DBH = 0` as a measurement | 99 / **4** — the parser, and both adapters' records |
+| classify every placeholder as `STATED` (hide #94) | 96 / **7** |
+| give `kind` and `kind_basis` defaults | 101 / **2** |
+
+Restored: 103 / 0.
+
+**Swift — `CypressTests/InventoryContractTests`, 9 tests.** Baseline 9 passed.
+
+| break | result |
+|---|---|
+| `uuidV5` writes version 4 | **2 issues** — the RFC control, and 145,837 rows' derivation |
+| fall back to prefix `us-ca-sf:` instead of `""` | **1** — every row's uuid mismatches |
+| a row claims an inventory the receipt cannot describe | **1** — `InventorySource(id:seedMeta:)` returns nil |
+| invert the blank-string query so it counts non-blanks | **1** — `blanks → 142282` |
+| expect 9,018 bucket-less city rows instead of 9,019 | **1** — the DBH sentinel discriminator |
+| count `alive` where the vacancy total is read | **1** — `12413` vs `133424` |
+| count the not-a-tree rows as vacant | **1** — `85` vs `12413` |
+
+Two of the nine could not be broken this way, and it is the same limitation as §6: **the receipt
+names this contract**, and **`sf`'s declared prefix is empty**, both activate only on a seed the
+contract built. Against the shipped seed they return without asserting. Seven of nine have teeth
+today; two are waiting on a rebuild.
+
+One process note worth carrying: a `grep 'Test run with' | tail -1` over an xcodebuild log reported
+`Test run with 0 tests passed` for a run that had in fact gone red, because the log carries more
+than one such line. The issue lines were the reliable signal. That is the same class of trap as
+`Executed 0 tests`.
 
 ---
 
