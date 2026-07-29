@@ -81,7 +81,7 @@ struct ShareDestinationGlyph: View {
             // drawing between its two arcs — see that shape — which crossed the box 4.4pt above the
             // centre and merged with the inner arc into a blob. The dot was moved to escape a
             // defect that was somewhere else, and the mark ended up with a detached full stop under
-            // it. See docs/errata-pending/share-glyphs-and-readings.md.
+            // it. See E163.
             Circle()
                 .fill(tint)
                 .frame(width: Self.side * 0.16, height: Self.side * 0.16)
@@ -173,7 +173,7 @@ private struct ShareAirDropArcs: Shape {
 /// opposite sides, so the two halves read as two rings hooked through each other rather than as one
 /// ring cut in half. The bar runs *on* the diagonal, between the two inner arms, and joins them.
 ///
-/// ── What was wrong (ERRATA — see docs/errata-pending/share-glyphs-and-readings.md) ─────────
+/// ── What was wrong (ERRATA E163) ─────────
 /// Each cap swept **90° instead of 180°**, so it stopped at the top of its circle instead of at the
 /// far side of it, and the arm that followed was then drawn from that wrong point back across the
 /// mark. The result was two lopsided hooks with a stroke cutting through each, which at 24pt reads
