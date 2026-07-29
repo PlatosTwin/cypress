@@ -305,19 +305,7 @@ struct VisitAddTreeView: View {
     /// and lets the excess hang, so the layout is the card's and only the drawing overflows. Seen by
     /// looking, on the simulator, after the tests were green.
     private var photoWell: some View {
-        RoundedRectangle(cornerRadius: CypressRadius.cardLg, style: .continuous)
-            .fill(CypressColor.surfaceEmptyThumb)
-            .aspectRatio(VisitMetrics.AddTree.wellAspectRatio, contentMode: .fit)
-            .overlay { wellContents }
-            // `.clipShape`, not `.clipped()`: ERRATA E114 is this codebase's own record of an overhang
-            // that clipped its drawing and kept its touches, swallowing every control beneath it.
-            // Clipping to the shape clips both.
-            .clipShape(RoundedRectangle(cornerRadius: CypressRadius.cardLg, style: .continuous))
-            .cypressDashedBorder(
-                CypressColor.borderDashedStrong,
-                radius: CypressRadius.cardLg,
-                width: CypressSpacing.Component.outlineWidth
-            )
+        VisitAddTreePhotoWell { wellContents }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(model.hasPhoto ? VisitAddTreeCopy.wellFilled : VisitAddTreeCopy.wellEmpty)
     }
@@ -461,6 +449,46 @@ struct VisitAddTreeView: View {
         .padding(.horizontal, CypressSpacing.gutter)
         .padding(.top, VisitMetrics.Identify.footerTop)
         .padding(.bottom, CypressSpacing.bottomCTA)
+    }
+}
+
+// MARK: - The photo well
+
+/// Screen 14 §2's dashed well, at the shape of the photograph it holds.
+///
+/// ── Why this is its own type ───────────────────────────────────────────────────────────────
+/// Because its shape is the whole of #113 and a `private var` on the screen cannot be measured.
+/// `VisitPhenologyChips` was pulled out for the same reason on the same day, and `VisitShotTypeChips`
+/// before both — a row or a frame whose geometry is the defect has to be hostable on its own, or the
+/// test that guards it is a test of its parent. See `theAddTreeWellIsAPortraitCaptureFrame`.
+///
+/// **The card is the base and the contents are an overlay, not a `ZStack`.** A `scaledToFill`
+/// photograph reports a size far larger than the frame it is drawn in, and a `frame(maxWidth:
+/// .infinity)` wrapped around it takes *that* size rather than the proposal — which is what this
+/// screen did on its first run: choosing a photo pushed the whole column wider than the phone and
+/// dragged the header and the CTA off to the left. `.overlay` sizes its content against the base and
+/// lets the excess hang, so the layout is the card's and only the drawing overflows. Seen by looking,
+/// on the simulator, after the tests were green.
+struct VisitAddTreePhotoWell<Content: View>: View {
+
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: CypressRadius.cardLg, style: .continuous)
+            .fill(CypressColor.surfaceEmptyThumb)
+            // The shape, and the reason it is a ratio rather than a height, are in
+            // `VisitMetrics.AddTree.wellAspectRatio`.
+            .aspectRatio(VisitMetrics.AddTree.wellAspectRatio, contentMode: .fit)
+            .overlay { content() }
+            // `.clipShape`, not `.clipped()`: ERRATA E114 is this codebase's own record of an overhang
+            // that clipped its drawing and kept its touches, swallowing every control beneath it.
+            // Clipping to the shape clips both.
+            .clipShape(RoundedRectangle(cornerRadius: CypressRadius.cardLg, style: .continuous))
+            .cypressDashedBorder(
+                CypressColor.borderDashedStrong,
+                radius: CypressRadius.cardLg,
+                width: CypressSpacing.Component.outlineWidth
+            )
     }
 }
 
