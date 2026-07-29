@@ -208,7 +208,9 @@ enum DebugDeepLink {
                 // **`measuredTree`, not `standingTree`** — see that function. This case does not
                 // write, but the test behind it does, and a saved reading outlives the launch
                 // (ERRATA E133).
-                router.push(.measure(try await measuredTree(api)))
+                // `.dbh`, which is 16 §2's drawn selection — this case opens the screen as screen
+                // 11's general link does, naming no measurement (RULINGS R15).
+                router.push(.measure(try await measuredTree(api), .dbh))
             case .species:
                 router.push(.species(try await anySpecies(api)))
             case .outbox:

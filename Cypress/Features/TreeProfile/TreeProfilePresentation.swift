@@ -66,7 +66,25 @@ struct TreeProfilePresentation {
     /// only asks where a card goes.
     enum StatDestination: Hashable {
         case growthHistory
-        case measure
+        /// Screen 16, **on the measurement this card is a card for**.
+        ///
+        /// The kind is the card's own, not a default. An empty slot is drawn inside a box labelled
+        /// `Height` or `DBH` and its entire meaning is that *that* measurement is missing, so the
+        /// form it opens is that measurement's form. It carried no kind until RULINGS R15, and
+        /// every entrance therefore opened on `MeasureDraft`'s default of DBH — including the
+        /// Height card, whose label then contradicted the screen it led to.
+        case measure(MeasurementKind)
+
+        /// Whether this is a door to screen 16 at all, without asking which measurement.
+        ///
+        /// Named because `== .measure` stopped compiling when the case gained its payload, and the
+        /// four places that asked it — three of them checking that a read-only record is offered no
+        /// write (E95) — are asking about the *door*, not the kind. Rewriting them as `if case`
+        /// would have buried an E95 assertion inside a pattern match.
+        var isMeasure: Bool {
+            if case .measure = self { return true }
+            return false
+        }
     }
 
     /// One card of the stat grid (C11).
@@ -727,7 +745,7 @@ struct TreeProfilePresentation {
                 )
             )
         } else if offersMeasurement {
-            items.append(emptyMeasurementSlot(id: "height", label: "Height"))
+            items.append(emptyMeasurementSlot(id: "height", label: "Height", kind: .height))
         }
 
         if let dbh = latestMeasurement(.dbh) {
@@ -745,7 +763,7 @@ struct TreeProfilePresentation {
             // number is not empty. The Height slot beside it is the door on a city tree.
             items.append(StatItem(id: "dbh", label: "DBH", value: .cityRecord(cityDBH)))
         } else if offersMeasurement {
-            items.append(emptyMeasurementSlot(id: "dbh", label: "DBH"))
+            items.append(emptyMeasurementSlot(id: "dbh", label: "DBH", kind: .dbh))
         }
 
         // The planted year is either the badge or a card, never both — 03 badges `THRIVING` and
@@ -788,12 +806,21 @@ struct TreeProfilePresentation {
     ///   launch day — the same shape of failure E63 records for screen 11.
     /// - Its copy is `Add a reading`, which is E74's own phrase for the control it declined to
     ///   invent. Borrowing the words already written down beats authoring new ones.
-    private func emptyMeasurementSlot(id: String, label: String) -> StatItem {
+    ///
+    /// **It is a per-measure door and nothing else** (RULINGS R15). It is not the app's general
+    /// "record something" action and cannot be, because it exists only while its own measurement is
+    /// missing: a tree carrying both a height and a DBH has no slot at all, and until R15 that tree
+    /// had no way into screen 16 from anywhere. The general entrance is on screen 11, under the
+    /// measurement log, where E74 first proposed it.
+    ///
+    /// Its copy stays `Add a reading` rather than becoming `Add a height`: the box's own label
+    /// already names the measurement, and a card that says `Height` twice is arguing with nobody.
+    private func emptyMeasurementSlot(id: String, label: String, kind: MeasurementKind) -> StatItem {
         StatItem(
             id: id,
             label: label,
             value: .placeholder(TreeProfilePresentation.emptyMeasurementValue),
-            destination: .measure
+            destination: .measure(kind)
         )
     }
 

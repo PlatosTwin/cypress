@@ -198,7 +198,7 @@ struct ScreenEntranceTests {
         .almanac,
         .activity(treeID),
         .memorial(treeID),
-        .measure(treeID),
+        .measure(treeID, .dbh),
         .outbox,
         .site(treeID),
         .pinSet(pinSet),
@@ -269,7 +269,7 @@ struct ScreenEntranceTests {
             "11 has no entrance"
         )
         #expect(
-            live.stats.contains { $0.destination == .measure },
+            live.stats.contains { $0.destination?.isMeasure == true },
             "16 has no entrance"
         )
 
@@ -350,7 +350,7 @@ struct ScreenEntranceTests {
         let subject = Self.presentation()
 
         let height = Self.stat("height", in: subject)
-        #expect(height?.destination == .measure)
+        #expect(height?.destination == .measure(.height), "the Height slot must open 16 on height")
         #expect(Self.isPlaceholder(height?.value ?? .text("")))
         #expect(height?.label == "Height")
 
@@ -364,8 +364,8 @@ struct ScreenEntranceTests {
     func bothSlotsOpenWithoutACityRecord() {
         let subject = Self.presentation(cityDBH: nil)
 
-        #expect(Self.stat("height", in: subject)?.destination == .measure)
-        #expect(Self.stat("dbh", in: subject)?.destination == .measure)
+        #expect(Self.stat("height", in: subject)?.destination == .measure(.height))
+        #expect(Self.stat("dbh", in: subject)?.destination == .measure(.dbh))
     }
 
     @Test("one kind measured, the other not: the card each gets is the card its record earns")
@@ -373,7 +373,7 @@ struct ScreenEntranceTests {
         let subject = Self.presentation(cityDBH: nil, measurements: [Self.heightReading()])
 
         #expect(Self.stat("height", in: subject)?.destination == .growthHistory)
-        #expect(Self.stat("dbh", in: subject)?.destination == .measure)
+        #expect(Self.stat("dbh", in: subject)?.destination == .measure(.dbh))
     }
 
     // MARK: - A read-only record gains no write
@@ -391,7 +391,7 @@ struct ScreenEntranceTests {
             #expect(!subject.acceptsContributions, "\(status) should take no contribution")
             #expect(!subject.offersCheckIn, "\(status) was offered a check-in")
             #expect(
-                !subject.stats.contains { $0.destination == .measure },
+                !subject.stats.contains { $0.destination?.isMeasure == true },
                 "\(status) was offered a measurement slot"
             )
             #expect(
@@ -419,7 +419,7 @@ struct ScreenEntranceTests {
 
             #expect(subject.offersCheckIn, "\(status) lost its check-in")
             #expect(
-                subject.stats.contains { $0.destination == .measure },
+                subject.stats.contains { $0.destination?.isMeasure == true },
                 "\(status) lost its measurement slot"
             )
         }

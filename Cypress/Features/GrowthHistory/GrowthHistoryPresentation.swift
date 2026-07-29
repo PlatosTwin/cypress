@@ -266,6 +266,39 @@ struct GrowthHistoryPresentation {
             ? GrowthHistoryCopy.noChartableState
             : GrowthHistoryCopy.noFixRecordedState
     }
+
+    // MARK: The general entrance to screen 16 (RULINGS R15)
+
+    /// Whether this screen offers to add a reading — **the app's only measure entrance that is not
+    /// tied to one measurement, and the only one that survives a fully measured tree.**
+    ///
+    /// ── Why it is here and not on 03 ──────────────────────────────────────────────────────────
+    /// E74 named this exact control — "an 'add a reading' control under 11's measurement log" — as
+    /// the least-invented candidate, and E74/E98 then resolved against it, putting the entrance on
+    /// screen 03 as an *empty* measurement stat card. That argument was about a **first** reading and
+    /// it still holds: somebody standing at a tree with a tape should not have to find a history
+    /// screen, and does not, because the empty slots are on the profile where every other field
+    /// action starts.
+    ///
+    /// What it left unanswered is the **repeat** reading. An empty slot is drawn only while its
+    /// measurement is missing, so a tree carrying both a height and a DBH has no slot, no door and no
+    /// route to 16 anywhere in the app — the trees with the most growth to record being precisely the
+    /// ones with no way to record it. That is E74's own gap reopened, and it passed 819 tests for
+    /// weeks. Somebody adding a second height is by definition interested in the series, and this is
+    /// the screen that draws the series. See RULINGS R15.
+    ///
+    /// ── When it draws ─────────────────────────────────────────────────────────────────────────
+    /// Whenever the record can take a contribution, including over the empty state: `isEmpty` is the
+    /// state every tree in the shipped inventory is in, and a screen that says
+    /// `No measurements on this tree yet.` with no way to add one is the emptiest room in the app.
+    /// This is R11's rule — an empty state must name what would fill it — with the naming made into
+    /// a control.
+    ///
+    /// Gated on `acceptsNewContributions` and nothing else, which is E95's rule and the same gate
+    /// `TreeProfilePresentation.offersMeasurement` applies from the other side: 11 is reachable with
+    /// a removed tree (a memorial's readings are still readings), and a read-only record must not be
+    /// handed a write.
+    var offersAddReading: Bool { profile.tree.status.acceptsNewContributions }
 }
 
 // MARK: - Copy
@@ -320,6 +353,13 @@ enum GrowthHistoryCopy {
     /// not keep. Recorded in ERRATA (E64), with the string kept here so it returns unedited the day
     /// the destination is designed.
     static let unrenderedFootnote = "Tap any point to open the observation behind it."
+
+    /// **NOT SPECIFIED**; decided in RULINGS R15, see `GrowthHistoryPresentation.offersAddReading`.
+    ///
+    /// E74's own phrase, which is also `TreeProfilePresentation.emptyMeasurementValue` — so the two
+    /// controls that write a reading call the thing by the same name, as
+    /// `TreeProfilePresentation.growthLinkTitle` already does for the control that reads them back.
+    static let addReadingTitle = "Add a reading"
 }
 
 // MARK: - Screen metrics

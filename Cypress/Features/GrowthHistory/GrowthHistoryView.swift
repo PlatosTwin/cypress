@@ -100,6 +100,13 @@ struct GrowthHistoryView: View {
                         emptyState(GrowthHistoryCopy.emptyState)
                     }
 
+                    // 5b · Screen 16's general entrance — the one that is not tied to a measurement
+                    // and does not vanish once the tree has both. See
+                    // `GrowthHistoryPresentation.offersAddReading` and RULINGS R15.
+                    if presentation.offersAddReading {
+                        addReadingLink
+                    }
+
                     // 6 · SCREENS.md's footnote is deliberately absent. See
                     // `GrowthHistoryCopy.unrenderedFootnote` and ERRATA (E64).
                 }
@@ -194,6 +201,33 @@ struct GrowthHistoryView: View {
         }
         .cypressBorder(CypressColor.borderCool, radius: CypressRadius.control)
         .accessibilityElement(children: .combine)
+    }
+
+    // MARK: - 5b · Add a reading (screen 16's general entrance, RULINGS R15)
+
+    /// Built exactly like `TreeProfileView.growthLink`, which is the control this one answers: same
+    /// font, same colour, same 44pt hit area, a quiet text link under the block it belongs to. The
+    /// two are a pair — one reads the series back, one adds to it — and a reader who has used either
+    /// should recognise the other. C1–C30 is a closed catalogue with no link in it, so a screen-local
+    /// control from tokens is what this codebase does here (ERRATA E46).
+    ///
+    /// It opens 16 on `MeasurementKind.dbh`, SCREENS.md 16 §2's drawn selection. This is the one
+    /// entrance in the app that names no measurement, so there is none to carry — and 16's kind
+    /// control is the first thing under its header.
+    private var addReadingLink: some View {
+        Button {
+            router?.push(.measure(model.treeID, .dbh))
+        } label: {
+            Text(GrowthHistoryCopy.addReadingTitle)
+                .font(CypressFont.body13Bold)
+                .foregroundStyle(CypressColor.ctaFill)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .cypressHitArea()
+        .padding(.horizontal, CypressSpacing.gutter)
+        .padding(.top, GrowthHistoryMetrics.logTop)
     }
 
     // MARK: - The states SCREENS.md does not draw

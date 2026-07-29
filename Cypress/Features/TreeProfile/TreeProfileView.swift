@@ -788,7 +788,9 @@ struct TreeProfileView: View {
     private func route(for destination: TreeProfilePresentation.StatDestination) -> Route {
         switch destination {
         case .growthHistory: return .growthHistory(model.treeID)
-        case .measure: return .measure(model.treeID)
+        // The card's own measurement travels with the route. Which card means which kind is the
+        // presentation's call, not this view's — see `StatDestination.measure` (RULINGS R15).
+        case let .measure(kind): return .measure(model.treeID, kind)
         }
     }
 
