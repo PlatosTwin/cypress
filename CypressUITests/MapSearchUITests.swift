@@ -270,6 +270,18 @@ final class MapSearchUITests: XCTestCase {
         field.tap()
         field.typeText(searched)
 
+        // **What went into the field, not what was aimed at it.** Species names in this seed carry
+        // apostrophes — `Indian Laurel Fig Tree 'Green Gem'` is 45 trees deep at the map's own
+        // opening centre — and iOS smart punctuation rewrites a typed `'` into `’`, which matches no
+        // row in the catalogue. A test that skipped this check would report the substitution as
+        // "narrowing emptied the map": the exact misdiagnosis this whole change is about, arriving
+        // by a different door. Checked rather than avoided, so awkward names stay covered.
+        XCTAssertEqual(
+            field.value as? String, searched,
+            "the field holds “\(field.value as? String ?? "")” after typing “\(searched)”, so what "
+                + "the map was asked for is not what this test asked for"
+        )
+
         // Both halves under one wait, for `testAWordNoSpeciesMatchesSaysSo`'s reason: they are two
         // reads of one settling map, and asserting either the instant it comes true races the other.
         _ = wait { self.pinsNamed(other, app) == 0 && self.pinsNamed(searched, app) > 0 }
