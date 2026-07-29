@@ -209,6 +209,30 @@ enum MapPinImage {
 
 // MARK: - The map view
 
+/// An `MKMapView` that says when it first has an area to draw in.
+///
+/// **A `UIViewRepresentable` has no layout hook, and this one needs exactly one** (ERRATA E167).
+/// `makeUIView` and the `updateUIView` passes around it can all run while the view is still
+/// `bounds == .zero`, and a camera cannot be aimed at a map with no area — so the opening camera has
+/// to wait for a size. Waiting is safe only if something wakes the layer when the size arrives:
+/// screen 01 re-runs its body 240 times a second and would have produced another pass on its own,
+/// but the two other screens that draw this basemap are quiet, and a quiet screen would have sat on
+/// MapKit's default region forever.
+///
+/// One callback, fired once, then released. It is not a general layout observer and must not become
+/// one — everything else this file does is driven by `updateUIView`, and it stays that way.
+final class AimableMapView: MKMapView {
+    var onFirstLayout: (() -> Void)?
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard onFirstLayout != nil, !bounds.isEmpty else { return }
+        let announce = onFirstLayout
+        onFirstLayout = nil
+        announce?()
+    }
+}
+
 /// The `MKMapView` that draws screen 01's basemap, pins, clusters, GPS dot and parchment wash.
 ///
 /// The parameter list is `MapKitBasemap`'s, unchanged, because this is a swap behind C18's seam and
@@ -232,9 +256,18 @@ struct MapAnnotationLayer: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
+    /// Whether this map view has an area to aim a camera at. See `AimableMapView` and E167.
+    static func canAim(_ mapView: MKMapView) -> Bool { !mapView.bounds.isEmpty }
+
     func makeUIView(context: Context) -> MKMapView {
-        let mapView = MKMapView()
+        let mapView = AimableMapView()
         mapView.delegate = context.coordinator
+        mapView.onFirstLayout = { [weak mapView] in
+            guard let mapView else { return }
+            // Whatever the app wants **now**, not whatever it wanted when the view was made. Between
+            // those two moments the first GPS fix can land, and on a cold launch it usually does.
+            context.coordinator.aimAtCurrentRequest(mapView)
+        }
 
         // "the city reads as street geometry rather than a busy consumer map": no POI pins, no
         // traffic, no 3-D. What is left is the street network and the water, which is what the mock
@@ -262,8 +295,25 @@ struct MapAnnotationLayer: UIViewRepresentable {
         )
 
         context.coordinator.installWash(on: mapView, isDark: colorScheme == .dark)
-        context.coordinator.appliedSequence = position.sequence
-        mapView.setRegion(position.region, animated: false)
+        // **The opening camera is *not* applied here any more, and this is ERRATA E167 — the whole
+        // of why the app opened on Mission Dolores Park with a perfect GPS fix in hand.**
+        //
+        // A freshly constructed `MKMapView()` has `bounds == .zero`; SwiftUI lays it out afterwards.
+        // `setRegion` on a map view with no area does not take — measured, on this screen, at launch:
+        // the region set to 37.7596 read back as **37.3346**, MapKit's own default. What it does do
+        // is leave MapKit holding the request, to be applied when the view finally has a size.
+        //
+        // Both halves of that were fatal. The ticket was recorded as applied when it had not been, so
+        // the moment the first GPS fix minted the *next* request the layer had already burnt its
+        // number and every later pass was dropped as stale — `REJECT seq=1 applied=1`, forever, with
+        // no retry, because `MapHomeView.hasCentredOnUser` is a one-shot and had already fired. And
+        // the region MapKit was holding was then applied *after* the fly-to that did get through, so
+        // even the pass that reached the map was overwritten by an opening camera from before it.
+        //
+        // So nothing is applied until there is a map to apply it to. `applyCameraIfChanged` refuses a
+        // view with no area without spending the ticket, and the first laid-out pass drives the
+        // camera to whatever the app wants **by then** — the remembered opening camera if no fix has
+        // landed, the reader's own location if one has. Either order arrives at the same place.
         return mapView
     }
 
@@ -279,6 +329,7 @@ struct MapAnnotationLayer: UIViewRepresentable {
     /// Clearing the annotations and overlays and dropping the delegate is what lets each one go when
     /// the view that owned it does.
     static func dismantleUIView(_ mapView: MKMapView, coordinator: Coordinator) {
+        (mapView as? AimableMapView)?.onFirstLayout = nil
         mapView.delegate = nil
         mapView.removeAnnotations(mapView.annotations)
         mapView.removeOverlays(mapView.overlays)
@@ -405,12 +456,28 @@ struct MapAnnotationLayer: UIViewRepresentable {
         /// geometry of a stale request is the wrong answer. See `MapCameraRequest` for the
         /// measurement, and ERRATA E140 for what it cost.
         func applyCameraIfChanged(_ request: MapCameraRequest, to mapView: MKMapView) {
+            // **A map with no area cannot be aimed, and pretending otherwise spends the ticket
+            // (ERRATA E167).** This is the *only* condition under which a request is passed over
+            // without being recorded: it has not been superseded, it has not been applied, and
+            // `AimableMapView.onFirstLayout` will bring it back the moment there is a map for it.
+            // Every other early return here is a camera the reader has already moved away from;
+            // this one is a camera nobody has been shown yet.
+            guard MapAnnotationLayer.canAim(mapView) else { return }
             if let applied = appliedSequence, request.sequence <= applied { return }
             appliedSequence = request.sequence
             // Reduce Motion snaps the camera instead of flying it. The zoom is the answer to a tap,
             // not the way the answer is delivered — `CypressMotion.resolved`'s rule, applied at the
             // one place on this screen where a camera actually moves.
             mapView.setRegion(request.region, animated: !UIAccessibility.isReduceMotionEnabled)
+        }
+
+        /// The map has just been given a size. Aim it at whatever the app is asking for now.
+        ///
+        /// Not at whatever it was asking for when `makeUIView` ran: the first GPS fix lands in that
+        /// window on a cold launch, and the request it minted is the one the reader is owed. See
+        /// `AimableMapView` and ERRATA E167.
+        func aimAtCurrentRequest(_ mapView: MKMapView) {
+            applyCameraIfChanged(parent.position, to: mapView)
         }
 
         /// Continuous, once per frame of a pan — the same cadence
