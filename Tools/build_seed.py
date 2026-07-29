@@ -1511,9 +1511,17 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             "inventory_city_name": "SF Public Works street tree inventory",
             "inventory_city_url": CITY_LAYER_SERVICE,
             "inventory_city_snapshot_on": city_meta["extracted_on"],
+            # Which numbering scheme this inventory's ids -- and therefore its
+            # uuids -- are drawn from. Both of San Francisco's are `sf`, on
+            # purpose: they publish the same TreeID space, so a record listed by
+            # both keeps one identity across a source switch (E156). A second
+            # CITY declares its own space, and a seed holding rows from two
+            # spaces is a seed whose uuids were derived two ways.
+            "inventory_city_id_space": INVENTORIES["city"].id_space,
             "inventory_datasf_name": "DataSF Street Tree List",
             "inventory_datasf_url": TREES_CSV_URL,
             "inventory_datasf_snapshot_on": NOW[:10],
+            "inventory_datasf_id_space": INVENTORIES["datasf"].id_space,
             # Nothing is unavailable outright: the two state-plane coordinates are
             # the same point as lat/lon and were never ingested from either source.
             "columns_absent_from_source": "",
@@ -1532,6 +1540,7 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             "inventory_datasf_name": "DataSF Street Tree List",
             "inventory_datasf_url": TREES_CSV_URL,
             "inventory_datasf_snapshot_on": NOW[:10],
+            "inventory_datasf_id_space": INVENTORIES["datasf"].id_space,
             "columns_absent_from_source": "",
         }
 
@@ -1554,6 +1563,36 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
         "dropped_dupe_treeid": str(stats["dropped_dupe_treeid"]),
         "vacant_site_rows": str(stats["vacant_site"]),
         "non_taxon_rows": str(stats["non_taxon_rows"]),
+        # ---- what the ingest contract made countable ------------------------
+        # These three are not new facts about the corpus. They are the same rows
+        # that were always here, split by WHO SAID SO -- which was not expressible
+        # before `InventoryRecord.kind_basis` existed, so the whole of it sat
+        # inside `vacant_site_rows` as a single number nobody could argue with.
+        #
+        #   ..._stated_by_source     the source describes a planting site:
+        #                            `Tree(s) ::` on a Permitted Site, the city
+        #                            layer's literal `BOTANICAL = 'Potential Site'`.
+        #   ..._inferred_from_absent_species
+        #                            THE SOURCE SAID NO SUCH THING. Its species
+        #                            field was blank or read `Tree`, and the
+        #                            ingest turned that silence into an empty hole
+        #                            in the pavement. 1,326 of the export's `::`
+        #                            rows carry `qLegalStatus = DPW Maintained`.
+        #   records_not_a_tree       the source says the thing growing there is a
+        #                            shrub, and `trees.status` has no value for
+        #                            that, so `STATUS_FOR_KIND` calls it `alive`.
+        #
+        # Together they are the size of task #94, in the file, per build.
+        "planting_sites_stated_by_source": str(stats["planting_sites_stated_by_source"]),
+        "planting_sites_inferred_from_absent_species":
+            str(stats["planting_sites_inferred_from_absent_species"]),
+        "records_not_a_tree": str(stats["records_not_a_tree"]),
+        "ingest_contract": "Tools/inventory_contract.py",
+        # The id space this seed's uuids are derived in, and the prefix they are
+        # derived with. A second city changes both, and a reader of the file can
+        # tell without reading the builder.
+        "identity_id_space": require_inventory(source).id_space,
+        "identity_prefix": ID_SPACES[require_inventory(source).id_space].identity_prefix,
         "species_with_leaf_retention": str(content_stats["leaf_retention"]),
         "species_with_family": str(content_stats["family"]),
         "species_curated": str(content_stats["curated"]),
@@ -1611,7 +1650,12 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
         print(f"    from datasf export   {stats['export_vacant_carried']:,}")
     print(f"    status=alive         {stats['alive']:,}")
     print(f"    status=vacant_site   {stats['vacant_site']:,}")
+    print(f"      the source says so {stats['planting_sites_stated_by_source']:,}")
+    print(f"      WE INFERRED IT     {stats['planting_sites_inferred_from_absent_species']:,}"
+          f"  (blank or 'Tree' species field -- #94)")
     print(f"    alive, no species    {stats['non_taxon_rows']:,}  (qSpecies names no taxon)")
+    print(f"      of which the source calls not-a-tree "
+          f"{stats['records_not_a_tree']:,}  (#94)")
     print("  city record columns")
     for seed_column, csv_column in CITY_RECORD_COLUMNS:
         present = stats["city_" + csv_column]
