@@ -58,3 +58,38 @@ every match had a name *beginning* with the query.
 misses, and so does a name the catalogue spells differently. That still wants an FTS5 index the seed
 does not carry, and it still belongs in `Tools/build_seed.py` beside the data rather than being built
 on device at first launch.
+
+**One more sentence went wrong on the way, and the simulator is what caught it.** With "cypress"
+resolving to six species instead of one, screen 01 drew **"No 6 species in view"**.
+`MapSearchCopy.subject` names one or two species and *counts* anything beyond that, and `status` was
+substituting that one phrase into four sentences of which only one takes a count. It was latent
+before this change — a genus like `Quercus` prefix-matched seventeen species and read "No 17 species
+in view" the same way — and became the ordinary case the moment one common word started matching six.
+The counted forms now carry their own article and the sentences around them branch.
+
+---
+
+### The search bar had no clear control, and no *visible* way out of the keyboard
+
+Task #110, two owner reports about C20: *"it's possible to get stuck in the search bar — cursor active
+and no way to exit out of keyboard"*, and *"I want a little x in far right of bar to clear contents"*.
+
+`SearchBar` was a `TextField` and a `Shape` in an `HStack` with no clear button, no `submitLabel`, no
+`FocusState` and no `scrollDismissesKeyboard`, and its only map caller added none of them.
+
+**The first report is not literally true, and the correction is the point of this entry.** There was
+no keyboard trap. Measured on the simulator against the component exactly as it shipped — no
+`FocusState`, no `submitLabel`, no `onSubmit` — pressing return already resigned focus, because that
+is SwiftUI's default for a single-line `TextField`. A UI test written to prove the return key had
+been *fixed* passed against the *unfixed* component, which is how this was found; the test was
+asserting the platform's behaviour rather than the app's, and has been deleted rather than kept.
+
+The defect is real but it is **discoverability, not capability**. The key that worked said `return`,
+which reads as "insert a newline"; nothing else on screen 01 dismisses the keyboard, because an
+`MKMapView` does not resign anyone's first responder and a tap-catcher over it would take the pan and
+the pinch with it; and the keyboard covers the FAB, the bottom card and the tab bar while it is up.
+
+Fixed by relabelling the key that already worked (`submitLabel(.search)` → `Search`) and adding a
+`Done` above the keyboard, plus the ✕ that genuinely did not exist — trailing edge, VoiceOver label
+`Clear search`, 44 pt target, drawn as a `Shape` like every other glyph in the app. Recorded as
+ruling **R15**, since SCREENS.md §2 specifies neither affordance (DECISIONS constraint 21).
