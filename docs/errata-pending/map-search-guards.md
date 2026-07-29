@@ -27,9 +27,11 @@ The counts are from the seed, queried directly against a 120 × 261 m box at eac
 `MapLayout.defaultSpanMetres` on this phone's aspect — rather than inferred from pin counts. The
 map's settled viewport is slightly wider than that box, so the pins it draws run a little above these
 numbers (56 planes drawn at the second fix against 47 in the box); the zeroes are the load-bearing
-part and they are zero either way. So the failure is deterministic in whatever `xcrun simctl location` the device was last
-left at — which no code in the file read, no failure message mentioned, and every agent had set
-differently. That is why it read as a flake across three machines.
+part and they are zero either way.
+
+So the failure is deterministic in whatever `xcrun simctl location` the device was last left at —
+which no code in the file read, no failure message mentioned, and every agent had set differently.
+That is why it read as a flake across three machines.
 
 Two traps that kept it hidden and are worth writing down: `xcrun simctl location <udid> clear` does
 **not** unfix a device (the app keeps the last fix; revoking the app's location grant is what
