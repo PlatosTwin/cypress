@@ -131,23 +131,46 @@ final class MapSearchUITests: XCTestCase {
 
         field.tap()
         field.typeText("cy")
-        XCTAssertTrue(
-            wait(timeout: 10) { app.keyboards.count > 0 },
-            "the keyboard never came up, so there is nothing to dismiss"
-        )
 
+        // **Focus, not `app.keyboards`, is what this asserts, and the difference is not pedantry.**
+        // A simulator with `Connect Hardware Keyboard` on never draws the software keyboard at all,
+        // so a test written against `keyboards.count` reports "the keyboard never came up" on a
+        // machine where the bar is working perfectly — a red test for a setting. The `Done` item is
+        // the honest proxy: it is a keyboard toolbar, so it is in the tree exactly while a field of
+        // this app's is focused, whatever the keyboard itself is doing.
         let done = app.buttons["Done"]
         XCTAssertTrue(done.waitForExistence(timeout: 10), "there is no drawn way out of the keyboard")
         XCTAssertTrue(done.isHittable, "the way out of the keyboard is in the tree but cannot be tapped")
         done.tap()
 
         XCTAssertTrue(
-            wait(timeout: 10) { app.keyboards.count == 0 },
-            "dismissing the keyboard left it on screen"
+            wait(timeout: 10) { !done.exists },
+            "tapping the way out of the keyboard did not take the field out of focus"
         )
         // And it did not clear the query on the way out: leaving the keyboard is not abandoning the
         // search, and a map that un-narrowed itself here would lose what the reader just typed.
         XCTAssertEqual(field.value as? String, "cy", "dismissing the keyboard changed the query")
+    }
+
+    /// The other way out, which costs no pixels and is the one the report was really about: the
+    /// return key was **already on the keyboard** and already did nothing. It now says `Search` and
+    /// resigns focus.
+    func testTheReturnKeyAlsoLeavesTheKeyboard() throws {
+        let app = launch()
+        let field = app.textFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 20), "the map's search field never appeared")
+
+        field.tap()
+        field.typeText("cy")
+        let done = app.buttons["Done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 10), "the field never took focus")
+
+        field.typeText("\n")
+        XCTAssertTrue(
+            wait(timeout: 10) { !done.exists },
+            "submitting the field left it focused; the return key still does nothing"
+        )
+        XCTAssertEqual(field.value as? String, "cy", "submitting the search changed the query")
     }
 
     /// The ✕ the owner asked for: present only when there is something to clear, labelled for
