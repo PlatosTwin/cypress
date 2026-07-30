@@ -455,8 +455,13 @@ struct MapOpeningCameraApplyTests {
     /// spoken state (#100), a cluster tap's "two zoom levels in" measured from a 98° span, and the
     /// camera this app now remembers between launches.
     ///
-    /// So the echo is asserted directly, in the units the defect appeared in. A span of tens of
-    /// degrees is not a plausible camera for a city and the bound below says so.
+    /// **What this test does and does not prove, measured rather than assumed.** It pins that the echo
+    /// exists: delete the write in `regionDidChangeAnimated` and it fails. It does **not** catch the
+    /// re-entrancy itself — a hook mutated back to firing inside `layoutSubviews` leaves this green,
+    /// because a map view that is not in a window does not reproduce MapKit's suppression. The witness
+    /// for that is `CypressUITests/MapCentredStateUITests.testTheMapOpensOnTheReaderWithoutBeingAsked`,
+    /// which fails with the control reading `Not centred` — and which is how the regression was found
+    /// in the first place, by launching the app rather than by running the suite.
     @Test("the region the map settles on is echoed back to the screen")
     func theSettledRegionIsEchoedBack() async {
         let screen = Screen(opening: Self.dolores)
