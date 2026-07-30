@@ -298,6 +298,20 @@ attribute columns**, and `emit` counts it where rows ship. That is the other hal
 `inventory` says which list contained the record, `attributes_from` says which list its facts came
 from — and without it a reader cannot tell a joined record from one whose columns are simply absent.
 
+**How strong that claim is, exactly.** It does not make a mis-sourced row *unrepresentable*: an
+adapter can still set `attributes_from` to the wrong inventory, and the contract cannot catch that,
+because only the adapter knows whether its join hit. What it does make unrepresentable is **the
+tally disagreeing with the rows.** `rows_enriched` is no longer a number computed beside the data
+where it can drift from it; it is a count of rows carrying a field, taken at the point those rows
+are admitted. That is the same reason `AccountDeletion.Outcome` was refused a second tombstone
+counter when the number was already reported elsewhere: two places holding one fact is one place too
+many, and the cheaper of the two is the one that goes.
+
+`validate()` does close the two failure modes it can see: `attributes_from` naming an inventory the
+receipt cannot describe, and `attributes_from` naming the listing inventory itself — which is the
+ordinary case and is spelled `None`, so that a reader never has to decide whether
+`inventory == attributes_from` means "joined to itself" or "not joined".
+
 ### Not proved: that the real extract still yields 145,837 rows
 
 **`Fixtures/raw/city_street_trees.ndjson` does not exist on this machine.** It is gitignored, it
@@ -348,17 +362,19 @@ shipped seed today: 85 rows are `alive` with no species), and the receipt gains
 A test whose failure mode nobody has seen is a test nobody should trust. Each break below was
 applied, run, and reverted; the worktree is clean.
 
-**Python — `Tools/test_inventory_contract.py`, 103 checks.** Baseline 103 passed / 0 failed.
+**Python — `Tools/test_inventory_contract.py`, 108 checks.** Baseline 108 passed / 0 failed.
 
 | break | result |
 |---|---|
-| give `sf` a non-empty `identity_prefix` | 100 / **3 failed** — uuid derivation moved, prefix no longer empty, the two SF inventories stopped agreeing |
-| let a planting site name a species | 102 / **1** |
-| accept the source's `DBH = 0` as a measurement | 99 / **4** — the parser, and both adapters' records |
-| classify every placeholder as `STATED` (hide #94) | 96 / **7** |
-| give `kind` and `kind_basis` defaults | 101 / **2** |
+| give `sf` a non-empty `identity_prefix` | 105 / **3 failed** — uuid derivation moved, prefix no longer empty, the two SF inventories stopped agreeing |
+| let a planting site name a species | 107 / **1** |
+| accept the source's `DBH = 0` as a measurement | 104 / **4** — the parser, and both adapters' records |
+| classify every placeholder as `STATED` (hide #94) | 101 / **7** |
+| give `kind` and `kind_basis` defaults | 106 / **2** |
+| stop recording the enrichment join on the record (the 55-row bug) | 107 / **1** |
+| let `attributes_from` name the listing inventory | 107 / **1** |
 
-Restored: 103 / 0.
+Restored: 108 / 0.
 
 **Swift — `CypressTests/InventoryContractTests`, 9 tests.** Baseline 9 passed.
 
@@ -377,10 +393,30 @@ names this contract**, and **`sf`'s declared prefix is empty**, both activate on
 contract built. Against the shipped seed they return without asserting. Seven of nine have teeth
 today; two are waiting on a rebuild.
 
-One process note worth carrying: a `grep 'Test run with' | tail -1` over an xcodebuild log reported
-`Test run with 0 tests passed` for a run that had in fact gone red, because the log carries more
-than one such line. The issue lines were the reliable signal. That is the same class of trap as
-`Executed 0 tests`.
+Two process notes worth carrying.
+
+A `grep 'Test run with' | tail -1` over an xcodebuild log reported `Test run with 0 tests passed`
+for a run that had in fact gone red, because the log carries more than one such line — the UI target
+runs its own empty Swift Testing pass. The issue lines were the reliable signal. Same class of trap
+as `Executed 0 tests`.
+
+And a UI test failure found here was **not mine and was already solved on main.**
+`MapSearchUITests.testTypingASpeciesNameNarrowsTheMap` failed twice —
+`XCTAssertGreaterThan failed: ("0") is not greater than ("0") — narrowing to the commonest species in
+San Francisco emptied the map` — once under simulator contention and once on a freshly rebooted
+simulator with zero test restarts, so it was not flake. It is also not a product defect: **E167**,
+which landed on main while this branch was open, diagnoses it exactly. The test typed the London
+Plane's name and assumed the opening viewport contained one; whether it does depends on where the map
+opens, which was deterministic in the machine's last `simctl location`. At 37.7505,-122.4950 the
+viewport holds 264 trees and zero London Planes; at 37.78485,-122.4215 it holds 47. The test now
+reads the viewport's two commonest named species instead of assuming one. After merging main it
+passes. Nothing to file.
+
+The evidence that it was never this branch's, kept because it is the cheap kind to record: the diff
+against the merge base touches **no file under `Cypress/`** — only `Tools/`, `CypressTests/`,
+`docs/` and the generated `Fixtures/seed/schema.sql` — and the bundled seed is byte-identical to
+main's (`bd5e85b7e8add690…` in both `Fixtures/seed/` and `Cypress/Resources/`). The app binary under
+test was main's.
 
 ---
 
