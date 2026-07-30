@@ -520,18 +520,21 @@ parsers were at module scope in the shared ingest. They were the contract, by de
 city would have inherited San Francisco's spelling habits by being compiled into the same file.
 Relocating them needed somewhere to put them, and "a module per source family" is that somewhere.
 
-**The `InventoryAdapter` base class — speculative, and I would not defend it hard.** With one city
-it is fifteen lines wrapping two generator functions and a stats dict. Its only present value is
-that it writes down, in one docstring, which decisions belong to an adapter and which belong to the
-seed — which is real but is documentation, not structure. If a reviewer wanted it deleted and the
-two adapters left as plain classes, nothing would be lost today.
+**The `InventoryAdapter` base class — speculative, and now deleted.** It was fifteen lines wrapping
+two generator functions and a stats dict, for two adapters whose constructors have nothing in
+common: an abstract base asserting an interface that Python does not enforce and that no third
+implementation existed to justify. Its one real contribution was a docstring saying which decisions
+belong to an adapter and which belong to the seed — documentation with a `class` keyword in front of
+it. That paragraph now sits in the module docstring, where it reads the same and costs nothing, and
+`ADAPTERS`, a registry dict nothing ever looked up, went with it. Both equivalence runs were redone
+after the deletion and are still byte-identical on both paths.
 
-So the shape I would defend is: **the contract plus the relocation, which is most of the diff, and
-a base class that is currently a comment with a `class` keyword in front of it.** The brief offered
-"a documented record plus a validation pass" as the smaller alternative. That would have got the
-contract but left the vocabulary where it was — and the vocabulary is the half that bites. One
-implementation of an adapter interface proves little; two modules that no longer share one city's
-placeholder list prove something.
+So what remains is: **the contract, and the relocation of one city's vocabulary out of the shared
+core.** The brief offered "a documented record plus a validation pass" as the smaller alternative.
+That would have got the contract but left `PLACEHOLDER_SPECIES` and its neighbours at module scope in
+`build_seed.py` — and that is the half that bites, because it is the half a second city inherits by
+default. One implementation of an adapter *interface* proves nothing; two modules that no longer
+share one city's placeholder list prove something.
 
 ---
 

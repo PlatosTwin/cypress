@@ -13,6 +13,26 @@ publishes.** It resolves the source's sentinels (a `DBH` of `0`, a blank CSV
 cell, a `PlantDate` of `01/01/1900`) to `None`, because only the adapter knows
 they are sentinels. It does not fill them in.
 
+WHAT AN ADAPTER IS. There is deliberately no base class. An adapter is anything
+with an `inventory_id`, a `records()` generator yielding `InventoryRecord`s, and a
+`stats` dict carrying at least `source_rows` and `dropped_no_coords`. That is the
+whole interface, and with two adapters whose constructors have nothing in common
+an abstract base was fifteen lines asserting it -- documentation with a `class`
+keyword in front of it. This paragraph is the documentation; `build_seed.py` calls
+`.records()` and reads `.stats`, and a third adapter needs to satisfy nothing else.
+
+An adapter OWNS:
+
+  * its source's field names, units, date formats and sentinels;
+  * dropping records its source publishes with no usable position, counted into
+    `stats["dropped_no_coords"]`;
+  * deciding each record's `kind` and, honestly, its `kind_basis`.
+
+An adapter does NOT own: the corpus bounding box, uniqueness of `source_ref`
+across the build, uuid derivation, the species catalogue, or the neighbourhood
+stamp. Those are the seed's rules, they live in `build_seed.py`, and they belong
+in one place so that two adapters cannot disagree about what a row means.
+
 WHY THE TWO SAN FRANCISCO ADAPTERS SHARE A SPECIES PARSER. `qSpecies` --
 `Scientific name :: Common name` in one column -- is DataSF's convention, and the
 city's ArcGIS layer publishes `BOTANICAL` and `COMMON` as two clean fields. The
@@ -373,36 +393,11 @@ MAPPED_COLUMNS = {
 
 
 # ---------------------------------------------------------------------------
-# The adapter interface
+# The adapters
 # ---------------------------------------------------------------------------
 
 
-class InventoryAdapter:
-    """One inventory, read as `InventoryRecord`s.
-
-    Subclasses set `inventory_id` and implement `records()`. They own:
-
-      * their source's field names, units, date formats and sentinels;
-      * dropping records their source publishes with no usable position, and
-        counting those drops into `stats["dropped_no_coords"]`;
-      * deciding each record's `kind` and, honestly, its `kind_basis`.
-
-    They do NOT own: the corpus bounding box, uniqueness of `source_ref` across
-    the build, uuid derivation, the species catalogue, or the neighbourhood
-    stamp. Those are the seed's rules and belong to one place, so two adapters
-    cannot disagree about what a row means.
-    """
-
-    inventory_id: str = ""
-
-    def __init__(self) -> None:
-        self.stats = {"source_rows": 0, "dropped_no_coords": 0}
-
-    def records(self) -> Iterator[InventoryRecord]:
-        raise NotImplementedError
-
-
-class SFDataSFAdapter(InventoryAdapter):
+class SFDataSFAdapter:
     """The DataSF open-data export `tkzw-k3nq` -- 18 columns, one row per record.
 
     The richer of San Francisco's two inventories in facts and the looser in
@@ -420,7 +415,7 @@ class SFDataSFAdapter(InventoryAdapter):
         planting_sites_only: bool = False,
         limit: int = 0,
     ) -> None:
-        super().__init__()
+        self.stats = {"source_rows": 0, "dropped_no_coords": 0}
         self.csv_path = csv_path
         self.horizon_year = horizon_year
         self.with_raw = with_raw
@@ -508,7 +503,7 @@ class SFDataSFAdapter(InventoryAdapter):
         return None if value != value else value  # NaN
 
 
-class SFCityLayerAdapter(InventoryAdapter):
+class SFCityLayerAdapter:
     """SF Public Works' own operational layer -- what its public map draws.
 
     16 fields against the export's 18, and it drops nine of them. The seven the
@@ -526,7 +521,7 @@ class SFCityLayerAdapter(InventoryAdapter):
     inventory_id = "city"
 
     def __init__(self, rows: list, enrichment: dict, horizon_year: int, limit: int = 0) -> None:
-        super().__init__()
+        self.stats = {"source_rows": 0, "dropped_no_coords": 0}
         self.rows = rows
         self.enrichment = enrichment
         self.horizon_year = horizon_year
@@ -627,8 +622,3 @@ class SFCityLayerAdapter(InventoryAdapter):
                 raw_json=None,
             )
 
-
-ADAPTERS = {
-    "datasf": SFDataSFAdapter,
-    "city": SFCityLayerAdapter,
-}
