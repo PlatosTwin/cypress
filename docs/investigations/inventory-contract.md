@@ -260,7 +260,45 @@ seed_meta           + identity_id_space, identity_prefix, ingest_contract,
 All 145,837 rows of the shipped seed carry an `external_ref`, and the Swift suite re-derives every
 one of their uuids rather than pinning a sample.
 
-### Not proved: the city adapter end to end
+### Proved: the city adapter is exactly the old path too
+
+The `--source city` path shares `emit` with the export path but nothing else: it has its own adapter,
+its own enrichment join against the export, and a second ingest pass for the vacant planting sites.
+None of that is touched by a `--source datasf` build, so the equivalence above did not cover it.
+
+It is covered now, over ~198,000 real records, without contacting the city. `SFCityLayerAdapter`
+reads eight fields — `TREEID`, `Latitude`, `Longitude`, `Address`, `PlantType`, `BOTANICAL`,
+`COMMON`, `DBH` — so the DataSF export's own rows were re-shaped into that shape and written as a
+**stand-in** `city_street_trees.ndjson` (198,435 records, `PlantType` `Tree` on all of them,
+`qSpecies` split back into the layer's two name fields). Both builders were then run over the same
+stand-in:
+
+```
+trees               IDENTICAL  a6216528e3d0a1cda2dd
+species             IDENTICAL  4cba3e0daa0d92730c7b
+species_assertions  IDENTICAL  d5493327b600a706037b
+neighborhoods       IDENTICAL  94da18d9830860fcbe21
+trees_rtree         IDENTICAL  8fbd7dd21c4e9c28bb0e
+seed_meta           + 8 added keys, nothing removed, no shared key's value changed
+```
+
+**Be exact about what this is and is not.** It is not the city's data, so the row count it produces
+is not 145,837 and nothing here claims it is. What it does is drive the city adapter, the enrichment
+join, the two-pass dedupe and the second pass's own accounting over a real corpus and show the
+rewrite reproduces main's output byte for byte. The remaining uncovered thing is the ArcGIS
+extract's *content*, and only the real cache can supply that.
+
+**It also caught a defect, which is the argument for doing it at all.** The first run of this
+comparison differed on exactly one receipt key: `rows_enriched`, 195,309 in main against 195,364 in
+the rewrite. The adapter was incrementing the counter at the moment of the enrichment join, and 55
+of those records were then dropped downstream by the corpus bounding box or as duplicate refs —
+`seed_meta.rows_enriched` is a claim about rows that *shipped*. The fix is not a counter
+adjustment: `InventoryRecord.attributes_from` now carries **which inventory supplied a row's
+attribute columns**, and `emit` counts it where rows ship. That is the other half of provenance —
+`inventory` says which list contained the record, `attributes_from` says which list its facts came
+from — and without it a reader cannot tell a joined record from one whose columns are simply absent.
+
+### Not proved: that the real extract still yields 145,837 rows
 
 **`Fixtures/raw/city_street_trees.ndjson` does not exist on this machine.** It is gitignored, it
 did not travel into the worktree, and it is not in the main checkout — only `street_tree_list.csv`
@@ -277,10 +315,12 @@ What that costs, precisely:
 
 - The **shipped seed is untouched.** No rebuild, no new receipt keys in it, no corpus change. Every
   number in `SeedCorpus.city` still holds and no existing suite moved.
-- The `city` adapter is covered at the unit level (`test_the_city_adapter_reads_the_layers_own
-  _fields`) over a hand-built five-record layer including the `BOTANICAL`-null swap, the city's
-  literal `Potential Site`, a record with no species text at all, and a positionless record. It is
-  not covered against 133,577 real ones.
+- The `city` adapter's **code** is covered — byte-for-byte against main over 198,435 records, plus
+  unit tests for the `BOTANICAL`-null swap, the city's literal `Potential Site`, a record with no
+  species text at all, and a positionless record. What is not covered is the ArcGIS extract's
+  **content**: that its 133,577 records still join to the export the way they did on 2026-07-26, and
+  therefore that the row set is still 145,837. That is a claim about the city's data, not about this
+  code, and re-measuring it needs the cache.
 - **Seven of the nine Swift tests assert against the shipped seed and are proven able to fail**
   (§7a). The other two — that the receipt names this contract, and that `sf`'s declared prefix is
   empty — activate only on a seed the contract built, and return without asserting otherwise. That
