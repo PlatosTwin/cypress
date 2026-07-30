@@ -14,6 +14,20 @@ import XCTest
 ///
 /// Black-box, like the rest of `CypressUITests`: it imports nothing from `Cypress` and knows the app
 /// only as a tree of labelled elements.
+///
+/// ── One rule this file learnt the hard way (tasks #101 and #104) ─────────────────────────────────
+/// **A test here states its own preconditions or it does not have any.** Both defects it was sent to
+/// fix were the same mistake wearing different clothes: a test depending on ambient machine state it
+/// never named. One asserted that searching `Platanus` leaves pins drawn, which is true or false
+/// depending on where `xcrun simctl location` last left the device — so it was red for one agent and
+/// green for the next, on the same commit, and got filed as "intermittent". The other guarded that
+/// with a skip whose stated condition — a fixless map opening on the clustered whole city — screen 01
+/// cannot produce, so the guard never fired and the dependency stayed invisible.
+///
+/// What replaced both is a query: the pins name their own species (`MapSpeciesPalette`), so the tests
+/// read what this viewport is holding and search for *that*. Nothing below hardcodes a species, a
+/// coordinate, or an assumption about where the map opens — which also means task #115 can move the
+/// opening camera without moving this file.
 final class MapSearchUITests: XCTestCase {
 
     override func setUp() {
@@ -43,8 +57,79 @@ final class MapSearchUITests: XCTestCase {
     /// without having checked anything. Matching `label` is what the original was doing all along.
     private func cityTreePins(_ app: XCUIApplication) -> Int {
         app.buttons
-            .matching(NSPredicate(format: "label BEGINSWITH %@", "City tree"))
+            .matching(NSPredicate(format: "label BEGINSWITH %@", Self.pinPrefix))
             .count
+    }
+
+    /// `MapPin.Kind.cityTree`'s own word, and the first thing every tree pin's label says.
+    private static let pinPrefix = "City tree"
+
+    /// What a pin says once the map has coloured it **and** read back the species' name:
+    /// `City tree, Sycamore, London Plane`. That name — the commonest tree in the city — contains a
+    /// comma of its own, so what follows this prefix is taken whole rather than split on anything.
+    private static let namedPinPrefix = "City tree, "
+
+    /// What the same pin says in the window between the colour landing and the name arriving:
+    /// `City tree, marked dot` (`MapPin.Kind.cityTreeSpecies`). That is a *slot*, not a species, and
+    /// a helper that read it as one would spend this file's whole argument searching for
+    /// “marked dot”.
+    private static let unnamedSlotPrefix = "City tree, marked "
+
+    /// `MapSpeciesSlot`'s four colours, which is the most species the map can name at once.
+    private static let slotCount = 4
+
+    /// Which species the map is naming on its pins right now, most pins first — the viewport's own
+    /// answer to "what is actually drawn here".
+    ///
+    /// **This is the question task #104 never asked.** The map colours the commonest few species
+    /// among the pins it has drawn and puts their names on those pins' labels
+    /// (`MapSpeciesPalette`, `MapPinKind.accessibilityLabel(for:palette:)`). So the pins say what
+    /// this viewport holds, and a black-box test can read it instead of assuming it. Assuming it —
+    /// "Platanus, the commonest tree in the city" — is precisely what turned a deterministic failure
+    /// into a mystery.
+    ///
+    /// **By exclusion, not by enumeration.** A screenful of San Francisco is up to 288 pins and
+    /// reading a label off each is one query resolution each. At most four species are ever named at
+    /// once, so this asks a few times over for "a named pin that is none of the ones already found"
+    /// and then counts each name — a dozen resolutions rather than three hundred.
+    private func namedSpecies(_ app: XCUIApplication) -> [(name: String, pins: Int)] {
+        var names: [String] = []
+        // One turn more than there are slots, so the loop ends by finding nothing rather than by
+        // running out of turns: if a fifth slot is ever added this reads it instead of silently
+        // reporting the first four as the whole truth.
+        while names.count <= Self.slotCount {
+            var format = "label BEGINSWITH %@ AND NOT label BEGINSWITH %@"
+            var arguments: [Any] = [Self.namedPinPrefix, Self.unnamedSlotPrefix]
+            for found in names {
+                format += " AND NOT label == %@"
+                arguments.append(Self.namedPinPrefix + found)
+            }
+            let pin = app.buttons
+                .matching(NSPredicate(format: format, argumentArray: arguments))
+                .firstMatch
+            guard pin.exists else { break }
+            let label = pin.label
+            guard label.hasPrefix(Self.namedPinPrefix) else { break }
+            names.append(String(label.dropFirst(Self.namedPinPrefix.count)))
+        }
+        return names
+            .map { (name: $0, pins: pinsNamed($0, app)) }
+            .sorted { $0.pins == $1.pins ? $0.name < $1.name : $0.pins > $1.pins }
+    }
+
+    /// How many pins the map is drawing for one named species.
+    private func pinsNamed(_ name: String, _ app: XCUIApplication) -> Int {
+        app.buttons
+            .matching(NSPredicate(format: "label == %@", Self.namedPinPrefix + name))
+            .count
+    }
+
+    /// The census, for a message. A failure that names what the map was actually showing is a
+    /// failure somebody can act on without re-running it.
+    private static func census(_ named: [(name: String, pins: Int)]) -> String {
+        named.isEmpty
+            ? "no species at all"
+            : named.map { "\($0.name) (\($0.pins) pins)" }.joined(separator: ", ")
     }
 
     private func launch() -> XCUIApplication {
@@ -53,41 +138,99 @@ final class MapSearchUITests: XCTestCase {
         return app
     }
 
-    /// Requires a simulated fix over San Francisco, and **skips** rather than fails without one.
+    /// Requires a map with individual pins on it, and **skips** rather than fails without one —
+    /// which is the honest report for a test that has nothing to empty.
     ///
-    /// Screen 01 opens on the user when it has a fix and on the whole city when it does not, and the
-    /// whole city is zoom ≤ 15, which is A1's clustered side: badges, not individual pins. So a
-    /// narrowing that is plainly visible with a fix has nothing to be visible *on* without one, and
-    /// these two tests would fail for a reason that is nothing to do with the search bar.
+    /// ── What this guard used to claim, and why it was never true (task #101) ─────────────────────
+    /// It was written as a *GPS-fix detector*: "screen 01 opens on the user when it has a fix and on
+    /// the whole city when it does not, and the whole city is zoom ≤ 15, which is A1's clustered
+    /// side: badges, not individual pins." Every clause after the first is wrong. Screen 01 opens at
+    /// `MapLayout.defaultSpanMetres` — 120 m across — with a fix and without one; only the *centre*
+    /// differs, and the fixless centre is `MapLayout.defaultCentre`, Mission Dolores Park. 120 m is
+    /// far inside A1's pin threshold, so the clustered city this guard was watching for is a state
+    /// launch cannot produce. `AlmanacGroupTapTests` had already measured and written this down —
+    /// "measured with location revoked outright for this app, the map opens on Dolores Park and
+    /// draws pins there anyway" — against this file, by name.
     ///
-    /// `AlmanacGroupTapTests` already carries this dependency and reports it as two red tests on any
-    /// machine that has not run `xcrun simctl location <udid> set 37.78,-122.42`. Skipping is the
-    /// honest form: a skip says "not checked here", which is true, where a failure says "broken",
-    /// which is not. Run with a fix — as the live verification for ERRATA E134 did — and they check
-    /// the thing they were written for.
+    /// So the guard could not fire for the reason it gave, and in practice did not fire at all: the
+    /// two tests it stood in front of ran on every machine regardless of any fix, and one of them
+    /// then failed for a reason the guard had just certified was absent (see
+    /// `requireTwoSpeciesTheMapIsNaming`). A guard that cannot fire is the same defect as a test
+    /// that cannot fail, and this file has already retired one of those.
     ///
-    /// ── This guard is the wrong guard for `testTypingASpeciesNameNarrowsTheMap` (task #104) ──────
-    /// **Not fixed here** — recorded because it was reproduced rather than theorised. This asks "did
-    /// the map draw any pins", and the test below needs "does this viewport hold any *London
-    /// Planes*". Those come apart, and by a lot: with the fix at `37.7505,-122.4950` — Sunset Blvd
-    /// at 37th, a screenful of Monterey Cypress and Monterey Pine — the seed holds **0** London
-    /// Planes in view and `testTypingASpeciesNameNarrowsTheMap` fails on
-    /// `narrowing … emptied the map`, having sailed through this guard on forty-odd pins of the
-    /// wrong species. Move the fix to `37.78485,-122.4215` and the same box holds **488**, and it
-    /// passes. Both runs are on this branch, minutes apart, with no code change between them.
-    ///
-    /// So #104's "intermittent and unexplained" is neither: it is deterministic in the simulator's
-    /// last `simctl location`, which no code in this file reads and nothing in CI pins. The fix is a
-    /// second guard that skips when the *species being typed* has nothing in view — which is a
-    /// change to what these tests assume, and belongs to #104 rather than to a search-matching
-    /// branch.
+    /// ── What it guards now ───────────────────────────────────────────────────────────────────────
+    /// The one thing `testAWordNoSpeciesMatchesSaysSo` actually needs, stated as itself: pins to
+    /// watch go away. A viewport genuinely holding none of them — the seed is the *street* tree
+    /// list, and Dolores Park at 120 m holds exactly zero of it — leaves that test asserting that
+    /// nothing became nothing. It can still check the other half, which is why this skips loudly
+    /// instead of passing quietly.
     private func requireAMapWithPins(_ app: XCUIApplication) throws {
         guard wait(timeout: 25, for: { self.cityTreePins(app) > 0 }) else {
             throw XCTSkip(
-                "the map drew no individual pins at launch — this needs a simulated GPS fix over "
-                    + "San Francisco: xcrun simctl location <udid> set 37.78485,-122.4215"
+                "the map is drawing no individual tree pins, so there is nothing here for a search "
+                    + "to empty. The seed is the street-tree inventory and the map opens 120 m "
+                    + "across, so a viewport over a park or the ocean legitimately holds none. Put "
+                    + "it over some streets: xcrun simctl location <udid> set 37.78485,-122.4215 "
+                    + "(and note that `simctl location clear` does not unfix a device — revoke the "
+                    + "app's location grant to do that)"
             )
         }
+    }
+
+    /// Two species **this viewport is actually holding**: one to search for, one to watch disappear.
+    ///
+    /// ── Why the narrowing test needed a different guard (task #104) ──────────────────────────────
+    /// `requireAMapWithPins` asks "did the map draw any pins". The test below then typed `Platanus`
+    /// and asserted the map was not empty. Those are claims about two different sets, and the gap
+    /// between them is the entire defect. Measured on this branch: with the fix at
+    /// `37.7505,-122.4950` — Sunset Blvd at 37th — the seed holds 264 trees inside the opening
+    /// viewport and **not one** of them is a London Plane, so the guard sailed through on 95
+    /// Monterey Cypresses and the assertion failed on `narrowing … emptied the map`. Move the fix to
+    /// `37.78485,-122.4215` and the same box holds 47 planes, and the same binary passes. Minutes
+    /// apart, no code change between.
+    ///
+    /// So #104's "intermittent and unexplained" was neither. It was deterministic in whatever
+    /// `xcrun simctl location` the machine had last been left at — which no code in this file read,
+    /// no failure message mentioned, and every agent had set differently.
+    ///
+    /// **The repair is not a better coordinate.** A coordinate that happens to hold London Planes
+    /// today is the same bug with a longer fuse, and where screen 01 opens is itself being changed
+    /// underneath this file (task #115). So the test stops assuming what is in the viewport and asks
+    /// it. `namedSpecies` is the asking, and it is black-box: the pins say their own species.
+    ///
+    /// **Two species, not one**, because "narrows" is a claim about something *going away*. The one
+    /// that is typed is watched surviving; the other is watched disappearing. A single species could
+    /// only show that pins are still drawn afterwards, which a search bar wired to nothing also
+    /// manages — and that was C20's original defect.
+    ///
+    /// The second must not be a substring relative of the first in either direction: species
+    /// matching has been `LIKE '%query%'` over both names since E165, so typing `Plum` would keep
+    /// `Cherry Plum` on the map and the disappearance asserted below would be a false alarm.
+    private func requireTwoSpeciesTheMapIsNaming(
+        _ app: XCUIApplication
+    ) throws -> (searched: String, other: String) {
+        _ = wait(timeout: 25) { self.namedSpecies(app).count >= 2 }
+        let named = namedSpecies(app)
+        guard let searched = named.first,
+              let other = named.dropFirst().first(where: { !Self.overlap($0.name, searched.name) })
+        else {
+            throw XCTSkip(
+                "screen 01 is naming \(Self.census(named)) on its pins, and this needs two species "
+                    + "that are not each other's substring — one to search for, one to watch "
+                    + "disappear. The map colours a species only where it has drawn at least two of "
+                    + "its pins (MapSpeciesPalette.minimumPinsForASlot), so an empty or "
+                    + "one-species viewport has nothing here to narrow. A mixed one: xcrun simctl "
+                    + "location <udid> set 37.78485,-122.4215"
+            )
+        }
+        return (searched.name, other.name)
+    }
+
+    /// Whether one species' name contains the other's, which is what would make a search for one of
+    /// them also match the other. Case-insensitive, because the query is.
+    private static func overlap(_ one: String, _ other: String) -> Bool {
+        let first = one.lowercased(), second = other.lowercased()
+        return first.contains(second) || second.contains(first)
     }
 
     /// Waits for a condition, polling. The map debounces the camera and the search independently and
@@ -105,27 +248,71 @@ final class MapSearchUITests: XCTestCase {
         return condition()
     }
 
-    /// Type a species name; watch the map narrow. Clear it; watch it come back.
+    /// Type the name of a species **this viewport is holding**; watch the map narrow to it and the
+    /// others go. Clear it; watch the neighbourhood come back.
+    ///
+    /// The species is not written down here on purpose. It used to be `Platanus`, on the true but
+    /// irrelevant grounds that the London Plane is the commonest tree in San Francisco; what the
+    /// test needed was a species commonest *on this screen*, and the two differ over most of the
+    /// city. See `requireTwoSpeciesTheMapIsNaming` for the whole of task #104.
     func testTypingASpeciesNameNarrowsTheMap() throws {
         let app = launch()
 
         let field = app.textFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 20), "the map's search field never appeared")
 
-        // The map has to have drawn something before narrowing it means anything.
-        try requireAMapWithPins(app)
+        // What this map is holding, asked rather than assumed.
+        let (searched, other) = try requireTwoSpeciesTheMapIsNaming(app)
         let before = cityTreePins(app)
+        let searchedBefore = pinsNamed(searched, app)
+        let otherBefore = pinsNamed(other, app)
 
         field.tap()
-        // The scientific name of the London Plane, prefix-matched — the commonest tree in the city.
-        field.typeText("Platanus")
+        field.typeText(searched)
 
-        XCTAssertTrue(
-            wait { self.cityTreePins(app) != before },
-            "typing a real species name into the search bar changed nothing on the map (it drew \(before) pins before and after)"
+        // **What went into the field, not what was aimed at it.** Species names in this seed carry
+        // apostrophes — `Indian Laurel Fig Tree 'Green Gem'` is 45 trees deep at the map's own
+        // opening centre — and iOS smart punctuation rewrites a typed `'` into `’`, which matches no
+        // row in the catalogue. A test that skipped this check would report the substitution as
+        // "narrowing emptied the map": the exact misdiagnosis this whole change is about, arriving
+        // by a different door. Checked rather than avoided, so awkward names stay covered.
+        XCTAssertEqual(
+            field.value as? String, searched,
+            "the field holds “\(field.value as? String ?? "")” after typing “\(searched)”, so what "
+                + "the map was asked for is not what this test asked for"
+        )
+
+        // Both halves under one wait, for `testAWordNoSpeciesMatchesSaysSo`'s reason: they are two
+        // reads of one settling map, and asserting either the instant it comes true races the other.
+        _ = wait { self.pinsNamed(other, app) == 0 && self.pinsNamed(searched, app) > 0 }
+
+        // It narrowed. The other species had pins on this screen a moment ago and the query does
+        // not match it, so every one of them must be gone — the half a search bar wired to nothing
+        // (C20, as it shipped) cannot fake.
+        XCTAssertEqual(
+            pinsNamed(other, app), 0,
+            "typing “\(searched)” left \(pinsNamed(other, app)) of \(other)'s \(otherBefore) pins on "
+                + "the map, so the map is not narrowed to what was typed"
+        )
+        // **And it narrowed to something.** This is task #104's assertion, now made about a species
+        // the map itself said was here rather than about one this file hoped would be.
+        XCTAssertGreaterThan(
+            pinsNamed(searched, app), 0,
+            "narrowing to \(searched) — which this very viewport was drawing \(searchedBefore) pins "
+                + "of a moment ago — emptied the map of it"
         )
         let narrowed = cityTreePins(app)
-        XCTAssertGreaterThan(narrowed, 0, "narrowing to the commonest species in San Francisco emptied the map")
+        XCTAssertGreaterThan(
+            narrowed, 0,
+            "narrowing to \(searched), which is in view, left no tree pins drawn at all"
+        )
+        // A narrowing cannot *add* trees: the pins drawn for a subset of the species come from a
+        // subset of the 44 pt cells the whole set filled (`MapModel.markerCellPoints`). A count that
+        // went up would mean the map is answering some other question than the one typed.
+        XCTAssertLessThanOrEqual(
+            narrowed, before,
+            "narrowing to \(searched) drew \(narrowed) pins where the unnarrowed map drew \(before)"
+        )
 
         // Clearing it puts the neighbourhood back — through the ✕ the bar now draws (task #110,
         // ruling R16), which is also the only way a person without a hardware keyboard could do it.
