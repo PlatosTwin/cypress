@@ -156,6 +156,7 @@ struct MapHomeView: View {
             MapCameraMemory.shared.note(snapshot)
         }
         .onChange(of: scenePhase) { _, phase in
+            MapCameraMemory.probeLastPhase = "\(phase)"
             if phase != .active { MapCameraMemory.shared.flush() }
         }
         .onDisappear { MapCameraMemory.shared.flush() }
@@ -254,6 +255,18 @@ struct MapHomeView: View {
                     // block — which is the position MapKit's own `MapUserLocationButton` could not
                     // have been given (`MapRecentre`, and ERRATA E110 for why the arithmetic here is
                     // not something a system control can be dropped into).
+                    Text(
+                        "n\(MapCameraMemory.probeNotes) f\(MapCameraMemory.probeFlushes) "
+                            + "w\(MapCameraMemory.probeWrites) "
+                            + "reg \(String(format: "%.4f", region.center.latitude)),"
+                            + "\(String(format: "%.4f", region.center.longitude)) "
+                            + "sp \(String(format: "%.5f", region.span.latitudeDelta)),"
+                            + "\(String(format: "%.5f", region.span.longitudeDelta)) "
+                            + "ok\(MapCameraMemory.isWorthRemembering(cameraSnapshot))"
+                    )
+                    .font(.system(size: 13))
+                    .foregroundStyle(.black)
+                    .background(.white)
                     MapRecentreButton(engagement: recentreEngagement) { recentre() }
                         .padding(.horizontal, MapLayout.sideInset - MapLayout.cardInset)
                         .padding(.bottom, MapLayout.locateToFabGap)

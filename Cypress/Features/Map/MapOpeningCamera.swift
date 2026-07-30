@@ -72,6 +72,12 @@ final class MapCameraMemory {
 
     static let shared = MapCameraMemory()
 
+    // TEMPORARY PROBE
+    static var probeNotes = 0
+    static var probeFlushes = 0
+    static var probeWrites = 0
+    static var probeLastPhase = "-"
+
     /// Four doubles: latitude, longitude, latitude span, longitude span. An array rather than four
     /// keys so a half-written camera is not representable — either all four are there or none are.
     static let defaultsKey = "map.lastCamera"
@@ -113,6 +119,7 @@ final class MapCameraMemory {
 
     /// A settled camera. **In memory only** — see the header on the cost model.
     func note(_ snapshot: Snapshot) {
+        Self.probeNotes += 1
         guard Self.isWorthRemembering(snapshot) else { return }
         loadIfNeeded()
         guard current != snapshot else { return }
@@ -123,8 +130,10 @@ final class MapCameraMemory {
     /// Write it down. Called when the app leaves the foreground and when the screen goes away, which
     /// between them cover every way a reader stops looking at the map.
     func flush() {
+        Self.probeFlushes += 1
         guard isDirty, let current else { return }
         isDirty = false
+        Self.probeWrites += 1
         defaults.set(Self.encode(current), forKey: Self.defaultsKey)
     }
 
