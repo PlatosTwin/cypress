@@ -1182,6 +1182,15 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             external_ref = None
         tree_uuid = str(uuid.uuid5(NS_TREE, uuid_seed))
 
+        # ---- where this row's FACTS came from, counted only now that the row is
+        # certain to ship. `seed_meta.rows_enriched` is a claim about the file.
+        if source == "city":
+            if record.inventory == "city":
+                if record.attributes_from is None:
+                    stats["city_only_rows"] += 1
+                else:
+                    stats["enriched_rows"] += 1
+
         kind = legacy_kind(record)
         qs = qspecies_stats.setdefault(
             record.species_text or "",
@@ -1330,8 +1339,6 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
 
     stats["source_rows"] = primary.stats["source_rows"]
     stats["dropped_no_coords"] += primary.stats["dropped_no_coords"]
-    stats["enriched_rows"] = primary.stats.get("enriched_rows", 0)
-    stats["city_only_rows"] = primary.stats.get("city_only_rows", 0)
 
     if source == "city":
         # ---- second pass: the export's vacant planting sites.

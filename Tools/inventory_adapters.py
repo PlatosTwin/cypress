@@ -531,8 +531,6 @@ class SFCityLayerAdapter(InventoryAdapter):
         self.enrichment = enrichment
         self.horizon_year = horizon_year
         self.limit = limit
-        self.stats["enriched_rows"] = 0
-        self.stats["city_only_rows"] = 0
 
     @staticmethod
     def species_of(botanical, common):
@@ -582,11 +580,12 @@ class SFCityLayerAdapter(InventoryAdapter):
                 continue
 
             ref = str(record["TREEID"])
+            # The join is counted on the RECORD, not in this adapter's stats, and
+            # the difference is not cosmetic: a record counted here may still be
+            # dropped downstream by the corpus bounding box or as a duplicate ref,
+            # and `seed_meta.rows_enriched` is a claim about rows that SHIPPED.
+            # Counting it at the point of the lookup overstated it by 55 rows.
             extra = self.enrichment.get(ref)
-            if extra is None:
-                self.stats["city_only_rows"] += 1
-            else:
-                self.stats["enriched_rows"] += 1
 
             species_text = self.species_of(record.get("BOTANICAL"), record.get("COMMON"))
             kind, basis, sci, common, conf, is_stub = qspecies_to_contract(species_text)
@@ -613,6 +612,11 @@ class SFCityLayerAdapter(InventoryAdapter):
                 species_confidence=conf,
                 species_text=species_text or None,
                 species_is_stub=is_stub,
+                # Seven of this layer's columns do not exist, and are carried
+                # across from the export for the records both inventories list.
+                # `None` here means this layer is the only one that lists the
+                # record, so those seven are genuinely absent rather than joined.
+                attributes_from="datasf" if extra is not None else None,
                 # Stored EXACTLY as the city writes them, mostly uppercase.
                 # Title-casing turns `MCALLISTER ST` into a spelling nobody uses.
                 address=_clean(record.get("Address")),

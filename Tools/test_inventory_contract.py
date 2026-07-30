@@ -465,7 +465,10 @@ def test_the_city_adapter_reads_the_layers_own_fields():
           "the city adapter produced a record the contract refuses: "
           + str([r.validate() for r in got]))
     check(all(r.inventory == "city" for r in got), "the city adapter mislabelled its inventory")
-    check(adapter.stats["city_only_rows"] == 4, "enrichment accounting is wrong with no export index")
+    check(
+        all(r.attributes_from is None for r in got),
+        "with no export index every record must say its facts are the layer's own",
+    )
 
     by_ref = {r.source_ref: r for r in got}
     check(by_ref["276198"].scientific_name == "Pinus radiata", "the plain case stopped parsing")
@@ -491,6 +494,46 @@ def test_the_city_adapter_reads_the_layers_own_fields():
         "the city adapter filled in a column its layer does not publish",
     )
     check(by_ref["276198"].planted_on is None, "the city adapter invented a planting date")
+
+
+def test_where_the_facts_came_from_is_a_property_of_the_record():
+    """FAILS IF: 'which list supplied this row's facts' stops being on the record.
+
+    It was a counter inside the city adapter, incremented at the moment of the
+    join — which overstated `seed_meta.rows_enriched` by 55, because a record can
+    be joined and then dropped by the corpus bounding box or as a duplicate ref.
+    A count of rows that shipped has to be taken where rows ship.
+
+    It is also the other half of provenance: `inventory` says which list contained
+    the record, `attributes_from` says which list its facts came from, and without
+    the second a reader cannot tell a joined record from one whose columns are
+    simply absent.
+    """
+    rows = [
+        {"TREEID": 1, "Latitude": 37.76, "Longitude": -122.44, "Address": "1 A ST",
+         "PlantType": "Tree", "BOTANICAL": "Pinus radiata", "COMMON": "Monterey Pine", "DBH": 10},
+        {"TREEID": 2, "Latitude": 37.76, "Longitude": -122.44, "Address": "2 A ST",
+         "PlantType": "Tree", "BOTANICAL": "Pinus radiata", "COMMON": "Monterey Pine", "DBH": 10},
+    ]
+    enrichment = {"1": {"qLegalStatus": "DPW Maintained", "qSiteInfo": None, "qCaretaker": None,
+                        "qCareAssistant": None, "PlantDate": None, "PlotSize": None,
+                        "PermitNotes": None}}
+    got = {r.source_ref: r for r in SFCityLayerAdapter(rows, enrichment, 2027).records()}
+
+    check(got["1"].attributes_from == "datasf", "a joined record does not say where its facts came from")
+    check(
+        got["2"].attributes_from is None,
+        "a record only the listing inventory holds claims its facts came from elsewhere",
+    )
+    check(all(r.validate() == [] for r in got.values()), "attributes_from broke validation")
+    check(
+        tree(inventory="city", attributes_from="city").validate(),
+        "attributes_from naming the listing inventory validated clean; that case is spelled None",
+    )
+    check(
+        tree(attributes_from="us-ca-la-streets").validate(),
+        "attributes_from naming an unregistered inventory validated clean",
+    )
 
 
 def test_the_datasf_adapter_reads_the_exports_own_fields(tmp_csv):
@@ -569,6 +612,7 @@ def main() -> int:
             test_the_sf_species_strings_classify_the_way_the_data_says,
             test_a_common_name_alone_does_not_mint_a_scientific_name,
             test_the_city_adapter_reads_the_layers_own_fields,
+            test_where_the_facts_came_from_is_a_property_of_the_record,
         ]
         for test in tests:
             test()

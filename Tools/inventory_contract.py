@@ -371,6 +371,18 @@ class InventoryRecord:
     dbh_in: Optional[float] = None
 
     # ---- the source's own record ----------------------------------------
+    #: **Which inventory supplied the attribute columns**, when that is not the
+    #: one that listed the record. `None` means the listing inventory supplied its
+    #: own, which is the ordinary case.
+    #:
+    #: This completes the provenance pair rather than being an extra: `inventory`
+    #: says which list contained this record, and `attributes_from` says which
+    #: list the facts on it came from. San Francisco needs both because the city
+    #: build takes its row set from the ArcGIS layer and seven of its columns from
+    #: the DataSF export -- the layer does not publish them. A reader who has only
+    #: `inventory` cannot tell a record whose facts came from elsewhere from one
+    #: whose facts are simply absent, and those are different records.
+    attributes_from: Optional[str] = None
     #: Keyed by SEED column name, not by any source's column name. Absent key and
     #: `None` value mean the same thing and both become NULL.
     city_record: dict = field(default_factory=dict)
@@ -401,6 +413,17 @@ class InventoryRecord:
         except ContractError as error:
             problems.append(str(error))
             inventory = None
+
+        if self.attributes_from is not None:
+            try:
+                require_inventory(self.attributes_from)
+            except ContractError as error:
+                problems.append(f"attributes_from: {error}")
+            if self.attributes_from == self.inventory:
+                problems.append(
+                    f"attributes_from is {self.attributes_from!r}, the same inventory that listed "
+                    f"the record; that is the ordinary case and is spelled None"
+                )
 
         if self.kind not in KINDS:
             problems.append(f"kind {self.kind!r} is not one of {KINDS}")
