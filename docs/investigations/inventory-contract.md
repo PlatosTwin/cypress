@@ -342,7 +342,38 @@ What that costs, precisely:
   predating per-row provenance, but it is worth saying plainly: **two of the nine are inert until
   someone rebuilds.**
 
-The one command that closes this, when someone with the owner's authority wants it:
+**What can be said about 145,837 without the cache, stated as an argument with each step checked.**
+
+1. **The rewrite is input-identical to main on both paths.** `--source datasf` over the real
+   198,435-row export: five tables byte-identical. `--source city` over a 198,435-record stand-in in
+   the layer's own field shape: five tables byte-identical, and after the `rows_enriched` fix every
+   shared receipt value identical too. So for *any* input, the rewrite emits what main emits.
+2. **Main's city build over the real cache produced 145,837**, and the shipped seed still carries
+   that build's own account of how — every figure below read out of `Fixtures/seed/cypress-seed.sqlite`
+   just now, and the arithmetic closes with nothing unexplained:
+
+   | | |
+   |---|---:|
+   | `trees_source_feature_count` — the layer's records | 133,577 |
+   | `source_rows` read from the layer | 133,577 |
+   | dropped: no coords / out of bbox / duplicate ref | 0 / 0 / 0 |
+   | → rows from the city layer (`inventory_source = 'city'`, counted in the table) | **133,577** |
+   | `export_vacant_rows_read` — the export's placeholder rows | 13,761 |
+   | dropped, no usable coordinate | 1,243 |
+   | excluded, the layer lists a living tree at that ref | 128 |
+   | already in, the layer calls it empty too | 130 |
+   | → rows from the export (`inventory_source = 'datasf'`, counted in the table) | **12,260** |
+   | 133,577 + 12,260 | **145,837** = `rows_kept` |
+   | `rows_enriched` + `rows_city_only` = 130,071 + 3,506 | 133,577 |
+
+3. Therefore the rewrite over that same cache produces 145,837 — **conditional on the cache being
+   the one from 2026-07-26.** That condition is the whole of what is unverified, and it is a fact
+   about the city's servers rather than about this code.
+
+I will not dress that up as a rebuild. The brief asked for counts rather than prose and step 2 is
+counts; step 3 is an inference, and it is labelled one.
+
+The one command that closes even that, when someone with the owner's authority wants it:
 
 ```sh
 python3 Tools/fetch_city_trees.py          # 67 paged requests, cached to Fixtures/raw/
