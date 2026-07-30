@@ -8,7 +8,7 @@ import Testing
 ///
 /// The owner's sentence is "opening the app should open on where you're located right now, 100% of
 /// the time", and the honest reading of it has three parts. The camera has to actually arrive on the
-/// reader (ERRATA E167, asserted in `MapOpeningCameraApplyTests` below). Until it can, it has to sit
+/// reader (ERRATA E168, asserted in `MapOpeningCameraApplyTests` below). Until it can, it has to sit
 /// somewhere defensible. And in the states where it never will, the screen has to say so — in
 /// *different* words for different states, which is ERRATA E126 and the lesson of E158.
 @MainActor
@@ -99,7 +99,7 @@ struct MapOpeningCameraTests {
 
     /// A zero span is the camera before MapKit has settled once — the same case
     /// `MapRecentre.Camera.isCentred` guards — and 37.3346 is what a map view that was never aimed
-    /// reads back as, which is the whole of E167. Neither is a place the reader has been.
+    /// reads back as, which is the whole of E168. Neither is a place the reader has been.
     @Test("a camera that is not a place is neither stored nor restored")
     func rubbishIsRejected() {
         #expect(MapCameraMemory.isWorthRemembering(Self.snapshot(latitudeSpan: 0)) == false)
@@ -272,7 +272,7 @@ struct MapOpeningCameraTests {
     }
 }
 
-/// **The camera that was applied to a map with no area (ERRATA E167).**
+/// **The camera that was applied to a map with no area (ERRATA E168).**
 ///
 /// This is the defect underneath #115, and it is not a copy or a fallback problem: with location
 /// granted and a fix already on the device, screen 01 opened on Mission Dolores Park and stayed
@@ -330,12 +330,28 @@ struct MapOpeningCameraApplyTests {
                 onSelectCluster: { _ in }
             )
             coordinator = layer.makeCoordinator()
+            // **The delegate is attached here, unlike in `MapCameraOwnershipTests`.** That suite
+            // deliberately drives every callback by hand so it is not asserting against a race. This
+            // one is about a callback MapKit either sends or does not send, so MapKit has to be the
+            // one sending it — see `theSettledRegionIsEchoedBack`.
+            mapView.delegate = coordinator
         }
 
         /// One `updateUIView` pass, in the part of it this defect touches.
         func updatePass() {
             coordinator.parent.position = box.position
             coordinator.applyCameraIfChanged(box.position, to: mapView)
+        }
+
+        /// SwiftUI gets round to laying the map out, and the runloop then gets a turn.
+        ///
+        /// The second half matters: `AimableMapView` hands its callback to the main queue rather than
+        /// running it inside `layoutSubviews`, so a test that only called `layoutIfNeeded()` would
+        /// observe nothing. See `theSettledRegionIsEchoedBack` and E168.
+        func layOutAndSettle(width: CGFloat = 402, height: CGFloat = 874) async {
+            layOut(width: width, height: height)
+            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(250))
         }
 
         /// SwiftUI gets round to laying the map out.
@@ -355,32 +371,32 @@ struct MapOpeningCameraApplyTests {
         }
     }
 
-    /// **The mechanism, and the assertion the whole of E167 turns on.**
+    /// **The mechanism, and the assertion the whole of E168 turns on.**
     ///
     /// A request passed over because there was no map to draw into must leave the ticket unspent. The
     /// measured failure was `REJECT seq=1 applied=1` repeating forever: the number had been recorded
     /// by `makeUIView` against a `setRegion` MapKit never performed, so the fly-to-you was stale
     /// before it was ever shown.
     @Test("a pass with no map to draw into does not spend the ticket")
-    func noAreaDoesNotSpendTheTicket() {
+    func noAreaDoesNotSpendTheTicket() async {
         let screen = Screen(opening: Self.dolores)
         for _ in 0..<5 { screen.updatePass() }
         #expect(
             screen.coordinator.appliedSequence == nil,
-            "a camera was recorded as applied to a map with no area — this is E167"
+            "a camera was recorded as applied to a map with no area — this is E168"
         )
-        screen.layOut()
+        await screen.layOutAndSettle()
         #expect(screen.coordinator.appliedSequence != nil, "the laid-out map was never aimed")
     }
 
     /// **The map is aimed at what the app wants *now*, not at what it wanted when the view was made.**
     ///
-    /// This is the half of E167 that decides where the reader actually lands. On a cold launch the
+    /// This is the half of E168 that decides where the reader actually lands. On a cold launch the
     /// first GPS fix arrives inside the window between `makeUIView` and the first layout, so the
     /// request outstanding when the map finally gets a size is the reader's own location — and a hook
     /// that replayed the camera captured at construction would faithfully open on the wrong place.
     @Test("the first laid-out pass aims at the newest request, not the opening one")
-    func aimsAtTheNewestRequest() {
+    func aimsAtTheNewestRequest() async {
         let screen = Screen(opening: Self.dolores)
         // The opening camera is asked for while there is still no map.
         for _ in 0..<3 { screen.updatePass() }
@@ -390,14 +406,14 @@ struct MapOpeningCameraApplyTests {
         )
         screen.coordinator.parent.position = screen.box.position
 
-        screen.layOut()
+        await screen.layOutAndSettle()
 
         let centre = screen.mapView.region.center
         #expect(
             Self.metres(centre, Self.user) < 60,
             """
             the map was given a size with the reader's own location outstanding and opened \
-            \(Int(Self.metres(centre, Self.user))) m away instead — this is E167, the map that opens \
+            \(Int(Self.metres(centre, Self.user))) m away instead — this is E168, the map that opens \
             on Dolores Park with a perfect fix in hand
             """
         )
@@ -407,9 +423,9 @@ struct MapOpeningCameraApplyTests {
     /// The other order, which has to arrive at the same place: the map is laid out first and opens on
     /// its opening camera, and a fix afterwards moves it.
     @Test("a fix that lands after the map is laid out moves the camera too")
-    func fixAfterLayoutStillArrives() {
+    func fixAfterLayoutStillArrives() async {
         let screen = Screen(opening: Self.dolores)
-        screen.layOut()
+        await screen.layOutAndSettle()
 
         #expect(
             Self.metres(screen.mapView.region.center, MapLayout.defaultCentre) < 60,
@@ -422,6 +438,63 @@ struct MapOpeningCameraApplyTests {
         screen.updatePass()
 
         #expect(Self.metres(screen.mapView.region.center, Self.user) < 60)
+    }
+
+    /// **The settled camera has to be reported back, and the fix for E168 nearly stopped it being.**
+    ///
+    /// This is a regression the E168 fix introduced and the unit suite could not see, found only by
+    /// launching the app and reading the numbers off the screen. Aiming the map from inside
+    /// `layoutSubviews` is a re-entrant call: `setRegion` is honoured, so the map on the glass is on
+    /// the right street and every screenshot looks correct — and `regionDidChangeAnimated` is never
+    /// delivered. Nothing else writes `MapHomeView.region`, so it kept MapKit's own default for the
+    /// life of the screen: **37.1328, −95.7856, span 98° × 61°**, which is the continental United
+    /// States, sitting behind a map of Van Ness and Market.
+    ///
+    /// That is the shape of defect this project keeps finding — a value that looks answered and is
+    /// not — and everything downstream of the settled camera was quietly wrong: the recentre control's
+    /// spoken state (#100), a cluster tap's "two zoom levels in" measured from a 98° span, and the
+    /// camera this app now remembers between launches.
+    ///
+    /// So the echo is asserted directly, in the units the defect appeared in. A span of tens of
+    /// degrees is not a plausible camera for a city and the bound below says so.
+    @Test("the region the map settles on is echoed back to the screen")
+    func theSettledRegionIsEchoedBack() async {
+        let screen = Screen(opening: Self.dolores)
+        await screen.layOutAndSettle()
+
+        let echoed = screen.box.region
+        #expect(
+            echoed.span.latitudeDelta > 0,
+            "the screen was never told what camera the map settled on"
+        )
+        #expect(
+            echoed.span.latitudeDelta < 1 && echoed.span.longitudeDelta < 1,
+            """
+            the screen thinks the camera spans \(echoed.span.latitudeDelta)° × \
+            \(echoed.span.longitudeDelta)°, which is a continent rather than a city — the settle was \
+            never reported and this is MapKit's default region (E168)
+            """
+        )
+        #expect(
+            Self.metres(echoed.center, MapLayout.defaultCentre) < 200,
+            """
+            the screen thinks the camera is at \(echoed.center.latitude), \
+            \(echoed.center.longitude) while the map was aimed at \
+            \(MapLayout.defaultCentre.latitude), \(MapLayout.defaultCentre.longitude)
+            """
+        )
+
+        // And it keeps tracking: a later camera has to be reported too, or the echo works exactly
+        // once and every reader of the settled region is stale from the second move onward.
+        screen.box.position = .move(
+            to: MapLayout.region(around: Self.user, metres: MapLayout.defaultSpanMetres)
+        )
+        screen.updatePass()
+        try? await Task.sleep(for: .milliseconds(400))
+        #expect(
+            Self.metres(screen.box.region.center, Self.user) < 200,
+            "the screen was told about the opening camera and then never again"
+        )
     }
 
     /// **The hook waits for an area, fires once, and lets go.**
@@ -439,17 +512,22 @@ struct MapOpeningCameraApplyTests {
     /// applied. So a test here claiming to prove E140 would have proved nothing. This one proves the
     /// property the hook is actually responsible for.
     @Test("the layout hook waits for an area, fires once, and releases the closure")
-    func layoutHookIsOneShot() {
+    func layoutHookIsOneShot() async {
         let view = AimableMapView(frame: .zero)
         var fired = 0
         view.onFirstLayout = { fired += 1 }
 
         // A layout pass with nothing to draw into is not the moment.
         view.layoutIfNeeded()
+        try? await Task.sleep(for: .milliseconds(150))
         #expect(fired == 0, "the hook fired at zero bounds, spending itself on a map with no area")
 
         view.frame = CGRect(x: 0, y: 0, width: 402, height: 874)
         view.layoutIfNeeded()
+        // The closure is handed over inside the layout pass and *run* after it (E168), so the release
+        // is observable at once and the call is not.
+        #expect(view.onFirstLayout == nil, "the closure is still retained after it has been used")
+        try? await Task.sleep(for: .milliseconds(250))
         #expect(fired == 1, "the hook did not fire when the map was given a size")
 
         // Every layout after it: a rotation, a keyboard, a tab switch.
@@ -457,7 +535,7 @@ struct MapOpeningCameraApplyTests {
         view.layoutIfNeeded()
         view.frame = CGRect(x: 0, y: 0, width: 874, height: 402)
         view.layoutIfNeeded()
+        try? await Task.sleep(for: .milliseconds(250))
         #expect(fired == 1, "the hook fired \(fired) times — it is a first-layout hook, not an observer")
-        #expect(view.onFirstLayout == nil, "the closure is still retained after it has been used")
     }
 }

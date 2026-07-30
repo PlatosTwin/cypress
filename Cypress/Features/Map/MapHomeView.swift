@@ -54,7 +54,7 @@ struct MapHomeView: View {
     ///
     /// It was `MapLayout.defaultCentre` — Mission Dolores Park — unconditionally, for everyone,
     /// forever. See `MapOpeningCamera` for why a place the reader has actually been beats a
-    /// stranger's park, and ERRATA E167 for the separate defect that stopped even the *fix* from
+    /// stranger's park, and ERRATA E168 for the separate defect that stopped even the *fix* from
     /// reaching the camera once it arrived.
     ///
     /// `MapCameraMemory.remembered` reads a value this process loaded once, so the re-evaluation of
@@ -156,7 +156,6 @@ struct MapHomeView: View {
             MapCameraMemory.shared.note(snapshot)
         }
         .onChange(of: scenePhase) { _, phase in
-            MapCameraMemory.probeLastPhase = "\(phase)"
             if phase != .active { MapCameraMemory.shared.flush() }
         }
         .onDisappear { MapCameraMemory.shared.flush() }
@@ -255,18 +254,6 @@ struct MapHomeView: View {
                     // block — which is the position MapKit's own `MapUserLocationButton` could not
                     // have been given (`MapRecentre`, and ERRATA E110 for why the arithmetic here is
                     // not something a system control can be dropped into).
-                    Text(
-                        "n\(MapCameraMemory.probeNotes) f\(MapCameraMemory.probeFlushes) "
-                            + "w\(MapCameraMemory.probeWrites) "
-                            + "reg \(String(format: "%.4f", region.center.latitude)),"
-                            + "\(String(format: "%.4f", region.center.longitude)) "
-                            + "sp \(String(format: "%.5f", region.span.latitudeDelta)),"
-                            + "\(String(format: "%.5f", region.span.longitudeDelta)) "
-                            + "ok\(MapCameraMemory.isWorthRemembering(cameraSnapshot))"
-                    )
-                    .font(.system(size: 13))
-                    .foregroundStyle(.black)
-                    .background(.white)
                     MapRecentreButton(engagement: recentreEngagement) { recentre() }
                         .padding(.horizontal, MapLayout.sideInset - MapLayout.cardInset)
                         .padding(.bottom, MapLayout.locateToFabGap)

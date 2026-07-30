@@ -211,7 +211,7 @@ enum MapPinImage {
 
 /// An `MKMapView` that says when it first has an area to draw in.
 ///
-/// **A `UIViewRepresentable` has no layout hook, and this one needs exactly one** (ERRATA E167).
+/// **A `UIViewRepresentable` has no layout hook, and this one needs exactly one** (ERRATA E168).
 /// `makeUIView` and the `updateUIView` passes around it can all run while the view is still
 /// `bounds == .zero`, and a camera cannot be aimed at a map with no area — so the opening camera has
 /// to wait for a size. Waiting is safe only if something wakes the layer when the size arrives:
@@ -221,6 +221,18 @@ enum MapPinImage {
 ///
 /// One callback, fired once, then released. It is not a general layout observer and must not become
 /// one — everything else this file does is driven by `updateUIView`, and it stays that way.
+///
+/// **The callback is delivered *after* the layout pass, not inside it, and that is not tidiness —
+/// it is the second half of E168.** Aiming from within `layoutSubviews` is a re-entrant call into a
+/// map that is in the middle of laying itself out: `setRegion` is honoured, so the camera looks
+/// perfect, and `regionDidChangeAnimated` is never delivered. `MapHomeView.region` is fed by nothing
+/// else, so it stayed on MapKit's own default — 37.1328, −95.7856, a span of 98° × 61°, which is the
+/// continental United States — for the life of the screen, while the map on the glass showed the
+/// right street. Everything that reads the settled camera was then reading that: the recentre
+/// control's "centred on you" (#100), a cluster tap's idea of "two zoom levels in", and the camera
+/// this app now remembers between launches.
+///
+/// One hop through the main queue costs a frame and makes the callback an ordinary event again.
 final class AimableMapView: MKMapView {
     var onFirstLayout: (() -> Void)?
 
@@ -229,7 +241,9 @@ final class AimableMapView: MKMapView {
         guard onFirstLayout != nil, !bounds.isEmpty else { return }
         let announce = onFirstLayout
         onFirstLayout = nil
-        announce?()
+        // Not `announce?()`. See the note above: a `setRegion` made from inside a layout pass is
+        // performed but never reported, and this file's whole camera story is told by that report.
+        DispatchQueue.main.async { announce?() }
     }
 }
 
@@ -256,7 +270,7 @@ struct MapAnnotationLayer: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
-    /// Whether this map view has an area to aim a camera at. See `AimableMapView` and E167.
+    /// Whether this map view has an area to aim a camera at. See `AimableMapView` and E168.
     static func canAim(_ mapView: MKMapView) -> Bool { !mapView.bounds.isEmpty }
 
     func makeUIView(context: Context) -> MKMapView {
@@ -295,7 +309,7 @@ struct MapAnnotationLayer: UIViewRepresentable {
         )
 
         context.coordinator.installWash(on: mapView, isDark: colorScheme == .dark)
-        // **The opening camera is *not* applied here any more, and this is ERRATA E167 — the whole
+        // **The opening camera is *not* applied here any more, and this is ERRATA E168 — the whole
         // of why the app opened on Mission Dolores Park with a perfect GPS fix in hand.**
         //
         // A freshly constructed `MKMapView()` has `bounds == .zero`; SwiftUI lays it out afterwards.
@@ -457,7 +471,7 @@ struct MapAnnotationLayer: UIViewRepresentable {
         /// measurement, and ERRATA E140 for what it cost.
         func applyCameraIfChanged(_ request: MapCameraRequest, to mapView: MKMapView) {
             // **A map with no area cannot be aimed, and pretending otherwise spends the ticket
-            // (ERRATA E167).** This is the *only* condition under which a request is passed over
+            // (ERRATA E168).** This is the *only* condition under which a request is passed over
             // without being recorded: it has not been superseded, it has not been applied, and
             // `AimableMapView.onFirstLayout` will bring it back the moment there is a map for it.
             // Every other early return here is a camera the reader has already moved away from;
@@ -475,7 +489,7 @@ struct MapAnnotationLayer: UIViewRepresentable {
         ///
         /// Not at whatever it was asking for when `makeUIView` ran: the first GPS fix lands in that
         /// window on a cold launch, and the request it minted is the one the reader is owed. See
-        /// `AimableMapView` and ERRATA E167.
+        /// `AimableMapView` and ERRATA E168.
         func aimAtCurrentRequest(_ mapView: MKMapView) {
             applyCameraIfChanged(parent.position, to: mapView)
         }

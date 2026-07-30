@@ -7,7 +7,7 @@
 //  ── The ask ──────────────────────────────────────────────────────────────────────────────────────
 //  "Opening the app should open on where you're located right now, 100% of the time." (#115)
 //
-//  Two thirds of that is a camera problem and was fixed where the camera lives — ERRATA E167, in
+//  Two thirds of that is a camera problem and was fixed where the camera lives — ERRATA E168, in
 //  `MapAnnotationLayer`: the fly-to-you was minted, applied, and then thrown away by an opening
 //  region MapKit was still holding from before the map had a size. With that repaired the map really
 //  does open on the reader whenever the phone knows where they are.
@@ -72,12 +72,6 @@ final class MapCameraMemory {
 
     static let shared = MapCameraMemory()
 
-    // TEMPORARY PROBE
-    static var probeNotes = 0
-    static var probeFlushes = 0
-    static var probeWrites = 0
-    static var probeLastPhase = "-"
-
     /// Four doubles: latitude, longitude, latitude span, longitude span. An array rather than four
     /// keys so a half-written camera is not representable — either all four are there or none are.
     static let defaultsKey = "map.lastCamera"
@@ -119,7 +113,6 @@ final class MapCameraMemory {
 
     /// A settled camera. **In memory only** — see the header on the cost model.
     func note(_ snapshot: Snapshot) {
-        Self.probeNotes += 1
         guard Self.isWorthRemembering(snapshot) else { return }
         loadIfNeeded()
         guard current != snapshot else { return }
@@ -130,10 +123,8 @@ final class MapCameraMemory {
     /// Write it down. Called when the app leaves the foreground and when the screen goes away, which
     /// between them cover every way a reader stops looking at the map.
     func flush() {
-        Self.probeFlushes += 1
         guard isDirty, let current else { return }
         isDirty = false
-        Self.probeWrites += 1
         defaults.set(Self.encode(current), forKey: Self.defaultsKey)
     }
 
@@ -162,7 +153,7 @@ final class MapCameraMemory {
     /// Every one of these has been seen from `MKMapView` at least once in this codebase's life: a
     /// zero span is the camera before the map has settled (`MapRecentre.Camera.isCentred` guards the
     /// same case), and a centre at MapKit's own default is what a map that was never aimed reads back
-    /// as — 37.3346, which E167 is the story of. A camera that fails this is not written and not
+    /// as — 37.3346, which E168 is the story of. A camera that fails this is not written and not
     /// restored; the reader gets the park, which is at least a real place.
     static func isWorthRemembering(_ snapshot: Snapshot) -> Bool {
         guard snapshot.latitudeSpan > 0, snapshot.longitudeSpan > 0 else { return false }
