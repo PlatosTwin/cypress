@@ -150,15 +150,24 @@ struct MapHomeView: View {
             guard !Task.isCancelled else { return }
             waited = true
         }
-        // Remembering where the reader left the map. `note` touches memory only; the write happens on
-        // the two edges below. See `MapOpeningCamera` on why this is not on the pan path.
-        .onChange(of: cameraSnapshot) { _, snapshot in
-            MapCameraMemory.shared.note(snapshot)
-        }
+        // Remembering where the reader left the map, at the two moments they stop looking at it.
+        //
+        // **The camera is read here rather than watched.** This began as an
+        // `.onChange(of: cameraSnapshot)` feeding an in-memory note, which is the obvious shape and
+        // was wrong twice over. It put a struct comparison on a body that runs 240 times a second
+        // (#84's hot path) to collect a value that is wanted at most twice per visit to the screen.
+        // And, measured on the device, it did not work: the settle that fired the change carried
+        // MapKit's own default span, `isWorthRemembering` correctly refused it, and the settle that
+        // followed — the real camera — produced no further change for the modifier to see. Nothing was
+        // ever written, and the screen went on saying "The map is over the middle of the city" to
+        // somebody who had been looking at Folsom Street a second earlier.
+        //
+        // Asking `region` what it holds at the moment of leaving needs no watching, cannot miss an
+        // intermediate value it does not care about, and costs nothing at all while the reader pans.
         .onChange(of: scenePhase) { _, phase in
-            if phase != .active { MapCameraMemory.shared.flush() }
+            if phase != .active { rememberCamera() }
         }
-        .onDisappear { MapCameraMemory.shared.flush() }
+        .onDisappear { rememberCamera() }
         #if DEBUG
         .onChange(of: model.content) { _, content in
             MapFrameProbe.shared.note(markers: content.markerCount, zoom: model.viewport?.zoom ?? 0)
@@ -254,6 +263,8 @@ struct MapHomeView: View {
                     // block — which is the position MapKit's own `MapUserLocationButton` could not
                     // have been given (`MapRecentre`, and ERRATA E110 for why the arithmetic here is
                     // not something a system control can be dropped into).
+                    Text("R \(String(format: "%.4f", region.center.latitude)),\(String(format: "%.4f", region.center.longitude)) S \(String(format: "%.5f", region.span.latitudeDelta)) E \(String(describing: recentreEngagement))")
+                        .font(.system(size: 10)).foregroundStyle(.black).background(.white)
                     MapRecentreButton(engagement: recentreEngagement) { recentre() }
                         .padding(.horizontal, MapLayout.sideInset - MapLayout.cardInset)
                         .padding(.bottom, MapLayout.locateToFabGap)
@@ -374,8 +385,16 @@ struct MapHomeView: View {
         return true
     }
 
-    /// The settled camera, in the form `MapCameraMemory` stores. Equatable, which `MKCoordinateRegion`
-    /// is not — which is the whole reason this exists rather than an `.onChange(of: region)`.
+    /// Hands the camera the reader is leaving behind to `MapCameraMemory`, and writes it down.
+    ///
+    /// Called on exactly two edges — the app leaving the foreground, and this screen going away —
+    /// which between them cover every way somebody stops looking at the map.
+    private func rememberCamera() {
+        MapCameraMemory.shared.note(cameraSnapshot)
+        MapCameraMemory.shared.flush()
+    }
+
+    /// The settled camera, in the form `MapCameraMemory` stores.
     private var cameraSnapshot: MapCameraMemory.Snapshot {
         MapCameraMemory.Snapshot(
             centre: Coordinate(region.center),

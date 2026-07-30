@@ -483,6 +483,25 @@ struct MapAnnotationLayer: UIViewRepresentable {
             // not the way the answer is delivered — `CypressMotion.resolved`'s rule, applied at the
             // one place on this screen where a camera actually moves.
             mapView.setRegion(request.region, animated: !UIAccessibility.isReduceMotionEnabled)
+            // **What we just asked for, recorded now rather than awaited** (ERRATA E168).
+            //
+            // `regionDidChangeAnimated` is the authority on where the camera *ended up*, and it
+            // refines this a moment later. But it is MapKit's callback on MapKit's schedule, and for
+            // the opening camera — set within a frame or two of the map first having a size — it does
+            // not reliably arrive at all. Measured: with the aim deferred out of `layoutSubviews` and
+            // the map visibly on the right street, `MapHomeView.region` still held MapKit's default
+            // 98° × 61° until something else moved the camera.
+            //
+            // Waiting for a report that may not come is what made `region` a value that looked
+            // answered and was not. The app knows what it asked for, so it writes that: at worst the
+            // screen believes the camera is where the app just drove it, which is true within the few
+            // metres MapKit adjusts a region by; at best the settle arrives and replaces it with the
+            // exact figure. There is no case left where the screen holds a camera nobody asked for.
+            //
+            // This drives nothing. `region` is read to size a cluster zoom, to answer "is the map on
+            // the reader" and to remember where they left it — never to move the camera — so writing
+            // it here cannot recreate E140.
+            parent.region = request.region
         }
 
         /// The map has just been given a size. Aim it at whatever the app is asking for now.
