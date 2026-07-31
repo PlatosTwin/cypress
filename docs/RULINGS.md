@@ -690,7 +690,7 @@ species, and whether the 312 not-a-tree records should get a status of their own
 be excluded from the corpus. Those change what the map draws and are #94's to settle. This ruling
 only makes them countable and makes the schema that permitted them look wrong.
 
-## R19 — A confirmed-dead tree says so in words; whether it gets its own drawn pin is still open
+### R19 — a confirmed-dead tree says so in words; whether it gets its own drawn pin is still open
 
 
 Raised by task #58 / ERRATA E170, which made `dead_reported` reachable from the app for the first
