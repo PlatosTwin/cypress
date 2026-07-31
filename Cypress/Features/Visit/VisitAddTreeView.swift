@@ -355,6 +355,15 @@ struct VisitAddTreeView: View {
             .frame(maxWidth: .infinity)
     }
 
+    /// The well has neither a photograph nor a live preview in it, so the sentence has to be drawn
+    /// somewhere. **Spelled once**: `wellContents` chooses the branch and `wellEmptyNotice` chooses
+    /// where the sentence lands, and if the two conditions ever drift the sentence is drawn twice or
+    /// not at all. `isLive` alone is not it — a session that is live but not yet vended still draws
+    /// the empty branch.
+    private var wellIsEmpty: Bool {
+        model.snapshot == nil && !(model.camera.isLive && model.camera.session != nil)
+    }
+
     @ViewBuilder
     private var wellContents: some View {
         if let snapshot = model.snapshot {
@@ -435,7 +444,7 @@ struct VisitAddTreeView: View {
     /// Nothing is lost to VoiceOver at any size: the well's own `accessibilityLabel` is this string.
     @ViewBuilder
     private var wellEmptyNotice: some View {
-        if dynamicTypeSize.isAccessibilitySize, !model.hasPhoto, !model.camera.isLive {
+        if dynamicTypeSize.isAccessibilitySize, wellIsEmpty {
             emptyWellSentence
                 .frame(maxWidth: .infinity, alignment: .center)
         }
