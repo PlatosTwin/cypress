@@ -9,7 +9,7 @@
 //
 //  Two things arrive here that used not to (ERRATA E112, E113):
 //
-//  - **The favourite has a state, and the state is the store's.** The heart's on-state is read on
+//  - **The favorite has a state, and the state is the store's.** The heart's on-state is read on
 //    load and re-read after every write, so what the cell shows is what is stored rather than what
 //    the last tap said. A write that does not land is visible as the control going back.
 //  - **A record that is not a tree does not become a profile.** `TreeProfileDestination` is asked
@@ -49,7 +49,7 @@ final class TreeProfileModel {
     let treeID: UUID
     private let api: any CypressAPI
 
-    /// Performs the favourite write. The composition root owns it, because the owner of a
+    /// Performs the favorite write. The composition root owns it, because the owner of a
     /// contribution (D9) and the outbox are not a view's to resolve — see `ProfileFavoriteWriter`.
     ///
     /// It returns nothing on purpose. Whether the write worked is not this closure's word against
@@ -96,7 +96,7 @@ final class TreeProfileModel {
                 break
             }
 
-            isFavorite = await storedFavorite()
+            await readFavorite()
             phase = .loaded(
                 TreeProfilePresentation(profile: profile, caretakerInitials: caretakerInitials)
             )
@@ -142,7 +142,7 @@ final class TreeProfileModel {
         await reload()
     }
 
-    // MARK: - The favourite (RULINGS R2)
+    // MARK: - The favorite (RULINGS R2)
 
     /// The taps, in the order they were made.
     ///
@@ -153,7 +153,7 @@ final class TreeProfileModel {
     /// keeps the last tap the last word.
     private var writes: Task<Void, Never>?
 
-    /// Toggles the favourite. Returns the task so a test can wait for it; the view does not.
+    /// Toggles the favorite. Returns the task so a test can wait for it; the view does not.
     @discardableResult
     func toggleFavorite() -> Task<Void, Never> {
         let previous = writes
@@ -165,27 +165,57 @@ final class TreeProfileModel {
         return task
     }
 
+    /// How many taps this screen has performed.
+    ///
+    /// **A read that started before a tap does not get to answer for it** (ERRATA E184). Every
+    /// favorite read here is `await`ed, which means it takes its snapshot, gives up the main actor,
+    /// and assigns whenever it gets it back. The taps were ordered against each other by `writes`;
+    /// the *reads* were ordered against nothing. `load()` is not only called on first appearance —
+    /// `TreeProfileView` calls `reload()` when the screen comes back to the front and again when a
+    /// sheet closes over it — so a refresh could be in flight, holding an answer taken a moment
+    /// before the finger arrived, and land on top of a favorite that had just been stored.
+    ///
+    /// The row was in the database and the cell said off: "I tapped Favorite and nothing happened",
+    /// which is the only shape that report can take on a control whose state is read rather than
+    /// remembered (RULINGS R2). Stamping each read with the tap count it was taken under, and
+    /// dropping it if that has moved, is what keeps the last tap the last word — the same sentence
+    /// `writes` already makes about the writes, extended to the reads that answer them.
+    private var taps = 0
+
     private func write() async {
         let desired = !isFavorite
+        taps += 1
         // The control answers the finger immediately…
         isFavorite = desired
         await setFavorite(treeID, desired)
         // …and then answers the store. If the write did not land, this is where the heart goes
         // back to where it was, which is the state E101 recorded as unavailable and R2 requires.
-        isFavorite = await storedFavorite()
+        await readFavorite()
+    }
+
+    /// Reads the store's answer and assigns it, unless a tap happened while the read was in flight.
+    ///
+    /// Dropping the answer rather than re-reading is deliberate: the tap that overtook this read has
+    /// its own re-read at the end of `write()`, so the store still gets the last word — one read
+    /// later, and from a snapshot that includes the tap.
+    private func readFavorite() async {
+        let generation = taps
+        let stored = await storedFavorite()
+        guard generation == taps else { return }
+        isFavorite = stored
     }
 
     /// Whether the store holds this tree for whoever is contributing right now.
     ///
-    /// Through `grove()`, which is `GET /me/grove` — "favourited and visited trees" — and which E89
+    /// Through `grove()`, which is `GET /me/grove` — "favorited and visited trees" — and which E89
     /// left correct and callerless. It reads both ownership arms (the device's rows and the
     /// account's), which is exactly the question the heart asks, and it is a read the protocol
-    /// already has: growing `CypressAPI` a per-tree favourite read would be the tidier call and it
+    /// already has: growing `CypressAPI` a per-tree favorite read would be the tidier call and it
     /// is a change to the backend boundary, not to a screen. If this screen ever needs it to be
     /// cheaper than "the trees you have contributed to", that is the method to add.
     ///
     /// A failed read is `false`: the cell draws its idle state when nothing is known, rather than
-    /// claiming a favourite it could not confirm.
+    /// claiming a favorite it could not confirm.
     private func storedFavorite() async -> Bool {
         guard let grove = try? await api.grove() else { return false }
         return grove.first { $0.treeID == treeID }?.isFavorite ?? false

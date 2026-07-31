@@ -428,14 +428,54 @@ struct MapFilterTests {
 
     /// A reader with no favourites at all is told something different from a reader who has some,
     /// just not here. Telling the first to "pan or zoom out to look further" is advice to go hunting
-    /// for trees they have never hearted.
+    /// for trees they have never marked.
+    ///
+    /// **This test used to require the word "hearted"** and therefore held the defect in place
+    /// (task #139, ERRATA E184). The sentence it was pinning read "Tap the heart on any tree's
+    /// page", and there is no heart anywhere in this app — C8's four cells are text, marked NOT
+    /// SPECIFIED in SCREENS.md §2 and again in §5 gap 3. What the test meant to assert is that the
+    /// never-favourited state says what to do; what it actually asserted is that it says it in a
+    /// word describing a control nobody drew. It now asks for the label the screen really carries.
     @Test("an empty set and an empty viewport give different reasons")
     func emptySetAndEmptyViewportDiffer() {
         let noneAnywhere = MapFilterCopy.emptyMessage(MapFilter(membership: .favorites), hasAnyMembers: false)
         let noneHere = MapFilterCopy.emptyMessage(MapFilter(membership: .favorites), hasAnyMembers: true)
         #expect(noneAnywhere != noneHere, "the same sentence is used for both empty states")
-        #expect(noneAnywhere.lowercased().contains("hearted"), "the never-favourited state does not say what to do: \(noneAnywhere)")
+        #expect(
+            noneAnywhere.contains(QuadActionRow.Action.favorite.label),
+            "the never-favourited state does not name the control that makes a favourite: \(noneAnywhere)"
+        )
         #expect(noneHere.lowercased().contains("pan"), "the nothing-here state does not offer the viewport: \(noneHere)")
+    }
+
+    /// **No screen in this app may tell the reader to tap a heart.**
+    ///
+    /// The owner's second report on #139 was that the Favorites note "says there is a heart icon to
+    /// heart a tree, but that's false". It was: SCREENS.md §5 gap 3 lists the C8 icons as NOT
+    /// SPECIFIED, `mocks/cypress-mocks.html` contains no heart, and RULINGS R2 retracts its own
+    /// "the heart glyph fills" clause for that reason. The word survived in the one place a reader
+    /// could act on it — an empty state whose entire job is to send them to the control.
+    ///
+    /// Every sentence this type can produce is checked, not only the one that was wrong, because
+    /// the next author to write this copy will be writing a different case.
+    @Test("no map-filter sentence sends the reader to an affordance the app does not draw")
+    func noSentenceNamesAHeart() {
+        let filters: [MapFilter] = [
+            MapFilter(membership: .favorites),
+            MapFilter(membership: .yours),
+            MapFilter(membership: nil, decade: .twentyTens),
+            MapFilter()
+        ]
+        for filter in filters {
+            for hasAnyMembers in [true, false] {
+                let sentence = MapFilterCopy.emptyMessage(filter, hasAnyMembers: hasAnyMembers)
+                #expect(
+                    !sentence.lowercased().contains("heart"),
+                    "a filter notice still promises a heart: \(sentence)"
+                )
+            }
+            #expect(!MapFilterCopy.emptyTitle(filter).lowercased().contains("heart"))
+        }
     }
 
     // MARK: - 6. The filter value itself
