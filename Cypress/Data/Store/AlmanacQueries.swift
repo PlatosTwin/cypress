@@ -12,9 +12,16 @@ import Foundation
 /// three before it can be spoken (D1, ARCHITECTURE §5.1). Nothing here can be ordered by
 /// contributor, and nothing here returns a contributor's identity.
 ///
-/// Every read is scoped to one neighbourhood id, which the caller resolves once through
-/// `SpeciesQueries.resolveNeighborhood(near:)` — the single seam A4 will move through when its
-/// stated mechanism exists (ERRATA E44).
+/// Every read is scoped to one `AlmanacScope`, which the caller resolves once — a named polygon
+/// where the merged record holds one, a stated radius where it does not (RULINGS **R29**, ERRATA
+/// **E182**). It used to be a bare `neighborhoodID: Int`, which is San Francisco's Analysis
+/// Neighborhoods and nothing else, and which made every San Jose row invisible to this screen
+/// (E176). `SpeciesQueries.resolveNeighborhood(near:)` still answers the first half and is still the
+/// single seam A4 will move through when its stated mechanism exists (ERRATA E44).
+///
+/// **The scope is the only thing that changed.** Every predicate below it — `standing`,
+/// `deleted_at IS NULL`, the species joins, the `NOT EXISTS` over visits — is untouched, so a
+/// neighbourhood asked for by id returns exactly the rows it returned before this pass.
 public struct AlmanacQueries {
     private let schema: SeedSchema
     private let seed = SeedDatabase.schemaName
@@ -39,6 +46,37 @@ public struct AlmanacQueries {
     /// tree by address able to name a basin.
     private static let standing = "t.status IN ('alive','declining')"
 
+    // MARK: - Is there an almanac to have at all
+
+    /// Whether the merged inventory holds **any** record inside this scope (ERRATA E182).
+    ///
+    /// A polygon proves its own existence: `resolveNeighborhood` only returns one it found through a
+    /// tree. A radius does not — a reader in Sacramento, or in the middle of the bay, has a
+    /// perfectly well-formed circle around them with nothing in it, and an almanac headed
+    /// `A 15-minute walk` over five withheld blocks would be claiming an area the record has never
+    /// heard of. So the fallback is only taken when this returns true, and when it does not the
+    /// screen says the one true sentence available: no inventory reaches here yet.
+    ///
+    /// `LIMIT 1` with no ordering and no join, so SQLite stops at the first row inside the box
+    /// rather than counting a city. Vacant sites count — `Self.standing` is deliberately **not**
+    /// applied. The question is whether the record covers this ground, not whether anything is
+    /// growing on it, and a block of empty basins is coverage: it is what the
+    /// `Where a tree could go` row is made of.
+    public func holdsAnyRecord(
+        scope: AlmanacScope,
+        connection: SQLiteConnection
+    ) throws -> Bool {
+        let statement = try connection.cachedStatement("""
+            SELECT 1 AS present
+              FROM \(seed).trees t
+             WHERE \(scope.predicate("t"))
+               AND t.deleted_at IS NULL
+             LIMIT 1
+            """)
+        _ = try statement.bind(scope.bindings)
+        return try statement.fetchOne { _ in true } ?? false
+    }
+
     // MARK: - This season · the elder
 
     /// The oldest recorded planting date in the neighbourhood (SCREENS.md 12 §2 row 2).
@@ -55,7 +93,7 @@ public struct AlmanacQueries {
     /// `PlantDate` on 36% of rows — and it means the row does not draw, rather than drawing a tree
     /// whose age nobody recorded.
     public func elder(
-        neighborhoodID: Int,
+        scope: AlmanacScope,
         connection: SQLiteConnection
     ) throws -> (treeID: UUID, speciesCommonName: String?, address: String?, plantedYear: Int)? {
         let statement = try connection.cachedStatement("""
@@ -65,14 +103,14 @@ public struct AlmanacQueries {
                    COALESCE(s.common_name, s.scientific_name) AS species_name
               FROM \(seed).trees t
               LEFT JOIN \(seed).species s ON s.id = t.species_current
-             WHERE t.neighborhood_id = :neighborhood
+             WHERE \(scope.predicate("t"))
                AND t.planted_on IS NOT NULL
                AND t.deleted_at IS NULL
                AND \(Self.standing)
              ORDER BY t.planted_on
              LIMIT 1
             """)
-        _ = try statement.bind(neighborhoodID, forName: ":neighborhood")
+        _ = try statement.bind(scope.bindings)
         return try statement.fetchOne { row in
             (
                 treeID: try row.uuid("tree_uuid"),
@@ -96,7 +134,7 @@ public struct AlmanacQueries {
     /// taxon (312 rows city-wide, ERRATA E14), which arrive with a `nil` name and are counted but
     /// never named.
     public func plantings(
-        neighborhoodID: Int,
+        scope: AlmanacScope,
         from: String,
         to: String,
         connection: SQLiteConnection
@@ -106,14 +144,14 @@ public struct AlmanacQueries {
                    COUNT(*) AS tree_count
               FROM \(seed).trees t
               LEFT JOIN \(seed).species s ON s.id = t.species_current
-             WHERE t.neighborhood_id = :neighborhood
+             WHERE \(scope.predicate("t"))
                AND t.planted_on BETWEEN :from AND :to
                AND t.deleted_at IS NULL
                AND \(Self.standing)
              GROUP BY t.species_current
              ORDER BY tree_count DESC, species_name
             """)
-        _ = try statement.bind([":neighborhood": neighborhoodID, ":from": from, ":to": to])
+        _ = try statement.bind(scope.bindings.merging([":from": from, ":to": to]) { a, _ in a })
         return try statement.fetchAll { row in
             (name: try row.stringIfPresent("species_name"), treeCount: try row.int("tree_count"))
         }
@@ -151,7 +189,7 @@ public struct AlmanacQueries {
     /// `unexpectedNull`, `AlmanacModel.load()` catches it as `.failed`, and screen 12 renders its
     /// header and its footnote and nothing between them.
     public func speciesMix(
-        neighborhoodID: Int,
+        scope: AlmanacScope,
         connection: SQLiteConnection
     ) throws -> [SpeciesShare] {
         let statement = try connection.cachedStatement("""
@@ -160,13 +198,13 @@ public struct AlmanacQueries {
                    COUNT(*) AS tree_count
               FROM \(seed).trees t
               JOIN \(seed).species s ON s.id = t.species_current
-             WHERE t.neighborhood_id = :neighborhood
+             WHERE \(scope.predicate("t"))
                AND t.deleted_at IS NULL
                AND \(Self.standing)
              GROUP BY s.id
              ORDER BY tree_count DESC, species_name
             """)
-        _ = try statement.bind(neighborhoodID, forName: ":neighborhood")
+        _ = try statement.bind(scope.bindings)
         return try statement.fetchAll { row in
             SpeciesShare(
                 speciesID: try row.uuid("species_uuid"),
@@ -205,7 +243,7 @@ public struct AlmanacQueries {
     /// label that names no taxon (ERRATA E14), and a young tree with no species is still a young tree
     /// nobody has visited. It must not drop out of a count the card prints.
     public func youngTreesWithoutVisits(
-        neighborhoodID: Int,
+        scope: AlmanacScope,
         plantedOnOrAfter: String,
         limit: Int,
         connection: SQLiteConnection
@@ -220,7 +258,7 @@ public struct AlmanacQueries {
                    s.\(schema.speciesIdentityColumn) AS species_uuid
               FROM \(seed).trees t
               LEFT JOIN \(seed).species s ON s.id = t.species_current
-             WHERE t.neighborhood_id = :neighborhood
+             WHERE \(scope.predicate("t"))
                AND t.planted_on >= :since
                AND t.deleted_at IS NULL
                AND \(Self.standing)
@@ -233,11 +271,10 @@ public struct AlmanacQueries {
              ORDER BY t.planted_on, t.id
              LIMIT :limit
             """)
-        _ = try statement.bind([
-            ":neighborhood": neighborhoodID,
+        _ = try statement.bind(scope.bindings.merging([
             ":since": plantedOnOrAfter,
             ":limit": limit
-        ])
+        ]) { a, _ in a })
         return try statement.fetchAll { row in try Self.pin(from: row) }
     }
 
@@ -289,7 +326,7 @@ public struct AlmanacQueries {
     /// drops a bloom recorded on a tree since removed, which is the rule saying what it always
     /// said — the row invites you to go and look at the tree.
     public func firstBloom(
-        neighborhoodID: Int,
+        scope: AlmanacScope,
         since: Date,
         connection: SQLiteConnection
     ) throws -> (treeID: UUID, speciesCommonName: String?, address: String?, firstSeenAt: Date, observerCount: Int)? {
@@ -304,7 +341,7 @@ public struct AlmanacQueries {
               LEFT JOIN \(seed).species s ON s.id = t.species_current
              WHERE v.deleted_at IS NULL
                AND v.captured_at >= :since
-               AND t.neighborhood_id = :neighborhood
+               AND \(scope.predicate("t"))
                AND t.deleted_at IS NULL
                AND \(Self.standing)
                AND EXISTS (
@@ -315,11 +352,10 @@ public struct AlmanacQueries {
              ORDER BY first_seen_at, tree_uuid
              LIMIT 1
             """)
-        _ = try statement.bind([
-            ":neighborhood": neighborhoodID,
+        _ = try statement.bind(scope.bindings.merging([
             ":since": since,
             ":flowering": PhenologyTag.flowering.rawValue
-        ])
+        ]) { a, _ in a })
         return try statement.fetchOne { row in
             (
                 treeID: try row.uuid("tree_uuid"),
@@ -362,7 +398,7 @@ public struct AlmanacQueries {
     /// total is read independently, the caller can prove whether the page is the whole group by
     /// comparing the two, which is what `PinSet.isComplete` does.
     public func vacantSites(
-        neighborhoodID: Int,
+        scope: AlmanacScope,
         near coordinate: Coordinate,
         limit: Int,
         connection: SQLiteConnection
@@ -370,11 +406,11 @@ public struct AlmanacQueries {
         let counted = try connection.cachedStatement("""
             SELECT COUNT(*) AS site_count
               FROM \(seed).trees t
-             WHERE t.neighborhood_id = :neighborhood
+             WHERE \(scope.predicate("t"))
                AND t.status = 'vacant_site'
                AND t.deleted_at IS NULL
             """)
-        _ = try counted.bind(neighborhoodID, forName: ":neighborhood")
+        _ = try counted.bind(scope.bindings)
         let count = try counted.fetchOne { try $0.int("site_count") } ?? 0
         guard count > 0 else { return (count: 0, nearest: []) }
 
@@ -390,20 +426,19 @@ public struct AlmanacQueries {
                    t.verification_state AS verification_state,
                    NULL AS species_uuid
               FROM \(seed).trees t
-             WHERE t.neighborhood_id = :neighborhood
+             WHERE \(scope.predicate("t"))
                AND t.status = 'vacant_site'
                AND t.deleted_at IS NULL
              ORDER BY (t.lat - :lat) * (t.lat - :lat)
                     + (t.lon - :lon) * (t.lon - :lon) * :lonWeight
              LIMIT :limit
             """)
-        _ = try statement.bind([
-            ":neighborhood": neighborhoodID,
+        _ = try statement.bind(scope.bindings.merging([
             ":lat": coordinate.latitude,
             ":lon": coordinate.longitude,
             ":lonWeight": longitudeWeight,
             ":limit": limit
-        ])
+        ]) { a, _ in a })
         // `species_uuid` is a literal NULL rather than a join, and that is a measurement rather than
         // a shortcut: `species_current` is NULL on all 12,518 vacant sites (`AlmanacVacantSiteTests`
         // asserts it against the shipped seed), so a `LEFT JOIN` here could only ever return NULL.
