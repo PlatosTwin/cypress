@@ -294,6 +294,37 @@ private enum AlmanacFixtures {
     }
 }
 
+/// **The fallback area** (RULINGS R29). Beside `12 · almanac` above: the same five blocks, and a
+/// pill that is a distance rather than a place, with the sentence that keeps the two from being
+/// mistaken for each other.
+#Preview("12 · a distance, not a place") {
+    NavigationStack {
+        AlmanacView(
+            api: AlmanacPreviewAPI(payload: AlmanacFixtures.radiusArea),
+            coordinate: Coordinate(latitude: 37.3352, longitude: -121.8895),
+            now: { AlmanacFixtures.now },
+            onBack: {},
+            onOpenTree: { _ in },
+            onShowGroup: { _ in }
+        )
+    }
+}
+
+/// **Outside every inventory in the record** (ERRATA E182). To be looked at beside
+/// `12 · read failed`: that one is the screen saying it could not ask, this one is the screen saying
+/// it asked and the answer is that the record stops before here. Until E182 this drew the loading
+/// screen, byte for byte.
+#Preview("12 · no inventory here") {
+    NavigationStack {
+        AlmanacView(
+            api: AlmanacPreviewAPI(payload: AlmanacFixtures.noArea),
+            coordinate: Coordinate(latitude: 38.5816, longitude: -121.4944),
+            now: { AlmanacFixtures.now },
+            onBack: {}
+        )
+    }
+}
+
 /// Dark. 12 has no specified dark screen (D1–D3 and 04 are the only ones, ERRATA E8), so this
 /// preview is evidence of what the token layer resolves it to rather than a design.
 #Preview("12 · dark") {

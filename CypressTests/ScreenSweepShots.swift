@@ -671,6 +671,32 @@ struct ScreenSweepShots {
             }
             .environment(AppRouter())
         })
+        // Screen 12's two other ways of having little or nothing on it (RULINGS R29, ERRATA E182).
+        // They join the sweep beside the failed read for the same reason that one did: all four of
+        // this screen's near-empty states used to be two pictures, and the only way they stay four
+        // is by being photographed.
+        #expect(await Self.pair("e12-almanac-radius-area") {
+            NavigationStack {
+                AlmanacView(
+                    api: AlmanacPreviewAPI(payload: SweepFixtures.radiusAlmanac),
+                    coordinate: SweepFixtures.coordinate,
+                    now: { SweepFixtures.now },
+                    onBack: {}
+                )
+            }
+            .environment(AppRouter())
+        })
+        #expect(await Self.pair("e12-almanac-out-of-range") {
+            NavigationStack {
+                AlmanacView(
+                    api: AlmanacPreviewAPI(payload: .empty),
+                    coordinate: SweepFixtures.coordinate,
+                    now: { SweepFixtures.now },
+                    onBack: {}
+                )
+            }
+            .environment(AppRouter())
+        })
         #expect(await Self.pair("e14b-site-nothing-nearby") {
             NavigationStack {
                 SiteScreen(
@@ -836,6 +862,39 @@ enum SweepFixtures {
                 CoverageTree(pin: pin(920 + $0), distanceM: Double(120 + $0 * 60))
             })),
             vacantSites: VacantSites(count: 1_474, nearest: (0..<20).map { pin(930 + $0, status: .vacantSite) })
+        ))
+    }
+
+    /// **The fallback area** (RULINGS R29): the same almanac a San Jose reader gets, with a distance
+    /// in the pill instead of a place and the sentence that says so under the header.
+    static var radiusAlmanac: Almanac {
+        Almanac(neighborhood: AlmanacNeighborhood(
+            area: .radius(metres: AlmanacLimits.fallbackRadiusM),
+            elder: ElderTree(
+                treeID: id(901),
+                activeName: nil,
+                speciesCommonName: "Ornamental Pear",
+                address: "S 1st St",
+                plantedYear: 2021
+            ),
+            newestNeighbors: RecentPlanting(
+                treeCount: 5,
+                leadingSpecies: ["Ornamental Pear"],
+                nearest: (0..<5).map { pin(940 + $0) }
+            ),
+            composition: NeighborhoodComposition(
+                distinctSpeciesCount: 167,
+                treeCount: 5_963,
+                leading: [
+                    SpeciesShare(speciesID: id(910), name: "Platanus acerifolia", treeCount: 1_968),
+                    SpeciesShare(speciesID: id(911), name: "California Fan Palm", treeCount: 358),
+                    SpeciesShare(speciesID: id(912), name: "Mexican Fan Palm", treeCount: 298),
+                ]
+            ),
+            coverage: CoverageGap(trees: Series(complete: (0..<4).map {
+                CoverageTree(pin: pin(920 + $0), distanceM: Double(120 + $0 * 60))
+            })),
+            vacantSites: VacantSites(count: 1_000, nearest: (0..<20).map { pin(930 + $0, status: .vacantSite) })
         ))
     }
 
