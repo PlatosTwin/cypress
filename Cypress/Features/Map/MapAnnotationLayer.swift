@@ -222,17 +222,20 @@ enum MapPinImage {
 /// One callback, fired once, then released. It is not a general layout observer and must not become
 /// one — everything else this file does is driven by `updateUIView`, and it stays that way.
 ///
-/// **The callback is delivered *after* the layout pass, not inside it, and that is not tidiness —
-/// it is the second half of E168.** Aiming from within `layoutSubviews` is a re-entrant call into a
-/// map that is in the middle of laying itself out: `setRegion` is honoured, so the camera looks
-/// perfect, and `regionDidChangeAnimated` is never delivered. `MapHomeView.region` is fed by nothing
-/// else, so it stayed on MapKit's own default — 37.1328, −95.7856, a span of 98° × 61°, which is the
-/// continental United States — for the life of the screen, while the map on the glass showed the
-/// right street. Everything that reads the settled camera was then reading that: the recentre
-/// control's "centred on you" (#100), a cluster tap's idea of "two zoom levels in", and the camera
-/// this app now remembers between launches.
+/// **The callback is delivered *after* the layout pass, not inside it — but not for the reason this
+/// note used to give.** The first fix for E168 claimed that "a `setRegion` made from inside a layout
+/// pass is performed but never reported", and that is false. Measured on a cold launch with the aim
+/// arriving from `updateUIView`, `regionDidChangeAnimated` was delivered every time, in the same
+/// millisecond as the `setRegion` that caused it, carrying exactly the right region. What was
+/// actually losing the camera is where the *write* happened, not whether the callback arrived — see
+/// `Coordinator.echo(_:)`, which is where E168's real mechanism is recorded.
 ///
-/// One hop through the main queue costs a frame and makes the callback an ordinary event again.
+/// The hop is kept anyway, on a narrower claim: driving a map's camera from inside its own
+/// `layoutSubviews` is a re-entrant geometry change on a view that is mid-layout, and one runloop
+/// turn costs a frame nobody can see. It is **not** load-bearing for the region echo any more, and
+/// on screen 01 it is not load-bearing at all — measured, this hook loses the race to `updateUIView`
+/// on every launch and its `applyCameraIfChanged` is a `REJECT` of a ticket already spent. It earns
+/// its place on the two quiet screens, where nothing else would produce a pass once the size lands.
 final class AimableMapView: MKMapView {
     var onFirstLayout: (() -> Void)?
 
@@ -241,9 +244,6 @@ final class AimableMapView: MKMapView {
         guard onFirstLayout != nil, !bounds.isEmpty else { return }
         let announce = onFirstLayout
         onFirstLayout = nil
-        NSLog("CYPROBE layoutSubviews bounds=%@", NSCoder.string(for: bounds))
-        // Not `announce?()`. See the note above: a `setRegion` made from inside a layout pass is
-        // performed but never reported, and this file's whole camera story is told by that report.
         DispatchQueue.main.async { announce?() }
     }
 }
@@ -477,40 +477,65 @@ struct MapAnnotationLayer: UIViewRepresentable {
             // `AimableMapView.onFirstLayout` will bring it back the moment there is a map for it.
             // Every other early return here is a camera the reader has already moved away from;
             // this one is a camera nobody has been shown yet.
-            guard MapAnnotationLayer.canAim(mapView) else {
-                NSLog("CYPROBE apply REFUSE-no-area seq=%d", request.sequence)
-                return
-            }
-            if let applied = appliedSequence, request.sequence <= applied {
-                NSLog("CYPROBE apply REJECT seq=%d applied=%d", request.sequence, applied)
-                return
-            }
-            NSLog("CYPROBE apply ACCEPT seq=%d to=%f", request.sequence, request.region.center.latitude)
+            guard MapAnnotationLayer.canAim(mapView) else { return }
+            if let applied = appliedSequence, request.sequence <= applied { return }
             appliedSequence = request.sequence
             // Reduce Motion snaps the camera instead of flying it. The zoom is the answer to a tap,
             // not the way the answer is delivered — `CypressMotion.resolved`'s rule, applied at the
             // one place on this screen where a camera actually moves.
             mapView.setRegion(request.region, animated: !UIAccessibility.isReduceMotionEnabled)
-            // **What we just asked for, recorded now rather than awaited** (ERRATA E168).
+            // **What we just asked for, told to the screen out of band** (ERRATA E168).
             //
-            // `regionDidChangeAnimated` is the authority on where the camera *ended up*, and it
-            // refines this a moment later. But it is MapKit's callback on MapKit's schedule, and for
-            // the opening camera — set within a frame or two of the map first having a size — it does
-            // not reliably arrive at all. Measured: with the aim deferred out of `layoutSubviews` and
-            // the map visibly on the right street, `MapHomeView.region` still held MapKit's default
-            // 98° × 61° until something else moved the camera.
-            //
-            // Waiting for a report that may not come is what made `region` a value that looked
-            // answered and was not. The app knows what it asked for, so it writes that: at worst the
-            // screen believes the camera is where the app just drove it, which is true within the few
-            // metres MapKit adjusts a region by; at best the settle arrives and replaces it with the
-            // exact figure. There is no case left where the screen holds a camera nobody asked for.
+            // `regionDidChangeAnimated` is the authority on where the camera *ended up* and refines
+            // this a moment later. This write exists because the settle is not guaranteed to be an
+            // event the screen can hear — see `echo(_:)`, which is where the whole mechanism is
+            // explained and why neither writer may assign `parent.region` directly.
             //
             // This drives nothing. `region` is read to size a cluster zoom, to answer "is the map on
             // the reader" and to remember where they left it — never to move the camera — so writing
             // it here cannot recreate E140.
-            parent.region = request.region
-            NSLog("CYPROBE apply WROTE parent.region=%f readback=%f", request.region.center.latitude, parent.region.center.latitude)
+            echo(request.region)
+        }
+
+        /// **Hands a camera back to the screen, one runloop turn later — never inline.**
+        ///
+        /// This is ERRATA E168, and the mechanism is not the one the first fix for it described.
+        ///
+        /// Both writers of `MapHomeView.region` — the line above and `regionDidChangeAnimated` —
+        /// can run *inside a SwiftUI view-update pass*, because `applyCameraIfChanged` is called
+        /// from `updateUIView` and `MKMapView.setRegion` delivers its settle **synchronously** from
+        /// within that call. A `@State` write made during a view update is discarded by SwiftUI, so
+        /// both of them were writing into a value that stayed exactly as it was.
+        ///
+        /// Measured on a cold launch, iPhone 16 Pro, static fix at 37.7599, −122.4148 — the probe
+        /// trace this note is written from, timestamps in milliseconds:
+        ///
+        ///     .857  settle region=37.132840 span=97.992432   ← outside the pass. Lands.
+        ///     .870  apply  ACCEPT seq=0 to=37.759600         ← from updateUIView
+        ///     .870  settle region=37.759600 span=0.002084    ← same millisecond: synchronous
+        ///     .871  apply  WROTE parent.region=37.759600 readback=37.132840
+        ///     .909  apply  ACCEPT seq=1 to=37.759900         ← the fly-to-you, from updateUIView
+        ///     .915  settle region=37.759900 span=0.002084    ← delivered
+        ///     .916  apply  WROTE parent.region=37.759900 readback=37.132840
+        ///
+        /// Two things in that trace overturn what this file used to say. **The settle is delivered** —
+        /// twice, carrying exactly the right region — so "a `setRegion` made from inside a layout
+        /// pass is performed but never reported" was never the fault. And the one write that *did*
+        /// land is the one at `.857`, the only one made outside an update pass. What the screen was
+        /// left holding, 37.1328 −95.7856 at a span of 98°, is the continental United States: MapKit's
+        /// own default, read back off a map that had not been aimed yet, sitting behind a map of
+        /// Folsom Street with the reader's dot in the middle of it.
+        ///
+        /// One hop through the main queue makes the write an ordinary event again. It is used by
+        /// **both** writers rather than only the one that is known to be unsafe today: the settle is
+        /// synchronous under `setRegion` and asynchronous after a real flight, and a value whose
+        /// safety depends on which of those happened is a value that will be wrong again.
+        ///
+        /// The lag is one turn, and nothing reads `region` on a deadline: a cluster tap sizes "two
+        /// zoom levels in" from it, `MapRecentre` asks it whether the map is on the reader, and
+        /// `MapCameraMemory` writes it down when the reader leaves.
+        private func echo(_ region: MKCoordinateRegion) {
+            DispatchQueue.main.async { [weak self] in self?.parent.region = region }
         }
 
         /// The map has just been given a size. Aim it at whatever the app is asking for now.
@@ -547,9 +572,12 @@ struct MapAnnotationLayer: UIViewRepresentable {
         /// camera back to the reader's own location. The map could not be moved. A press now mints
         /// its own ticket whether or not it names the same place, so the second press works without
         /// this handler having any opinion about the camera at all.
+        ///
+        /// **Through `echo(_:)`, not by assignment.** MapKit delivers this synchronously from inside
+        /// `setRegion`, which this file calls from `updateUIView`, so a direct write lands in the
+        /// middle of a SwiftUI view update and is discarded. See `echo(_:)` and ERRATA E168.
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
-            NSLog("CYPROBE settle region=%f span=%f", mapView.region.center.latitude, mapView.region.span.latitudeDelta)
-            parent.region = mapView.region
+            echo(mapView.region)
         }
 
         // MARK: The annotations

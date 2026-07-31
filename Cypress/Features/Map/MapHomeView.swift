@@ -263,8 +263,6 @@ struct MapHomeView: View {
                     // block — which is the position MapKit's own `MapUserLocationButton` could not
                     // have been given (`MapRecentre`, and ERRATA E110 for why the arithmetic here is
                     // not something a system control can be dropped into).
-                    Text("R \(String(format: "%.4f", region.center.latitude)),\(String(format: "%.4f", region.center.longitude)) S \(String(format: "%.5f", region.span.latitudeDelta)) E \(String(describing: recentreEngagement))")
-                        .font(.system(size: 10)).foregroundStyle(.black).background(.white)
                     MapRecentreButton(engagement: recentreEngagement) { recentre() }
                         .padding(.horizontal, MapLayout.sideInset - MapLayout.cardInset)
                         .padding(.bottom, MapLayout.locateToFabGap)
@@ -378,7 +376,6 @@ struct MapHomeView: View {
     /// Those wanted different cameras before and still do.
     @discardableResult
     private func centreOnUserIfNeeded() -> Bool {
-        NSLog("CYPROBE centreOnUserIfNeeded hasCentred=%d avail=%@", hasCentredOnUser ? 1 : 0, String(describing: location.availability))
         guard !hasCentredOnUser, let coordinate = location.availability.coordinate else { return false }
         hasCentredOnUser = true
         recentreWhenFixArrives = false
@@ -469,7 +466,6 @@ struct MapHomeView: View {
     /// recentre refetches *through* the narrowing rather than around it. Clearing the field here
     /// would be a second, hidden meaning for a button that says it centres the map.
     private func flyTo(_ coordinate: Coordinate, metres: CLLocationDistance?) {
-        NSLog("CYPROBE flyTo %f,%f metres=%@", coordinate.latitude, coordinate.longitude, String(describing: metres))
         // **No `withAnimation`, and the camera still flies.** The basemap is a `UIViewRepresentable`
         // over `MKMapView` now, so the thing that animates is `setRegion(_:animated:)` on the far
         // side of the seam; a SwiftUI transaction wrapped around this write cannot interpolate a
