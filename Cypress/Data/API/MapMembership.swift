@@ -1,7 +1,12 @@
 import Foundation
 
 /// The two ways a reader can be related to a tree, as screen 01's filter row asks about them
-/// (#116, RULINGS R23).
+/// (#116, RULINGS R23, amended by **R23.1**).
+///
+/// **Both are still here and both are still asked; only one of them is still a chip in the row.**
+/// R23.1 moved `favorites` behind the row's expandable control on the owner's instruction. That is a
+/// change to where the question is asked from, not to the question — nothing in this file or in
+/// `LocalAPI.mapMembership` moved, and `MapFilter.membership` still holds either value.
 ///
 /// ── Why these are one type and not two methods ─────────────────────────────────────────────
 /// Both answer the same shape of question — "which trees are mine, for this sense of mine" — and
@@ -10,8 +15,8 @@ import Foundation
 /// wants it: "privacy is the shape of the query", and there is no form of either that can return
 /// somebody else's rows.
 ///
-/// ── Why `yours` is not `favourites` ───────────────────────────────────────────────────────
-/// A favourite is a *bookmark*: a tree you want to find again, which you may never have stood in
+/// ── Why `yours` is not `favorites` ────────────────────────────────────────────────────────
+/// A favorite is a *bookmark*: a tree you want to find again, which you may never have stood in
 /// front of. A contribution is a *record*: a tree you were at, with something to show for it. The
 /// owner asked for both, in that order of importance, and they genuinely disagree — the grove's own
 /// query has carried the distinction since screen 08 (`GroveQueries.ownContributions` unions the
@@ -33,9 +38,16 @@ public enum MapMembership: String, Sendable, Hashable, CaseIterable, Identifiabl
 
     /// Trees hearted on screen 03's quad row and still held (D9, ERRATA E89).
     ///
-    /// Device-scoped, and tombstones are excluded — an un-favourited tree is not one anybody would
+    /// Device-scoped, and tombstones are excluded — an un-favorited tree is not one anybody would
     /// say they have (`DeviceContributions.favorites` makes the same call for the same reason).
-    case favourites
+    ///
+    /// **Spelled the American way, on the owner's instruction** (R23.1). The rest of the codebase
+    /// still says `favourite` in 157 places and that is a separate ticket; what is renamed here is
+    /// the vocabulary of the control the owner was looking at when they said it — this case, its
+    /// label, and the two empty-state sentences. `DeviceContributions.favorites` and the
+    /// `favorites` table were already spelled this way, so this narrows a split rather than
+    /// widening one.
+    case favorites
 
     public var id: String { rawValue }
 }

@@ -199,7 +199,7 @@ struct MapFilterTests {
             )
         }
 
-        let favourites = try await api.mapMembership(.favourites)
+        let favourites = try await api.mapMembership(.favorites)
         #expect(favourites == [kept], "expected only the tree still hearted, got \(favourites)")
         #expect(!favourites.contains(dropped), "an un-favourited tree came back as a favourite")
     }
@@ -232,7 +232,7 @@ struct MapFilterTests {
         }
 
         let yours = try await api.mapMembership(.yours)
-        let favourites = try await api.mapMembership(.favourites)
+        let favourites = try await api.mapMembership(.favorites)
         #expect(yours == [visited], "Yours answered \(yours)")
         #expect(favourites == [hearted], "Favourites answered \(favourites)")
     }
@@ -406,8 +406,8 @@ struct MapFilterTests {
         let cases: [(MapFilter, Bool)] = [
             (MapFilter(membership: .yours), false),
             (MapFilter(membership: .yours), true),
-            (MapFilter(membership: .favourites), false),
-            (MapFilter(membership: .favourites), true),
+            (MapFilter(membership: .favorites), false),
+            (MapFilter(membership: .favorites), true),
             (MapFilter(decade: .twentyTens), false),
             (MapFilter(speciesID: UUID()), false),
             (MapFilter.needsCare, false)
@@ -431,8 +431,8 @@ struct MapFilterTests {
     /// for trees they have never hearted.
     @Test("an empty set and an empty viewport give different reasons")
     func emptySetAndEmptyViewportDiffer() {
-        let noneAnywhere = MapFilterCopy.emptyMessage(MapFilter(membership: .favourites), hasAnyMembers: false)
-        let noneHere = MapFilterCopy.emptyMessage(MapFilter(membership: .favourites), hasAnyMembers: true)
+        let noneAnywhere = MapFilterCopy.emptyMessage(MapFilter(membership: .favorites), hasAnyMembers: false)
+        let noneHere = MapFilterCopy.emptyMessage(MapFilter(membership: .favorites), hasAnyMembers: true)
         #expect(noneAnywhere != noneHere, "the same sentence is used for both empty states")
         #expect(noneAnywhere.lowercased().contains("hearted"), "the never-favourited state does not say what to do: \(noneAnywhere)")
         #expect(noneHere.lowercased().contains("pan"), "the nothing-here state does not offer the viewport: \(noneHere)")
