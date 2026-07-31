@@ -129,11 +129,60 @@ decided" so that a chip guaranteed to produce an empty-state card is at least wr
 
 #### 7 · The mutation sweep — every test broken on purpose, and the red it produced
 
-MUTATION_TABLE_PLACEHOLDER
+Every test below was broken on purpose in the production code, run, and restored. Ten mutants, ten
+distinct reds — the point is not that a test failed but that it failed *saying the right thing*, which
+is what a maintainer reads six months from now.
+
+| # | the defect introduced | the test that caught it, and what it said |
+|---|---|---|
+| M1 | drop `.accessibilityValue(MapFilterCopy.chipValue(isOn:))` from the chip | `testTheFilterRowIsReachableAndEveryChipSaysItIsOff` — *the “Yours” chip announces “” at rest, so a listener cannot tell it from a chip that is on* |
+| M2 | remove `.filterSelected` from `Chip.isSelected` | `testTurningAChipOnIsAnnouncedInBothChannels` — *the “Needs care” chip is on and does not carry the selected trait* |
+| M3 | `if isExpanded { drawer }` → `drawer.opacity(isExpanded ? 1 : 0)` | `testTheHiddenFilterIsOnlyInTheTreeWhileTheControlIsOpen` — *“Favorites” is reachable while the control holding it is shut — a filter a sighted reader cannot see and an assistive technology can still press* |
+| M4 | `moreValue` returns the state and drops the names | `testAShutControlSaysWhatIsSetInsideIt` — *the map is narrowed by “Favorites” and the shut control announces “Collapsed” — a listener is given no way to find out what is thinning the map* |
+| M5 | `MapFilter.isActive` stops counting `membership` | `testClearFiltersAppearsWithTheFilterAndTakesAwayEvenTheHiddenOne` — *a filter is on behind a shut control and no “Clear filters” is drawn, so the only way out is to remember that it is there* |
+| M6 | the empty notice loses its `actionLabel`/`onAction` (i.e. #116's change reverted) | `testTheEmptyNoticeOffersASecondWayOutAndItWorks` — *an emptied map offers 1 controls labelled “Clear filters”, and R23 requires two* |
+| M7 | delete `guard !pins.isEmpty else { return nil }` from `MapModel.filterResult` | `testTheCountYieldsToTheNotice` — *`["0 trees"]` is not equal to `[]` … a count is sitting in the chrome above it saying the same thing in weaker words (R23 §5)* |
+| M9 | `MapFilterCopy.result` returns a bare `"\(drawn)"` | `testTheResultLineIsOneCountingPhrase` — *narrowing the map to “Southern Magnolia, plum pins marked dot” … put 0 result lines over the map. The tree holds `[]`* |
+| M10 | `FlowRow` stops wrapping (`next > .infinity`) | `testTheFilterRowWrapsAndStaysOnThePhoneAtAX5` — *at AX5 the “Needs care” chip in the row runs to 500.33 pt on a 390.0 pt screen, so the end of its label is off the edge. Its frame is (308.67, 143.33, 191.67, 59.67)* |
+| M11 | the suggestion list is drawn *above* the chips instead of below the field | `testAnOpenSuggestionListLeavesTheWholeFilterRowOrderedAndHittable` — *the suggestion list did not push the “In bloom” chip down (102.0 → 102.0), so it is drawn over it* |
+
+M10 is worth reading twice: it is **#98 reproduced exactly** — a chip whose label runs 110 pt past the
+right edge of the phone — and the test that catches it is the one this ticket was written to get.
+
+(There is no M8. It was going to break the year caveat into two `Text`s; the test it was for is gone,
+for the reason in §4.)
 
 ---
 
-#### 8 · What was *not* done
+#### 9 · Test results
+
+```
+Unit    ✔ Test run with 938 tests in 87 suites passed after 101.495 seconds.
+        (main was 933; the five new ones are in MapFilterTests)
+
+UI      Test Suite 'CypressUITests.xctest' passed
+        Executed 11 tests, with 0 failures (0 unexpected) in 109.711 seconds
+
+        testTheFilterRowIsReachableAndEveryChipSaysItIsOff              passed (11.055s)
+        testTurningAChipOnIsAnnouncedInBothChannels                     passed ( 6.220s)
+        testTheHiddenFilterIsOnlyInTheTreeWhileTheControlIsOpen         passed ( 9.525s)
+        testAShutControlSaysWhatIsSetInsideIt                           passed (13.308s)
+        testClearFiltersAppearsWithTheFilterAndTakesAwayEvenTheHiddenOne passed (10.127s)
+        testTheEmptyNoticeOffersASecondWayOutAndItWorks                 passed ( 8.409s)
+        testTheCountYieldsToTheNotice                                   passed (10.070s)
+        testTheResultLineIsOneCountingPhrase                            passed ( 4.862s)
+        testTheFilterRowWrapsAndStaysOnThePhoneAtAX5                    passed (19.195s)
+        testTheEmptyNoticesWayOutIsUnreachableAtAX5                     passed ( 6.781s)  ← strict expected failure; see §2
+        testAnOpenSuggestionListLeavesTheWholeFilterRowOrderedAndHittable passed ( 9.975s)
+```
+
+Run on iPhone 16e (`3A1F212D-8F3A-41F1-AF72-EC95E155A4C9`), a 390 pt phone, which is the AX5 case the
+ticket names. `testTheResultLineIsOneCountingPhrase`'s guard did not fire: the map opened on the
+default centre and was colouring `Southern Magnolia`.
+
+---
+
+#### 10 · What was *not* done
 
 - **The AX5 notice defect (§2) and the swipe-order finding (§3) are not fixed.** Both are recorded and
   one of them is machine-pinned. Both fixes are design decisions inside R23's and R25's territory.
