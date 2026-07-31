@@ -337,6 +337,7 @@ struct VisitAddTreeView: View {
     /// dragged the header and the CTA off to the left. `.overlay` sizes its content against the base
     /// and lets the excess hang, so the layout is the card's and only the drawing overflows. Seen by
     /// looking, on the simulator, after the tests were green.
+    ///
     /// **It is bounded as well as shaped, and the bound is a width (ERRATA E174).** The shape is
     /// invariant; what the ceiling changes is how much of the column the well is allowed to take
     /// when the viewport is too short to hold it and a form as well. See
