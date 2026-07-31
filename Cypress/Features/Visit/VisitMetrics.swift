@@ -80,12 +80,59 @@ enum VisitMetrics {
         /// Inverted here because SwiftUI's `aspectRatio(_:contentMode:)` takes width ÷ height where
         /// the floor takes height ÷ width.
         ///
-        /// **No fixed height and no cap.** The well takes the width it is given and derives the rest,
-        /// so it is the right shape on a phone this was never measured on. A cap would be a return to
-        /// the letterbox by a smaller margin — any well shorter than its own capture crops the live
-        /// preview again, which is the defect. The composer scrolls (`VisitAddTreeView.composer`) and
-        /// the CTA is pinned outside that scroll, so a taller well costs scrolling, never reach.
+        /// **No fixed height.** The well takes the width it is given and derives the rest, so it is
+        /// the right shape on a phone this was never measured on.
         static var wellAspectRatio: CGFloat { 1 / Camera.captureAspectRatio }
+
+        /// The most of the composer's scroll viewport the well may occupy.
+        ///
+        /// ── What this is answering (ERRATA E174) ──────────────────────────────────────────
+        /// Reported by the project owner: *"Screen for Add this Tree has the photo square fill the
+        /// entire vertical area so it's not clear to the user that there is content below the photo
+        /// that they can fill out."* Measured on the running app, iPhone 16e (390 × 844 pt): the
+        /// composer's scroll viewport was 573 pt and the well drew 476 of it — **83 %**. At AX5 the
+        /// viewport falls to 247 pt and the well's 476 does not fit in it at all, so the entire
+        /// first screenful was one grey box clipped at the footer, with the form, the pin row and
+        /// the land question all below a fold nothing on the screen admitted to. On the 393 × 852
+        /// phone the tests host, the same two are 481 pt of a 617 pt viewport — 78 % — and 219
+        /// *drawn* rows of a 287 pt one, 219 being where the footer cut the well off.
+        ///
+        /// **E162 refused a cap and the refusal was right about the wrong thing.** Its argument:
+        /// "any well shorter than its own capture crops the live preview again, which is the
+        /// defect." That is true of a well that keeps the gutter's width and loses height — the
+        /// preview is `.resizeAspectFill` and would crop the crown off a street tree, exactly the
+        /// defect E162 was written to kill. It is not true of a well that keeps its **shape** and
+        /// takes less width. This ceiling is expressed as a width for that reason (see
+        /// `wellWidthCeiling`): the well is the photograph's frame, so it is always exactly the
+        /// photograph's shape, and when there is no room for it at the gutter's width it takes less
+        /// width — never a different ratio, never a letterbox, never a crop. `wellAspectRatio` is
+        /// still derived from `Camera.captureAspectRatio` and nothing here can move it.
+        ///
+        /// **Two thirds, and the third that is left over is the point.** The rule is stateable —
+        /// the photograph gets two thirds of the viewport and the form keeps a third — and a third
+        /// of a phone's viewport is a band of form rather than a sliver of one: on the 393 pt phone
+        /// the tests measure, it is the photo-source control, the sentence about where the tree
+        /// will be recorded, the pin link and the top of the land question. A reader cannot mistake
+        /// that for the bottom of the screen. Anything much above two thirds and the remainder is a
+        /// clipped line, which is what the owner was looking at.
+        ///
+        /// It is a fraction of the **viewport** rather than of the display, so it holds under the
+        /// type ramp instead of being a number drawn at one size: at AX5 the header and the footer
+        /// take more, the viewport shrinks, and the well shrinks with it rather than swallowing
+        /// what is left. That is the opposite of E159's failure, where a fixed overlay grew off the
+        /// top of the display as the tray beneath it grew.
+        static let wellViewportShare: CGFloat = 2.0 / 3.0
+
+        /// The widest the well may be drawn when the composer's scroll viewport is `viewport` tall.
+        ///
+        /// **A width and not a height, and that is the whole of the fix.** `.aspectRatio(_:
+        /// contentMode: .fit)` derives one dimension from the other, so bounding the width bounds
+        /// the height at exactly the same ratio — the well shrinks along its own diagonal. Bounding
+        /// the *height* instead would leave a gutter-wide box shorter than its capture, which fills
+        /// and therefore crops, which is E162.
+        static func wellWidthCeiling(viewport: CGFloat) -> CGFloat {
+            max(0, viewport) * wellViewportShare * wellAspectRatio
+        }
     }
 
     // MARK: - Moving the pin

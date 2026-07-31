@@ -818,11 +818,17 @@ struct VisitCameraSessionTests {
         #expect(ratio == portrait, "the well is \(ratio), not the 3:4 frame a phone held upright takes")
 
         // The number the old constant got wrong, kept so the mistake cannot come back quietly: at the
-        // gutter's width on a 393 pt phone the well is 481 pt tall, not 268.
+        // gutter's width on a 393 pt phone an unbounded well is 481 pt tall, not 268.
+        //
+        // **481 is still the shape and is no longer the drawing, and that distinction is E174.** The
+        // well the composer draws is bounded by `wellWidthCeiling`, because 481 pt of a 393 × 852
+        // phone left the form under it invisible. What the bound takes is *width*, so this number
+        // stays exactly true of the shape: the well is still the frame of a 3:4 photograph at every
+        // size it is ever drawn at, and the case below is the one that measures the bounded one.
         let width: CGFloat = 393 - CypressSpacing.gutter * 2
         #expect(abs(width / ratio - 481) < 1, "the well is \(width / ratio) pt tall at \(width) pt wide")
 
-        // And the well itself draws that shape when it is given that width.
+        // And the well itself draws that shape when it is given that width and no ceiling.
         let measured = await Self.measure(
             VisitAddTreePhotoWell { Color.clear },
             at: .large,
@@ -832,6 +838,151 @@ struct VisitCameraSessionTests {
         #expect(
             abs(measured.width / measured.height - ratio) < 0.01,
             "the well was drawn \(measured), a ratio of \(measured.width / measured.height)"
+        )
+        #expect(abs(measured.height - 481) < 1, "the unbounded well drew \(measured.height) pt, not 481")
+    }
+
+    /// **#127 · ERRATA E174.** The ceiling takes width, so it cannot change the well's shape.
+    ///
+    /// This is the assertion that keeps E174 from undoing E162. A bound on a frame that holds a
+    /// photograph has exactly two forms: take height and letterbox (or, with a `.resizeAspectFill`
+    /// preview, crop — which is the defect E162 exists for), or take width and stay the same shape at
+    /// a smaller size. `VisitAddTreePhotoWell.widthCeiling` is the second, and the way to prove it is
+    /// to bind the ceiling hard and read the ratio back off the drawing.
+    @Test("bounding the well narrows it and does not reshape it")
+    func theWellCeilingTakesWidthNotShape() async throws {
+        let ratio = VisitMetrics.AddTree.wellAspectRatio
+        let width: CGFloat = 393 - CypressSpacing.gutter * 2
+
+        // A ceiling well below the width the well would otherwise take, so it certainly binds.
+        let ceiling: CGFloat = 200
+        let measured = await Self.measure(
+            VisitAddTreePhotoWell(widthCeiling: ceiling) { Color.clear },
+            at: .large,
+            width: width
+        )
+
+        #expect(
+            abs(measured.width - ceiling) < 1,
+            "the well drew \(measured.width) pt wide against a \(ceiling) pt ceiling"
+        )
+        // The shape, unchanged — this is the E162 invariant surviving the bound.
+        #expect(
+            abs(measured.width / measured.height - ratio) < 0.01,
+            "the bounded well drew \(measured), a ratio of \(measured.width / measured.height)"
+        )
+        #expect(
+            abs(measured.height - ceiling / ratio) < 1,
+            "the bounded well drew \(measured.height) pt tall where its own shape says \(ceiling / ratio)"
+        )
+
+        // And a ceiling wider than the column is not a bound at all: the well still takes the width
+        // it is given. Without this, a ceiling that had quietly become a *frame* would pass above.
+        let unbound = await Self.measure(
+            VisitAddTreePhotoWell(widthCeiling: 4_000) { Color.clear },
+            at: .large,
+            width: width
+        )
+        #expect(abs(unbound.width - width) < 1, "the well drew \(unbound.width) pt in a \(width) pt column")
+    }
+
+    /// **#127 · ERRATA E174.** The photograph does not take the whole screen, and the form is on it.
+    ///
+    /// Reported by the project owner: *"Screen for Add this Tree has the photo square fill the entire
+    /// vertical area so it's not clear to the user that there is content below the photo that they
+    /// can fill out."*
+    ///
+    /// ── This is the assertion the previous one could not make ──────────────────────────────
+    /// `theAddTreeWellIsAPortraitCaptureFrame` measures the well as a component, which is how E162's
+    /// defect was caught and is not how E174's was: the well was the right shape and the wrong
+    /// *share of the screen*, and a component measured on its own has no screen to be a share of. So
+    /// this hosts the real composer at a real phone's size, draws it, and reads the well's rows out
+    /// of the pixels — the same thing the owner did, with a ruler.
+    ///
+    /// Three claims, and each fails on `main` before the fix:
+    ///
+    /// 1. **The well takes at most two thirds of the scroll viewport.** It took 82 % at the drawn
+    ///    size on the iPhone 16e this was measured on, and more than 100 % at AX5.
+    /// 2. **The well starts at the top of the viewport.** This is what makes claim 1 mean what it
+    ///    says rather than something weaker — with the accuracy chip scrolling above the well, the
+    ///    chip's height came out of the third that was meant to be left over, and at AX5 the chip is
+    ///    78 pt of a 255 pt viewport.
+    /// 3. **There is ink below the well and inside the viewport**, which is the owner's sentence
+    ///    stated as a fact about pixels: something is drawn under the photograph, without scrolling.
+    @Test(
+        "the add-tree photograph leaves the form on the screen",
+        arguments: [DynamicTypeSize.large, DynamicTypeSize.accessibility5]
+    )
+    func theAddTreeWellLeavesTheFormOnTheScreen(at size: DynamicTypeSize) async throws {
+        let phone = CGSize(width: 393, height: 852)
+        let hosted = try await Self.host(
+            VisitPreviewFixtures.addTree(), at: size, in: phone, style: .light
+        )
+        defer { hosted.dismiss() }
+
+        let scroll = try #require(
+            Self.controlsScrollView(in: hosted.root),
+            "the add-tree composer has no scroll view, so it has no viewport to be a share of"
+        )
+        let viewport = scroll.convert(scroll.bounds, to: hosted.root)
+        #expect(viewport.height > 0, "the composer's viewport measured \(viewport)")
+
+        let bitmap = try Self.draw(hosted.root)
+        let band = Int(viewport.minY.rounded())..<Int(viewport.maxY.rounded())
+        let well = try #require(
+            Self.rows(
+                of: Self.srgb(CypressColor.surfaceEmptyThumb),
+                in: bitmap,
+                band: band,
+                // Narrower than the well is at AX5 (122 pt on the phone this was measured on) and far
+                // wider than any stray run of that fill could be.
+                minimumRun: 60
+            ),
+            "no photo well was drawn anywhere in the composer's viewport at \(size)"
+        )
+        let wellHeight = CGFloat(well.count)
+        let ceiling = viewport.height * VisitMetrics.AddTree.wellViewportShare
+
+        // 1 · the share.
+        #expect(
+            wellHeight <= ceiling + 2,
+            """
+            at \(size) the well drew \(wellHeight) pt of a \(viewport.height) pt viewport — \
+            \(Int((wellHeight / viewport.height * 100).rounded())) %, against a ceiling of \(ceiling)
+            """
+        )
+
+        // 2 · nothing of the form is above it, so the third that is left over is all beneath it.
+        #expect(
+            CGFloat(well.lowerBound) - viewport.minY < 3,
+            "at \(size) the well starts \(CGFloat(well.lowerBound) - viewport.minY) pt into the viewport"
+        )
+
+        // 3 · and something is actually drawn down there.
+        //
+        // **The 6 pt offset is load-bearing.** The well's own dashed border is several hundred
+        // pixels of not-the-page-colour lying immediately under its last filled row, and counting
+        // those made this claim pass on the very layout it was written to fail: at AX5 before the
+        // fix the well was clipped by the footer with nothing at all beneath it, and its own bottom
+        // edge answered for the form. The `if` is the other half — past the clip there is no band
+        // left, and a `Range` with its bounds the wrong way round traps rather than failing.
+        //
+        // The page and the well's fill are 5/255 apart on every channel, so this tolerance treats
+        // them as the same nothing. That is deliberate: a well that reappeared below `inkStart`
+        // must not be able to answer for the form either.
+        let page = Self.srgb(CypressColor.surfaceScreen)
+        var ink = 0
+        let inkStart = well.upperBound + 6
+        if inkStart < band.upperBound {
+            for y in inkStart..<band.upperBound where y < bitmap.height {
+                for x in 0..<bitmap.width where !bitmap.matches(x, y, page, tolerance: 12) {
+                    ink += 1
+                }
+            }
+        }
+        #expect(
+            ink >= 200,
+            "at \(size) only \(ink) pixels are drawn below the photograph and above the CTA"
         )
     }
 
@@ -851,13 +1002,16 @@ struct VisitCameraSessionTests {
     static func host(
         _ content: some View,
         at size: DynamicTypeSize,
-        in frame: CGSize
+        in frame: CGSize,
+        style: UIUserInterfaceStyle = .unspecified
     ) async throws -> Hosted {
         let host = UIHostingController(
             rootView: AnyView(content.environment(\.dynamicTypeSize, size))
         )
+        host.overrideUserInterfaceStyle = style
         host.view.frame = CGRect(origin: .zero, size: frame)
         let window = UIWindow(frame: CGRect(x: -2_000, y: 0, width: frame.width, height: frame.height))
+        window.overrideUserInterfaceStyle = style
         window.rootViewController = host
         window.isHidden = false
         // `await`, not a run-loop spin: the screen's `.task` loads through an actor, and until it
@@ -910,6 +1064,93 @@ struct VisitCameraSessionTests {
             if let found = controlsScrollView(in: subview) { return found }
         }
         return nil
+    }
+
+    // MARK: - Reading a drawn screen back as pixels (ERRATA E174)
+
+    /// A hosted screen drawn into memory, **one pixel per point**, in the root view's coordinates.
+    ///
+    /// ── Why a bitmap and not the view tree ────────────────────────────────────────────────
+    /// The subject of E174 is a `RoundedRectangle` inside a `ScrollView`. SwiftUI vends no `UIView`
+    /// for it, `Hosted` vends no accessibility elements (see `theControlsScrollBeneathTheFloorAtAX5`),
+    /// and a hosted tree therefore offers no way at all to ask "how tall is the photo well *on the
+    /// screen*". The complaint E174 answers is about what a person sees, so what this reads is what
+    /// was drawn: the well's fill is `surfaceEmptyThumb` and nothing else inside the composer's
+    /// scroll uses it, so the rows it occupies are the rows it occupies.
+    ///
+    /// `layer.render(in:)` rather than `drawHierarchy(in:afterScreenUpdates:)`: it needs no screen
+    /// update to have happened, which an off-screen window cannot promise.
+    struct Bitmap {
+        let width: Int
+        let height: Int
+        let bytes: [UInt8]
+
+        func rgb(_ x: Int, _ y: Int) -> (r: Int, g: Int, b: Int) {
+            let i = (y * width + x) * 4
+            return (Int(bytes[i]), Int(bytes[i + 1]), Int(bytes[i + 2]))
+        }
+
+        func matches(_ x: Int, _ y: Int, _ colour: (r: Int, g: Int, b: Int), tolerance: Int) -> Bool {
+            let p = rgb(x, y)
+            return abs(p.r - colour.r) <= tolerance
+                && abs(p.g - colour.g) <= tolerance
+                && abs(p.b - colour.b) <= tolerance
+        }
+    }
+
+    static func draw(_ view: UIView) throws -> Bitmap {
+        let w = Int(view.bounds.width.rounded())
+        let h = Int(view.bounds.height.rounded())
+        var bytes = [UInt8](repeating: 0, count: w * h * 4)
+        try bytes.withUnsafeMutableBytes { raw in
+            guard let context = CGContext(
+                data: raw.baseAddress,
+                width: w, height: h,
+                bitsPerComponent: 8, bytesPerRow: w * 4,
+                space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { throw CocoaError(.fileWriteUnknown) }
+            // UIKit's origin is top-left and Core Graphics' is bottom-left, so without this the
+            // screen is drawn upside down and every row index below means the wrong thing.
+            context.translateBy(x: 0, y: CGFloat(h))
+            context.scaleBy(x: 1, y: -1)
+            view.layer.render(in: context)
+        }
+        return Bitmap(width: w, height: h, bytes: bytes)
+    }
+
+    /// A design-system colour as the sRGB triple it draws as, in the light appearance.
+    static func srgb(_ color: Color) -> (r: Int, g: Int, b: Int) {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        UIColor(color)
+            .resolvedColor(with: UITraitCollection(userInterfaceStyle: .light))
+            .getRed(&r, green: &g, blue: &b, alpha: &a)
+        return (Int((r * 255).rounded()), Int((g * 255).rounded()), Int((b * 255).rounded()))
+    }
+
+    /// The rows of `band` on which at least `minimumRun` pixels are `colour`.
+    ///
+    /// A count and not a contiguous run: the empty well has a sentence across its middle at the
+    /// drawn size, which breaks any single run, and only the first and last rows are being asked
+    /// for. The threshold is what keeps a stray antialiased pixel from counting as the well.
+    static func rows(
+        of colour: (r: Int, g: Int, b: Int),
+        in bitmap: Bitmap,
+        band: Range<Int>,
+        minimumRun: Int
+    ) -> ClosedRange<Int>? {
+        var first: Int?
+        var last: Int?
+        for y in band where y >= 0 && y < bitmap.height {
+            var count = 0
+            for x in 0..<bitmap.width where bitmap.matches(x, y, colour, tolerance: 2) { count += 1 }
+            if count >= minimumRun {
+                if first == nil { first = y }
+                last = y
+            }
+        }
+        guard let first, let last else { return nil }
+        return first...last
     }
 }
 #endif
