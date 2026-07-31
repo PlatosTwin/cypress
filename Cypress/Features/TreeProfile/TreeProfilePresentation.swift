@@ -322,12 +322,14 @@ struct TreeProfilePresentation {
         return parts.joined(separator: " · ")
     }
 
-    /// "SF city inventory" vs "community-added, unverified" — the two labels SCREENS.md ships.
+    /// Where the record came from — **read off this row's inventory, not off a literal**.
+    ///
+    /// SCREENS.md ships `SF city inventory` against `community-added, unverified`. The second is
+    /// unchanged; the first now names the inventory the row is actually from, which is San Jose's on
+    /// 52,788 rows of the shipped seed. See `CityRecordCopy.recordSource` for the whole argument and
+    /// RULINGS R28 for the mock pin this overruled.
     var provenance: String {
-        switch tree.source {
-        case .cityImport: return "SF city inventory"
-        case .community: return "community-added, unverified"
-        }
+        CityRecordCopy.recordSource(tree.source, inventory: profile.inventorySource)
     }
 
     /// Who said what species this is, when the answer is "a contributor did".
@@ -916,10 +918,12 @@ struct TreeProfilePresentation {
         return "\(range.lowerBound)–\(range.upperBound) cm"
     }
 
-    /// `SF #13284` — the DataSF `TreeID`, which is the citable city record (BUILD-PLAN §7).
+    /// `#13284` — the publishing inventory's own id, which is the citable city record (BUILD-PLAN
+    /// §7). SF's `TreeID`, San Jose's `FACILITYID`. See `CityRecordCopy.recordNumber` for why the
+    /// `SF ` prefix did not survive a second city and the number did (RULINGS R28).
     var cityRecordText: String? {
         guard tree.source == .cityImport, let ref = tree.externalRef, !ref.isEmpty else { return nil }
-        return "SF #\(ref)"
+        return CityRecordCopy.recordNumber(ref)
     }
 
     /// 14's `Watch for` card. Authored species care content only — 20 of the curated 40 carry any
@@ -1019,7 +1023,7 @@ struct TreeProfilePresentation {
         }
     }
 
-    // MARK: - What San Francisco has on file (task #68)
+    // MARK: - What the city has on file (task #68, made city-agnostic by #137/R28)
 
     /// The city's own six columns, prepared for the grid — or `nil` when there is no section to draw.
     ///
@@ -1041,16 +1045,20 @@ struct TreeProfilePresentation {
     /// The opt-out arrangement first, because it is a fact about *this* tree and answers the reader
     /// who has just read `Prune Opt Out` on the card above; the general note second, because it is a
     /// fact about the dataset. Empty when there is no section.
+    ///
+    /// **The pruning note is San Francisco's and is absent outside it** — see
+    /// `CityRecordPresentation.pruningNote(idSpace:)`. A San Jose tree's section is a shorter list,
+    /// not a list with a substitute in it (RULINGS R28).
     var cityRecordNotes: [String] {
         guard showsCityRecordSection else { return [] }
         var notes: [String] = []
         if let optOut = cityRecord?.maintenanceOptOutNote() { notes.append(optOut) }
-        notes.append(CityRecordPresentation.pruningNote)
+        if let pruning = CityRecordPresentation.pruningNote(idSpace: tree.idSpace) { notes.append(pruning) }
         if let provenance = inventoryProvenanceNote { notes.append(provenance) }
         return notes
     }
 
-    /// Whether "What San Francisco has on file" draws.
+    /// Whether "What the city has on file" draws.
     ///
     /// **Cards, or a provenance line.** It used to be cards alone, and `CityRecordPresentation`
     /// still explains why: a header over an empty grid is worse than no header, so a record whose

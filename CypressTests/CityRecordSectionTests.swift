@@ -2,8 +2,9 @@ import Foundation
 import Testing
 @testable import Cypress
 
-/// **What San Francisco has on file** — screen 03/14 §9b, the section that reads `CityRecord` out
-/// onto the tree's landing page (ERRATA E145).
+/// **What the city has on file** — screen 03/14 §9b, the section that reads `CityRecord` out
+/// onto the tree's landing page (ERRATA E145, and ERRATA E181 for the four surfaces that stopped
+/// saying San Francisco about San Jose).
 ///
 /// ── Why so much of this runs against the whole seed ───────────────────────────────────────────
 /// `CityRecordPresentation` makes exactly three kinds of decision — what to show, how to say it, and
@@ -260,8 +261,9 @@ struct CityRecordSectionTests {
     /// The general note is on every tree that draws the section, because it is a statement about the
     /// inventory rather than about the tree — and it never becomes an `Unknown` field, because a
     /// field would be a claim that the value exists and Cypress has not got it.
-    @Test("every city record says on screen that the inventory holds no pruning dates")
-    func thePruningAnswerIsOnScreen() {
+    @Test("every San Francisco city record says on screen that the inventory holds no pruning dates")
+    func thePruningAnswerIsOnScreen() throws {
+        let pruning = try #require(CityRecordPresentation.pruningNote(idSpace: "sf"))
         for profile in [
             TreeProfileSeedFixtures.fullCityRecord,
             TreeProfileSeedFixtures.bareCityRecord,
@@ -269,8 +271,10 @@ struct CityRecordSectionTests {
             TreeProfileSeedFixtures.populated,
             TreeProfileSeedFixtures.coldStart,
         ] {
-            let presentation = Self.presentation(profile)
-            #expect(presentation.cityRecordNotes.last == CityRecordPresentation.pruningNote)
+            var sanFrancisco = profile
+            sanFrancisco.tree.idSpace = "sf"
+            let presentation = Self.presentation(sanFrancisco)
+            #expect(presentation.cityRecordNotes.last == pruning)
             // No field, no blank, no placeholder anywhere in the grid.
             let labels = presentation.cityRecord?.facts.map(\.label) ?? []
             #expect(labels.contains { $0.lowercased().contains("prun") } == false)
@@ -298,9 +302,9 @@ struct CityRecordSectionTests {
     }
 
     @Test("a tree with no opt-out carries only the note about the dataset")
-    func anOrdinaryTreeCarriesOnlyTheGeneralNote() {
+    func anOrdinaryTreeCarriesOnlyTheGeneralNote() throws {
         let presentation = Self.presentation(TreeProfileSeedFixtures.fullCityRecord)
-        #expect(presentation.cityRecordNotes == [CityRecordPresentation.pruningNote])
+        #expect(presentation.cityRecordNotes == [try #require(CityRecordPresentation.pruningNote(idSpace: nil))])
     }
 
     /// The two opt-out statuses are the only ones that get a sentence — asserted over the seed's
@@ -475,7 +479,10 @@ struct CityRecordSectionTests {
             #expect(presentation.landContextNote == nil)
         }
         #expect(facts.contains { $0.id == "permitNotes" } == false)
-        #expect(presentation.cityRecordNotes.contains(CityRecordPresentation.pruningNote))
+        #expect(
+            presentation.cityRecordNotes
+                .contains(try #require(CityRecordPresentation.pruningNote(idSpace: tree.idSpace)))
+        )
 
         // The provenance line, end to end: `seed_meta` → `CypressStore.seedProvenance` →
         // `TreeProfile` → the section's last sentence. This is the fix for the defect that made
