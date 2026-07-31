@@ -96,7 +96,7 @@ final class TreeProfileModel {
                 break
             }
 
-            isFavorite = await storedFavorite()
+            await readFavorite()
             phase = .loaded(
                 TreeProfilePresentation(profile: profile, caretakerInitials: caretakerInitials)
             )
@@ -165,14 +165,44 @@ final class TreeProfileModel {
         return task
     }
 
+    /// How many taps this screen has performed.
+    ///
+    /// **A read that started before a tap does not get to answer for it** (ERRATA E184). Every
+    /// favourite read here is `await`ed, which means it takes its snapshot, gives up the main actor,
+    /// and assigns whenever it gets it back. The taps were ordered against each other by `writes`;
+    /// the *reads* were ordered against nothing. `load()` is not only called on first appearance —
+    /// `TreeProfileView` calls `reload()` when the screen comes back to the front and again when a
+    /// sheet closes over it — so a refresh could be in flight, holding an answer taken a moment
+    /// before the finger arrived, and land on top of a favourite that had just been stored.
+    ///
+    /// The row was in the database and the cell said off: "I tapped Favorite and nothing happened",
+    /// which is the only shape that report can take on a control whose state is read rather than
+    /// remembered (RULINGS R2). Stamping each read with the tap count it was taken under, and
+    /// dropping it if that has moved, is what keeps the last tap the last word — the same sentence
+    /// `writes` already makes about the writes, extended to the reads that answer them.
+    private var taps = 0
+
     private func write() async {
         let desired = !isFavorite
+        taps += 1
         // The control answers the finger immediately…
         isFavorite = desired
         await setFavorite(treeID, desired)
         // …and then answers the store. If the write did not land, this is where the heart goes
         // back to where it was, which is the state E101 recorded as unavailable and R2 requires.
-        isFavorite = await storedFavorite()
+        await readFavorite()
+    }
+
+    /// Reads the store's answer and assigns it, unless a tap happened while the read was in flight.
+    ///
+    /// Dropping the answer rather than re-reading is deliberate: the tap that overtook this read has
+    /// its own re-read at the end of `write()`, so the store still gets the last word — one read
+    /// later, and from a snapshot that includes the tap.
+    private func readFavorite() async {
+        let generation = taps
+        let stored = await storedFavorite()
+        guard generation == taps else { return }
+        isFavorite = stored
     }
 
     /// Whether the store holds this tree for whoever is contributing right now.
