@@ -153,6 +153,17 @@ struct InventoryContractTests {
             // And on a seed the contract built, its id space must be the one the file's uuids were
             // derived in. A seed mixing two spaces has uuids derived two ways and half are wrong.
             guard let declared else { continue }
+            // Folded in from what used to be a test of its own. A receipt that names a contract
+            // must name the one in this repo — a seed filtered through some other file is a seed
+            // whose rules nobody here can read. It lives inside a live test rather than beside one
+            // so that on the shipped seed, which names no contract, the enclosing test still
+            // asserts something.
+            if let named = meta["ingest_contract"] {
+                #expect(
+                    named == "Tools/inventory_contract.py",
+                    "the seed says it was filtered through '\(named)', which is not the contract in this repo"
+                )
+            }
             let space = meta["inventory_\(inventory)_id_space"]
             #expect(
                 space == declared,
@@ -161,15 +172,23 @@ struct InventoryContractTests {
         }
     }
 
-    @Test("San Francisco's identity prefix is empty, and that is frozen")
-    func theSanFranciscoPrefixIsFrozenEmpty() async throws {
-        let (_, meta) = try await Self.openSeed()
-        guard meta["identity_id_space"] == "sf" else { return }
-        #expect(
-            meta["identity_prefix"] == "",
-            "the 'sf' identity prefix is no longer empty. Every one of the seed's uuids moves, and every photograph, favourite and citation that referenced one is orphaned."
-        )
-    }
+    // ── A deleted test, and why ───────────────────────────────────────────────────────────────
+    // There was a `theSanFranciscoPrefixIsFrozenEmpty` here, asserting
+    // `meta["identity_prefix"] == ""`. It was removed rather than repaired.
+    //
+    // On the shipped seed that key is absent — the file predates the contract — so the test
+    // returned without asserting, and an inert test is one that cannot fail. This project has had
+    // one positively ratify a defect for weeks. The obvious repair, asserting against a
+    // hand-built receipt dictionary, is worse than useless: it would check that a dictionary
+    // holds the value the test just put in it.
+    //
+    // The property is not lost, it is asserted in three live places already.
+    // `identityIsAPureFunctionOfTheSourceId` re-derives all 145,837 uuids through
+    // `meta["identity_prefix"] ?? ""` and goes red for every row if that prefix is wrong —
+    // demonstrated, by substituting `"us-ca-sf:"` and watching it fail. And
+    // `Tools/test_inventory_contract.py` pins `ID_SPACES["sf"].identity_prefix == ""` directly
+    // and refuses an empty prefix for any *other* space. A fourth statement of it that cannot
+    // fail was cost without cover.
 
     // MARK: - A missing optional field does not become a lie
 
@@ -339,13 +358,4 @@ struct InventoryContractTests {
         )
     }
 
-    @Test("a receipt that names a contract names this one")
-    func theReceiptNamesItsContract() async throws {
-        let (_, meta) = try await Self.openSeed()
-        guard let named = meta["ingest_contract"] else { return }
-        #expect(
-            named == "Tools/inventory_contract.py",
-            "the seed says it was filtered through '\(named)', which is not the contract in this repo"
-        )
-    }
 }

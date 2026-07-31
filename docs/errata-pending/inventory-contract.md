@@ -59,16 +59,39 @@ and belongs to #94.
 - **The defect runs both ways.** The brief describes only vacant-sites-called-trees. The larger and
   less visible half is trees-called-vacant-sites, which nobody had counted.
 
-### `external_ref INTEGER UNIQUE` is a global constraint on a source-local id
+### Two schema blockers for #107, reproduced rather than predicted
 
-Not a defect today — one city, one id space — and a hard failure the first time a second city is
-ingested. Los Angeles `TreeID` 276198 and San Francisco `TreeID` 276198 cannot both be rows in one
-seed: the INSERT fails on the unique index. The uuid derivation is now safe against this
-(`ID_SPACES[<space>].identity_prefix + source_ref`, verified over all 145,837 shipped rows) but the
-column is not. Whoever does #107 has to widen it to `(id_space, external_ref)` or store the
-qualified string. Recorded here because it is a five-minute change that is invisible until it is a
-build failure with 133,577 rows already inserted.
+Neither is a defect today — one city, one id space — and both are hard failures the first time a
+second city is ingested. **Whoever picks up #107 should read this entry before writing an adapter,
+because both bite during the ingest, after the rows are built.** Reproduced against the shipped
+seed's own `CREATE TABLE trees`, pulled from its `sqlite_master`, with San Francisco's TreeID 276198
+already inserted:
 
-`CHECK (inventory_source IN ('city','datasf'))` has the same shape: a closed two-value vocabulary
-in which `city` is a poor identifier once there is more than one city. The Swift side needs no
-change — `InventorySource.init(id:seedMeta:)` already resolves any identifier the receipt describes.
+**Blocker 1 — `external_ref INTEGER UNIQUE` is a global constraint on a source-local id.**
+Los Angeles TreeID 276198 is a different tree with a different uuid, and it cannot be a row:
+
+```
+sqlite3.IntegrityError: UNIQUE constraint failed: trees.external_ref
+```
+
+The uuid derivation is already safe — `ID_SPACES[<space>].identity_prefix + source_ref`, verified
+over all 145,837 shipped rows — but the column is not. The fix is to widen the index to
+`(id_space, external_ref)` or to store the qualified string. It is a small change that is invisible
+until it is a build failure partway through inserting a second city.
+
+**Blocker 2 — `CHECK (inventory_source IN ('city','datasf'))` is a closed two-value vocabulary.**
+A row naming any third inventory cannot be inserted:
+
+```
+sqlite3.IntegrityError: CHECK constraint failed: inventory_source IN ('city','datasf')
+```
+
+The CHECK must be widened, and `city` is a poor identifier once there is more than one city, so it
+is worth renaming in the same pass. **The Swift side needs no change:**
+`InventorySource.init(id:seedMeta:)` already resolves any identifier the receipt describes through
+the `inventory_<id>_*` keys, so a new inventory is a build-side change only.
+
+Both are caught by the contract's own registry before a row is built —
+`require_inventory` refuses an unregistered inventory and `require_id_space` refuses a space with an
+empty or unterminated prefix — but the registry cannot widen a CHECK constraint in a shipped schema.
+That is the ingest's job and it has not been done.
