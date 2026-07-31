@@ -89,5 +89,30 @@ the well is at most two thirds of the viewport; the well starts at the top of th
 there is ink drawn below the well and above the CTA, which is the owner's sentence restated as a
 fact about pixels.
 
+**Proved by mutation, because a layout assertion that has never been red is a screenshot with a
+`#expect` around it.** With `wellWidthCeiling` returning `.infinity`, the chip put back inside the
+scroll and the sentence put back inside the well — the layout as it stood on `main` — the new test
+records five issues across its two cases:
+
+    ✘ … size → .large: (wellHeight → 481.0) <= (ceiling + 2 → 413.11)
+    ✘ … size → .large: (CGFloat(well.lowerBound) - viewport.minY → 36.0) < (3 → 3.0)
+    ✘ … size → .accessibility5: (wellHeight → 219.0) <= (ceiling + 2 → 193.33)
+    ✘ … size → .accessibility5: (CGFloat(well.lowerBound) - viewport.minY → 67.67) < (3 → 3.0)
+    ✘ … size → .accessibility5: (ink → 0) >= 200
+
+and with the ceiling applied as `.frame(maxHeight:)` instead of `.frame(maxWidth:)` — the letterbox
+this fix exists not to be — `theWellCeilingTakesWidthNotShape` records the shape going wrong:
+
+    ✘ (abs(measured.width - ceiling) → 161.0) < (1 → 1.0)
+    ✘ (abs(measured.width / measured.height - ratio) → 1.055) < 0.01
+
+The last line is the important one: 1.055 is the distance from 0.75, which is the well ceasing to be
+the shape of the photograph. That is the assertion standing between E174 and a second E162.
+
+**One thing the first draft of the ink claim got wrong**, kept here because it is the failure mode of
+every probe like it: it counted the well's own dashed border as content below the photograph, so it
+passed on the exact AX5 layout it was written to fail. Starting the band 6 pt below the well's last
+filled row is what makes `ink → 0` above true.
+
 Related: E162, whose "no cap" this narrows and whose ratio it leaves alone; E159, whose rule about
 what a ramp-independent frame may carry is applied here a second time; ticket #127.
