@@ -39,6 +39,13 @@ camera has not been superseded and has not been seen. `makeUIView` no longer set
 whatever the app wants *by then*: the remembered opening camera if no fix has landed, the reader's own
 location if one has. Both orders arrive at the same place.
 
+**On screen 01, that hook has never once been the thing that aimed the map.** Measured on every cold
+launch traced: `updateUIView` reaches `applyCameraIfChanged` before the deferred `onFirstLayout`
+callback does, so by the time the hook runs the ticket is spent and it logs `REJECT`. Screen 01
+re-runs its body often enough to produce its own pass the instant the size lands, exactly as the note
+above guessed it would. The hook earns its place on the two quiet screens and as belt-and-braces here;
+it should not be described as what closed this defect on the app's default screen, because it is not.
+
 **A second road to the same defect, closed at the same time.** `MapLocationProvider` is the
 composition root's, shared with screens 09, 12, 16 and the visit flow, and `RootView` wires
 `onRequestLocation: { location.start() }` in three places. Arrive on screen 01 after any of them and
@@ -53,33 +60,82 @@ place that decides.
 Worth more than the original defect, because it is the class of bug this project keeps finding: **a
 value that looks answered and is not.**
 
-Aiming the map from inside `layoutSubviews` is a re-entrant call into a view that is mid-layout.
-`setRegion` is honoured — so the map on the glass is on the right street and every screenshot looks
-perfect — and `regionDidChangeAnimated` is never delivered. Nothing else writes
-`MapHomeView.region`, so it kept MapKit's own default for the whole launch:
+`MapHomeView.region` — the app's copy of where the camera is — held MapKit's own default for the
+whole launch:
 
     region 37.1328,-95.7856   span 98.0°×61.3°
 
-That is the geographic centre of the continental United States, sitting behind a map of Van Ness and
-Market. Everything downstream of the settled camera was reading it: the recentre control's
-`Centred on you` (#100), a cluster tap's "two zoom levels in" measured from a 98° span, and the camera
-this app now remembers between launches — which is why nothing was ever written down.
+That is the geographic centre of the continental United States, sitting behind a map of Folsom Street
+with the reader's blue dot in the middle of it. Everything downstream of the settled camera was
+reading it: the recentre control's `Centred on you` (#100), a cluster tap's "two zoom levels in"
+measured from a 98° span, and the camera this app now remembers between launches — which is why
+nothing was ever written down.
+
+**The first fix for this named the wrong mechanism, and the wrong one was ruled out by measurement.**
+It said that aiming from inside `layoutSubviews` is re-entrant, that `setRegion` is honoured but
+`regionDidChangeAnimated` "is never delivered", and it moved the aim to the main queue. The symptom
+survived that change untouched. A probe in the layer itself, cold launch, iPhone 16 Pro, static fix at
+37.7599, −122.4148, timestamps in milliseconds:
+
+    .802 .838 .850  apply  REFUSE-no-area seq=0
+    .857            settle region=37.132840 span=97.992432
+    .870            apply  ACCEPT seq=0 to=37.759600
+    .870            settle region=37.759600 span=0.002084
+    .871            apply  WROTE parent.region=37.759600 readback=37.132840
+    .875            layoutSubviews bounds={{0, 0}, {402, 874}}
+    .885            apply  REJECT seq=0 applied=0
+    .907            centreOnUserIfNeeded avail=located(37.7599, −122.4148)
+    .907            flyTo 37.7599,-122.4148 metres=120
+    .909            apply  ACCEPT seq=1 to=37.759900
+    .915            settle region=37.759900 span=0.002084
+    .916            apply  WROTE parent.region=37.759900 readback=37.132840
+
+**The settle is delivered.** Twice, carrying exactly the right region. It was never suppressed. What
+that trace shows instead is that the settle arrives in the *same millisecond* as the `setRegion` that
+caused it — MapKit calls `regionDidChangeAnimated` synchronously from inside `setRegion` — and
+`applyCameraIfChanged` is called from `updateUIView`. So both writers of `region` were running inside
+a SwiftUI view-update pass, and **a `@State` write made during a view update is discarded.** The one
+write that landed in the entire launch is the settle at `.857`, the only one that happened outside a
+pass — and what it carried was MapKit's default. That is the number that stuck.
+
+`Coordinator.echo(_:)` hands every camera back one runloop turn later, and is used by **both** writers
+rather than only the one known to be unsafe today: the settle is synchronous under `setRegion` and
+asynchronous after a real flight, and a value whose correctness depends on which of those happened is
+a value that will be wrong again.
+
+Verified on the running app, nothing pressed, launch state: `R 37.7599,-122.4148 S 0.00108 centred`.
 
 **How it hid.** The whole unit suite was green. The map looked right in every screenshot. The camera
 tests assert `mapView.region`, which is the truth, and the one thing that was wrong was the *copy* of
 it the screen holds. It was found by launching the app with a debug readout of `region` drawn on top
-of the chrome and reading the numbers — not by a test, and no test in the suite would have found it.
+of the chrome and reading the numbers — not by a test.
 
-`AimableMapView` hands its callback to the main queue instead. One frame, and the callback is an
-ordinary event again.
+**What each test is now measured to catch.** Two deliberate breaks, built and run against
+`CypressUITests/MapCentredStateUITests` on a simulator with a fix:
 
-**The witness is a UI test, and this was measured rather than assumed.**
+| Break | Result |
+|---|---|
+| baseline, fixed | `Executed 2 tests, with 0 failures` in 10.979 s |
+| write `parent.region` inline instead of through `echo(_:)` — the real defect | `Executed 2 tests, with 1 failure` in 31.890 s — `XCTAssertEqual failed: ("Not centred") is not equal to ("Centred on you")` |
+| aim re-entrantly from `layoutSubviews` (`announce?()` inline) | `Executed 2 tests, with 0 failures` in 11.082 s — **invisible** |
+
+Two things follow, and both are worth more than the green line.
+
+**The re-entrancy break is invisible because there is nothing to see.** On screen 01 the
+`onFirstLayout` hook never applies a camera at all: `updateUIView` reaches `applyCameraIfChanged`
+first on every launch and spends the ticket, so the hook only ever logs `REJECT` (line `.885` above).
+No test guards it because no behaviour depends on it. The main-queue hop is kept on a narrower
+claim — do not drive a view's camera from inside its own layout — and its note now says so instead of
+claiming to be load-bearing.
+
+**Under the real break, the *pressed* test still passes.** A press produces a genuine animated flight
+whose settle arrives outside the update pass and therefore lands. That is the entire content of "still
+`Not centred` at launch, and a press fixes it": it is one bug, not two, and the unpressed test is the
+only one that can see it.
+
 `MapOpeningCameraApplyTests.theSettledRegionIsEchoedBack` pins that the echo exists — delete the write
-and it fails — but a hook mutated back to firing inside `layoutSubviews` leaves it **green**, because
-a map view that is not in a window does not reproduce MapKit's suppression. The test that fails is
-`MapCentredStateUITests.testTheMapOpensOnTheReaderWithoutBeingAsked`, with the control reading
-`Not centred` on a phone that knows exactly where it is. Both tests are kept and each says which half
-it holds.
+and it fails — but it cannot see either break, because a map view outside a window and outside a
+SwiftUI update pass reproduces neither condition.
 
 ---
 
@@ -125,6 +181,39 @@ The two waits are given `MapOpening.patience` — three seconds — before they 
 notice that flashes on every healthy launch teaches the reader to stop reading the slot it appears in.
 The refusals are said at once: nothing is coming, so there is nothing to be patient about.
 
+##### Which of those four a simulator can actually produce
+
+Driven on the running app rather than reasoned about, iPhone 16 Pro, one screenshot each.
+
+| Asked for | `simctl` | What appeared |
+|---|---|---|
+| fix present | `privacy grant location` + `location set 37.7599,-122.4148` | map on Folsom & 9th, dot dead centre, **no notice**, control filled and reading `Centred on you` |
+| permission revoked, no history | fresh install + `privacy revoke location` | Dolores Park, **Location is off** + "…The map is over the middle of the city." + Settings, control struck through |
+| permission revoked, with history | as above, after one granted launch was backgrounded | **Folsom & 9th**, no dot, **Location is off** + "…The map is where you last left it." |
+| never asked | fresh install + `privacy reset location` | Dolores Park, system sheet up, control in the plain `askable` drawing |
+
+**`waitingForFix` is not reachable on a simulator, and that is a property of the design rather than a
+gap in the testing.** Two things were confirmed by driving it. First, `xcrun simctl location <udid>
+clear` does **not** unfix a device: on a fresh install with permission granted and the location
+cleared, the map still opened centred on the fix with the dot in the middle — the only way to take a
+fix away from the app is to take the *permission* away, which produces `denied`, a different state
+with different copy. Second, `simctl location <udid> list` offers only City Run, City Bicycle Ride,
+Freeway Drive and Apple; there is no no-fix scenario. And even if there were, `MapOpening.patience`
+gates the notice at three seconds and a simulator answers from cache in well under one, so the
+`searching` sentence is by construction only ever shown to a phone that is genuinely slow. That is
+E158's lesson working as intended, and it means the row is exercised by
+`CypressTests/MapOpeningCameraTests` and by nothing on a device.
+
+**The remembered camera was verified end to end, and only works because of the fix above.** After one
+granted launch was backgrounded, `UserDefaults` held:
+
+    map.lastCamera = (37.759899, -122.414803, 0.001081, 0.001362)
+
+Before the echo was repaired, `region` held a span of 98°, which `MapCameraMemory.isWorthRemembering`
+correctly refuses as wider than `maximumSpanDegrees`. So nothing was ever written, on any launch, and
+the third row of that table could never have been reached. Repairing the echo is what made the memory
+real.
+
 ---
 
 #### #100 was not the defect it was reported as
@@ -133,10 +222,28 @@ Reported as: the recentre control's accessibility state does not track whether t
 VoiceOver announces the wrong thing.
 
 Measured first, before changing anything. `MapCentredStateUITests.testTheControlSaysCentredOnceTheMapIsOnYou`
-— launch, press the control, poll the spoken value — **passed on unmodified code**. The wiring from
-`MKMapView`'s settle through `MapHomeView.region` to `MapRecentre.engagement` was intact, and the
-`Not centred` the owner and `AlmanacGroupTapTests` both saw was a true statement about a map that had
-never moved. That is #115, and fixing #115 fixes the symptom.
+— launch, press the control, poll the spoken value — **passed on unmodified code**, so the pure
+decision `MapRecentre.engagement(availability:camera:)` was never the fault. The reported defect, as
+worded, does not exist.
+
+But the conclusion first drawn from that green — "the wiring from `MKMapView`'s settle through
+`MapHomeView.region` to `MapRecentre.engagement` was intact" — is **wrong, and it is wrong in the
+direction that matters.** The wiring was severed; the press is simply the one path that survives it.
+A press produces a real animated flight, its settle arrives outside the SwiftUI update pass, and the
+write lands. Every camera the *app* sets on its own — the opening one, the fly-to-you — is applied
+from inside `updateUIView`, and those writes were being discarded. So the control's spoken value was
+false for the entire life of every launch nobody touched, and pressing it repaired the value as a side
+effect of repairing the camera.
+
+That is why `AlmanacGroupTapTests` could record `Not centred` for a 39-second run *and* a screenshot of
+that same launch with the dot in the middle of the screen. Both observations were correct and they
+were not in tension: the picture came from `MKMapView`, the sentence came from the app's discarded
+copy of it. `Not centred` was not "a true statement about a map that had never moved" — the map had
+moved, and the sentence was simply false.
+
+So #100 as filed is one symptom of #115's second defect (E168), and fixing that fixes it. The witness
+is `MapCentredStateUITests.testTheMapOpensOnTheReaderWithoutBeingAsked`, and the break table above
+shows it going red with exactly the reported words while the pressed test stays green.
 
 What was genuinely wrong is narrower and is still an accessibility defect. `Engagement` had three
 cases and `away` carried all of "I know where you are and the map is not there", "nobody has answered
