@@ -786,17 +786,33 @@ public struct ContributionStore {
 
     // MARK: - Moderation (ERRATA E124-B)
 
-    /// The open flags a lead has to act on, newest first. Scoped to one `kind` so the removal queue
-    /// and (a future) dead-tree queue are separate lists, and to `status = 'open'` because a confirmed
-    /// or dismissed flag is done — the index `(tree_uuid, status)` is not the one that serves this, so
-    /// it is a small scan over a table that holds one row per raised concern, not per tree.
-    public func openReviewFlags(kind: ReviewFlag.Kind, connection: SQLiteConnection) throws -> [ReviewFlag] {
+    /// The open flags a lead has to act on, newest first, across every kind asked for.
+    ///
+    /// **Plural since ERRATA E170.** It used to take one `kind`, on the reasoning that "the removal
+    /// queue and (a future) dead-tree queue are separate lists" — and the future queue was never
+    /// built, so the one caller passed `.appearsRemoved` and every `appears_dead` flag screen 05
+    /// raised was invisible to the only surface that could close it. One list, and the row says which
+    /// kind it is; see `ReviewFlag.Kind.confirmedStatus`.
+    ///
+    /// Scoped to `status = 'open'` because a confirmed or dismissed flag is done. The index
+    /// `(tree_uuid, status)` is not the one that serves this, so it is a small scan over a table that
+    /// holds one row per raised concern, not per tree.
+    ///
+    /// An empty `kinds` returns nothing rather than everything: "no kinds" is not "all kinds", and a
+    /// query that widened when its filter emptied is how a queue starts showing rows nobody can act
+    /// on. The placeholders are generated from the count, so the SQL text is one of a handful and
+    /// `cachedStatement` still caches it.
+    public func openReviewFlags(kinds: [ReviewFlag.Kind], connection: SQLiteConnection) throws -> [ReviewFlag] {
+        guard !kinds.isEmpty else { return [] }
+        let names = (0..<kinds.count).map { ":kind\($0)" }
         let statement = try connection.cachedStatement("""
             SELECT * FROM review_flags
-             WHERE kind = :kind AND status = 'open' AND deleted_at IS NULL
+             WHERE kind IN (\(names.joined(separator: ", "))) AND status = 'open' AND deleted_at IS NULL
              ORDER BY created_at DESC
             """)
-        _ = try statement.bind([":kind": kind.rawValue])
+        var bindings: [String: SQLiteBindable?] = [:]
+        for (name, kind) in zip(names, kinds) { bindings[name] = kind.rawValue }
+        _ = try statement.bind(bindings)
         return try statement.fetchAll(Self.decodeReviewFlag)
     }
 
@@ -814,6 +830,22 @@ public struct ContributionStore {
     public func confirmReviewFlag(id: UUID, at date: Date, connection: SQLiteConnection) throws -> WriteOutcome {
         let statement = try connection.cachedStatement("""
             UPDATE review_flags SET status = 'confirmed', updated_at = :now
+             WHERE id = :id AND status = 'open' AND deleted_at IS NULL
+            """)
+        _ = try statement.bind([":id": id.uuidString, ":now": date])
+        return try run(statement, on: connection)
+    }
+
+    /// Move an open flag to `dismissed` — a lead saying the report is wrong (ERRATA E170).
+    ///
+    /// `ReviewFlag.Status.dismissed` has existed since the model was written and nothing wrote it,
+    /// so a lead who disagreed with a report could only leave it open forever. Guarded on
+    /// `status = 'open'` for the same reason `confirmReviewFlag` is: it is a transition, not a
+    /// toggle, and a dismiss arriving after a confirm must change nothing.
+    @discardableResult
+    public func dismissReviewFlag(id: UUID, at date: Date, connection: SQLiteConnection) throws -> WriteOutcome {
+        let statement = try connection.cachedStatement("""
+            UPDATE review_flags SET status = 'dismissed', updated_at = :now
              WHERE id = :id AND status = 'open' AND deleted_at IS NULL
             """)
         _ = try statement.bind([":id": id.uuidString, ":now": date])

@@ -75,6 +75,11 @@ enum DebugDeepLink {
         case measure            // 16
         case outbox             // 17
         case memorial           // 19 — reachable now via a local removal override (ERRATA E124-B)
+        /// 03 over a tree a lead has **confirmed dead** (ERRATA E170) — the other outcome of the
+        /// review queue, and deliberately not screen 19. A standing dead tree is not removed: it
+        /// keeps its profile, its REPORT and CARE buttons and its pin, and what changes is that the
+        /// profile says the status was confirmed. This case exists so that claim can be looked at.
+        case deadProfile
         case photos             // 20 — the photo browser (ERRATA E125)
         case photoHero          // 03 with photographs on it, which the seed alone cannot produce
         /// 03 over a **community** tree carrying a contributor's species (ERRATA E141) — the state
@@ -221,8 +226,21 @@ enum DebugDeepLink {
                 // open its memorial. The tree is a real seed record, and after the override this device
                 // genuinely holds it as removed — so 19 draws over a memorial, not over a living tree.
                 let id = try await standingTree(api)
-                try await api.debugMarkRemoved(treeID: id)
+                try await api.debugMarkStatus(treeID: id, .removed)
                 router.push(.memorial(id))
+            case .deadProfile:
+                // The same shape as `.memorial` and the opposite outcome (ERRATA E170): write the
+                // status a confirmed `appears_dead` flag writes, then open the **profile**. If this
+                // ever redirects to 19, `TreeProfileDestination` has stopped agreeing with
+                // `acceptsNewContributions` and a dead tree has lost its REPORT button.
+                //
+                // Its own coordinate, not `standingTree`'s: this case writes a persistent override,
+                // and the rule this file already keeps is that a case which writes persistent state
+                // must not write it onto a record another case reads. `.memorial` marks a tree
+                // removed; the two must not land on the same one.
+                let id = try await deadCandidateTree(api)
+                try await api.debugMarkStatus(treeID: id, .deadReported)
+                router.push(.treeProfile(id))
             case .photos, .photoHero:
                 // The data changes here too (ERRATA E125), and for the same reason as `.memorial`:
                 // the shipped seed holds no photographs at all, because every photograph in this app
@@ -282,10 +300,18 @@ enum DebugDeepLink {
                 // a defect. So the deep link ends where a person starts, and the pill is a tap away.
                 router.push(.treeProfile(id))
             case .moderationReview:
-                // Put the lead's review queue in front of a screenshot: open a removal review on a real
-                // tree, promote this account to a lead, and show the You tab, where the section draws.
-                let id = try await standingTree(api)
-                try await api.debugSeedRemovalReview(treeID: id)
+                // Put the lead's review queue in front of a screenshot: open reviews on real trees,
+                // promote this account to a lead, and show the You tab, where the section draws.
+                //
+                // **Both kinds, on two different trees (ERRATA E170).** A queue seeded with removals
+                // only would photograph exactly the state that hid this defect for as long as it
+                // lasted — one verb, one vocabulary, and no way to tell from the picture that
+                // `appears_dead` was going nowhere. The two rows must read differently, and this is
+                // the surface where that is checked.
+                let removalID = try await standingTree(api)
+                try await api.debugSeedReview(treeID: removalID, kind: .appearsRemoved)
+                let deathID = try await deadCandidateTree(api)
+                try await api.debugSeedReview(treeID: deathID, kind: .appearsDead)
                 try await api.setRole(.coordinator)
                 router.tab = .you
             case .careLog:
@@ -403,6 +429,40 @@ enum DebugDeepLink {
             )
         }
         return standing[standing.count / 2].tree.id
+    }
+
+    /// The tree three quarters of the way out — the one the two `appears_dead` cases write onto
+    /// (ERRATA E170).
+    ///
+    /// ── Why it needs a slot of its own, and why it is the awkward one ──────────────────────
+    /// The rule this file keeps is that a case which writes persistent state must not write it onto a
+    /// tree another case reads. `.memorial` marches from the near end, the photo cases from the far
+    /// end, `.measure` holds the middle — and a confirmed death is worse behaved than any of them,
+    /// because `TreeStatus.deadReported.acceptsNewContributions` is `true`. A tree marked removed
+    /// drops out of every `standingTree` scan afterwards, so `.memorial` steps outward on its own; a
+    /// tree marked dead **stays in**, so it would sit at the near end forever and `.memorial` would
+    /// then mark this very record removed on the next run — photographing a memorial where the
+    /// previous case had just proved a dead tree keeps its profile.
+    ///
+    /// That the ruling's own "a dead tree is still there" makes the harness harder is the point: the
+    /// two states are genuinely different and the seam has to say so. Three quarters, so it sits
+    /// between `.measure`'s middle and the photo cases' far end with hundreds of records either side.
+    ///
+    /// Re-running is idempotent rather than marching: this returns the same tree and re-writes the
+    /// same override, which is the correct behaviour for a case whose whole subject is a status.
+    private static func deadCandidateTree(_ api: LocalAPI) async throws -> UUID {
+        let candidates = try await api.treesNear(centre, radiusM: radiusM, limit: candidateLimit)
+        // `.alive` here rather than `acceptsNewContributions`, precisely because a tree this case has
+        // already marked dead would pass the latter and re-anchoring on it is fine — but a tree the
+        // *photo* cases have warmed must not be picked up as this slot drifts.
+        let standing = candidates.filter { $0.tree.status == .alive || $0.tree.status == .deadReported }
+        guard !standing.isEmpty else {
+            throw Failure(
+                screen: "a standing tree to report dead",
+                reason: "none among the \(candidates.count) records nearest \(centre.latitude), \(centre.longitude)"
+            )
+        }
+        return standing[standing.count * 3 / 4].tree.id
     }
 
     /// The nearest vacant planting site — a record with no tree in it (E107). 12,413 of them in the

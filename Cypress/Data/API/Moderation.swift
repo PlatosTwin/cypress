@@ -16,12 +16,20 @@
 
 import Foundation
 
-/// One open `appears_removed` flag, resolved for a lead to act on: the tree it names, where it is,
-/// and when the concern was raised. `flagID` is what a confirmation acts on; `treeID` is what the
-/// resulting memorial is reached by.
-public struct RemovalReviewItem: Identifiable, Sendable, Hashable {
+/// One open status-review flag, resolved for a lead to act on: what was reported, the tree it names,
+/// where it is, and when the concern was raised. `flagID` is what a confirmation or a dismissal acts
+/// on; `treeID` is what the resulting record is reached by.
+///
+/// **`kind` is why this type is no longer called `RemovalReviewItem`** (ERRATA E170). The queue used
+/// to be one kind wide, hard-coded to `appears_removed`, while screen 05 raised two — so every
+/// `appears_dead` flag went into a table no surface read. A row now carries the kind it came from,
+/// the confirm resolves it through `ReviewFlag.Kind.confirmedStatus`, and the copy beside it says
+/// which of the two things was reported instead of calling both "removed".
+public struct ReviewQueueItem: Identifiable, Sendable, Hashable {
     public let flagID: UUID
     public let treeID: UUID
+    /// What was reported. Only kinds with a `confirmedStatus` reach this queue.
+    public let kind: ReviewFlag.Kind
     /// The tree's active name, or its species common name — the same fallback the rest of the app
     /// uses (`activeName` → species). Never a bare UUID.
     public let treeName: String
@@ -34,6 +42,7 @@ public struct RemovalReviewItem: Identifiable, Sendable, Hashable {
     public init(
         flagID: UUID,
         treeID: UUID,
+        kind: ReviewFlag.Kind,
         treeName: String,
         address: String?,
         coordinate: Coordinate,
@@ -41,6 +50,7 @@ public struct RemovalReviewItem: Identifiable, Sendable, Hashable {
     ) {
         self.flagID = flagID
         self.treeID = treeID
+        self.kind = kind
         self.treeName = treeName
         self.address = address
         self.coordinate = coordinate
