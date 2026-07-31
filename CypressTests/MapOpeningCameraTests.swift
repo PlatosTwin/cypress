@@ -443,12 +443,18 @@ struct MapOpeningCameraApplyTests {
     /// **The settled camera has to be reported back, and the fix for E168 nearly stopped it being.**
     ///
     /// This is a regression the E168 fix introduced and the unit suite could not see, found only by
-    /// launching the app and reading the numbers off the screen. Aiming the map from inside
-    /// `layoutSubviews` is a re-entrant call: `setRegion` is honoured, so the map on the glass is on
-    /// the right street and every screenshot looks correct — and `regionDidChangeAnimated` is never
-    /// delivered. Nothing else writes `MapHomeView.region`, so it kept MapKit's own default for the
-    /// life of the screen: **37.1328, −95.7856, span 98° × 61°**, which is the continental United
-    /// States, sitting behind a map of Van Ness and Market.
+    /// launching the app and reading the numbers off the screen. `MapHomeView.region` kept MapKit's
+    /// own default for the life of the screen: **37.1328, −95.7856, span 98° × 61°**, which is the
+    /// continental United States, sitting behind a map of Folsom Street with the reader's dot in the
+    /// middle of it.
+    ///
+    /// **The mechanism is not the one first written here.** This note used to say
+    /// `regionDidChangeAnimated` "is never delivered" when the aim comes from inside a layout pass.
+    /// It is delivered — measured, twice per launch, carrying exactly the right region, in the same
+    /// millisecond as the `setRegion` that caused it, because MapKit calls it synchronously from
+    /// inside `setRegion`. And `applyCameraIfChanged` is called from `updateUIView`. So both writers
+    /// of `region` were running inside a SwiftUI view-update pass, where a `@State` write is
+    /// discarded. See `MapAnnotationLayer.Coordinator.echo(_:)` for the trace.
     ///
     /// That is the shape of defect this project keeps finding — a value that looks answered and is
     /// not — and everything downstream of the settled camera was quietly wrong: the recentre control's
@@ -456,12 +462,15 @@ struct MapOpeningCameraApplyTests {
     /// camera this app now remembers between launches.
     ///
     /// **What this test does and does not prove, measured rather than assumed.** It pins that the echo
-    /// exists: delete the write in `regionDidChangeAnimated` and it fails. It does **not** catch the
-    /// re-entrancy itself — a hook mutated back to firing inside `layoutSubviews` leaves this green,
-    /// because a map view that is not in a window does not reproduce MapKit's suppression. The witness
-    /// for that is `CypressUITests/MapCentredStateUITests.testTheMapOpensOnTheReaderWithoutBeingAsked`,
-    /// which fails with the control reading `Not centred` — and which is how the regression was found
-    /// in the first place, by launching the app rather than by running the suite.
+    /// exists: delete the write in `regionDidChangeAnimated` and it fails. It catches **neither** of
+    /// the two regressions that were actually built and run against it — writing `parent.region`
+    /// inline instead of through `echo(_:)`, and aiming re-entrantly from `layoutSubviews` — because a
+    /// map view outside a window and outside a SwiftUI update pass reproduces neither condition. The
+    /// witness for the first is
+    /// `CypressUITests/MapCentredStateUITests.testTheMapOpensOnTheReaderWithoutBeingAsked`, which
+    /// fails with the control reading `Not centred`. There is no witness for the second and there
+    /// does not need to be — see that file for why the re-entrant break changes no behaviour at all
+    /// on screen 01.
     @Test("the region the map settles on is echoed back to the screen")
     func theSettledRegionIsEchoedBack() async {
         let screen = Screen(opening: Self.dolores)
