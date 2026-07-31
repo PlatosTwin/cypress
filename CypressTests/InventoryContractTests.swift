@@ -7,8 +7,8 @@ import Testing
 ///
 /// The contract itself is Python, and so are its own tests
 /// (`Tools/test_inventory_contract.py`, run with `python3`). What those cannot check is the thing
-/// that actually ships: a 78 MB file in the app bundle whose 145,837 uuids are supposed to be a
-/// pure function of San Francisco's own tree ids. This suite checks the file.
+/// that actually ships: a 108 MB file in the app bundle whose 198,625 uuids are supposed to be a
+/// pure function of each row's own city's tree ids. This suite checks the file.
 ///
 /// ── Why identity is derived here rather than pinned ───────────────────────────────────────
 /// Writing down three known uuids would catch a rebuild that moved them and nothing else. The
@@ -23,9 +23,14 @@ import Testing
 /// inventory. San Francisco's two inventories share a space on purpose: they publish the same
 /// `TreeID` numbering, and their uuids colliding is the property that lets a photograph stay
 /// attached to its tree when the seed is rebuilt from the other one. A second *city* gets its own
-/// space and its own frozen prefix. `everyRowIsInTheSeedsDeclaredIdSpace` is the invariant that
-/// fails the moment a build mixes two spaces into one file, which is the shape #107 would take if
-/// it went wrong.
+/// space and its own frozen prefix.
+///
+/// **Since #129 the seed holds two spaces, and holding two is now the correct state.** What used to
+/// be checked — "every inventory in this file is in the file's one id space" — was the assumption
+/// the second city removed, and it is replaced by two checks that survive a third:
+/// `theFileDeclaresItsOwnVocabulary` (a row's space and inventory are declared by the file, and
+/// agree with each other) and `twoCitiesShareIdsAndNotIdentities` (San Jose FACILITYID 3 and San
+/// Francisco TreeID 3 are two different trees and have two different uuids). See ERRATA E176.
 @Suite("Inventory contract")
 struct InventoryContractTests {
 
