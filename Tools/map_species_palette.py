@@ -2,7 +2,7 @@
 """
 Tools/map_species_palette.py — reproduces the four species-slot colours on screen 01.
 
-Task #80; see docs/errata-pending/species-pins.md. `CypressColor.pinSpeciesA`…`D` are the only
+Task #80; see ERRATA E149. `CypressColor.pinSpeciesA`…`D` are the only
 tokens in the design system whose *light*
 half is ours as well as the dark one, because SCREENS.md draws no species colouring at all. This is
 the arithmetic behind them, in the same space `Tools/retint_ramp.py` and ERRATA E8's derivation work
