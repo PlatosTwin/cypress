@@ -12,23 +12,125 @@ import SwiftUI
 
 // MARK: - Filter chips
 
-/// `All / In bloom / Needs care`, single-select, `All` default (SCREENS.md 01 §12).
+/// Screen 01's filter row (#116, RULINGS R23).
+///
+/// `Yours · Favourites · Year ▾ · Needs care · In bloom`, plus a `Clear` chip that appears only when
+/// something is on. SCREENS.md 01 §12 drew `All / In bloom / Needs care`, single-select; the owner
+/// asked for four narrowings in priority order and they are not alternatives to each other, so the
+/// row became a conjunction and `All` became the row with nothing selected. `MapFilter`'s header is
+/// the full argument, including why there is no species chip — the legend is the species control.
+///
+/// **It wraps rather than scrolls**, borrowing `FlowRow` from the legend, and for the reason stated
+/// there: "a horizontal scroller on top of a map is a gesture competing with the pan underneath it —
+/// the one interaction screen 01 cannot afford to make ambiguous". Six chips do not fit one 361 pt
+/// line at default size, let alone at AX5.
 struct MapFilterChips: View {
     @Binding var filter: MapModel.Filter
 
     var body: some View {
-        HStack(spacing: MapLayout.chipGap) {
-            ForEach(MapModel.Filter.allCases) { candidate in
-                Chip(
-                    candidate.label,
-                    style: candidate == filter ? .filterSelected : .filterIdle
+        FlowRow(spacing: MapLayout.chipGap, lineSpacing: MapLayout.chipGap) {
+            ForEach(MapMembership.allCases) { kind in
+                chip(
+                    MapFilterCopy.membershipLabel(kind),
+                    isOn: filter.membership == kind
                 ) {
-                    filter = candidate
+                    // Tapping the chip that is on turns it off. Every chip in this row is a toggle,
+                    // because a conjunction with no way to remove one term is a conjunction that
+                    // can only be escaped through `Clear`.
+                    filter.membership = filter.membership == kind ? nil : kind
                 }
+            }
+
+            yearChip
+
+            ForEach(MapFilter.Condition.allCases) { condition in
+                chip(condition.label, isOn: filter.condition == condition) {
+                    filter.condition = filter.condition == condition ? nil : condition
+                }
+            }
+
+            if filter.isActive {
+                chip(MapFilterCopy.clearLabel, isOn: false) { filter = .all }
             }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Filter trees")
+        .accessibilityLabel(MapFilterCopy.rowLabel)
+    }
+
+    /// The one chip that carries a value rather than a state.
+    ///
+    /// A `Menu` rather than a sixth and seventh chip per decade: five decades plus `Any year` is
+    /// five more capsules on a row already carrying five, over a map. The menu is the system's own,
+    /// which means it is already a ≥44 pt target list, already Dynamic Type correct, and already
+    /// dismissible by the gesture readers expect — none of which a hand-drawn popover over MapKit
+    /// would be. It draws no SF Symbol: the label carries the chosen decade in words
+    /// (`MapYearFilterCopy.label`), so there is no chevron to source and nothing added to the five
+    /// call sites ticket #130 already owes.
+    private var yearChip: some View {
+        Menu {
+            Button(MapYearFilterCopy.anyLabel) { filter.decade = nil }
+            ForEach(MapFilter.Decade.allCases) { decade in
+                Button(decade.label) { filter.decade = decade }
+            }
+        } label: {
+            // No `action:`, so `Chip` renders the bare pill and the `Menu` around it owns the press.
+            // A `Chip` with its own action inside a `Menu` label would be a button inside a button.
+            Chip(
+                MapYearFilterCopy.label(filter.decade),
+                style: filter.decade == nil ? .filterIdle : .filterSelected
+            )
+        }
+        .cypressHitArea()
+        .accessibilityLabel(MapYearFilterCopy.label)
+        .accessibilityValue(filter.decade?.label ?? MapYearFilterCopy.anyLabel)
+    }
+
+    private func chip(_ title: String, isOn: Bool, action: @escaping () -> Void) -> some View {
+        Chip(title, style: isOn ? .filterSelected : .filterIdle, action: action)
+            // The fill and the weight say "on" and neither reaches a listener, so the state travels
+            // as a value the way `MapRecentreButton`'s engagement does.
+            .accessibilityValue(MapFilterCopy.chipValue(isOn: isOn))
+    }
+}
+
+// MARK: - The filter's result and its empty state
+
+/// What the filter says about what it found — the count, the year caveat, or nothing.
+///
+/// It borrows `MapSearchStatus`'s capsule exactly, because it is the same kind of object in the same
+/// strip of chrome: a sentence about how the map has been narrowed. Two lines at most, and it draws
+/// nothing at all when no filter is on, so an un-narrowed screen 01 is untouched.
+struct MapFilterStatus: View {
+    let result: String?
+    let showsYearCaveat: Bool
+
+    var body: some View {
+        if result != nil || showsYearCaveat {
+            VStack(alignment: .leading, spacing: MapLayout.chipGap) {
+                if let result {
+                    line(result)
+                }
+                // The sentence that keeps the year control honest about the 74 % of rows it cannot
+                // judge (ERRATA E175). It sits *below* the count deliberately: the count is the
+                // answer, this is the qualification on it.
+                if showsYearCaveat {
+                    line(MapYearFilterCopy.setAside)
+                }
+            }
+        }
+    }
+
+    private func line(_ message: String) -> some View {
+        Text(message)
+            .font(CypressFont.body13)
+            .foregroundStyle(CypressColor.textMuted)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.vertical, CypressSpacing.Component.chipPaddingVFilter)
+            .padding(.horizontal, CypressSpacing.Component.chipPaddingHFilter)
+            .background { Capsule().fill(CypressColor.searchFill) }
+            .cypressPillBorder(CypressColor.searchBorder)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(message)
     }
 }
 
@@ -133,6 +235,24 @@ struct MapLocationNotice: View {
     /// would be advice to change something that is already correct.
     var onOpenSettings: (() -> Void)?
 
+    /// The trailing button's words, when it is not the Settings one.
+    ///
+    /// **The button was hard-coded to `Settings` and is not any more** (#116). ERRATA E126 requires
+    /// a filtered empty map to offer a way *out*, and the way out is `Clear filters` — a different
+    /// sentence on the same control, on the same card, in the same slot. Generalising the label was
+    /// the whole change; both existing call sites pass neither and get `Settings`, so nothing that
+    /// already used this moved.
+    var actionLabel: String = "Settings"
+    /// The trailing button's press, when it is not `onOpenSettings`.
+    var onAction: (() -> Void)?
+
+    /// One trailing button, whichever of the two filled it.
+    private var action: (label: String, run: () -> Void)? {
+        if let onAction { return (actionLabel, onAction) }
+        if let onOpenSettings { return ("Settings", onOpenSettings) }
+        return nil
+    }
+
     var body: some View {
         HStack(alignment: .top, spacing: MapLayout.cardSpacing) {
             VStack(alignment: .leading, spacing: MapLayout.cardMetaTop) {
@@ -145,9 +265,9 @@ struct MapLocationNotice: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
-            if let onOpenSettings {
-                Button(action: onOpenSettings) {
-                    Text("Settings")
+            if let action {
+                Button(action: action.run) {
+                    Text(action.label)
                         .font(CypressFont.body13Bold)
                         .foregroundStyle(CypressColor.ctaLabel)
                         .padding(.vertical, CypressSpacing.Component.chipPaddingVFilter)
@@ -156,6 +276,7 @@ struct MapLocationNotice: View {
                 }
                 .buttonStyle(.plain)
                 .cypressHitArea()
+                .fixedSize()
             }
         }
         .padding(.vertical, MapLayout.cardPaddingV)

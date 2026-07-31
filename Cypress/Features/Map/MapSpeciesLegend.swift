@@ -30,10 +30,28 @@
 
 import SwiftUI
 
-/// The four coloured species, named. One chip each, in rank order.
+/// The four coloured species, named — **and, since #116, the map's species filter.**
+///
+/// ── Why the legend is the filter ─────────────────────────────────────────────────────────────
+/// The owner asked for a species narrowing, and attached two constraints to it: the filter and the
+/// legend "must agree with each other", and they "must not fight for the same screen space" — the
+/// legend having covered the map once already. A separate species chip would have been a second
+/// control naming the same four species in the same strip of chrome, which is both of those problems
+/// at once, and the agreement would have been something to maintain rather than something true.
+///
+/// One control cannot disagree with itself and costs no space it was not already costing. Tapping an
+/// entry narrows the map to that species; tapping it again clears. A species outside the four is
+/// reached the way it always was, by typing it into C20 — `MapModel.speciesIDs` intersects the two,
+/// so neither control silently undoes the other.
+///
+/// The selected entry keeps its swatch and takes the filter row's selected fill, so "this is the one
+/// the map is narrowed to" is said in the same visual language the chips beside it use.
 struct MapSpeciesLegend: View {
 
     let palette: MapSpeciesPalette
+    /// The species the map is narrowed to, or nil. A binding rather than a callback because the
+    /// legend renders the selection as well as setting it.
+    @Binding var selection: UUID?
 
     private var named: [MapSpeciesPalette.Entry] {
         palette.entries.filter { $0.name?.isEmpty == false }
@@ -46,7 +64,13 @@ struct MapSpeciesLegend: View {
             // the pan underneath it — the one interaction screen 01 cannot afford to make ambiguous.
             FlowRow(spacing: MapLayout.chipGap, lineSpacing: MapLayout.chipGap) {
                 ForEach(named) { entry in
-                    chip(entry)
+                    Button {
+                        selection = selection == entry.speciesID ? nil : entry.speciesID
+                    } label: {
+                        chip(entry)
+                    }
+                    .buttonStyle(.plain)
+                    .cypressHitArea()
                 }
             }
             .accessibilityElement(children: .contain)
@@ -55,23 +79,27 @@ struct MapSpeciesLegend: View {
     }
 
     private func chip(_ entry: MapSpeciesPalette.Entry) -> some View {
-        HStack(spacing: CypressSpacing.Component.chipSpeciesSwatchGap) {
+        let isSelected = selection == entry.speciesID
+        return HStack(spacing: CypressSpacing.Component.chipSpeciesSwatchGap) {
             swatch(entry.slot)
             Text(entry.name ?? "")
                 .font(CypressFont.body12SemiBold)
-                .foregroundStyle(CypressColor.textBody)
+                .foregroundStyle(isSelected ? CypressColor.ctaLabel : CypressColor.textBody)
                 .lineLimit(1)
         }
         .padding(.vertical, CypressSpacing.Component.chipPaddingVFilter)
         .padding(.horizontal, CypressSpacing.Component.chipPaddingHFilter)
-        .background { Capsule().fill(CypressColor.searchFill) }
-        .cypressPillBorder(CypressColor.searchBorder)
+        .background { Capsule().fill(isSelected ? CypressColor.ctaFill : CypressColor.searchFill) }
+        .cypressPillBorder(isSelected ? CypressColor.ctaFill : CypressColor.searchBorder)
         // One stop per species, and it says the mark as well as the colour. A reader who cannot see
         // either still gets the pairing from the pins, which speak the same name
         // (`MapPinKind.accessibilityLabel(for:palette:)`) — this is the key to that, not a substitute
         // for it.
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(MapSpeciesLegendCopy.chipLabel(name: entry.name ?? "", slot: entry.slot))
+        // It is a filter now, so it has a state, and the state is not visible to a listener.
+        .accessibilityValue(MapFilterCopy.chipValue(isOn: isSelected))
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
 
     /// The pin, at the chip's size.

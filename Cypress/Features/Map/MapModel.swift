@@ -19,26 +19,12 @@ import Observation
 final class MapModel {
 
     // MARK: - Filters
+    //
+    // The filter *value* is `MapFilter`, in its own file, where the design decision (RULINGS R23)
+    // and the seed measurement behind the year control (ERRATA E175) are argued. `Filter` remains as
+    // an alias so the name screen 01 and its tests already use keeps working.
 
-    /// The three chips of SCREENS.md 01, verbatim, single-select with `All` default.
-    enum Filter: String, CaseIterable, Identifiable {
-        case all
-        case inBloom
-        case needsCare
-
-        var id: String { rawValue }
-
-        var label: String {
-            switch self {
-            case .all: return "All"
-            case .inBloom: return "In bloom"
-            case .needsCare: return "Needs care"
-            }
-        }
-
-        /// `In bloom` is the only chip that needs a species lookup to answer.
-        var needsSeasonalData: Bool { self == .inBloom }
-    }
+    typealias Filter = MapFilter
 
     // MARK: - Inputs
 
@@ -70,13 +56,42 @@ final class MapModel {
     private(set) var search: MapSearch = .off
 
     /// The narrowing itself, as the viewport carries it. `nil` until a query resolves.
+    ///
+    /// **Two sources, intersected** (#116). The search bar resolves a typed word to a set of species
+    /// — a genus match can be several — and a tap on a legend entry picks exactly one off the glass.
+    /// Both are "narrow the map to a species", both write the same viewport field, and a reader can
+    /// have both on at once. The intersection is the only combination that keeps each control's
+    /// promise: typing "plane" and then tapping the London Plane legend chip must leave London
+    /// Planes, not silently widen back to every plane or silently drop the typed word.
+    ///
+    /// An empty result is `[]` rather than nil, and that distinction is load-bearing all the way
+    /// down: `[]` means "narrowed to nothing", which `TreeQueries.narrowing` answers with
+    /// `.matchesNothing` and an empty map, while nil means "not narrowed at all".
     private var speciesIDs: Set<UUID>? {
-        switch search {
-        case .off: return nil
-        case .noMatch: return []
-        case let .narrowed(narrowed): return narrowed.speciesIDs
-        }
+        let searched: Set<UUID>? = {
+            switch search {
+            case .off: return nil
+            case .noMatch: return []
+            case let .narrowed(narrowed): return narrowed.speciesIDs
+            }
+        }()
+        guard let picked = filter.speciesID else { return searched }
+        guard let searched else { return [picked] }
+        return searched.intersection([picked])
     }
+
+    /// The trees the membership chip has narrowed to, or nil when no chip is on.
+    ///
+    /// Read once per press of the chip rather than once per pan — `membershipDidChange` fills it and
+    /// the map refetches through it. `[]` is a real answer here (a reader with no favourites) and it
+    /// narrows the map to nothing, which screen 01 renders as an empty map with a reason on it.
+    private(set) var membershipIDs: Set<UUID>?
+
+    /// Whether the membership chip that is on has *any* members at all, which is what tells "none
+    /// here" apart from "none anywhere" in the empty state (ERRATA E126).
+    var membershipHasAnyMembers: Bool { !(membershipIDs?.isEmpty ?? true) }
+
+    private var membershipTask: Task<Void, Never>?
 
     private var searchTask: Task<Void, Never>?
 
@@ -86,7 +101,7 @@ final class MapModel {
     static let searchDebounce: Duration = .milliseconds(300)
 
     var filter: Filter = .all {
-        didSet { if filter != oldValue { filterDidChange() } }
+        didSet { if filter != oldValue { filterDidChange(from: oldValue) } }
     }
 
     private(set) var viewport: MapViewport?
@@ -106,7 +121,7 @@ final class MapModel {
     /// Species resolved for the bloom filter, keyed by id. Populated lazily and only for species
     /// that are actually on screen — the catalogue is 569 rows and the map does not need it.
     private var species: [UUID: Species] = [:] {
-        didSet { if filter.needsSeasonalData { recomputeAdmittedPins() } }
+        didSet { if filter.condition?.needsSeasonalData == true { recomputeAdmittedPins() } }
     }
     private var speciesMisses: Set<UUID> = []
 
@@ -291,8 +306,16 @@ final class MapModel {
         // matches — which is what lets it hold *all* of them rather than whichever survived the
         // budget. Filtering here as well would be a second, redundant pass and would put the
         // "all and only" guarantee back downstream of the grid where it cannot be kept.
-        switch filter {
-        case .all:
+        //
+        // **`membership`, `decade` and `speciesID` are not applied here either, and for exactly the
+        // same reason** (#116): all three ride on the viewport, so the answer that came back already
+        // holds only matches. Re-applying them would be a redundant pass, and — worse — it would put
+        // the guarantee back downstream of the grid, where a pin thinned out of a 44 pt cell cannot
+        // be recovered. `condition` is the only dimension that *cannot* go into the query: neither
+        // "needs care" nor "in bloom" is a column the seed's map statements select on, so it is the
+        // only one left filtering pins in hand.
+        switch filter.condition {
+        case nil:
             pins = fetched.items
         case .needsCare:
             pins = fetched.items.filter { MapPinKind.needsCare(status: $0.status) }
@@ -308,6 +331,36 @@ final class MapModel {
                 return species.seasonal.bloomMonths.contains(month)
             }
         }
+    }
+
+    // MARK: - What the filter row reports
+
+    /// The result line over the map — `31 trees` — or nil when there is nothing to report.
+    ///
+    /// **Nil unless a filter is on**, which is the whole of D1's safety here: an un-narrowed map
+    /// draws no number at all, so there is no surface on which a count of anything could sit by
+    /// default. When it does draw, the number is of *trees under this viewport matching this
+    /// filter*, it moves when the reader pans, and `MapFilterCopy.result` is where the argument that
+    /// this is not the count D1 forbids is written out.
+    ///
+    /// **E38 is honoured by asking `content`, not `pins`.** `pins` is what survived the grid;
+    /// `PinAnswer.matchesInView` is how many actually matched. The copy renders those two cases
+    /// differently rather than presenting a page as a total.
+    var filterResult: String? {
+        guard filter.isActive, case let .pins(answer) = content else { return nil }
+        // The drawn count is `pins`, not `answer.items`: a condition chip filters after the fetch,
+        // so the number on screen has to be the number on the glass.
+        return MapFilterCopy.result(drawn: pins.count, matched: answer.matchesInView)
+    }
+
+    /// Whether the filter has emptied the map, which is the state ERRATA E126 governs.
+    ///
+    /// A clustered viewport is deliberately excluded: badges are not pins, an empty `pins` array at
+    /// zoom 12 means the map is drawing clusters rather than that nothing matched, and a notice
+    /// saying "nothing here" over a screen full of badges would be the wrong sentence entirely.
+    var isEmptiedByFilter: Bool {
+        guard filter.isActive, case .pins = content else { return false }
+        return pins.isEmpty
     }
 
     // MARK: - Camera
@@ -335,14 +388,27 @@ final class MapModel {
     /// The one place a `MapViewport` is built, so the camera and the search bar cannot disagree
     /// about what the map is being asked for.
     private func makeViewport(bounds: BoundingBox, zoom: Int) -> MapViewport {
-        MapViewport(
+        let members = membershipIDs
+        return MapViewport(
             bounds: bounds,
             zoom: zoom,
             pinLimit: Self.pinLimit,
             // Only the pin half of the answer has a level of detail to choose. A clustered viewport
             // is already one badge per 64 pt cell, which is the same rule with a count on it.
-            markerCellPoints: zoom <= MapViewport.highestClusteringZoom ? nil : Self.markerCellPoints,
-            speciesIDs: speciesIDs
+            //
+            // **And a membership viewport takes no cell at all** (#116). The grid exists to bound an
+            // answer that grows with the viewport's area; a membership set does not — it is bounded
+            // by what one person tapped, which is tens. Handing it a 44 pt cell would thin a set
+            // that fits on the screen twice over, and thinning it would put `matchesInView` on the
+            // answer and make screen 01 say "showing 12 of 31" about a set it could have drawn
+            // whole. `MapViewport.shouldCluster` suspends A1's badges on the same argument and says
+            // so at length.
+            markerCellPoints: members != nil || zoom <= MapViewport.highestClusteringZoom
+                ? nil
+                : Self.markerCellPoints,
+            speciesIDs: speciesIDs,
+            plantedYears: filter.decade?.years,
+            treeIDs: members
         )
     }
 
@@ -384,7 +450,7 @@ final class MapModel {
             // exactly what changes how much of it fits.
             search = search.reporting(content)
             loadFailure = nil
-            if filter.needsSeasonalData { resolveSpeciesForVisiblePins() }
+            if filter.condition?.needsSeasonalData == true { resolveSpeciesForVisiblePins() }
         } catch let error as APIError {
             guard !Task.isCancelled else { return }
             loadFailure = error
@@ -436,10 +502,57 @@ final class MapModel {
 
     // MARK: - Filters
 
-    private func filterDidChange() {
+    /// A press of any chip. Three of the four dimensions change the *query*, so they go back to the
+    /// database; the fourth filters the pins already in hand.
+    private func filterDidChange(from old: MapFilter) {
         clearSelection()
+
+        // The membership set is a read of its own, and it has to land before the map is refetched —
+        // otherwise the first fetch after the press goes out with a nil `treeIDs` and draws the
+        // whole city for a frame, which is the wrong answer shown first.
+        if filter.membership != old.membership {
+            membershipDidChange()
+            return
+        }
+
         recomputeAdmittedPins()
-        if filter.needsSeasonalData { resolveSpeciesForVisiblePins() }
+        if filter.condition?.needsSeasonalData == true { resolveSpeciesForVisiblePins() }
+        guard filter.narrowsTheQuery || old.narrowsTheQuery else { return }
+        refetchThroughNarrowing()
+    }
+
+    /// Reads the id set behind `Yours` or `Favourites`, then refetches the map through it.
+    ///
+    /// The same two-step shape as `searchDidChange`, and for the same reason: the narrow thing is
+    /// resolved first — here from `main`, a table of tens of rows — and the wide query over 145,837
+    /// trees is asked once, already narrowed.
+    private func membershipDidChange() {
+        membershipTask?.cancel()
+        guard let kind = filter.membership else {
+            membershipIDs = nil
+            refetchThroughNarrowing()
+            return
+        }
+        membershipTask = Task { [weak self, api] in
+            let ids = (try? await api.mapMembership(kind)) ?? []
+            guard let self, !Task.isCancelled, self.filter.membership == kind else { return }
+            // `[]` is published deliberately rather than left nil. A reader with no favourites has
+            // asked a question and the honest answer is an empty map that says why (ERRATA E126),
+            // not the whole city.
+            self.membershipIDs = ids
+            self.refetchThroughNarrowing()
+        }
+    }
+
+    /// Rebuilds the viewport around whatever the narrowing now is and refetches.
+    ///
+    /// Identical in shape to what `applySearch` does, and for the reason stated there: the narrowing
+    /// lives on the viewport, so changing it is a *new viewport*, which is exactly what the fetch
+    /// path already knows how to answer and what lets the debounce see that anything changed.
+    private func refetchThroughNarrowing() {
+        guard let current = viewport else { return }
+        viewport = makeViewport(bounds: current.bounds, zoom: current.zoom)
+        scheduleFetch(immediate: true)
     }
 
     /// Resolves the species of the pins currently on screen, once each, so `In bloom` can answer

@@ -940,7 +940,8 @@ public struct ContributionStore {
                 SELECT id AS tree_uuid FROM community_trees WHERE deleted_at IS NULL
             )
             """)
-        _ = try statement.bind([":device": deviceID, ":user": userID as Any])
+        let bindings: [String: SQLiteBindable?] = [":device": deviceID, ":user": userID]
+        _ = try statement.bind(bindings)
         return Set(try statement.fetchAll { try $0.uuid("tree_uuid") })
     }
 
@@ -961,7 +962,8 @@ public struct ContributionStore {
                AND (device_id = :device COLLATE NOCASE
                     OR (:user IS NOT NULL AND user_id = :user COLLATE NOCASE))
             """)
-        _ = try statement.bind([":device": deviceID, ":user": userID as Any])
+        let bindings: [String: SQLiteBindable?] = [":device": deviceID, ":user": userID]
+        _ = try statement.bind(bindings)
         return Set(try statement.fetchAll { try $0.uuid("tree_uuid") })
     }
 
