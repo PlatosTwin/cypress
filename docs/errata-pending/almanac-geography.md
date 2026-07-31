@@ -117,7 +117,11 @@ thing this comparison must not capture.
 the three it had:
 
 ```
-MUTATION_OUTPUT_PLACEHOLDER
+✘ Test "an almanac that resolved no area does not look like one that is still loading"
+  recorded an issue at AlmanacGeographyTests.swift:299:9: Expectation failed: differs
+↳ an almanac that finished and found no inventory draws the loading screen (E182):
+  105083 bytes against 105083
+✘ Test run with 8 tests in 1 suite failed after 3.364 seconds with 1 issue.
 ```
 
 ### The rest
@@ -134,7 +138,38 @@ MUTATION_OUTPUT_PLACEHOLDER
 
 ### On screen, in both cities
 
-RUNNING_APP_PLACEHOLDER
+Built, installed and launched on iPhone 16 Pro Max, driven by hand at three fixes. The privacy
+grant was set with `simctl privacy … grant location` and each fix with `simctl location … set`
+followed by a terminate and relaunch, because `AlmanacView` builds its model from the coordinate it
+is handed on mount.
+
+**Downtown San Jose (37.3352, −121.8895).** The screen a reader in the second city now gets:
+
+| | |
+|---|---|
+| pill | `Within a 15-minute walk` |
+| under the header | *No neighborhood boundaries are on file for where you are, so this almanac is drawn around you instead. It will name a neighborhood once this city's boundaries join the record.* |
+| The elder | `MUSASHINO SAWLEAF ZELKOVA · in the city record since 2021` |
+| Newest neighbors | `1 tree planted this spring` |
+| Who lives here | `167 species` — Platanus acerifolia 33%, California Fan Palm 6%, Mexican Fan Palm 5%, Everyone else 56% |
+| Where a tree could go | `1,000 empty planting sites` |
+| Where eyes are needed | `4 young trees with no visits since planting` · *All four are within a 15-minute walk.* · `Walk the four` |
+
+Every figure matches what was measured against the file beforehand, including the walking sentence
+rendering rather than being withheld.
+
+**`Newest neighbors`, tapped.** It opens the `PinSet` map: title `Newest neighbors`, subject
+`1 tree planted this spring`, the E38 line `It is on this map.`, the pill carried through as
+`Within a 15-minute walk`, and the pin drawn on N 12th St. That is the owner's report closed.
+
+**Outer Sunset (37.7533, −122.4934).** Unchanged, which is the point: pill `Sunset/Parkside`, **no
+explanatory line at all**, `The elder — Ornamental Cherry · in the city record since 1969`,
+`Who lives here · 201 species`, `1,436 empty planting sites`, `9 young trees with no visits since
+planting` / `Walk the nine`. A reader in San Francisco cannot tell this pass happened.
+
+**Downtown Sacramento (38.5816, −121.4944).** Header, `No inventory reaches here yet.`, the two-line
+body, and the footnote. Before this pass that screen was the header and the footnote with an empty
+column between them — which is what a reader sees while the read is still running.
 
 ## 5 · Things checked rather than assumed
 
@@ -167,6 +202,16 @@ to say — the elder of Golden Gate Park is the elder of whichever sixth of it y
 
 - `AlmanacWindow.springMonths = 3...5` is northern-hemisphere. Correct for every US city and wrong
   the first time this database crosses the equator. Not fixed; nothing in scope crosses it.
+- **The elder row in San Jose reads `MUSASHINO SAWLEAF ZELKOVA`**, in capitals, where San Francisco
+  reads `Ornamental Cherry`. Chased rather than shrugged at: San Jose publishes no common name
+  (E176), so `COALESCE(s.common_name, s.scientific_name)` falls through to the scientific name, and
+  this row's `NAMESCIENTIFIC` holds an all-caps *common* name rather than a binomial. It is **one
+  species and one tree** in the whole file — measured, not assumed — so it is a source-data curiosity
+  rather than a pattern; it is worth recording only because that single row happens to be the elder
+  of downtown San Jose and therefore sits on the screen's flagship line. Not fixed here: correcting a
+  species row is the species catalogue's business, not screen 12's. (215 species carry no common name
+  at all and render their scientific name, which is `SpeciesQueries`' documented E51 fallback and
+  predates the second city.)
 - `AlmanacCopy.street(from:)` drops a leading house number. Checked against San Jose's addresses
   (`393 E ST JOHN ST`) and it works. The all-caps casing it leaves behind is **not** an SF/SJ
   difference: SF's own rows include `1726 ALEMANY BLVD` beside `600 Montgomery St`, so this is a
