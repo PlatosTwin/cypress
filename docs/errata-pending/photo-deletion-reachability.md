@@ -123,6 +123,17 @@ The pill's own discoverability is untouched. It is now a second way to the same 
 the only way, which is the part of this that mattered; whether a mono-10.5 capsule over a photograph
 should look like a door at all is a design question and not this entry's.
 
+**The silent case is still silent, and it is now silent in two places.** An anonymised photograph —
+one whose contributor left through the door that keeps their work — is still *shown*, correctly, and
+has no delete on it, correctly. What neither screen 20 nor the viewer does is **say so**. The row
+simply has one fewer control than the row above it, and the viewer simply has an empty corner. E126
+requires a screen with nothing on it to say why, and the same logic covers an action that is absent
+for a reason; "this photograph's contributor has left, and it is nobody's to remove" is a sentence
+this app would normally write. It is deliberately not written here because it is a different defect
+from the reported one and wants its own entry and its own copy — the state is reachable (sign in,
+contribute, delete the account keeping the work), it is rare, and inventing the sentence in passing
+is how copy gets written that nobody has read against the screen.
+
 Seen while reading, and not fixed here: `TreePhotosModel.load` filters `profile.photos.items`, which
 `LocalAPI` already narrows to what this installation wrote, while the hero pill's count comes from
 the tree's whole photo count. On a tree carrying photographs from other people the pill would say
