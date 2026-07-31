@@ -241,8 +241,22 @@ enum MapFilterCopy {
         case .yours where !hasAnyMembers:
             return "You have not added a photo, a check-in or a measurement to any tree yet. "
                 + "Visit one and it will appear here."
+        // **Names the control the app actually draws, which is not a heart** (task #139, E184).
+        //
+        // This sentence used to read "Tap the heart on any tree's page". There is no heart anywhere
+        // in this app and there never has been: SCREENS.md §2 C8 marks the four cells' icons NOT
+        // SPECIFIED, §5 gap 3 repeats it, `mocks/cypress-mocks.html` contains no heart, and RULINGS
+        // R2 corrects its own first draft on exactly this point — "C8 has no glyph … there was
+        // nothing to fill". The row is four text cells reading `Favorite · Care · Share · Report`.
+        //
+        // So the reader was sent to look for an affordance that does not exist, on the one screen
+        // this notice's whole job is to route them to. `QuadActionRow.Action.favorite.label` is the
+        // string on the cell, quoted rather than paraphrased so the two cannot drift.
+        // Written out rather than interpolated from `QuadActionRow.Action.favorite.label`, so this
+        // file keeps its `Foundation`-only import; `MapFilterCopyNamesTheDrawnControlTests` asserts
+        // the two strings agree, which is the drift protection the interpolation would have bought.
         case .favourites where !hasAnyMembers:
-            return "You have not hearted a tree yet. Tap the heart on any tree's page and it will "
+            return "You have not favorited a tree yet. Tap Favorite on any tree's page and it will "
                 + "appear here."
         case .some:
             return "Nothing in this part of the map. Pan or zoom out to look further, or clear the "

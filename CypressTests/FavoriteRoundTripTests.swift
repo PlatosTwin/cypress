@@ -2,10 +2,10 @@ import Foundation
 import Testing
 @testable import Cypress
 
-/// **The favourite, end to end, on a tree that came out of the seed** (task #139, ERRATA E184).
+/// **The favorite, end to end, on a tree that came out of the seed** (task #139, ERRATA E184).
 ///
 /// This suite exists because of a hole rather than a hypothesis. Two suites already cover the
-/// favourite and both are green, and between them they still could not have caught a screen whose
+/// favorite and both are green, and between them they still could not have caught a screen whose
 /// heart does not stick:
 ///
 /// - `FavoriteTests` proves the store — the tombstone, the replay guard, the two ownership arms.
@@ -19,7 +19,7 @@ import Testing
 ///   arm every tree the owner can tap goes down.
 ///
 /// So the two halves are each covered and the seam between them is not, and the seam is where a
-/// favourite would be lost: the model writes through `ProfileFavoriteWriter` and then re-reads
+/// favorite would be lost: the model writes through `ProfileFavoriteWriter` and then re-reads
 /// through `CypressAPI.grove()`, which are two different queries over two different owner columns,
 /// and nothing joined them. What is asserted here is the join:
 ///
@@ -32,9 +32,9 @@ import Testing
 /// **Why the real seed and not `CypressStore.inMemory()`.** With no seed attached `treeQueries` is
 /// nil, `requireTree` falls through to the community arm, and `grove()` resolves the tree through
 /// `communityTrees`. Every tree on the map is a seed row. A test that never opens the seed cannot
-/// tell a favourite that works from one that only works on the 0 % of records this app added.
+/// tell a favorite that works from one that only works on the 0 % of records this app added.
 @MainActor
-@Suite("Screen 03 · the favourite round trip, real store (#139)")
+@Suite("Screen 03 · the favorite round trip, real store (#139)")
 struct FavoriteRoundTripTests {
 
     private static let deviceID = UUID(uuidString: "D1390000-0000-4000-8000-000000000139")!
@@ -76,7 +76,7 @@ struct FavoriteRoundTripTests {
         let model = Self.model(api: api, outbox: outbox, treeID: treeID)
 
         await model.load()
-        #expect(!model.isFavorite, "a tree nobody has favourited opened selected")
+        #expect(!model.isFavorite, "a tree nobody has favorited opened selected")
 
         await model.toggleFavorite().value
 
@@ -87,7 +87,7 @@ struct FavoriteRoundTripTests {
         // And the store, asked directly rather than through the screen's own read, so a `grove()`
         // that lied in both directions could not make this pass.
         let held = try await api.mapMembership(.favourites)
-        #expect(held.contains(treeID), "no live favourite row for the tree that was tapped")
+        #expect(held.contains(treeID), "no live favorite row for the tree that was tapped")
     }
 
     @Test("a second tap tombstones the row and the cell goes off")
@@ -99,14 +99,14 @@ struct FavoriteRoundTripTests {
         await model.toggleFavorite().value
         await model.toggleFavorite().value
 
-        #expect(!model.isFavorite, "the un-favourite was swallowed and the cell still reads on")
+        #expect(!model.isFavorite, "the un-favorite was swallowed and the cell still reads on")
         let held = try await api.mapMembership(.favourites)
         #expect(!held.contains(treeID), "the tombstone did not take: the row is still live")
 
         // A tombstone, not a delete (BUILD-PLAN §4). The row has to still be there, carrying the
-        // off state, or the un-favourite is not an event anything could sync.
+        // off state, or the un-favorite is not an event anything could sync.
         let rows = try await api.deviceContributions().favorites
-        #expect(rows == 0, "an un-favourited tree is still counted as this device's favourite")
+        #expect(rows == 0, "an un-favorited tree is still counted as this device's favorite")
     }
 
     // MARK: - 3. The failure that has to be visible
@@ -116,13 +116,13 @@ struct FavoriteRoundTripTests {
         let (api, _, treeID) = try await Self.openSeeded()
         // The composition root's writer, replaced by one that does nothing — which is exactly the
         // defect class this ticket is filed under (#59: controls that promise storage and store
-        // nothing). The screen must not claim the favourite it could not make.
+        // nothing). The screen must not claim the favorite it could not make.
         let model = TreeProfileModel(treeID: treeID, api: api, setFavorite: { _, _ in })
 
         await model.load()
         await model.toggleFavorite().value
 
-        #expect(!model.isFavorite, "the cell claimed a favourite the store never took")
+        #expect(!model.isFavorite, "the cell claimed a favorite the store never took")
         let held = try await api.mapMembership(.favourites)
         #expect(held.isEmpty)
     }
@@ -148,7 +148,7 @@ struct FavoriteRoundTripTests {
     @Test("a refresh already in flight does not put the heart back after a tap")
     func aStaleRefreshDoesNotOverwriteATapThatLanded() async {
         let store = FavoriteBox()
-        let api = SlowGroveAPI(favourites: store)
+        let api = SlowGroveAPI(favorites: store)
         let model = TreeProfileModel(
             treeID: SlowGroveAPI.treeID,
             api: api,
@@ -161,7 +161,7 @@ struct FavoriteRoundTripTests {
         #expect(!model.isFavorite)
 
         // The sheet closes: a refresh begins and its `grove()` takes its snapshot — "not a
-        // favourite" — and then stalls before returning.
+        // favorite" — and then stalls before returning.
         await api.holdTheNextGroveReadOpen()
         let refresh = Task { await model.reload() }
         await api.waitUntilGroveIsHeld()
@@ -176,15 +176,15 @@ struct FavoriteRoundTripTests {
 
         #expect(
             model.isFavorite,
-            "a refresh that started before the tap put the heart back off, over a favourite the store holds"
+            "a refresh that started before the tap put the heart back off, over a favorite the store holds"
         )
-        #expect(store.held.contains(SlowGroveAPI.treeID), "the store lost the favourite as well")
+        #expect(store.held.contains(SlowGroveAPI.treeID), "the store lost the favorite as well")
     }
 }
 
 // MARK: - Doubles for the ordering test
 
-/// The favourites a test can write to and read back, shared between the API double and the model's
+/// The favorites a test can write to and read back, shared between the API double and the model's
 /// write closure — which is what makes "what the cell shows is what is stored" a testable sentence.
 final class FavoriteBox: @unchecked Sendable {
     var held: Set<UUID> = []
@@ -198,12 +198,12 @@ final class FavoriteBox: @unchecked Sendable {
 final class SlowGroveAPI: CypressAPI, @unchecked Sendable {
     static let treeID = UUID(uuidString: "F1390000-0000-4000-8000-0000000001A1")!
 
-    private let favourites: FavoriteBox
+    private let favorites: FavoriteBox
     private var hold: CheckedContinuation<Void, Never>?
     private var holdRequested = false
     private var holdEntered: CheckedContinuation<Void, Never>?
 
-    init(favourites: FavoriteBox) { self.favourites = favourites }
+    init(favorites: FavoriteBox) { self.favorites = favorites }
 
     func holdTheNextGroveReadOpen() async { holdRequested = true }
 
@@ -245,7 +245,7 @@ final class SlowGroveAPI: CypressAPI, @unchecked Sendable {
 
     func grove() async throws -> [GroveEntry] {
         // The read, taken now.
-        let snapshot = favourites.held
+        let snapshot = favorites.held
         if holdRequested {
             holdRequested = false
             await withCheckedContinuation { continuation in
