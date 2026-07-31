@@ -348,6 +348,11 @@ final class MapModel {
     /// differently rather than presenting a page as a total.
     var filterResult: String? {
         guard filter.isActive, case let .pins(answer) = content else { return nil }
+        // **Nothing to report when the empty notice is already reporting it.** Seen on the running
+        // screen: a `0 trees` pill sat in the chrome while `No trees of yours here` sat in the card
+        // below, which is the same fact twice and the weaker phrasing on top. The notice says why
+        // the map is empty and offers the way out (ERRATA E126); a bare zero says neither.
+        guard !pins.isEmpty else { return nil }
         // The drawn count is `pins`, not `answer.items`: a condition chip filters after the fetch,
         // so the number on screen has to be the number on the glass.
         return MapFilterCopy.result(drawn: pins.count, matched: answer.matchesInView)
