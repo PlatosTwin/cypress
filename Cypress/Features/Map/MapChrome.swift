@@ -12,13 +12,21 @@ import SwiftUI
 
 // MARK: - Filter chips
 
-/// Screen 01's filter row (#116, RULINGS R23).
+/// Screen 01's filter row (#116, RULINGS R23, restructured by **R23.1**).
 ///
-/// `Yours · Favourites · Year ▾ · Needs care · In bloom`, plus a `Clear` chip that appears only when
-/// something is on. SCREENS.md 01 §12 drew `All / In bloom / Needs care`, single-select; the owner
-/// asked for four narrowings in priority order and they are not alternatives to each other, so the
-/// row became a conjunction and `All` became the row with nothing selected. `MapFilter`'s header is
-/// the full argument, including why there is no species chip — the legend is the species control.
+/// `Yours · In bloom · Needs care · Year ▾ · More filters`, plus a `Clear filters` chip that appears
+/// only when something is on. SCREENS.md 01 §12 drew `All / In bloom / Needs care`, single-select;
+/// the owner asked for four narrowings and they are not alternatives to each other, so the row became
+/// a conjunction and `All` became the row with nothing selected. `MapFilter`'s header is the full
+/// argument, including why there is no species chip — the legend is the species control.
+///
+/// **What R23.1 changed, and what it did not.** The owner, walking the app: "Only filters that should
+/// show are yours, in bloom, needs care, and year — and favorites (and any others we add later)
+/// should go to a separate expandable filter button." So `Favorites` came out of the row and the row
+/// grew a control that holds it, and the visible four are drawn in the owner's own order. The
+/// conjunction, the absent `All`, the single `Clear filters`, the legend-as-species-filter, the
+/// result line and the empty notice are all untouched — see `MapExtraFilter` for the drawer's
+/// contents and `docs/RULINGS.md` R23.1 for what was superseded.
 ///
 /// **It wraps rather than scrolls**, borrowing `FlowRow` from the legend, and for the reason stated
 /// there: "a horizontal scroller on top of a map is a gesture competing with the pan underneath it —
@@ -27,34 +35,104 @@ import SwiftUI
 struct MapFilterChips: View {
     @Binding var filter: MapModel.Filter
 
+    /// Whether the expandable control is open.
+    ///
+    /// **View state, not filter state, and the distinction is the whole of R23.1's hazard.** What is
+    /// narrowing the map lives in `filter`; whether the reader can currently *see* one of those
+    /// narrowings lives here. Closing the control must not clear anything — a disclosure that
+    /// discarded what was set inside it would be a control that undoes your instruction when you tidy
+    /// the screen — which is exactly why the collapsed chip has to say that something is still on.
+    @State private var isExpanded = false
+
     var body: some View {
-        FlowRow(spacing: MapLayout.chipGap, lineSpacing: MapLayout.chipGap) {
-            ForEach(MapMembership.allCases) { kind in
+        // A stack rather than more entries in the flow: the drawer is a block under the row, not a
+        // wide chip in it. In the flow and never an overlay, for R25's reason one control over — an
+        // overlay would leave whatever it covered reachable by an assistive technology and invisible
+        // to everyone else.
+        VStack(alignment: .leading, spacing: MapLayout.chipGap) {
+            FlowRow(spacing: MapLayout.chipGap, lineSpacing: MapLayout.chipGap) {
+                // The owner's four, in the owner's order. `Yours` is the membership half that stayed;
+                // `Favorites` is behind `moreChip`.
                 chip(
-                    MapFilterCopy.membershipLabel(kind),
-                    isOn: filter.membership == kind
+                    MapFilterCopy.membershipLabel(.yours),
+                    isOn: filter.membership == .yours
                 ) {
                     // Tapping the chip that is on turns it off. Every chip in this row is a toggle,
                     // because a conjunction with no way to remove one term is a conjunction that
                     // can only be escaped through `Clear`.
-                    filter.membership = filter.membership == kind ? nil : kind
+                    filter.membership = filter.membership == .yours ? nil : .yours
+                }
+
+                ForEach(MapFilter.Condition.allCases) { condition in
+                    chip(condition.label, isOn: filter.condition == condition) {
+                        filter.condition = filter.condition == condition ? nil : condition
+                    }
+                }
+
+                yearChip
+                moreChip
+
+                if filter.isActive {
+                    chip(MapFilterCopy.clearLabel, isOn: false) { filter = .all }
                 }
             }
 
-            yearChip
-
-            ForEach(MapFilter.Condition.allCases) { condition in
-                chip(condition.label, isOn: filter.condition == condition) {
-                    filter.condition = filter.condition == condition ? nil : condition
-                }
-            }
-
-            if filter.isActive {
-                chip(MapFilterCopy.clearLabel, isOn: false) { filter = .all }
-            }
+            // Open, the drawer's chips are real elements after the row. Shut, they are **not in the
+            // tree at all** — the `if` is the point. A drawer built as a hidden overlay, or as chips
+            // behind `.opacity(0)`, would leave a filter a sighted reader cannot see and a VoiceOver
+            // reader can still swipe onto and press, which is the failure
+            // `DeepLinkVoiceOverTests.testAModalIsolatesTheScreenBehindIt` exists for.
+            if isExpanded { drawer }
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(MapFilterCopy.rowLabel)
+    }
+
+    /// The expandable control itself (R23.1).
+    ///
+    /// It is a `Chip` like the rest of the row rather than a new kind of object, because it *is* a
+    /// filter control — the one that holds the filters there is no room for. Three channels say the
+    /// same thing about what is hidden inside it, and they are three because they reach different
+    /// readers: the selected fill (sighted, glanceable), the count in the label (sighted, exact, and
+    /// survives a reader who cannot tell the two fills apart), and the spoken value, which is the
+    /// only one that names what is on.
+    private var moreChip: some View {
+        let active = filter.activeExtras
+        return Chip(
+            MapFilterCopy.moreChipLabel(active: active.count),
+            style: active.isEmpty ? .filterIdle : .filterSelected
+        ) {
+            isExpanded.toggle()
+        }
+        .accessibilityLabel(MapFilterCopy.moreLabel)
+        .accessibilityValue(MapFilterCopy.moreValue(isExpanded: isExpanded, active: active))
+        .accessibilityHint(MapFilterCopy.moreHint)
+    }
+
+    /// What is behind the control: `MapExtraFilter.allCases`, and nothing written out by hand.
+    ///
+    /// It takes the search bar's own capsule fill rather than a new surface, for `MapFilterStatus`'s
+    /// reason — it is another block of chrome in the same strip, and screen 01 has enough kinds of
+    /// object floating on it. It wraps for the row's reason, which matters more here than there: at
+    /// AX5 a single chip is most of the width of the phone.
+    private var drawer: some View {
+        FlowRow(spacing: MapLayout.chipGap, lineSpacing: MapLayout.chipGap) {
+            ForEach(MapExtraFilter.allCases) { extra in
+                chip(extra.label, isOn: extra.isOn(filter)) { extra.toggle(in: &filter) }
+            }
+        }
+        .padding(.vertical, CypressSpacing.Component.chipPaddingVFilter)
+        .padding(.horizontal, CypressSpacing.Component.chipPaddingHFilter)
+        .background {
+            RoundedRectangle(cornerRadius: CypressRadius.cardSm, style: .continuous)
+                .fill(CypressColor.searchFill)
+        }
+        .cypressBorder(CypressColor.searchBorder, radius: CypressRadius.cardSm)
+        // A container, not a combine: the chips inside must stay separately reachable, and the
+        // group's own name is what tells a reader navigating by element that they have arrived
+        // inside the control they just opened rather than somewhere else in the chrome.
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(MapFilterCopy.moreLabel)
     }
 
     /// The one chip that carries a value rather than a state.

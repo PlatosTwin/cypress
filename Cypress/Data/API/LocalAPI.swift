@@ -1892,7 +1892,7 @@ public actor LocalAPI: CypressAPI {
                 return try contributions.contributedTreeIDs(
                     userID: user, deviceID: device, connection: connection
                 )
-            case .favourites:
+            case .favorites:
                 return try contributions.favoriteTreeIDs(
                     userID: user, deviceID: device, connection: connection
                 )

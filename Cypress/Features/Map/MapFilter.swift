@@ -57,10 +57,15 @@ import Foundation
 /// `All` chip selected, so the default behaviour is unchanged.
 struct MapFilter: Equatable, Sendable {
 
-    /// `Yours` / `Favourites`, or neither. Single-select **within this dimension only**: a tree is
+    /// `Yours` / `Favorites`, or neither. Single-select **within this dimension only**: a tree is
     /// either one you have contributed to or one you have hearted, and asking for both at once means
     /// the intersection, which is a set so small and so unmotivated that offering it would be a
     /// control nobody wants. Tapping the other one swaps.
+    ///
+    /// **The two halves are no longer drawn in the same place** (R23.1): `Yours` is a chip in the
+    /// row and `Favorites` is behind the row's expandable control. That is a change to where the
+    /// question is asked and to nothing else — the swap still happens, across the two surfaces, and
+    /// `MapExtraFilter.favorites` is the one place that arm is written.
     var membership: MapMembership?
 
     /// The planting decade, or nil for every year. See the header, and ERRATA E175.
@@ -101,12 +106,27 @@ struct MapFilter: Equatable, Sendable {
         membership != nil || decade != nil || speciesID != nil
     }
 
+    /// The narrowings currently set **inside the row's expandable control** — the ones a reader
+    /// cannot see while it is shut.
+    ///
+    /// This is the value the collapsed control renders itself from, and it exists as a property on
+    /// the filter rather than as a count in the view because the hazard R23.1 creates is a fact
+    /// about the *filter*, not about the chrome: a dimension can be on while nothing on screen
+    /// draws it. One expression, read by the chip's label, its fill and its spoken value, so those
+    /// three cannot disagree about whether anything is hidden.
+    var activeExtras: [MapExtraFilter] { MapExtraFilter.allCases.filter { $0.isOn(self) } }
+
     // MARK: - Conditions
 
     /// SCREENS.md 01 §12's own two, unchanged in meaning.
+    ///
+    /// **The declaration order is the row's drawn order and is load-bearing** (R23.1). The owner
+    /// listed the visible chips as "yours, in bloom, needs care, and year", so `inBloom` comes
+    /// first here; `MapFilterChips` draws `allCases` and does not re-sort it, which keeps the
+    /// owner's order in one place rather than in a literal beside the view.
     enum Condition: String, CaseIterable, Identifiable, Sendable {
-        case needsCare
         case inBloom
+        case needsCare
 
         var id: String { rawValue }
 
@@ -161,6 +181,56 @@ struct MapFilter: Equatable, Sendable {
     }
 }
 
+// MARK: - The narrowings that are not in the row
+
+/// **Everything the filter can ask that the row does not have a chip for** (RULINGS **R23.1**).
+///
+/// ── Why this is a type and not an `if` in the view ───────────────────────────────────────────
+/// The owner's instruction was "favorites (and any others we add later) should go to a separate
+/// expandable filter button". The parenthesis is the requirement: this is an **extension point**,
+/// not a drawer that happens to hold one thing. A `Favorites` chip written inline behind an
+/// `if isExpanded` would satisfy the sentence and none of it — the second narrowing to arrive would
+/// be a second inline chip, the collapsed control would need a hand-updated count, and the day
+/// somebody forgot to update it is the day a filter is on with nothing on screen saying so.
+///
+/// So the drawer draws `allCases`, the collapsed chip counts and names `allCases`, and adding a
+/// narrowing later is one case here plus its two arms below. Nothing in `MapFilterChips` changes.
+///
+/// ── Why the arms live here rather than on `MapFilter` ────────────────────────────────────────
+/// `isOn` and `toggle` are the *whole* definition of what a hidden narrowing means, and keeping them
+/// beside the case is what makes the case the only thing a new one has to write. `favorites` reads
+/// and writes `MapFilter.membership`, which is single-select within itself (R23 §1) — so turning
+/// `Favorites` on from inside the drawer turns `Yours` off in the row above it, which is the same
+/// swap R23 specified, now crossing a surface.
+enum MapExtraFilter: String, CaseIterable, Identifiable, Sendable {
+
+    /// Trees hearted on screen 03 (D9, E89). In the row until R23.1, behind the control since.
+    case favorites
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .favorites: return MapFilterCopy.membershipLabel(.favorites)
+        }
+    }
+
+    func isOn(_ filter: MapFilter) -> Bool {
+        switch self {
+        case .favorites: return filter.membership == .favorites
+        }
+    }
+
+    /// A toggle, like every other chip in this feature: a conjunction with no way to remove one
+    /// term is a conjunction you can only escape wholesale (R23 §1).
+    func toggle(in filter: inout MapFilter) {
+        switch self {
+        case .favorites:
+            filter.membership = filter.membership == .favorites ? nil : .favorites
+        }
+    }
+}
+
 // MARK: - Copy
 
 /// What the filter row and its result line say.
@@ -175,7 +245,8 @@ enum MapFilterCopy {
     static func membershipLabel(_ kind: MapMembership) -> String {
         switch kind {
         case .yours: return "Yours"
-        case .favourites: return "Favourites"
+        // American spelling, on the owner's instruction (R23.1). They named this word.
+        case .favorites: return "Favorites"
         }
     }
 
@@ -184,7 +255,54 @@ enum MapFilterCopy {
     static func chipValue(isOn: Bool) -> String { isOn ? "On" : "Off" }
 
     /// The control that puts the map back.
+    ///
+    /// **One of these, not two, and R23.1 makes that load-bearing rather than tidy.** A narrowing set
+    /// inside the expandable control is invisible while the control is shut; if the way out of it
+    /// were also inside it, a reader would have to know a filter existed in order to find the control
+    /// that removes it. `filter = .all` clears every dimension, drawn or hidden, and this chip is on
+    /// screen whenever *any* of them is set.
     static let clearLabel = "Clear filters"
+
+    // MARK: The expandable control (R23.1)
+
+    /// The control's own name, and the name of the group it opens.
+    static let moreLabel = "More filters"
+
+    /// **What the chip says while it is shut and something inside it is on.**
+    ///
+    /// The hazard R23.1 creates, stated as a string: a filter behind a closed control is a map
+    /// narrowed by a cause nobody can see, which is ERRATA E126's defect ("a screen showing something
+    /// other than what you asked for must say why") wearing a new hat. The count is the visible half
+    /// of the answer — it rides in the label so it survives a reader who cannot see the selected
+    /// fill, and it is a number rather than a list of names because the control exists precisely
+    /// because names do not fit in this row.
+    ///
+    /// The names are not lost; they are in `moreValue`, which is where a listener gets them and where
+    /// they cost no width at all.
+    static func moreChipLabel(active: Int) -> String {
+        active == 0 ? moreLabel : "\(moreLabel) (\(active))"
+    }
+
+    /// **What the control announces: whether it is open, and what is set inside it.**
+    ///
+    /// Two facts in one value, and both are needed. A disclosure that does not say whether it is open
+    /// leaves a listener pressing it to find out — and a listener is exactly the reader for whom
+    /// "the panel appeared below" is not an observation. And a *shut* control that named no contents
+    /// would be the E126 hazard with the visual half fixed and the spoken half left open: the fill
+    /// and the count reach a sighted reader, and this sentence is the only thing that reaches anyone
+    /// else.
+    ///
+    /// Names rather than a number here, because the constraint that made the label count instead —
+    /// the width of a chip row on a phone — does not apply to a spoken string.
+    static func moreValue(isExpanded: Bool, active: [MapExtraFilter]) -> String {
+        let state = isExpanded ? "Expanded" : "Collapsed"
+        guard !active.isEmpty else { return state }
+        return "\(state), on: " + active.map(\.label).joined(separator: ", ")
+    }
+
+    /// Why a reader would open it. It says what is *behind* the control rather than what pressing it
+    /// does, because "expands" is already the value's job.
+    static let moreHint = "Holds the narrowings that are not chips in the row."
 
     // MARK: The result line
 
@@ -227,12 +345,17 @@ enum MapFilterCopy {
     /// filter that emptied it — so the reader knows which chip to reach for — and the notice this
     /// goes into carries a `Clear` button, so the way out is a control rather than a hint.
     ///
-    /// `Yours` and `Favourites` get their own reasons, because on a fresh install the honest answer
+    /// `Yours` and `Favorites` get their own reasons, because on a fresh install the honest answer
     /// is not "no matches here" but "you have not made any yet", and telling somebody to pan around
     /// looking for trees they have never visited is the dead end D16 (b) warns about.
+    ///
+    /// **This survives R23.1 unchanged in substance and is the reason the restructure is safe.**
+    /// `Favorites` is now set from behind a control that may be shut by the time the map is empty, so
+    /// the notice naming the filter is no longer a convenience — on that path it is the only sentence
+    /// on screen that says which narrowing did this.
     static func emptyTitle(_ filter: MapFilter) -> String {
         if filter.membership == .yours { return "No trees of yours here" }
-        if filter.membership == .favourites { return "No favourites here" }
+        if filter.membership == .favorites { return "No favorites here" }
         return "Nothing matches here"
     }
 
@@ -241,7 +364,7 @@ enum MapFilterCopy {
         case .yours where !hasAnyMembers:
             return "You have not added a photo, a check-in or a measurement to any tree yet. "
                 + "Visit one and it will appear here."
-        case .favourites where !hasAnyMembers:
+        case .favorites where !hasAnyMembers:
             return "You have not hearted a tree yet. Tap the heart on any tree's page and it will "
                 + "appear here."
         case .some:
