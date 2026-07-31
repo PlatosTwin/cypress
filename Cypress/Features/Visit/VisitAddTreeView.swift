@@ -447,6 +447,11 @@ struct VisitAddTreeView: View {
         if dynamicTypeSize.isAccessibilitySize, wellIsEmpty {
             emptyWellSentence
                 .frame(maxWidth: .infinity, alignment: .center)
+                // Hidden from VoiceOver, not added to it: the well's own `accessibilityLabel` is
+                // already this exact string at every size, so leaving this visible to the tree
+                // would read it out twice in a row at AX5 and only at AX5. What moved is where the
+                // sentence is *drawn*; nothing about the screen's tree changes with the type ramp.
+                .accessibilityHidden(true)
         }
     }
 
