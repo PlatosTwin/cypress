@@ -101,9 +101,14 @@ enum MapSuggestions: Equatable {
     /// whole job is the list and which can scroll for as long as it likes.
     ///
     /// This list floats over the map that is answering the question, so every row it adds hides some
-    /// of the answer. Six rows of two lines each is about a third of the display at the drawn size,
-    /// which leaves the FAB, the tree card and the lower two thirds of the city visible underneath —
-    /// looked at on the running app rather than reasoned about, per R25.
+    /// of the answer.
+    ///
+    /// **Measured rather than estimated, and the estimate was wrong.** This said "about a third of
+    /// the display" until it was drawn on an iPhone 16e: a two-line row is about 79 pt, so six of them
+    /// come to roughly 480 pt and the height cap in `MapSuggestionList` bites first. Five and a bit
+    /// rows are drawn and the part-row at the cut is what says the list scrolls, which is a better
+    /// dropdown than six exactly. The number stays at six because the *cap*, not the count, governs
+    /// how much of the map is hidden. See R25.
     static let rowLimit = 6
 
     /// Resolves what the catalogue returned into what the list should draw.

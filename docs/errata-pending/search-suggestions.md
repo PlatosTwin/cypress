@@ -59,9 +59,86 @@ the suite would notice, which is why `typingDropsAList` asserts the containment 
 
 ---
 
-#### What was checked on the running app, because a green suite has said nothing about a screen before
+#### Two defects the suite could not see, both found by typing into the running app
 
-MUTATION_AND_SCREENSHOT_SECTION
+**1 · The E38 sentence was below the fold, which is E38's own defect one level down.** The remainder
+line began as the last row of the scrolling list, on the reasoning that a VoiceOver reader who hears
+the rows should hear what they are a page of in the same sweep. Typed into the running app, `a` drew
+six rows, filled the height cap exactly, and left `Showing 6 of at least 100 matching species` where
+nobody would find it. Every test stayed green, including the XCUITest that asserts the sentence
+exists — `XCUIElement.exists` is true for an element inside a scroll view whether or not any part of
+it is on screen, which is exactly the gap between "the app says it" and "the app says it to somebody".
+The sentence is now pinned under the scroll and inside the accessibility container: one sweep for
+VoiceOver, and never scrollable away.
+
+**2 · At AX5 the FAB drew on top of that sentence.** Screen 01's chrome is two absolutely positioned
+blocks and the bottom one — recentre, FAB, tree card — was applied *after* the top one, so it won every
+overlap. At the drawn size the two never overlap and nobody had noticed in the year the screen has
+existed. At AX5 with the list open, `What tree is this?` sat squarely across the middle of the
+sentence: `Showing 6 of at least 100 match……. Keep ty…… it.` The blocks are now applied in the other
+order. Nothing inside either of them moved, and nothing else on screen 01 changed position at any
+size.
+
+**A third thing, in the tests rather than the app, and it is #101 and #104's mistake again.** The
+first XCUITest draft matched the row label `Monterey Cypress, Hesperocyparis macrocarpa`, copied out of
+`SCREENS.md` 02. The seed spells that species `Cupressus macrocarpa`. Three tests went red reporting
+`typing “cypress” drew no suggestions` — a sentence about the dropdown being broken that was in fact a
+sentence about the mock. The row's real claim is structural (a common name, a comma, a second name),
+which is provable without knowing *which* second name, so the tests now match a prefix and assert
+something follows it.
+
+#### Proving the tests can fail
+
+Three one-line mutations to production code, run against `MapSuggestionTests` and
+`MapSuggestionUITests`, restored afterwards.
+
+| # | mutation | file |
+|---|---|---|
+| 1 | `remainder = .atLeast(hidden)` → `.exactly(hidden)` | `MapSuggestions.swift` |
+| 2 | `rowLabel` returns `name(species)` only | `MapSuggestions.swift` |
+| 3 | `applySearch(MapSearch(query: searchText, matches: [species]))` deleted from `chooseSuggestion` | `MapModel.swift` |
+
+**The unit suite — 4 of 14 red, 8 issues:**
+
+```
+✘ Test "a full page from the catalogue is reported as a floor, never as a total" recorded an issue
+  at MapSuggestionTests.swift:108:9: Expectation failed:
+  (listing.remainder → .exactly(94)) == (.atLeast(MapSearch.speciesLimit - MapSuggestions.rowLimit) → .atLeast(94))
+✘ … at MapSuggestionTests.swift:113:9: Expectation failed:
+  (sentence → "Showing 6 of 100 matching species. Keep typing to narrow it.")
+    == "Showing 6 of at least 100 matching species. Keep typing to narrow it."
+✘ … at MapSuggestionTests.swift:119:9: Expectation failed:
+  (sentence → "Showing 6 of 100 matching species. Keep typing to narrow it.").contains("at least")
+✘ Test "one letter against the real catalogue is a page, and the list says it is" recorded an issue
+  at MapSuggestionTests.swift:241:9: Expectation failed:
+  (listing.remainder → .exactly(94)) == (… → .atLeast(94))
+✘ Test "a row names both names, and a species with only one name says only that one" recorded an issue
+  at MapSuggestionTests.swift:146:9: Expectation failed:
+  (MapSuggestionCopy.rowLabel(both) → "Monterey Cypress") == "Monterey Cypress, Hesperocyparis macrocarpa"
+✘ Test "choosing a suggestion narrows the map to that one species and puts its name in the field"
+  recorded an issue at MapSuggestionTests.swift:286:9: Expectation failed:
+  (after.speciesIDs → [D64A2DCB…, 5D2F9A2D…, F909A9EE…, 9846C997…, 04E62989…, B2FFEE94…])
+    == ([chosen.id] → [F909A9EE…])
+✘ … at MapSuggestionTests.swift:299:9: the same six ids, after the debounce, so the pin had not merely
+  arrived late
+✘ Test run with 14 tests in 1 suite failed after 1.305 seconds with 8 issues.
+```
+
+The sixth is the ticket's own sentence stated as a failure: with the pinning removed, choosing
+`Monterey Cypress` leaves the map on all six species whose names contain the word.
+
+**The UI suite — 5 of 5 red:**
+
+```
+MapSuggestionUITests.swift:167: testAPageOfMatchesSaysItIsAPage : XCTAssertTrue failed - a query
+  matching a full page of the catalogue drew six rows and said nothing about the other ninety-four
+MapSuggestionUITests.swift:139: testChoosingARowPutsThatSpeciesInTheField : … drew no suggestions
+MapSuggestionUITests.swift:219: testLeavingTheKeyboardClosesTheList : … drew no suggestions
+testTheChipsUnderTheListAreNotCoveredButReachable  failed (27.953 seconds)
+testTypingDropsRowsCarryingBothNames               failed (27.102 seconds)
+```
+
+Restored, the whole unit suite is green and all five UI tests pass.
 
 ---
 
