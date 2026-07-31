@@ -38,6 +38,9 @@ struct VisitAddTreeView: View {
     @State private var model: VisitAddTreeModel
     @State private var libraryItem: PhotosPickerItem?
 
+    /// Read for one decision: where the empty well's sentence is drawn. See `wellEmptyNotice`.
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     /// Held so the species picker can be handed the same boundary this screen writes through. The
     /// model owns its own reference; this one exists because `SpeciesPickView` builds its own model.
     private let api: any CypressAPI
@@ -119,49 +122,78 @@ struct VisitAddTreeView: View {
         }
     }
 
+    /// **A `GeometryReader` around the scroll, and its one job is the well's ceiling (ERRATA E174).**
+    /// `proxy.size.height` is the scroll viewport — what a reader can see without scrolling — and
+    /// `VisitMetrics.AddTree.wellWidthCeiling` turns it into the width past which the photograph
+    /// would leave no room for the form underneath it. Same shape as screen 04's
+    /// `accessibilityLayout`, and for a related reason: a split at a *stated* line rather than
+    /// whatever two flexible children happen to negotiate.
+    ///
+    /// **The accuracy chip is pinned with the header rather than scrolled with the form, and that
+    /// is what makes the ceiling mean what it says.** "The well takes at most two thirds of the
+    /// viewport" is only "a third of the viewport shows the form" if the well starts at the top of
+    /// the viewport — with the chip above it inside the scroll, the chip's height came out of the
+    /// third, and at AX5 the chip is 78 pt of a 255 pt viewport, which is the whole of it. The chip
+    /// is a statement about the screen rather than a row of the form (it is screen 02's status row,
+    /// and 02 does not scroll it either), so pinning it is what it was always describing.
     private var composer: some View {
         VStack(spacing: 0) {
             ScreenHeader(title: VisitAddTreeCopy.title, bottomInset: .wide, onBack: onBack)
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: CypressSpacing.gapRows) {
-                    if let gps = model.gpsChipLabel {
-                        Chip(gps, style: .meta, leadingDot: CypressColor.gpsDot)
-                    }
+            if let gps = model.gpsChipLabel {
+                Chip(gps, style: .meta, leadingDot: CypressColor.gpsDot)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, CypressSpacing.gutter)
+                    .padding(.bottom, CypressSpacing.gapRows)
+            }
 
-                    photoWell
-
-                    photoSources
-
-                    placementRow
-
-                    landRow
-
-                    speciesRow
-
-                    if case let .duplicate(candidates) = model.phase {
-                        duplicateWarning(candidates)
-                    }
-
-                    if case let .failed(message) = model.phase {
-                        Text(message)
-                            .cypressBody135(color: CypressColor.textMuted)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    if let reason = model.blockingReason {
-                        Text(reason)
-                            .cypressBody135(color: CypressColor.textMuted)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+            GeometryReader { viewport in
+                ScrollView {
+                    composerColumn(
+                        wellWidthCeiling: VisitMetrics.AddTree.wellWidthCeiling(
+                            viewport: viewport.size.height
+                        )
+                    )
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, CypressSpacing.gutter)
-                .padding(.bottom, CypressSpacing.gapCandidates)
             }
 
             footer
         }
+    }
+
+    private func composerColumn(wellWidthCeiling: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: CypressSpacing.gapRows) {
+            photoWell(widthCeiling: wellWidthCeiling)
+
+            wellEmptyNotice
+
+            photoSources
+
+            placementRow
+
+            landRow
+
+            speciesRow
+
+            if case let .duplicate(candidates) = model.phase {
+                duplicateWarning(candidates)
+            }
+
+            if case let .failed(message) = model.phase {
+                Text(message)
+                    .cypressBody135(color: CypressColor.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let reason = model.blockingReason {
+                Text(reason)
+                    .cypressBody135(color: CypressColor.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, CypressSpacing.gutter)
+        .padding(.bottom, CypressSpacing.gapCandidates)
     }
 
     // MARK: - Where the tree goes
@@ -304,10 +336,21 @@ struct VisitAddTreeView: View {
     /// dragged the header and the CTA off to the left. `.overlay` sizes its content against the base
     /// and lets the excess hang, so the layout is the card's and only the drawing overflows. Seen by
     /// looking, on the simulator, after the tests were green.
-    private var photoWell: some View {
-        VisitAddTreePhotoWell { wellContents }
+    /// **It is bounded as well as shaped, and the bound is a width (ERRATA E174).** The shape is
+    /// invariant; what the ceiling changes is how much of the column the well is allowed to take
+    /// when the viewport is too short to hold it and a form as well. See
+    /// `VisitMetrics.AddTree.wellWidthCeiling`.
+    private func photoWell(widthCeiling: CGFloat) -> some View {
+        VisitAddTreePhotoWell(widthCeiling: widthCeiling) { wellContents }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(model.hasPhoto ? VisitAddTreeCopy.wellFilled : VisitAddTreeCopy.wellEmpty)
+            // Centred rather than left-aligned once the ceiling narrows it: the column is
+            // `alignment: .leading`, and a photograph pinned to one edge of a column whose every
+            // other row runs the full gutter reads as a layout accident. A no-op at the widths where
+            // the ceiling does not bind. **Here and not inside the well**, so that the well still
+            // measures as the card it is and `theAddTreeWellIsAPortraitCaptureFrame` can read a
+            // ratio off it rather than off a greedy wrapper.
+            .frame(maxWidth: .infinity)
     }
 
     @ViewBuilder
@@ -356,12 +399,43 @@ struct VisitAddTreeView: View {
             // own note ("no other screen in SCREENS.md uses it"), and borrowing it here would make it
             // a shared component by accident. A dashed frame with one line in it is §5.6's restraint
             // applied to a space that is genuinely still empty.
-            Text(VisitAddTreeCopy.wellEmpty)
-                .font(CypressFont.body13)
-                .foregroundStyle(CypressColor.textFaint)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, CypressSpacing.gutter)
+            //
+            // **At the accessibility sizes the sentence is not in here at all** — see
+            // `wellEmptyNotice`. E159's rule for screen 04's viewfinder, applied to the other frame
+            // in this feature that is sized by a photograph rather than by its contents: a frame
+            // whose size does not follow the type ramp carries only furniture that does not either.
+            if !dynamicTypeSize.isAccessibilitySize {
+                emptyWellSentence
+            }
+        }
+    }
+
+    /// "A photo of the tree is required", drawn wherever it is legible.
+    private var emptyWellSentence: some View {
+        Text(VisitAddTreeCopy.wellEmpty)
+            .font(CypressFont.body13)
+            .foregroundStyle(CypressColor.textFaint)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, CypressSpacing.gutter)
+    }
+
+    /// The empty well's sentence, at the sizes where it does not fit inside the well (ERRATA E174).
+    ///
+    /// The well is sized by the photograph and the sentence is sized by the type ramp, so above a
+    /// certain size the two stop being compatible: at AX5 on a 390 pt phone the well is 122 pt wide
+    /// and this sentence sets four lines of ~33 pt type, which the well clips top and bottom into
+    /// *"photo of the tree is requir"*. Same rule E159 wrote for screen 04 — a frame whose size does
+    /// not follow the ramp carries only furniture that does not follow the ramp either, and
+    /// everything that grows moves out into the column. It lands directly under the well, which is
+    /// also the first thing a reader meets on the way down.
+    ///
+    /// Nothing is lost to VoiceOver at any size: the well's own `accessibilityLabel` is this string.
+    @ViewBuilder
+    private var wellEmptyNotice: some View {
+        if dynamicTypeSize.isAccessibilitySize, !model.hasPhoto, !model.camera.isLive {
+            emptyWellSentence
+                .frame(maxWidth: .infinity, alignment: .center)
         }
     }
 
@@ -471,6 +545,17 @@ struct VisitAddTreeView: View {
 /// on the simulator, after the tests were green.
 struct VisitAddTreePhotoWell<Content: View>: View {
 
+    /// The widest this well may be drawn — `VisitMetrics.AddTree.wellWidthCeiling` of the composer's
+    /// scroll viewport, and `.infinity` for a caller with no viewport to answer for.
+    ///
+    /// **The bound is a width because the shape is not negotiable (ERRATA E174).** With
+    /// `.aspectRatio(_:contentMode: .fit)` one dimension derives the other, so a width ceiling is a
+    /// height ceiling at exactly the same ratio: the well shrinks along its own diagonal and stays
+    /// the frame of the photograph it holds. Capping the *height* of a gutter-wide box would give
+    /// back the landscape letterbox E162 removed, and the live preview — which is
+    /// `.resizeAspectFill` — would crop the crown off the tree again.
+    var widthCeiling: CGFloat = .infinity
+
     @ViewBuilder let content: () -> Content
 
     var body: some View {
@@ -479,6 +564,7 @@ struct VisitAddTreePhotoWell<Content: View>: View {
             // The shape, and the reason it is a ratio rather than a height, are in
             // `VisitMetrics.AddTree.wellAspectRatio`.
             .aspectRatio(VisitMetrics.AddTree.wellAspectRatio, contentMode: .fit)
+            .frame(maxWidth: widthCeiling)
             .overlay { content() }
             // `.clipShape`, not `.clipped()`: ERRATA E114 is this codebase's own record of an overhang
             // that clipped its drawing and kept its touches, swallowing every control beneath it.

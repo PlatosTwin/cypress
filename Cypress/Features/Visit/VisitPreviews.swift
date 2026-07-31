@@ -199,6 +199,28 @@ enum VisitPreviewFixtures {
         )
     }
 
+    // ── The community add ─────────────────────────────────────────────────────────────────────
+
+    /// The add-tree composer, on a fix good enough that every row it can draw is drawn — the state
+    /// the owner reported against (ERRATA E174), and the state the photo well's ceiling is measured
+    /// in. `VisitPreviewAPI.addTree` refuses, so nothing here can write a tree.
+    ///
+    /// It exists for the same reason `camera()` does: the screen is behind a flow that needs a GPS
+    /// fix, and a renderer that has none draws the `Finding you` notice instead of the screen.
+    @MainActor
+    static func addTree(
+        fix: VisitLocationProvider.Fix = .located(origin, accuracyM: 5)
+    ) -> VisitAddTreeView {
+        VisitAddTreeView(
+            api: VisitPreviewAPI(),
+            location: VisitLocationProvider(pinnedFix: fix),
+            attribution: attribution,
+            onAdded: { _ in },
+            onOpenExisting: { _ in },
+            onBack: {}
+        )
+    }
+
     // ── 18 ────────────────────────────────────────────────────────────────────────────────────
 
     /// A receipt as the save actually produces one, rather than one assembled by hand. A visit
@@ -298,6 +320,18 @@ enum VisitPreviewFixtures {
 /// whose camera permission was refused.
 #Preview("04 · visit camera") {
     VisitPreviewFixtures.camera()
+}
+
+/// The community add, at the drawn type size — the photograph bounded so the form below it is on
+/// the screen with it (ERRATA E174).
+#Preview("add · composer") {
+    VisitPreviewFixtures.addTree()
+}
+
+/// The same at AX5, which is where the well used to be a grey box clipped at the footer with the
+/// whole form below a fold nothing admitted to.
+#Preview("add · composer · AX5") {
+    VisitPreviewFixtures.addTree().environment(\.dynamicTypeSize, .accessibility5)
 }
 
 /// The community add's pin step, on a fix as poor as a street canyon really produces.
