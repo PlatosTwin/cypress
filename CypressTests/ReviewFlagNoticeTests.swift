@@ -29,13 +29,13 @@ struct ReviewFlagNoticeTests {
 
     /// The two flagging statuses, taken off the property rather than hand-listed, so a third one
     /// added to the card cannot slip past this suite.
-    private static var flagging: [ObservationStatus] {
+    /// `nonisolated` because `@Test(arguments:)` evaluates these while building the test plan, off
+    /// the main actor, and this suite is `@MainActor`.
+    nonisolated static let flagging: [ObservationStatus] =
         ObservationStatus.allCases.filter(\.opensReviewFlag)
-    }
 
-    private static var plain: [ObservationStatus] {
+    nonisolated static let plain: [ObservationStatus] =
         ObservationStatus.allCases.filter { !$0.opensReviewFlag }
-    }
 
     // MARK: - The confirmation step
 

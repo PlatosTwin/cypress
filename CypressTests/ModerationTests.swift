@@ -51,8 +51,24 @@ struct ModerationTests {
     ///
     /// Driven off `ObservationStatus.opensReviewFlag` rather than a hand-written list, so a third
     /// flagging status added to the card cannot slip past this suite (ERRATA E170).
-    private static var flaggingStatuses: [ObservationStatus] {
+    ///
+    /// `nonisolated` because `@Test(arguments:)` evaluates it while building the test plan, off the
+    /// main actor, and this suite is `@MainActor`.
+    nonisolated static let flaggingStatuses: [ObservationStatus] =
         ObservationStatus.allCases.filter(\.opensReviewFlag)
+
+    nonisolated static let nonLeadRoles: [UserRole] = [.member, .steward]
+
+    /// The one open review, required rather than subscripted.
+    ///
+    /// `openReviews()[0]` was how this suite reached the flag, and under the very defect E170 fixes
+    /// the queue comes back **empty** — so the whole test process died on `Index out of range` and
+    /// xcodebuild reported `Test run with 0 tests … passed`. A crash is not a failure: it takes the
+    /// rest of the run with it and reports as the wrong thing entirely. `#require` fails this one
+    /// test, in words, and lets the other twenty-seven speak.
+    private static func onlyReview(_ api: LocalAPI) async throws -> ReviewQueueItem {
+        let reviews = try await api.openReviews()
+        return try #require(reviews.first, "the queue holds no open review")
     }
 
     private static func harness(role: UserRole) async throws -> (LocalAPI, OutboxQueue) {
@@ -76,7 +92,7 @@ struct ModerationTests {
         #expect(reviews.count == 1)
         #expect(reviews.first?.treeID == tree.id)
 
-        try await api.confirmReview(flagID: reviews[0].flagID)
+        try await api.confirmReview(flagID: #require(reviews.first).flagID)
 
         // After: the profile is a memorial (what `MemorialModel` gates on), and the queue is empty.
         let profile = try await api.treeProfile(id: tree.id)
@@ -92,7 +108,7 @@ struct ModerationTests {
         let tree = try await Self.makeTree(api: api)
         try await Self.reportRemoved(outbox: outbox, treeID: tree.id)
         let reviews = try await api.openReviews()
-        try await api.confirmReview(flagID: reviews[0].flagID)
+        try await api.confirmReview(flagID: #require(reviews.first).flagID)
 
         // A viewport around the tree; community adds are merged into `mapContent`'s pins.
         let viewport = MapViewport(
@@ -118,7 +134,7 @@ struct ModerationTests {
         let (api, outbox) = try await Self.harness(role: .member)
         let tree = try await Self.makeTree(api: api)
         try await Self.reportRemoved(outbox: outbox, treeID: tree.id)
-        let flagID = try await api.openReviews()[0].flagID
+        let flagID = try await Self.onlyReview(api).flagID
 
         await #expect(throws: APIError.forbidden) {
             try await api.confirmReview(flagID: flagID)
@@ -132,7 +148,7 @@ struct ModerationTests {
         let (api, outbox) = try await Self.harness(role: .steward)
         let tree = try await Self.makeTree(api: api)
         try await Self.reportRemoved(outbox: outbox, treeID: tree.id)
-        let flagID = try await api.openReviews()[0].flagID
+        let flagID = try await Self.onlyReview(api).flagID
 
         await #expect(throws: APIError.forbidden) {
             try await api.confirmReview(flagID: flagID)
@@ -144,7 +160,7 @@ struct ModerationTests {
         let (api, outbox) = try await Self.harness(role: .coordinator)
         let tree = try await Self.makeTree(api: api)
         try await Self.reportRemoved(outbox: outbox, treeID: tree.id)
-        let flagID = try await api.openReviews()[0].flagID
+        let flagID = try await Self.onlyReview(api).flagID
 
         try await api.confirmReview(flagID: flagID)
         await #expect(throws: APIError.conflict) {
@@ -178,7 +194,7 @@ struct ModerationTests {
         let (api, outbox) = try await Self.harness(role: .coordinator)
         let tree = try await Self.makeTree(api: api)
         try await Self.report(status, outbox: outbox, treeID: tree.id)
-        let item = try await api.openReviews()[0]
+        let item = try await Self.onlyReview(api)
 
         try await api.confirmReview(flagID: item.flagID)
 
@@ -195,7 +211,7 @@ struct ModerationTests {
         let (api, outbox) = try await Self.harness(role: .coordinator)
         let tree = try await Self.makeTree(api: api)
         try await Self.report(.appearsDead, outbox: outbox, treeID: tree.id)
-        try await api.confirmReview(flagID: api.openReviews()[0].flagID)
+        try await api.confirmReview(flagID: Self.onlyReview(api).flagID)
 
         let profile = try await api.treeProfile(id: tree.id)
         #expect(profile.tree.status == .deadReported)
@@ -240,7 +256,7 @@ struct ModerationTests {
         let (api, outbox) = try await Self.harness(role: .coordinator)
         let tree = try await Self.makeTree(api: api)
         try await Self.report(.appearsDead, outbox: outbox, treeID: tree.id)
-        try await api.confirmReview(flagID: api.openReviews()[0].flagID)
+        try await api.confirmReview(flagID: Self.onlyReview(api).flagID)
 
         let viewport = MapViewport(
             bounds: BoundingBox(
@@ -255,10 +271,38 @@ struct ModerationTests {
         }
         let pin = try #require(pins.first { $0.id == tree.id })
         #expect(pin.status == .deadReported, "the map still called a confirmed-dead tree alive")
-        let spoken = MapPinKind.accessibilityLabel(for: pin)
+
+        // The tree this suite builds is a community add, so it draws the dashed community pin and
+        // keeps the community's words — see `MapPinKind.accessibilityLabel(for:)`. The lie being
+        // fixed lives on the pin a **city** record draws once it is confirmed dead, so that is the
+        // pin this asserts on. Same coordinate, same status, city provenance.
+        let cityPin = TreePin(
+            id: pin.id,
+            coordinate: pin.coordinate,
+            status: .deadReported,
+            source: .cityImport,
+            verificationState: .cityRecord,
+            speciesID: nil
+        )
+        #expect(MapPinKind.kind(for: cityPin) == .removed, "grey is right — there is no living tree here")
+        let spoken = MapPinKind.accessibilityLabel(for: cityPin)
         #expect(!spoken.lowercased().contains("memorial"), "a standing dead tree is not a memorial: \(spoken)")
         #expect(!spoken.lowercased().contains("removed"), "it has not been removed: \(spoken)")
         #expect(spoken == MapPinCopy.deadReportedLabel)
+
+        // And the community rule is not quietly widened: DECISIONS §3.16 wins in both channels.
+        #expect(MapPinKind.accessibilityLabel(for: pin) == MapPin.Kind.community.accessibilityLabel)
+
+        // The memorial's own label is untouched.
+        let removedPin = TreePin(
+            id: pin.id,
+            coordinate: pin.coordinate,
+            status: .removed,
+            source: .cityImport,
+            verificationState: .cityRecord,
+            speciesID: nil
+        )
+        #expect(MapPinKind.accessibilityLabel(for: removedPin) == MapPin.Kind.removed.accessibilityLabel)
     }
 
     // MARK: - Dismiss, the verb the queue never had (ERRATA E170)
@@ -268,7 +312,7 @@ struct ModerationTests {
         let (api, outbox) = try await Self.harness(role: .coordinator)
         let tree = try await Self.makeTree(api: api)
         try await Self.report(status, outbox: outbox, treeID: tree.id)
-        let flagID = try await api.openReviews()[0].flagID
+        let flagID = try await Self.onlyReview(api).flagID
 
         try await api.dismissReview(flagID: flagID)
 
@@ -285,7 +329,7 @@ struct ModerationTests {
         let (api, outbox) = try await Self.harness(role: .coordinator)
         let tree = try await Self.makeTree(api: api)
         try await Self.reportRemoved(outbox: outbox, treeID: tree.id)
-        let flagID = try await api.openReviews()[0].flagID
+        let flagID = try await Self.onlyReview(api).flagID
 
         try await api.confirmReview(flagID: flagID)
         await #expect(throws: APIError.conflict) { try await api.dismissReview(flagID: flagID) }
@@ -297,7 +341,7 @@ struct ModerationTests {
         let (api, outbox) = try await Self.harness(role: .coordinator)
         let tree = try await Self.makeTree(api: api)
         try await Self.reportRemoved(outbox: outbox, treeID: tree.id)
-        let flagID = try await api.openReviews()[0].flagID
+        let flagID = try await Self.onlyReview(api).flagID
 
         try await api.dismissReview(flagID: flagID)
         await #expect(throws: APIError.conflict) { try await api.dismissReview(flagID: flagID) }
@@ -310,13 +354,13 @@ struct ModerationTests {
     /// combinations of the two roles that must be refused, over both kinds, over both verbs.
     @Test(
         "neither a member nor a steward can resolve a review, either way, either kind",
-        arguments: [UserRole.member, .steward], ModerationTests.flaggingStatuses
+        arguments: ModerationTests.nonLeadRoles, ModerationTests.flaggingStatuses
     )
     func nonLeadsAreForbidden(_ role: UserRole, _ status: ObservationStatus) async throws {
         let (api, outbox) = try await Self.harness(role: role)
         let tree = try await Self.makeTree(api: api)
         try await Self.report(status, outbox: outbox, treeID: tree.id)
-        let flagID = try await api.openReviews()[0].flagID
+        let flagID = try await Self.onlyReview(api).flagID
 
         await #expect(throws: APIError.forbidden) { try await api.confirmReview(flagID: flagID) }
         await #expect(throws: APIError.forbidden) { try await api.dismissReview(flagID: flagID) }

@@ -568,11 +568,19 @@ enum MapPinKind {
     /// without touching the catalogue; whether a standing dead tree deserves its own drawn pin is a
     /// design decision, and it is left open rather than guessed at.
     static func accessibilityLabel(for pin: TreePin) -> String {
-        if pin.status == .deadReported { return MapPinCopy.deadReportedLabel }
-        guard kind(for: pin) == .vacantSite else {
-            return kind(for: pin).accessibilityLabel
+        switch kind(for: pin) {
+        case .vacantSite:
+            return SiteCopy.pinAccessibilityLabel
+        // Only where the drawn pin is the memorial's, which is what makes the default a lie. A
+        // community-added dead tree draws `.community` and says so, because "community source wins
+        // over every status" (DECISIONS §3.16) is the rule in both channels, not only in the fill —
+        // and `Community-added tree` is incomplete rather than untrue. Fixing the lie is this
+        // errata's business; widening the rule is not.
+        case .removed where pin.status == .deadReported:
+            return MapPinCopy.deadReportedLabel
+        case let other:
+            return other.accessibilityLabel
         }
-        return SiteCopy.pinAccessibilityLabel
     }
 
     /// The same label, with the species named when the map has a colour on this pin.
