@@ -197,7 +197,103 @@ standing to make. It is a known hole in the shipped build, not a surprise waitin
 are minted; `MapContentBudgetTests`' floor is a `>` bound and central San Jose is not denser than
 central San Francisco. `SeedCorpus.densestScreenfulFloor` is unchanged for that reason.
 
+**And one thing worked better than expected: the species catalogue merged rather than duplicated.**
+215 species rows are now carried by trees in *both* cities — `Lophostemon confertus` over 6,746 trees,
+`Magnolia grandiflora` over 6,098 — because `emit()` keys species on the normalised scientific name
+and San Jose's `NAMESCIENTIFIC` lands on San Francisco's existing row. San Jose publishes no common
+name at all, so those 215 species inherit SF's curated one, and the field guide gains no `Unknown` and
+no duplicate. That is the D16 merge working at the smallest scale it can: 376 species carry San Jose
+trees, of which only 161 are new rows.
+
 ---
+
+### Walking the app with two cities present
+
+Built, installed, launched on iPhone 16 Pro Max, simulated location set to downtown San Jose
+(37.3352, -121.8895). Screenshots under `shots/`.
+
+**The map is correct and looks right.** Downtown San Jose draws its street trees densely along both
+sidewalks of South First Street, vacant-site pins among them, at the same visual weight San Francisco
+draws. The species legend fills with San Jose's own vocabulary — `Platanus acerifolia`,
+`Platanus acerifolia 'Columbia'`, `Ornamental Pear`. `LandContext` draws no "Stands on" sentence,
+which is R24 working.
+
+**The tree profile has four SF-hardcoded surfaces, and they are all copy.** On one San Jose tree:
+
+| what the screen said | what is true |
+|---|---|
+| subtitle `SF city inventory` | the row's inventory is `sj_street_tree` |
+| card `CITY RECORD · SF #167879` | a `FACILITYID`, not a `TreeID`; the `SF ` prefix is a literal |
+| section header `WHAT SAN FRANCISCO HAS ON FILE` | San Jose has it on file |
+| `The city's street tree inventory records pruning by block, not by tree…` | a statement about DataSF's column list |
+| `LEGAL STATUS · Private`, `CARED FOR BY · General Fund` | San Jose's `OWNEDBY` and `MAINTBY` under DataSF's labels; `General Fund` is a budget line, not a caretaker |
+
+**The provenance sentence at the bottom of the same screen is already right** — *"From the City of
+San Jose Street Tree inventory, July 31, 2026."* — because it resolves per row through
+`InventorySource(id:seedMeta:)`, exactly as E169 predicted it would. So the machinery is in place and
+four other call sites do not use it.
+
+**None of this is fixed here, and the reason is a rule rather than a budget.** `SF city inventory`,
+`SF #13284` and `What San Francisco has on file` are copy pinned by SCREENS.md and by four suites.
+ARCHITECTURE §5 rule 8 is that a screen or state not in SCREENS.md is a stop-and-ask, and generalising
+a city's name across five surfaces is a design decision about what the app calls a city, not an
+ingest change. It is filed here so the next person makes it deliberately.
+
+---
+
+### The new tests were broken deliberately, and all three regressions went red
+
+`Test run with 903 tests in 85 suites passed after 101.086 seconds` on the shipped two-city seed.
+A green suite is worth nothing until it has been shown to bite, so three regressions were applied and
+the output pasted here verbatim.
+
+**M1 — every row written with `id_space = 'sf'`, whatever space its inventory is in.** The build did
+not produce a wrong file; it stopped, on the constraint this whole entry is about:
+
+```
+  File ".../Tools/build_seed.py", line 2191, in flush
+    conn.executemany(
+sqlite3.IntegrityError: UNIQUE constraint failed: trees.id_space, trees.external_ref
+```
+
+That is E169's blocker reproduced from the other side. Faking the id space collapses San Jose's
+`FACILITYID` onto San Francisco's `TreeID` and the composite index catches it at the first collision —
+which is exactly what the old `external_ref INTEGER UNIQUE` did, and exactly what the new one has to
+keep doing.
+
+**M1b — the file declares an empty `identity_prefix` for every space while still deriving uuids with
+the real one.** This builds, and is the shape of "somebody tidied `sf`'s empty prefix into a
+template":
+
+```
+✘ Test "every tree's uuid is derived from its source id under ITS OWN id space's prefix"
+  recorded an issue at InventoryContractTests.swift:151:9: Expectation failed: (mismatches → [
+    "ref '100001': seed 94ab5b8e-cee0-5ad6-bce6-d4ee90cf15e4, derived b7cfff11-c916-5645-88d8-e5e73b2668f5",
+    "ref '100002': seed c56696f2-c392-5434-a222-45dfadd3f29f, derived ab6cc327-63c3-5a77-b42f-aa28425995e3",
+    ...]).isEmpty → false
+```
+
+**M2 — `LandContext.inferred(from:idSpace:)` stops refusing a foreign vocabulary.** This is precisely
+the pre-R24 state, and it is what the numbers in this entry were measured from:
+
+```
+✘ Test "the mapping covers every row of the inventory, in the documented proportions"
+  recorded an issue at CityRecordTests.swift:265:9: Expectation failed:
+    ((counts[.privateProperty] ?? 0) → 52632) == (corpus.landContextPrivate → 4596)
+✘ ... CityRecordTests.swift:266:9: ((counts[.otherPublic] ?? 0) → 5212) == (corpus.landContextOtherPublic → 460)
+✘ ... CityRecordTests.swift:277:9: ((counts[LandContext?.none] ?? 0) → 3506) == (corpus.landContextUnplaced → 56294)
+✘ Test run with 28 tests in 3 suites failed after 1.259 seconds with 4 issues.
+```
+
+All three restored, the seed rebuilt, and the full suite re-run green.
+
+**What was NOT proved this way, said plainly.** `twoCitiesShareIdsAndNotIdentities`,
+`theFileDeclaresItsOwnVocabulary`, the per-space bbox gate and the almanac's
+`vacantSitesWithNoNeighbourhood` were not each given their own mutation — M1 stops the build before
+any of them can run, and the remaining mutations that would isolate them are further rebuilds of a
+108 MB file. Each carries an explicit control that fails when it would otherwise be vacuous
+(`shared.count >= 2` for the collision test, the `unboxed` count for the bbox gate), which is the
+weaker guarantee of the two and is stated as weaker.
 
 ### Why there is no `AppSchema` v14, although v14 was reserved for this ticket
 
