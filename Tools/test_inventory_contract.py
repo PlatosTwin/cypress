@@ -142,29 +142,116 @@ def test_two_cities_cannot_collide():
     )
 
 
-def test_a_new_id_space_cannot_be_registered_wrongly():
-    """FAILS IF: the guards that keep city two out of SF's uuid space come off."""
+def refusal_for(space_id: str) -> str:
+    """The message `require_id_space` refuses this space with, or '' if it does not.
+
+    The reason matters, not just the fact. `require_id_space` has two refusals and
+    an empty prefix trips BOTH — `"".endswith(":")` is False — so an assertion that
+    only asks "was it refused" stays green with the empty-prefix guard deleted, and
+    that is exactly how it stayed green when the guard was disabled.
+    """
+    try:
+        require_id_space(space_id)
+    except ContractError as error:
+        return str(error)
+    return ""
+
+
+def test_a_new_id_space_cannot_declare_an_empty_prefix():
+    """FAILS IF: a second city may take San Francisco's uuid space.
+
+    `sf`'s prefix is the empty string and is frozen, because 145,837 shipped uuids
+    are derived with no prefix. A NEW space declaring the same empty prefix mints
+    San Francisco's uuids for another city's trees — TreeID 276198 in Los Angeles
+    would become `1 TWIN PEAKS BLVD`. This is the single load-bearing refusal in
+    the identity design and it must fail for its OWN reason, not incidentally.
+    """
     saved = dict(ID_SPACES)
     try:
         ID_SPACES["us-ca-la"] = IdSpace(id="us-ca-la", identity_prefix="")
-        raised = False
-        try:
-            require_id_space("us-ca-la")
-        except ContractError:
-            raised = True
-        check(raised, "an id space with an empty prefix was accepted; it would mint SF's uuids")
+        message = refusal_for("us-ca-la")
+        check(message, "an id space with an empty prefix was accepted; it would mint SF's uuids")
         check(
-            check_id_space_registry(),
-            "the registry check did not object to a second empty-prefix id space",
+            "empty identity_prefix" in message,
+            f"an empty prefix was refused, but not by the empty-prefix guard -- it fell through to "
+            f"another check, so that guard could be deleted unnoticed. Got: {message!r}",
+        )
+        check(
+            any("empty identity_prefix" in p for p in check_id_space_registry()),
+            "the registry check does not object to a second empty-prefix id space",
         )
 
+        # And the same refusal must survive the space being otherwise well-formed:
+        # a uuid derived under it would be byte-identical to San Francisco's.
+        check(
+            str(uuid.uuid5(NS_TREE, ID_SPACES["us-ca-la"].identity_seed("276198")))
+            == "80a237b1-ba0a-515b-8c96-3da5a790c69d",
+            "the premise of this test is wrong: an empty prefix no longer reproduces SF's uuid",
+        )
+    finally:
+        ID_SPACES.clear()
+        ID_SPACES.update(saved)
+
+
+def test_a_new_id_space_must_terminate_its_prefix():
+    """FAILS IF: two spaces' seed strings can alias.
+
+    Without a terminator, space `us-ca-la` with prefix `us-ca-la` and ref `1:2`
+    and space `us-ca-la1` with prefix `us-ca-la1` and ref `:2` produce the same
+    seed string. The separator is what partitions the space of seed strings.
+    """
+    saved = dict(ID_SPACES)
+    try:
         ID_SPACES["us-ca-la"] = IdSpace(id="us-ca-la", identity_prefix="us-ca-la")
-        raised = False
-        try:
-            require_id_space("us-ca-la")
-        except ContractError:
-            raised = True
-        check(raised, "an id space whose prefix does not end in the separator was accepted")
+        message = refusal_for("us-ca-la")
+        check(message, "an id space whose prefix does not end in the separator was accepted")
+        check(
+            "does not end in" in message,
+            f"an unterminated prefix was refused for the wrong reason: {message!r}",
+        )
+    finally:
+        ID_SPACES.clear()
+        ID_SPACES.update(saved)
+
+
+def test_two_id_spaces_cannot_share_a_prefix():
+    """FAILS IF: two cities can be registered into one uuid space.
+
+    THE REFUSAL THAT HAD NO TEST. Every earlier test registered exactly one
+    fictional space, so `check_id_space_registry`'s duplicate-prefix branch was
+    never reached and could be deleted with the suite still green. It is the guard
+    #107 depends on most directly: the failure it prevents is silent, produces
+    valid-looking uuids, and is discovered only when two cities' trees turn out to
+    share an identity.
+
+    Both spaces here are well-formed on their own — non-empty prefix, correctly
+    terminated — so nothing else in the contract objects to either of them. Only
+    the pairwise check can see it.
+    """
+    saved = dict(ID_SPACES)
+    try:
+        ID_SPACES["us-ca-la"] = IdSpace(id="us-ca-la", identity_prefix="us-ca:")
+        ID_SPACES["us-ca-sd"] = IdSpace(id="us-ca-sd", identity_prefix="us-ca:")
+
+        check(
+            refusal_for("us-ca-la") == "" and refusal_for("us-ca-sd") == "",
+            "the premise is wrong: these two spaces are individually well-formed, and if "
+            "require_id_space now rejects one of them this test is no longer reaching the "
+            "pairwise check",
+        )
+        problems = check_id_space_registry()
+        check(
+            any("share the identity_prefix" in p for p in problems),
+            f"two id spaces sharing a prefix were accepted; their uuids collide. Got: {problems!r}",
+        )
+        # The collision is not theoretical: the same source id in both spaces
+        # produces one uuid, so one city's tree IS the other city's tree.
+        la = ID_SPACES["us-ca-la"].identity_seed("276198")
+        sd = ID_SPACES["us-ca-sd"].identity_seed("276198")
+        check(
+            uuid.uuid5(NS_TREE, la) == uuid.uuid5(NS_TREE, sd),
+            "the premise is wrong: a shared prefix no longer produces a shared uuid",
+        )
     finally:
         ID_SPACES.clear()
         ID_SPACES.update(saved)
@@ -597,7 +684,9 @@ def main() -> int:
             test_identity_is_stable_for_san_francisco,
             test_the_two_sf_inventories_share_an_identity_on_purpose,
             test_two_cities_cannot_collide,
-            test_a_new_id_space_cannot_be_registered_wrongly,
+            test_a_new_id_space_cannot_declare_an_empty_prefix,
+            test_a_new_id_space_must_terminate_its_prefix,
+            test_two_id_spaces_cannot_share_a_prefix,
             test_an_unregistered_source_is_refused,
             test_a_source_ref_cannot_alias_another_id_space,
             test_a_record_with_no_source_ref_says_so,
