@@ -685,6 +685,19 @@ final class MapFilterAccessibilityTests: XCTestCase {
         }
         boxes.append((Self.clear, clearControls(app)[0].frame))
 
+        // **AX5 actually arrived.** The size is asked for through a launch argument, and an argument
+        // that stopped working would leave every assertion below being made at the drawn size — a
+        // test named for AX5 that never sees it, which is this project's own definition of a test
+        // that cannot fail. A filter chip is ~30 pt tall as drawn (`Chip`'s 13 pt label and its
+        // padding tokens) and cannot be at the top of the ramp.
+        let tallest = boxes.map(\.1.height).max() ?? 0
+        XCTAssertGreaterThan(
+            tallest, 44,
+            "the tallest chip in the row is \(tallest) pt, which is the drawn size — "
+                + "-UIPreferredContentSizeCategoryName did not take, so nothing below is a "
+                + "statement about AX5"
+        )
+
         assertOnThePhone(boxes, screen: screen, where: "the row")
 
         // It wrapped. Six chips at AX5 cannot be one line on this phone, so a row reporting one line
