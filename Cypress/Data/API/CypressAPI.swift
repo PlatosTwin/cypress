@@ -174,6 +174,25 @@ public protocol CypressAPI: Sendable {
     /// contribution store truthfully holds.
     func deviceContributions() async throws -> DeviceContributions
 
+    /// The trees this reader has a relationship with, by kind — the sets behind screen 01's `Yours`
+    /// and `Favourites` chips (#116, RULINGS R23).
+    ///
+    /// Not a BUILD-PLAN §6 endpoint, for the reason `deviceContributions()` is not: §6 was written
+    /// for a server, where the client's own rows are the client's own business. On a local-first
+    /// build the map needs the id set before it can ask the seed for pins, and the seed cannot
+    /// answer it — what this device has visited, measured or hearted is in `main`.
+    ///
+    /// **It returns ids and nothing else, deliberately.** A count of one's own contributions is
+    /// exactly what D1 forbids as a user-visible figure, and the safest way not to render one is not
+    /// to have one in hand: `Set<UUID>.count` is a number about trees on a map, which is what
+    /// `PinAnswer` already reports, and the filter surface reads it from there.
+    ///
+    /// Defaulted in `MapMembership.swift` to the empty set, which is what an implementation with no
+    /// contribution store truthfully holds. **Declared here and not only in an extension** — see
+    /// `photoData` above for the full argument, and ERRATA E125 for the day every photograph in the
+    /// app failed to load because a requirement lived in an extension and dispatched statically.
+    func mapMembership(_ kind: MapMembership) async throws -> Set<UUID>
+
     // MARK: - Reports and export
 
     /// `POST /reports/hazard-redirect` — logs that a 311 redirect was shown. Analytics only, no
@@ -297,6 +316,44 @@ public struct MapViewport: Hashable, Sendable {
     /// carry `species_current IS NULL`, and a narrowed map is expected to empty out over them.
     public let speciesIDs: Set<UUID>?
 
+    /// The planting years the map has been narrowed to, or `nil` for every year (#116, RULINGS R23).
+    ///
+    /// **A tree with no recorded planting date is never in this range, and that is the whole design
+    /// problem this field carries.** Measured against the shipped seed: 145,837 rows, of which
+    /// **37,962 (26.03 %) carry `planted_year` at all** — and among the 133,424 *living* trees it is
+    /// 28,725, or 21.5 %. So a year narrowing does not thin the map, it empties it: roughly four out
+    /// of five living street trees can never satisfy any range a reader picks, not because they were
+    /// planted outside it but because the city never wrote the date down.
+    ///
+    /// Silently dropping those rows is the defect ERRATA E175 records. The predicate is honest —
+    /// `planted_year BETWEEN a AND b` is exactly what was asked — and the *surface* is what has to
+    /// carry the rest: `MapYearFilterCopy` says how many trees in view were set aside for having no
+    /// date, every time the narrowing is on. A filter that cannot judge a row must say so rather
+    /// than let its absence read as an answer.
+    ///
+    /// A `ClosedRange` rather than a single year because the seed spans 1955–2026 and a per-year
+    /// control would offer 72 options holding a citywide mean of 527 trees each — invisible in a
+    /// viewport. `MapFilter.Decade` is what picks the range.
+    public let plantedYears: ClosedRange<Int>?
+
+    /// The trees this reader has a relationship with, when the map has been narrowed to them — the
+    /// `Yours` and `Favourites` chips (#116, RULINGS R23). `nil` for every tree.
+    ///
+    /// **It is an explicit id set rather than a predicate because it is a fact about `main`, not
+    /// about the inventory.** What this device has visited, photographed, checked in on, measured or
+    /// hearted lives in the app's own tables; the seed knows none of it and no `WHERE` clause over
+    /// `trees` could. So the set is resolved first — `CypressAPI.mapMembership(_:)` — and travels
+    /// here, exactly as `speciesIDs` does, so that a changed membership is a *different viewport*
+    /// and the fetch debounce can see the difference.
+    ///
+    /// **Empty means "the map is narrowed to nothing", never "no narrowing"**, on the same terms as
+    /// `speciesIDs`: a reader with no favourites who taps `Favourites` has asked a question whose
+    /// honest answer is an empty map with a sentence over it, not the whole city.
+    ///
+    /// It is bounded by what one person tapped — tens, not thousands — which is why the queries
+    /// answering it need no pin budget. See `TreeQueries.Narrowing`.
+    public let treeIDs: Set<UUID>?
+
     /// **A1, resolved**: "pins cluster at zoom 15 and below; individual pins at zoom 16 and above
     /// (the spec sentence was backwards)" — BUILD-PLAN §11. This constant is the only place that
     /// number appears.
@@ -307,19 +364,43 @@ public struct MapViewport: Hashable, Sendable {
         zoom: Int,
         pinLimit: Int = 2_000,
         markerCellPoints: Double? = nil,
-        speciesIDs: Set<UUID>? = nil
+        speciesIDs: Set<UUID>? = nil,
+        plantedYears: ClosedRange<Int>? = nil,
+        treeIDs: Set<UUID>? = nil
     ) {
         self.bounds = bounds
         self.zoom = zoom
         self.pinLimit = pinLimit
         self.markerCellPoints = markerCellPoints
         self.speciesIDs = speciesIDs
+        self.plantedYears = plantedYears
+        self.treeIDs = treeIDs
     }
-
-    public var shouldCluster: Bool { zoom <= MapViewport.highestClusteringZoom }
 
     /// Whether this viewport has been narrowed to a species at all.
     public var isNarrowed: Bool { speciesIDs != nil }
+
+    /// Whether anything at all narrows this viewport — species, planting year, or membership.
+    public var isFiltered: Bool {
+        speciesIDs != nil || plantedYears != nil || treeIDs != nil
+    }
+
+    /// **A1's clustering rule, and the one narrowing that suspends it.**
+    ///
+    /// A1 fixes clusters at zoom ≤ 15 because the un-narrowed answer over 145,837 trees is unbounded
+    /// and a badge is how an unbounded answer is made drawable. A membership narrowing is bounded by
+    /// construction — it is the set of trees one person has touched, and a person cannot tap a
+    /// hundred thousand hearts — so there is nothing for a badge to bound. Clustering it would take
+    /// a reader who asked "where are my trees?" and answer with a number they then have to zoom into
+    /// four times to see, when the whole set fits on one screen of the city.
+    ///
+    /// So this is a deliberate, argued deviation from A1 rather than a bug, and it is narrow: it
+    /// applies only when `treeIDs` is set. Every other viewport, narrowed or not, clusters exactly
+    /// where it always did — including a year narrowing, which can still match 37,962 trees.
+    public var shouldCluster: Bool {
+        if treeIDs != nil { return false }
+        return zoom <= MapViewport.highestClusteringZoom
+    }
 }
 
 /// One clustered cell.
