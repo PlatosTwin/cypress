@@ -149,7 +149,11 @@ struct TreePhotosView: View {
                 .contentShape(Rectangle())
                 .onTapGesture {
                     router?.present(
-                        .photoViewer(id: photo.id, caption: TreePhotosPresentation.caption(photo))
+                        .photoViewer(
+                            id: photo.id,
+                            caption: TreePhotosPresentation.caption(photo),
+                            treeID: model.treeID
+                        )
                     )
                 }
                 // ══════════════════════════════════════════════════════════════════════════════
@@ -171,7 +175,11 @@ struct TreePhotosView: View {
                 .accessibilityHint(TreePhotosCopy.openHint)
                 .accessibilityAction(named: Text(TreePhotosCopy.openAction)) {
                     router?.present(
-                        .photoViewer(id: photo.id, caption: TreePhotosPresentation.caption(photo))
+                        .photoViewer(
+                            id: photo.id,
+                            caption: TreePhotosPresentation.caption(photo),
+                            treeID: model.treeID
+                        )
                     )
                 }
                 .overlay(alignment: .topLeading) {

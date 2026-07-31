@@ -316,7 +316,9 @@ struct TreeProfileView: View {
         .contentShape(Rectangle())
         .onTapGesture {
             guard let best, let caption = presentation.heroPhotoCaption else { return }
-            router?.present(.photoViewer(id: best.id, caption: caption))
+            router?.present(
+                .photoViewer(id: best.id, caption: caption, treeID: model.treeID)
+            )
         }
         // `children: .contain`, not `.combine` — the back circle lives inside this component, and
         // combining would swallow the one control that gets a listener off the screen.

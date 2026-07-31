@@ -69,7 +69,14 @@ enum Route: Hashable {
     /// the hero's eyebrow on 03 — and a viewer that re-read the record could name the photograph
     /// differently from the words that were on screen a frame earlier. There is nothing here worth
     /// a database read; the caption is one line of text that the caller has already formed.
-    case photoViewer(id: UUID, caption: String)
+    ///
+    /// **The tree id is not decoration, and it is the whole of ERRATA E173.** Ownership is a fact
+    /// about a tree's photographs (`TreeProfile.deletablePhotoIDs`), so a viewer that carries only a
+    /// photograph's id cannot ask whether the person looking at it may delete it — which is why the
+    /// one surface in the app that shows a single, named photograph full-frame was the one surface
+    /// with no delete on it. The caption argument above does not apply: this is not a word that could
+    /// disagree with what was on screen, it is the key the answer is read under.
+    case photoViewer(id: UUID, caption: String, treeID: UUID)
     /// 15, the account ask. **Mocked**, so this is not an invented destination — and `sheet`'s own
     /// comment below has always named 15 among the three screens drawn as sheets, which is what this
     /// case finally lets it mean.
