@@ -590,13 +590,38 @@ public actor LocalAPI: CypressAPI {
         let calendar = Calendar.current
 
         return try await store.queue.readConsistently { connection -> Almanac in
-            guard let area = try speciesQueries.resolveNeighborhood(near: coordinate, connection: connection) else {
-                return .empty
+            // --- What this almanac is about (RULINGS R29, ERRATA E182).
+            //
+            // The polygon first, because a named place is a better subject than a distance: its
+            // boundary is the city's, it has a name the reader knows, and — the part a radius cannot
+            // do — it is the *same area for everybody standing in it*, so the elder and the nine
+            // young trees are facts about a place rather than about where one person happens to be.
+            //
+            // Then the radius, because under D16 the record is every municipal inventory in the
+            // country and most of those cities publish no boundary set we hold. Requiring one would
+            // make a city's trees invisible until somebody sourced it — which is exactly the state
+            // San Jose's 52,788 rows were in (E176).
+            //
+            // Then nothing, and the screen says so. A circle drawn around a reader in Sacramento is
+            // a perfectly well-formed area with no record in it, and heading a blank screen with a
+            // distance would be claiming ground the inventory has never covered.
+            let scope: AlmanacScope
+            if let polygon = try speciesQueries.resolveNeighborhood(near: coordinate, connection: connection) {
+                scope = .neighborhood(id: polygon.id, name: polygon.name)
+            } else {
+                let fallback = AlmanacScope.radius(
+                    centre: coordinate,
+                    metres: AlmanacLimits.fallbackRadiusM
+                )
+                guard try almanacQueries.holdsAnyRecord(scope: fallback, connection: connection) else {
+                    return .empty
+                }
+                scope = fallback
             }
 
             // --- Who lives here. City data, so this is the one block a fresh install draws whole
             // (A9: "species mix always renders from city data").
-            let mix = try almanacQueries.speciesMix(neighborhoodID: area.id, connection: connection)
+            let mix = try almanacQueries.speciesMix(scope: scope, connection: connection)
             let composition = mix.isEmpty ? nil : NeighborhoodComposition(
                 distinctSpeciesCount: mix.count,
                 treeCount: mix.reduce(0) { $0 + $1.treeCount },
@@ -605,7 +630,7 @@ public actor LocalAPI: CypressAPI {
 
             // --- The elder. The active name is a `main` row and the tree is a `seed` row, so the
             // two are read separately and joined here rather than across the attach boundary.
-            let elder = try almanacQueries.elder(neighborhoodID: area.id, connection: connection)
+            let elder = try almanacQueries.elder(scope: scope, connection: connection)
                 .map { found in
                     ElderTree(
                         treeID: found.treeID,
@@ -621,23 +646,35 @@ public actor LocalAPI: CypressAPI {
             var newestNeighbors: RecentPlanting?
             if let spring = AlmanacWindow.currentSpring(now: moment, calendar: calendar) {
                 let planted = try almanacQueries.plantings(
-                    neighborhoodID: area.id,
+                    scope: scope,
                     from: spring.from,
                     to: spring.to,
                     connection: connection
                 )
                 let total = planted.reduce(0) { $0 + $1.treeCount }
                 if total > 0 {
+                    // The pins are a second read of the same predicate, so the row's count stays a
+                    // total and the map stays a page of it (ERRATA E38, E182). The owner asked for
+                    // this row to say where its trees are; it could not, because the count was all
+                    // that was ever read.
                     newestNeighbors = RecentPlanting(
                         treeCount: total,
-                        leadingSpecies: planted.compactMap(\.name)
+                        leadingSpecies: planted.compactMap(\.name),
+                        nearest: try almanacQueries.plantingPins(
+                            scope: scope,
+                            from: spring.from,
+                            to: spring.to,
+                            near: coordinate,
+                            limit: AlmanacLimits.recentPlantingRowLimit,
+                            connection: connection
+                        )
                     )
                 }
             }
 
             // --- The first bloom of the year.
             let bloom = try almanacQueries.firstBloom(
-                neighborhoodID: area.id,
+                scope: scope,
                 since: AlmanacWindow.yearStart(now: moment, calendar: calendar),
                 connection: connection
             ).map { found in
@@ -654,7 +691,7 @@ public actor LocalAPI: CypressAPI {
             // fact about the read rather than a guess — the same proof `ContributionStore` uses, and
             // it has to hold here because this card is nothing but a count (ERRATA E38).
             let found = try almanacQueries.youngTreesWithoutVisits(
-                neighborhoodID: area.id,
+                scope: scope,
                 plantedOnOrAfter: AlmanacWindow.youngSince(now: moment, calendar: calendar),
                 limit: AlmanacLimits.coverageRowLimit + 1,
                 connection: connection
@@ -677,7 +714,7 @@ public actor LocalAPI: CypressAPI {
             // prints and the rows are what its map can hold (ERRATA E38, E129). See
             // `AlmanacLimits.vacantSiteRowLimit`.
             let sites = try almanacQueries.vacantSites(
-                neighborhoodID: area.id,
+                scope: scope,
                 near: coordinate,
                 limit: AlmanacLimits.vacantSiteRowLimit,
                 connection: connection
@@ -688,7 +725,7 @@ public actor LocalAPI: CypressAPI {
 
             return Almanac(
                 neighborhood: AlmanacNeighborhood(
-                    name: area.name,
+                    area: scope.area,
                     firstBloom: bloom,
                     elder: elder,
                     newestNeighbors: newestNeighbors,

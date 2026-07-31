@@ -228,7 +228,7 @@ struct ScreenEntranceTests {
         #expect(Self.entrance(for: .pinSet(Self.pinSet)).contains("Where a tree could go"))
 
         let almanac = AlmanacPresentation(almanac: Almanac(neighborhood: AlmanacNeighborhood(
-            name: "Sunset/Parkside",
+            area: .named("Sunset/Parkside"),
             coverage: CoverageGap(trees: Series(complete: (0..<9).map {
                 CoverageTree(pin: AlmanacPresentationTests.pin(600 + $0), distanceM: Double(100 + $0 * 50))
             })),

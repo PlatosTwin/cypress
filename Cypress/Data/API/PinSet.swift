@@ -39,6 +39,21 @@ public struct PinSet: Hashable, Sendable {
         case coverageGap
         /// `Where a tree could go`, the vacant planting sites (RULINGS R10).
         case vacantSites
+
+        /// §2 row 3, `Newest neighbors` — this spring's plantings (ERRATA **E182**).
+        ///
+        /// The owner, walking the app: *"Clicking on newest neighbors on neighborhood almanac should
+        /// show them on the map."* It was the last counted row on screen 12 that named a group and
+        /// went nowhere, which is E129's defect and E144's, surviving on the one row neither entry
+        /// happened to touch. It arrives here rather than at a fourth destination for exactly the
+        /// reason those two arrived here: the question a count of trees raises is *where*, and this
+        /// app answers that in one place.
+        ///
+        /// `sentence` is carried, not re-derived, for `.oneRecord`'s reason. The row's subtitle is
+        /// assembled by `AlmanacCopy.newestSubtitle` out of a species list that this type does not
+        /// hold and should not learn to hold; re-deriving it here would be a second read that can
+        /// disagree with the row the reader just pressed.
+        case newestNeighbors(sentence: String)
         /// **One record, because the reader asked where it is** (ERRATA E144).
         ///
         /// A group of one, which is what makes it belong here rather than in a screen of its own.

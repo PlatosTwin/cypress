@@ -55,7 +55,7 @@ struct AlmanacLateFixTests {
     /// and a composition card under it. The numbers are not the subject and are not asserted on.
     static let neighbourhood = Almanac(
         neighborhood: AlmanacNeighborhood(
-            name: "Sunset/Parkside",
+            area: .named("Sunset/Parkside"),
             composition: NeighborhoodComposition(
                 distinctSpeciesCount: 215,
                 treeCount: 11_026,

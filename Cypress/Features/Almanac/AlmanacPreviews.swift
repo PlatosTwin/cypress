@@ -154,10 +154,17 @@ private enum AlmanacFixtures {
     /// Every block present — the state SCREENS.md draws, with the seed's numbers in it.
     static let full = Almanac(
         neighborhood: AlmanacNeighborhood(
-            name: "Sunset/Parkside",
+            area: .named("Sunset/Parkside"),
             firstBloom: bloom,
             elder: elder,
-            newestNeighbors: RecentPlanting(treeCount: 23, leadingSpecies: ["Ginkgo", "NZ tea tree"]),
+            newestNeighbors: RecentPlanting(
+                treeCount: 23,
+                leadingSpecies: ["Ginkgo", "NZ tea tree"],
+                // The pins the row hands its map (ERRATA E182). Fewer than the count, so the
+                // preview also exercises `PinSet.isComplete` being false and the destination
+                // saying which page it is holding.
+                nearest: (0..<12).map { pin(400 + $0) }
+            ),
             composition: composition,
             coverage: coverage(9, farthestM: 900),
             vacantSites: vacantSites()
@@ -171,7 +178,7 @@ private enum AlmanacFixtures {
     /// neighbourhood, so §4's walking sentence is withheld.
     static let freshInstall = Almanac(
         neighborhood: AlmanacNeighborhood(
-            name: "Sunset/Parkside",
+            area: .named("Sunset/Parkside"),
             firstBloom: nil,
             elder: elder,
             newestNeighbors: nil,
@@ -185,7 +192,7 @@ private enum AlmanacFixtures {
     /// One sighting rather than three: the row draws, the headcount does not (A8).
     static let singleObserver = Almanac(
         neighborhood: AlmanacNeighborhood(
-            name: "Sunset/Parkside",
+            area: .named("Sunset/Parkside"),
             firstBloom: bloomAlone,
             elder: elder,
             newestNeighbors: nil,
@@ -196,6 +203,24 @@ private enum AlmanacFixtures {
 
     /// No location fix, so no area. Header, footnote, nothing else.
     static let noArea = Almanac.empty
+
+    /// **The fallback area** (RULINGS R29): a reader in a city the record holds trees for and
+    /// boundaries for. The pill is a distance, and the sentence under the header says so.
+    static let radiusArea = Almanac(
+        neighborhood: AlmanacNeighborhood(
+            area: .radius(metres: AlmanacLimits.fallbackRadiusM),
+            firstBloom: nil,
+            elder: elder,
+            newestNeighbors: RecentPlanting(
+                treeCount: 5,
+                leadingSpecies: ["Ornamental Pear"],
+                nearest: (0..<5).map { pin(500 + $0) }
+            ),
+            composition: composition,
+            coverage: coverage(4, farthestM: 700),
+            vacantSites: vacantSites(count: 1_000)
+        )
+    )
 }
 
 // MARK: - Previews
@@ -263,6 +288,37 @@ private enum AlmanacFixtures {
         AlmanacView(
             api: AlmanacPreviewAPI(fails: true),
             coordinate: Coordinate(latitude: 37.7533, longitude: -122.4934),
+            now: { AlmanacFixtures.now },
+            onBack: {}
+        )
+    }
+}
+
+/// **The fallback area** (RULINGS R29). Beside `12 · almanac` above: the same five blocks, and a
+/// pill that is a distance rather than a place, with the sentence that keeps the two from being
+/// mistaken for each other.
+#Preview("12 · a distance, not a place") {
+    NavigationStack {
+        AlmanacView(
+            api: AlmanacPreviewAPI(payload: AlmanacFixtures.radiusArea),
+            coordinate: Coordinate(latitude: 37.3352, longitude: -121.8895),
+            now: { AlmanacFixtures.now },
+            onBack: {},
+            onOpenTree: { _ in },
+            onShowGroup: { _ in }
+        )
+    }
+}
+
+/// **Outside every inventory in the record** (ERRATA E182). To be looked at beside
+/// `12 · read failed`: that one is the screen saying it could not ask, this one is the screen saying
+/// it asked and the answer is that the record stops before here. Until E182 this drew the loading
+/// screen, byte for byte.
+#Preview("12 · no inventory here") {
+    NavigationStack {
+        AlmanacView(
+            api: AlmanacPreviewAPI(payload: AlmanacFixtures.noArea),
+            coordinate: Coordinate(latitude: 38.5816, longitude: -121.4944),
             now: { AlmanacFixtures.now },
             onBack: {}
         )

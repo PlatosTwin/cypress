@@ -155,7 +155,9 @@ final class AlmanacGroupTapTests: XCTestCase {
     /// when there is no fix. Repeated here as a literal because these tests import nothing from
     /// `Cypress`; if the copy changes this stops matching, which is the same bargain every other
     /// anchor in this file makes.
-    private static let locationPrompt = "See your neighbourhood"
+    /// American spelling since ERRATA E182 — this literal is the reason a copy change to that
+    /// string has to be made in two places, and the bargain the doc comment above describes.
+    private static let locationPrompt = "See your neighborhood"
 
     /// Screen 12's `§3` label, which is the almanac saying it has a neighbourhood.
     ///

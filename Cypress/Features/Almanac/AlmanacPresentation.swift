@@ -42,6 +42,14 @@ struct AlmanacPresentation: Equatable {
         /// a specific tree; "newest neighbors" is a group and has none.
         let treeID: UUID?
 
+        /// The group this row is about, when it is about a group (ERRATA **E182**).
+        ///
+        /// Exactly one of `treeID` and `group` is ever set, because a row either names one record or
+        /// counts several and those take different destinations — a profile and a map. `Newest
+        /// neighbors` is the only row of the second kind in §2, and until the owner reported it as
+        /// going nowhere it was the only counted row on the whole screen with no destination at all.
+        let group: PinSet?
+
         var id: String { kind.rawValue }
     }
 
@@ -105,8 +113,31 @@ struct AlmanacPresentation: Equatable {
         let group: PinSet
     }
 
-    /// The trailing pill on C1 — the neighbourhood's name, or nil when there is no area.
+    /// The trailing pill on C1 — the area's name for a polygon, the stated distance for the
+    /// fallback, and nil when there is no area at all (RULINGS **R29**).
+    ///
+    /// The two are different promises and the pill says which one is being made: `Sunset/Parkside`
+    /// is a place, `Within a 15-minute walk` is a measurement. Nothing here ever invents a place
+    /// name for an area the record does not name.
     let neighborhoodName: String?
+
+    /// Whether the read resolved an area at all (ERRATA **E182**).
+    ///
+    /// Distinct from `isEmpty`, which is about a resolved area with nothing to say, and distinct
+    /// from `presentation == nil`, which is a read still in flight or one that failed. Screen 12
+    /// has four ways of having nothing on it and they mean four different things; this is the one
+    /// that means "the inventory does not reach where you are standing".
+    let hasArea: Bool
+
+    /// The line that explains the fallback area, or nil for a named one (RULINGS **R29**).
+    ///
+    /// **NOT SPECIFIED** — SCREENS.md 12 draws one area and gives it a name. A pill on its own is
+    /// too quiet to carry this: a reader who has only ever seen `Sunset/Parkside` there has no way
+    /// to know that `Within a 15-minute walk` is a different kind of thing rather than an oddly
+    /// named neighborhood. The sentence says what changed and, by naming what is missing, what would
+    /// change it back.
+    let areaNote: String?
+
     let seasonRows: [SeasonRow]
     let composition: Composition?
     let coverage: Coverage?
@@ -130,7 +161,9 @@ struct AlmanacPresentation: Equatable {
 
     init(almanac: Almanac, now: Date = .now, calendar: Calendar = .current, locale: Locale = .current) {
         guard let area = almanac.neighborhood else {
+            self.hasArea = false
             self.neighborhoodName = nil
+            self.areaNote = nil
             self.seasonRows = []
             self.composition = nil
             self.coverage = nil
@@ -138,11 +171,17 @@ struct AlmanacPresentation: Equatable {
             return
         }
 
-        self.neighborhoodName = area.name
-        self.seasonRows = Self.seasonRows(area, now: now, calendar: calendar, locale: locale)
+        // The one string every block hands its destination for the header pill. For a polygon it is
+        // the city's own name; for the fallback it is the distance, because `PinSet` documents that
+        // an area we could not name must not be named and a measurement is not a name (R29).
+        let pill = AlmanacCopy.areaPill(area.area, locale: locale)
+        self.hasArea = true
+        self.neighborhoodName = pill
+        self.areaNote = AlmanacCopy.areaNote(area.area, locale: locale)
+        self.seasonRows = Self.seasonRows(area, in: pill, now: now, calendar: calendar, locale: locale)
         self.composition = Self.composition(area.composition, locale: locale)
-        self.coverage = Self.coverage(area.coverage, in: area.name, locale: locale)
-        self.vacantSites = Self.vacantSites(area.vacantSites, in: area.name, locale: locale)
+        self.coverage = Self.coverage(area.coverage, in: pill, locale: locale)
+        self.vacantSites = Self.vacantSites(area.vacantSites, in: pill, locale: locale)
     }
 
     // MARK: - §2 This season
@@ -154,6 +193,7 @@ struct AlmanacPresentation: Equatable {
     /// nothing to notice, and the almanac's whole job is noticing.
     private static func seasonRows(
         _ area: AlmanacNeighborhood,
+        in areaName: String,
         now: Date,
         calendar: Calendar,
         locale: Locale
@@ -174,7 +214,8 @@ struct AlmanacPresentation: Equatable {
                         calendar: calendar,
                         locale: locale
                     ),
-                    treeID: bloom.treeID
+                    treeID: bloom.treeID,
+                    group: nil
                 )
             )
         }
@@ -191,23 +232,35 @@ struct AlmanacPresentation: Equatable {
                         street: AlmanacCopy.street(from: elder.address),
                         plantedYear: elder.plantedYear
                     ),
-                    treeID: elder.treeID
+                    treeID: elder.treeID,
+                    group: nil
                 )
             )
         }
 
         if let planted = area.newestNeighbors, planted.treeCount > 0 {
+            let sentence = AlmanacCopy.newestSubtitle(
+                treeCount: planted.treeCount,
+                leadingSpecies: planted.leadingSpecies,
+                locale: locale
+            )
             rows.append(
                 SeasonRow(
                     kind: .newestNeighbors,
                     accent: .newGrowth,
                     title: AlmanacCopy.newestTitle,
-                    subtitle: AlmanacCopy.newestSubtitle(
-                        treeCount: planted.treeCount,
-                        leadingSpecies: planted.leadingSpecies,
-                        locale: locale
-                    ),
-                    treeID: nil
+                    subtitle: sentence,
+                    treeID: nil,
+                    // The row counts trees, so it goes where the other two counted rows go
+                    // (ERRATA E182, the owner's report). Absent rather than inert when the read
+                    // returned no pins: a row that looks pressable and answers nothing is the
+                    // defect being fixed, not a smaller version of it.
+                    group: planted.nearest.isEmpty ? nil : PinSet(
+                        subject: .newestNeighbors(sentence: sentence),
+                        pins: planted.nearest,
+                        count: planted.treeCount,
+                        neighborhoodName: areaName
+                    )
                 )
             )
         }
@@ -407,8 +460,64 @@ enum AlmanacCopy {
 
     // MARK: Turn on location (R11 residual, E123)
 
-    static let locationPromptTitle = "See your neighbourhood"
+    /// American spelling, at the owner's explicit instruction. The screen's own name in SCREENS.md
+    /// has always been `Neighborhood almanac`; this string was the one place on it that disagreed.
+    /// The codebase-wide sweep is somebody else's ticket and is deliberately not started here.
+    static let locationPromptTitle = "See your neighborhood"
     static let locationPromptSubtitle = "Turn on location and the almanac fills with the trees around you."
+
+    // MARK: The area this almanac is about (RULINGS R29)
+
+    /// C1's trailing pill, and the string every block hands its destination.
+    ///
+    /// **A name for a polygon, a distance for the fallback, and never a name invented for a
+    /// distance.** The whole of R29 is that "the Mission" and "everything within a 15-minute walk"
+    /// are different promises; a pill reading `Your area` would make the smaller promise while
+    /// looking like the larger one, which is the failure this copy exists to avoid.
+    ///
+    /// The fallback reads as a walk rather than as metres because the screen already has a unit for
+    /// this distance — §4's body says "within a 15-minute walk" of the same 1,200 m — and a reader
+    /// who is being told how far the almanac reaches is better served by the time it takes to cross
+    /// it than by a number they have to convert.
+    static func areaPill(_ area: AlmanacArea, locale: Locale) -> String {
+        switch area {
+        case let .named(name): return name
+        case .radius: return "Within a 15-minute walk"
+        }
+    }
+
+    /// The sentence under the header that explains a fallback area, or nil for a named one.
+    ///
+    /// **NOT SPECIFIED**; see `AlmanacPresentation.areaNote`. Three things had to be in it and
+    /// nothing else: that this almanac is drawn around the reader rather than around a place, why,
+    /// and — D16(b)'s rule, that an honest empty state must say what *would* happen rather than only
+    /// what does not — what would give it a place back. It never names the city. The app does not
+    /// know which city a coordinate is in; it knows only that no boundary in the record contains it,
+    /// and saying more than that would be the screen guessing.
+    static func areaNote(_ area: AlmanacArea, locale: Locale) -> String? {
+        guard case .radius = area else { return nil }
+        return "No neighborhood boundaries are on file for where you are, so this almanac is drawn "
+            + "around you instead. It will name a neighborhood once this city's boundaries join the record."
+    }
+
+    // MARK: Nowhere the record reaches (ERRATA E182)
+
+    /// The screen a reader gets when the fix is good, the read finished, and the merged inventory
+    /// simply does not cover where they are standing.
+    ///
+    /// This is the state San Jose was in before R29 and that everywhere outside two cities is still
+    /// in, and until now it drew **nothing**: header, footnote, and an empty column between them —
+    /// pixel for pixel the screen a reader sees while the read is still in flight. That is E126's
+    /// defect on a different cause, on the screen E126 itself calls the last place to conflate
+    /// states, and it is the half of this ticket that had to land whatever was decided about
+    /// geography.
+    ///
+    /// The copy is D16's shape, not an apology. It says what the almanac is made of, that the record
+    /// does not reach here, and what would change that — because a dead end that explains itself is
+    /// still a dead end unless it says which way the door opens.
+    static let outOfRangeTitle = "No inventory reaches here yet."
+    static let outOfRangeBody = "The almanac is built from city tree inventories, and none of the "
+        + "ones on this phone covers where you are. It fills in as more cities join the record."
 
     // MARK: The read that did not arrive (ERRATA E126)
 
