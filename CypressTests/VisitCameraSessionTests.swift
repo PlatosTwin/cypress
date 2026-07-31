@@ -805,7 +805,17 @@ struct VisitCameraSessionTests {
             ratio == 1 / VisitMetrics.Camera.captureAspectRatio,
             "the well's shape is \(ratio) and the capture's is \(VisitMetrics.Camera.captureAspectRatio)"
         )
-        #expect(ratio == 3.0 / 4.0, "the well is \(ratio), not the 3:4 frame a phone held upright takes")
+        // **The annotation is load-bearing, and this is not a tolerance.** Written inline as
+        // `#expect(ratio == 3.0 / 4.0, …)` this assertion failed against a `ratio` whose bit pattern
+        // is exactly `0x3fe8000000000000` — 0.75 to the last bit. `#expect(a == b)` expands to a
+        // generic `__checkBinaryOperation(lhs: T, _ op: (T, () -> U) -> Bool, rhs: @autoclosure () -> U)`,
+        // and with `T == CGFloat` and a bare float-literal expression on the right, the solver binds
+        // `U` to **`AnyHashable`** rather than to `CGFloat`. The two sides are then boxes rather than
+        // numbers, and `AnyHashable(CGFloat(0.75)) != AnyHashable(Double(0.75))` because the dynamic
+        // types differ, however equal the values are. Naming the type here keeps `U` at `CGFloat`, so
+        // this compares the number. See `docs/errata-pending/well-aspect-ratio.md`.
+        let portrait: CGFloat = 3.0 / 4.0
+        #expect(ratio == portrait, "the well is \(ratio), not the 3:4 frame a phone held upright takes")
 
         // The number the old constant got wrong, kept so the mistake cannot come back quietly: at the
         // gutter's width on a 393 pt phone the well is 481 pt tall, not 268.
