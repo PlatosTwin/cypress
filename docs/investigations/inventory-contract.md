@@ -393,19 +393,44 @@ shipped seed today: 85 rows are `alive` with no species), and the receipt gains
 A test whose failure mode nobody has seen is a test nobody should trust. Each break below was
 applied, run, and reverted; the worktree is clean.
 
-**Python — `Tools/test_inventory_contract.py`, 108 checks.** Baseline 108 passed / 0 failed.
+**The two guards that had no test, and how they hid.** The reviewer disabled both id-space refusals
+in `inventory_contract.py` — `if not space.identity_prefix:` and
+`if space.identity_prefix in prefixes:` — and the suite stayed **green at 108**. Those two lines are
+the load-bearing part of the identity design, so this is worth the diagnosis rather than just the
+fix. The two failed for *different* reasons:
 
-| break | result |
-|---|---|
-| give `sf` a non-empty `identity_prefix` | 105 / **3 failed** — uuid derivation moved, prefix no longer empty, the two SF inventories stopped agreeing |
-| let a planting site name a species | 107 / **1** |
-| accept the source's `DBH = 0` as a measurement | 104 / **4** — the parser, and both adapters' records |
-| classify every placeholder as `STATED` (hide #94) | 101 / **7** |
-| give `kind` and `kind_basis` defaults | 106 / **2** |
-| stop recording the enrichment join on the record (the 55-row bug) | 107 / **1** |
-| let `attributes_from` name the listing inventory | 107 / **1** |
+- **The empty-prefix refusal was redundant, not unreached.** A test did register a fictional space
+  with an empty prefix and did assert refusal — but `"".endswith(":")` is `False`, so the *next*
+  guard raised anyway. An assertion that asks only "was it refused" cannot see the difference. It
+  now asserts the refusal's **reason**, so each guard is pinned individually.
+- **The duplicate-prefix refusal was genuinely unreached.** Every test registered exactly one
+  fictional space, so the pairwise check never ran. A test now registers two spaces that are each
+  well-formed — non-empty, correctly terminated — and share a prefix, which nothing but the pairwise
+  check can see. It also asserts the collision is real: the same source id in both spaces mints one
+  uuid, so one city's tree *is* the other city's tree.
 
-Restored: 108 / 0.
+That is the same defect as **E167** — a guard watching for a state the tests could not produce — in
+the one place #107 depends on most.
+
+**Python — `Tools/test_inventory_contract.py`, 114 checks.** All nine breaks measured against one
+baseline, each reverted immediately (`breakproof_all.sh`). Baseline 114 passed / 0 failed.
+
+| # | break | result |
+|---|---|---|
+| 1 | give `sf` a non-empty `identity_prefix` | 111 / **3 failed** — uuid derivation moved, prefix no longer empty, the two SF inventories stopped agreeing |
+| 2 | let a planting site name a species | 113 / **1** |
+| 3 | accept the source's `DBH = 0` as a measurement | 110 / **4** — the parser, and both adapters' records |
+| 4 | classify every placeholder as `STATED` (hide #94) | 107 / **7** |
+| 5 | give `kind` and `kind_basis` defaults | 112 / **2** |
+| 6 | stop recording the enrichment join on the record (the 55-row bug) | 113 / **1** |
+| 7 | let `attributes_from` name the listing inventory | 113 / **1** |
+| 8 | **let a new id space declare an empty prefix** | 112 / **2** |
+| 9 | **let two id spaces share a prefix** | 113 / **1** |
+
+Restored: 114 / 0. Breaks 8 and 9 are the two that were green before this round; break 8's message
+is the useful one, because it names the fall-through that hid it: *"an empty prefix was refused, but
+not by the empty-prefix guard — it fell through to another check, so that guard could be deleted
+unnoticed."*
 
 **Swift — `CypressTests/InventoryContractTests`, 9 tests.** Baseline 9 passed.
 
@@ -419,10 +444,26 @@ Restored: 108 / 0.
 | count `alive` where the vacancy total is read | **1** — `12413` vs `133424` |
 | count the not-a-tree rows as vacant | **1** — `85` vs `12413` |
 
-Two of the nine could not be broken this way, and it is the same limitation as §6: **the receipt
-names this contract**, and **`sf`'s declared prefix is empty**, both activate only on a seed the
-contract built. Against the shipped seed they return without asserting. Seven of nine have teeth
-today; two are waiting on a rebuild.
+**The two that could not be broken are gone.** They were `theSanFranciscoPrefixIsFrozenEmpty` and
+`theReceiptNamesItsContract`, and both returned without asserting on the shipped seed because it
+carries no receipt the contract wrote. An inert test is one that cannot fail, and this project has
+had one positively ratify a defect for weeks, so "it will wake up after a rebuild" is not good
+enough. The obvious repair — asserting against a hand-built receipt dictionary — is worse than
+useless for these two, because both are plain key-equality checks: the test would be verifying that
+a dictionary holds the value the test just put in it.
+
+So one was deleted and one folded:
+
+- **Deleted** `theSanFranciscoPrefixIsFrozenEmpty`. The property is asserted in three live places
+  already — `identityIsAPureFunctionOfTheSourceId` re-derives all 145,837 uuids through
+  `meta["identity_prefix"] ?? ""` and goes red on every row when that prefix is wrong (shown, break
+  B), and the Python suite pins `sf`'s prefix directly and now refuses an empty one for any other
+  space (break 8). A fourth statement of it that cannot fail was cost without cover.
+- **Folded** `theReceiptNamesItsContract` into `everyRowIsInTheSeedsDeclaredIdSpace`, whose
+  surrounding assertions run on the shipped seed. The check survives for a rebuilt seed without
+  existing as a test that passes silently.
+
+**All seven remaining Swift tests assert against the shipped seed and all seven were shown to fail.**
 
 Two process notes worth carrying.
 
