@@ -34,6 +34,23 @@
 //  cover rather than on the path. Practically: a pushed viewer would inherit the navigation stack's
 //  bar and its own dark backdrop would have a light bar across the top of it.
 //
+//  ── Why there is a delete on it (ERRATA E173) ────────────────────────────────────────────
+//  E147 shipped the delete on screen 20 only, and said why: "a delete on the hero would act on
+//  whichever photograph the rule happened to pick". That sentence is true of the hero and false of
+//  this screen, and applying it here is the defect the owner reported as "I don't see that option".
+//
+//  Tapping a photograph is the one gesture a person makes to act on a photograph, and every route in
+//  the app that starts from a picture — the hero on 03, a row on 20 — ends here. What they arrived
+//  at was a surface whose entire vocabulary is *look, then close*: no delete, and no way onward to
+//  the screen that has one. The control was reachable only by a second tap on the small metadata
+//  pill in the corner of the hero, which reads as a caption rather than a door.
+//
+//  This screen shows exactly one photograph, named, whole, with its id in hand. There is nothing for
+//  a rule to pick. So it gets the same three-beat control screen 20 has — trash glyph, a
+//  confirmation naming the consequence, the verb on the button — driven by the *same*
+//  `TreePhotosModel`, so there is one implementation of "may this person delete this, and what does
+//  it cost" rather than two that can drift.
+//
 //  ── Why there is no pinch-to-zoom ────────────────────────────────────────────────────────
 //  Deliberate, and worth writing down because it is the obvious next thing to reach for. The report
 //  is that the photograph is *cut off*; showing it whole answers that completely. A zoom that had to
@@ -51,7 +68,43 @@ struct PhotoViewerView: View {
     let caption: String
     let onClose: () -> Void
 
+    /// Screen 20's model, over the tree this photograph belongs to. Deliberately the same type: the
+    /// question "may this person delete this photograph, and what does removing it cost the tree"
+    /// has one answer and it already lives there (ERRATA E173). A second model would be a second
+    /// place for `deletablePhotoIDs` and the community-add sentence to live.
+    @State private var model: TreePhotosModel
+
     @Environment(PhotoImageStore.self) private var store: PhotoImageStore?
+
+    init(
+        photoID: UUID,
+        caption: String,
+        treeID: UUID,
+        api: (any CypressAPI)? = nil,
+        onClose: @escaping () -> Void
+    ) {
+        self.photoID = photoID
+        self.caption = caption
+        self.onClose = onClose
+        _model = State(wrappedValue: TreePhotosModel(treeID: treeID, api: api))
+    }
+
+    /// A finished model, for previews and the screen sweep.
+    init(photoID: UUID, caption: String, model: TreePhotosModel, onClose: @escaping () -> Void) {
+        self.photoID = photoID
+        self.caption = caption
+        self.onClose = onClose
+        _model = State(wrappedValue: model)
+    }
+
+    /// The record behind `photoID`, once the tree has been read. `nil` while loading, and on a
+    /// photograph this device does not hold.
+    private var photo: Photo? { model.photos.first { $0.id == photoID } }
+
+    /// Whether to draw the control. The same gate screen 20 uses and for the same reason: an
+    /// anonymised photograph is still *shown* — that is what the leaving door promised — and is
+    /// nobody's to take back.
+    private var isDeletable: Bool { photo.map(model.isDeletable) ?? false }
 
     var body: some View {
         ZStack {
@@ -79,10 +132,55 @@ struct PhotoViewerView: View {
         }
         .overlay(alignment: .bottomLeading) { captionLine }
         .overlay(alignment: .topTrailing) { closeButton }
+        .overlay(alignment: .bottomTrailing) { if isDeletable { deleteControl } }
         // The photograph is the largest thing `PhotoImageStore` ever holds and it is decoded for
         // this screen alone, so it is loaded when this screen appears and dropped when it goes.
         .task(id: photoID) { await store?.loadViewer(photoID) }
+        // Who owns this photograph is a separate read from its bytes, and it is what decides whether
+        // the control above is drawn at all (ERRATA E173).
+        .task { await model.load() }
         .onDisappear { store?.releaseViewer() }
+        .confirmationDialog(
+            TreePhotosCopy.deleteTitle,
+            isPresented: Binding(
+                get: { model.pendingDeletion != nil },
+                set: { if !$0 { model.pendingDeletion = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: model.pendingDeletion
+        ) { photo in
+            Button(TreePhotosCopy.deleteAction, role: .destructive) {
+                model.pendingDeletion = nil
+                Task {
+                    await model.delete(photo.id, images: store)
+                    // The subject of this screen is gone. Staying would draw *That photograph could
+                    // not be opened* over the place it used to be, which reads as a failure rather
+                    // than as the thing that was just asked for. Closing returns to the surface the
+                    // reader tapped from, which re-reads itself and shows the set without it.
+                    if model.deleteError == nil { onClose() }
+                }
+            }
+            Button(TreePhotosCopy.deleteCancel, role: .cancel) { model.pendingDeletion = nil }
+        } message: { photo in
+            Text(
+                TreePhotosPresentation.deleteMessage(
+                    isLastOfACommunityAdd: model.isLastPhotographOfACommunityAdd(photo)
+                )
+            )
+        }
+        // A failed deletion is never swallowed, for `TreePhotosModel.deleteError`'s reason: somebody
+        // has just been told a photograph is about to be destroyed and has to know whether it was.
+        // On this screen it has to be drawn over the photograph, because there is no list to put it
+        // above — and the photograph being still there is itself half the message.
+        .overlay(alignment: .top) {
+            if let message = model.deleteError {
+                Text(message)
+                    .font(CypressFont.body125)
+                    .foregroundStyle(CypressColor.Dark.textMuted)
+                    .multilineTextAlignment(.center)
+                    .padding(CypressSpacing.gutter)
+            }
+        }
     }
 
     // MARK: - Chrome
@@ -102,6 +200,41 @@ struct PhotoViewerView: View {
             // is announced twice, which is the `DeepLinkVoiceOverTests` complaint about doubled
             // labels in a different costume.
             .accessibilityHidden(true)
+    }
+
+    /// The delete, on the one screen that shows a single named photograph whole (ERRATA E173).
+    ///
+    /// **The same glyph, register and confirmation as screen 20's**, deliberately: a person who has
+    /// seen one of these has seen both, and a second visual vocabulary for the same irreversible act
+    /// would be a second thing to learn. It is in the amber hazard register because there is no red
+    /// in this palette, and it sits in the bottom-trailing corner — diagonally opposite the close
+    /// button, so the destructive control is nowhere near the one that means *never mind*, and clear
+    /// of the caption in the other bottom corner.
+    ///
+    /// **One tap opens a question and destroys nothing.**
+    private var deleteControl: some View {
+        Button {
+            model.pendingDeletion = photo
+        } label: {
+            Circle()
+                .fill(CypressColor.heroBackFill)
+                .overlay {
+                    Image(systemName: "trash")
+                        .font(.system(size: PhotoViewerMetrics.closeGlyph, weight: .semibold))
+                        .foregroundStyle(CypressColor.hazardCTAFill)
+                }
+                .frame(
+                    width: CypressSpacing.Component.backCircle,
+                    height: CypressSpacing.Component.backCircle
+                )
+                .cypressShadow(CypressShadow.heroButton)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(PhotoViewerCopy.delete)
+        .accessibilityHint(TreePhotosCopy.deleteHint)
+        .padding(.trailing, CypressSpacing.Component.heroBackLeading)
+        .padding(.bottom, CypressSpacing.Component.heroBottomInset)
     }
 
     /// A cover with no navigation bar has no way out that the system provides, so it needs one drawn.
@@ -160,6 +293,9 @@ enum PhotoViewerMetrics {
 /// **Every string here is NOT SPECIFIED** — there is no viewer in SCREENS.md.
 enum PhotoViewerCopy {
     static let close = "Close"
+    /// Named rather than left as a bare glyph, because a listener has no picture to infer it from —
+    /// and it says *this photo* so it cannot be heard as "delete the tree".
+    static let delete = "Delete this photo"
     static let wholeFrame = "The whole photograph"
     static let unavailable = "That photograph could not be opened"
 }

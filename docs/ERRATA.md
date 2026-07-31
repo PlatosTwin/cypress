@@ -8393,6 +8393,411 @@ So the empty map was never silent, and there is no product defect behind #104. W
 test that could not tell that state from a broken one — it read "no pins" and reported "broken",
 which is exactly the mistake the app's own copy exists to stop a *person* making.
 
+### E168 — The map kept its own copy of the camera, and every write to it was thrown away
+
+
+The owner: *"Opening the app should open on where you're located right now, 100% of the time."*
+
+Reproduced on the simulator with location granted and a fix set over Van Ness: screen 01 opened on
+`MapLayout.defaultCentre` — 37.7596, −122.4269, Mission Dolores Park — and stayed there for the life
+of the launch. Not for a second before CoreLocation answered. Permanently, with the fix already on
+`location.availability`.
+
+`AlmanacGroupTapTests` had recorded half of this in its own header and read it the other way round:
+*"the control reads `Not centred` for a whole 39-second run, and a screenshot of that same launch has
+the camera on the fix and the reader's blue dot in the middle of the screen. Something between the
+settled region and `MapRecentre.Camera` disagrees with the picture; whatever it is, it belongs to
+screen 01 and not here."* It did belong to screen 01. The control was telling the truth; both
+sentences were about a map that had never moved, and the screenshot came from a launch where the
+timing happened to go the other way.
+
+**The camera request was thrown away, not never made.** A probe in the layer itself, on a cold launch:
+
+    MAKE   seq=0 bounds=(0.0, 0.0) to=37.7596      ← makeUIView, zero frame, asks for the fallback
+    MADE   region=37.3346                          ← MapKit did not take it; 37.3346 is its own default
+    APPLY  seq=1 bounds=(402.0, 874.0) to=37.7599  ← the fly-to-you, applied at full size, in a window
+    REJECT seq=1 applied=1  ×∞                     ← and every pass after it, forever
+
+A freshly constructed `MKMapView()` has `bounds == .zero`; SwiftUI lays it out afterwards. `setRegion`
+on a map with no area does not take — measured, the region set to 37.7596 read back as 37.3346 — but
+`makeUIView` recorded the ticket as applied anyway. So the request minted by the first GPS fix was
+already stale by the time there was a map to show it on, and it was dropped. There is no retry:
+`MapHomeView.hasCentredOnUser` is a one-shot (#85) and had already fired.
+
+`MapCameraRequest`'s ticket is not at fault and is not weakened here. E140 established that camera
+*geometry* cannot be compared because an update pass can arrive carrying state from before the
+reader's last gesture. What was wrong is that a number was spent on a camera nobody was shown.
+
+**The fix.** `applyCameraIfChanged` refuses a map it cannot aim, without spending the ticket — the one
+early return in that method that does not record the request, because it is the one case where the
+camera has not been superseded and has not been seen. `makeUIView` no longer sets a region at all.
+`AimableMapView` supplies the single layout hook a `UIViewRepresentable` does not have, and aims at
+whatever the app wants *by then*: the remembered opening camera if no fix has landed, the reader's own
+location if one has. Both orders arrive at the same place.
+
+**On screen 01, that hook has never once been the thing that aimed the map.** Measured on every cold
+launch traced: `updateUIView` reaches `applyCameraIfChanged` before the deferred `onFirstLayout`
+callback does, so by the time the hook runs the ticket is spent and it logs `REJECT`. Screen 01
+re-runs its body often enough to produce its own pass the instant the size lands, exactly as the note
+above guessed it would. The hook earns its place on the two quiet screens and as belt-and-braces here;
+it should not be described as what closed this defect on the app's default screen, because it is not.
+
+**A second road to the same defect, closed at the same time.** `MapLocationProvider` is the
+composition root's, shared with screens 09, 12, 16 and the visit flow, and `RootView` wires
+`onRequestLocation: { location.start() }` in three places. Arrive on screen 01 after any of them and
+`availability` is already `.located` — so `.onChange(of:)` never fires, because the value never
+changes. The one-shot is now also called from `.task`, and `centreOnUserIfNeeded()` is the single
+place that decides.
+
+---
+
+#### The regression this fix introduced, and how it hid
+
+Worth more than the original defect, because it is the class of bug this project keeps finding: **a
+value that looks answered and is not.**
+
+`MapHomeView.region` — the app's copy of where the camera is — held MapKit's own default for the
+whole launch:
+
+    region 37.1328,-95.7856   span 98.0°×61.3°
+
+That is the geographic centre of the continental United States, sitting behind a map of Folsom Street
+with the reader's blue dot in the middle of it. Everything downstream of the settled camera was
+reading it: the recentre control's `Centred on you` (#100), a cluster tap's "two zoom levels in"
+measured from a 98° span, and the camera this app now remembers between launches — which is why
+nothing was ever written down.
+
+**The first fix for this named the wrong mechanism, and the wrong one was ruled out by measurement.**
+It said that aiming from inside `layoutSubviews` is re-entrant, that `setRegion` is honoured but
+`regionDidChangeAnimated` "is never delivered", and it moved the aim to the main queue. The symptom
+survived that change untouched. A probe in the layer itself, cold launch, iPhone 16 Pro, static fix at
+37.7599, −122.4148, timestamps in milliseconds:
+
+    .802 .838 .850  apply  REFUSE-no-area seq=0
+    .857            settle region=37.132840 span=97.992432
+    .870            apply  ACCEPT seq=0 to=37.759600
+    .870            settle region=37.759600 span=0.002084
+    .871            apply  WROTE parent.region=37.759600 readback=37.132840
+    .875            layoutSubviews bounds={{0, 0}, {402, 874}}
+    .885            apply  REJECT seq=0 applied=0
+    .907            centreOnUserIfNeeded avail=located(37.7599, −122.4148)
+    .907            flyTo 37.7599,-122.4148 metres=120
+    .909            apply  ACCEPT seq=1 to=37.759900
+    .915            settle region=37.759900 span=0.002084
+    .916            apply  WROTE parent.region=37.759900 readback=37.132840
+
+**The settle is delivered.** Twice, carrying exactly the right region. It was never suppressed. What
+that trace shows instead is that the settle arrives in the *same millisecond* as the `setRegion` that
+caused it — MapKit calls `regionDidChangeAnimated` synchronously from inside `setRegion` — and
+`applyCameraIfChanged` is called from `updateUIView`. So both writers of `region` were running inside
+a SwiftUI view-update pass, and **a `@State` write made during a view update is discarded.** The one
+write that landed in the entire launch is the settle at `.857`, the only one that happened outside a
+pass — and what it carried was MapKit's default. That is the number that stuck.
+
+`Coordinator.echo(_:)` hands every camera back one runloop turn later, and is used by **both** writers
+rather than only the one known to be unsafe today: the settle is synchronous under `setRegion` and
+asynchronous after a real flight, and a value whose correctness depends on which of those happened is
+a value that will be wrong again.
+
+Verified on the running app, nothing pressed, launch state: `R 37.7599,-122.4148 S 0.00108 centred`.
+
+**How it hid.** The whole unit suite was green. The map looked right in every screenshot. The camera
+tests assert `mapView.region`, which is the truth, and the one thing that was wrong was the *copy* of
+it the screen holds. It was found by launching the app with a debug readout of `region` drawn on top
+of the chrome and reading the numbers — not by a test.
+
+**What each test is now measured to catch.** Two deliberate breaks, built and run against
+`CypressUITests/MapCentredStateUITests` on a simulator with a fix:
+
+| Break | Result |
+|---|---|
+| baseline, fixed | `Executed 2 tests, with 0 failures` in 10.979 s |
+| write `parent.region` inline instead of through `echo(_:)` — the real defect | `Executed 2 tests, with 1 failure` in 31.890 s — `XCTAssertEqual failed: ("Not centred") is not equal to ("Centred on you")` |
+| aim re-entrantly from `layoutSubviews` (`announce?()` inline) | `Executed 2 tests, with 0 failures` in 11.082 s — **invisible** |
+
+Two things follow, and both are worth more than the green line.
+
+**The re-entrancy break is invisible because there is nothing to see.** On screen 01 the
+`onFirstLayout` hook never applies a camera at all: `updateUIView` reaches `applyCameraIfChanged`
+first on every launch and spends the ticket, so the hook only ever logs `REJECT` (line `.885` above).
+No test guards it because no behaviour depends on it.
+
+**Say this plainly, because the comment above it does not read that way.** `AimableMapView`'s
+`DispatchQueue.main.async` carries a long, careful, confident note about re-entrancy, and the next
+person to read it will assume it is load-bearing. On screen 01, as currently wired, **it is dead in
+practice** — the whole hook, not just the hop. Mutating it either way changes no observable behaviour
+and no test.
+
+**It should nonetheless stay, and the reason changed during this round.** When it was written it was
+insurance against a screen too quiet to produce another `updateUIView` pass once the size landed —
+speculative, and on the one screen anybody measured, unnecessary. It stopped being speculative when
+`mapViewDidChangeVisibleRegion` was gated on `appliedSequence != nil` (below): with that gate, a map
+that is never aimed never reports a camera at all, so screen 01 would never fetch a tree and screen
+16's pin would never track. The hook is now the thing that guarantees the aim eventually happens, and
+that is a real job. Its note has been rewritten to claim that job and not the other one.
+
+**Under the real break, the *pressed* test still passes.** A press produces a genuine animated flight
+whose settle arrives outside the update pass and therefore lands. That is the entire content of "still
+`Not centred` at launch, and a press fixes it": it is one bug, not two, and the unpressed test is the
+only one that can see it.
+
+`MapOpeningCameraApplyTests.theSettledRegionIsEchoedBack` pins that the echo exists — delete the write
+and it fails — but it cannot see either break, because a map view outside a window and outside a
+SwiftUI update pass reproduces neither condition.
+
+---
+
+#### The second regression this fix introduced: a pin 2,300 km from its tree
+
+Worse than anything above, and it is the fix's own doing rather than the original defect's.
+
+Two of the changes made for E168 are individually correct. `makeUIView` no longer sets a region, and
+`applyCameraIfChanged` refuses a map with no area without spending the ticket. Together they open a
+window that did not exist on main, where the camera was set in `makeUIView` at the earliest possible
+moment: **between construction and the first laid-out pass, the map has never been aimed at all**, and
+what `MKMapView` reports as its visible region in that window is its own default — 37.1328, −95.7856,
+span 98°.
+
+`mapViewDidChangeVisibleRegion` fires during that window and reports it.
+
+On screen 01 that was invisible and nearly free: one wasted fetch over a bounding box the size of
+North America, discarded by `MapModel.cameraDidChange` as soon as a real camera arrived. On **screen
+16** it is not free at all. `VisitPinAdjustView` follows this callback directly — its whole design is
+that the map moves under a fixed reticle and the pin *is* the middle of the map:
+
+    onCameraChange: { box, _ in … pin = VisitPinAdjust.centre(of: box) }
+
+So the pin a contributor is about to attach to a tree they are standing next to was being dragged to
+the middle of Kansas before they touched anything. Measured on merged main in clean derived data:
+
+    testPinAdjust                             failed (18.685 s)   hittability: activation point invalid
+    testTheNudgeControlsActuallyMoveThePin    failed  (9.009 s)
+    testThePinSaysWhenItHasGoneAsFarAsItGoes  failed (12.416 s)
+        XCTAssertEqual failed: ("2344980 m east of where you are standing.")
+
+2,344,980 m observed, against a great-circle distance of **2,343,915 m** from the fix to MapKit's
+default centre. A 0.05 % match is an identification, not a resemblance. The first of the three fails
+differently only because a pin in Kansas has no activation point on a map of San Francisco.
+
+**The gate.** `mapViewDidChangeVisibleRegion` now returns unless `appliedSequence != nil`.
+That property is exactly the question "has this layer ever aimed this map", and the callback's
+contract is *the app moved the camera, here is where it is now* — a camera nobody asked for has no
+business travelling through it. All three tests pass with the gate and fail without it, which is the
+red-then-green this entry is entitled to claim.
+
+**Two lessons, and the second is the one worth carrying.** The first is ordinary: a fix that makes a
+value arrive *later* has to be checked against everything that reads it *earlier*. The second is that
+this branch's own tests could not see it. Screen 01 is where all the attention went, and on screen 01
+the same defect is a rounding error in a database query. It surfaced only because screen 16 happens to
+wire a user-visible artefact straight to the same callback — and it surfaced as three red tests that
+were initially, and wrongly, written off as derived-data contamination.
+
+---
+
+#### Where the map opens now, and what it says about it
+
+**Opening on the reader is only two thirds of "100% of the time", and the third part is the one that
+gets skipped.** There is a window before CoreLocation answers, and there are states where it never
+will, and in every one of them the map is showing a piece of San Francisco that is not where the
+reader is standing. ERRATA **E126** governs: a screen showing something other than what you asked for
+must say why. **E158** is the warning — screen 11 spent its life telling people their GPS fix was
+"too weak" when their phone had merely not answered yet, and the cold-launch population was the
+*entire* population of that message.
+
+`MapCameraMemory` remembers the camera the reader last left the map on. A place they have actually
+been beats a stranger's park: the app reopened in the same neighbourhood is very nearly right, and
+Dolores Park survives as the answer to the one question nothing else can answer — a first launch, no
+history, no fix. `UserDefaults` rather than `app_state`, for `VisitSaveLedger`'s reason (a UI fact,
+not a contribution) and one that decides it outright: `CypressStore.appState(_:)` is `async`, and a
+camera that arrives one `await` after the first frame is the defect performed slightly faster.
+
+The write is **not on the pan path**. Tasks #51, #75 and #84 were all map performance and #84 was the
+basemap re-evaluating some 200 times a second at rest; a settle updates a struct in memory and the
+write happens once, when the app leaves the foreground or the screen goes away. There is no debounce
+timer to tune. `noteDoesNotWrite` asserts it: fifty settles, nothing in storage.
+
+Four standing states now, and no two of them read the same:
+
+| State | What the map shows | What it says |
+|---|---|---|
+| `located` | the reader | nothing — there is nothing to explain |
+| `notAsked` | remembered camera, or the city | **Cypress has not been given your location.** Nothing has answered the location request yet, so there is nowhere to centre the map. + where it is |
+| `waitingForFix` | remembered camera, or the city | **Finding you.** Cypress has permission and is still waiting for a first fix. + where it is + it will move as soon as one arrives |
+| `denied` / `servicesOff` | remembered camera, or the city | **Location is off** / **Location Services are off.** The map still works—it just cannot show where you are… + where it is |
+
+Two things about that table. The last row's two titles were already distinct (`MapLocationCopy.title`)
+and stay so. And every row carries a clause naming **what the reader is looking at instead** — "The
+map is where you last left it" or "The map is over the middle of the city" — which is the half of E126
+that was missing. The old sentence explained the absence of the dot; it said nothing about the presence
+of a particular stretch of city, and a reader who has never been to Dolores Park was left to assume
+the app thought they were there.
+
+The two waits are given `MapOpening.patience` — three seconds — before they say anything, because a
+notice that flashes on every healthy launch teaches the reader to stop reading the slot it appears in.
+The refusals are said at once: nothing is coming, so there is nothing to be patient about.
+
+##### Which of those four a simulator can actually produce
+
+Driven on the running app rather than reasoned about, iPhone 16 Pro, one screenshot each.
+
+| Asked for | `simctl` | What appeared |
+|---|---|---|
+| fix present | `privacy grant location` + `location set 37.7599,-122.4148` | map on Folsom & 9th, dot dead centre, **no notice**, control filled and reading `Centred on you` |
+| permission revoked, no history | fresh install + `privacy revoke location` | Dolores Park, **Location is off** + "…The map is over the middle of the city." + Settings, control struck through |
+| permission revoked, with history | as above, after one granted launch was backgrounded | **Folsom & 9th**, no dot, **Location is off** + "…The map is where you last left it." |
+| never asked | fresh install + `privacy reset location` | Dolores Park, system sheet up, control in the plain `askable` drawing |
+
+**`waitingForFix` is not reachable on a simulator, and that is a property of the design rather than a
+gap in the testing.** Two things were confirmed by driving it. First, `xcrun simctl location <udid>
+clear` does **not** unfix a device: on a fresh install with permission granted and the location
+cleared, the map still opened centred on the fix with the dot in the middle — the only way to take a
+fix away from the app is to take the *permission* away, which produces `denied`, a different state
+with different copy. Second, `simctl location <udid> list` offers only City Run, City Bicycle Ride,
+Freeway Drive and Apple; there is no no-fix scenario. And even if there were, `MapOpening.patience`
+gates the notice at three seconds and a simulator answers from cache in well under one, so the
+`searching` sentence is by construction only ever shown to a phone that is genuinely slow. That is
+E158's lesson working as intended, and it means the row is exercised by
+`CypressTests/MapOpeningCameraTests` and by nothing on a device.
+
+**The remembered camera was verified end to end, and only works because of the fix above.** After one
+granted launch was backgrounded, `UserDefaults` held:
+
+    map.lastCamera = (37.759899, -122.414803, 0.001081, 0.001362)
+
+Before the echo was repaired, `region` held a span of 98°, which `MapCameraMemory.isWorthRemembering`
+correctly refuses as wider than `maximumSpanDegrees`. So nothing was ever written, on any launch, and
+the third row of that table could never have been reached. Repairing the echo is what made the memory
+real.
+
+---
+
+#### #128, tested on this branch: the ticket is inverted, and the real defect is #85's shape
+
+Reported by the owner walking the app: *"Going Map > Journal > Map, you land NOT where you're
+actually located when you go back to map, which shouldn't happen."*
+
+Driven on the device rather than reasoned about, on this branch, with a fix at 37.7599, −122.4148.
+
+**As worded it does not reproduce.** Map → Journal → Map with the camera untouched lands on Folsom &
+9th with the reader's dot dead centre and the control reading `Centred on you`. You land exactly where
+you are located, which is what the ticket asks for.
+
+**What does reproduce is the opposite, and it is worse.** Pan the map away first — south to Folsom &
+20th, the dot off screen, the control correctly reading `Not centred` — then Journal, then Map. The
+map is back on the reader, dot dead centre, and **the pan is gone**.
+
+That is #85's shape returning through a door #85 did not close: "the map snaps back to your location
+and cannot be panned away". The mechanism is not the `@State` discard this entry is about, so
+`echo(_:)` does not fix it and was not expected to.
+
+Two things are true and only one of them is the cause. A pan is a *gesture*: it moves `MKMapView`'s
+camera and mints no `MapCameraRequest`, so `MapHomeView.position` still holds the last request the app
+made and the reader's pan is never represented in any value that survives the tab. That is the
+standing hazard. But the thing that actually re-aims the camera is simpler and is exactly what the
+guard rail names: **`hasCentredOnUser` is `@State` on a tab root that SwiftUI rebuilds**, so returning
+to the tab resets the one-shot, `.task` runs `centreOnUserIfNeeded()` again, it finds a fix, and it
+mints a *fresh* fly-to. The map re-centres on every appearance. `#85` closed that for later fixes
+arriving within one visit; it did not close it for a second visit.
+
+Both readings agree the view's state was rebuilt, which is what the observation shows; whoever fixes
+it should confirm which of the two drives the camera before choosing where to put the flag.
+
+**It is almost certainly not this branch's.** On main, `makeUIView` called
+`setRegion(position.region, animated: false)` on the same stale request for the same reason. This was
+**not** verified by running main — it is read off the two versions of the file, and should be treated
+as inference until somebody runs it.
+
+Recorded and not fixed here. The fix is a real design decision — what a fresh map view owes a request
+it has never applied but that has already been superseded by a gesture — and it interacts directly
+with E140's ticket rule and with #85. It should not be bolted onto a merge about the opening camera.
+
+---
+
+#### The suite, on merged main, at the end of this round
+
+iPhone 16 Pro, private derived data, location granted with a fix at 37.7599, −122.4148.
+
+    Test run with 899 tests in 85 suites passed after 101.468 seconds
+    Executed 42 tests, with 1 test skipped and 2 failures in 411.356 seconds
+
+The unit suite is clean — no issues at all, #123's `VisitCameraSessionTests` red having landed on main
+as E171.
+
+**The one skip is structural and cannot be fixed in the test.**
+`MapRecentreUITests.testPressingItWithLocationDeniedExplainsRatherThanDoingNothing` needs location
+*denied*; `MapCentredStateUITests` and `MapSearchUITests` need it *granted with a fix*. Both are set
+outside the test process by `simctl privacy`, so one invocation on one simulator can exercise the
+granted paths or the refused one, never both. Whichever way the machine is set, something skips and
+the run is still green. The fix belongs to how the suite is invoked — a second pass with location
+revoked and `-only-testing` on the refusal tests — not to any file in it. Worth knowing before
+trusting a green here, and worth knowing that three UI test files each document a *different*
+`simctl location` in their own headers (37.7599,−122.4148; 37.78485,−122.4215; and, implicitly,
+`MapLayout.defaultCentre`), so no single device fix satisfies all of them.
+
+**The two failures share one cause and it is not the camera.** Both are XCUITest refusing to resolve
+hittability of a map pin:
+
+    Failed to determine hittability of "City tree, Southern Magnolia" Button:
+    Activation point invalid and no suggested hit points based on element frame
+
+They are `AccessibilityTreeTests.testNoUnlabelledButtonsOnLaunch` and
+`DeepLinkVoiceOverTests.testPinAdjust`, and both reach it through a helper that walks every button on
+screen and asks `isHittable`. It is **intermittent**: across three clean runs on this branch the first
+of them failed, passed, and failed. Whether it predates this branch was **not established** — it would
+take a run on main with the same device fix, which was not done. What can be said is that #115 working
+changes what that helper walks: the map now opens on the reader's own street with a screenful of pins
+rather than on a park with almost none, so a walk over ~290 annotation views is now the normal case
+rather than the rare one. That makes this branch a plausible aggravator of a pre-existing fragility,
+and an implausible cause of a new one.
+
+---
+
+#### #100 was not the defect it was reported as
+
+Reported as: the recentre control's accessibility state does not track whether the map is centred, so
+VoiceOver announces the wrong thing.
+
+Measured first, before changing anything. `MapCentredStateUITests.testTheControlSaysCentredOnceTheMapIsOnYou`
+— launch, press the control, poll the spoken value — **passed on unmodified code**, so the pure
+decision `MapRecentre.engagement(availability:camera:)` was never the fault. The reported defect, as
+worded, does not exist.
+
+But the conclusion first drawn from that green — "the wiring from `MKMapView`'s settle through
+`MapHomeView.region` to `MapRecentre.engagement` was intact" — is **wrong, and it is wrong in the
+direction that matters.** The wiring was severed; the press is simply the one path that survives it.
+A press produces a real animated flight, its settle arrives outside the SwiftUI update pass, and the
+write lands. Every camera the *app* sets on its own — the opening one, the fly-to-you — is applied
+from inside `updateUIView`, and those writes were being discarded. So the control's spoken value was
+false for the entire life of every launch nobody touched, and pressing it repaired the value as a side
+effect of repairing the camera.
+
+That is why `AlmanacGroupTapTests` could record `Not centred` for a 39-second run *and* a screenshot of
+that same launch with the dot in the middle of the screen. Both observations were correct and they
+were not in tension: the picture came from `MKMapView`, the sentence came from the app's discarded
+copy of it. `Not centred` was not "a true statement about a map that had never moved" — the map had
+moved, and the sentence was simply false.
+
+So #100 as filed is one symptom of #115's second defect (E168), and fixing that fixes it. The witness
+is `MapCentredStateUITests.testTheMapOpensOnTheReaderWithoutBeingAsked`, and the break table above
+shows it going red with exactly the reported words while the pressed test stays green.
+
+What was genuinely wrong is narrower and is still an accessibility defect. `Engagement` had three
+cases and `away` carried all of "I know where you are and the map is not there", "nobody has answered
+the permission ask" and "I am still looking" — and `MapRecentreCopy.value` spoke one word over all
+three: `Not centred`. For a sighted reader that is a caption on a picture they can also see. For a
+VoiceOver reader it is the *entire* report on where the map is, and in two of the three states it
+describes a relationship that does not exist: there is no "centred" to be short of, because the app
+does not know where the reader is, and pressing will not move the camera at all — it will raise a
+permission sheet, or promise a move later.
+
+So it is E126 arriving at the one control whose whole purpose is that no press is ever silent, and the
+fix is five cases where there were three: `centred`, `away`, `askable`, `searching`, `unavailable`,
+each with its own spoken value and its own hint about what the press will do. The *drawing* is
+unchanged — `askable` and `searching` still look exactly like `away` did, because a control that
+changed colour while CoreLocation thought about it would be flicker with no information in it, and
+only `unavailable` is struck through. `engagementTracksThePress` holds the shape: every availability
+that presses differently now describes itself differently.
+
 ### E169 — The seed said "empty planting site" where the source said nothing, and nobody could count it
 
 `Tools/build_seed.py` decided what every record in the corpus *was* with one line:
@@ -8731,3 +9136,287 @@ numeric expression. Bind the expected value to a `CGFloat` first, or write both 
 comparison you read is not the comparison the macro compiles.
 
 Related: E162, which is the well's own defect and the reason this test exists; ticket #113.
+
+### E172 — The survey that had to ask each city what its own numbering means
+
+     parallel agent. Written for #107, the survey half. -->
+
+### California's other tree inventories, surveyed — and what the contract yields from each
+
+E169 left #107 with a question it could not answer from San Francisco: *which city next, and does
+the contract carry a genuinely foreign inventory without being widened for it?* Eight California
+inventories were probed through their own APIs on **2026-07-31**, 195 requests in total, every
+response cached under `Fixtures/raw/ca_survey/` and every request logged, so the count is read off a
+file. Nothing was bulk-downloaded and nothing was fetched from behind a login or a click-through
+licence, because nothing found required one.
+
+**The recommendation is San Jose**, and the reason is not its size.
+
+**Only one of the eight publishes a field that says what a record is.** San Jose's Street Tree layer
+carries `VACANTSITE` — `Yes`/`No`, 344,879 rows, null on 680. E169's finding was that until the
+contract existed there was no field anywhere in the ingest in which a source could state this, so
+`build_seed.py` inferred it from a missing species. Against San Jose that inference is reached by
+**61 rows of 344,879 — 0.018% of the corpus**, against **1,777 of the 195,309-row `--source datasf`
+corpus (E11) — 0.91%**. The shipped seed is `--source city`, whose split between stated and inferred
+E169 records as not measured, so no figure for it is quoted. For Los Angeles, Sacramento, Santa
+Monica, Oakland, San Mateo and Long Beach the
+inference would be reached by *every record*, because none of them publishes a vacancy or site
+concept at all.
+
+**Three sources publish a licence that is a grant; two publish a disclaimer or nothing.** Measured
+from each publisher's own metadata:
+
+- **San Jose — CC-BY.** `license_id: cc-by` on the city's CKAN package `street-tree`,
+  `metadata_modified` 2026-07-24.
+- **Oakland — CC0 1.0**, and the dataset's `rowsUpdatedAt` is **2013-01-22**. Eight fields, no id but
+  a row number, no DBH, no date.
+- **Long Beach — CC BY 4.0**, and **1,728 rows**: trees planted since September 2018 under one CAL
+  FIRE grant. A grant deliverable, not a city inventory.
+- **Santa Monica — ODC-BY-1.0**, 40,966 rows.
+- **Sacramento** states *"provided as a public service and for general informational purposes only"*
+  — a disclaimer, not a licence.
+- **Los Angeles** and **San Mateo** state nothing at all: empty `licenseInfo`, empty `copyrightText`.
+
+**Two findings that stop a source rather than rank it.**
+
+*Berkeley could not be verified.* `data.cityofberkeley.info` returns **HTTP 403** to every automated
+request made here — metadata, count, sample, and the landing page. Berkeley's `City Trees` is
+described as covering trees, planting sites **and stumps**, which is all three of the contract's
+kinds, and it may be the best fit in the state. **It is recorded as unverified. It is not recorded
+as permissive.**
+
+*Santa Monica's API serves placeholder rows before it serves real ones.* At offset 0 the CKAN
+datastore returns records with `_id: 0`, `name_botanical: "ncMUFCMU"` and coordinates
+`39.7817, -89.6501` — **Springfield, Illinois**. At offsets 5,000 and 30,000 the same resource
+returns plausible Santa Monica data. `total` reads 40,966 throughout. Observed, not explained. An
+ingest that read the first page and stopped would ship Illinois.
+
+*San Diego publishes no tree inventory.* Its open-data portal lists 115 datasets and none concerns
+trees.
+
+**Two sources publish DBH and neither publishes a measurement.** Sacramento's `DBH` is a string
+range spelled two ways in the same column — `13 - 24` and `19 to 24` — and Santa Monica's is
+`dbh_min`/`dbh_max`. `InventoryRecord.dbh_in` means inches somebody measured, so the contract yields
+**NULL for all 112,814 Sacramento rows and all 40,966 Santa Monica rows**, and there is no honest way
+around it. San Jose's `TRUNKDIAM` is a double in inches and is the only one that survives.
+
+**Los Angeles is the largest and would add 635,558 trees of unknown species.** Its open layer
+publishes six fields: an id, a type, a tooltip, a URL. `Species: Not Specified` on every sampled row.
+The species exist behind per-tree NavigateLA report pages — 635,558 requests against somebody else's
+server, which is not a thing to do.
+
+### The contract carried a foreign inventory without being widened, and the proof is 29 real rows
+
+`SanJoseStreetTreeAdapter` and `Tools/test_ca_inventory_adapter.py` are new;
+`Tools/inventory_contract.py` gains one `IdSpace` line and one `Inventory` line and nothing else.
+`Tools/test_inventory_contract.py` still reports **114 checks passed, 0 failed** with San Jose
+registered.
+
+The adapter reads `NAMESCIENTIFIC` straight into `scientific_name`. There is no `::` in it, it does
+not import `parse_qspecies`, and it never touches `PLACEHOLDER_SPECIES` — which is exactly what
+`SFCityLayerAdapter.species_of`'s docstring promised the third source would be able to do, now
+demonstrated rather than asserted.
+
+Three of San Jose's own conventions would otherwise have produced records the contract refuses:
+
+- **72,142 rows carry `TRUNKDIAM = 0`.** `validate()` refuses a non-positive `dbh_in`, so until the
+  adapter resolved the sentinel this was a hard failure, not a wrong number. Only 2,701 of those
+  rows are `VACANTSITE = 'No'`.
+- **72,995 rows carry the literal string `Vacant site` (71,590) or `Vacant Site` (1,405) in the
+  scientific-name field.** Two spellings, one fact. A rule keyed on the literal string mints a
+  species called `Vacant Site` for 1,405 planting sites — #103's mechanism exactly.
+- **4,513 rows say `Unknown`.** Treated as a placeholder it deletes 4,513 trees from the map;
+  minted as a species it puts `Unknown` in the field guide. R18 already settled it: a tree of
+  unknown species is a tree.
+
+**Where San Jose disagrees with itself, the adapter picks the field whose only meaning is vacancy
+and counts the disagreement** rather than resolving it silently: **611** vacant sites that name a
+real taxon, **3,666** vacant sites carrying a positive trunk diameter, **82** rows saying
+`Vacant site` under `VACANTSITE = 'No'`, and **61** rows where the source said nothing in either
+field. All four counts are measured against the live layer.
+
+### Two of the new tests did not notice the adapter being broken
+
+Ten deliberate regressions were applied one at a time and the suite was required to go red for each.
+**Eight did. Two did not, and both were fixture gaps rather than assertion gaps.**
+
+- **The vacancy vocabulary could be keyed on the wrong case with the suite green**, because every
+  vacancy row in the fixture was *also* flagged `VACANTSITE = 'Yes'` — the flag reached the answer
+  first and the vocabulary was never consulted. The 82-row case where the flag says occupied and the
+  species field says vacant is the only case the vocabulary decides, and it was missing.
+- **The trailing-space rule could be deleted with the suite green**, because querying the layer for
+  `NAMESCIENTIFIC = 'Ulmus '` returns rows holding `Ulmus`: trailing spaces are insignificant to SQL
+  comparison, so the obvious query built a fixture that made the test pass **without ever containing
+  the case**. Re-fetched with `LIKE 'Ulmus_'`, and the test now asserts on the raw fixture value as
+  well as the parsed one so the case cannot be lost again silently.
+
+After both fixes all ten go red. 563 checks pass over 29 rows taken verbatim off the layer, one
+query per case the adapter has a rule for.
+
+### The two schema blockers, now stated as the constraints they must become
+
+E169 reproduced both. Neither is changed here — `AppSchema` is at v13 and a migration is a
+build-and-test job — but the survey settles what they should become, because the id-space answer is
+now known for a real second city.
+
+**`trees.external_ref INTEGER UNIQUE`** must become `external_ref TEXT NOT NULL` beside a new
+`id_space TEXT NOT NULL`, with the uniqueness moved to `UNIQUE (id_space, external_ref)`. **Text,
+not integer**: `source_ref` is defined as the source's own id verbatim as a string, and nothing
+guarantees the third city's is numeric. Storing the qualified seed string `us-ca-sj:3` in one column
+is the alternative and is worse — it makes "which space is this row in" a parse rather than a column.
+
+**`CHECK (inventory_source IN ('city','datasf'))`** must become `CHECK (inventory_source <> '')`
+plus a foreign key into a new `inventories` table that `build_seed.py` writes from `INVENTORIES` for
+exactly the inventories that contributed rows. A hardcoded list is the wrong instrument for "the
+receipt can describe this inventory": every new city would edit the schema. In the same pass, `city`
+should be renamed `sf_city` — E169 already says it is a poor identifier once there is more than one
+city, and the rename touches a stored value so it belongs in a migration and not before one.
+
+**No Swift change is needed for either**, which E169 established and this survey did not disturb.
+`CypressTests/InventoryContractTests.swift` should pass unchanged for a second city; **that was not
+verified here, because building and the simulator were out of scope for this task**, and if it does
+not pass it has found something real.
+
+### E173 — The delete shipped on one screen and the gesture people make led away from it
+
+
+The report, walking the app:
+
+> Not sure if the feature to delete photos is still tbd, but I don't see that option, so hopefully
+> it's tbd rather than 'shipped' but not actually.
+
+#78 is COMPLETED and it is genuinely complete. **The control exists, works, and is reachable — and
+it is not on the screen the gesture takes you to.** This is the third of the four things that report
+could have been, and it is a defect rather than a misreading.
+
+#### What was observed, before any code was read
+
+Booted the simulator, installed a build from this worktree, and drove it. On `photoHero` — screen 03
+over a tree with three photographs — the delete is exactly where E147 put it: screen 20, one amber
+trash glyph per row, beside the two thumbs. It opens a confirmation naming the consequence, the verb
+is on the button, and it works. E147's walkthrough was accurate and its tests were honest.
+
+Then the other tap. **Tapping the photograph opens `PhotoViewerView`, which had no delete on it and
+no route onward.** One photograph, full-frame, named in its own caption, with a close button in the
+corner and nothing else. Somebody who taps their photograph in order to do something to it arrives
+at a screen whose entire vocabulary is *look, then close*, and the only correct conclusion from
+inside that screen is that the feature does not exist.
+
+Both doors into the viewer are like this: the hero on 03 (`TreeProfileView.hero`) and a row on
+screen 20 (`TreePhotosView.card`). So a person who is already standing on the surface that has the
+delete, and taps the picture to see it properly before deciding, loses the control by looking closer.
+
+#### Why the reasoning that excluded it was right about the hero and wrong about the viewer
+
+E147 wrote down its exclusion:
+
+> No delete affordance in the full-screen viewer or on the hero: screen 20 is the only surface that
+> shows a tree's photographs as a set with per-photograph controls, and a delete on the hero would
+> act on whichever photograph the rule happened to pick.
+
+The second clause is true, and it is the reason not to put a delete on the hero: the hero is
+whichever photograph `PhotoHero.choose` ranked first this frame, so a trash beside it is a control
+whose subject changes under a vote. **The viewer is the opposite case.** It is handed a `photoID`.
+It draws that photograph and no other, whole, with that photograph's own caption under it. There is
+no rule and nothing for it to pick. The sentence was carried from the hero to the viewer in the same
+breath, and the two were never the same screen.
+
+The other half is timing. `PhotoViewerView` is E142, and it exists because of an earlier field
+report — *"clicking on photo from tree page should show full view"*. E142 gave the photograph a tap,
+and in doing so made "tap the photograph" the app's answer to *act on this photograph*. E147 landed
+after it, and reasoned about the hero as though the tap still went nowhere.
+
+#### The pill is a caption, and that is the rest of the answer
+
+The one door to screen 20 is the hero's metadata pill, which reads `3 photos · since 2026`. It is a
+button and it says so to VoiceOver, and `HeroPhotoHeader` grew its target to 44 pt on purpose. But
+it is mono 10.5 in a translucent capsule in the corner of a photograph, which is the same treatment
+this app gives `Best photo · Oct 2025` two inches away — a label. Nothing about it reads *there are
+controls behind this*. So the delete sat behind a caption, one tap away from a screen whose obvious
+tap goes somewhere else, and the owner's summary of that arrangement is the correct one.
+
+#### The repair
+
+`Route.photoViewer` gains the tree id. That is not bookkeeping: ownership is a fact about a tree's
+photographs (`TreeProfile.deletablePhotoIDs`), so a viewer holding only a photograph's id **cannot
+ask whether the person looking at it may delete it** — which is the mechanical reason this screen
+could not have had the control when it was written. The route's own comment argues that it carries a
+caption rather than an id to avoid a second read that could disagree with what is on screen; that
+argument does not apply here, because this is not a word, it is the key the answer is read under.
+
+The viewer then drives **the same `TreePhotosModel`** screen 20 drives, rather than a model of its
+own. One implementation of "may this person delete this photograph, and what does removing it cost
+the tree" — the community-add sentence included — instead of two that can drift. The control is the
+same glyph in the same amber register opening the same confirmation with the same words, because a
+person who has seen one of these has seen both.
+
+Three smaller decisions, each with a reason:
+
+1. **Bottom-trailing, diagonally opposite `Close`.** The destructive control is as far as the screen
+   allows from the one that means *never mind*, and clear of the caption in the other corner.
+2. **The viewer closes on a successful delete.** Its subject no longer exists; staying would draw
+   *That photograph could not be opened* over the place it used to be, which reads as a failure
+   rather than as the thing that was just asked for. The surface underneath re-reads itself — which
+   is E127, and which E147's own harness defect was about.
+3. **The failure is drawn over the photograph.** `TreePhotosModel.deleteError` must never be silent;
+   here there is no list to put it above, and the photograph still being there is half the message.
+
+#### The test, and how it was made to fail
+
+`CypressUITests/PhotoDeletionReachabilityTests` — and it is a **UI test on purpose**. Every unit test
+in `PhotoDeletionTests` passed throughout this defect and would have gone on passing: they assert
+that `deletePhoto` removes a row and a file, which was always true. Nothing asserted that a person
+holding the phone could get to it. A unit test on a presentation helper would have repeated exactly
+the mistake that closed #78 green.
+
+It drives the reported path. `communityPhotos` — the deep link E147 built precisely to have its
+photograph deleted, on its own tree — then tap the hero photograph, then assert the delete is in the
+tree, is hittable, opens a confirmation, and that taking the confirmation leaves the tree cold. It
+does not stop at `isHittable`: this project has shipped a control that reported `true` and that no
+finger could press, so the control is *used* and the surface underneath is read.
+
+Made to fail on purpose by deleting the one overlay line that draws the control — which restores the
+defect exactly as it stood, since nothing else about the deletion changed. Both cases went red, on
+their own sentences:
+
+```
+PhotoDeletionReachabilityTests.swift:47: error: testTheHeroPhotographReachesADeleteThatWorks :
+  XCTAssertTrue failed - the viewer opened over a photograph this device owns and offered no way
+  to delete it — which is the whole of the owner's report on #78
+PhotoDeletionReachabilityTests.swift:110: error: testAPhotographOpenedFromTheBrowserReachesTheSameDelete :
+  XCTAssertTrue failed - the browser's own row opened a viewer with no delete on it, so looking
+  closer at a photograph costs you the controls for it
+     Executed 2 tests, with 4 failures (0 unexpected) in 29.254 seconds
+```
+
+The line restored, both green:
+
+```
+Test Case 'testAPhotographOpenedFromTheBrowserReachesTheSameDelete' passed (12.789 seconds).
+Test Case 'testTheHeroPhotographReachesADeleteThatWorks' passed (11.538 seconds).
+     Executed 2 tests, with 0 failures (0 unexpected) in 24.327 seconds
+```
+
+#### What was not built, and one thing seen in passing
+
+The pill's own discoverability is untouched. It is now a second way to the same control rather than
+the only way, which is the part of this that mattered; whether a mono-10.5 capsule over a photograph
+should look like a door at all is a design question and not this entry's.
+
+**The silent case is still silent, and it is now silent in two places.** An anonymised photograph —
+one whose contributor left through the door that keeps their work — is still *shown*, correctly, and
+has no delete on it, correctly. What neither screen 20 nor the viewer does is **say so**. The row
+simply has one fewer control than the row above it, and the viewer simply has an empty corner. E126
+requires a screen with nothing on it to say why, and the same logic covers an action that is absent
+for a reason; "this photograph's contributor has left, and it is nobody's to remove" is a sentence
+this app would normally write. It is deliberately not written here because it is a different defect
+from the reported one and wants its own entry and its own copy — the state is reachable (sign in,
+contribute, delete the account keeping the work), it is rare, and inventing the sentence in passing
+is how copy gets written that nobody has read against the screen.
+
+Seen while reading, and not fixed here: `TreePhotosModel.load` filters `profile.photos.items`, which
+`LocalAPI` already narrows to what this installation wrote, while the hero pill's count comes from
+the tree's whole photo count. On a tree carrying photographs from other people the pill would say
+`214 photos` and screen 20 would draw its empty state. Nothing syncs anybody else's photographs down
+today, so the two cannot disagree yet and this is latent rather than live — but it is the shape E126
+is about, and it becomes real the day the service exists.

@@ -176,9 +176,19 @@ enum MapLocationCopy {
         availability == .servicesOff ? "Location Services are off" : "Location is off"
     }
 
-    static let message =
+    /// **Now it also names the place the reader is looking at instead** (#115, ERRATA E126).
+    ///
+    /// The first clause was already honest about the absence. It said nothing about the *presence* of
+    /// a particular stretch of San Francisco, which is the half of the screen the reader can actually
+    /// see — and once the map opens on a remembered camera rather than always on the same park, which
+    /// stretch it is became a fact worth stating rather than a constant nobody could be told about.
+    ///
+    /// The `The map still works` opening is load-bearing: `MapRecentreUITests` reads it as the
+    /// black-box witness that this simulator has location denied.
+    static func message(_ showing: MapOpening.Showing) -> String {
         "The map still works—it just cannot show where you are, or work out which tree you are "
-        + "standing in front of."
+            + "standing in front of. " + MapOpeningCopy.showing(showing)
+    }
 }
 
 // MARK: - Recentre
@@ -228,7 +238,10 @@ struct MapRecentreButton: View {
     private var tint: Color {
         switch engagement {
         case .centred: return CypressColor.ctaLabel
-        case .away: return CypressColor.ctaFill
+        // `askable` and `searching` draw exactly as `away` did when all three were one case (#100).
+        // The words told the reader apart; the picture never claimed to, and a control that changed
+        // colour while CoreLocation thought about it would be flicker with no information in it.
+        case .away, .askable, .searching: return CypressColor.ctaFill
         // Struck through *and* muted. Either alone reads as a disabled control, which this is not —
         // it is a control that answers with words instead of with the camera.
         case .unavailable: return CypressColor.textMuted

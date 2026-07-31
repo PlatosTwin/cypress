@@ -270,12 +270,18 @@ struct RootView: View {
                 onOpenGrove: { router.goToTab(.grove) }
             )
 
-        case let .photoViewer(id, caption):
+        case let .photoViewer(id, caption, treeID):
             // One photograph, whole. Presented rather than pushed for the reason `PhotoViewerView`
             // sets out: it is a closer look at what is already on screen, not a place in the app.
+            //
+            // It gets the api for the reason ERRATA E173 sets out: looking at a photograph and being
+            // allowed to unmake it are two questions, and until this line the viewer could not ask
+            // the second one.
             PhotoViewerView(
                 photoID: id,
                 caption: caption,
+                treeID: treeID,
+                api: data.api,
                 onClose: { router.sheet = nil }
             )
 

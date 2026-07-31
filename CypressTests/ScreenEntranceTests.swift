@@ -203,7 +203,7 @@ struct ScreenEntranceTests {
         .site(treeID),
         .pinSet(pinSet),
         .accountAsk,
-        .photoViewer(id: treeID, caption: "Full tree · 12 Oct 2025"),
+        .photoViewer(id: treeID, caption: "Full tree · 12 Oct 2025", treeID: treeID),
     ]
 
     /// A group of nine, as screen 12's coverage CTA hands one over (ERRATA E129).

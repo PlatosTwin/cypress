@@ -200,6 +200,21 @@ ID_SPACES = {
             "collision to fix. New spaces MUST declare a non-empty prefix."
         ),
     ),
+    "us-ca-sj": IdSpace(
+        id="us-ca-sj",
+        identity_prefix="us-ca-sj:",
+        note=(
+            "City of San Jose. The numbering is FACILITYID on the Street Tree layer -- Esri's "
+            "Local Government Information Model asset id, which is the id the city's own asset "
+            "records are keyed on. Measured against the live layer on 2026-07-31: 344,879 rows, "
+            "344,879 distinct FACILITYID, zero null, and no ':' in any of the 1,000 sampled. "
+            "It is its own space and shares no numbering with San Francisco: SF's TreeID is a "
+            "different city's asset id that happens to also be small integers, which is exactly "
+            "the collision the prefix exists to prevent. NOT keyed on DAVEYID (the contractor's "
+            "survey-event id, 'MB 20140207121505' -- an id for the visit, not for the site) and "
+            "NOT on OBJECTID (the feature service's row number, which moves on republish)."
+        ),
+    ),
 }
 
 
@@ -232,6 +247,15 @@ INVENTORIES = {
         id_space="sf",
         name="DataSF Street Tree List",
         url="https://data.sfgov.org/api/views/tkzw-k3nq/rows.csv?accessType=DOWNLOAD",
+    ),
+    "sj_street_tree": Inventory(
+        id="sj_street_tree",
+        id_space="us-ca-sj",
+        name="City of San Jose Street Tree inventory",
+        url=(
+            "https://geo.sanjoseca.gov/server/rest/services/OPN/OPN_OpenDataService/"
+            "MapServer/510"
+        ),
     ),
 }
 
