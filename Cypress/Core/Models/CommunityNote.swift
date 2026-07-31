@@ -78,6 +78,37 @@ public struct ReviewFlag: CoreEntity, SoftDeletable {
         /// Opened by the weekly city diff when a row leaves the source but the tree has recent
         /// community activity (BUILD-PLAN §7). Not in the §4 list; §7 names it explicitly.
         case removedButActive = "removed_but_active"
+
+        /// The `TreeStatus` a confirmation of this flag writes, or nil for a kind that is not a
+        /// status claim at all.
+        ///
+        /// **This is the seam that makes the review queue kind-agnostic** (ERRATA E170). It used to
+        /// be a literal `.removed` inside `LocalAPI.confirmRemoval`, which is why `appears_dead` was
+        /// raisable from screen 05 and resolvable by nothing: the raise switched over both cases and
+        /// the resolve hard-coded one. Both sides now read the same exhaustive switch, so a kind that
+        /// can be raised as a status claim and not confirmed is a compile error rather than a flag
+        /// that sits open forever.
+        ///
+        /// `duplicateSuspected` and `wrongSpecies` are nil because neither is a statement about
+        /// whether the tree is alive — they are corrections to the record, and confirming one must
+        /// not move `trees.status`. `removedButActive` is nil for a sharper reason: the weekly diff
+        /// opens it precisely *because* the city and the community disagree, and the whole point is
+        /// that a person looks rather than a status being written (BUILD-PLAN §7).
+        public var confirmedStatus: TreeStatus? {
+            switch self {
+            case .appearsRemoved: return .removed
+            case .appearsDead: return .deadReported
+            case .duplicateSuspected, .wrongSpecies, .removedButActive: return nil
+            }
+        }
+
+        /// The kinds a lead's queue serves: exactly those a confirm can resolve into a status.
+        ///
+        /// Derived rather than listed, so the queue cannot drift out of step with `confirmedStatus`
+        /// the way it did before E170.
+        public static var statusReviewKinds: [Kind] {
+            allCases.filter { $0.confirmedStatus != nil }
+        }
     }
 
     public enum Status: String, Codable, Sendable, Hashable, CaseIterable {

@@ -188,6 +188,20 @@ struct TreeProfileView: View {
 
                 identityBlock(presentation)
 
+                if let notice = presentation.deadNotice {
+                    // Above the recognition tip and above the CTA, because it changes how everything
+                    // under it should be read (ERRATA E170). `.memorial` is the Callout style screen
+                    // 19 uses for the same job — saying what state a record is in — and this is the
+                    // other status that needs saying. The buttons below stay live; see `deadNotice`.
+                    Callout(
+                        " " + notice,
+                        style: .memorial,
+                        leadIn: TreeProfilePresentation.deadNoticeLeadIn
+                    )
+                    .padding(.horizontal, CypressSpacing.gutter)
+                    .padding(.top, TreeProfileMetrics.blockGap)
+                }
+
                 if let tip = presentation.recognitionTip {
                     // C14. Absent when the species has no authored tip — no botany is invented to
                     // fill the box (BUILD-PLAN §15).

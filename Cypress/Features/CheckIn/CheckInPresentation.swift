@@ -176,6 +176,44 @@ enum CheckInCopy {
         counts.
         """
 
+    // MARK: Where a flagged status goes (ERRATA E170)
+
+    /// **NOT SPECIFIED.** SCREENS.md 05 draws four segments and promises nothing about any of them.
+    ///
+    /// Two of them are not observations, they are reports: `Appears dead` and `Removed?` open a
+    /// `review_flags` row that a community reviewer confirms before the tree's status moves. Until
+    /// now the card said nothing at all about that, so the only two segments with a consequence
+    /// outside this phone looked exactly like the two without one.
+    ///
+    /// **The sentence names a community reviewer and says the city is not notified.** Nothing in this
+    /// app notifies San Francisco; DECISIONS §3.3 forbids "sent to the city" copy, and RULINGS R12
+    /// exists because that gap was noticed once already. The temptation is real here — a person
+    /// reporting a dead tree is reasonably hoping somebody official will come — so the screen says the
+    /// true thing at the moment the hope forms rather than leaving it to be inferred.
+    ///
+    /// The register is `AccountAskCopy.noticeUnavailable`'s: name what is true today, then end on the
+    /// plain limit. Drawn only under the two segments it is about (`ObservationStatus.opensReviewFlag`),
+    /// because a permanent line about flags on a card whose default is `Alive` is noise that gets read
+    /// past — and the point is that it gets read.
+    static let reviewNotice = "This goes to a community reviewer to confirm. The city is not notified."
+
+    /// The dialog `opensReviewFlag` was written for, one tap before the claim is made.
+    static func reviewConfirmTitle(for status: ObservationStatus) -> String {
+        switch status {
+        case .appearsDead: return "Report this tree as dead?"
+        case .appearsRemoved: return "Report this tree as gone?"
+        case .alive, .declining: return ""
+        }
+    }
+
+    /// Says what the report is and what it is not, and stops. It does not warn or scold: a contributor
+    /// standing in front of a dead tree is doing the right thing, and the dialog exists to make sure
+    /// they meant this segment rather than the one above it.
+    static let reviewConfirmMessage = "A community reviewer checks this before the tree's status changes. Nothing is sent to the city."
+
+    static let reviewConfirmAction = "Report it"
+    static let reviewCancel = "Cancel"
+
     /// The failed-save line. **NOT SPECIFIED** by SCREENS.md 05, which draws no error state.
     /// It never claims a save that did not happen (DECISIONS constraint 3's principle).
     static let saveFailed = "This check-in was not saved. Try again."

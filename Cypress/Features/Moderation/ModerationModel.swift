@@ -29,15 +29,16 @@ final class ModerationModel {
     /// behind it (`ModerationModel(api: nil)`) — which draws exactly the You tab a non-lead sees.
     private let api: LocalAPI?
 
-    /// Whether the signed-in account may confirm a removal (`UserRole.canConfirmReviewFlag`). The You
+    /// Whether the signed-in account may resolve a review (`UserRole.canConfirmReviewFlag`). The You
     /// tab shows the whole section only when this is true, so a non-lead never sees the queue — but
-    /// the authority that actually protects a tree is on the write (`LocalAPI.confirmRemoval`), not
-    /// on this flag.
+    /// the authority that actually protects a tree is on the write (`LocalAPI.confirmReview` and
+    /// `dismissReview`), not on this flag.
     private(set) var canModerate = false
 
-    /// The open `appears_removed` reviews, newest first. Empty is a real, common state — nothing has
-    /// been reported removed — and reads as "nothing to confirm", not as a failure.
-    private(set) var items: [RemovalReviewItem] = []
+    /// The open status reviews, newest first, of every kind a confirm can resolve — `appears_removed`
+    /// and `appears_dead` (ERRATA E170). Empty is a real, common state and reads as "nothing to
+    /// review", not as a failure.
+    private(set) var items: [ReviewQueueItem] = []
 
     private(set) var isBusy = false
 
@@ -58,16 +59,27 @@ final class ModerationModel {
             items = []
             return
         }
-        items = (try? await api.openRemovalReviews()) ?? []
+        items = (try? await api.openReviews()) ?? []
     }
 
-    /// Confirm one review. The tree becomes a memorial and the flag closes; then the queue reloads,
-    /// so the confirmed row leaves the list and the map's next read shows the memorial pin.
-    func confirm(_ item: RemovalReviewItem) async {
+    /// Confirm one review. The tree takes the status the flag's kind resolves to and the flag closes;
+    /// then the queue reloads, so the resolved row leaves the list and the map's next read shows it.
+    func confirm(_ item: ReviewQueueItem) async {
         guard let api, !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
-        try? await api.confirmRemoval(flagID: item.flagID)
+        try? await api.confirmReview(flagID: item.flagID)
+        await load()
+    }
+
+    /// Dismiss one review: the flag closes and **the tree does not move** (ERRATA E170). The second
+    /// verb the queue never had — before this, a lead who thought a report was wrong could only leave
+    /// it open, and the list only ever grew in the direction of agreeing.
+    func dismiss(_ item: ReviewQueueItem) async {
+        guard let api, !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
+        try? await api.dismissReview(flagID: item.flagID)
         await load()
     }
 

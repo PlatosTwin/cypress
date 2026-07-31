@@ -1334,16 +1334,26 @@ public actor LocalAPI: CypressAPI {
         try await store.setAppState(.currentUserRole, to: role.rawValue)
     }
 
-    /// The open `appears_removed` flags a lead has to act on, resolved for display: each tree's name
-    /// (active name, else species common name), address and coordinate, newest concern first.
+    /// The open status-review flags a lead has to act on, resolved for display: what was reported,
+    /// each tree's name (active name, else species common name), address and coordinate, newest
+    /// concern first.
+    ///
+    /// **Every kind a confirm can resolve, not one** (ERRATA E170). This read used to name
+    /// `.appearsRemoved` in its own body while screen 05 raised `.appearsDead` beside it with an
+    /// identical affordance, so half of what the check-in card offered to report landed in
+    /// `review_flags` and was never shown to anybody again. The list comes from
+    /// `ReviewFlag.Kind.statusReviewKinds`, which is derived from the same switch the confirm uses.
     ///
     /// A read, so it is ungated — a non-lead simply never reaches the surface that calls it (the You
     /// tab shows the section only when `userRole.canConfirmReviewFlag`). The *write* is what carries
-    /// the authority check; see `confirmRemoval`.
-    public func openRemovalReviews() async throws -> [RemovalReviewItem] {
-        try await store.queue.read { connection -> [RemovalReviewItem] in
-            let flags = try contributions.openReviewFlags(kind: .appearsRemoved, connection: connection)
-            return try flags.compactMap { flag -> RemovalReviewItem? in
+    /// the authority check; see `confirmReview` and `dismissReview`.
+    public func openReviews() async throws -> [ReviewQueueItem] {
+        try await store.queue.read { connection -> [ReviewQueueItem] in
+            let flags = try contributions.openReviewFlags(
+                kinds: ReviewFlag.Kind.statusReviewKinds,
+                connection: connection
+            )
+            return try flags.compactMap { flag -> ReviewQueueItem? in
                 // The tree may be a seed row or a community add; resolve through the same two-step the
                 // profile uses. A flag whose tree cannot be found is skipped rather than shown nameless.
                 let record = try treeQueries?.tree(id: flag.treeID, connection: connection)
@@ -1357,9 +1367,10 @@ public actor LocalAPI: CypressAPI {
                         connection: connection
                     )?.commonName
                     ?? "This tree"
-                return RemovalReviewItem(
+                return ReviewQueueItem(
                     flagID: flag.id,
                     treeID: flag.treeID,
+                    kind: flag.kind,
                     treeName: name,
                     address: tree.address,
                     coordinate: tree.coordinate,
@@ -1369,16 +1380,31 @@ public actor LocalAPI: CypressAPI {
         }
     }
 
-    /// A lead confirms an `appears_removed` flag: the flag moves to `confirmed` and the tree gains a
-    /// local status override of `removed`, in one transaction (see `AppSchema.v7`). That is the whole
-    /// of what makes screen 19 reachable from real data — the map pin becomes a memorial and the
-    /// profile becomes a memorial record, because `mapContent` and `treeProfile` layer this override
-    /// over the inventory's status.
+    /// A lead confirms a status-review flag: the flag moves to `confirmed` and the tree gains a local
+    /// status override of whatever that kind resolves to, in one transaction (see `AppSchema.v7`).
+    ///
+    /// **The status comes from the flag, not from this method's name** (ERRATA E170). It used to be a
+    /// literal `.removed` under a `guard flag.kind == .appearsRemoved`, which is the whole of why
+    /// `appears_dead` was a flag nothing could ever resolve. `ReviewFlag.Kind.confirmedStatus` decides
+    /// now: `appears_removed` → `.removed`, `appears_dead` → `.deadReported`. No migration and no new
+    /// enum case were needed for the second one — `tree_status_overrides` carries any `TreeStatus`, and
+    /// `TreeStatus.deadReported` has existed since the type was written (`Tree.swift`).
+    ///
+    /// The two outcomes are not the same shape and must not be read as one. A confirmed removal makes
+    /// screen 19 reachable from real data — the map pin becomes a memorial and the profile becomes a
+    /// memorial record. A confirmed death makes neither: `deadReported.acceptsNewContributions` is
+    /// `true` on purpose, so the tree keeps its profile, its REPORT and CARE actions and its pin. A
+    /// dead street tree is still standing over a pavement, and reporting it is the most useful thing a
+    /// passer-by can do; a memorial page would take that button away.
+    ///
+    /// A kind with no `confirmedStatus` — `duplicate_suspected`, `wrong_species`, `removed_but_active`
+    /// — still throws `.validationFailed`. That is not a status claim, and confirming one must not
+    /// move a tree on grounds nobody made.
     ///
     /// Gated: only `userRole.canConfirmReviewFlag` (moderator, admin, coordinator) may confirm a flag
     /// into a status transition (DECISIONS §3.7). A `member` or `steward` gets `.forbidden` — the
     /// authority lives on the write, so even a surface shown in error cannot move a tree.
-    public func confirmRemoval(flagID: UUID) async throws {
+    public func confirmReview(flagID: UUID) async throws {
         guard userRole.canConfirmReviewFlag else { throw APIError.forbidden }
         let moment = now()
         let confirmer = userID
@@ -1387,15 +1413,13 @@ public actor LocalAPI: CypressAPI {
                   flag.deletedAt == nil else {
                 throw APIError.notFound
             }
-            // Only a removal flag becomes a removal. A confirm arriving for any other kind is a bug in
-            // the caller, not a silent status change on the wrong grounds.
-            guard flag.kind == .appearsRemoved else { throw APIError.validationFailed }
+            guard let status = flag.kind.confirmedStatus else { throw APIError.validationFailed }
             guard flag.status == .open else { throw APIError.conflict }
 
             try contributions.confirmReviewFlag(id: flagID, at: moment, connection: connection)
             try contributions.setStatusOverride(
                 treeID: flag.treeID,
-                status: .removed,
+                status: status,
                 setBy: confirmer,
                 at: moment,
                 connection: connection
@@ -1403,6 +1427,37 @@ public actor LocalAPI: CypressAPI {
         }
         // The map holds this table between writes; this is one of the two writes. See `overrideCache`.
         overrideCache = nil
+    }
+
+    /// A lead dismisses a status-review flag: the flag moves to `dismissed` and **nothing else
+    /// happens** (ERRATA E170).
+    ///
+    /// `ReviewFlag.Status.dismissed` has been in the model since it was written and no code path
+    /// wrote it, so a lead who thought a report was wrong had exactly one move available — leave it
+    /// open — and the queue accumulated reports that were never going to be confirmed. A queue whose
+    /// only verb is "agree" is not a review.
+    ///
+    /// **No status override, deliberately.** Dismissing says the reported change did not happen, and
+    /// the tree's status is already what it was; writing an override to say so would replace an
+    /// inventory value with a device-side row asserting the same thing, and `tree_status_overrides`
+    /// would start carrying rows that mean "somebody looked" rather than "this changed". The flag row
+    /// records who looked and when.
+    ///
+    /// Same gate as the confirm, and for the same reason: both are the resolution of somebody else's
+    /// report, and a `member` or `steward` gets `.forbidden` on the write itself.
+    public func dismissReview(flagID: UUID) async throws {
+        guard userRole.canConfirmReviewFlag else { throw APIError.forbidden }
+        let moment = now()
+        try await store.queue.write { connection in
+            guard let flag = try contributions.reviewFlag(id: flagID, connection: connection),
+                  flag.deletedAt == nil else {
+                throw APIError.notFound
+            }
+            guard flag.kind.confirmedStatus != nil else { throw APIError.validationFailed }
+            guard flag.status == .open else { throw APIError.conflict }
+
+            try contributions.dismissReviewFlag(id: flagID, at: moment, connection: connection)
+        }
     }
 
     #if DEBUG
@@ -1438,28 +1493,44 @@ public actor LocalAPI: CypressAPI {
         return tree.id
     }
 
-    /// Test seam (ERRATA E124-B): open a removal review on a real seed tree, returning its flag id, so
-    /// the deep-link harness can put the moderation surface in front of a screenshot with a genuine
-    /// record behind it. Inserts the same `appears_removed` flag a "Removed?" check-in would, without
-    /// the outbox round trip.
+    /// Test seam (ERRATA E170): read one flag back, including a resolved one.
+    ///
+    /// `openReviews` returns open flags only, so a dismissal is invisible through the shipping read —
+    /// which is exactly what a test of the dismissal must not accept as proof. "The row left the
+    /// queue" is also what a soft-delete, a lost write or a `notFound` would look like. This reads
+    /// the row and lets the test assert `.dismissed` rather than absence.
+    public func debugReviewFlag(id: UUID) async throws -> ReviewFlag? {
+        try await store.queue.read { connection in
+            try contributions.reviewFlag(id: id, connection: connection)
+        }
+    }
+
+    /// Test seam (ERRATA E124-B, widened by E170): open a status review of a given kind on a real seed
+    /// tree, returning its flag id, so the deep-link harness can put the moderation surface in front of
+    /// a screenshot with a genuine record behind it. Inserts the same flag a screen 05 check-in would,
+    /// without the outbox round trip.
+    ///
+    /// Takes the kind because the queue now serves two, and the two rows read differently — a
+    /// screenshot of a queue holding only removals would not show that.
     @discardableResult
-    public func debugSeedRemovalReview(treeID: UUID) async throws -> UUID {
+    public func debugSeedReview(treeID: UUID, kind: ReviewFlag.Kind = .appearsRemoved) async throws -> UUID {
         let moment = now()
-        let flag = ReviewFlag(treeID: treeID, kind: .appearsRemoved, raisedBy: nil, createdAt: moment, updatedAt: moment)
+        let flag = ReviewFlag(treeID: treeID, kind: kind, raisedBy: nil, createdAt: moment, updatedAt: moment)
         try await store.queue.write { connection in
             try contributions.insert(flag, connection: connection)
         }
         return flag.id
     }
 
-    /// Test seam (ERRATA E124-B): force a tree to a memorial by writing its status override directly,
-    /// so the harness can open screen 19 against a real seed record. The shipping path is
-    /// `confirmRemoval`, which requires a lead and an open flag; this skips both because the harness is
-    /// proving the *screen renders*, not the moderation gate — `ModerationTests` proves the gate.
-    public func debugMarkRemoved(treeID: UUID) async throws {
+    /// Test seam (ERRATA E124-B, widened by E170): force a tree to a status by writing its override
+    /// directly, so the harness can open screen 19 — or a confirmed-dead profile — against a real seed
+    /// record. The shipping path is `confirmReview`, which requires a lead and an open flag; this skips
+    /// both because the harness is proving the *screen renders*, not the moderation gate —
+    /// `ModerationTests` proves the gate.
+    public func debugMarkStatus(treeID: UUID, _ status: TreeStatus) async throws {
         let moment = now()
         try await store.queue.write { connection in
-            try contributions.setStatusOverride(treeID: treeID, status: .removed, setBy: nil, at: moment, connection: connection)
+            try contributions.setStatusOverride(treeID: treeID, status: status, setBy: nil, at: moment, connection: connection)
         }
         // The other write. See `overrideCache`.
         overrideCache = nil

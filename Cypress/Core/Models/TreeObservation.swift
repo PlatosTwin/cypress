@@ -14,6 +14,15 @@ public enum ObservationStatus: String, Codable, Sendable, Hashable, CaseIterable
     case appearsRemoved = "appears_removed"
 
     /// The two cases that trigger a confirmation dialog and a review flag (PRODUCT §5 M6).
+    ///
+    /// **Both halves of that sentence are now true** (ERRATA E170). The flag half always was — see
+    /// `reviewFlagKind` and `LocalAPI.apply(_:)`. The dialog half was documentation of a feature that
+    /// did not exist: this property had no caller in shipping code, and screen 05 changed the segment
+    /// on one tap with nothing asked. `CheckInModel.select(status:)` now reads it, holds the tap in
+    /// `pendingStatus`, and `CheckInView` asks before the claim is made — which is worth the second
+    /// tap, because these are the only two segments on the card that put work in front of another
+    /// person. It also gates the sentence screen 05 draws about where that work goes
+    /// (`CheckInCopy.reviewNotice`).
     public var opensReviewFlag: Bool {
         switch self {
         case .appearsDead, .appearsRemoved: return true
