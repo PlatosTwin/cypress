@@ -480,4 +480,103 @@ struct MapFilterTests {
         #expect(!MapViewport(bounds: city, zoom: 12, treeIDs: [UUID()]).shouldCluster,
                 "a membership narrowing still clustered a set bounded by what one person tapped")
     }
+
+    // MARK: - 7. The expandable control (RULINGS R23.1)
+
+    /// **A narrowing set behind a shut control must be visible in the row's drawn label.**
+    ///
+    /// R23.1 §2's hazard: a filter nobody can see is a map thinned by a cause nobody can find, which
+    /// is ERRATA E126's defect wearing a new hat. Three channels answer it and `CypressUITests`
+    /// reaches two of them — the selected trait and the spoken value. It cannot reach this one,
+    /// because the chip overrides its accessibility label back to `More filters` so the count is not
+    /// read out ahead of the value that names what is on. So the *drawn* string is pinned here.
+    @Test("the collapsed control's drawn label counts what is set inside it")
+    func moreChipLabelCountsWhatIsHidden() {
+        #expect(MapFilterCopy.moreChipLabel(active: 0) == MapFilterCopy.moreLabel,
+                "an empty control decorates its label with something")
+        let one = MapFilterCopy.moreChipLabel(active: 1)
+        #expect(one != MapFilterCopy.moreLabel,
+                "a filter is set behind the control and the chip draws “\(one)”, the same words as an empty one, so nothing on screen says the map has been narrowed")
+        #expect(one.contains("1"), "the label does not say how many: \(one)")
+        #expect(MapFilterCopy.moreChipLabel(active: 2).contains("2"))
+    }
+
+    /// **And a listener gets the state and the names, which is the channel the label cannot carry.**
+    ///
+    /// Two facts in one value on purpose (R23.1 §2). A disclosure that does not say whether it is open
+    /// leaves a listener pressing it to find out; a shut one that named no contents would leave the
+    /// hazard fixed for sighted readers only.
+    @Test("the control announces whether it is open and what is on inside it")
+    func moreValueSaysStateAndContents() {
+        let shutEmpty = MapFilterCopy.moreValue(isExpanded: false, active: [])
+        let openEmpty = MapFilterCopy.moreValue(isExpanded: true, active: [])
+        #expect(shutEmpty != openEmpty, "open and shut announce the same thing: \(shutEmpty)")
+
+        let shutOn = MapFilterCopy.moreValue(isExpanded: false, active: [.favorites])
+        #expect(shutOn != shutEmpty,
+                "a shut control with a filter on announces “\(shutOn)”, the same as an empty one: the map is narrowed by a cause nothing on screen names")
+        #expect(shutOn.contains(MapExtraFilter.favorites.label),
+                "the shut control does not name what is on: \(shutOn)")
+        // The names, not a count: a spoken string has no width, which is the whole reason the label
+        // and the value divide the work the way they do.
+        #expect(!shutOn.contains("1"), "the spoken value counts where it should name: \(shutOn)")
+    }
+
+    /// **The drawer is an extension point, and `activeExtras` is the one expression its three
+    /// channels read.**
+    ///
+    /// The owner asked for "favorites (and any others we add later)". The test that matters is not
+    /// that `favorites` works — it is that nothing here is written per-case, so the second narrowing
+    /// to arrive is one enum case and two switch arms. Every assertion below is over `allCases`.
+    @Test("every hidden narrowing toggles, reports itself, and clears with the rest")
+    func extraFiltersAreDrivenByTheirOwnCases() {
+        #expect(!MapExtraFilter.allCases.isEmpty)
+        for extra in MapExtraFilter.allCases {
+            var filter = MapFilter.all
+            #expect(!extra.isOn(filter), "\(extra) reads as on over an unfiltered map")
+            #expect(filter.activeExtras.isEmpty)
+
+            extra.toggle(in: &filter)
+            #expect(extra.isOn(filter), "\(extra) did not come on")
+            #expect(filter.isActive,
+                    "\(extra) is on and the filter is not active, so no “Clear filters” would draw and the only way out would be to remember it is there (R23.1 §3)")
+            #expect(filter.activeExtras.map(\.id) == [extra.id],
+                    "\(extra) is on and activeExtras reports \(filter.activeExtras.map(\.id))")
+            #expect(!extra.label.isEmpty, "\(extra) has no words")
+
+            // A toggle, like every other chip in this feature.
+            extra.toggle(in: &filter)
+            #expect(!extra.isOn(filter), "\(extra) could not be turned off again")
+
+            // …and the one clear-everything control reaches it. This is R23.1 §3: if the way out of
+            // a hidden filter were also hidden, a reader would have to know the filter existed to
+            // find the control that removes it.
+            extra.toggle(in: &filter)
+            filter = .all
+            #expect(!extra.isOn(filter), "clearing every filter left \(extra) on")
+        }
+    }
+
+    /// The row is the owner's four, in the owner's order: "yours, in bloom, needs care, and year".
+    ///
+    /// `MapFilterChips` draws `Condition.allCases` and does not re-sort it, so the declaration order
+    /// *is* the drawn order — which makes it worth one assertion rather than a comment.
+    @Test("the two condition chips are drawn in the owner's order")
+    func conditionOrderIsTheOwnersOrder() {
+        #expect(MapFilter.Condition.allCases.map(\.label) == ["In bloom", "Needs care"],
+                "the row draws \(MapFilter.Condition.allCases.map(\.label))")
+    }
+
+    /// American spelling, on the owner's instruction (R23.1). They named this word.
+    @Test("the membership vocabulary is spelled the American way")
+    func membershipIsSpelledAmerican() {
+        let label = MapFilterCopy.membershipLabel(.favorites)
+        #expect(label == "Favorites", "the chip says \(label)")
+        let title = MapFilterCopy.emptyTitle(MapFilter(membership: .favorites))
+        #expect(!title.lowercased().contains("favourite"), "the empty title says \(title)")
+        let message = MapFilterCopy.emptyMessage(
+            MapFilter(membership: .favorites), hasAnyMembers: false
+        )
+        #expect(!message.lowercased().contains("favourite"), "the empty message says \(message)")
+    }
 }
