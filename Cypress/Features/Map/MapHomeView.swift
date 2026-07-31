@@ -156,14 +156,20 @@ struct MapHomeView: View {
         // `.onChange(of: cameraSnapshot)` feeding an in-memory note, which is the obvious shape and
         // was wrong twice over. It put a struct comparison on a body that runs 240 times a second
         // (#84's hot path) to collect a value that is wanted at most twice per visit to the screen.
-        // And, measured on the device, it did not work: the settle that fired the change carried
-        // MapKit's own default span, `isWorthRemembering` correctly refused it, and the settle that
-        // followed — the real camera — produced no further change for the modifier to see. Nothing was
-        // ever written, and the screen went on saying "The map is over the middle of the city" to
-        // somebody who had been looking at Folsom Street a second earlier.
+        // And, measured on the device, it did not work: nothing was ever written, and the screen went
+        // on saying "The map is over the middle of the city" to somebody who had been looking at
+        // Folsom Street a second earlier.
         //
-        // Asking `region` what it holds at the moment of leaving needs no watching, cannot miss an
-        // intermediate value it does not care about, and costs nothing at all while the reader pans.
+        // **That second reason was misdiagnosed and the real cause was E168.** `region` was not
+        // carrying an intermediate value the modifier missed; it was carrying MapKit's default —
+        // span 98°, which `isWorthRemembering` correctly refuses — because every write that would
+        // have replaced it was being discarded by SwiftUI. No shape of watcher would have helped. The
+        // memory works now because `MapAnnotationLayer.Coordinator.echo(_:)` was fixed, and it is
+        // verified: one granted launch, backgrounded, leaves `map.lastCamera` holding
+        // `(37.759899, −122.414803, 0.001081, 0.001362)`.
+        //
+        // The first reason stands on its own, so the shape does not go back. Asking `region` what it
+        // holds at the moment of leaving needs no watching and costs nothing while the reader pans.
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { rememberCamera() }
         }
