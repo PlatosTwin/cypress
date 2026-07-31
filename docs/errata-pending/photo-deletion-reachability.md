@@ -95,8 +95,27 @@ tree, is hittable, opens a confirmation, and that taking the confirmation leaves
 does not stop at `isHittable`: this project has shipped a control that reported `true` and that no
 finger could press, so the control is *used* and the surface underneath is read.
 
-Made to fail on purpose by removing the one overlay line that draws it, which is the defect exactly
-as it stood: [RED OUTPUT], then restored: [GREEN OUTPUT].
+Made to fail on purpose by deleting the one overlay line that draws the control — which restores the
+defect exactly as it stood, since nothing else about the deletion changed. Both cases went red, on
+their own sentences:
+
+```
+PhotoDeletionReachabilityTests.swift:47: error: testTheHeroPhotographReachesADeleteThatWorks :
+  XCTAssertTrue failed - the viewer opened over a photograph this device owns and offered no way
+  to delete it — which is the whole of the owner's report on #78
+PhotoDeletionReachabilityTests.swift:110: error: testAPhotographOpenedFromTheBrowserReachesTheSameDelete :
+  XCTAssertTrue failed - the browser's own row opened a viewer with no delete on it, so looking
+  closer at a photograph costs you the controls for it
+     Executed 2 tests, with 4 failures (0 unexpected) in 29.254 seconds
+```
+
+The line restored, both green:
+
+```
+Test Case 'testAPhotographOpenedFromTheBrowserReachesTheSameDelete' passed (12.789 seconds).
+Test Case 'testTheHeroPhotographReachesADeleteThatWorks' passed (11.538 seconds).
+     Executed 2 tests, with 0 failures (0 unexpected) in 24.327 seconds
+```
 
 #### What was not built, and one thing seen in passing
 
