@@ -73,9 +73,21 @@ struct SearchBar: View {
     /// comment for why the other two are not a matter of writing more code here.
     var placeholder: String = "Search a species…"
 
-    /// Owned here rather than passed in: every caller wants the same behaviour from it, and a
-    /// `FocusState` binding threaded through two screens would be two chances to forget it.
-    @FocusState private var isFocused: Bool
+    /// A caller's own focus, for the one caller that has to *read* it.
+    ///
+    /// R16 owned the `FocusState` here on the grounds that "every caller wants the same behaviour
+    /// from it, and a binding threaded through two screens would be two chances to forget it". That
+    /// stays true and stays the default — this is `nil` at three of the four call sites and they are
+    /// unchanged. What changed is that screen 01 now drops a list of species under this bar (task
+    /// #109, R25), and a dropdown has to disappear when the field it belongs to is no longer being
+    /// typed into. Whether that has happened is a fact only the field knows, so the field can now be
+    /// asked. `Done` and the return key keep working through whichever binding is in play.
+    var focus: FocusState<Bool>.Binding?
+
+    /// The focus when no caller supplied one, so the default behaviour needs no caller at all.
+    @FocusState private var ownFocus: Bool
+
+    private var isFocused: FocusState<Bool>.Binding { focus ?? $ownFocus }
 
     /// Whether the clear control is drawn. One expression, read by the overlay and by the spacer
     /// that reserves its width, so the two can never disagree about whether it is there — a control
@@ -106,7 +118,7 @@ struct SearchBar: View {
             .font(CypressFont.body145)
             .foregroundStyle(CypressColor.textInk)
             .textFieldStyle(.plain)
-            .focused($isFocused)
+            .focused(isFocused)
             // The key already dismissed the keyboard (see the file comment — it was measured, not
             // assumed). This changes what it *says*: `Search` rather than `return`, which is the
             // difference between a key that reads as an exit and one that reads as a newline. iOS
@@ -136,7 +148,7 @@ struct SearchBar: View {
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
-                Button(SearchBarCopy.done) { isFocused = false }
+                Button(SearchBarCopy.done) { isFocused.wrappedValue = false }
                     .font(CypressFont.body145)
             }
         }

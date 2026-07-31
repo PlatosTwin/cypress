@@ -63,11 +63,33 @@ final class MapModel {
     /// the results, narrowed in place, because that is the surface the spec already draws and the one
     /// the owner asked for — "typing in a tree name brought up all and only those trees".
     var searchText: String = "" {
-        didSet { if searchText != oldValue { searchDidChange() } }
+        // `isApplyingChoice` is set only by `chooseSuggestion`, which writes the chosen species'
+        // name into the field and has already decided what the map should narrow to. Without the
+        // guard that write would look exactly like a keystroke: the debounce would start, the
+        // catalogue would be re-read for the name we just resolved, and the answer could be wider
+        // than the one row the reader tapped.
+        didSet { if searchText != oldValue, !isApplyingChoice { searchDidChange() } }
     }
 
     /// The species the current query resolved to, and what the map is able to say about it.
     private(set) var search: MapSearch = .off
+
+    /// What drops under C20 for the text currently in it (task #109, ruling R25).
+    ///
+    /// **NOT SPECIFIED** by SCREENS.md 01, which lists "search results" among the surfaces it does
+    /// not draw. `MapSuggestions` is where the surface is reasoned out, and E38 is why it carries a
+    /// remainder rather than just an array.
+    private(set) var suggestions: MapSuggestions = .off
+
+    /// The species picked off the dropdown, if the field's text is still that species' name.
+    ///
+    /// Kept so the pinning is visible to a test and to a reader — "the map is narrowed to this one
+    /// species because somebody chose it" is a different fact from "the map is narrowed to whatever
+    /// this string matched", and only one of them survives another keystroke.
+    private(set) var chosenSpecies: Species?
+
+    /// True only for the single assignment `chooseSuggestion` makes to `searchText`.
+    private var isApplyingChoice = false
 
     /// The narrowing itself, as the viewport carries it. `nil` until a query resolves.
     private var speciesIDs: Set<UUID>? {
@@ -403,12 +425,21 @@ final class MapModel {
     /// the wide query is asked once, already narrowed.
     private func searchDidChange() {
         searchTask?.cancel()
+
+        // A keystroke is the reader taking the query back off the list. Whatever they chose a moment
+        // ago is no longer what the field says, so the map must stop claiming it is — otherwise
+        // deleting a letter from `Monterey Cypress` would leave the map pinned to Monterey Cypress
+        // while the field says `Monterey Cypres`. See `chooseSuggestion`, which sets this.
+        chosenSpecies = nil
+
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
 
         // Clearing the field is not a search, and it must not wait out the debounce: the map is
-        // narrowed *now* and the user has asked for it to stop being.
+        // narrowed *now* and the user has asked for it to stop being. The dropdown goes with it, for
+        // the same reason and on the same frame.
         guard !query.isEmpty else {
             searchTask = nil
+            suggestions = .off
             applySearch(.off)
             return
         }
@@ -418,8 +449,39 @@ final class MapModel {
             if Task.isCancelled { return }
             let matches = (try? await api.searchSpecies(query: query, limit: MapSearch.speciesLimit)) ?? []
             guard let self, !Task.isCancelled else { return }
+            // **One read, two surfaces.** The dropdown and the narrowing are two readings of the
+            // same array, so the list can never offer a species the map is not narrowed to — which
+            // a second `searchSpecies` call at a second limit would eventually allow.
+            self.suggestions = MapSuggestions(matches: matches)
             self.applySearch(MapSearch(query: query, matches: matches))
         }
+    }
+
+    /// A row in the dropdown was tapped: the map narrows to **that species**, not to everything its
+    /// name happens to match.
+    ///
+    /// That difference is the whole of what the ticket asked for, and it is not cosmetic. Typing
+    /// `Cypress` narrows to the six species whose names contain the word (E165). Picking
+    /// `Monterey Cypress` off the list is a statement about one of those six, and the map must stop
+    /// showing the other five — so the species set is pinned here rather than re-derived from the
+    /// text, which would resolve `Monterey Cypress` back through the catalogue and could pick up
+    /// anything else that happens to contain the phrase.
+    ///
+    /// **The keyboard goes.** This is the deliberate opposite of R16's ✕, which clears and *keeps*
+    /// focus because clearing starts the next query. Choosing ends one: the reader has said which
+    /// tree they meant, and the thing they asked for is the map that the keyboard is covering.
+    func chooseSuggestion(_ species: Species) {
+        searchTask?.cancel()
+        searchTask = nil
+        isApplyingChoice = true
+        // The field shows what was chosen rather than what was typed — the ticket's own words, and
+        // the reason a chooser is not just a shortcut for typing the rest of the name.
+        searchText = MapSuggestionCopy.name(species)
+        isApplyingChoice = false
+        chosenSpecies = species
+        // Nothing left to suggest: the field now holds the answer the list was offering.
+        suggestions = .off
+        applySearch(MapSearch(query: searchText, matches: [species]))
     }
 
     private func applySearch(_ next: MapSearch) {

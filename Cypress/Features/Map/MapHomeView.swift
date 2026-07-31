@@ -83,6 +83,12 @@ struct MapHomeView: View {
     /// A press made while waiting for the first fix. The notice promises the map will move when one
     /// arrives; this is the promise, held.
     @State private var recentreWhenFixArrives = false
+    /// Whether C20 is being typed into, which is the whole condition for the suggestion dropdown
+    /// existing (task #109, ruling R25).
+    ///
+    /// `SearchBar` still owns a focus of its own for every other caller — R16's argument for that is
+    /// untouched — and takes this one only because this screen has something that has to *read* it.
+    @FocusState private var searchFocused: Bool
 
     /// The two presses that produce words instead of a camera move.
     private enum RecentreAnswer: Equatable {
@@ -101,7 +107,16 @@ struct MapHomeView: View {
             ZStack(alignment: .bottom) {
                 MapCanvas(
                     basemap: { basemap },
-                    overlay: { chrome(topInset: proxy.safeAreaInsets.top) }
+                    overlay: {
+                        chrome(
+                            topInset: proxy.safeAreaInsets.top,
+                            // For the suggestion dropdown's cap. It takes a share of the display
+                            // rather than a fixed number of points, because the thing it must not
+                            // swallow — the map, the FAB, the tree card — is measured in shares of
+                            // the display too. See `MapSuggestionList.share`.
+                            availableHeight: proxy.size.height
+                        )
+                    }
                 )
                 BottomTabBar(selection: tabBinding)
             }
@@ -228,7 +243,7 @@ struct MapHomeView: View {
     // MARK: - Overlay
 
     @ViewBuilder
-    private func chrome(topInset: CGFloat) -> some View {
+    private func chrome(topInset: CGFloat, availableHeight: CGFloat) -> some View {
         @Bindable var model = model
 
         // Two absolutely positioned blocks, exactly as 01 describes them — a `Spacer` between them
@@ -237,7 +252,28 @@ struct MapHomeView: View {
         Color.clear
             .overlay(alignment: .top) {
                 VStack(alignment: .leading, spacing: MapLayout.chipRowTop) {
-                    SearchBar(text: $model.searchText)
+                    SearchBar(text: $model.searchText, focus: $searchFocused)
+                    // **Between the bar and the chips, in the flow** — task #109, ruling R25. Not an
+                    // overlay: an overlay would leave the chips underneath reachable by an assistive
+                    // technology while invisible to everyone else, and would put the rows somewhere
+                    // other than immediately after the field in the element tree. See
+                    // `MapSuggestionList`.
+                    //
+                    // Gated on focus, because a dropdown belongs to the act of typing. Pressing
+                    // R16's `Done` puts the keyboard away to look at the map, and a list still
+                    // sitting over that map would be the same complaint one layer up.
+                    if searchFocused {
+                        MapSuggestionList(
+                            suggestions: model.suggestions,
+                            availableHeight: availableHeight
+                        ) { species in
+                            model.chooseSuggestion(species)
+                            // Choosing is the end of a query, so the keyboard goes — the deliberate
+                            // opposite of the ✕, which clears and keeps focus because clearing is
+                            // the start of the next one (R16).
+                            searchFocused = false
+                        }
+                    }
                     MapFilterChips(filter: $model.filter)
                     // Below the chips, so the C20 → chips order the accessibility tests walk is
                     // exactly as it was. Draws nothing unless the search has something to say.
