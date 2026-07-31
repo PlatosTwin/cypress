@@ -52,7 +52,7 @@ enum DebugDeepLink {
     /// seed still holds only `alive` and `vacant_site`, so there is no `removed` row to resolve. But
     /// the local moderation route can *make* one: a lead confirms an `appears_removed` review and the
     /// tree gains a device-side `removed` override. The `memorial` case below writes that override on a
-    /// real standing seed tree (`debugMarkRemoved`) and opens 19 over it — a memorial over a record
+    /// real standing seed tree (`debugMarkStatus`) and opens 19 over it — a memorial over a record
     /// that this device really does now hold as removed, not a lie over a living tree. E117's
     /// "unreachable-until-the-data-changes" is discharged.
     ///

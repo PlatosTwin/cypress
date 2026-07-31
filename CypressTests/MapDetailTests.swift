@@ -308,7 +308,7 @@ struct MapDetailTests {
     /// as good as its invalidation, and this is the failure it would produce: a tree moderated to
     /// `removed` after the map has already drawn once, still drawing green.
     ///
-    /// Driven through `debugMarkRemoved` rather than through `confirmRemoval` because the moderation
+    /// Driven through `debugMarkStatus` rather than through `confirmReview` because the moderation
     /// gate is `ModerationTests`' subject and not this one's; what is under test is that a write to
     /// the table reaches the next `mapContent`.
     @Test("a moderated tree changes its pin on the very next viewport read")
