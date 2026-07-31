@@ -10450,7 +10450,7 @@ installed was the M4 mutant, built minutes earlier and never replaced. It is an 
 half-fixed state, and it is also the reason to distrust a screenshot taken without checking which
 build produced it. Rebuilt, reinstalled, re-photographed; the sentence is gone.
 
-# E182 — A city with no polygons had no almanac, and the screen did not say so
+### E182 — A city with no polygons had no almanac, and the screen did not say so
 
 Task #138. The ruling behind the geography half is **RULINGS R29**; this entry is what was built,
 what was measured, and what was found and not fixed. `AppSchema` is **untouched — v14 was not

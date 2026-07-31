@@ -1646,7 +1646,7 @@ the identical top-and-bottom contradiction. Both now call `CityRecordCopy.record
 `CityRecordCopy.recordNumber`. One string, three screens — a memorial cannot start naming a city the
 other two have stopped naming.
 
-# R29 — What the almanac is about, once the record holds more than one city
+### R29 — What the almanac is about, once the record holds more than one city
 
 **Task #138.** Delegated by the ticket: *"Two candidate shapes, and choosing between them IS the
 work."* Implemented in ERRATA **E182**.
