@@ -1,0 +1,100 @@
+# Cypress — standing rules
+
+Loaded automatically for every session and every subagent working in this repo. Every rule here
+was paid for; the receipts are in `docs/investigations/repeat-failures-postmortem.md`. When a rule
+conflicts with convenience, the rule wins.
+
+## Documents
+- `docs/ARCHITECTURE.md` (§2 import discipline, §5 mock fidelity, §6 tokens, §7 concurrency),
+  `docs/ERRATA.md`, `docs/RULINGS.md`, `docs/ROADMAP.md`
+- `docs/distilled/SCREENS.md`, `docs/distilled/DECISIONS.md`, `docs/distilled/PRODUCT.md`
+  (they live in `docs/distilled/`, not `docs/`)
+- `docs/errata-pending/`, `docs/rulings-pending/` — see **Numbering** below
+
+## Verification — this project's signature failure mode is false green
+- Run tests with `Tools/run_tests.sh <udid> <log> [xcodebuild args…]`; judge any log with
+  `Tools/verify_test_log.sh <log>`. Never conclude from an exit code: `nohup … &` returns the
+  shell's success, a killed build leaves a truncated log under a wrapper claiming success, and a
+  trailing `echo` in an `&&` chain lies.
+- The only meaningful unit-test line is **`Test run with N tests passed`** (Swift Testing).
+  `Executed 0 tests / All tests passed` is XCTest reporting on a suite it cannot see. UI tests
+  (XCTest) need `** TEST SUCCEEDED **` **and** a nonzero executed count.
+- **Never trust an artifact you did not watch being produced.** Before reading a log, screenshot,
+  or build as evidence, check its mtime, its provenance (which build, worktree, simulator), and
+  its content. Stale DerivedData, stale logs at a reused path, an uncommitted asset, an empty
+  console capture, blank screenshots, and a location-declined simulator have each produced a
+  false conclusion here.
+- Never write a conclusion before reading the output that supports it.
+- Prove every new test can fail: break the code, watch red, restore. Assert presence, not
+  absence; assert facts, not phrasing.
+- Look at the running screen; a green suite has ratified real defects here. Map performance and
+  camera flows only tell the truth on the physical phone.
+- Verify every merge by running the suite on the **merged** tree; a branch's green proves the
+  branch, only the merged tree proves main.
+- A green re-run proves a failure was intermittent, never why it happened.
+
+## Simulators
+- iPhone 16 `8085586B-1661-4AD3-B84F-8332F436CDFB` is the owner's — keep it free.
+  Agents use: 16 Pro `EA0AD796-3052-4EE5-A7A8-A1DE807A3653`, 16 Pro Max
+  `DE8E11AE-4375-4C3B-A296-9B60A7DF1DB3`, 16e `3A1F212D-8F3A-41F1-AF72-EC95E155A4C9`,
+  16 Plus `24D1629F-9FA8-4E3D-812E-F6BC85C9E668`.
+- One simulator per agent, explicitly assigned. Cap **three** concurrent `xcodebuild`s
+  machine-wide — orchestrator verification runs count against the cap.
+- Boot and wait for `Booted` before any `simctl` call; `simctl` against a Shutdown device fails
+  quietly inside `&&` chains.
+- Grant camera once per install (`xcrun simctl privacy <udid> grant camera app.cypress.Cypress`);
+  the unit suite hangs forever without it, and an uninstall wipes the grant. Never re-grant on a
+  timer — `grant` kills the running app mid-test.
+- To make a device fixless, revoke the location privacy grant; `simctl location clear` does NOT
+  unfix a device.
+- `SQLITE_IOERR_VNODE` / fd-storm failures on the slowest test mean simulator contention, not
+  your change — check `ps aux | grep xcodebuild` before theorizing.
+
+## Known hangs (read like a stalled agent, are not)
+- `#expect(dataA == dataB)` on two large `Data` values hangs in Swift Testing's diff — reduce to
+  a `Bool` before the macro sees it.
+- The unit suite hangs on a simulator that never granted camera access (see above).
+
+## Numbering and shared files
+- Never write a number into `docs/ERRATA.md` or `docs/RULINGS.md` from a branch or agent. Write
+  the entry **unnumbered** to `docs/errata-pending/<topic>.md` or `docs/rulings-pending/`; the
+  orchestrator splices it under the real next number at merge, then rewrites any code comments
+  that cited the pending filename.
+- A deliberate gap in the E/R sequence is a reservation for a live branch — never fill it.
+- **Schema versions are the opposite: never reserved, never skipped.** One migration author per
+  round, named explicitly. If your task turns out to need a migration, STOP and report.
+- Never `git add -A` on main; stage explicit paths — another agent's untracked work may share
+  the checkout.
+- A rename of a shared identifier breaks every other live branch even when correctly scoped to
+  your ticket; announce it, and budget a compile-and-fix pass at merge.
+
+## Working in a worktree (agents)
+- Set up with `Tools/setup_worktree.sh <worktree-path>` — it copies the git-ignored ~103 MB seed
+  into `Cypress/Resources/` and `Fixtures/seed/`; without it 13 tests fail on `seedURL → nil`
+  and you will chase a defect you did not cause.
+- **Commit continuously.** Limit deaths take every agent at once and a stall with uncommitted
+  work is the only way work is lost here.
+- Use a private DerivedData directory named for yourself (`<scratchpad>/dd-<your-suffix>/`).
+  The scratchpad is shared by every agent: never `rm -rf` at its root, and never reuse another
+  run's log path — `rm -f` your own log before each run.
+- One watcher per build, bounded (`for i in $(seq 1 40)`, not `until`), print a line each
+  iteration, kill the previous watcher before starting a new build.
+- Never edit `Cypress.xcodeproj/project.pbxproj` — the tree is a
+  `PBXFileSystemSynchronizedRootGroup`.
+- **Facts in your brief may be wrong.** Agents have correctly refuted brief premises many times.
+  Verify each premise against the code or seed before building on it; refusing a false premise
+  is doing the job right.
+
+## Code
+- Swift 5 language mode on Swift 6.1, SwiftUI, iOS 17+, zero external dependencies,
+  zero-warning line (app **and** test targets).
+- `Core` is pure Foundation; `Data` imports no UI framework; `Features` may import anything
+  (ARCHITECTURE §2).
+- No raw hex, font sizes, or radii — tokens only (§6). No SF Symbols (policy; the five legacy
+  sites are ticketed, #130). American spellings: favorite, color, center, neighborhood.
+- `CypressTests` is Swift Testing; `CypressUITests` is XCTest.
+- A confident comment is where bugs have survived here. Never assert an invariant in a comment
+  you have not verified; a comment is not a test. Cite errata by number, never by pending
+  filename.
+- Do not invent botanical or civic content (DECISIONS constraint 15). A screen or state not in
+  the mocks is a stop-and-ask (constraint 21).
