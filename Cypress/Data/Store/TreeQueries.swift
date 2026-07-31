@@ -160,29 +160,101 @@ public struct TreeQueries {
     /// table, and an un-narrowed viewport resolves to no predicate. Letting the empty set fall
     /// through would build `IN ()`, which is a syntax error, and guarding it at every call site is
     /// how one of the three would eventually forget.
-    enum Narrowing: Equatable {
-        case none
-        case matchesNothing
-        case species([Int64])
+    /// **It was an enum with three cases and it is a struct now, because narrowings compose.**
+    /// Species, planting year and membership are three independent questions a reader can ask at
+    /// once ("my trees, planted in the 2010s"), and an enum can hold one of them. Every map query in
+    /// this file already interpolates `narrowing.predicate` into its `WHERE` clause, so widening the
+    /// type widens all four statements — pins, marker cells, clusters and the match count — at once,
+    /// which is the property that keeps "all and only" true. A predicate that reached the pin query
+    /// but not `markerCells` would be filtered downstream of a budget already spent on the wrong
+    /// rows, which is the shape of ERRATA E36 and E38 and is argued at length on `pins(in:)` below.
+    struct Narrowing: Equatable {
 
-        /// The SQL. Empty for both `.none` and `.matchesNothing` — the latter never reaches a
+        /// Seed `species.id`s, or nil for every species.
+        var speciesRowIDs: [Int64]?
+        /// The planting years asked for, or nil for every year (`MapViewport.plantedYears`).
+        var plantedYears: ClosedRange<Int>?
+        /// Lower-cased tree uuids, sorted, or nil for every tree (`MapViewport.treeIDs`).
+        var treeUUIDs: [String]?
+        /// Whether some part of the narrowing resolved to the empty set, so no row can match.
+        var matchesNothing: Bool = false
+
+        static let none = Narrowing()
+
+        /// A narrowing that can never match, answered without touching the trees table.
+        static let matchesNothing = Narrowing(matchesNothing: true)
+
+        /// The SQL. Empty for `.none`, and empty for `.matchesNothing` — the latter never reaches a
         /// statement, because its callers answer it without one.
         var predicate: String {
-            guard case let .species(ids) = self else { return "" }
-            return TreeQueries.speciesPredicate(ids)
+            var clauses: [String] = []
+            if let speciesRowIDs, !speciesRowIDs.isEmpty {
+                clauses.append(TreeQueries.speciesPredicate(speciesRowIDs))
+            }
+            if let plantedYears {
+                // **`planted_year IS NOT NULL` is implied by the BETWEEN and is written anyway.**
+                // SQLite's three-valued logic already excludes NULL here, so this clause changes no
+                // row. It is in the text so that a reader of the query plan, or of this file, sees
+                // the decision that ERRATA E175 is about rather than having to infer it from the
+                // absence of a clause: 107,875 of the seed's 145,837 rows have no planting date and
+                // every one of them is being set aside here. The surface says so out loud
+                // (`MapYearFilterCopy`); this is the same sentence in SQL.
+                clauses.append(
+                    "AND t.planted_year IS NOT NULL "
+                        + "AND t.planted_year BETWEEN \(plantedYears.lowerBound) AND \(plantedYears.upperBound)"
+                )
+            }
+            if let treeUUIDs, !treeUUIDs.isEmpty {
+                // **Interpolated, and quoted by `quote(_:)` rather than bound**, for the reason
+                // `speciesPredicate` gives above at length: a list hidden behind `json_each` is a
+                // list the planner cannot cost, and it falls back to walking the box. These are
+                // uuids this process read out of its own database, never anything the user typed,
+                // and `quote` doubles any apostrophe regardless.
+                //
+                // The set is bounded by what one person tapped — tens, not thousands — so the
+                // statement text stays short and there is one prepared copy per distinct set, which
+                // is one per press of the chip rather than one per pan.
+                let list = treeUUIDs.map(TreeQueries.quote).joined(separator: ",")
+                clauses.append("AND t.uuid COLLATE NOCASE IN (\(list))")
+            }
+            return clauses.joined(separator: " ")
         }
 
-        var matchesNothing: Bool {
-            if case .matchesNothing = self { return true }
-            return false
+        /// Whether anything at all narrows this. Used only for assertions and tests.
+        var isNone: Bool {
+            speciesRowIDs == nil && plantedYears == nil && treeUUIDs == nil && !matchesNothing
         }
     }
 
+    /// A SQL string literal. Single quotes doubled, which is the whole of SQLite's escaping rule.
+    static func quote(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: "''") + "'"
+    }
+
     func narrowing(for viewport: MapViewport, connection: SQLiteConnection) throws -> Narrowing {
-        guard let ids = viewport.speciesIDs else { return .none }
-        guard !ids.isEmpty else { return .matchesNothing }
-        let rowIDs = try speciesRowIDs(for: ids, connection: connection)
-        return rowIDs.isEmpty ? .matchesNothing : .species(rowIDs)
+        var narrowing = Narrowing()
+
+        if let ids = viewport.speciesIDs {
+            guard !ids.isEmpty else { return .matchesNothing }
+            let rowIDs = try speciesRowIDs(for: ids, connection: connection)
+            guard !rowIDs.isEmpty else { return .matchesNothing }
+            narrowing.speciesRowIDs = rowIDs
+        }
+
+        if let treeIDs = viewport.treeIDs {
+            // Empty means "narrowed to nothing", never "not narrowed" — a reader with no favourites
+            // who taps `Favourites` has asked a question, and the whole city is not its answer.
+            guard !treeIDs.isEmpty else { return .matchesNothing }
+            // Lower-cased because the seed writes uuids in lower case and `UUID.uuidString` produces
+            // upper; sorted so the same set always spells the same statement text and reuses its
+            // prepared copy. `COLLATE NOCASE` on the column carries the comparison regardless — see
+            // `speciesRowIDs` for the day that collation was attached to the wrong operand and the
+            // whole search silently returned nothing.
+            narrowing.treeUUIDs = treeIDs.map { $0.uuidString.lowercased() }.sorted()
+        }
+
+        narrowing.plantedYears = viewport.plantedYears
+        return narrowing
     }
 
     /// Individual pins, zoom ≥ 16.
@@ -269,8 +341,12 @@ public struct TreeQueries {
         // narrowed map is answering for a set the reader named; so the count runs there and nowhere
         // else, which also leaves `MapContentBudgetTests` — which reaches its cap deliberately, and
         // un-narrowed — reading exactly as it did.
+        //
+        // **`isFiltered`, not `isNarrowed` (#116).** It was the species test alone, and a year or
+        // membership narrowing is a set the reader named just as loudly — screen 01 puts a count
+        // over the map for all three, and E38 forbids that count being the size of a truncated page.
         guard viewport.markerCellPoints == nil,
-              viewport.isNarrowed,
+              viewport.isFiltered,
               found.count == viewport.pinLimit
         else { return PinAnswer(found) }
 

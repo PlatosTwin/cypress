@@ -887,6 +887,86 @@ public struct ContributionStore {
         return Dictionary(rows, uniquingKeysWith: { _, latest in latest })
     }
 
+    // MARK: - The map's membership sets (#116, RULINGS R23)
+
+    /// Every tree this reader has contributed to — screen 01's `Yours` chip.
+    ///
+    /// The four contribution tables unioned, exactly as `GroveQueries.ownContributions` unions them
+    /// and for the same reason: "standing in front of a tree with the camera, rating it, taping it
+    /// and watering it are all having been there". `DISTINCT` because a tree visited four times is
+    /// one tree on a map, and because **nothing here may produce a count** — D1, and
+    /// ARCHITECTURE §5.1's "if you find yourself writing `visitCount` into a user-visible string,
+    /// stop". This returns a set of ids; there is no `COUNT(*)` in it and no caller could get one.
+    ///
+    /// Community-added trees are unioned in as well. A tree you added is not in any of the four
+    /// contribution tables — it is the row in `community_trees` — and it is the most emphatically
+    /// yours there is, so a `Yours` map that omitted it would be wrong in the one case the reader
+    /// would notice first.
+    ///
+    /// **That arm carries no owner clause, because the table carries no owner columns**, and this is
+    /// correct rather than a hole: `community_trees` has neither `user_id` nor `device_id`, and it
+    /// does not need them, because there is no sync that brings anybody else's rows down — every row
+    /// in `main.community_trees` is one this installation wrote. `CommunityTreeStore` relies on the
+    /// same fact, and `TreeProfile.ownPhotoIDs` states it in the same words: "`main.photos` holds
+    /// what this device wrote and nothing else". If a `RemoteAPI` ever lands rows from elsewhere,
+    /// this arm needs an owner clause on the same day the columns arrive — and the schema change is
+    /// where that will be noticed, because this query will not compile against a table it has to
+    /// filter and cannot.
+    ///
+    /// Privacy is the shape of the query (D11): the caller states who it is, both owners are read
+    /// because a row saved before sign-in and a row saved after are both this person's
+    /// (`grove()` makes the same argument), and there is no form of this SQL that returns anybody
+    /// else's rows.
+    public func contributedTreeIDs(
+        userID: UUID?,
+        deviceID: UUID,
+        connection: SQLiteConnection
+    ) throws -> Set<UUID> {
+        let owner = """
+             WHERE deleted_at IS NULL
+               AND (device_id = :device COLLATE NOCASE
+                    OR (:user IS NOT NULL AND user_id = :user COLLATE NOCASE))
+            """
+        let statement = try connection.cachedStatement("""
+            SELECT DISTINCT tree_uuid FROM (
+                SELECT tree_uuid FROM visits \(owner)
+                UNION ALL
+                SELECT tree_uuid FROM observations \(owner)
+                UNION ALL
+                SELECT tree_uuid FROM measurements \(owner)
+                UNION ALL
+                SELECT tree_uuid FROM care_events \(owner)
+                UNION ALL
+                SELECT id AS tree_uuid FROM community_trees WHERE deleted_at IS NULL
+            )
+            """)
+        let bindings: [String: SQLiteBindable?] = [":device": deviceID, ":user": userID]
+        _ = try statement.bind(bindings)
+        return Set(try statement.fetchAll { try $0.uuid("tree_uuid") })
+    }
+
+    /// Every tree this reader is still holding a favourite on — screen 01's `Favourites` chip.
+    ///
+    /// `deleted_at IS NULL` is the whole of it and it matters more here than anywhere else on this
+    /// type: a favourite is a toggle with a tombstone (BUILD-PLAN §4), so an un-favourited tree
+    /// keeps its row and would come back as a favourite from any query that forgot the clause.
+    /// `DeviceContributions.favorites` makes the same call in the same words.
+    public func favoriteTreeIDs(
+        userID: UUID?,
+        deviceID: UUID,
+        connection: SQLiteConnection
+    ) throws -> Set<UUID> {
+        let statement = try connection.cachedStatement("""
+            SELECT DISTINCT tree_uuid FROM favorites
+             WHERE deleted_at IS NULL
+               AND (device_id = :device COLLATE NOCASE
+                    OR (:user IS NOT NULL AND user_id = :user COLLATE NOCASE))
+            """)
+        let bindings: [String: SQLiteBindable?] = [":device": deviceID, ":user": userID]
+        _ = try statement.bind(bindings)
+        return Set(try statement.fetchAll { try $0.uuid("tree_uuid") })
+    }
+
     /// First namer wins (D15). The partial unique index on `(tree_uuid) WHERE status = 'active'`
     /// makes a second active name a constraint violation rather than a race.
     @discardableResult

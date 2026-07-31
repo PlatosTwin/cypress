@@ -242,10 +242,21 @@ struct MapHomeView: View {
                     // Below the chips, so the C20 → chips order the accessibility tests walk is
                     // exactly as it was. Draws nothing unless the search has something to say.
                     MapSearchStatus(search: model.search)
+                    // What the filter found, and the year control's caveat about the 74 % of rows
+                    // that carry no planting date (#116, ERRATA E175). Draws nothing when no filter
+                    // is on, so an un-narrowed screen 01 is exactly as it was.
+                    MapFilterStatus(
+                        result: model.filterResult,
+                        showsYearCaveat: model.filter.decade != nil
+                    )
                     // And below that, for the same reason. The key to the species colouring — which
                     // names the four species the map has coloured, and draws nothing when it has
-                    // coloured none. See `MapSpeciesLegend`.
-                    MapSpeciesLegend(palette: model.speciesPalette)
+                    // coloured none. **It is also the species filter** (#116) — see
+                    // `MapSpeciesLegend` for why the filter and the legend had to be one control.
+                    MapSpeciesLegend(
+                        palette: model.speciesPalette,
+                        selection: $model.filter.speciesID
+                    )
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, MapLayout.sideInset)
@@ -319,6 +330,24 @@ struct MapHomeView: View {
                 MapTreeCard(subject: subject, userCoordinate: location.availability.coordinate) {
                     router.push(MapHomeView.route(for: subject.pin))
                 }
+            } else if model.isEmptiedByFilter {
+                // **ERRATA E126, applied to the filter** (#116): a filtered map with no matches must
+                // say why it is empty and how to get out of it. It outranks the standing location
+                // notice because the reader just pressed something and this is the answer to that
+                // press — the same argument that puts `recentreAnswer` above the card.
+                //
+                // The way out is a control, not a hint. `MapLocationNotice` already carries a
+                // trailing button and a title/message pair, which is exactly this shape, so the
+                // empty state reuses it rather than drawing a fourth kind of card on this screen.
+                MapLocationNotice(
+                    title: MapFilterCopy.emptyTitle(model.filter),
+                    message: MapFilterCopy.emptyMessage(
+                        model.filter,
+                        hasAnyMembers: model.membershipHasAnyMembers
+                    ),
+                    actionLabel: MapFilterCopy.clearLabel,
+                    onAction: { model.filter = .all }
+                )
             } else {
                 standingNotice
             }

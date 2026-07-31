@@ -118,9 +118,23 @@ public actor LocalAPI: CypressAPI {
                 limit: viewport.pinLimit,
                 connection: connection
             )
-            let added = viewport.speciesIDs.map { wanted in
-                allAdded.filter { tree in tree.speciesCurrentID.map(wanted.contains) ?? false }
-            } ?? allAdded
+            //
+            // **All three narrowings, not just the species one (#116).** Each is the same leak in a
+            // different colour: a `Favourites` map that drew every community tree in the box would
+            // be claiming the reader had hearted them, and a `2010s` map that drew a community tree
+            // with no planting year would be claiming the city planted it in a decade nobody
+            // recorded. The year clause is deliberately `false` for a nil year, matching the SQL's
+            // `planted_year IS NOT NULL` on the seed side exactly — see ERRATA E175.
+            let added = allAdded.filter { tree in
+                if let wanted = viewport.speciesIDs {
+                    guard let id = tree.speciesCurrentID, wanted.contains(id) else { return false }
+                }
+                if let wanted = viewport.treeIDs, !wanted.contains(tree.id) { return false }
+                if let years = viewport.plantedYears {
+                    guard let planted = tree.plantedYear, years.contains(planted) else { return false }
+                }
+                return true
+            }
 
             // Local status overrides (ERRATA E124-B): a lead-confirmed removal makes a tree a
             // memorial pin even though the inventory still calls it alive. Applied to `.pins` only —
@@ -1824,6 +1838,28 @@ public actor LocalAPI: CypressAPI {
         let device = deviceID
         return try await store.queue.read { connection in
             try contributions.deviceContributions(deviceUUID: device, connection: connection)
+        }
+    }
+
+    /// Screen 01's `Yours` and `Favourites` sets (#116, RULINGS R23).
+    ///
+    /// One read per press of the chip, not one per pan: `MapModel` holds the answer for as long as
+    /// the chip is on, and the map refetches *through* it. The sets are bounded by what one person
+    /// tapped, so reading them whole is the cheap option as well as the simple one.
+    public func mapMembership(_ kind: MapMembership) async throws -> Set<UUID> {
+        let device = deviceID
+        let user = userID
+        return try await store.queue.read { connection in
+            switch kind {
+            case .yours:
+                return try contributions.contributedTreeIDs(
+                    userID: user, deviceID: device, connection: connection
+                )
+            case .favourites:
+                return try contributions.favoriteTreeIDs(
+                    userID: user, deviceID: device, connection: connection
+                )
+            }
         }
     }
 
