@@ -912,3 +912,100 @@ accuracy chip, now pinned above the scroll so that the remaining third is genuin
 photograph, should stay pinned once the screen has more chips than one; and whether the AX5 layout
 deserves its own drawn variant in `SCREENS.md` the way R14 gave screen 04 one. Whoever answers the last
 of those draws the result, so the next person inherits a spec rather than a precedent.
+
+---
+
+*R23, R24 and R25 are reserved and deliberately absent. They are held for three branches in flight on
+2026-07-31 — the map's filter interface, the San Jose ingest, and the search field's suggestions — each
+of which was handed its number at spawn time and cites it in source comments. The gap is not an error
+and must not be filled by anything else.*
+
+### R26 — adoption is a private commitment to a tree, not a claim on it
+
+The owner asked for adoption on 2026-07-27: *"Self verified, and just means you get reminders to water
+it, and updates when others take care of or record observation about it."* On 2026-07-31 they confirmed
+the reading below and asked for it to be built.
+
+**What this overrules, stated plainly rather than folded in.** `DESIGN.md:155,205` and
+`SPEC-PHASE1.md:19` both put adoption and watering reminders *out* of Phase 1, deliberately. This is the
+owner overruling their own scope, which is theirs to do; it is recorded here so that a reader who finds
+the old lines knows they were superseded on purpose and by whom, rather than drifted past.
+
+**1 · Adoption is self-verified, and therefore asserts nothing to anyone.** It confers no authority, no
+priority, and no standing over another contributor. It does not gate, moderate, or outrank anybody
+else's observations of the same tree. Concretely: **more than one person may adopt the same tree, and
+this is a feature.** Exclusive adoption would turn a quiet commitment into a land grab, and a scarce
+public claim is the exact shape D1 exists to keep out of this app — the competition would simply move
+from a leaderboard to the map. A tree with four adopters is a well-loved tree, not a conflict.
+
+**2 · The adopter is never named, to anyone, anywhere.** D11 is unconditional on this point and nothing
+here softens it. It follows that *"updates when others take care of it"* must arrive **unattributed** —
+"someone recorded a watering", never a name and never a stable pseudonym, since a pseudonym plus a fixed
+location is an identity. `User.publicAttribution` cannot be turned on anywhere today (E100), so there is
+no path by which this leaks; the constraint is written down here so that whoever *does* build
+attribution knows adoption is not covered by it.
+
+**3 · A reminder is an offer, never a debt.** Watering reminders mean local notifications, permission,
+and a scheduling model — a genuinely new subsystem, and the first in this app (there is no
+`UNUserNotification` code at all today; `PrivateReminder` is a note, never scheduled). The design
+constraint that matters is not technical: **a missed reminder must leave no record.** No streak, no
+lapse, no "you have not watered this in 3 weeks", no count of waterings performed, and nothing on the
+tree or in the grove that a person could read as their own score. D1 forbids counting a person's
+actions, and a reminder subsystem is the easiest place in this codebase to violate it by accident,
+because guilt is the default idiom of every reminder app. The cadence is the adopter's to choose and to
+silence, and silencing it is not an event either.
+
+**4 · Adoption is device-scoped, like every other ownership fact here** (D9), and it ends the way a
+favourite does — with a real off state that leaves nothing behind (R2). Un-adopting is not a failure
+state and generates no note.
+
+**Deliberately not decided here:** whether adoption belongs on the tree profile, in My Grove, or both;
+what the notification actually says (it should carry the tree, not the obligation); and whether
+seasonal watering cadence should follow the species' own phenology data, which is in the schema and
+would be the honest answer, or a flat interval, which is the shippable one. Whoever answers the last of
+those should say which they chose and why, because a flat interval that pretends to be seasonal is
+worse than one that admits it is flat.
+
+### R27 — a tree can be beloved without anyone being ranked for loving it
+
+The owner asked, on 2026-07-27, for *"hand-picked great trees, as many city websites feature these, and
+also a place to view a neighborhood's most beloved trees (most favorites? Most photos?) but without
+turning the view into a leaderboard or score."* They named the tension themselves. This is the answer,
+confirmed by them on 2026-07-31.
+
+**The two halves are separable and only one of them is hard.**
+
+**1 · Great trees are editorial, and San Francisco publishes a real list.** The city's own Landmark
+Trees are a curated set with a public source, which makes this the same kind of work as the curated
+species field guide (#6): content, not mechanism. It ships first because it is separable and because it
+is the visible half. Constraint 15 governs it — do not invent botanical or civic content; a landmark
+tree's designation comes from the city or it is not stated.
+
+**2 · "Most beloved" is answered by moving the count off the person and onto the tree.** D1 forbids
+counting a person's actions; it does not forbid a tree having properties. The distinction is not a
+loophole, it is the whole design: *how many people know this tree* is a fact about the tree, and no
+individual is nameable, rankable, or scoreable through it. Three rules make that real rather than
+rhetorical:
+
+- **Belovedness is a state, not a position.** A tree is beloved or it is not. There is no first, no
+  order, no number shown, and no "top ten". This is the same move D1 made on the almanac.
+- **It has a floor, and the floor is a privacy mechanism as much as a cold-start one.** DECISIONS
+  already sets the precedent — caretakers are shown only at ≥3 distinct people. Favourites are private
+  (R2, D11), so a threshold of one would publish a private bookmark and a threshold of two would make
+  it inferable by anyone who knows they are the other. The floor must be high enough that no individual
+  is recoverable from the state.
+- **The set is shown unordered and rotating, not ranked.** A neighbourhood's beloved trees is a handful
+  of trees to go and see, drawn from those over the floor, and the order carries no meaning. If the set
+  is larger than the view, it rotates rather than truncates to the "top" — E38 applies, and a page is
+  not a total.
+
+**What this costs, stated rather than buried:** the owner asked "most favorites? most photos?" and the
+answer is neither, in the superlative sense. There is no "most". A reader who wants to know which tree
+in the Mission is the single most loved will not find out, and that is the intended outcome, because
+every mechanism that answers it is a leaderboard wearing a different noun.
+
+**Deliberately not decided here:** the numeric floor (it wants the real distribution of favourites per
+tree, which nobody has looked at yet — count it before choosing it); whether photographs and favourites
+should count toward the same state or two different ones; and whether "neighbourhood" here means the
+analysis-neighbourhood geometry already in `Fixtures/raw/sf_analysis_neighborhoods.geojson` or the
+viewport the reader is looking at.
