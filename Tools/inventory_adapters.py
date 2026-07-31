@@ -622,3 +622,316 @@ class SFCityLayerAdapter:
                 raw_json=None,
             )
 
+
+# ---------------------------------------------------------------------------
+# San Jose
+# ---------------------------------------------------------------------------
+
+
+# The strings San Jose writes into `NAMESCIENTIFIC` that are not species. Every
+# one is measured against the live layer, 2026-07-31, 344,879 rows:
+#
+#     'Vacant site'   71,590   the city's own vacancy string, lower case
+#     'Vacant Site'    1,405   the same claim, other spelling. Two strings, one
+#                              fact -- so the set is keyed case-folded and the
+#                              spelling never reaches a rule.
+#     'Stump'          1,933   something is at the site and it is not a tree
+#     'Unknown'        4,513   a TREE the surveyor could not identify. This one
+#                              is deliberately NOT in this set; see below.
+#
+# `Unknown` is the case R18 already settled: a tree of unknown species is a tree,
+# not an empty hole and not a non-tree. It yields KIND_TREE with no species, and
+# `species_text` keeps the city's word so the build can still count them.
+SJ_VACANCY_SPECIES = {"vacant site"}
+SJ_NON_TREE_SPECIES = {"stump"}
+
+#: San Jose's `TRUNKDIAM` is a double in inches, aliased "Trunk Diameter (DBH) (in)".
+#: `0` appears on 72,142 rows, of which 72,142 - 2,701 = 69,441 are flagged vacant,
+#: so it is this source's "no trunk to measure" rather than a zero-inch trunk. Two
+#: rows exceed 400 in (2,304 and 445); the same 400 in ceiling the SF adapter uses
+#: rejects them. Both counts measured 2026-07-31.
+SJ_DBH_CEILING_IN = 400.0
+
+
+class SanJoseStreetTreeAdapter:
+    """City of San Jose's `Street Tree` layer -- 344,879 rows, CC-BY.
+
+    THE REASON THIS SOURCE IS WORTH THE CONTRACT'S EXISTENCE. It publishes a
+    field whose only job is to say whether a site holds a tree -- `VACANTSITE`,
+    `Yes`/`No` -- which is the field E169 says no source had. So almost every
+    record here reaches `KindBasis.STATED` or `STATED_CATEGORY`, and
+    `INFERRED_FROM_ABSENT_SPECIES` is reached by 61 rows out of 344,879 rather
+    than by 1,777 out of 145,837. That number is the point: the basis is not a
+    formality, it is a measurement of how much of the corpus is our guess.
+
+    It also disagrees with itself, and the disagreements are the interesting
+    part. Measured on 2026-07-31:
+
+      * 611 rows are `VACANTSITE = 'Yes'` and name a real taxon. An empty hole
+        that names a species is one of the two records this contract exists to
+        forbid, so the adapter cannot pass both through. It keeps the flag --
+        that is the field whose *only* meaning is vacancy, against a species
+        field that carries four different kinds of claim -- drops the species,
+        and counts the row into `vacant_sites_naming_a_taxon`.
+      * 4,885 rows are `VACANTSITE = 'No'` and their species field says
+        `Vacant site`, `Stump` or `Unknown`. Of those, 82 literally say
+        `Vacant site` on a site the flag calls occupied. Same rule, other
+        direction: the flag decides the kind for `Vacant site`, and `Stump`
+        still yields `not_a_tree` because a stump is a thing that is there.
+      * 1,808 `Vacant site` rows carry a positive `TRUNKDIAM`. A planting site
+        with a measured trunk is not a fact, it is two records that were never
+        reconciled, so `dbh_in` is dropped on any planting site and the count
+        goes to `planting_sites_with_a_trunk_diameter`.
+
+    NOT A ROUND TRIP THROUGH ANOTHER CITY'S FORMAT. `NAMESCIENTIFIC` is one
+    clean field, so it is read into `scientific_name` directly. Nothing in this
+    class builds a `::` string, imports `parse_qspecies`, or touches
+    `PLACEHOLDER_SPECIES` -- which is what `SFCityLayerAdapter.species_of`'s
+    docstring promised the third source would be able to do.
+
+    WHAT SAN JOSE DOES NOT PUBLISH, which the contract renders as NULL and not
+    as a plausible-looking stand-in:
+
+      * a common name -- there is no such field, so `common_name` is always None
+        and no species is ever minted from a vernacular (#103's mechanism);
+      * a planting date on 343,537 of 344,879 rows. `INSTALLDATE` is populated
+        on 1,342. `ORIGINALINVENTORYDATE` is the date somebody walked past the
+        tree, not the date it was planted, and it is NOT read into `planted_on`.
+    """
+
+    inventory_id = "sj_street_tree"
+
+    #: Layer columns carried into `city_record` under SEED column names. Keyed by
+    #: seed column so no San Jose column name survives past this class.
+    CITY_RECORD_COLUMNS = [
+        ("legal_status", "OWNEDBY"),
+        ("caretaker", "MAINTBY"),
+        ("plant_type", "GROWSPACE"),
+        ("plot_size", "SPACEWIDTH"),
+        ("permit_notes", "CONDITION"),
+    ]
+
+    def __init__(self, rows: list, limit: int = 0) -> None:
+        self.rows = rows
+        self.limit = limit
+        self.stats = {
+            "source_rows": 0,
+            "dropped_no_coords": 0,
+            # Every branch of the kind decision, so its shape is a number.
+            "kind_from_vacancy_flag": 0,
+            "kind_from_species_vocabulary": 0,
+            "kind_inferred_from_absent_species": 0,
+            # The source's disagreements with itself.
+            "vacant_sites_naming_a_taxon": 0,
+            "planting_sites_with_a_trunk_diameter": 0,
+            "trunk_diameter_over_ceiling": 0,
+        }
+
+    # ------------------------------------------------------------------ parts
+
+    @staticmethod
+    def parse_trunk_diameter(raw) -> Optional[float]:
+        """`TRUNKDIAM` -> inches measured, or None. See `SJ_DBH_CEILING_IN`."""
+        if raw is None:
+            return None
+        try:
+            inches = float(raw)
+        except (TypeError, ValueError):
+            return None
+        if inches != inches:  # NaN
+            return None
+        if inches <= 0:
+            return None
+        if inches > SJ_DBH_CEILING_IN:
+            return None
+        return inches
+
+    @staticmethod
+    def parse_install_date(raw) -> Optional[_datetime.date]:
+        """`INSTALLDATE` -> a date, or None. The service ships epoch milliseconds.
+
+        No horizon clamp and no sentinel list, because neither is warranted by
+        anything measured in this source: `INSTALLDATE` is non-null on 1,342 rows
+        and a sentinel invented for a source that does not use one is the same
+        mistake as failing to resolve one that does.
+        """
+        if raw is None:
+            return None
+        try:
+            millis = float(raw)
+        except (TypeError, ValueError):
+            return None
+        if millis != millis:
+            return None
+        try:
+            return _datetime.datetime.utcfromtimestamp(millis / 1000.0).date()
+        except (OverflowError, OSError, ValueError):
+            return None
+
+    @staticmethod
+    def _species_key(raw) -> str:
+        return " ".join((raw or "").strip().lower().split())
+
+    def classify(self, vacant_flag, species_raw):
+        """One row's `(kind, kind_basis, scientific_name)`, and why.
+
+        Read this next to `qspecies_to_contract`: that function had to infer a
+        kind from a species string because DataSF has no other field. Here the
+        kind mostly comes from a field that means only that, and the species
+        field is consulted second and for a named reason each time.
+        """
+        flag = (vacant_flag or "").strip().lower()
+        key = self._species_key(species_raw)
+        name = " ".join((species_raw or "").strip().split()) or None
+
+        if flag == "yes":
+            # The city's dedicated vacancy field says the site is empty. It wins
+            # over the species field even when that names a taxon (611 rows),
+            # because `VACANTSITE` means exactly one thing and `NAMESCIENTIFIC`
+            # means four.
+            self.stats["kind_from_vacancy_flag"] += 1
+            if name and key not in SJ_VACANCY_SPECIES and key not in SJ_NON_TREE_SPECIES:
+                self.stats["vacant_sites_naming_a_taxon"] += 1
+            return KIND_PLANTING_SITE, KindBasis.STATED, None
+
+        if flag == "no":
+            if key in SJ_VACANCY_SPECIES:
+                # 82 rows: the flag says occupied and the species field says
+                # `Vacant site`. Two statements, and the one that is only ever
+                # about vacancy is the species field here -- it is not naming a
+                # plant, it is repeating a vacancy claim. Treated as stated
+                # vacancy, and reached through the species vocabulary, so it is
+                # counted separately from the flag's own decisions.
+                self.stats["kind_from_species_vocabulary"] += 1
+                return KIND_PLANTING_SITE, KindBasis.STATED, None
+            if key in SJ_NON_TREE_SPECIES:
+                self.stats["kind_from_species_vocabulary"] += 1
+                return KIND_NOT_A_TREE, KindBasis.STATED_AS_NON_TAXON, None
+            # `VACANTSITE = 'No'` is the city's category field placing this
+            # record in the ordinary category, which is what STATED_CATEGORY
+            # means. `Unknown` and a blank species both land here and both are
+            # trees of unknown species -- R18's answer, not a planting site.
+            self.stats["kind_from_vacancy_flag"] += 1
+            return KIND_TREE, KindBasis.STATED_CATEGORY, self._taxon(name, key)
+
+        # `VACANTSITE` is null on 680 rows -- the category field is silent, so
+        # the species field is all there is.
+        if key in SJ_VACANCY_SPECIES:
+            self.stats["kind_from_species_vocabulary"] += 1
+            return KIND_PLANTING_SITE, KindBasis.STATED, None
+        if key in SJ_NON_TREE_SPECIES:
+            self.stats["kind_from_species_vocabulary"] += 1
+            return KIND_NOT_A_TREE, KindBasis.STATED_AS_NON_TAXON, None
+        if name:
+            # The city wrote something in the species field. Naming what grows
+            # at a site is the city stating that something grows there, in the
+            # only field left once the flag is silent.
+            self.stats["kind_from_species_vocabulary"] += 1
+            return KIND_TREE, KindBasis.STATED, self._taxon(name, key)
+
+        # 61 rows: no vacancy flag AND no species. The source said nothing, and
+        # this is the one branch where the KIND IS OURS. Spelled with the badly
+        # named basis on purpose so the build receipt carries its size.
+        self.stats["kind_inferred_from_absent_species"] += 1
+        return KIND_PLANTING_SITE, KindBasis.INFERRED_FROM_ABSENT_SPECIES, None
+
+    @staticmethod
+    def _taxon(name, key):
+        """The scientific name to record, or None when the string names no taxon.
+
+        `Unknown` is a tree of unknown species, so it yields None here and
+        `KIND_TREE` above -- the record says a tree is there and does not say
+        which. Minting a species called `Unknown` is #103 exactly.
+        """
+        if not name or key in {"unknown"}:
+            return None
+        return name
+
+    @staticmethod
+    def confidence_for(scientific_name: Optional[str]) -> Optional[float]:
+        """How far to trust `NAMESCIENTIFIC`, on the same scale the SF parser uses.
+
+        San Jose publishes 618 distinct values (measured 2026-07-31) and they are
+        clean: `Platanus acerifolia`, `Quercus`, `Acer x fremanii 'Autumn Blaze'`.
+        The scale is the SF one so a species catalogue built from both sources
+        does not have two meanings for the same number.
+        """
+        if scientific_name is None:
+            return None
+        tokens = scientific_name.split()
+        genus = tokens[0]
+        if not genus[:1].isupper() or not genus.replace("-", "").isalpha():
+            return 0.2
+        if len(tokens) == 1:
+            return 0.7
+        if tokens[1].lower() in {"sp.", "spp.", "sp", "spp", "x", "hybrid"}:
+            return 0.75
+        if tokens[1][:1].islower() and tokens[1].replace("-", "").isalpha():
+            return 1.0 if len(tokens) == 2 else 0.9
+        return 0.6
+
+    # ----------------------------------------------------------------- records
+
+    def records(self) -> Iterator[InventoryRecord]:
+        """`rows` are the layer's own features: {'attributes': {...}, 'geometry': {...}}."""
+        for feature in self.rows:
+            self.stats["source_rows"] += 1
+            if self.limit and self.stats["source_rows"] > self.limit:
+                self.stats["source_rows"] -= 1
+                break
+
+            attributes = feature.get("attributes") or {}
+            geometry = feature.get("geometry") or {}
+            lat, lon = geometry.get("y"), geometry.get("x")
+            if lat is None or lon is None or lat != lat or lon != lon:
+                self.stats["dropped_no_coords"] += 1
+                continue
+
+            species_raw = attributes.get("NAMESCIENTIFIC")
+            kind, basis, scientific_name = self.classify(
+                attributes.get("VACANTSITE"), species_raw
+            )
+
+            raw_dbh = attributes.get("TRUNKDIAM")
+            dbh_in = self.parse_trunk_diameter(raw_dbh)
+            if dbh_in is None and raw_dbh not in (None, "") and float(raw_dbh or 0) > SJ_DBH_CEILING_IN:
+                self.stats["trunk_diameter_over_ceiling"] += 1
+            if dbh_in is not None and kind == KIND_PLANTING_SITE:
+                # A measured trunk on an empty hole is two unreconciled records,
+                # not a fact. Dropped, and counted rather than quietly lost.
+                self.stats["planting_sites_with_a_trunk_diameter"] += 1
+                dbh_in = None
+
+            address = " ".join(
+                str(part).strip()
+                for part in (attributes.get("ADDRESSNUM"), attributes.get("STREETNAME"))
+                if str(part or "").strip()
+            )
+
+            yield InventoryRecord(
+                inventory=self.inventory_id,
+                kind=kind,
+                kind_basis=basis,
+                lat=float(lat),
+                lon=float(lon),
+                source_ref=_clean(attributes.get("FACILITYID")),
+                # One clean field into one clean field. No `::` anywhere.
+                scientific_name=scientific_name,
+                # San Jose publishes no common name. None, never a guess.
+                common_name=None,
+                species_confidence=self.confidence_for(scientific_name),
+                species_text=_clean(species_raw),
+                # Every name this source publishes is a scientific name it wrote
+                # itself, so nothing here is a stub minted from a raw string.
+                species_is_stub=False,
+                address=_clean(address),
+                site_type=_clean(attributes.get("GROWSPACE")),
+                planted_on=self.parse_install_date(attributes.get("INSTALLDATE")),
+                dbh_in=dbh_in,
+                city_record={
+                    seed_column: _clean(attributes.get(layer_column))
+                    for seed_column, layer_column in self.CITY_RECORD_COLUMNS
+                },
+                raw_json=None,
+            )
+
