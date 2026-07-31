@@ -49,11 +49,13 @@ struct PinSetDestinationTests {
 
     private static func present(
         coverage: CoverageGap? = nil,
-        vacantSites: VacantSites? = nil
+        vacantSites: VacantSites? = nil,
+        newestNeighbors: RecentPlanting? = nil
     ) -> AlmanacPresentation {
         AlmanacPresentation(
             almanac: Almanac(neighborhood: AlmanacNeighborhood(
-                name: "Sunset/Parkside",
+                area: .named("Sunset/Parkside"),
+                newestNeighbors: newestNeighbors,
                 coverage: coverage,
                 vacantSites: vacantSites
             )),
@@ -73,6 +75,15 @@ struct PinSetDestinationTests {
     /// `count` basins in the neighbourhood, of which `shown` are carried to the map.
     private static func vacant(count: Int, shown: Int) -> VacantSites {
         VacantSites(count: count, nearest: (0..<shown).map { pin(400 + $0, status: .vacantSite) })
+    }
+
+    /// `count` trees planted this spring, of which `shown` are carried to the map (ERRATA E182).
+    private static func planting(count: Int, shown: Int) -> RecentPlanting {
+        RecentPlanting(
+            treeCount: count,
+            leadingSpecies: ["Ginkgo", "NZ tea tree"],
+            nearest: (0..<shown).map { pin(500 + $0) }
+        )
     }
 
     // MARK: - Neither row carries one record
@@ -114,12 +125,22 @@ struct PinSetDestinationTests {
     func noCountedRowResolvesToOneRecord() throws {
         let presentation = Self.present(
             coverage: Self.coverageGap(11),
-            vacantSites: Self.vacant(count: 1_474, shown: 20)
+            vacantSites: Self.vacant(count: 1_474, shown: 20),
+            newestNeighbors: Self.planting(count: 23, shown: 12)
         )
 
-        let groups = [
-            try #require(presentation.coverage).group,
-            try #require(presentation.vacantSites).group,
+        let groups = try [
+            #require(presentation.coverage).group,
+            #require(presentation.vacantSites).group,
+            // **The row this sweep did not cover, which is why it shipped** (ERRATA E182). The
+            // sweep read "no counted row on screen 12 resolves to a single record" and enumerated
+            // two of the three, so `Newest neighbors` went nowhere for as long as it existed and
+            // nothing here noticed. It is enumerated now, and `seasonRows` is asked for it by kind
+            // rather than by index so a fourth row cannot slip in behind it either.
+            #require(
+                presentation.seasonRows.first { $0.kind == .newestNeighbors }?.group,
+                "Newest neighbors has no destination"
+            ),
         ]
         for group in groups {
             #expect(group.pins.count > 1, "\(group.subject) still leaves with one record")
@@ -323,7 +344,7 @@ struct PinSetDestinationTests {
 
         let result = try await store.queue.read { connection in
             try queries.vacantSites(
-                neighborhoodID: sunset,
+                scope: .neighborhood(id: sunset, name: "Sunset/Parkside"),
                 near: here,
                 limit: AlmanacLimits.vacantSiteRowLimit,
                 connection: connection
@@ -373,7 +394,7 @@ struct PinSetDestinationTests {
 
         let young = try await store.queue.read { connection in
             try queries.youngTreesWithoutVisits(
-                neighborhoodID: sunset,
+                scope: .neighborhood(id: sunset, name: "Sunset/Parkside"),
                 plantedOnOrAfter: "0000-01-01",
                 limit: AlmanacLimits.coverageRowLimit + 1,
                 connection: connection
@@ -393,4 +414,57 @@ struct PinSetDestinationTests {
         #expect(young.allSatisfy { $0.coordinate.latitude > 37 && $0.coordinate.longitude < -122 })
         #expect(young.allSatisfy { MapPinKind.kind(for: $0) != .vacantSite })
     }
+
+    // MARK: - The third counted row (ERRATA E182)
+
+    /// **The owner's report, as an assertion**: *"Clicking on newest neighbors on neighborhood
+    /// almanac should show them on the map."*
+    ///
+    /// The row counted 23 trees, named two species, and had no destination of any kind — it was not
+    /// wired to the wrong screen, it simply was not tappable. So this cannot be written as "it opens
+    /// the right thing instead of the wrong thing" the way the two tests above are; what it asserts
+    /// is that a `group` exists at all, that it holds the trees the sentence counted, and that it is
+    /// the *same* destination the other two counted rows use rather than a third one.
+    @Test("Newest neighbors hands over this spring's plantings, and goes where the counted rows go")
+    func newestNeighborsCarriesAGroup() throws {
+        let presentation = Self.present(newestNeighbors: Self.planting(count: 23, shown: 12))
+        let row = try #require(
+            presentation.seasonRows.first { $0.kind == .newestNeighbors },
+            "the row did not render"
+        )
+
+        #expect(row.subtitle == "23 trees planted this spring, mostly Ginkgo and NZ tea tree")
+        #expect(row.treeID == nil, "a group of 23 is not one record")
+
+        let group = try #require(row.group, "the row still goes nowhere")
+        #expect(group.pins.count == 12)
+        #expect(group.count == 23)
+        #expect(!group.isComplete, "12 of 23 is a page and must say so")
+        #expect(group.neighborhoodName == "Sunset/Parkside")
+
+        // The destination is the one E129 built, titled and captioned out of the row's own strings —
+        // no new screen, no new sentence, and nothing re-derived here that could disagree with the
+        // row the reader pressed.
+        let screen = PinSetPresentation(set: group, locale: Self.locale)
+        #expect(screen.title == "Newest neighbors")
+        #expect(screen.subject == row.subtitle)
+        #expect(screen.coverage == "The 12 nearest are on this map.")
+        #expect(screen.focusPinID == nil, "a group is about all of its pins equally")
+    }
+
+    /// The row is absent rather than inert when there is nothing to put on a map.
+    ///
+    /// A count with no pins behind it can only happen if the two reads disagree, and the honest
+    /// answer to that is a row that does not offer a tap — not one that offers a tap to an empty
+    /// map, which is the defect being fixed wearing a different coat.
+    @Test("a planting row with no pins behind it offers no tap")
+    func newestNeighborsWithoutPinsIsInert() throws {
+        let presentation = Self.present(
+            newestNeighbors: RecentPlanting(treeCount: 23, leadingSpecies: ["Ginkgo"], nearest: [])
+        )
+        let row = try #require(presentation.seasonRows.first { $0.kind == .newestNeighbors })
+        #expect(row.group == nil)
+        #expect(row.treeID == nil)
+    }
+
 }

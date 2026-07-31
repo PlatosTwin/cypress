@@ -780,7 +780,7 @@ enum SweepFixtures {
 
     static var almanac: Almanac {
         Almanac(neighborhood: AlmanacNeighborhood(
-            name: "Outer Sunset",
+            area: .named("Outer Sunset"),
             firstBloom: BloomFirst(
                 treeID: id(900),
                 speciesCommonName: "Red flowering gum",
@@ -816,7 +816,7 @@ enum SweepFixtures {
     /// contribution are not.
     static var freshAlmanac: Almanac {
         Almanac(neighborhood: AlmanacNeighborhood(
-            name: "Outer Sunset",
+            area: .named("Outer Sunset"),
             elder: ElderTree(
                 treeID: id(901),
                 activeName: nil,

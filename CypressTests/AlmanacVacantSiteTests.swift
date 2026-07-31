@@ -250,7 +250,7 @@ struct AlmanacVacantSiteTests {
         let sunset = try await Self.neighborhoodID(named: "Sunset/Parkside", on: store)
 
         let mix = try await store.queue.read { connection in
-            try queries.speciesMix(neighborhoodID: sunset, connection: connection)
+            try queries.speciesMix(scope: .neighborhood(id: sunset, name: "Sunset/Parkside"), connection: connection)
         }
 
         #expect(mix.count == corpus.sunsetSpeciesInMix)
@@ -315,7 +315,7 @@ struct AlmanacVacantSiteTests {
         )
 
         let elder = try await store.queue.read { connection in
-            try queries.elder(neighborhoodID: sunset, connection: connection)
+            try queries.elder(scope: .neighborhood(id: sunset, name: "Sunset/Parkside"), connection: connection)
         }
         // `elder` is `MIN(planted_on)` within the neighbourhood, so it is nil for every
         // neighbourhood in a seed with no planting dates. Where the source has them, its being
@@ -328,7 +328,7 @@ struct AlmanacVacantSiteTests {
 
         let planted = try await store.queue.read { connection in
             try queries.plantings(
-                neighborhoodID: sunset,
+                scope: .neighborhood(id: sunset, name: "Sunset/Parkside"),
                 from: "0000-01-01",
                 to: "9999-12-31",
                 connection: connection
@@ -343,7 +343,7 @@ struct AlmanacVacantSiteTests {
 
         let young = try await store.queue.read { connection in
             try queries.youngTreesWithoutVisits(
-                neighborhoodID: sunset,
+                scope: .neighborhood(id: sunset, name: "Sunset/Parkside"),
                 plantedOnOrAfter: "0000-01-01",
                 limit: 5_000,
                 connection: connection
@@ -388,7 +388,7 @@ struct AlmanacVacantSiteTests {
 
         let bloom = try await store.queue.read { connection in
             try queries.firstBloom(
-                neighborhoodID: sunset,
+                scope: .neighborhood(id: sunset, name: "Sunset/Parkside"),
                 since: Date(timeIntervalSince1970: 0),
                 connection: connection
             )
@@ -426,7 +426,7 @@ struct AlmanacVacantSiteTests {
 
         let bloom = try await store.queue.read { connection in
             try queries.firstBloom(
-                neighborhoodID: sunset,
+                scope: .neighborhood(id: sunset, name: "Sunset/Parkside"),
                 since: Date(timeIntervalSince1970: 0),
                 connection: connection
             )
@@ -454,7 +454,7 @@ struct AlmanacVacantSiteTests {
         let here = Coordinate(latitude: 37.7530, longitude: -122.4850)
         let result = try await store.queue.read { connection in
             try queries.vacantSites(
-                neighborhoodID: sunset,
+                scope: .neighborhood(id: sunset, name: "Sunset/Parkside"),
                 near: here,
                 limit: AlmanacLimits.vacantSiteRowLimit,
                 connection: connection
@@ -491,7 +491,7 @@ struct AlmanacVacantSiteTests {
         // A real count with a destination draws the row.
         let site = AlmanacPresentationTests.pin(930, status: .vacantSite)
         let drawn = AlmanacPresentation(almanac: Almanac(
-            neighborhood: AlmanacNeighborhood(name: "Sunset/Parkside",
+            neighborhood: AlmanacNeighborhood(area: .named("Sunset/Parkside"),
                 vacantSites: VacantSites(count: 1_474, nearest: [site]))
         ))
         let block = try #require(drawn.vacantSites)
@@ -509,14 +509,14 @@ struct AlmanacVacantSiteTests {
 
         // A count with no destination is not a statement the reader can act on, so it does not draw.
         let noDestination = AlmanacPresentation(almanac: Almanac(
-            neighborhood: AlmanacNeighborhood(name: "X",
+            neighborhood: AlmanacNeighborhood(area: .named("X"),
                 vacantSites: VacantSites(count: 9, nearest: []))
         ))
         #expect(noDestination.vacantSites == nil)
 
         // A neighbourhood with no basins draws nothing, even though E115 found none like it today.
         let none = AlmanacPresentation(almanac: Almanac(
-            neighborhood: AlmanacNeighborhood(name: "X", vacantSites: nil)
+            neighborhood: AlmanacNeighborhood(area: .named("X"), vacantSites: nil)
         ))
         #expect(none.vacantSites == nil)
     }
@@ -525,7 +525,7 @@ struct AlmanacVacantSiteTests {
     @Test("one empty site reads in the singular")
     func vacantSingular() throws {
         let one = AlmanacPresentation(almanac: Almanac(
-            neighborhood: AlmanacNeighborhood(name: "X",
+            neighborhood: AlmanacNeighborhood(area: .named("X"),
                 vacantSites: VacantSites(count: 1, nearest: [AlmanacPresentationTests.pin(931, status: .vacantSite)]))
         ))
         #expect(one.vacantSites?.title == "1 empty planting site")

@@ -108,6 +108,13 @@ struct AlmanacPresentationTests {
     private static func renderedStrings(_ presentation: AlmanacPresentation) -> [String] {
         var strings: [String] = [presentation.footnote]
         if let name = presentation.neighborhoodName { strings.append(name) }
+        // R29's qualifier under the header, present only for a fallback area.
+        if let note = presentation.areaNote { strings.append(note) }
+        // E182's two sentences, drawn in place of every block when the read resolved no area at all.
+        if !presentation.hasArea {
+            strings.append(AlmanacCopy.outOfRangeTitle)
+            strings.append(AlmanacCopy.outOfRangeBody)
+        }
         for row in presentation.seasonRows {
             strings.append(row.title)
             strings.append(row.subtitle)
@@ -140,11 +147,13 @@ struct AlmanacPresentationTests {
 
     // MARK: - No area at all
 
-    @Test("no location fix means no almanac, not an empty one")
-    func noNeighborhoodRendersOnlyTheFootnote() {
+    @Test("no area means no almanac, not an empty one")
+    func noNeighborhoodRendersNoBlocks() {
         let presentation = Self.present(nil)
 
         #expect(presentation.neighborhoodName == nil)
+        #expect(presentation.hasArea == false)
+        #expect(presentation.areaNote == nil)
         #expect(presentation.seasonRows.isEmpty)
         #expect(presentation.composition == nil)
         #expect(presentation.coverage == nil)
@@ -152,7 +161,14 @@ struct AlmanacPresentationTests {
 
         // The header pill has no name in it, which is the point: a header naming an area we could
         // not determine would be the screen's first lie (A4, ERRATA E44).
-        #expect(Self.renderedStrings(presentation) == [AlmanacCopy.footnote])
+        //
+        // **It used to be the footnote alone**, and that was the defect ERRATA E182 is about: a
+        // finished read that resolved nothing drew the same picture as a read still in flight. The
+        // two sentences beside the footnote are what a reader standing outside the record now gets.
+        #expect(
+            Self.renderedStrings(presentation)
+                == [AlmanacCopy.footnote, AlmanacCopy.outOfRangeTitle, AlmanacCopy.outOfRangeBody]
+        )
     }
 
     // MARK: - The whole sweep
@@ -163,7 +179,7 @@ struct AlmanacPresentationTests {
     func belowThresholdEverywhere() {
         let presentation = Self.present(
             AlmanacNeighborhood(
-                name: "Sunset/Parkside",
+                area: .named("Sunset/Parkside"),
                 firstBloom: nil,                                      // A9: needs 1 sighting
                 elder: nil,                                           // no recorded planting date
                 newestNeighbors: RecentPlanting(treeCount: 0, leadingSpecies: []),
@@ -191,7 +207,7 @@ struct AlmanacPresentationTests {
     @Test("no flowering visit means no bloom row at all")
     func noBloomSightingRendersNoRow() {
         let presentation = Self.present(
-            AlmanacNeighborhood(name: "Sunset/Parkside", firstBloom: nil, elder: Self.elder)
+            AlmanacNeighborhood(area: .named("Sunset/Parkside"), firstBloom: nil, elder: Self.elder)
         )
         #expect(!presentation.seasonRows.contains { $0.kind == .bloom })
         #expect(presentation.seasonRows.map(\.kind) == [.elder])
@@ -201,7 +217,7 @@ struct AlmanacPresentationTests {
     @Test("one sighting is a first bloom")
     func oneSightingRendersTheRow() {
         let presentation = Self.present(
-            AlmanacNeighborhood(name: "Sunset/Parkside", firstBloom: Self.bloom(observers: 1))
+            AlmanacNeighborhood(area: .named("Sunset/Parkside"), firstBloom: Self.bloom(observers: 1))
         )
         let row = presentation.seasonRows.first { $0.kind == .bloom }
         #expect(row?.title == "First bloom of the year")
@@ -213,7 +229,7 @@ struct AlmanacPresentationTests {
     func headcountBelowA8IsDropped() {
         for observers in 0...2 {
             let presentation = Self.present(
-                AlmanacNeighborhood(name: "Sunset/Parkside", firstBloom: Self.bloom(observers: observers))
+                AlmanacNeighborhood(area: .named("Sunset/Parkside"), firstBloom: Self.bloom(observers: observers))
             )
             let subtitle = presentation.seasonRows.first { $0.kind == .bloom }?.subtitle ?? ""
             #expect(
@@ -230,7 +246,7 @@ struct AlmanacPresentationTests {
     @Test("at three observers the headcount is spelled out, as the mock spells it")
     func headcountAtA8Renders() {
         let presentation = Self.present(
-            AlmanacNeighborhood(name: "Sunset/Parkside", firstBloom: Self.bloom(observers: 3))
+            AlmanacNeighborhood(area: .named("Sunset/Parkside"), firstBloom: Self.bloom(observers: 3))
         )
         let subtitle = presentation.seasonRows.first { $0.kind == .bloom }?.subtitle ?? ""
         #expect(subtitle.contains("three neighbors saw it"), "\(subtitle)")
@@ -244,7 +260,7 @@ struct AlmanacPresentationTests {
     @Test("the elder says what the record says, not what the tree is")
     func elderCitesTheRecord() {
         let presentation = Self.present(
-            AlmanacNeighborhood(name: "Sunset/Parkside", elder: Self.elder)
+            AlmanacNeighborhood(area: .named("Sunset/Parkside"), elder: Self.elder)
         )
         let row = presentation.seasonRows.first { $0.kind == .elder }
         #expect(row?.subtitle == "Blackwood Acacia · in the city record since 1956")
@@ -271,7 +287,7 @@ struct AlmanacPresentationTests {
     func noRecentPlantingRendersNoRow() {
         for planting in [nil, RecentPlanting(treeCount: 0, leadingSpecies: ["Ginkgo"])] {
             let presentation = Self.present(
-                AlmanacNeighborhood(name: "Sunset/Parkside", newestNeighbors: planting)
+                AlmanacNeighborhood(area: .named("Sunset/Parkside"), newestNeighbors: planting)
             )
             #expect(!presentation.seasonRows.contains { $0.kind == .newestNeighbors })
         }
@@ -295,7 +311,7 @@ struct AlmanacPresentationTests {
     @Test("the species mix renders from city data, and its remainder is the honest one")
     func compositionRendersAndRemainderIsExact() {
         let presentation = Self.present(
-            AlmanacNeighborhood(name: "Sunset/Parkside", composition: Self.composition)
+            AlmanacNeighborhood(area: .named("Sunset/Parkside"), composition: Self.composition)
         )
         let composition = presentation.composition
         #expect(composition?.label == "Who lives here · 215 species")
@@ -321,7 +337,7 @@ struct AlmanacPresentationTests {
             NeighborhoodComposition(distinctSpeciesCount: 1, treeCount: 0, leading: [])
         ] {
             let presentation = Self.present(
-                AlmanacNeighborhood(name: "Sunset/Parkside", composition: composition)
+                AlmanacNeighborhood(area: .named("Sunset/Parkside"), composition: composition)
             )
             #expect(presentation.composition == nil)
         }
@@ -338,7 +354,7 @@ struct AlmanacPresentationTests {
             ]
         )
         let presentation = Self.present(
-            AlmanacNeighborhood(name: "Sunset/Parkside", composition: whole)
+            AlmanacNeighborhood(area: .named("Sunset/Parkside"), composition: whole)
         )
         #expect(presentation.composition?.rows.count == 2)
         #expect(presentation.composition?.rows.contains { $0.isRemainder } == false)
@@ -357,7 +373,7 @@ struct AlmanacPresentationTests {
     func emptyCoverageRendersNothing() {
         for gap in [nil, Self.coverage(0, farthestM: 0)] {
             let presentation = Self.present(
-                AlmanacNeighborhood(name: "Sunset/Parkside", coverage: gap)
+                AlmanacNeighborhood(area: .named("Sunset/Parkside"), coverage: gap)
             )
             #expect(presentation.coverage == nil)
             #expect(!Self.containsAZero(Self.renderedStrings(presentation)))
@@ -370,7 +386,7 @@ struct AlmanacPresentationTests {
     func pagedCoverageRendersNothing() {
         let presentation = Self.present(
             AlmanacNeighborhood(
-                name: "Sunset/Parkside",
+                area: .named("Sunset/Parkside"),
                 coverage: Self.coverage(200, farthestM: 500, isComplete: false)
             )
         )
@@ -380,14 +396,14 @@ struct AlmanacPresentationTests {
     @Test("the walking sentence is written only when it is true")
     func walkClauseIsCheckedNotAsserted() {
         let close = Self.present(
-            AlmanacNeighborhood(name: "Sunset/Parkside", coverage: Self.coverage(9, farthestM: 900))
+            AlmanacNeighborhood(area: .named("Sunset/Parkside"), coverage: Self.coverage(9, farthestM: 900))
         )
         #expect(close.coverage?.title == "9 young trees with no visits since planting")
         #expect(close.coverage?.body.contains("All nine are within a 15-minute walk.") == true)
         #expect(close.coverage?.ctaTitle == "Walk the nine")
 
         let spread = Self.present(
-            AlmanacNeighborhood(name: "Sunset/Parkside", coverage: Self.coverage(17, farthestM: 4_100))
+            AlmanacNeighborhood(area: .named("Sunset/Parkside"), coverage: Self.coverage(17, farthestM: 4_100))
         )
         #expect(spread.coverage?.body == "The first two summers decide whether a street tree makes it.")
         #expect(spread.coverage?.ctaTitle == "Walk the seventeen")
@@ -396,7 +412,7 @@ struct AlmanacPresentationTests {
     @Test("one tree does not read `walk the one`")
     func singleCoverageTreeReadsAsOne() {
         let presentation = Self.present(
-            AlmanacNeighborhood(name: "Sunset/Parkside", coverage: Self.coverage(1, farthestM: 100))
+            AlmanacNeighborhood(area: .named("Sunset/Parkside"), coverage: Self.coverage(1, farthestM: 100))
         )
         #expect(presentation.coverage?.title == "1 young tree with no visit since planting")
         #expect(presentation.coverage?.ctaTitle == "Walk to it")
@@ -416,7 +432,7 @@ struct AlmanacPresentationTests {
         let near = CoverageTree(pin: Self.pin(201), distanceM: 40)
         let presentation = Self.present(
             AlmanacNeighborhood(
-                name: "Sunset/Parkside",
+                area: .named("Sunset/Parkside"),
                 coverage: CoverageGap(trees: Series(complete: [near, far]))
             )
         )
@@ -476,7 +492,7 @@ struct AlmanacPresentationTests {
     func nothingCountsContributions() {
         let presentation = Self.present(
             AlmanacNeighborhood(
-                name: "Sunset/Parkside",
+                area: .named("Sunset/Parkside"),
                 firstBloom: Self.bloom(observers: 6),
                 elder: Self.elder,
                 newestNeighbors: RecentPlanting(treeCount: 23, leadingSpecies: ["Ginkgo"]),
