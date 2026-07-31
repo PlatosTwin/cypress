@@ -32,16 +32,20 @@
 //  block of chrome competing for the same strip of glass.
 //
 //  ── Why the year control is a decade and says so out loud ────────────────────────────────────
-//  Counted against the shipped seed, not assumed (ERRATA E175): **145,837 trees, 37,962 with a
-//  planting year — 26.03 %.** Among the 133,424 living ones it is 28,725, or **21.5 %**. A year
-//  filter therefore cannot be a plain predicate with a silent complement; four out of five living
-//  street trees are unjudgeable, and a control that quietly dropped them would be answering "when
-//  was this planted?" with "never" for most of the city. `MapYearFilterCopy.setAside` is the
-//  sentence that keeps it honest, and it is rendered whenever the narrowing is on.
+//  Counted against the shipped seed, not assumed (ERRATA E175): **198,625 trees, 38,185 with a
+//  planting year — 19.22 %.** The two cities are nothing alike on this column: San Francisco records
+//  a year for 26.03 % of its rows and San Jose for **0.42 %** (222 of 52,788), which is why adding a
+//  city made the control's caveat *stronger* rather than weaker (E176). A year filter therefore
+//  cannot be a plain predicate with a silent complement; four out of five trees are unjudgeable, and
+//  a control that quietly dropped them would be answering "when was this planted?" with "never" for
+//  most of the map. `MapYearFilterCopy.setAside` is the sentence that keeps it honest, and it is
+//  rendered whenever the narrowing is on.
 //
-//  Decades rather than years because the seed spans 1955–2026: 72 options holding a citywide mean of
-//  527 trees each, which is invisible in a viewport. Five buckets, sized off the real distribution —
-//  pre-1990 7,742 · 1990s 8,746 · 2000s 10,134 · 2010s 8,493 · 2020s 2,847.
+//  Decades rather than years because the seed spans 1955–2026: 72 options holding a mean of 530 dated
+//  trees each, which is invisible in a viewport. Five buckets, sized off the real distribution —
+//  pre-1990 7,742 · 1990s 8,746 · 2000s 10,134 · 2010s 8,493 · 2020s 3,070. San Jose's 222 dated rows
+//  all landed in the last bucket and moved no boundary; the shape of this control is San Francisco's,
+//  and the first city that records planting dates properly is the one that should revisit it.
 //
 
 import Foundation
@@ -266,9 +270,9 @@ enum MapYearFilterCopy {
     /// **The sentence the owner asked for by name: what the control says about rows it cannot
     /// judge** (#116, ERRATA E175).
     ///
-    /// Counted before it was designed, which was the instruction: **107,875 of the shipped seed's
-    /// 145,837 rows carry no `planted_year` at all — 73.97 %.** Among living trees it is worse,
-    /// 78.5 %. So a year narrowing sets aside roughly three trees in four *before* it judges
+    /// Counted before it was designed, which was the instruction: **160,440 of the shipped seed's
+    /// 198,625 rows carry no `planted_year` at all — 80.78 %.** So a year narrowing sets aside
+    /// roughly four trees in five *before* it judges
     /// anything, and saying nothing would make their absence read as an answer: "there are no trees
     /// here from the 2010s", when the truth is "the city did not record when most of these were
     /// planted". Those are very different claims about the same empty patch of map, and the second
@@ -285,10 +289,22 @@ enum MapYearFilterCopy {
     ///
     /// No spaces around em dashes (ARCHITECTURE §5.7).
     static let setAside =
-        "About 3 in 4 trees have no recorded planting date—none of them can appear under a year."
+        "About 4 in 5 trees have no recorded planting date—none of them can appear under a year."
 
     /// The share of the shipped seed carrying no planting year, as `MapYearCoverageTests` measures
-    /// it. The copy above rounds this to "3 in 4"; the test asserts the rounding is still true, so a
+    /// it. The copy above rounds this to "4 in 5"; the test asserts the rounding is still true, so a
     /// re-ingest that moved coverage would fail rather than leave the sentence lying.
-    static let undatedShareOfSeed = 0.7397
+    ///
+    /// **It has already fired once, on the day it was written.** This constant was `0.7397` and the
+    /// sentence read "3 in 4", both measured against a seed holding San Francisco alone. San Jose
+    /// landed the same afternoon (E176) and the test went red on the merge: San Jose publishes a
+    /// planting date for **222 of its 52,788 rows — 0.42 %** — against San Francisco's 26.03 %, so
+    /// two cities in one seed is 80.78 % undated where one was 73.97 %.
+    ///
+    /// The lesson is worth more than the number. Under D16 the seed is a *merged* inventory, so the
+    /// coverage of any field is not a property of this app at all — it is a weighted average over
+    /// whichever cities happen to be in, and it moves every time one is added. A sentence quoting a
+    /// coverage figure is therefore always provisional, and the only thing keeping it honest is that
+    /// this constant is asserted against the seed rather than remembered from the day it was true.
+    static let undatedShareOfSeed = 0.8078
 }

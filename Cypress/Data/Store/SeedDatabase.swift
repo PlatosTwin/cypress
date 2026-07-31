@@ -140,6 +140,18 @@ public struct SeedSchema: Equatable, Sendable {
     /// second round has no such column and every row in it came from one inventory, so the flag
     /// exists to let the read layer fall back to the seed-wide answer rather than fail.
     public let hasInventorySource: Bool
+    /// Whether `trees.id_space` and the `id_spaces` / `inventories` tables are present — the v14
+    /// seed pass (#129, ERRATA E176), which is what made a second city representable at all.
+    ///
+    /// Before it, `external_ref` was `INTEGER UNIQUE`: a global constraint on a source-local id, so
+    /// San Jose FACILITYID 3 could not be a row beside San Francisco TreeID 3. After it, identity is
+    /// unique over `(id_space, external_ref)` and the id space is a column rather than something a
+    /// reader has to parse out of a qualified string.
+    ///
+    /// A seed built before that pass is still readable and still correct: every row in it is in one
+    /// id space, and `seed_meta.identity_prefix` is the right answer for all of them. This flag is
+    /// what lets the read layer and the contract test tell the two files apart rather than assume.
+    public let hasIdSpace: Bool
     /// Whether the identity model is the current INTEGER-PK one.
     public var usesIntegerPrimaryKeys: Bool { treeIdentityColumn == "uuid" }
 
@@ -178,7 +190,12 @@ public struct SeedSchema: Equatable, Sendable {
             speciesIdentityColumn: speciesColumns.contains("uuid") ? "uuid" : "id",
             rtreeJoinColumn: treeColumns.contains("rt_id") ? "rt_id" : "id",
             hasCityRaw: treeColumns.contains("city_raw"),
-            hasInventorySource: treeColumns.contains("inventory_source")
+            hasInventorySource: treeColumns.contains("inventory_source"),
+            // All three together or none: the column and the two tables it and
+            // `inventory_source` point at are one migration and are meaningless apart.
+            hasIdSpace: try treeColumns.contains("id_space")
+                && connection.tableExists("id_spaces", in: schema)
+                && connection.tableExists("inventories", in: schema)
         )
     }
 }

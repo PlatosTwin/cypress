@@ -12,8 +12,10 @@ import Testing
 ///
 /// - **E38** — `31 trees` must not be the size of a page. The grid thins; the count must be of what
 ///   matched, not of what survived.
-/// - **E175** — 73.97 % of the seed carries no planting date, so a year filter that says nothing
-///   about them is asserting they were planted outside every decade the reader can pick.
+/// - **E175** — 80.78 % of the seed carries no planting date, so a year filter that says nothing
+///   about them is asserting they were planted outside every decade the reader can pick. The figure
+///   was 73.97 % when this was written and San Jose moved it the same day (E176); the number lives in
+///   `MapYearFilterCopy` and is asserted against the seed for exactly that reason.
 /// - **E126** — an emptied map must say why, and offer the way out.
 /// - **D1** — none of the above may become a count of the reader's own actions.
 ///
@@ -239,7 +241,7 @@ struct MapFilterTests {
 
     /// **The measurement the year control is designed around, pinned so it cannot rot.**
     ///
-    /// `MapYearFilterCopy.setAside` says "about 3 in 4". That sentence is only honest while the seed
+    /// `MapYearFilterCopy.setAside` says "about 4 in 5". That sentence is only honest while the seed
     /// actually looks like this, and the seed is rebuilt by `Tools/build_seed.py` from a live city
     /// export — so a re-ingest could move coverage without anybody touching this feature. This test
     /// is what makes that a failing build rather than a lie on screen.
@@ -262,14 +264,19 @@ struct MapFilterTests {
 
         // The constant the copy is derived from, and the rounding the copy performs. Both are
         // asserted: the first catches a drift the sentence would hide, the second catches a drift
-        // large enough to make "3 in 4" the wrong words.
+        // large enough to make "4 in 5" the wrong words.
+        //
+        // This pair has already caught a real one. Written against a San-Francisco-only seed it read
+        // 0.7397 and "3 in 4"; San Jose landed hours later and turned the merge red, because San Jose
+        // publishes a planting date for 222 of 52,788 rows. See E175 and E176 — the point of pinning
+        // the number to the seed rather than to the day it was measured.
         #expect(
             abs(undatedShare - MapYearFilterCopy.undatedShareOfSeed) < 0.01,
             "planting-date coverage moved: \(undatedShare) undated, copy is written for \(MapYearFilterCopy.undatedShareOfSeed)"
         )
         #expect(
-            undatedShare > 0.7 && undatedShare < 0.8,
-            "\"about 3 in 4\" is no longer true of the seed: \(undatedShare) of rows are undated"
+            undatedShare > 0.75 && undatedShare < 0.85,
+            "\"about 4 in 5\" is no longer true of the seed: \(undatedShare) of rows are undated"
         )
     }
 

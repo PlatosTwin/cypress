@@ -101,8 +101,20 @@ public typealias SiteType = String
 /// from day one (PRODUCT §3, DECISIONS §3.13).
 public struct Tree: CoreEntity, SoftDeletable {
     public let id: UUID
-    /// DataSF `TreeID`. Nullable and unique; the key the weekly diff matches on (BUILD-PLAN §7).
+    /// The publishing inventory's own id for this record, verbatim. SF `TreeID`, San Jose
+    /// `FACILITYID`. The key the weekly diff matches on (BUILD-PLAN §7).
+    ///
+    /// **Unique only within `idSpace`, never on its own.** San Jose FACILITYID 3 and San Francisco
+    /// TreeID 3 are two different trees and both are in the seed (ERRATA E169, E176).
     public var externalRef: String?
+    /// The numbering `externalRef` is drawn from — `sf`, `us-ca-sj` — or nil when the record does not
+    /// say, which is how every seed built before the v14 pass reads and how a community-added tree
+    /// reads always.
+    ///
+    /// It is on the model rather than left in the database because it changes what the app may
+    /// *conclude* from the city's columns: `LandContext.inferred(from:idSpace:)` is a rule over one
+    /// publisher's vocabulary and must not run against another's. See RULINGS R24.
+    public var idSpace: String?
     public var source: TreeSource
     /// `geom geometry(Point, 4326)`. Tree pins are exact; only photo locations are fuzzed
     /// (BUILD-PLAN §10).
@@ -145,6 +157,7 @@ public struct Tree: CoreEntity, SoftDeletable {
     public init(
         id: UUID = UUID(),
         externalRef: String? = nil,
+        idSpace: String? = nil,
         source: TreeSource,
         coordinate: Coordinate,
         address: String? = nil,
@@ -165,6 +178,7 @@ public struct Tree: CoreEntity, SoftDeletable {
     ) {
         self.id = id
         self.externalRef = externalRef
+        self.idSpace = idSpace
         self.source = source
         self.coordinate = coordinate
         self.address = address
@@ -197,7 +211,9 @@ public struct Tree: CoreEntity, SoftDeletable {
         if let stated = statedLandContext {
             return KnownLandContext(context: stated, source: .statedByContributor)
         }
-        guard let cityRecord, let inferred = LandContext.inferred(from: cityRecord) else { return nil }
+        guard let cityRecord,
+              let inferred = LandContext.inferred(from: cityRecord, idSpace: idSpace)
+        else { return nil }
         return KnownLandContext(context: inferred, source: .inferredFromCityRecord)
     }
 }

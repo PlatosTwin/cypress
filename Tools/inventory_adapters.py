@@ -405,7 +405,7 @@ class SFDataSFAdapter:
     planted and undocumented trees the maintenance inventory never adopted.
     """
 
-    inventory_id = "datasf"
+    inventory_id = "sf_datasf"
 
     def __init__(
         self,
@@ -518,7 +518,7 @@ class SFCityLayerAdapter:
     see `species_of`.
     """
 
-    inventory_id = "city"
+    inventory_id = "sf_city"
 
     def __init__(self, rows: list, enrichment: dict, horizon_year: int, limit: int = 0) -> None:
         self.stats = {"source_rows": 0, "dropped_no_coords": 0}
@@ -611,7 +611,7 @@ class SFCityLayerAdapter:
                 # across from the export for the records both inventories list.
                 # `None` here means this layer is the only one that lists the
                 # record, so those seven are genuinely absent rather than joined.
-                attributes_from="datasf" if extra is not None else None,
+                attributes_from="sf_datasf" if extra is not None else None,
                 # Stored EXACTLY as the city writes them, mostly uppercase.
                 # Title-casing turns `MCALLISTER ST` into a spelling nobody uses.
                 address=_clean(record.get("Address")),

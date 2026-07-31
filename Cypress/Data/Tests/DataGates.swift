@@ -984,12 +984,47 @@ public enum DataGates {
             """)
         expect(badUUIDs == 0, "seed contract: \(badUUIDs) trees have a malformed uuid", into: &failures)
 
-        // Coordinates are inside the declared SF bbox.
-        let outOfBounds = try await count("""
-            SELECT COUNT(*) AS n FROM \(SeedDatabase.schemaName).trees
-             WHERE lat NOT BETWEEN 37.69 AND 37.85 OR lon NOT BETWEEN -122.54 AND -122.33
-            """)
-        expect(outOfBounds == 0, "seed contract: \(outOfBounds) trees are outside the SF bbox", into: &failures)
+        // Coordinates are inside their own city's declared bbox.
+        //
+        // **The box belongs to the id space, not to the file.** This used to be San Francisco's box
+        // applied to every row, which was right while every row was San Francisco's and became a
+        // hard failure for all 52,788 San Jose rows the moment a second city landed — one of them
+        // being San Jose's own `SJ_BBOX` in `Tools/build_seed.py`, where `accepts()` already
+        // enforces it. A gate that rejected the correct outcome is a gate that would have been
+        // "fixed" by widening it to hold both cities, which is how a bbox check stops catching
+        // state-plane leakage and null island at all.
+        let boxes: [(space: String, minLat: Double, maxLat: Double, minLon: Double, maxLon: Double)] = [
+            ("sf", 37.69, 37.85, -122.54, -122.33),
+            ("us-ca-sj", 37.10, 37.50, -122.10, -121.65)
+        ]
+        if schema.hasIdSpace {
+            for box in boxes {
+                let outOfBounds = try await count("""
+                    SELECT COUNT(*) AS n FROM \(SeedDatabase.schemaName).trees
+                     WHERE id_space = '\(box.space)'
+                       AND (lat NOT BETWEEN \(box.minLat) AND \(box.maxLat)
+                            OR lon NOT BETWEEN \(box.minLon) AND \(box.maxLon))
+                    """)
+                expect(
+                    outOfBounds == 0,
+                    "seed contract: \(outOfBounds) trees in id space '\(box.space)' are outside its bbox",
+                    into: &failures
+                )
+            }
+            // And no row is in a space this gate has no box for, so a third city cannot arrive
+            // unchecked by being unrecognised.
+            let unboxed = try await count("""
+                SELECT COUNT(*) AS n FROM \(SeedDatabase.schemaName).trees
+                 WHERE id_space NOT IN (\(boxes.map { "'\($0.space)'" }.joined(separator: ",")))
+                """)
+            expect(unboxed == 0, "seed contract: \(unboxed) trees are in an id space with no bounding box to check", into: &failures)
+        } else {
+            let outOfBounds = try await count("""
+                SELECT COUNT(*) AS n FROM \(SeedDatabase.schemaName).trees
+                 WHERE lat NOT BETWEEN 37.69 AND 37.85 OR lon NOT BETWEEN -122.54 AND -122.33
+                """)
+            expect(outOfBounds == 0, "seed contract: \(outOfBounds) trees are outside the SF bbox", into: &failures)
+        }
 
         // Enumerated columns hold only vocabulary values.
         let badStatus = try await count("""
@@ -1345,10 +1380,21 @@ public enum DataGates {
             // planting sites are a second read of the DataSF export. Its rows are read, shipped and
             // skipped on exactly the same terms, and a `city` seed whose second pass silently
             // stopped carrying sites would otherwise balance its books without them.
+            //
+            // **A third pass once a second city is in the file**, on the same terms. San Jose's
+            // whole 344,879-record corpus is read and validated; what does not ship is the part
+            // outside `SJ_SHIP_WINDOW`, and that count is a *product* decision rather than a data
+            // defect — which is why it is named `sj_rows_outside_ship_window` and not folded in
+            // with the drops. It still has to appear on this side of the arithmetic, or the books
+            // balance only by not mentioning 292,091 rows.
             let spineRead = meta["source_rows"].flatMap(Int.init) ?? -1
-            let read = spineRead + (meta["export_vacant_rows_read"].flatMap(Int.init) ?? 0)
+            let read = spineRead
+                + (meta["export_vacant_rows_read"].flatMap(Int.init) ?? 0)
+                + (meta["sj_rows_read"].flatMap(Int.init) ?? 0)
             let dropped = [
                 "dropped_no_coords", "dropped_out_of_bbox", "dropped_dupe_treeid",
+                // Read, validated, and deliberately not shipped. See above.
+                "sj_rows_outside_ship_window",
                 // A site the city's layer lists as a living tree — the one case where the two
                 // inventories genuinely contradict each other, and the city wins.
                 "export_vacant_sites_excluded_city_lists_tree",

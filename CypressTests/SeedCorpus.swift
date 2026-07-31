@@ -62,8 +62,22 @@ struct SeedCorpus: Sendable {
     let landContextOtherPublic: Int
     let landContextCityPark: Int
     let landContextUnplaced: Int
+    /// Rows `LandContext.inferred(from:idSpace:)` declines outright because they are in an id space
+    /// the mapping was not written for (R24) — as opposed to rows whose record says nothing. Both
+    /// land in `landContextUnplaced`, and they are different facts: a change that turned one into
+    /// the other would balance a single total without anybody noticing.
+    let landContextDeclinedForeignVocabulary: Int
     /// Neighbourhoods that hold trees but no vacant planting site.
     let neighborhoodsWithNoVacantSite: Int
+    /// Vacant sites in no neighbourhood at all, and therefore invisible to every neighbourhood
+    /// surface in the app. Zero for a San Francisco-only seed; a whole city's worth once a second
+    /// city ships without a neighbourhood layer of its own (ERRATA E176).
+    let vacantSitesWithNoNeighbourhood: Int
+    /// Rows that are `alive` with no species because their **source said a tree is there and did not
+    /// say which** — R18's answer for San Jose's `NAMESCIENTIFIC = 'Unknown'`. Distinct from
+    /// `records_not_a_tree`, which is a source saying the thing growing there is not a tree. Neither
+    /// of San Francisco's inventories can express the first, so it is zero for both SF corpora.
+    let treesOfUnknownSpecies: Int
     /// Vacant sites carrying a planting date — the reason `planted_on` alone cannot decide what the
     /// almanac's season rows and coverage card may show.
     let datedVacantSites: Int
@@ -94,9 +108,18 @@ struct SeedCorpus: Sendable {
             .split(separator: ",")
             .map { String($0).trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty })
-        switch source {
-        case "city": return .city(absentColumns: absent)
-        case "datasf": return .dataSF(absentColumns: absent)
+        // Which corpus a file is depends on TWO facts now, not one: which San Francisco inventory
+        // decided its trees, and whether a second city's rows are in it. `id_spaces_in_file` is
+        // written by the v14 pass and is absent on every earlier seed, which is exactly right —
+        // those files hold one space.
+        let spaces = Set((meta["id_spaces_in_file"] ?? "")
+            .split(separator: ",")
+            .map { String($0).trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty })
+        switch (source, spaces.contains("us-ca-sj")) {
+        case ("sf_city", false), ("city", false): return .city(absentColumns: absent)
+        case ("sf_city", true), ("city", true): return .cityWithSanJose(absentColumns: absent)
+        case ("sf_datasf", _), ("datasf", _): return .dataSF(absentColumns: absent)
         default:
             Issue.record("seed_meta.trees_source is '\(source)', which no corpus is pinned for")
             return .dataSF(absentColumns: absent)
@@ -149,7 +172,73 @@ struct SeedCorpus: Sendable {
             landContextOtherPublic: 460,
             landContextCityPark: 71,
             landContextUnplaced: 3_506,
+            landContextDeclinedForeignVocabulary: 0,
             neighborhoodsWithNoVacantSite: 0,
+            vacantSitesWithNoNeighbourhood: 0,
+            treesOfUnknownSpecies: 0,
+            datedVacantSites: 9_237,
+            sunsetVacantSites: 1_436,
+            sunsetTreesWithSpecies: 9_504,
+            sunsetTreesLeftJoined: 9_512,
+            sunsetSpeciesInMix: 201,
+            densestScreenfulFloor: 4_000
+        )
+    }
+
+    /// **San Francisco as above, plus central San Jose.** What ships after #129, built with
+    /// `--source city --sj-extent downtown`.
+    ///
+    /// **52,788 San Jose rows on top of San Francisco's 145,837**, out of a 344,879-record corpus
+    /// that was read and validated in full. Ingesting and shipping are two decisions (ERRATA E176):
+    /// what a phone gets is a contiguous window over central San Jose — downtown, SoFA, Japantown,
+    /// Naglee Park, the Alameda, north Willow Glen — **complete inside it**, because a sampled corpus
+    /// would put invisible holes between real trees on a real block while looking fine in aggregate.
+    ///
+    /// **Three numbers here are the same as `city`'s and that is the finding, not an oversight.**
+    /// `landContextStreet`, `landContextPrivate`, `landContextOtherPublic` and `landContextCityPark`
+    /// do not move, because `LandContext.inferred(from:idSpace:)` refuses to read San Francisco's
+    /// `qLegalStatus` vocabulary against San Jose's `OWNEDBY` (R24). So all 52,788 San Jose rows land
+    /// in `landContextUnplaced`, which goes 3,506 → 56,294. Before that refusal they resolved —
+    /// 48,036 of them to `.privateProperty`, on a layer called *Street Trees*.
+    ///
+    /// **`sunset*` and `neighborhoodsWithNoVacantSite` do not move either**, for a related reason
+    /// worth stating: the seed's `neighborhoods` table is San Francisco's 41 Analysis Neighborhoods
+    /// and nothing else, so every San Jose row carries `neighborhood_id IS NULL` and is invisible to
+    /// every neighbourhood-scoped surface in the app, the almanac included.
+    static func cityWithSanJose(absentColumns: Set<String>) -> SeedCorpus {
+        SeedCorpus(
+            source: "sf_city",
+            absentColumns: absentColumns,
+            trees: 198_625,
+            species: 738,
+            vacantSites: 24_200,
+            cityColumnRows: [
+                "legal_status": 192_912,
+                "caretaker": 195_119,
+                "care_assistant": 10_595,
+                "plant_type": 197_526,
+                "plot_size": 166_746,
+                "permit_notes": 78_095
+            ],
+            distinctPlotSizes: 411,
+            // UNCHANGED from `city`, and that is a finding. San Jose's SPACEWIDTH is a bare
+            // number of feet — `8+`, `3`, `0` — and `CityRecordPresentation.plotSizeText` refuses a
+            // bare integer of unstated unit, which is the same rule that refuses San Francisco's
+            // `60`. So all 51,550 San Jose plot sizes are carried into the seed and none of them
+            // will ever render. Correct under the existing rule; recorded in ERRATA E176 rather
+            // than fixed, because deciding that SPACEWIDTH means feet is a decision about a column
+            // documented as DataSF's PlotSize.
+            plotSizesShown: 96_566,
+            plotSizesRefused: 70_180,
+            landContextStreet: 137_204,
+            landContextPrivate: 4_596,
+            landContextOtherPublic: 460,
+            landContextCityPark: 71,
+            landContextUnplaced: 56_294,
+            landContextDeclinedForeignVocabulary: 52_788,
+            neighborhoodsWithNoVacantSite: 0,
+            vacantSitesWithNoNeighbourhood: 11_787,
+            treesOfUnknownSpecies: 705,
             datedVacantSites: 9_237,
             sunsetVacantSites: 1_436,
             sunsetTreesWithSpecies: 9_504,
@@ -185,7 +274,10 @@ struct SeedCorpus: Sendable {
             landContextOtherPublic: 956,
             landContextCityPark: 177,
             landContextUnplaced: 0,
+            landContextDeclinedForeignVocabulary: 0,
             neighborhoodsWithNoVacantSite: 0,
+            vacantSitesWithNoNeighbourhood: 0,
+            treesOfUnknownSpecies: 0,
             datedVacantSites: 9_294,
             sunsetVacantSites: 1_474,
             sunsetTreesWithSpecies: 11_026,

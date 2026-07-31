@@ -64,7 +64,7 @@ def check(condition, message):
 def tree(**overrides) -> InventoryRecord:
     """A minimal valid record, for tests that vary one thing about it."""
     base = dict(
-        inventory="datasf",
+        inventory="sf_datasf",
         kind=KIND_TREE,
         kind_basis=KindBasis.STATED_CATEGORY,
         lat=37.7761,
@@ -113,10 +113,10 @@ def test_the_two_sf_inventories_share_an_identity_on_purpose():
     DataSF -> city switch reversible with zero uuids moved (E156), and what keeps
     a photograph attached to its tree across a source change.
     """
-    from_export = tree(inventory="datasf", source_ref="266901")
-    from_layer = tree(inventory="city", source_ref="266901")
+    from_export = tree(inventory="sf_datasf", source_ref="266901")
+    from_layer = tree(inventory="sf_city", source_ref="266901")
     check(
-        INVENTORIES["city"].id_space == INVENTORIES["datasf"].id_space == "sf",
+        INVENTORIES["sf_city"].id_space == INVENTORIES["sf_datasf"].id_space == "sf",
         "SF's two inventories are no longer in one id space; a source switch would orphan data",
     )
     check(
@@ -551,7 +551,7 @@ def test_the_city_adapter_reads_the_layers_own_fields():
     check(all(r.validate() == [] for r in got),
           "the city adapter produced a record the contract refuses: "
           + str([r.validate() for r in got]))
-    check(all(r.inventory == "city" for r in got), "the city adapter mislabelled its inventory")
+    check(all(r.inventory == "sf_city" for r in got), "the city adapter mislabelled its inventory")
     check(
         all(r.attributes_from is None for r in got),
         "with no export index every record must say its facts are the layer's own",
@@ -607,14 +607,14 @@ def test_where_the_facts_came_from_is_a_property_of_the_record():
                         "PermitNotes": None}}
     got = {r.source_ref: r for r in SFCityLayerAdapter(rows, enrichment, 2027).records()}
 
-    check(got["1"].attributes_from == "datasf", "a joined record does not say where its facts came from")
+    check(got["1"].attributes_from == "sf_datasf", "a joined record does not say where its facts came from")
     check(
         got["2"].attributes_from is None,
         "a record only the listing inventory holds claims its facts came from elsewhere",
     )
     check(all(r.validate() == [] for r in got.values()), "attributes_from broke validation")
     check(
-        tree(inventory="city", attributes_from="city").validate(),
+        tree(inventory="sf_city", attributes_from="sf_city").validate(),
         "attributes_from naming the listing inventory validated clean; that case is spelled None",
     )
     check(
