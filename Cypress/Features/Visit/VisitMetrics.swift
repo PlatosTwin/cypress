@@ -94,8 +94,8 @@ enum VisitMetrics {
         /// viewport falls to 247 pt and the well's 476 does not fit in it at all, so the entire
         /// first screenful was one grey box clipped at the footer, with the form, the pin row and
         /// the land question all below a fold nothing on the screen admitted to. On the 393 × 852
-        /// phone the tests host, the same two numbers are 78 % of a 620 pt viewport and 219 drawn
-        /// rows of a 290 pt one.
+        /// phone the tests host, the same two are 481 pt of a 617 pt viewport — 78 % — and 219
+        /// *drawn* rows of a 287 pt one, 219 being where the footer cut the well off.
         ///
         /// **E162 refused a cap and the refusal was right about the wrong thing.** Its argument:
         /// "any well shorter than its own capture crops the live preview again, which is the

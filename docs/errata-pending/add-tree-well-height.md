@@ -31,9 +31,10 @@ considered, and there was a second one.
 | after, default type | 539 pt | 357 tall × 266 wide | 66 % |
 | after, AX5 | 179 pt | 116 tall × 91 wide | 65 % |
 
-The tests host a 393 × 852 phone rather than this one, and the failures they record before the fix
-read 481 pt of a 620 pt viewport at the drawn size and 219 drawn rows of a 290 pt viewport at AX5 —
-the second of those being the clipped height, because 481 has nowhere to go in 290.
+The tests host a 393 × 852 phone rather than this one, and the failures they record against the
+pre-fix layout read 481 pt of a 617 pt viewport at the drawn size (78 %) and 219 *drawn* rows of a
+287 pt viewport at AX5 — the second being where the footer cut the well off, because 481 pt has
+nowhere to go in 287.
 
 At the drawn size the 83 % left 105 pt under the photograph, into which the screen fitted the
 photo-source link, one sentence, and the top half of the words `Move the pin` — a clipped line above
