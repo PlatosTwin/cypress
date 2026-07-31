@@ -263,7 +263,11 @@ struct CityRecordSectionTests {
     /// field would be a claim that the value exists and Cypress has not got it.
     @Test("every San Francisco city record says on screen that the inventory holds no pruning dates")
     func thePruningAnswerIsOnScreen() throws {
-        let pruning = try #require(CityRecordPresentation.pruningNote(idSpace: "sf"))
+        // The fixtures carry no id space, which `pruningNote(idSpace:)` reads as San Francisco for
+        // the reason `LandContext.inferred(from:idSpace:)` does — a seed built before the column
+        // existed holds one city. The San Jose half of the rule is asserted against real rows in
+        // `theSanJoseSentenceIsAbsentRatherThanTranslated`.
+        let pruning = try #require(CityRecordPresentation.pruningNote(idSpace: nil))
         for profile in [
             TreeProfileSeedFixtures.fullCityRecord,
             TreeProfileSeedFixtures.bareCityRecord,
@@ -271,9 +275,7 @@ struct CityRecordSectionTests {
             TreeProfileSeedFixtures.populated,
             TreeProfileSeedFixtures.coldStart,
         ] {
-            var sanFrancisco = profile
-            sanFrancisco.tree.idSpace = "sf"
-            let presentation = Self.presentation(sanFrancisco)
+            let presentation = Self.presentation(profile)
             #expect(presentation.cityRecordNotes.last == pruning)
             // No field, no blank, no placeholder anywhere in the grid.
             let labels = presentation.cityRecord?.facts.map(\.label) ?? []
@@ -479,10 +481,12 @@ struct CityRecordSectionTests {
             #expect(presentation.landContextNote == nil)
         }
         #expect(facts.contains { $0.id == "permitNotes" } == false)
-        #expect(
-            presentation.cityRecordNotes
-                .contains(try #require(CityRecordPresentation.pruningNote(idSpace: tree.idSpace)))
-        )
+        // Conditional rather than `#require`d: the predicate above is a `LIMIT 1` over a table that
+        // now holds two cities, and the pruning sentence is San Francisco's alone (R28). Asserting
+        // it unconditionally would make this test's subject depend on which row SQLite handed back.
+        if let pruning = CityRecordPresentation.pruningNote(idSpace: tree.idSpace) {
+            #expect(presentation.cityRecordNotes.contains(pruning))
+        }
 
         // The provenance line, end to end: `seed_meta` → `CypressStore.seedProvenance` →
         // `TreeProfile` → the section's last sentence. This is the fix for the defect that made

@@ -250,7 +250,10 @@ struct TreePlacementTests {
     @Test("a city record claims neither placement")
     func aCityTreeClaimsNoPlacement() {
         let line = Self.subtitle(source: .cityImport, placement: .gps)
-        #expect(line.contains("SF city inventory"))
+        // No city in this fixture's provenance element, because the fixture carries no inventory
+        // to name one from — and never `SF` on a row that might be San Jose's (#137, R28).
+        #expect(line.contains(CityRecordCopy.unnamedCityInventory))
+        #expect(!line.contains("SF"), "the subtitle reads: \(line)")
         #expect(!line.contains("position"), "the subtitle reads: \(line)")
         let note = TreeProfilePresentation(
             profile: TreeProfile(tree: Self.tree(source: .cityImport, placement: .gps))
