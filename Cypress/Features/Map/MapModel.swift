@@ -557,11 +557,30 @@ enum MapPinKind {
     /// change them, and `SiteCopy` is where the screen's own copy already lives. A component in
     /// `DesignSystem` must not reach into `Features` for a string, so the default stays where it is
     /// and this keeps overriding it.
+    ///
+    /// **A confirmed-dead tree is the second override, for the same reason** (ERRATA E170). It draws
+    /// the grey pin, which is right — there is no living tree at this site, and `MapPin.Kind` is a
+    /// closed catalogue whose sixth entry took a ruling. But the grey pin *says* `Removed tree,
+    /// memorial`, and a dead street tree has not been removed: it is standing there, over a pavement,
+    /// and it keeps its profile and its REPORT button precisely because reporting it is the most
+    /// useful thing a passer-by can do. A reader sweeping a block was told the one thing that would
+    /// stop them walking over to it. Same split E107 made and same half — the words are fixable here
+    /// without touching the catalogue; whether a standing dead tree deserves its own drawn pin is a
+    /// design decision, and it is left open rather than guessed at.
     static func accessibilityLabel(for pin: TreePin) -> String {
-        guard kind(for: pin) == .vacantSite else {
-            return kind(for: pin).accessibilityLabel
+        switch kind(for: pin) {
+        case .vacantSite:
+            return SiteCopy.pinAccessibilityLabel
+        // Only where the drawn pin is the memorial's, which is what makes the default a lie. A
+        // community-added dead tree draws `.community` and says so, because "community source wins
+        // over every status" (DECISIONS §3.16) is the rule in both channels, not only in the fill —
+        // and `Community-added tree` is incomplete rather than untrue. Fixing the lie is this
+        // errata's business; widening the rule is not.
+        case .removed where pin.status == .deadReported:
+            return MapPinCopy.deadReportedLabel
+        case let other:
+            return other.accessibilityLabel
         }
-        return SiteCopy.pinAccessibilityLabel
     }
 
     /// The same label, with the species named when the map has a colour on this pin.
@@ -583,6 +602,19 @@ enum MapPinKind {
         else { return plain }
         return "City tree, \(name)"
     }
+}
+
+/// The words the map says about a pin that the closed `MapPin.Kind` catalogue has no case for.
+///
+/// **NOT SPECIFIED** — C19 names five pins and none of them is a standing dead tree. It lives in
+/// `Features/Map` rather than in the component for the reason `SiteCopy.pinAccessibilityLabel` does:
+/// a component in `DesignSystem` must not reach into `Features` for a string, so the catalogue keeps
+/// its own default and the feature overrides it.
+enum MapPinCopy {
+    /// Says the two things a listener needs and neither of the two it must not: that the tree is dead
+    /// (so the grey dot is explained), that it is still standing (so nobody reads "gone"), and no
+    /// word of "memorial" or "removed", which are the other status.
+    static let deadReportedLabel = "Dead tree, still standing"
 }
 
 // MARK: - The bottom card's subject

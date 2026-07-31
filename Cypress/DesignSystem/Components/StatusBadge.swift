@@ -22,12 +22,21 @@ struct StatusBadge: View {
         case planted(year: Int)
         /// `REMOVED` — the memorial state.
         case removed
+        /// `DEAD` — a tree a lead has confirmed dead (ERRATA E170).
+        ///
+        /// **Not a second way of saying `removed`.** A `dead_reported` tree is still standing over a
+        /// pavement: it keeps its profile, its REPORT and CARE buttons and its pin
+        /// (`TreeStatus.deadReported.acceptsNewContributions`). The badge exists because that profile
+        /// otherwise says nothing at all about a status somebody confirmed — it looked exactly like a
+        /// live tree with no check-ins.
+        case deadReported
 
         var text: String {
             switch self {
             case .thriving: return "Thriving"
             case let .planted(year): return "Planted \(year)"
             case .removed: return "Removed"
+            case .deadReported: return "Dead"
             }
         }
 
@@ -35,7 +44,11 @@ struct StatusBadge: View {
             switch self {
             case .thriving: return CypressColor.thrivingBadgeText
             case .planted: return CypressColor.plantedBadgeText
-            case .removed: return CypressColor.removedBadgeText
+            // The removed pair, deliberately: the catalogue has no fifth badge colour, and inventing
+            // one is a design decision this errata has no standing to make (the argument E107 made
+            // about the vacant-site pin, which waited for RULINGS R7). Grey says "not a living tree
+            // here", which is true of both — and the two badges never say the same word.
+            case .removed, .deadReported: return CypressColor.removedBadgeText
             }
         }
 
@@ -43,7 +56,7 @@ struct StatusBadge: View {
             switch self {
             case .thriving: return CypressColor.thrivingBadgeFill
             case .planted: return CypressColor.plantedBadgeFill
-            case .removed: return CypressColor.removedBadgeFill
+            case .removed, .deadReported: return CypressColor.removedBadgeFill
             }
         }
     }
@@ -90,12 +103,18 @@ struct StatusBadge: View {
 
     /// The domain → badge mapping. `nil` means "SCREENS.md documents no badge for this tree",
     /// which is a legitimate answer: most trees carry none.
+    ///
+    /// Status outranks vitality in both directions, and `deadReported` is why that ordering had to be
+    /// written down rather than left to `isMemorial` (ERRATA E170). A tree can carry a confirmed-dead
+    /// status *and* a stale `.thriving` rating from a check-in made before it died — the observation
+    /// is not wrong, it is old — and the badge must be the status.
     static func kind(
         status: TreeStatus,
         vitality: Vitality?,
         plantedYear: Int?
     ) -> Kind? {
         if status.isMemorial { return .removed }
+        if status == .deadReported { return .deadReported }
         if vitality == .thriving { return .thriving }
         if vitality == nil, let plantedYear { return .planted(year: plantedYear) }
         return nil
