@@ -813,7 +813,7 @@ struct VisitCameraSessionTests {
         // `U` to **`AnyHashable`** rather than to `CGFloat`. The two sides are then boxes rather than
         // numbers, and `AnyHashable(CGFloat(0.75)) != AnyHashable(Double(0.75))` because the dynamic
         // types differ, however equal the values are. Naming the type here keeps `U` at `CGFloat`, so
-        // this compares the number. See `docs/errata-pending/well-aspect-ratio.md`.
+        // this compares the number. See ERRATA E171.
         let portrait: CGFloat = 3.0 / 4.0
         #expect(ratio == portrait, "the well is \(ratio), not the 3:4 frame a phone held upright takes")
 
