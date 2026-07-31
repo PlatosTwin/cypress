@@ -1,0 +1,36 @@
+2026-07-31T18:15:14+00:00	socrata_catalog	200	129	https://api.us.socrata.com/api/catalog/v1?domains=data.sfgov.org&q=tree&limit=100
+2026-07-31T18:15:22+00:00	socrata_catalog	200	109827	https://api.us.socrata.com/api/catalog/v1?search_context=data.sfgov.org&domains=data.sfgov.org&q=tree&limit=60
+2026-07-31T18:15:23+00:00	socrata_catalog	200	39299	https://data.sfgov.org/api/catalog/v1?q=landmark%20tree&limit=40
+2026-07-31T18:15:34+00:00	socrata_catalog	200	80467	https://api.us.socrata.com/api/catalog/v1?search_context=data.sfgov.org&domains=data.sfgov.org&q=landmark&limit=60
+2026-07-31T18:15:35+00:00	socrata_catalog	200	129	https://api.us.socrata.com/api/catalog/v1?search_context=data.sfgov.org&domains=data.sfgov.org&q=urban%20forestry&limit=60
+2026-07-31T18:15:49+00:00	arcgis_online_search	200	377863	https://www.arcgis.com/sharing/rest/search?q=landmark%20tree&f=json&num=50
+2026-07-31T18:15:55+00:00	sf_arcgis	200	368038	https://services.arcgis.com/Zs2aNLFN00jrS4gG/arcgis/rest/services?f=json
+2026-07-31T18:16:17+00:00	sf_arcgis	200	3113	https://services.arcgis.com/Zs2aNLFN00jrS4gG/arcgis/rest/services/Confirmed_Landmark_tree_data_table/FeatureServer?f=json
+2026-07-31T18:16:18+00:00	sf_arcgis	200	3201	https://services.arcgis.com/Zs2aNLFN00jrS4gG/arcgis/rest/services/Sullivan_Candidate_Landmark_significant_tree_data_table/FeatureServer?f=json
+2026-07-31T18:16:26+00:00	arcgis_online_item	200	1267	https://www.arcgis.com/sharing/rest/content/items/1d7f24c0623e4762ab020ca86c513257?f=json
+2026-07-31T18:16:27+00:00	arcgis_online_item	200	1345	https://www.arcgis.com/sharing/rest/content/items/f04cda2b32dd46c9b017e7d5f2cf845a?f=json
+2026-07-31T18:16:40+00:00	sf_arcgis	200	13774	https://services.arcgis.com/Zs2aNLFN00jrS4gG/arcgis/rest/services/Confirmed_Landmark_tree_data_table/FeatureServer/0?f=json
+2026-07-31T18:16:41+00:00	sf_arcgis	200	13823	https://services.arcgis.com/Zs2aNLFN00jrS4gG/arcgis/rest/services/Sullivan_Candidate_Landmark_significant_tree_data_table/FeatureServer/0?f=json
+2026-07-31T18:16:43+00:00	sf_arcgis	200	9384	https://services.arcgis.com/Zs2aNLFN00jrS4gG/arcgis/rest/services/Sullivan_Candidate_Landmark_significant_tree_data_table/FeatureServer/1?f=json
+2026-07-31T18:16:57+00:00	sf_arcgis	200	12	https://services.arcgis.com/Zs2aNLFN00jrS4gG/arcgis/rest/services/Confirmed_Landmark_tree_data_table/FeatureServer/0/query?where=1%3D1&returnCountOnly=true&f=json
+2026-07-31T18:16:58+00:00	sf_arcgis	200	12	https://services.arcgis.com/Zs2aNLFN00jrS4gG/arcgis/rest/services/Sullivan_Candidate_Landmark_significant_tree_data_table/FeatureServer/0/query?where=1%3D1&returnCountOnly=true&f=json
+2026-07-31T18:17:00+00:00	sf_arcgis	200	14	https://services.arcgis.com/Zs2aNLFN00jrS4gG/arcgis/rest/services/Sullivan_Candidate_Landmark_significant_tree_data_table/FeatureServer/1/query?where=1%3D1&returnCountOnly=true&f=json
+2026-07-31T18:17:31+00:00	datasf	200	631	https://data.sfgov.org/resource/tkzw-k3nq.json?$select=qlegalstatus,count(*)&$group=qlegalstatus&$order=count(*)%20desc
+2026-07-31T18:17:56+00:00	datasf	200	133555	https://data.sfgov.org/resource/tkzw-k3nq.json?$where=qlegalstatus%20in%20('Landmark%20tree')&$limit=1000
+2026-07-31T18:18:40+00:00	sf_arcgis	200	131	https://services.arcgis.com/Zs2aNLFN00jrS4gG/arcgis/rest/services/BUF_Street_Trees/FeatureServer/3/query?where=TREEID%20IN%20%282614%2C2615%2C2616%2C2617%2C2618%2C2619%2C64380%2C105444%2C111205%2C111749%2C111757%2C111763%2C113742%2C251108%2C251109%2C251110%2C251111%2C251112%2C251113%2C251114%2C251115%2C251116%2C262100%2C262274%2C264739%2C264741%2C275826%29&outFields=*&returnGeometry=false&f=json
+2026-07-31T18:18:59+00:00	datasf	200	1679635	https://data.sfgov.org/resource/tkzw-k3nq.json?$where=qlegalstatus%20in%20('Significant%20Tree')&$limit=5000
+2026-07-31T18:19:50+00:00	datasf	200	3753	https://data.sfgov.org/resource/tkzw-k3nq.json?$where=treeid%20in%20(262215,262216,262217,248932,231331,151836,138024)&$limit=50
+2026-07-31T18:20:56+00:00	sf_arcgis	200	19311	https://services.arcgis.com/Zs2aNLFN00jrS4gG/arcgis/rest/services/Confirmed_Landmark_tree_data_table/FeatureServer/0/query?where=1%3D1&outFields=*&returnGeometry=true&f=json
+2026-07-31T18:22:04+00:00	sfpublicworks	200	63752	https://sfpublicworks.org/services/significant-and-landmark-trees
+2026-07-31T18:23:07+00:00	datasf	200	520	https://data.sfgov.org/resource/tkzw-k3nq.json?$where=qspecies%20like%20%27%25rupicola%25%27&$limit=200
+2026-07-31T18:23:09+00:00	datasf	200	64264	https://data.sfgov.org/resource/tkzw-k3nq.json?$where=qspecies%20like%20%27%25Brahea%25%27&$limit=200
+2026-07-31T18:23:10+00:00	datasf	200	3	https://data.sfgov.org/resource/tkzw-k3nq.json?$where=qaddress%20like%20%27%252251%25Filbert%25%27&$limit=200
+2026-07-31T18:23:12+00:00	datasf	200	562	https://data.sfgov.org/resource/tkzw-k3nq.json?$where=qaddress%20like%20%27%252694%25McAllister%25%27&$limit=200
+2026-07-31T18:23:13+00:00	datasf	200	5399	https://data.sfgov.org/resource/tkzw-k3nq.json?$where=qaddress%20like%20%27%253555%25Cesar%25%27&$limit=200
+2026-07-31T18:23:15+00:00	datasf	200	38393	https://data.sfgov.org/resource/tkzw-k3nq.json?$where=qaddress%20like%20%27%25Stillings%25%27&$limit=200
+2026-07-31T18:24:01+00:00	sfenvironment	200	198177	https://www.sfenvironment.org/landmark-tree-program
+2026-07-31T18:24:38+00:00	ordinance	403	5847	https://codelibrary.amlegal.com/codes/san_francisco/latest/sf_publicworks/0-0-0-4204
+2026-07-31T18:24:39+00:00	ordinance	200	141136	https://sfenvironment.org/media/10791/download?inline=
+2026-07-31T18:25:59+00:00	datasf	200	38530	https://data.sfgov.org/api/views/tkzw-k3nq.json
+2026-07-31T00:00:00+00:00	ordinance	200	146594	https://www.sfenvironment.org/media/10791/download?inline=  -> pdf/sf_publicworks_art16_sec810_landmark_trees.pdf (curl, follows redirect)
+2026-07-31T00:00:00+00:00	google_mymaps	200	22360	https://www.google.com/maps/d/kml?mid=1NK4oc4n35UXpAt19FrJUHAkQaxmvmv9a&forcekml=1  -> sf_landmark_trees_google_mymaps.kml (curl)

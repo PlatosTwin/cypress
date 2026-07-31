@@ -1,0 +1,2768 @@
+{
+  "results" :
+    [
+      {
+        "resource" :
+          {
+            "name" : "Street Tree List",
+            "id" : "tkzw-k3nq",
+            "resource_name" : null,
+            "parent_fxf" : [],
+            "description" : "List of dpw maintained street trees including: Planting date, species, and location",
+            "attribution" : "San Francisco Public Works",
+            "attribution_link" : "http://www.sfdpw.org",
+            "contact_email" : null,
+            "type" : "dataset",
+            "updatedAt" : "2026-07-31T12:14:41.000Z",
+            "createdAt" : "2012-09-25T00:51:48.000Z",
+            "metadata_updated_at" : "2026-07-31T12:14:41.000Z",
+            "data_updated_at" : "2026-07-30T12:24:36.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 241,
+                "page_views_last_month" : 1135,
+                "page_views_total" : 57056,
+                "page_views_last_week_log" : 7.9188632372745955,
+                "page_views_last_month_log" : 10.149747119504683,
+                "page_views_total_log" : 15.800116273000738
+              },
+            "columns_name" :
+              [
+                "Analysis Neighborhoods",
+                "Fire Prevention Districts",
+                "Police Districts",
+                "Supervisor Districts",
+                "Zip Codes",
+                "Neighborhoods (old)",
+                "PlantType",
+                "Location (city)",
+                "Location (state)",
+                "Location (zip)",
+                "qAddress",
+                "qCaretaker",
+                "DBH",
+                "qLegalStatus",
+                "Location",
+                "qSiteInfo",
+                "PlantDate",
+                "PermitNotes",
+                "Latitude",
+                "Longitude",
+                "TreeID",
+                "qSpecies",
+                "SiteOrder",
+                "qCareAssistant",
+                "PlotSize",
+                "YCoord",
+                "Location (address)",
+                "XCoord"
+              ],
+            "columns_field_name" :
+              [
+                ":@computed_region_ajp5_b2md",
+                ":@computed_region_yftq_j783",
+                ":@computed_region_p5aj_wyqh",
+                ":@computed_region_rxqg_mtj9",
+                ":@computed_region_bh8s_q3mv",
+                ":@computed_region_fyvs_ahh9",
+                "planttype",
+                "location_city",
+                "location_state",
+                "location_zip",
+                "qaddress",
+                "qcaretaker",
+                "dbh",
+                "qlegalstatus",
+                "location",
+                "qsiteinfo",
+                "plantdate",
+                "permitnotes",
+                "latitude",
+                "longitude",
+                "treeid",
+                "qspecies",
+                "siteorder",
+                "qcareassistant",
+                "plotsize",
+                "ycoord",
+                "location_address",
+                "xcoord"
+              ],
+            "columns_datatype" :
+              [
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Number",
+                "Text",
+                "Point",
+                "Text",
+                "Calendar date",
+                "Text",
+                "Number",
+                "Number",
+                "Number",
+                "Text",
+                "Number",
+                "Text",
+                "Text",
+                "Number",
+                "Text",
+                "Number"
+              ],
+            "columns_description" :
+              [
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "Landscaping or Tree",
+                "",
+                "",
+                "",
+                "Address of Tree",
+                "Agency or person that is primary caregiver to tree. Owner of Tree",
+                "depth, ,height",
+                "Legal staus: Permitted or DPW maintained",
+                "Location formatted for mapping",
+                "description of location of tree",
+                "date tree was planted",
+                "Tree permit number reference",
+                "WGS84",
+                "WGS84",
+                "Unique id of tree",
+                "Species of tree",
+                "Order of tree at address where multiple trees are at same address. Trees are ordered in ascending address order",
+                "Agency or person that is secondary caregiver to tree",
+                "date tree was planted",
+                "CA State Plane III",
+                "",
+                "CA State Plane III"
+              ],
+            "columns_format" :
+              [
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                { "view" : "coords", "align" : "left" },
+                {},
+                {},
+                {},
+                {},
+                {},
+                {
+                  "precisionStyle" : "standard",
+                  "noCommas" : "true",
+                  "align" : "right"
+                },
+                {},
+                {},
+                {},
+                {},
+                {
+                  "precisionStyle" : "standard",
+                  "noCommas" : "true",
+                  "align" : "right"
+                },
+                {},
+                {
+                  "precisionStyle" : "standard",
+                  "noCommas" : "true",
+                  "align" : "right"
+                }
+              ],
+            "download_count" : 25797,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "table",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : "2022-11-14T22:30:28.000Z"
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "City Infrastructure",
+            "domain_tags" : [ "trees" ],
+            "domain_metadata" :
+              [
+                {
+                  "key" : "Department-Metrics_Publishing-Department",
+                  "value" : "Public Works"
+                },
+                {
+                  "key" : "Publishing-Details_Publishing-frequency",
+                  "value" : "Daily"
+                },
+                {
+                  "key" : "Publishing-Details_Geographic-unit",
+                  "value" : "Latitude/longitude"
+                },
+                { "key" : "Publishing-Details_Program-link", "value" : "" },
+                {
+                  "key" : "Publishing-Details_Data-change-frequency",
+                  "value" : "Daily"
+                },
+                {
+                  "key" : "Internal-Management_Inventory-ID",
+                  "value" : "DPW-0019"
+                }
+              ]
+          },
+        "metadata" :
+          {
+            "domain" : "data.sfgov.org",
+            "license" : "Open Data Commons Public Domain Dedication and License"
+          },
+        "permalink" : "https://data.sfgov.org/d/tkzw-k3nq",
+        "link" : "https://data.sfgov.org/City-Infrastructure/Street-Tree-List/tkzw-k3nq",
+        "owner" :
+          {
+            "id" : "hf8p-vup5",
+            "user_type" : "interactive",
+            "display_name" : "San Francisco Public Works"
+          },
+        "creator" :
+          {
+            "id" : "hf8p-vup5",
+            "user_type" : "interactive",
+            "display_name" : "San Francisco Public Works"
+          }
+      },
+      {
+        "resource" :
+          {
+            "name" : "Map of SF Urban Tree Canopy",
+            "id" : "55pv-5zcc",
+            "resource_name" : null,
+            "parent_fxf" : [ "ni2e-vpbg" ],
+            "description" : "In preparation for the San Francisco Urban Forest Plan (2013), the Planning Department performed an Urban Tree Canopy (UTC) Analysis using aerial imagery and additional data sets to determine a canopy estimate for the City & County of San Francisco. This analysis estimated San Francisco's tree canopy at 13.7%. This number supersedes a 2007 canopy estimate of 11.9% (USDA Forest Service, 2007). Given the differing methodologies used to arrive at these two numbers it is difficult to draw conclusions regarding urban forest growth or decline based on a comparison. The current analysis establishes a baseline and methodology from which future canopy analyses can be conducted and compared over subsequent years to track San Francisco's urban forest growth or decline over time. See the attachment under About for more on the methodology.",
+            "attribution" : null,
+            "attribution_link" : null,
+            "contact_email" : null,
+            "type" : "map",
+            "updatedAt" : "2025-01-23T19:22:38.000Z",
+            "createdAt" : "2016-07-12T17:47:19.000Z",
+            "metadata_updated_at" : "2025-01-23T19:22:38.000Z",
+            "data_updated_at" : "2016-07-12T17:56:37.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 57,
+                "page_views_last_month" : 218,
+                "page_views_total" : 21606,
+                "page_views_last_week_log" : 5.857980995127572,
+                "page_views_last_month_log" : 7.774787059601174,
+                "page_views_total_log" : 14.399211156255298
+              },
+            "columns_name" : [],
+            "columns_field_name" : [],
+            "columns_datatype" : [],
+            "columns_description" : [],
+            "columns_format" : [],
+            "download_count" : 2532,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "visualization_canvas_map",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : "2025-01-23T19:22:38.000Z"
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "Energy and Environment",
+            "domain_tags" : [ "canopy" ],
+            "domain_metadata" :
+              [
+                {
+                  "key" : "Department-Metrics_Publishing-Department",
+                  "value" : "Planning"
+                },
+                { "key" : "Publishing-Details_Program-link", "value" : "" },
+                { "key" : "Publishing-Details_Geographic-unit", "value" : "" },
+                {
+                  "key" : "Publishing-Details_Publishing-frequency",
+                  "value" : "Not updated (historical only)"
+                },
+                {
+                  "key" : "Publishing-Details_Data-change-frequency",
+                  "value" : "Not updated (historical only)"
+                },
+                {
+                  "key" : "Internal-Management_Inventory-ID",
+                  "value" : "CPC-0091"
+                }
+              ]
+          },
+        "metadata" :
+          {
+            "domain" : "data.sfgov.org",
+            "license" : "Open Data Commons Public Domain Dedication and License"
+          },
+        "permalink" : "https://data.sfgov.org/d/55pv-5zcc",
+        "link" : "https://data.sfgov.org/Energy-and-Environment/Map-of-SF-Urban-Tree-Canopy/55pv-5zcc",
+        "owner" :
+          {
+            "id" : "dbag-6qd9",
+            "user_type" : "interactive",
+            "display_name" : "OpenData"
+          },
+        "creator" :
+          {
+            "id" : "dbag-6qd9",
+            "user_type" : "interactive",
+            "display_name" : "OpenData"
+          }
+      },
+      {
+        "resource" :
+          {
+            "name" : "Street Tree Map",
+            "id" : "k7tq-bjzx",
+            "resource_name" : null,
+            "parent_fxf" : [ "tkzw-k3nq" ],
+            "description" : "List of dpw maintained street trees including: Planting date, species, and location",
+            "attribution" : "San Francisco Public Works",
+            "attribution_link" : "http://www.sfdpw.org",
+            "contact_email" : null,
+            "type" : "map",
+            "updatedAt" : "2026-07-30T12:24:36.000Z",
+            "createdAt" : "2020-08-27T14:23:06.000Z",
+            "metadata_updated_at" : "2025-07-02T17:35:20.000Z",
+            "data_updated_at" : "2026-07-30T12:24:36.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 41,
+                "page_views_last_month" : 190,
+                "page_views_total" : 6015,
+                "page_views_last_week_log" : 5.392317422778761,
+                "page_views_last_month_log" : 7.577428828035749,
+                "page_views_total_log" : 12.554588851677638
+              },
+            "columns_name" : [],
+            "columns_field_name" : [],
+            "columns_datatype" : [],
+            "columns_description" : [],
+            "columns_format" : [],
+            "download_count" : 13,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "visualization_canvas_map",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : "2020-08-27T14:24:31.000Z"
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "City Infrastructure",
+            "domain_tags" : [],
+            "domain_metadata" :
+              [
+                {
+                  "key" : "Department-Metrics_Publishing-Department",
+                  "value" : "Public Works"
+                },
+                {
+                  "key" : "Publishing-Details_Publishing-frequency",
+                  "value" : "Daily"
+                },
+                { "key" : "Publishing-Details_Geographic-unit", "value" : "" },
+                { "key" : "Publishing-Details_Program-link", "value" : "" },
+                {
+                  "key" : "Publishing-Details_Data-change-frequency",
+                  "value" : "Daily"
+                },
+                {
+                  "key" : "Internal-Management_Inventory-ID",
+                  "value" : "DPW-0019"
+                }
+              ]
+          },
+        "metadata" :
+          {
+            "domain" : "data.sfgov.org",
+            "license" : "Open Data Commons Public Domain Dedication and License"
+          },
+        "permalink" : "https://data.sfgov.org/d/k7tq-bjzx",
+        "link" : "https://data.sfgov.org/City-Infrastructure/Street-Tree-Map/k7tq-bjzx",
+        "owner" :
+          {
+            "id" : "a4uf-jukj",
+            "user_type" : "interactive",
+            "display_name" : "Jennifer Valencia"
+          },
+        "creator" :
+          {
+            "id" : "a4uf-jukj",
+            "user_type" : "interactive",
+            "display_name" : "Jennifer Valencia"
+          }
+      },
+      {
+        "resource" :
+          {
+            "name" : "Street Tree Removal Notifications",
+            "id" : "qrwx-q4gg",
+            "resource_name" : null,
+            "parent_fxf" : [],
+            "description" : "<strong>Dataset Update (July 31, 2025):</strong> This dataset is now sourced from a new system following a planned system migration. For questions or feedback, please contact support@datasf.org.\n\n<strong>A. SUMMARY</strong>\nStreet Tree Removal public notifications managed by San Francisco Public Works.\n\n<strong>B. HOW THE DATASET IS CREATED</strong>\nData is based on 24-hour, 15-day, or 30-day public notices posted on the trees after a Street Tree Removal Permit was issued by the City.\n\n<strong>C. UPDATE PROCESS</strong>\nUpdated daily.\n\n<strong>D. HOW TO USE THIS DATASET</strong>\nEach record is a street tree removal public notice after a permit was issued and the tree was recommended for removal.",
+            "attribution" : "San Francisco Public Works",
+            "attribution_link" : "http://www.sfdpw.org",
+            "contact_email" : null,
+            "type" : "dataset",
+            "updatedAt" : "2026-07-31T16:40:07.000Z",
+            "createdAt" : "2020-07-22T19:15:12.000Z",
+            "metadata_updated_at" : "2026-07-31T16:40:06.000Z",
+            "data_updated_at" : "2026-07-31T16:40:07.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 49,
+                "page_views_last_month" : 229,
+                "page_views_total" : 4198,
+                "page_views_last_week_log" : 5.643856189774724,
+                "page_views_last_month_log" : 7.845490050944376,
+                "page_views_total_log" : 12.035830072835019
+              },
+            "columns_name" :
+              [
+                "PostedType",
+                "PostedDate",
+                "TreeID",
+                "Supervisor_District",
+                "Description",
+                "SiteOrder",
+                "LegalStatus",
+                "Planter",
+                "Location",
+                "SiteType",
+                "PlantType",
+                "Species",
+                "X",
+                "Y",
+                "Lat",
+                "Long",
+                "Point",
+                "Analysis_Neighborhood",
+                "data_as_of",
+                "data_loaded_at",
+                "Neighborhoods",
+                "SF Find Neighborhoods",
+                "Current Police Districts",
+                "Current Supervisor Districts",
+                "Analysis Neighborhoods"
+              ],
+            "columns_field_name" :
+              [
+                "postedtype",
+                "posteddate",
+                "treeid",
+                "supervisor_district",
+                "description",
+                "siteorder",
+                "legalstatus",
+                "planter",
+                "location",
+                "sitetype",
+                "planttype",
+                "species",
+                "x",
+                "y",
+                "lat",
+                "long",
+                "point",
+                "analysis_neighborhood",
+                "data_as_of",
+                "data_loaded_at",
+                ":@computed_region_jwn9_ihcz",
+                ":@computed_region_6qbp_sg9q",
+                ":@computed_region_qgnn_b9vv",
+                ":@computed_region_26cr_cadq",
+                ":@computed_region_ajp5_b2md"
+              ],
+            "columns_datatype" :
+              [
+                "Text",
+                "Calendar date",
+                "Text",
+                "Text",
+                "Text",
+                "Number",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Point",
+                "Text",
+                "Calendar date",
+                "Calendar date",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number"
+              ],
+            "columns_description" :
+              [
+                "Posted Type",
+                "Posted Date",
+                "Tree ID",
+                "Supervisor District",
+                "Address | SiteOrder",
+                "Site Order",
+                "Legal Status",
+                "Owner",
+                "Location Site",
+                "Site Type",
+                "Plant Type",
+                "Scientific Name : Common Name",
+                "X Coordinate",
+                "Y Coordinate",
+                "Latitude",
+                "Longtitude",
+                "Represents vector geometry objects on a map",
+                "Analysis Neighborhood",
+                "Timestamp the data was updated in the source system.",
+                "Timestamp the data was uploaded to the open data portal.",
+                "This column was automatically created in order to record in what polygon from the dataset 'Neighborhoods' (jwn9-ihcz) the point in column 'point' is located.  This enables the creation of region maps (choropleths) in the visualization canvas and data lens.",
+                "This column was automatically created in order to record in what polygon from the dataset 'SF Find Neighborhoods' (6qbp-sg9q) the point in column 'point' is located.  This enables the creation of region maps (choropleths) in the visualization canvas and data lens.",
+                "This column was automatically created in order to record in what polygon from the dataset 'Current Police Districts' (qgnn-b9vv) the point in column 'point' is located.  This enables the creation of region maps (choropleths) in the visualization canvas and data lens.",
+                "This column was automatically created in order to record in what polygon from the dataset 'Current Supervisor Districts' (26cr-cadq) the point in column 'point' is located.  This enables the creation of region maps (choropleths) in the visualization canvas and data lens.",
+                "This column was automatically created in order to record in what polygon from the dataset 'Analysis Neighborhoods' (ajp5-b2md) the point in column 'point' is located.  This enables the creation of region maps (choropleths) in the visualization canvas and data lens."
+              ],
+            "columns_format" :
+              [
+                {},
+                { "view" : "date_ymd_time" },
+                { "noCommas" : "true" },
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                { "noCommas" : "true" },
+                { "noCommas" : "true" },
+                {},
+                {},
+                {},
+                {},
+                { "view" : "date_ymd_time" },
+                { "view" : "date_ymd_time" },
+                {},
+                {},
+                {},
+                {},
+                {}
+              ],
+            "download_count" : 5505,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "table",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : "2025-07-31T17:20:10.000Z"
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "City Infrastructure",
+            "domain_tags" :
+              [
+                "tree",
+                "trees",
+                "removal",
+                "schedule",
+                "posting",
+                "notification"
+              ],
+            "domain_metadata" :
+              [
+                {
+                  "key" : "Department-Metrics_Publishing-Department",
+                  "value" : "Public Works"
+                },
+                {
+                  "key" : "Internal-Management_Inventory-ID",
+                  "value" : "DPW-0044"
+                },
+                {
+                  "key" : "Detailed-Descriptive_Geographic-unit",
+                  "value" : "Latitude/longitude"
+                },
+                {
+                  "key" : "Publishing-Details_Data-change-frequency",
+                  "value" : "Daily"
+                },
+                { "key" : "Publishing-Details_Program-link", "value" : "" },
+                {
+                  "key" : "Publishing-Details_Publishing-frequency",
+                  "value" : "Daily"
+                },
+                {
+                  "key" : "Publishing-Details_Geographic-unit",
+                  "value" : "Latitude/longitude"
+                }
+              ]
+          },
+        "metadata" :
+          { "domain" : "data.sfgov.org", "license" : "Public Domain" },
+        "permalink" : "https://data.sfgov.org/d/qrwx-q4gg",
+        "link" : "https://data.sfgov.org/City-Infrastructure/Street-Tree-Removal-Notifications/qrwx-q4gg",
+        "owner" :
+          {
+            "id" : "hf8p-vup5",
+            "user_type" : "interactive",
+            "display_name" : "San Francisco Public Works"
+          },
+        "creator" :
+          {
+            "id" : "hf8p-vup5",
+            "user_type" : "interactive",
+            "display_name" : "San Francisco Public Works"
+          }
+      },
+      {
+        "resource" :
+          {
+            "name" : "Urban Tree Canopy",
+            "id" : "ni2e-vpbg",
+            "resource_name" : null,
+            "parent_fxf" : [],
+            "description" : "In preparation for the San Francisco Urban Forest Plan (2013), the Planning Department performed an Urban Tree Canopy (UTC) Analysis using aerial imagery and additional data sets to determine a canopy estimate for the City & County of San Francisco. This analysis estimated San Francisco's tree canopy at 13.7%. This number supersedes a 2007 canopy estimate of 11.9% (USDA Forest Service, 2007). Given the differing methodologies used to arrive at these two numbers it is difficult to draw conclusions regarding urban forest growth or decline based on a comparison. The current analysis establishes a baseline and methodology from which future canopy analyses can be conducted and compared over subsequent years to track San Francisco's urban forest growth or decline over time. See the attachment under About for more on the methodology.",
+            "attribution" : null,
+            "attribution_link" : null,
+            "contact_email" : null,
+            "type" : "dataset",
+            "updatedAt" : "2024-03-13T18:50:50.000Z",
+            "createdAt" : "2016-07-12T17:48:37.000Z",
+            "metadata_updated_at" : "2024-03-13T18:50:50.000Z",
+            "data_updated_at" : "2016-07-12T17:56:37.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 15,
+                "page_views_last_month" : 66,
+                "page_views_total" : 2533,
+                "page_views_last_week_log" : 4.0,
+                "page_views_last_month_log" : 6.066089190457772,
+                "page_views_total_log" : 11.30720080914081
+              },
+            "columns_name" : [ "the_geom", "ACRES", "T_SQFT", "NAME" ],
+            "columns_field_name" : [ "the_geom", "acres", "t_sqft", "name" ],
+            "columns_datatype" : [
+                                   "MultiPolygon",
+                                   "Number",
+                                   "Number",
+                                   "Text"
+                                 ],
+            "columns_description" : [ "", "", "", "" ],
+            "columns_format" : [ {}, {}, {}, {} ],
+            "download_count" : 1742,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "table",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : null
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "Energy and Environment",
+            "domain_tags" : [ "canopy" ],
+            "domain_metadata" :
+              [
+                {
+                  "key" : "Department-Metrics_Publishing-Department",
+                  "value" : "Planning"
+                },
+                {
+                  "key" : "Internal-Management_Inventory-ID",
+                  "value" : "CPC-0091"
+                },
+                {
+                  "key" : "Publishing-Details_Publishing-frequency",
+                  "value" : "Not updated (historical only)"
+                },
+                { "key" : "Publishing-Details_Geographic-unit", "value" : "" },
+                { "key" : "Publishing-Details_Program-link", "value" : "" },
+                {
+                  "key" : "Publishing-Details_Data-change-frequency",
+                  "value" : "Not updated (historical only)"
+                }
+              ]
+          },
+        "metadata" :
+          {
+            "domain" : "data.sfgov.org",
+            "license" : "Open Data Commons Public Domain Dedication and License"
+          },
+        "permalink" : "https://data.sfgov.org/d/ni2e-vpbg",
+        "link" : "https://data.sfgov.org/Energy-and-Environment/Urban-Tree-Canopy/ni2e-vpbg",
+        "owner" :
+          {
+            "id" : "dbag-6qd9",
+            "user_type" : "interactive",
+            "display_name" : "OpenData"
+          },
+        "creator" :
+          {
+            "id" : "dbag-6qd9",
+            "user_type" : "interactive",
+            "display_name" : "OpenData"
+          }
+      },
+      {
+        "resource" :
+          {
+            "name" : "Tree Caretakers in San Francisco",
+            "id" : "frdy-nem6",
+            "resource_name" : null,
+            "parent_fxf" : [ "tkzw-k3nq" ],
+            "description" : "<b><i>***As of November 2023, this map has been updated to use a new format. For details, please see <a href=\"https://data.sfgov.org/stories/s/q44z-zyx4\">here</a>.***</i></b> </br> List of dpw maintained street trees including: Planting date, species, and location",
+            "attribution" : "San Francisco Public Works",
+            "attribution_link" : "http://www.sfdpw.org",
+            "contact_email" : null,
+            "type" : "map",
+            "updatedAt" : "2026-07-30T12:24:36.000Z",
+            "createdAt" : "2023-10-13T18:18:23.000Z",
+            "metadata_updated_at" : "2024-03-13T18:55:11.000Z",
+            "data_updated_at" : "2026-07-30T12:24:36.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 5,
+                "page_views_last_month" : 45,
+                "page_views_total" : 3618,
+                "page_views_last_week_log" : 2.584962500721156,
+                "page_views_last_month_log" : 5.523561956057013,
+                "page_views_total_log" : 11.821375392372538
+              },
+            "columns_name" : [],
+            "columns_field_name" : [],
+            "columns_datatype" : [],
+            "columns_description" : [],
+            "columns_format" : [],
+            "download_count" : 280,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "visualization_canvas_map",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : "2023-11-01T16:57:37.000Z"
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "City Infrastructure",
+            "domain_tags" : [],
+            "domain_metadata" :
+              [
+                {
+                  "key" : "Department-Metrics_Publishing-Department",
+                  "value" : "Public Works"
+                },
+                {
+                  "key" : "Internal-Management_Inventory-ID",
+                  "value" : "DPW-0019"
+                },
+                {
+                  "key" : "Publishing-Details_Publishing-frequency",
+                  "value" : "Daily"
+                },
+                { "key" : "Publishing-Details_Geographic-unit", "value" : "" },
+                { "key" : "Publishing-Details_Program-link", "value" : "" },
+                {
+                  "key" : "Publishing-Details_Data-change-frequency",
+                  "value" : "Daily"
+                }
+              ]
+          },
+        "metadata" :
+          {
+            "domain" : "data.sfgov.org",
+            "license" : "Open Data Commons Public Domain Dedication and License"
+          },
+        "permalink" : "https://data.sfgov.org/d/frdy-nem6",
+        "link" : "https://data.sfgov.org/City-Infrastructure/Tree-Caretakers-in-San-Francisco/frdy-nem6",
+        "owner" :
+          {
+            "id" : "a4uf-jukj",
+            "user_type" : "interactive",
+            "display_name" : "Jennifer Valencia"
+          },
+        "creator" :
+          {
+            "id" : "a4uf-jukj",
+            "user_type" : "interactive",
+            "display_name" : "Jennifer Valencia"
+          }
+      },
+      {
+        "resource" :
+          {
+            "name" : "Street Tree Removal Notifications Map",
+            "id" : "562m-v7a6",
+            "resource_name" : null,
+            "parent_fxf" : [ "qrwx-q4gg" ],
+            "description" : "<strong>A. SUMMARY</strong>\nStreet Tree Removal public notifications managed by San Francisco Public Works.\n\n<strong>B. HOW THE DATASET IS CREATED</strong>\nData is based on 15-day or 30-day public notices posted on the trees after a Street Tree Removal Permit was issued by the City.\n\n<strong>C. UPDATE PROCESS</strong>\nUpdated daily and uses Safe FME to automate publishing.\n\n<strong>D. HOW TO USE THIS DATASET</strong>\nEach record is a street tree removal public notice after a permit was issued and the tree was recommended for removal.",
+            "attribution" : "San Francisco Public Works",
+            "attribution_link" : "http://www.sfdpw.org",
+            "contact_email" : null,
+            "type" : "map",
+            "updatedAt" : "2026-07-30T16:42:21.000Z",
+            "createdAt" : "2021-11-04T21:47:40.000Z",
+            "metadata_updated_at" : "2025-07-02T17:34:58.000Z",
+            "data_updated_at" : "2026-07-30T16:42:21.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 16,
+                "page_views_last_month" : 76,
+                "page_views_total" : 1832,
+                "page_views_last_week_log" : 4.08746284125034,
+                "page_views_last_month_log" : 6.266786540694902,
+                "page_views_total_log" : 10.839991070539886
+              },
+            "columns_name" : [],
+            "columns_field_name" : [],
+            "columns_datatype" : [],
+            "columns_description" : [],
+            "columns_format" : [],
+            "download_count" : 9,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "visualization_canvas_map",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : "2021-12-03T17:37:34.000Z"
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "City Infrastructure",
+            "domain_tags" : [],
+            "domain_metadata" :
+              [
+                {
+                  "key" : "Department-Metrics_Publishing-Department",
+                  "value" : "Public Works"
+                },
+                {
+                  "key" : "Publishing-Details_Publishing-frequency",
+                  "value" : "Daily"
+                },
+                { "key" : "Publishing-Details_Geographic-unit", "value" : "" },
+                { "key" : "Publishing-Details_Program-link", "value" : "" },
+                {
+                  "key" : "Publishing-Details_Data-change-frequency",
+                  "value" : "Daily"
+                },
+                {
+                  "key" : "Internal-Management_Inventory-ID",
+                  "value" : "DPW-0044"
+                }
+              ]
+          },
+        "metadata" :
+          { "domain" : "data.sfgov.org", "license" : "Public Domain" },
+        "permalink" : "https://data.sfgov.org/d/562m-v7a6",
+        "link" : "https://data.sfgov.org/City-Infrastructure/Street-Tree-Removal-Notifications-Map/562m-v7a6",
+        "owner" :
+          {
+            "id" : "a4uf-jukj",
+            "user_type" : "interactive",
+            "display_name" : "Jennifer Valencia"
+          },
+        "creator" :
+          {
+            "id" : "a4uf-jukj",
+            "user_type" : "interactive",
+            "display_name" : "Jennifer Valencia"
+          }
+      },
+      {
+        "resource" :
+          {
+            "name" : "Map of Street Tree Count by Neighborhood",
+            "id" : "fzwb-c3ef",
+            "resource_name" : null,
+            "parent_fxf" : [ "tkzw-k3nq" ],
+            "description" : "List of dpw maintained street trees including: Planting date, species, and location",
+            "attribution" : "San Francisco Public Works",
+            "attribution_link" : "http://www.sfdpw.org",
+            "contact_email" : null,
+            "type" : "map",
+            "updatedAt" : "2026-07-30T12:24:36.000Z",
+            "createdAt" : "2022-11-14T22:40:46.000Z",
+            "metadata_updated_at" : "2024-03-13T18:54:48.000Z",
+            "data_updated_at" : "2026-07-30T12:24:36.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 5,
+                "page_views_last_month" : 59,
+                "page_views_total" : 864,
+                "page_views_last_week_log" : 2.584962500721156,
+                "page_views_last_month_log" : 5.906890595608519,
+                "page_views_total_log" : 9.756556322524087
+              },
+            "columns_name" : [],
+            "columns_field_name" : [],
+            "columns_datatype" : [],
+            "columns_description" : [],
+            "columns_format" : [],
+            "download_count" : 5,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "visualization_canvas_map",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : "2022-11-14T22:41:22.000Z"
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "City Infrastructure",
+            "domain_tags" : [],
+            "domain_metadata" :
+              [
+                {
+                  "key" : "Department-Metrics_Publishing-Department",
+                  "value" : "Public Works"
+                },
+                {
+                  "key" : "Internal-Management_Inventory-ID",
+                  "value" : "DPW-0019"
+                },
+                {
+                  "key" : "Publishing-Details_Publishing-frequency",
+                  "value" : "Daily"
+                },
+                { "key" : "Publishing-Details_Geographic-unit", "value" : "" },
+                { "key" : "Publishing-Details_Program-link", "value" : "" },
+                {
+                  "key" : "Publishing-Details_Data-change-frequency",
+                  "value" : "Daily"
+                }
+              ]
+          },
+        "metadata" :
+          {
+            "domain" : "data.sfgov.org",
+            "license" : "Open Data Commons Public Domain Dedication and License"
+          },
+        "permalink" : "https://data.sfgov.org/d/fzwb-c3ef",
+        "link" : "https://data.sfgov.org/City-Infrastructure/Map-of-Street-Tree-Count-by-Neighborhood/fzwb-c3ef",
+        "owner" :
+          {
+            "id" : "dbag-6qd9",
+            "user_type" : "interactive",
+            "display_name" : "OpenData"
+          },
+        "creator" :
+          {
+            "id" : "dbag-6qd9",
+            "user_type" : "interactive",
+            "display_name" : "OpenData"
+          }
+      },
+      {
+        "resource" :
+          {
+            "name" : "FY07-11 Street Evaluation Results",
+            "id" : "i8y7-m763",
+            "resource_name" : null,
+            "parent_fxf" : [],
+            "description" : "The Controller's Office's City Services Auditor (CSA) Division has worked with the Department of Public Works (DPW) to develop maintenance standards for streets and sidewalks and schedules and inspect for compliance since July 2004. This data file consolidates street and sidewalk inspection results FY07-FY11. Current evaluation results are also available on DataSF; however, they are not comparable to this data set because of changes in methodology.You can access the annual reports at  http://sfcontroller.org/index.aspx?page=49",
+            "attribution" : "City Performance Unit, City Services Auditor (CSA) Division, Controller's Office",
+            "attribution_link" : "http://sfcontroller.org/index.aspx?page=49",
+            "contact_email" : null,
+            "type" : "dataset",
+            "updatedAt" : "2024-03-13T18:40:29.000Z",
+            "createdAt" : "2014-07-23T23:49:26.000Z",
+            "metadata_updated_at" : "2024-03-13T18:40:29.000Z",
+            "data_updated_at" : "2014-07-23T23:50:02.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 8,
+                "page_views_last_month" : 21,
+                "page_views_total" : 2326,
+                "page_views_last_week_log" : 3.1699250014423126,
+                "page_views_last_month_log" : 4.459431618637297,
+                "page_views_total_log" : 11.184255495405349
+              },
+            "columns_name" :
+              [
+                "StartStreetName",
+                "4.0 Pass?",
+                "5.1",
+                "4.6",
+                "Side of Street",
+                "Year/Month",
+                "Date of Inspection",
+                "Start Time",
+                "End Time",
+                "Sweeping Day(s)",
+                "Sweeping Time(s)",
+                "1.1 Litter Count",
+                "2.1 Litter Count",
+                "2.2",
+                "2.3",
+                "2.5",
+                "3.1",
+                "4.2",
+                "4.3",
+                "4.4",
+                "5.2",
+                "5.3",
+                "5.4",
+                "District",
+                "Inspector",
+                "2.4",
+                "Type of Street",
+                "Clean Corridor",
+                "Fiscal Year",
+                "Quarter of Inspection",
+                "1.1",
+                "Corridor Name",
+                "4.1",
+                "EndStreetName",
+                "Route No.",
+                "2.1",
+                "3.2",
+                "3.3",
+                "4.5"
+              ],
+            "columns_field_name" :
+              [
+                "startstreetname",
+                "_4_0_pass",
+                "_5_1",
+                "_4_6",
+                "side_of_street",
+                "year_month",
+                "date_of_inspection",
+                "start_time",
+                "end_time",
+                "sweeping_day_s",
+                "sweeping_time_s",
+                "_1_1_litter_count",
+                "_2_1_litter_count",
+                "_2_2",
+                "_2_3",
+                "_2_5",
+                "_3_1",
+                "_4_2",
+                "_4_3",
+                "_4_4",
+                "_5_2",
+                "_5_3",
+                "_5_4",
+                "district",
+                "inspector",
+                "_2_4",
+                "type_of_street",
+                "clean_corridor",
+                "fiscal_year",
+                "quarter_of_inspection",
+                "_1_1",
+                "corridor_name",
+                "_4_1",
+                "endstreetname",
+                "route_no",
+                "_2_1",
+                "_3_2",
+                "_3_3",
+                "_4_5"
+              ],
+            "columns_datatype" :
+              [
+                "Text",
+                "Text",
+                "Number",
+                "Text",
+                "Text",
+                "Text",
+                "Calendar date",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Number",
+                "Number",
+                "Text",
+                "Number",
+                "Text",
+                "Text",
+                "Text",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Number",
+                "Text",
+                "Text",
+                "Text",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Text"
+              ],
+            "columns_description" :
+              [
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                ""
+              ],
+            "columns_format" :
+              [
+                {},
+                {},
+                {
+                  "percentScale" : "100",
+                  "precisionStyle" : "percentage",
+                  "view" : "percent_bar_and_text"
+                },
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {
+                  "percentScale" : "100",
+                  "precisionStyle" : "percentage",
+                  "view" : "percent_bar_and_text"
+                },
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {
+                  "percentScale" : "100",
+                  "precisionStyle" : "percentage",
+                  "view" : "percent_bar_and_text"
+                },
+                {
+                  "percentScale" : "100",
+                  "precisionStyle" : "percentage",
+                  "view" : "percent_bar_and_text"
+                },
+                {
+                  "percentScale" : "100",
+                  "precisionStyle" : "percentage",
+                  "view" : "percent_bar_and_text"
+                },
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {}
+              ],
+            "download_count" : 3423,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "table",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : "2014-07-23T23:56:38.000Z"
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "City Infrastructure",
+            "domain_tags" :
+              [
+                "results",
+                "controller's street evaluation program",
+                "graffiti",
+                "grime",
+                "inspection",
+                "tree",
+                "trash",
+                "street evaluation",
+                "street",
+                "leaks",
+                "litter",
+                "spills",
+                "sidewalk",
+                "performance"
+              ],
+            "domain_metadata" :
+              [
+                {
+                  "key" : "Department-Metrics_Frequency",
+                  "value" : "This historical dataset will no longer be updated."
+                },
+                {
+                  "key" : "Department-Metrics_Publishing-Department",
+                  "value" : "Controller"
+                },
+                {
+                  "key" : "Internal-Management_Inventory-ID",
+                  "value" : "CON-0012"
+                },
+                {
+                  "key" : "Publishing-Details_Publishing-frequency",
+                  "value" : "Not updated (historical only)"
+                },
+                { "key" : "Publishing-Details_Geographic-unit", "value" : "" },
+                { "key" : "Publishing-Details_Program-link", "value" : "" },
+                {
+                  "key" : "Publishing-Details_Data-change-frequency",
+                  "value" : "Not updated (historical only)"
+                }
+              ]
+          },
+        "metadata" :
+          {
+            "domain" : "data.sfgov.org",
+            "license" : "Open Data Commons Public Domain Dedication and License"
+          },
+        "permalink" : "https://data.sfgov.org/d/i8y7-m763",
+        "link" : "https://data.sfgov.org/City-Infrastructure/FY07-11-Street-Evaluation-Results/i8y7-m763",
+        "owner" :
+          {
+            "id" : "99ku-nz3k",
+            "user_type" : "interactive",
+            "display_name" : "Sherman Luk, CBIP, CBA, PfMP"
+          },
+        "creator" :
+          {
+            "id" : "99ku-nz3k",
+            "user_type" : "interactive",
+            "display_name" : "Sherman Luk, CBIP, CBA, PfMP"
+          }
+      },
+      {
+        "resource" :
+          {
+            "name" : "DPW Street & Sidewalk Evaluation Results, 7-1-2013 to 6-30-2018 (FY13-FY18)",
+            "id" : "83ki-hu3p",
+            "resource_name" : null,
+            "parent_fxf" : [],
+            "description" : "The Controller's Office's City Services Auditor (CSA) Division has worked with the Department of Public Works (DPW) to develop maintenance standards for streets and sidewalks and schedules and inspect for compliance since July 2004, as mandated by 2003 Prop. C. This data file contains street and sidewalk evaluation results from 7/1/2013  to 6/30/18 under the FY12 standards.  Older evaluation results are also available on DataSF but are not comparable due to changes in the way the standards are calculated.  You can also access the annual reports in PDF at \"Street Maintenance\" section of http://sfcontroller.org/index.aspx?page=49 or https://sf.gov/resource/2022/street-and-sidewalk-maintenance-standards",
+            "attribution" : "City Performance Unit, Controller's Office",
+            "attribution_link" : null,
+            "contact_email" : null,
+            "type" : "dataset",
+            "updatedAt" : "2024-03-13T18:40:44.000Z",
+            "createdAt" : "2015-02-05T00:58:14.000Z",
+            "metadata_updated_at" : "2024-03-13T18:40:44.000Z",
+            "data_updated_at" : "2018-10-30T19:51:50.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 9,
+                "page_views_last_month" : 27,
+                "page_views_total" : 3903,
+                "page_views_last_week_log" : 3.3219280948873626,
+                "page_views_last_month_log" : 4.807354922057604,
+                "page_views_total_log" : 11.930737337562887
+              },
+            "columns_name" :
+              [
+                "22  Grime, Leaks, Spills (% of sidewalk w/out)",
+                "Detailed Type",
+                "11  Score (10, 20, or 30 score)",
+                "34 Pass",
+                "42  Pass",
+                "51  Pass",
+                "54  Pass",
+                "Longitude",
+                "24  Illegal Dumping (Y/N, where Y=none)",
+                "33  Private (Please indicate nearest address on attached work s",
+                "53  Weediness",
+                "54  Clearance",
+                "52  Pass",
+                "Latitude",
+                "Location (state)",
+                "252  Broken Glass (Y/N, where Y=none)",
+                "Corridor Description",
+                "34 Sidewalk (# on sidewalk, preiously 23)",
+                "46  Doors",
+                "Corridor #",
+                "Total # Trees",
+                "DPW Zone",
+                "251  Feces, Needles, Condoms (Y/N, where Y=none)",
+                "33  Pass",
+                "Evaluator name",
+                "Representative Street Segment",
+                "SupDistrict",
+                "Corridor Num and Description",
+                "Midpoint times",
+                "31  Public (DPW)",
+                "Total # Trash Receptacles",
+                "41  Fullness",
+                "Priority",
+                "CNN (Route ID)",
+                "Location (city)",
+                "Inspector",
+                "22  Pass",
+                "Type",
+                "43  Pass",
+                "21  Pass",
+                "44  Pass",
+                "Evaluation date",
+                "27  Odors (nonDPW)",
+                "FY",
+                "32 Pass",
+                "Side of street",
+                "Clean Corridor",
+                "46  Pass",
+                "26  Odors (DPW)",
+                "21  Litter (10, 20, or 30 score)",
+                "11 pass",
+                "42  Cleanliness of trash receptacles",
+                "43  Cleanliness around trash receptacles",
+                "Location (address)",
+                "Location (zip)",
+                "44  Painting",
+                "45  Structural integrity & function",
+                "51  Cleanliness",
+                "Location",
+                "52  Tree Appearance",
+                "53 Pass",
+                "45  Pass",
+                "41  Pass",
+                "31  Pass",
+                "32 Public (nonDPW)"
+              ],
+            "columns_field_name" :
+              [
+                "_22_grime_leaks_spills_of_sidewalk_w_out",
+                "detailed_type",
+                "_11_score_10_20_or_30_score",
+                "_34_pass",
+                "_42_pass",
+                "_51_pass",
+                "_54_pass",
+                "longitude",
+                "_24_illegal_dumping_y_n_where_y_none",
+                "_33_private_please_indicate_nearest_address_on_attached_work_s",
+                "_53_weediness",
+                "_54_clearance",
+                "_52_pass",
+                "latitude",
+                "location_state",
+                "_252_broken_glass_y_n_where_y_none",
+                "corridor_description",
+                "_34_sidewalk_on_sidewalk_preiously_23",
+                "_46_doors",
+                "corridor",
+                "total_trees",
+                "dpw_zone",
+                "_251_feces_needles_condoms_y_n_where_y_none",
+                "_33_pass",
+                "evaluator_name",
+                "representative_street_segment",
+                "supdistrict",
+                "corridor_num_and_description",
+                "midpoint_times",
+                "_31_public_dpw",
+                "total_trash_receptacles",
+                "_41_fullness",
+                "priority",
+                "cnn_route_id",
+                "location_city",
+                "inspector",
+                "_22_pass",
+                "type",
+                "_43_pass",
+                "_21_pass",
+                "_44_pass",
+                "evaluation_date",
+                "_27_odors_nondpw",
+                "fy",
+                "_32_pass",
+                "side_of_street",
+                "clean_corridor",
+                "_46_pass",
+                "_26_odors_dpw",
+                "_21_litter_10_20_or_30_score",
+                "_11_pass",
+                "_42_cleanliness_of_trash_receptacles",
+                "_43_cleanliness_around_trash_receptacles",
+                "location_address",
+                "location_zip",
+                "_44_painting",
+                "_45_structural_integrity_function",
+                "_51_cleanliness",
+                "location",
+                "_52_tree_appearance",
+                "_53_pass",
+                "_45_pass",
+                "_41_pass",
+                "_31_pass",
+                "_32_public_nondpw"
+              ],
+            "columns_datatype" :
+              [
+                "Number",
+                "Text",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Text",
+                "Number",
+                "Text",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Text",
+                "Number",
+                "Number",
+                "Text",
+                "Text",
+                "Number",
+                "Text",
+                "Text",
+                "Number",
+                "Number",
+                "Number",
+                "Text",
+                "Number",
+                "Text",
+                "Text",
+                "Number",
+                "Text",
+                "Number",
+                "Number",
+                "Number",
+                "Calendar date",
+                "Number",
+                "Text",
+                "Number",
+                "Text",
+                "Text",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Text",
+                "Text",
+                "Number",
+                "Number",
+                "Number",
+                "Point",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number"
+              ],
+            "columns_description" :
+              [
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "Longitude of CNN",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "Latitude of CNN",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "Priority route schedule or regular route schedule.",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "Combined latitude and longitude coordinates",
+                "",
+                "",
+                "",
+                "",
+                "",
+                ""
+              ],
+            "columns_format" :
+              [
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                { "view" : "coords", "align" : "left" },
+                {},
+                {},
+                {},
+                {},
+                {},
+                { "view" : "coords", "align" : "left" },
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {
+                  "precisionStyle" : "standard",
+                  "noCommas" : "false",
+                  "align" : "right",
+                  "mask" : "##############"
+                },
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {}
+              ],
+            "download_count" : 4204,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "table",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : "2018-09-25T00:30:59.000Z"
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "City Infrastructure",
+            "domain_tags" :
+              [
+                "controller's street evaluation program",
+                "inspection",
+                "leaks",
+                "litter",
+                "performance",
+                "results",
+                "sidewalk",
+                "graffiti",
+                "grime",
+                "evaluation",
+                "spills",
+                "street",
+                "street sweeping",
+                "tree",
+                "trash"
+              ],
+            "domain_metadata" :
+              [
+                {
+                  "key" : "Department-Metrics_Publishing-Department",
+                  "value" : "Controller"
+                },
+                {
+                  "key" : "Internal-Management_Inventory-ID",
+                  "value" : "CON-0017"
+                },
+                {
+                  "key" : "Publishing-Details_Is-self-service",
+                  "value" : "Yes"
+                },
+                {
+                  "key" : "Publishing-Details_Publishing-frequency",
+                  "value" : "Not updated (historical only)"
+                },
+                {
+                  "key" : "Publishing-Details_Geographic-unit",
+                  "value" : "Not applicable"
+                },
+                { "key" : "Publishing-Details_Program-link", "value" : "" },
+                {
+                  "key" : "Publishing-Details_Data-change-frequency",
+                  "value" : "As needed"
+                }
+              ]
+          },
+        "metadata" :
+          {
+            "domain" : "data.sfgov.org",
+            "license" : "Open Data Commons Public Domain Dedication and License"
+          },
+        "permalink" : "https://data.sfgov.org/d/83ki-hu3p",
+        "link" : "https://data.sfgov.org/City-Infrastructure/DPW-Street-Sidewalk-Evaluation-Results-7-1-2013-to/83ki-hu3p",
+        "owner" :
+          {
+            "id" : "99ku-nz3k",
+            "user_type" : "interactive",
+            "display_name" : "Sherman Luk, CBIP, CBA, PfMP"
+          },
+        "creator" :
+          {
+            "id" : "99ku-nz3k",
+            "user_type" : "interactive",
+            "display_name" : "Sherman Luk, CBIP, CBA, PfMP"
+          }
+      },
+      {
+        "resource" :
+          {
+            "name" : "StreetTreeList311",
+            "id" : "eqb2-twsi",
+            "resource_name" : null,
+            "parent_fxf" : [ "tkzw-k3nq" ],
+            "description" : "List of dpw maintained street trees including: Planting date, species, and location",
+            "attribution" : "San Francisco Public Works",
+            "attribution_link" : "http://www.sfdpw.org",
+            "contact_email" : null,
+            "type" : "filter",
+            "updatedAt" : "2026-07-30T12:24:36.000Z",
+            "createdAt" : "2016-04-27T03:11:44.000Z",
+            "metadata_updated_at" : "2025-01-30T03:29:25.000Z",
+            "data_updated_at" : "2026-07-30T12:24:36.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 13,
+                "page_views_last_month" : 92,
+                "page_views_total" : 2961,
+                "page_views_last_week_log" : 3.8073549220576037,
+                "page_views_last_month_log" : 6.539158811108032,
+                "page_views_total_log" : 11.532355925288849
+              },
+            "columns_name" : [ "YCoord", "XCoord" ],
+            "columns_field_name" : [ "ycoord", "xcoord" ],
+            "columns_datatype" : [ "Number", "Number" ],
+            "columns_description" :
+              [ "CA State Plane III", "CA State Plane III" ],
+            "columns_format" :
+              [
+                {
+                  "precisionStyle" : "standard",
+                  "noCommas" : "true",
+                  "align" : "right"
+                },
+                {
+                  "precisionStyle" : "standard",
+                  "noCommas" : "true",
+                  "align" : "right"
+                }
+              ],
+            "download_count" : 334,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "table",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : "2016-06-03T21:07:15.000Z"
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "City Infrastructure",
+            "domain_tags" : [ "trees" ],
+            "domain_metadata" :
+              [
+                {
+                  "key" : "Department-Metrics_Publishing-Department",
+                  "value" : "Public Works"
+                },
+                {
+                  "key" : "Publishing-Details_Publishing-frequency",
+                  "value" : "Daily"
+                },
+                { "key" : "Publishing-Details_Geographic-unit", "value" : "" },
+                { "key" : "Publishing-Details_Program-link", "value" : "" },
+                {
+                  "key" : "Publishing-Details_Data-change-frequency",
+                  "value" : "Daily"
+                },
+                {
+                  "key" : "Internal-Management_Inventory-ID",
+                  "value" : "DPW-0019"
+                }
+              ]
+          },
+        "metadata" :
+          {
+            "domain" : "data.sfgov.org",
+            "license" : "Open Data Commons Public Domain Dedication and License"
+          },
+        "permalink" : "https://data.sfgov.org/d/eqb2-twsi",
+        "link" : "https://data.sfgov.org/City-Infrastructure/StreetTreeList311/eqb2-twsi",
+        "owner" :
+          {
+            "id" : "urtw-9mv6",
+            "user_type" : "interactive",
+            "display_name" : "Samuel Valdez"
+          },
+        "creator" :
+          {
+            "id" : "urtw-9mv6",
+            "user_type" : "interactive",
+            "display_name" : "Samuel Valdez"
+          }
+      },
+      {
+        "resource" :
+          {
+            "name" : "Department Code Lookup",
+            "id" : "3r4n-zfvm",
+            "resource_name" : null,
+            "parent_fxf" : [ "j2hz-23ps" ],
+            "description" : "These department codes are maintained in the City's financial system of record. Department Groups, Divisions, Sections, Units, Sub Units and Departments are nested in the dataset from left to right. Each nested unit has both a code and an associated name. \r\n\r\nThe dataset represents a flattened tree (hierarchy) so that each leaf on the tree has it's own row. Thus certain rows will have repeated codes across columns.\r\n\r\nData changes as needed.",
+            "attribution" : null,
+            "attribution_link" : null,
+            "contact_email" : null,
+            "type" : "chart",
+            "updatedAt" : "2026-07-27T09:59:31.000Z",
+            "createdAt" : "2022-03-04T23:06:52.000Z",
+            "metadata_updated_at" : "2024-03-13T18:40:40.000Z",
+            "data_updated_at" : "2026-07-27T09:59:31.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 67,
+                "page_views_last_month" : 149,
+                "page_views_total" : 2383,
+                "page_views_last_week_log" : 6.08746284125034,
+                "page_views_last_month_log" : 7.22881869049588,
+                "page_views_total_log" : 11.219168520462162
+              },
+            "columns_name" : [],
+            "columns_field_name" : [],
+            "columns_datatype" : [],
+            "columns_description" : [],
+            "columns_format" : [],
+            "download_count" : 14,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "visualization_canvas_chart",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : "2022-09-14T01:19:10.000Z"
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "City Management and Ethics",
+            "domain_tags" : [],
+            "domain_metadata" :
+              [
+                {
+                  "key" : "Department-Metrics_Publishing-Department",
+                  "value" : "Controller"
+                },
+                {
+                  "key" : "Publishing-Details_Publishing-frequency",
+                  "value" : "As needed"
+                },
+                { "key" : "Publishing-Details_Geographic-unit", "value" : "" },
+                { "key" : "Publishing-Details_Program-link", "value" : "" },
+                {
+                  "key" : "Publishing-Details_Data-change-frequency",
+                  "value" : "As needed"
+                },
+                {
+                  "key" : "Internal-Management_Inventory-ID",
+                  "value" : "CON-0027"
+                }
+              ]
+          },
+        "metadata" :
+          {
+            "domain" : "data.sfgov.org",
+            "license" : "Open Data Commons Public Domain Dedication and License"
+          },
+        "permalink" : "https://data.sfgov.org/d/3r4n-zfvm",
+        "link" : "https://data.sfgov.org/City-Management-and-Ethics/Department-Code-Lookup/3r4n-zfvm",
+        "owner" :
+          {
+            "id" : "dbag-6qd9",
+            "user_type" : "interactive",
+            "display_name" : "OpenData"
+          },
+        "creator" :
+          {
+            "id" : "dbag-6qd9",
+            "user_type" : "interactive",
+            "display_name" : "OpenData"
+          }
+      },
+      {
+        "resource" :
+          {
+            "name" : "StreetTreeList311",
+            "id" : "xbdh-uw76",
+            "resource_name" : null,
+            "parent_fxf" : [ "tkzw-k3nq" ],
+            "description" : "List of dpw maintained street trees including: Planting date, species, and location",
+            "attribution" : "San Francisco Public Works",
+            "attribution_link" : "http://www.sfdpw.org",
+            "contact_email" : null,
+            "type" : "filter",
+            "updatedAt" : "2026-07-30T12:24:36.000Z",
+            "createdAt" : "2016-04-27T03:22:26.000Z",
+            "metadata_updated_at" : "2025-01-30T03:33:54.000Z",
+            "data_updated_at" : "2026-07-30T12:24:36.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 3,
+                "page_views_last_month" : 27,
+                "page_views_total" : 1788,
+                "page_views_last_week_log" : 2.0,
+                "page_views_last_month_log" : 4.807354922057604,
+                "page_views_total_log" : 10.804937672051908
+              },
+            "columns_name" : [ "qLegalStatus", "XCoord", "YCoord" ],
+            "columns_field_name" : [ "qlegalstatus", "xcoord", "ycoord" ],
+            "columns_datatype" : [ "Text", "Number", "Number" ],
+            "columns_description" :
+              [
+                "Legal staus: Permitted or DPW maintained",
+                "CA State Plane III",
+                "CA State Plane III"
+              ],
+            "columns_format" :
+              [
+                {},
+                {
+                  "precisionStyle" : "standard",
+                  "noCommas" : "true",
+                  "align" : "right"
+                },
+                {
+                  "precisionStyle" : "standard",
+                  "noCommas" : "true",
+                  "align" : "right"
+                }
+              ],
+            "download_count" : 233,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "table",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : "2016-06-03T21:07:15.000Z"
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "City Infrastructure",
+            "domain_tags" : [ "trees" ],
+            "domain_metadata" :
+              [
+                {
+                  "key" : "Department-Metrics_Publishing-Department",
+                  "value" : "Public Works"
+                },
+                {
+                  "key" : "Publishing-Details_Publishing-frequency",
+                  "value" : "Daily"
+                },
+                { "key" : "Publishing-Details_Geographic-unit", "value" : "" },
+                { "key" : "Publishing-Details_Program-link", "value" : "" },
+                {
+                  "key" : "Publishing-Details_Data-change-frequency",
+                  "value" : "Daily"
+                },
+                {
+                  "key" : "Internal-Management_Inventory-ID",
+                  "value" : "DPW-0019"
+                }
+              ]
+          },
+        "metadata" :
+          {
+            "domain" : "data.sfgov.org",
+            "license" : "Open Data Commons Public Domain Dedication and License"
+          },
+        "permalink" : "https://data.sfgov.org/d/xbdh-uw76",
+        "link" : "https://data.sfgov.org/City-Infrastructure/StreetTreeList311/xbdh-uw76",
+        "owner" :
+          {
+            "id" : "urtw-9mv6",
+            "user_type" : "interactive",
+            "display_name" : "Samuel Valdez"
+          },
+        "creator" :
+          {
+            "id" : "urtw-9mv6",
+            "user_type" : "interactive",
+            "display_name" : "Samuel Valdez"
+          }
+      },
+      {
+        "resource" :
+          {
+            "name" : "StreetTreeList311",
+            "id" : "fivj-ftr7",
+            "resource_name" : null,
+            "parent_fxf" : [ "tkzw-k3nq" ],
+            "description" : "List of dpw maintained street trees including: Planting date, species, and location",
+            "attribution" : "San Francisco Public Works",
+            "attribution_link" : "http://www.sfdpw.org",
+            "contact_email" : null,
+            "type" : "filter",
+            "updatedAt" : "2026-07-30T12:24:36.000Z",
+            "createdAt" : "2016-04-27T03:25:35.000Z",
+            "metadata_updated_at" : "2025-01-30T03:29:37.000Z",
+            "data_updated_at" : "2026-07-30T12:24:36.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 7,
+                "page_views_last_month" : 28,
+                "page_views_total" : 1670,
+                "page_views_last_week_log" : 3.0,
+                "page_views_last_month_log" : 4.857980995127573,
+                "page_views_total_log" : 10.706496018061188
+              },
+            "columns_name" : [ "qLegalStatus", "YCoord", "XCoord" ],
+            "columns_field_name" : [ "qlegalstatus", "ycoord", "xcoord" ],
+            "columns_datatype" : [ "Text", "Number", "Number" ],
+            "columns_description" :
+              [
+                "Legal staus: Permitted or DPW maintained",
+                "CA State Plane III",
+                "CA State Plane III"
+              ],
+            "columns_format" :
+              [
+                {},
+                {
+                  "precisionStyle" : "standard",
+                  "noCommas" : "true",
+                  "align" : "right"
+                },
+                {
+                  "precisionStyle" : "standard",
+                  "noCommas" : "true",
+                  "align" : "right"
+                }
+              ],
+            "download_count" : 263,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "table",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : "2016-06-03T21:07:15.000Z"
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "City Infrastructure",
+            "domain_tags" : [ "trees" ],
+            "domain_metadata" :
+              [
+                {
+                  "key" : "Department-Metrics_Publishing-Department",
+                  "value" : "Public Works"
+                },
+                {
+                  "key" : "Publishing-Details_Publishing-frequency",
+                  "value" : "Daily"
+                },
+                { "key" : "Publishing-Details_Geographic-unit", "value" : "" },
+                { "key" : "Publishing-Details_Program-link", "value" : "" },
+                {
+                  "key" : "Publishing-Details_Data-change-frequency",
+                  "value" : "Daily"
+                },
+                {
+                  "key" : "Internal-Management_Inventory-ID",
+                  "value" : "DPW-0019"
+                }
+              ]
+          },
+        "metadata" :
+          {
+            "domain" : "data.sfgov.org",
+            "license" : "Open Data Commons Public Domain Dedication and License"
+          },
+        "permalink" : "https://data.sfgov.org/d/fivj-ftr7",
+        "link" : "https://data.sfgov.org/City-Infrastructure/StreetTreeList311/fivj-ftr7",
+        "owner" :
+          {
+            "id" : "urtw-9mv6",
+            "user_type" : "interactive",
+            "display_name" : "Samuel Valdez"
+          },
+        "creator" :
+          {
+            "id" : "urtw-9mv6",
+            "user_type" : "interactive",
+            "display_name" : "Samuel Valdez"
+          }
+      },
+      {
+        "resource" :
+          {
+            "name" : "HAQR Priority Green Infrastructure Zones",
+            "id" : "nn26-kuy2",
+            "resource_name" : null,
+            "parent_fxf" : [],
+            "description" : "Heat and air quality issues caused by climate change and gas-powered vehicles affect San Francisco communities differently. Tree canopy that would buffer the effects is not equally distributed due to historic racial inequities in infrastructure investment.\n\nTo positively affect public health and leverage new federal funding sources, the City and other stakeholders are planning for green infrastructure investments, such as tree planting, sidewalk landscape zones, cool pavement, structural shading,\ngreen schoolyards, and increased areas of stormwater management. This dataset identifies locations where these strategies could have the highest benefit\nto community health and make the most effective use of City investment.\n\nSF Public Works mapped a combination of environmental and health data to identify the priority zones. The study layers exposure to fine particulate matter (PM2.5), satellite temperature readings from a recent heat wave, and tree canopy data to identify where exposure is the highest. To further refine the prioritization zone, data was added for residents experiencing asthma or diabetes hospitalizations\nwhich are both exacerbated by heat and air quality issues. \n\nThis created two final maps focused on heat and air quality that combine environmental data and human health. These maps were combined to produce the final priority zones.",
+            "attribution" : null,
+            "attribution_link" : null,
+            "contact_email" : null,
+            "type" : "dataset",
+            "updatedAt" : "2024-06-21T17:03:22.000Z",
+            "createdAt" : "2024-06-06T23:42:49.000Z",
+            "metadata_updated_at" : "2024-06-21T17:03:22.000Z",
+            "data_updated_at" : "2024-06-20T20:29:20.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 21,
+                "page_views_last_month" : 63,
+                "page_views_total" : 3016,
+                "page_views_last_week_log" : 4.459431618637297,
+                "page_views_last_month_log" : 6.0,
+                "page_views_total_log" : 11.558898981146704
+              },
+            "columns_name" : [ "Descript", "the_geom" ],
+            "columns_field_name" : [ "descript", "the_geom" ],
+            "columns_datatype" : [ "Text", "MultiPolygon" ],
+            "columns_description" : [ "", "" ],
+            "columns_format" : [ {}, {} ],
+            "download_count" : 558,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "table",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : "2024-06-20T20:29:26.000Z"
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "Energy and Environment",
+            "domain_tags" : [],
+            "domain_metadata" :
+              [
+                {
+                  "key" : "Department-Metrics_Publishing-Department",
+                  "value" : "Office of Resilience and Capital Planning"
+                },
+                {
+                  "key" : "Internal-Management_Inventory-ID",
+                  "value" : "RES-0001"
+                },
+                {
+                  "key" : "Publishing-Details_Publishing-frequency",
+                  "value" : "As needed"
+                },
+                {
+                  "key" : "Publishing-Details_Data-change-frequency",
+                  "value" : "As needed"
+                }
+              ]
+          },
+        "metadata" : { "domain" : "data.sfgov.org" },
+        "permalink" : "https://data.sfgov.org/d/nn26-kuy2",
+        "link" : "https://data.sfgov.org/Energy-and-Environment/HAQR-Priority-Green-Infrastructure-Zones/nn26-kuy2",
+        "owner" :
+          {
+            "id" : "rtw4-hi68",
+            "user_type" : "interactive",
+            "display_name" : "Alex Morrison"
+          },
+        "creator" :
+          {
+            "id" : "rtw4-hi68",
+            "user_type" : "interactive",
+            "display_name" : "Alex Morrison"
+          }
+      },
+      {
+        "resource" :
+          {
+            "name" : "Reference: Department Code List",
+            "id" : "j2hz-23ps",
+            "resource_name" : null,
+            "parent_fxf" : [],
+            "description" : "These department codes are maintained in the City's financial system of record. Department Groups, Divisions, Sections, Units, Sub Units and Departments are nested in the dataset from left to right. Each nested unit has both a code and an associated name. \r\n\r\nThe dataset represents a flattened tree (hierarchy) so that each leaf on the tree has it's own row. Thus certain rows will have repeated codes across columns.\r\n\r\nData changes as needed.",
+            "attribution" : null,
+            "attribution_link" : null,
+            "contact_email" : null,
+            "type" : "dataset",
+            "updatedAt" : "2026-07-27T09:59:31.000Z",
+            "createdAt" : "2018-01-06T01:56:18.000Z",
+            "metadata_updated_at" : "2026-07-27T09:59:26.000Z",
+            "data_updated_at" : "2026-07-27T09:59:31.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 77,
+                "page_views_last_month" : 310,
+                "page_views_total" : 9869,
+                "page_views_last_week_log" : 6.285402218862249,
+                "page_views_last_month_log" : 8.280770770130603,
+                "page_views_total_log" : 13.26883436934376
+              },
+            "columns_name" :
+              [
+                "Division Code",
+                "Unit Name",
+                "Department Name",
+                "data_loaded_at",
+                "Sub-Unit Code",
+                "Section Code",
+                "data_as_of",
+                "Department Group Code",
+                "Section Name",
+                "Unit Code",
+                "Sub-Unit Name",
+                "Department Code",
+                "Department Group Name",
+                "Division Name"
+              ],
+            "columns_field_name" :
+              [
+                "division_code",
+                "unit_name",
+                "department_name",
+                "data_loaded_at",
+                "sub_unit_code",
+                "section_code",
+                "data_as_of",
+                "department_group_code",
+                "section_name",
+                "unit_code",
+                "sub_unit_name",
+                "department_code",
+                "department_group_name",
+                "division_name"
+              ],
+            "columns_datatype" :
+              [
+                "Text",
+                "Text",
+                "Text",
+                "Calendar date",
+                "Text",
+                "Text",
+                "Calendar date",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text"
+              ],
+            "columns_description" :
+              [
+                "The second node down the hierarchy of department codes. A Department Group may have one or many Divisions. For smaller departments, there will be one department group code and one division code.",
+                "The name for the unit code.",
+                "The name for the department code.",
+                "Timestamp the data was loaded to the open data portal.",
+                "The fifth node down the hierarchy of department codes. A Unit may have zero or many Sub-Units.",
+                "The third node down the hierarchy of department codes. A Division may have zero or many Sections.",
+                "Timestamp the data was updated in the source system.",
+                "The first node in the hierarchy of department codes. All active departments will have at least one row capturing this level, repeating subsequent codes.",
+                "The name for the section code.",
+                "The fourth node down the hierarchy of department codes. A Section may have zero or many Units.",
+                "The name for the sub-unit code.",
+                "The sixth node down the hierarchy of department codes. A Sub-Unit may have zero or many Departments.",
+                "The name associated with the department group code.",
+                "The name for the division code."
+              ],
+            "columns_format" :
+              [
+                { "align" : "right" },
+                { "align" : "right" },
+                { "align" : "right" },
+                { "view" : "date_ymd_time" },
+                { "align" : "right" },
+                { "align" : "right" },
+                { "view" : "date_ymd_time" },
+                { "align" : "right" },
+                { "align" : "right" },
+                { "align" : "left" },
+                { "align" : "right" },
+                { "align" : "right" },
+                { "align" : "right" },
+                { "align" : "right" }
+              ],
+            "download_count" : 4410,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "table",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : "2024-04-30T16:15:59.000Z"
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "City Management and Ethics",
+            "domain_tags" : [ "city reference data" ],
+            "domain_metadata" :
+              [
+                {
+                  "key" : "Department-Metrics_Publishing-Department",
+                  "value" : "Controller"
+                },
+                {
+                  "key" : "Publishing-Details_Publishing-frequency",
+                  "value" : "As needed"
+                },
+                { "key" : "Publishing-Details_Geographic-unit", "value" : "" },
+                { "key" : "Publishing-Details_Program-link", "value" : "" },
+                {
+                  "key" : "Publishing-Details_Data-change-frequency",
+                  "value" : "As needed"
+                },
+                {
+                  "key" : "Internal-Management_Inventory-ID",
+                  "value" : "CON-0027"
+                }
+              ]
+          },
+        "metadata" :
+          {
+            "domain" : "data.sfgov.org",
+            "license" : "Open Data Commons Public Domain Dedication and License"
+          },
+        "permalink" : "https://data.sfgov.org/d/j2hz-23ps",
+        "link" : "https://data.sfgov.org/City-Management-and-Ethics/Reference-Department-Code-List/j2hz-23ps",
+        "owner" :
+          {
+            "id" : "dbag-6qd9",
+            "user_type" : "interactive",
+            "display_name" : "OpenData"
+          },
+        "creator" :
+          {
+            "id" : "dbag-6qd9",
+            "user_type" : "interactive",
+            "display_name" : "OpenData"
+          }
+      },
+      {
+        "resource" :
+          {
+            "name" : "Street & Sidewalk Maintenance Standards Results, Jan 2022 - Jun 2025",
+            "id" : "qya8-uhsz",
+            "resource_name" : null,
+            "parent_fxf" : [],
+            "description" : "Since July 2004, San Francisco’s Charter has required the Controller’s Office (CON) to work with San Francisco Public Works (Public Works) to develop and implement street and sidewalk maintenance standards and report out on the City’s condition under the standards. This data file contains street and sidewalk evaluation results from 1/1/2022 to 6/30/2025. Older evaluation results are also available on DataSF but are not comparable due to changes in the way the standards are calculated. You can also access past annual reports in the \"Past Reports\" section of https://www.sf.gov/street-and-sidewalk-maintenance-standards",
+            "attribution" : "City Performance Unit, Controller's Office",
+            "attribution_link" : null,
+            "contact_email" : null,
+            "type" : "dataset",
+            "updatedAt" : "2025-10-20T17:21:34.000Z",
+            "createdAt" : "2024-11-18T20:05:52.000Z",
+            "metadata_updated_at" : "2025-10-20T17:21:25.000Z",
+            "data_updated_at" : "2025-10-20T17:21:34.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 32,
+                "page_views_last_month" : 149,
+                "page_views_total" : 1743,
+                "page_views_last_week_log" : 5.044394119358453,
+                "page_views_last_month_log" : 7.22881869049588,
+                "page_views_total_log" : 10.768184324776927
+              },
+            "columns_name" :
+              [
+                "Other sidewalk obstructions:",
+                "Does the route have one or more trash receptacles?",
+                "Do you detect any strong unpleasant or offensive odors along the street or sidewalk?",
+                "Does any graffiti appear to be stenciled?",
+                "Are any trash receptacles overflowing?",
+                "Does any graffiti include offensive language  (e.g., racial slurs or profanity)?",
+                "Which of the following issues are present in or on any of the transit shelters along the route?",
+                "Does the route have one or more transit shelters?",
+                "Does the sidewalk have any marked defects that have not been repaired?",
+                "Does illegal dumping obstruct the street?",
+                "Is sidewalk clearance less than 4 feet wide or 8 feet high at any point?",
+                "How many dead animals are present?",
+                "How many abandoned syringes are present?",
+                "How many instances of feces are present?",
+                "How many instances of graffiti are present on private property or on the sidewalk or non-painted curb immediately adjacent to private property?",
+                "Other dumped items:",
+                "What types of items are present? (select all that apply)",
+                "How many large abandoned items are present?",
+                "Does litter obstruct the street?",
+                "Select the statement that best describes the amount and distribution of litter in the street.",
+                "Is the pile of item(s) more than 8ft in diameter? (July 2023-December 2024 only)",
+                "Are there closed, unlabeled trash bags grouped together? (July 2023-December 2024 only)",
+                "Evaluation Period",
+                "Analysis Neighborhoods",
+                "CreationDate",
+                "If yes, is the odor from a sewer or catch basin?",
+                "How severe are the pavement defects?",
+                "Does the sidewalk have any defects that have not been marked for repair?",
+                "If yes, identify the cause (select all that apply)",
+                "How many used or opened condoms are present?",
+                "How many instances of broken glass are present along the sidewalk and street?",
+                "Select the statement that best describes the amount and distribution of broken glass on the street and sidewalk:",
+                "How many instances of graffiti are present on other property?",
+                "How many instances of graffiti are present on SF gov property?",
+                "Select the statement that best describes the amount and distribution of litter on the sidewalk.",
+                "ObjectID",
+                "Is this route predominantly residential or commercial/industrial/mixed use?",
+                "Route Location:",
+                "Route ID:"
+              ],
+            "columns_field_name" :
+              [
+                "other_sidewalk_obstructions",
+                "does_the_route_have_one_or",
+                "do_you_detect_any_strong",
+                "does_any_graffiti_appear",
+                "are_any_trash_receptacles",
+                "does_any_graffiti_include",
+                "which_of_the_following_issues",
+                "does_the_route_have_one_or_1",
+                "does_the_sidewalk_have_any_1",
+                "does_illegal_dumping_obstruct",
+                "is_sidewalk_clearance_less",
+                "how_many_dead_animals_are",
+                "how_many_abandoned_syringes",
+                "how_many_instances_of_feces",
+                "how_many_instances_of_graffiti",
+                "other_dumped_items",
+                "what_types_of_items_are",
+                "how_many_large_abandoned",
+                "does_litter_obstruct_the",
+                "select_the_statement_that",
+                "is_the_pile_of_item_s_more",
+                "are_there_closed_unlabeled",
+                "evaluation_period",
+                "analysis_neighborhoods",
+                "creationdate",
+                "if_yes_is_the_odor_from_a",
+                "how_severe_are_the_pavement",
+                "does_the_sidewalk_have_any",
+                "if_yes_identify_the_cause",
+                "how_many_used_or_opened",
+                "how_many_instances_of_broken",
+                "select_the_statement_that_2",
+                "how_many_instances_of_graffiti_2",
+                "how_many_instances_of_graffiti_1",
+                "select_the_statement_that_1",
+                "objectid",
+                "is_this_route_predominantly",
+                "route_location",
+                "route_id"
+              ],
+            "columns_datatype" :
+              [
+                "Text",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Text",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Text",
+                "Text",
+                "Calendar date",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Text",
+                "Number"
+              ],
+            "columns_description" :
+              [
+                "11. Sidewalk clearance.  Free form descriptions",
+                "10. Receptacles.  Yes or No. 0 = \"No\" and 1 = \"Yes\".",
+                "13. Odors.  Presence of strong unpleasant or offensive odors is represented by Yes and No. 0 = \"No\" and 1 = \"Yes\".",
+                "4. Graffiti.  If graffiti is present, stenciled graffiti is measured by Yes or No. 0 = \"No\" and 1 = \"Yes\".",
+                "10. Receptacles.  If a trash receptacle is present, overflowing receptacles are represented by Yes or No. 0 = \"No\" and 1 = \"Yes\".",
+                "4. Graffiti.  If graffiti is present, offensive graffiti is measured by Yes or No. 0 = \"No\" and 1 = \"Yes\".",
+                "14. Transit shelters.  If a shelter is present, please provide issue codes: 1 No issues found, 12 Broken/damaged infrastructure or equipment - note: if shelter has no glass but has horizontal back bars (see image), it is not broken. If it has no glass and no horizontal back bars, it is broken., 2 Broken glass (on the ground), 3 Dead animal, 4 Feces, 5 Graffiti (non-etched), 6 Grime, 7 Illegal dumping, 8 Improperly parked scooter or bicycle, 9 Litter, 10 Open/used condom, 11 Syringe",
+                "14. Transit shelters.  Presence of a transit shelter is represented by Yes and No. 0 = \"No\" and 1 = \"Yes\".",
+                "12. Sidewalk defects.  Unrepaired sidewalk defects are represented by Yes and No. 0 = \"No\" and 1 = \"Yes\".",
+                "3. Illegal dumping.  If illegal dumping is present, illegal dumping street obstruction is measured by Yes or No. 0 = \"No\" and 1 = \"Yes\".",
+                "11. Sidewalk clearance.  Issues are represented by Yes and No. 0 = \"No\" and 1 = \"Yes\".",
+                "9. Dead animals. Count of instances.",
+                "7. Syringes . Count of instances.",
+                "6. Feces. Count of instances.",
+                "4. Graffiti. The number of instances of graffiti on private property are recorded here. In case more than 100 instances are present for a single evaluation, \"101\" is reported.",
+                "3. Illegal dumping.  Written descriptions of other dumped items that do not fit the categories described in previous question.",
+                "3. Illegal dumping. Codes for the types of abandoned items: 1. Blankets, bedding, & pillows 2. Furniture, mattresses, and bed frames 3. Miscellaneous household items & luggage 4. Clothing 5. Boxed materials, boxes, and bagged items 6. Construction waste/debris (including cones, signs, etc.) 7. Bicycle, automotive, other parts and accessories 8. Electronics and appliances 9. Organic debris (such as large branches, piles of leaves, or soil 10. Other",
+                "3. Illegal dumping.  The count of abandoned items represents instances of illegal dumping.",
+                "1. If street litter is present, street litter obstruction is measured by Yes or No. 0 = \"No\" and 1 = \"Yes\".",
+                "1. Street litter rated on a scale of 1-5. 1 = None, 2 = A few traces, 3 = More than a few traces, but no accumulation, 4 = Distributed litter with some accumulation, 5 = Widespread litter with significant accumulation.",
+                "3. Illegal dumping.  If illegal dumping is present, piles of items more than 8 feet in diameter are measured by Yes or No. 0 = \"No\" and 1 = \"Yes\".",
+                "3. Illegal dumping.  If illegal dumping is present, closed unlabeled trash bags are measured by Yes or No. 0 = \"No\" and 1 = \"Yes\".",
+                "One of three evaluation periods: January 2022 - December 2022, January 2023 - June 2023, July 2023 - June 2024.",
+                "Neighborhood group of the street evaluated",
+                "Evaluation date",
+                "13. Odors.  If strong unpleasant or offensive odors are present, Yes and No represent whether or not the source is a sewer or catch basin. 0 = \"No\" and 1 = \"Yes\".",
+                "12. Sidewalk defects.  Sidewalk pavement defect severity is measured on a scale of 1-3. 1 = Minor, 2 = Moderate, 3 = Severe.",
+                "12. Sidewalk defects.  Existing Defect/repair markings are represented by Yes and No. 0 = \"No\" and 1 = \"Yes\".",
+                "11. Sidewalk clearance. Codes: 1 Café tables and chairs, 12 Car(s), 2 Construction, 3 Design exception, 4 Display merchandise, 5 Encampment, 6 Glass, 7 Grime, 8 Illegal dumping, 9 Litter, 10 Pavement defects, 11 Shared scooter or bicycle, 13 Tree/shrub/other greenery, 0 Other (specify)",
+                "8. Condoms . Count of instances.",
+                "5. Broken glass.  Count of instances/clusters.",
+                "5. Broken glass.  Measured on a scale of 1-5. 1 = None, 2 = A few traces, 3 = More than a few traces but no concentration, 4 = Glass is concentrated in a single line or spot, 5 = Glass is concentrated in multiple lines or spots.",
+                "4. Graffiti.  The number of instances of graffiti on other property are recorded here. In case more than 100 instances are present for a single evaluation, \"101\" is reported.",
+                "4. Graffiti.  The number of instances of graffiti on SF gov property are recorded here. In case more than 100 instances are present for a single evaluation, \"101\" is reported.",
+                "2. Sidewalk litter rated on a scale of 1-5. 1 = None, 2 = A few traces, 3 = More than a few traces, but no accumulation, 4 = Distributed litter with some accumulation, 5 = Widespread litter with significant accumulation.",
+                "Unique identifier for the evaluation",
+                "The type of route is either Commercial/Industrial/Mixed Use or Residential. 1 = \"Commercial/Industrial/Mixed Use\" and 2 = \"Residential\".",
+                "Description of the location where the evaluation took place",
+                "Unique identifier for the route evaluated"
+              ],
+            "columns_format" :
+              [
+                {},
+                { "decimalSeparator" : ".", "groupSeparator" : "," },
+                { "decimalSeparator" : ".", "groupSeparator" : "," },
+                { "decimalSeparator" : ".", "groupSeparator" : "," },
+                { "decimalSeparator" : ".", "groupSeparator" : "," },
+                { "decimalSeparator" : ".", "groupSeparator" : "," },
+                { "decimalSeparator" : ".", "groupSeparator" : "," },
+                { "decimalSeparator" : ".", "groupSeparator" : "," },
+                { "decimalSeparator" : ".", "groupSeparator" : "," },
+                { "decimalSeparator" : ".", "groupSeparator" : "," },
+                { "decimalSeparator" : ".", "groupSeparator" : "," },
+                { "decimalSeparator" : ".", "groupSeparator" : "," },
+                { "decimalSeparator" : ".", "groupSeparator" : "," },
+                { "decimalSeparator" : ".", "groupSeparator" : "," },
+                { "decimalSeparator" : ".", "groupSeparator" : "," },
+                {},
+                { "decimalSeparator" : ".", "groupSeparator" : "," },
+                { "decimalSeparator" : ".", "groupSeparator" : "," },
+                { "decimalSeparator" : ".", "groupSeparator" : "," },
+                { "decimalSeparator" : ".", "groupSeparator" : "," },
+                { "decimalSeparator" : ".", "groupSeparator" : "," },
+                { "decimalSeparator" : ".", "groupSeparator" : "," },
+                {},
+                {},
+                {},
+                { "decimalSeparator" : ".", "groupSeparator" : "," },
+                { "decimalSeparator" : ".", "groupSeparator" : "," },
+                { "decimalSeparator" : ".", "groupSeparator" : "," },
+                { "decimalSeparator" : ".", "groupSeparator" : "," },
+                { "decimalSeparator" : ".", "groupSeparator" : "," },
+                { "decimalSeparator" : ".", "groupSeparator" : "," },
+                { "decimalSeparator" : ".", "groupSeparator" : "," },
+                { "decimalSeparator" : ".", "groupSeparator" : "," },
+                { "decimalSeparator" : ".", "groupSeparator" : "," },
+                { "decimalSeparator" : ".", "groupSeparator" : "," },
+                { "decimalSeparator" : ".", "groupSeparator" : "," },
+                { "decimalSeparator" : ".", "groupSeparator" : "," },
+                {},
+                { "decimalSeparator" : ".", "groupSeparator" : "," }
+              ],
+            "download_count" : 2354,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "table",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : "2024-12-04T17:03:31.000Z"
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "City Infrastructure",
+            "domain_tags" :
+              [
+                "street evaluation",
+                "controller's street evaluation program",
+                "evaluation",
+                "graffiti",
+                "litter",
+                "sidewalk",
+                "street",
+                "streets",
+                "trash"
+              ],
+            "domain_metadata" :
+              [
+                {
+                  "key" : "Department-Metrics_Publishing-Department",
+                  "value" : "Controller"
+                },
+                {
+                  "key" : "Publishing-Details_Publishing-frequency",
+                  "value" : "Annually"
+                },
+                {
+                  "key" : "Publishing-Details_Data-change-frequency",
+                  "value" : "Annually"
+                },
+                {
+                  "key" : "Detailed-Descriptive_Program-link",
+                  "value" : "https://www.sf.gov/street-and-sidewalk-maintenance-standards"
+                },
+                {
+                  "key" : "Detailed-Descriptive_Geographic-unit",
+                  "value" : "Neighborhood"
+                }
+              ]
+          },
+        "metadata" :
+          {
+            "domain" : "data.sfgov.org",
+            "license" : "Open Data Commons Attribution License"
+          },
+        "permalink" : "https://data.sfgov.org/d/qya8-uhsz",
+        "link" : "https://data.sfgov.org/City-Infrastructure/Street-Sidewalk-Maintenance-Standards-Results-Jan-/qya8-uhsz",
+        "owner" :
+          {
+            "id" : "jrg4-pfrm",
+            "user_type" : "interactive",
+            "display_name" : "Darren Low"
+          },
+        "creator" :
+          {
+            "id" : "jrg4-pfrm",
+            "user_type" : "interactive",
+            "display_name" : "Darren Low"
+          }
+      }
+    ],
+  "resultSetSize" : 17,
+  "timings" : { "serviceMillis" : 37, "searchMillis" : [ 20, 7 ] },
+  "warnings" : []
+}

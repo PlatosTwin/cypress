@@ -1,0 +1,644 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>San Francisco Landmark Trees</name>
+    <description>Protected Trees given Landmark Status by the SF Board of Supervisors</description>
+    <Style id="icon-1720-0F9D58-normal">
+      <IconStyle>
+        <color>ff589d0f</color>
+        <scale>1</scale>
+        <Icon>
+          <href>https://www.gstatic.com/mapspro/images/stock/503-wht-blank_maps.png</href>
+        </Icon>
+      </IconStyle>
+      <LabelStyle>
+        <scale>0</scale>
+      </LabelStyle>
+    </Style>
+    <Style id="icon-1720-0F9D58-highlight">
+      <IconStyle>
+        <color>ff589d0f</color>
+        <scale>1</scale>
+        <Icon>
+          <href>https://www.gstatic.com/mapspro/images/stock/503-wht-blank_maps.png</href>
+        </Icon>
+      </IconStyle>
+      <LabelStyle>
+        <scale>1</scale>
+      </LabelStyle>
+    </Style>
+    <StyleMap id="icon-1720-0F9D58">
+      <Pair>
+        <key>normal</key>
+        <styleUrl>#icon-1720-0F9D58-normal</styleUrl>
+      </Pair>
+      <Pair>
+        <key>highlight</key>
+        <styleUrl>#icon-1720-0F9D58-highlight</styleUrl>
+      </Pair>
+    </StyleMap>
+    <Folder>
+      <name>Landmark Trees</name>
+      <Placemark>
+        <name>Brazilian Pepper</name>
+        <description><![CDATA[Address: 3rd Street and Yosemite<br>Latitude: 37.727978731997354<br>Longitude: -122.39335808079059<br>Scientific Name: Schinus terebinthifolius]]></description>
+        <styleUrl>#icon-1720-0F9D58</styleUrl>
+        <ExtendedData>
+          <Data name="Address">
+            <value>3rd Street and Yosemite</value>
+          </Data>
+          <Data name="Latitude">
+            <value>37.727978731997354</value>
+          </Data>
+          <Data name="Longitude">
+            <value>-122.39335808079059</value>
+          </Data>
+          <Data name="Scientific Name">
+            <value>Schinus terebinthifolius</value>
+          </Data>
+        </ExtendedData>
+        <Point>
+          <coordinates>
+            -122.393358080791,37.7279787319974,0
+          </coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name>Blue Gum Eucalyptus</name>
+        <description><![CDATA[Address: 1801 Bush Street<br>Latitude: 37.787748<br>Longitude: -122.427269<br>Scientific Name: Eucalyptus globulus]]></description>
+        <styleUrl>#icon-1720-0F9D58</styleUrl>
+        <ExtendedData>
+          <Data name="Address">
+            <value>1801 Bush Street</value>
+          </Data>
+          <Data name="Latitude">
+            <value>37.787748</value>
+          </Data>
+          <Data name="Longitude">
+            <value>-122.427269</value>
+          </Data>
+          <Data name="Scientific Name">
+            <value>Eucalyptus globulus</value>
+          </Data>
+        </ExtendedData>
+        <Point>
+          <coordinates>
+            -122.427269,37.787748,0
+          </coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name>Blue Elderberry</name>
+        <description><![CDATA[Address: Folsom Street and Bernal Heights Road<br>Latitude: 37.743143<br>Longitude: -122.410042<br>Scientific Name: Sambucus mexicana]]></description>
+        <styleUrl>#icon-1720-0F9D58</styleUrl>
+        <ExtendedData>
+          <Data name="Address">
+            <value>Folsom Street and Bernal Heights Road</value>
+          </Data>
+          <Data name="Latitude">
+            <value>37.743143</value>
+          </Data>
+          <Data name="Longitude">
+            <value>-122.410042</value>
+          </Data>
+          <Data name="Scientific Name">
+            <value>Sambucus mexicana</value>
+          </Data>
+        </ExtendedData>
+        <Point>
+          <coordinates>
+            -122.410042,37.743143,0
+          </coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name>California Buckeye</name>
+        <description><![CDATA[Address: 730 28th Avenue<br>Latitude: 37.77465<br>Longitude: -122.487467<br>Scientific Name: Aesculus californica]]></description>
+        <styleUrl>#icon-1720-0F9D58</styleUrl>
+        <ExtendedData>
+          <Data name="Address">
+            <value>730 28th Avenue</value>
+          </Data>
+          <Data name="Latitude">
+            <value>37.77465</value>
+          </Data>
+          <Data name="Longitude">
+            <value>-122.487467</value>
+          </Data>
+          <Data name="Scientific Name">
+            <value>Aesculus californica</value>
+          </Data>
+        </ExtendedData>
+        <Point>
+          <coordinates>
+            -122.487467,37.77465,0
+          </coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name>California Buckeye</name>
+        <description><![CDATA[Address: 757 Pennsylvania Avenue<br>Latitude: 37.756648<br>Longitude: -122.392956<br>Scientific Name: Aesculus californica]]></description>
+        <styleUrl>#icon-1720-0F9D58</styleUrl>
+        <ExtendedData>
+          <Data name="Address">
+            <value>757 Pennsylvania Avenue</value>
+          </Data>
+          <Data name="Latitude">
+            <value>37.756648</value>
+          </Data>
+          <Data name="Longitude">
+            <value>-122.392956</value>
+          </Data>
+          <Data name="Scientific Name">
+            <value>Aesculus californica</value>
+          </Data>
+        </ExtendedData>
+        <Point>
+          <coordinates>
+            -122.392956,37.756648,0
+          </coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name>Canary Island Date Palm</name>
+        <description><![CDATA[Address: Quesada and 3rd Street <br>Latitude: 37.733382<br>Longitude: -122.391223<br>Scientific Name: Phoenix canariensis]]></description>
+        <styleUrl>#icon-1720-0F9D58</styleUrl>
+        <ExtendedData>
+          <Data name="Address">
+            <value>Quesada and 3rd Street </value>
+          </Data>
+          <Data name="Latitude">
+            <value>37.733382</value>
+          </Data>
+          <Data name="Longitude">
+            <value>-122.391223</value>
+          </Data>
+          <Data name="Scientific Name">
+            <value>Phoenix canariensis</value>
+          </Data>
+        </ExtendedData>
+        <Point>
+          <coordinates>
+            -122.391223,37.733382,0
+          </coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name>Cliff Date Palms</name>
+        <description><![CDATA[Address: 730 Dolores Street<br>Latitude: 37.757683<br>Longitude: -122.425896<br>Scientific Name: Phoenix rupicola]]></description>
+        <styleUrl>#icon-1720-0F9D58</styleUrl>
+        <ExtendedData>
+          <Data name="Address">
+            <value>730 Dolores Street</value>
+          </Data>
+          <Data name="Latitude">
+            <value>37.757683</value>
+          </Data>
+          <Data name="Longitude">
+            <value>-122.425896</value>
+          </Data>
+          <Data name="Scientific Name">
+            <value>Phoenix rupicola</value>
+          </Data>
+        </ExtendedData>
+        <Point>
+          <coordinates>
+            -122.425896,37.757683,0
+          </coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name>Canary Island Date Palm</name>
+        <description><![CDATA[Address: 730 Dolores Street<br>Latitude: 37.75776509<br>Longitude: -122.4259006<br>Scientific Name: phoenix canariensis]]></description>
+        <styleUrl>#icon-1720-0F9D58</styleUrl>
+        <ExtendedData>
+          <Data name="Address">
+            <value>730 Dolores Street</value>
+          </Data>
+          <Data name="Latitude">
+            <value>37.75776509</value>
+          </Data>
+          <Data name="Longitude">
+            <value>-122.4259006</value>
+          </Data>
+          <Data name="Scientific Name">
+            <value>phoenix canariensis</value>
+          </Data>
+        </ExtendedData>
+        <Point>
+          <coordinates>
+            -122.4259006,37.75776509,0
+          </coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name>Coast Live Oak</name>
+        <description><![CDATA[Address: 4124 23rd Street<br>Latitude: 37.75294582<br>Longitude: -122.434896<br>Scientific Name: Quercus agrifolia]]></description>
+        <styleUrl>#icon-1720-0F9D58</styleUrl>
+        <ExtendedData>
+          <Data name="Address">
+            <value>4124 23rd Street</value>
+          </Data>
+          <Data name="Latitude">
+            <value>37.75294582</value>
+          </Data>
+          <Data name="Longitude">
+            <value>-122.434896</value>
+          </Data>
+          <Data name="Scientific Name">
+            <value>Quercus agrifolia</value>
+          </Data>
+        </ExtendedData>
+        <Point>
+          <coordinates>
+            -122.434896,37.75294582,0
+          </coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name>Coast Live Oak</name>
+        <description><![CDATA[Address: 20 Rosemont Terrace<br>Latitude: 37.76862597<br>Longitude: -122.4257055<br>Scientific Name: Quercus agrifolia]]></description>
+        <styleUrl>#icon-1720-0F9D58</styleUrl>
+        <ExtendedData>
+          <Data name="Address">
+            <value>20 Rosemont Terrace</value>
+          </Data>
+          <Data name="Latitude">
+            <value>37.76862597</value>
+          </Data>
+          <Data name="Longitude">
+            <value>-122.4257055</value>
+          </Data>
+          <Data name="Scientific Name">
+            <value>Quercus agrifolia</value>
+          </Data>
+        </ExtendedData>
+        <Point>
+          <coordinates>
+            -122.4257055,37.76862597,0
+          </coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name>Coast Redwood</name>
+        <description><![CDATA[Address: 46 Stillings Avenue<br>Latitude: 37.7344546<br>Longitude: -122.4415732<br>Scientific Name: Sequoia sempervirens]]></description>
+        <styleUrl>#icon-1720-0F9D58</styleUrl>
+        <ExtendedData>
+          <Data name="Address">
+            <value>46 Stillings Avenue</value>
+          </Data>
+          <Data name="Latitude">
+            <value>37.7344546</value>
+          </Data>
+          <Data name="Longitude">
+            <value>-122.4415732</value>
+          </Data>
+          <Data name="Scientific Name">
+            <value>Sequoia sempervirens</value>
+          </Data>
+        </ExtendedData>
+        <Point>
+          <coordinates>
+            -122.4415732,37.7344546,0
+          </coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name>Giant Sequoia</name>
+        <description><![CDATA[Address: 3066 Market Street<br>Latitude: 37.76115664<br>Longitude: -122.4426356<br>Scientific Name: Sequoiadendron giganteum]]></description>
+        <styleUrl>#icon-1720-0F9D58</styleUrl>
+        <ExtendedData>
+          <Data name="Address">
+            <value>3066 Market Street</value>
+          </Data>
+          <Data name="Latitude">
+            <value>37.76115664</value>
+          </Data>
+          <Data name="Longitude">
+            <value>-122.4426356</value>
+          </Data>
+          <Data name="Scientific Name">
+            <value>Sequoiadendron giganteum</value>
+          </Data>
+        </ExtendedData>
+        <Point>
+          <coordinates>
+            -122.4426356,37.76115664,0
+          </coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name>Guadalupe Palm</name>
+        <description><![CDATA[Address: 1608 Dolores Street<br>Latitude: 37.74355216<br>Longitude: -122.4243942<br>Scientific Name: Brahea edulis]]></description>
+        <styleUrl>#icon-1720-0F9D58</styleUrl>
+        <ExtendedData>
+          <Data name="Address">
+            <value>1608 Dolores Street</value>
+          </Data>
+          <Data name="Latitude">
+            <value>37.74355216</value>
+          </Data>
+          <Data name="Longitude">
+            <value>-122.4243942</value>
+          </Data>
+          <Data name="Scientific Name">
+            <value>Brahea edulis</value>
+          </Data>
+        </ExtendedData>
+        <Point>
+          <coordinates>
+            -122.4243942,37.74355216,0
+          </coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name>Howell’s Manzanita</name>
+        <description><![CDATA[Address: 115 Parker Street<br>Latitude: 37.78356683<br>Longitude: -122.4546902<br>Scientific Name: Arctostaphylos hispidula]]></description>
+        <styleUrl>#icon-1720-0F9D58</styleUrl>
+        <ExtendedData>
+          <Data name="Address">
+            <value>115 Parker Street</value>
+          </Data>
+          <Data name="Latitude">
+            <value>37.78356683</value>
+          </Data>
+          <Data name="Longitude">
+            <value>-122.4546902</value>
+          </Data>
+          <Data name="Scientific Name">
+            <value>Arctostaphylos hispidula</value>
+          </Data>
+        </ExtendedData>
+        <Point>
+          <coordinates>
+            -122.4546902,37.78356683,0
+          </coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name>Flaxleaf paperbark</name>
+        <description><![CDATA[Address: 1701 Franklin Street<br>Latitude: 37.79036<br>Longitude: -122.42429<br>Scientific Name: Melaleuca linariifolia]]></description>
+        <styleUrl>#icon-1720-0F9D58</styleUrl>
+        <ExtendedData>
+          <Data name="Address">
+            <value>1701 Franklin Street</value>
+          </Data>
+          <Data name="Latitude">
+            <value>37.79036</value>
+          </Data>
+          <Data name="Longitude">
+            <value>-122.42429</value>
+          </Data>
+          <Data name="Scientific Name">
+            <value>Melaleuca linariifolia</value>
+          </Data>
+        </ExtendedData>
+        <Point>
+          <coordinates>
+            -122.42429,37.79036,0
+          </coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name>Flowering Ash</name>
+        <description><![CDATA[Address: 500 Cortland Avenue<br>Latitude: 37.73885<br>Longitude: -122.41613<br>Scientific Name: Fraxinus ornus]]></description>
+        <styleUrl>#icon-1720-0F9D58</styleUrl>
+        <ExtendedData>
+          <Data name="Address">
+            <value>500 Cortland Avenue</value>
+          </Data>
+          <Data name="Latitude">
+            <value>37.73885</value>
+          </Data>
+          <Data name="Longitude">
+            <value>-122.41613</value>
+          </Data>
+          <Data name="Scientific Name">
+            <value>Fraxinus ornus</value>
+          </Data>
+        </ExtendedData>
+        <Point>
+          <coordinates>
+            -122.41613,37.73885,0
+          </coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name>Moreton Bay Fig</name>
+        <description><![CDATA[Address: 3555 Cesar Chavez Street<br>Latitude: 37.7477<br>Longitude: -122.42066<br>Scientific Name: Ficus macrophylla]]></description>
+        <styleUrl>#icon-1720-0F9D58</styleUrl>
+        <ExtendedData>
+          <Data name="Address">
+            <value>3555 Cesar Chavez Street</value>
+          </Data>
+          <Data name="Latitude">
+            <value>37.7477</value>
+          </Data>
+          <Data name="Longitude">
+            <value>-122.42066</value>
+          </Data>
+          <Data name="Scientific Name">
+            <value>Ficus macrophylla</value>
+          </Data>
+        </ExtendedData>
+        <Point>
+          <coordinates>
+            -122.42066,37.7477,0
+          </coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name>New Zealand Christmas Tree</name>
+        <description><![CDATA[Address: 1221 Stanyan Street<br>Latitude: 37.76155<br>Longitude: -122.45218<br>Scientific Name: Metrosideros excelsa]]></description>
+        <styleUrl>#icon-1720-0F9D58</styleUrl>
+        <ExtendedData>
+          <Data name="Address">
+            <value>1221 Stanyan Street</value>
+          </Data>
+          <Data name="Latitude">
+            <value>37.76155</value>
+          </Data>
+          <Data name="Longitude">
+            <value>-122.45218</value>
+          </Data>
+          <Data name="Scientific Name">
+            <value>Metrosideros excelsa</value>
+          </Data>
+        </ExtendedData>
+        <Point>
+          <coordinates>
+            -122.45218,37.76155,0
+          </coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name>Norfolk Island Cook Pine</name>
+        <description><![CDATA[Address: 46 Cook Street<br>Latitude: 37.78293<br>Longitude: -122.45219<br>Scientific Name: Araucaria spp]]></description>
+        <styleUrl>#icon-1720-0F9D58</styleUrl>
+        <ExtendedData>
+          <Data name="Address">
+            <value>46 Cook Street</value>
+          </Data>
+          <Data name="Latitude">
+            <value>37.78293</value>
+          </Data>
+          <Data name="Longitude">
+            <value>-122.45219</value>
+          </Data>
+          <Data name="Scientific Name">
+            <value>Araucaria spp</value>
+          </Data>
+        </ExtendedData>
+        <Point>
+          <coordinates>
+            -122.45219,37.78293,0
+          </coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name>Sweet Bay</name>
+        <description><![CDATA[Address: 555 Battery Street <br>Latitude: 37.79603<br>Longitude: -122.40102<br>Scientific Name: Laurus nobilis]]></description>
+        <styleUrl>#icon-1720-0F9D58</styleUrl>
+        <ExtendedData>
+          <Data name="Address">
+            <value>555 Battery Street </value>
+          </Data>
+          <Data name="Latitude">
+            <value>37.79603</value>
+          </Data>
+          <Data name="Longitude">
+            <value>-122.40102</value>
+          </Data>
+          <Data name="Scientific Name">
+            <value>Laurus nobilis</value>
+          </Data>
+        </ExtendedData>
+        <Point>
+          <coordinates>
+            -122.40102,37.79603,0
+          </coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name>Monterey Cypress</name>
+        <description><![CDATA[Address: 2626 Vallejo Stret <br>Latitude: 37.79481<br>Longitude: -122.44056<br>Scientific Name: Cupressus macrocarpa]]></description>
+        <styleUrl>#icon-1720-0F9D58</styleUrl>
+        <ExtendedData>
+          <Data name="Address">
+            <value>2626 Vallejo Stret </value>
+          </Data>
+          <Data name="Latitude">
+            <value>37.79481</value>
+          </Data>
+          <Data name="Longitude">
+            <value>-122.44056</value>
+          </Data>
+          <Data name="Scientific Name">
+            <value>Cupressus macrocarpa</value>
+          </Data>
+        </ExtendedData>
+        <Point>
+          <coordinates>
+            -122.44056,37.79481,0
+          </coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name>Canary Island Pine</name>
+        <description><![CDATA[Address: 2251 Filbert Street<br>Latitude: 37.79805315746839<br>Longitude: -122.43652369307623<br>Scientific Name: Pinus canariensis]]></description>
+        <styleUrl>#icon-1720-0F9D58</styleUrl>
+        <ExtendedData>
+          <Data name="Address">
+            <value>2251 Filbert Street</value>
+          </Data>
+          <Data name="Latitude">
+            <value>37.79805315746839</value>
+          </Data>
+          <Data name="Longitude">
+            <value>-122.43652369307623</value>
+          </Data>
+          <Data name="Scientific Name">
+            <value>Pinus canariensis</value>
+          </Data>
+        </ExtendedData>
+        <Point>
+          <coordinates>
+            -122.436523693076,37.7980531574684,0
+          </coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name>California Buckeye</name>
+        <description><![CDATA[Address: 2694 McAllister Street<br>Latitude: 37.775889004577934<br>Longitude: -122.45629045568901<br>Scientific Name: Aesculus californica]]></description>
+        <styleUrl>#icon-1720-0F9D58</styleUrl>
+        <ExtendedData>
+          <Data name="Address">
+            <value>2694 McAllister Street</value>
+          </Data>
+          <Data name="Latitude">
+            <value>37.775889004577934</value>
+          </Data>
+          <Data name="Longitude">
+            <value>-122.45629045568901</value>
+          </Data>
+          <Data name="Scientific Name">
+            <value>Aesculus californica</value>
+          </Data>
+        </ExtendedData>
+        <Point>
+          <coordinates>
+            -122.456290455689,37.7758890045779,0
+          </coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name>Cork Oak</name>
+        <description><![CDATA[Address: 20th Street at Noe Street<br>Latitude: 37.757806429250124<br>Longitude: -122.43226323822554<br>Scientific Name: Quercus suber]]></description>
+        <styleUrl>#icon-1720-0F9D58</styleUrl>
+        <ExtendedData>
+          <Data name="Address">
+            <value>20th Street at Noe Street</value>
+          </Data>
+          <Data name="Latitude">
+            <value>37.757806429250124</value>
+          </Data>
+          <Data name="Longitude">
+            <value>-122.43226323822554</value>
+          </Data>
+          <Data name="Scientific Name">
+            <value>Quercus suber</value>
+          </Data>
+        </ExtendedData>
+        <Point>
+          <coordinates>
+            -122.432263238226,37.7578064292501,0
+          </coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name>Coast Redwood</name>
+        <description><![CDATA[Address: 313 Scott Street<br>Latitude: 37.77279699834572<br>Longitude: -122.43612420359528<br>Scientific Name: Sequoia sempervirens]]></description>
+        <styleUrl>#icon-1720-0F9D58</styleUrl>
+        <ExtendedData>
+          <Data name="Address">
+            <value>313 Scott Street</value>
+          </Data>
+          <Data name="Latitude">
+            <value>37.77279699834572</value>
+          </Data>
+          <Data name="Longitude">
+            <value>-122.43612420359528</value>
+          </Data>
+          <Data name="Scientific Name">
+            <value>Sequoia sempervirens</value>
+          </Data>
+        </ExtendedData>
+        <Point>
+          <coordinates>
+            -122.436124203595,37.7727969983457,0
+          </coordinates>
+        </Point>
+      </Placemark>
+    </Folder>
+  </Document>
+</kml>

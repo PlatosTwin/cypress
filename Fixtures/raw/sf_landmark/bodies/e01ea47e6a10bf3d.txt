@@ -1,0 +1,967 @@
+{
+  "results" :
+    [
+      {
+        "resource" :
+          {
+            "name" : "Nova Scotia Topographic DataBase - Land Cover Map",
+            "id" : "2mpd-kw4r",
+            "resource_name" : null,
+            "parent_fxf" : [ "bkty-qkqe" ],
+            "description" : "Part of the Nova Scotia Topographic Database (NSTDB), the land cover theme layer is updated and maintained from aerial photography. Land cover is limited to treed areas over 3600m2 in size and over two metres in height. Orchards, nurseries, tree lines, and single landmark trees are also included. Land Cover feature codes and their descriptions are provided with\r\nthe download in a NSTDB feature code table.\r\nData download also available via GeoNova: https://nsgi.novascotia.ca/WSF_DDS/DDS.svc/DownloadFile?tkey=fhrTtdnDvfytwLz6&id=13\r\nMap service view also available via GeoNova:\r\nhttps://nsgiwa.novascotia.ca/arcgis/rest/services/BASE/BASE_NSTDB_10k_Land_Cover_UT83/MapServer?f=jsapi",
+            "attribution" : null,
+            "attribution_link" : null,
+            "contact_email" : null,
+            "type" : "map",
+            "updatedAt" : "2026-05-05T11:12:34.000Z",
+            "createdAt" : "2021-02-19T18:41:58.000Z",
+            "metadata_updated_at" : "2023-05-31T12:43:08.000Z",
+            "data_updated_at" : "2026-05-05T11:12:34.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 19,
+                "page_views_last_month" : 91,
+                "page_views_total" : 2670,
+                "page_views_last_week_log" : 4.321928094887363,
+                "page_views_last_month_log" : 6.523561956057013,
+                "page_views_total_log" : 11.38316426063511
+              },
+            "columns_name" : [],
+            "columns_field_name" : [],
+            "columns_datatype" : [],
+            "columns_description" : [],
+            "columns_format" : [],
+            "download_count" : 9,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "visualization_canvas_map",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : "2023-05-31T12:43:08.000Z"
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "Lands, Forests and Wildlife",
+            "domain_tags" :
+              [
+                "land cover",
+                "nursery",
+                "tree line",
+                "nsgi",
+                "reforestation",
+                "orchard",
+                "trees",
+                "forestry"
+              ],
+            "domain_metadata" :
+              [
+                {
+                  "key" : "Detailed-Metadata_Geographic-Region-Name",
+                  "value" : "Nova Scotia"
+                },
+                {
+                  "key" : "Detailed-Metadata_Department",
+                  "value" : "Service Nova Scotia"
+                },
+                {
+                  "key" : "Detailed-Metadata_Related-Documents",
+                  "value" : "Nova Scotia Geographic Data Directory https://nsgi.novascotia.ca/gdd/"
+                },
+                {
+                  "key" : "Detailed-Metadata_Time-Period-Coverage",
+                  "value" : "2002-01-01 to present"
+                },
+                {
+                  "key" : "Detailed-Metadata_Spatial",
+                  "value" : "Lower Left Extent = N 43°00', E -66° 30', Upper Right Extent = N 47° 30', -59°00' UTM NAD83 (CSRS) "
+                },
+                { "key" : "Detailed-Metadata_Language", "value" : "eng" },
+                {
+                  "key" : "Detailed-Metadata_Frequency",
+                  "value" : "Annually"
+                }
+              ]
+          },
+        "metadata" :
+          {
+            "domain" : "data.novascotia.ca",
+            "license" : "Nova Scotia Open Government Licence"
+          },
+        "permalink" : "https://data.novascotia.ca/d/2mpd-kw4r",
+        "link" : "https://data.novascotia.ca/Lands-Forests-and-Wildlife/Nova-Scotia-Topographic-DataBase-Land-Cover-Map/2mpd-kw4r",
+        "owner" :
+          {
+            "id" : "9pyy-md4w",
+            "user_type" : "interactive",
+            "display_name" : "Open Data Nova Scotia"
+          },
+        "creator" :
+          {
+            "id" : "9pyy-md4w",
+            "user_type" : "interactive",
+            "display_name" : "Open Data Nova Scotia"
+          }
+      },
+      {
+        "resource" :
+          {
+            "name" : "Nova Scotia Topographic Database - Land Cover (Line Layer)",
+            "id" : "bkty-qkqe",
+            "resource_name" : null,
+            "parent_fxf" : [],
+            "description" : "Part of the Nova Scotia Topographic Database (NSTDB), the land cover theme layer is updated and maintained from aerial photography. Land cover is limited to treed areas over 3600m2 in size and over two metres in height. Orchards, nurseries, tree lines, and single landmark trees are also included. Land Cover feature codes and their descriptions are provided with the download in a NSTDB feature code table.\nData download also available via GeoNova: https://nsgi.novascotia.ca/WSF_DDS/DDS.svc/DownloadFile?tkey=fhrTtdnDvfytwLz6&id=13\nMap service view also available via GeoNova:\nhttps://nsgiwa.novascotia.ca/arcgis/rest/services/BASE/BASE_NSTDB_10k_Land_Cover_UT83/MapServer?f=jsapi",
+            "attribution" : null,
+            "attribution_link" : null,
+            "contact_email" : null,
+            "type" : "dataset",
+            "updatedAt" : "2026-05-05T11:12:34.000Z",
+            "createdAt" : "2020-07-22T12:48:21.000Z",
+            "metadata_updated_at" : "2026-05-05T11:12:28.000Z",
+            "data_updated_at" : "2026-05-05T11:12:34.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 10,
+                "page_views_last_month" : 60,
+                "page_views_total" : 5418,
+                "page_views_last_week_log" : 3.4594316186372978,
+                "page_views_last_month_log" : 5.930737337562887,
+                "page_views_total_log" : 12.40381093178603
+              },
+            "columns_name" :
+              [ "SHAPE_LEN", "ZVALUE", "FEAT_DESC", "FEAT_CODE", "the_geom" ],
+            "columns_field_name" :
+              [ "shape_len", "zvalue", "feat_desc", "feat_code", "the_geom" ],
+            "columns_datatype" :
+              [ "Number", "Number", "Text", "Text", "MultiLine" ],
+            "columns_description" : [ "", "", "", "", "" ],
+            "columns_format" : [ {}, {}, {}, {}, {} ],
+            "download_count" : 2734,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "table",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : "2025-08-13T18:33:51.000Z"
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "Lands, Forests and Wildlife",
+            "domain_tags" :
+              [
+                "tree line",
+                "land cover",
+                "trees",
+                "reforestation",
+                "nsgi",
+                "orchard",
+                "nursery",
+                "forestry"
+              ],
+            "domain_metadata" :
+              [
+                {
+                  "key" : "Detailed-Metadata_Geographic-Region-Name",
+                  "value" : "Nova Scotia"
+                },
+                {
+                  "key" : "Detailed-Metadata_Department",
+                  "value" : "Service Nova Scotia"
+                },
+                {
+                  "key" : "Detailed-Metadata_Related-Documents",
+                  "value" : "For additional information on the dataset, see: 1. https://www.nsgc.gov.ns.ca/mappingspecs/Specifications/Compilation/Resource_NSTDB/default.htm ; 2. the Topographic 1:10,000 digital index https://nsgi.novascotia.ca/datalocator/indexing/ (use the identify tool within the application to click on individual mapsheets to view); 3. index web map service that labels the 1:10,000 index, showing the year of photography used to update each mapsheet https://nsgiwa.novascotia.ca/arcgis/rest/services/BASE/BASE_Index_NSTDB_10k_WM84/MapServer"
+                },
+                {
+                  "key" : "Detailed-Metadata_Time-Period-Coverage",
+                  "value" : "2002-01-01 to present"
+                },
+                {
+                  "key" : "Detailed-Metadata_Spatial",
+                  "value" : "Lower Left Extent = N 43°00', E -66° 30', Upper Right Extent = N 47° 30', -59°00' UTM NAD83 (CSRS) "
+                },
+                { "key" : "Detailed-Metadata_Language", "value" : "eng" },
+                {
+                  "key" : "Detailed-Metadata_Frequency",
+                  "value" : "Annually"
+                }
+              ]
+          },
+        "metadata" :
+          {
+            "domain" : "data.novascotia.ca",
+            "license" : "Nova Scotia Open Government Licence"
+          },
+        "permalink" : "https://data.novascotia.ca/d/bkty-qkqe",
+        "link" : "https://data.novascotia.ca/Lands-Forests-and-Wildlife/Nova-Scotia-Topographic-Database-Land-Cover-Line-L/bkty-qkqe",
+        "owner" :
+          {
+            "id" : "9pyy-md4w",
+            "user_type" : "interactive",
+            "display_name" : "Open Data Nova Scotia"
+          },
+        "creator" :
+          {
+            "id" : "9pyy-md4w",
+            "user_type" : "interactive",
+            "display_name" : "Open Data Nova Scotia"
+          }
+      },
+      {
+        "resource" :
+          {
+            "name" : "Nova Scotia Topographic Database - Land Cover (Point Layer)",
+            "id" : "xjmb-zxnn",
+            "resource_name" : null,
+            "parent_fxf" : [],
+            "description" : "Part of the Nova Scotia Topographic Database (NSTDB), the land cover theme layer is updated and maintained from aerial photography. Land cover is limited to treed areas over 3600m2 in size and over two metres in height. Orchards, nurseries, tree lines, and single landmark trees are also included. Land Cover feature codes and their descriptions are provided with\nthe download in a NSTDB feature code table.\nData download also available via GeoNova: https://nsgi.novascotia.ca/WSF_DDS/DDS.svc/DownloadFile?tkey=fhrTtdnDvfytwLz6&id=13\nMap service view also available via GeoNova:\nhttps://nsgiwa.novascotia.ca/arcgis/rest/services/BASE/BASE_NSTDB_10k_Land_Cover_UT83/MapServer?f=jsapi",
+            "attribution" : null,
+            "attribution_link" : null,
+            "contact_email" : null,
+            "type" : "dataset",
+            "updatedAt" : "2026-05-05T15:37:22.000Z",
+            "createdAt" : "2021-02-19T16:58:12.000Z",
+            "metadata_updated_at" : "2026-05-05T15:37:14.000Z",
+            "data_updated_at" : "2026-05-05T15:37:22.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 5,
+                "page_views_last_month" : 23,
+                "page_views_total" : 1339,
+                "page_views_last_week_log" : 2.584962500721156,
+                "page_views_last_month_log" : 4.584962500721157,
+                "page_views_total_log" : 10.388017285345136
+              },
+            "columns_name" : [
+                               "FEAT_CODE",
+                               "the_geom",
+                               "ZVALUE",
+                               "FEAT_DESC"
+                             ],
+            "columns_field_name" :
+              [ "feat_code", "the_geom", "zvalue", "feat_desc" ],
+            "columns_datatype" : [ "Text", "Point", "Number", "Text" ],
+            "columns_description" : [ "", "", "", "" ],
+            "columns_format" : [ {}, {}, {}, {} ],
+            "download_count" : 2494,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "table",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : "2025-08-13T18:34:52.000Z"
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "Lands, Forests and Wildlife",
+            "domain_tags" :
+              [
+                "orchard",
+                "forestry",
+                "land cover",
+                "trees",
+                "tree line",
+                "nsgi",
+                "reforestation",
+                "nursery"
+              ],
+            "domain_metadata" :
+              [
+                {
+                  "key" : "Detailed-Metadata_Geographic-Region-Name",
+                  "value" : "Nova Scotia"
+                },
+                {
+                  "key" : "Detailed-Metadata_Department",
+                  "value" : "Service Nova Scotia"
+                },
+                {
+                  "key" : "Detailed-Metadata_Related-Documents",
+                  "value" : "For additional information on the dataset, see: 1. https://www.nsgc.gov.ns.ca/mappingspecs/Specifications/Compilation/Resource_NSTDB/default.htm ; 2. the Topographic 1:10,000 digital index https://nsgi.novascotia.ca/datalocator/indexing/ (use the identify tool within the application to click on individual mapsheets to view); 3. index web map service that labels the 1:10,000 index, showing the year of photography used to update each mapsheet https://nsgiwa.novascotia.ca/arcgis/rest/services/BASE/BASE_Index_NSTDB_10k_WM84/MapServer"
+                },
+                {
+                  "key" : "Detailed-Metadata_Time-Period-Coverage",
+                  "value" : "2002-01-01 to present"
+                },
+                {
+                  "key" : "Detailed-Metadata_Spatial",
+                  "value" : "\tLower Left Extent = N 43°00', E -66° 30', Upper Right Extent = N 47° 30', -59°00' UTM NAD83 (CSRS) "
+                },
+                { "key" : "Detailed-Metadata_Language", "value" : "eng" },
+                {
+                  "key" : "Detailed-Metadata_Frequency",
+                  "value" : "Annually"
+                }
+              ]
+          },
+        "metadata" :
+          {
+            "domain" : "data.novascotia.ca",
+            "license" : "Nova Scotia Open Government Licence"
+          },
+        "permalink" : "https://data.novascotia.ca/d/xjmb-zxnn",
+        "link" : "https://data.novascotia.ca/Lands-Forests-and-Wildlife/Nova-Scotia-Topographic-Database-Land-Cover-Point-/xjmb-zxnn",
+        "owner" :
+          {
+            "id" : "9pyy-md4w",
+            "user_type" : "interactive",
+            "display_name" : "Open Data Nova Scotia"
+          },
+        "creator" :
+          {
+            "id" : "9pyy-md4w",
+            "user_type" : "interactive",
+            "display_name" : "Open Data Nova Scotia"
+          }
+      },
+      {
+        "resource" :
+          {
+            "name" : "Nova Scotia Topographic Database - Land Cover (Poly)",
+            "id" : "xed8-vvg5",
+            "resource_name" : null,
+            "parent_fxf" : [],
+            "description" : "Part of the Nova Scotia Topographic Database (NSTDB), the land cover theme layer is updated and maintained from aerial photography. Land cover is limited to treed areas over 3600m2 in size and over two metres in height. Orchards, nurseries, tree lines, and single landmark trees are also included. Land Cover feature codes and their descriptions are provided with\nthe download in a NSTDB feature code table.\nData download also available via GeoNova: https://nsgi.novascotia.ca/WSF_DDS/DDS.svc/DownloadFile?tkey=fhrTtdnDvfytwLz6&id=13\nMap service view also available via GeoNova:\nhttps://nsgiwa.novascotia.ca/arcgis/rest/services/BASE/BASE_NSTDB_10k_Land_Cover_UT83/MapServer?f=jsapi",
+            "attribution" : null,
+            "attribution_link" : null,
+            "contact_email" : null,
+            "type" : "dataset",
+            "updatedAt" : "2026-05-05T15:51:06.000Z",
+            "createdAt" : "2021-02-19T17:05:28.000Z",
+            "metadata_updated_at" : "2026-05-05T15:48:04.000Z",
+            "data_updated_at" : "2026-05-05T15:51:06.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 8,
+                "page_views_last_month" : 34,
+                "page_views_total" : 1914,
+                "page_views_last_week_log" : 3.1699250014423126,
+                "page_views_last_month_log" : 5.129283016944966,
+                "page_views_total_log" : 10.903128676812319
+              },
+            "columns_name" :
+              [
+                "SHAPE_AREA",
+                "SHAPE_LEN",
+                "ZVALUE",
+                "the_geom",
+                "FEAT_CODE",
+                "FEAT_DESC"
+              ],
+            "columns_field_name" :
+              [
+                "shape_area",
+                "shape_len",
+                "zvalue",
+                "the_geom",
+                "feat_code",
+                "feat_desc"
+              ],
+            "columns_datatype" :
+              [ "Number", "Number", "Number", "MultiPolygon", "Text", "Text" ],
+            "columns_description" : [ "", "", "", "", "", "" ],
+            "columns_format" : [ {}, {}, {}, {}, {}, {} ],
+            "download_count" : 3372,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "table",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : "2025-08-13T18:44:52.000Z"
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "Lands, Forests and Wildlife",
+            "domain_tags" :
+              [
+                "trees",
+                "nsgi",
+                "nursery",
+                "orchard",
+                "reforestation",
+                "tree line",
+                "land cover",
+                "forestry"
+              ],
+            "domain_metadata" :
+              [
+                {
+                  "key" : "Detailed-Metadata_Geographic-Region-Name",
+                  "value" : "Nova Scotia"
+                },
+                {
+                  "key" : "Detailed-Metadata_Department",
+                  "value" : "Service Nova Scotia"
+                },
+                {
+                  "key" : "Detailed-Metadata_Related-Documents",
+                  "value" : "For additional information on the dataset, see: 1. https://www.nsgc.gov.ns.ca/mappingspecs/Specifications/Compilation/Resource_NSTDB/default.htm ; 2. the Topographic 1:10,000 digital index https://nsgi.novascotia.ca/datalocator/indexing/ (use the identify tool within the application to click on individual mapsheets to view); 3. index web map service that labels the 1:10,000 index, showing the year of photography used to update each mapsheet https://nsgiwa.novascotia.ca/arcgis/rest/services/BASE/BASE_Index_NSTDB_10k_WM84/MapServer"
+                },
+                {
+                  "key" : "Detailed-Metadata_Time-Period-Coverage",
+                  "value" : "2002-01-01 to present"
+                },
+                {
+                  "key" : "Detailed-Metadata_Spatial",
+                  "value" : "Lower Left Extent = N 43°00', E -66° 30', Upper Right Extent = N 47° 30', -59°00' UTM NAD83 (CSRS) "
+                },
+                { "key" : "Detailed-Metadata_Language", "value" : "eng" },
+                {
+                  "key" : "Detailed-Metadata_Frequency",
+                  "value" : "Annually"
+                }
+              ]
+          },
+        "metadata" :
+          {
+            "domain" : "data.novascotia.ca",
+            "license" : "Nova Scotia Open Government Licence"
+          },
+        "permalink" : "https://data.novascotia.ca/d/xed8-vvg5",
+        "link" : "https://data.novascotia.ca/Lands-Forests-and-Wildlife/Nova-Scotia-Topographic-Database-Land-Cover-Poly-/xed8-vvg5",
+        "owner" :
+          {
+            "id" : "9pyy-md4w",
+            "user_type" : "interactive",
+            "display_name" : "Open Data Nova Scotia"
+          },
+        "creator" :
+          {
+            "id" : "9pyy-md4w",
+            "user_type" : "interactive",
+            "display_name" : "Open Data Nova Scotia"
+          }
+      },
+      {
+        "resource" :
+          {
+            "name" : "Bronx Hurricane Sandy Damaged Trees",
+            "id" : "x3s6-cqrv",
+            "resource_name" : null,
+            "parent_fxf" : [],
+            "description" : "damaged tree complaints logged in three days after Hurricane Sandy. The source file is updated automatically and is logging in tree damage not associated with the storm, so I isolated the damage reports to the following three days after the storm. This dataset is historical and will not be updated.",
+            "attribution" : "NYC Open Data",
+            "attribution_link" : "https://data.cityofnewyork.us/Social-Services/Bronx-Hurricane-Sandy-Damaged-Trees/27w4-q2rz",
+            "contact_email" : null,
+            "type" : "dataset",
+            "updatedAt" : "2019-04-18T20:12:55.000Z",
+            "createdAt" : "2013-02-05T15:13:06.000Z",
+            "metadata_updated_at" : "2019-04-18T20:12:55.000Z",
+            "data_updated_at" : "2013-02-05T15:13:20.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 0,
+                "page_views_last_month" : 5,
+                "page_views_total" : 2979,
+                "page_views_last_week_log" : 0.0,
+                "page_views_last_month_log" : 2.584962500721156,
+                "page_views_total_log" : 11.541096615349526
+              },
+            "columns_name" :
+              [
+                "Location 2 (zip)",
+                "Complaint Type",
+                "Landmark",
+                "Location Type",
+                "Incident Zip",
+                "Incident Address",
+                "Cross Street 1",
+                "Cross Street 2",
+                "Due Date",
+                "Resolution Action Updated Date",
+                "Community Board",
+                "Borough",
+                "Unique Key",
+                "Closed Date",
+                "Descriptor",
+                "Location 1",
+                "Location 1 (city)",
+                "Location",
+                "Intersection Street 2",
+                "Agency Name",
+                "Intersection Street 1",
+                "Created Date",
+                "Location 2",
+                "Location 1 (state)",
+                "Location 1 (address)",
+                "Location 2 (address)",
+                "Location 2 (state)",
+                "Location 1 (zip)",
+                "Location 2 (city)",
+                "Park Borough",
+                "Status",
+                "Facility Type",
+                "Agency"
+              ],
+            "columns_field_name" :
+              [
+                "location_2_zip",
+                "complaint_type",
+                "landmark",
+                "location_type",
+                "incident_zip",
+                "incident_address",
+                "cross_street_1",
+                "cross_street_2",
+                "due_date",
+                "resolution_action_updated_date",
+                "community_board",
+                "borough",
+                "unique_key",
+                "closed_date",
+                "descriptor",
+                "location_1",
+                "location_1_city",
+                "location",
+                "intersection_street_2",
+                "agency_name",
+                "intersection_street_1",
+                "created_date",
+                "location_2",
+                "location_1_state",
+                "location_1_address",
+                "location_2_address",
+                "location_2_state",
+                "location_1_zip",
+                "location_2_city",
+                "park_borough",
+                "status",
+                "facility_type",
+                "agency"
+              ],
+            "columns_datatype" :
+              [
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Number",
+                "Text",
+                "Text",
+                "Text",
+                "Calendar date",
+                "Calendar date",
+                "Text",
+                "Text",
+                "Number",
+                "Calendar date",
+                "Text",
+                "Point",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Calendar date",
+                "Point",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text"
+              ],
+            "columns_description" :
+              [
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                ""
+              ],
+            "columns_format" :
+              [
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {}
+              ],
+            "download_count" : 503,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "table",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : "2013-02-05T15:16:14.000Z"
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "My Neighborhood",
+            "domain_tags" : [
+                              "limbs",
+                              "sandy",
+                              "tree",
+                              "damage",
+                              "hurricane"
+                            ],
+            "domain_metadata" : []
+          },
+        "metadata" :
+          { "domain" : "bronx.lehman.cuny.edu", "license" : "Public Domain" },
+        "permalink" : "https://bronx.lehman.cuny.edu/d/x3s6-cqrv",
+        "link" : "https://bronx.lehman.cuny.edu/My-Neighborhood/Bronx-Hurricane-Sandy-Damaged-Trees/x3s6-cqrv",
+        "owner" :
+          {
+            "id" : "v4c9-bc9b",
+            "user_type" : "interactive",
+            "display_name" : "cpbride"
+          },
+        "creator" :
+          {
+            "id" : "v4c9-bc9b",
+            "user_type" : "interactive",
+            "display_name" : "cpbride"
+          }
+      },
+      {
+        "resource" :
+          {
+            "name" : "2018 Central Park Squirrel Census - Squirrel Data",
+            "id" : "vfnx-vebw",
+            "resource_name" : null,
+            "parent_fxf" : [],
+            "description" : "The Squirrel Census (https://www.thesquirrelcensus.com/) is a multimedia science, design, and storytelling project focusing on the Eastern gray (Sciurus carolinensis). They count squirrels and present their findings to the public. This table contains squirrel data for each of the 3,023 sightings, including location coordinates, age, primary and secondary fur color, elevation, activities, communications, and interactions between squirrels and with humans.",
+            "attribution" : "The Squirrel Census",
+            "attribution_link" : "https://www.thesquirrelcensus.com/",
+            "contact_email" : null,
+            "type" : "dataset",
+            "updatedAt" : "2023-04-18T19:29:57.000Z",
+            "createdAt" : "2019-10-13T21:31:44.000Z",
+            "metadata_updated_at" : "2023-04-18T19:29:57.000Z",
+            "data_updated_at" : "2019-10-18T17:54:51.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 696,
+                "page_views_last_month" : 2689,
+                "page_views_total" : 302060,
+                "page_views_last_week_log" : 9.445014845868423,
+                "page_views_last_month_log" : 11.393390457443987,
+                "page_views_total_log" : 18.20448039985084
+              },
+            "columns_name" :
+              [
+                "Combination of Primary and Highlight Color",
+                "Approaches",
+                "Date",
+                "Unique Squirrel ID",
+                "Y",
+                "X",
+                "City Council Districts",
+                "Above Ground Sighter Measurement",
+                "Foraging",
+                "Running",
+                "Quaas",
+                "Age",
+                "Climbing",
+                "Indifferent",
+                "Police Precincts",
+                "Shift",
+                "Hectare Squirrel Number",
+                "Color notes",
+                "Lat/Long",
+                "Hectare",
+                "Runs from",
+                "Primary Fur Color",
+                "Tail flags",
+                "Eating",
+                "Zip Codes",
+                "Specific Location",
+                "Kuks",
+                "Location",
+                "Moans",
+                "Tail twitches",
+                "Other Interactions",
+                "Chasing",
+                "Highlight Fur Color",
+                "Other Activities",
+                "Community Districts",
+                "Borough Boundaries"
+              ],
+            "columns_field_name" :
+              [
+                "combination_of_primary_and",
+                "approaches",
+                "date",
+                "unique_squirrel_id",
+                "y",
+                "x",
+                ":@computed_region_92fq_4b7q",
+                "above_ground_sighter",
+                "foraging",
+                "running",
+                "quaas",
+                "age",
+                "climbing",
+                "indifferent",
+                ":@computed_region_sbqj_enih",
+                "shift",
+                "hectare_squirrel_number",
+                "color_notes",
+                "geocoded_column",
+                "hectare",
+                "runs_from",
+                "primary_fur_color",
+                "tail_flags",
+                "eating",
+                ":@computed_region_efsh_h5xi",
+                "specific_location",
+                "kuks",
+                "location",
+                "moans",
+                "tail_twitches",
+                "other_interactions",
+                "chasing",
+                "highlight_fur_color",
+                "other_activities",
+                ":@computed_region_f5dn_yrer",
+                ":@computed_region_yeji_bk3q"
+              ],
+            "columns_datatype" :
+              [
+                "Text",
+                "Checkbox",
+                "Text",
+                "Text",
+                "Number",
+                "Number",
+                "Number",
+                "Text",
+                "Checkbox",
+                "Checkbox",
+                "Checkbox",
+                "Text",
+                "Checkbox",
+                "Checkbox",
+                "Number",
+                "Text",
+                "Number",
+                "Text",
+                "Point",
+                "Text",
+                "Checkbox",
+                "Text",
+                "Checkbox",
+                "Checkbox",
+                "Number",
+                "Text",
+                "Checkbox",
+                "Text",
+                "Checkbox",
+                "Checkbox",
+                "Text",
+                "Checkbox",
+                "Text",
+                "Text",
+                "Number",
+                "Number"
+              ],
+            "columns_description" :
+              [
+                "A combination of the previous two columns; this column gives the total permutations of primary and highlight colors observed.",
+                "Squirrel was seen approaching human, seeking food.",
+                "Concatenation of the sighting session day and month.",
+                "Identification tag for each squirrel sightings. The tag is comprised of \"Hectare ID\" + \"Shift\" + \"Date\" + \"Hectare Squirrel Number.\"",
+                "Latitude coordinate for squirrel sighting point",
+                "Longitude coordinate for squirrel sighting point",
+                "",
+                "For squirrel sightings on the ground plane, fields were populated with a value of “FALSE.”",
+                "Squirrel was seen foraging for food.",
+                "Squirrel was seen running.",
+                "Squirrel was heard quaaing, an elongated vocal communication which can indicate the presence of a ground predator such as a dog.",
+                "Value is either \"Adult\" or \"Juvenile.\"",
+                "Squirrel was seen climbing a tree or other environmental landmark.",
+                "Squirrel was indifferent to human presence.",
+                "",
+                "Value is either \"AM\" or \"PM,\" to communicate whether or not the sighting session occurred in the morning or late afternoon. ",
+                "Number within the chronological sequence of squirrel sightings for a discrete sighting session. ",
+                "Sighters occasionally added commentary on the squirrel fur conditions. These notes are provided here.",
+                "Latitude and longitude",
+                "ID tag, which is derived from the hectare grid used to divide and count the park area. One axis that runs predominantly north-to-south is numerical (1-42), and the axis that runs predominantly east-to-west is roman characters (A-I). ",
+                "Squirrel was seen running from humans, seeing them as a threat.",
+                "Value is either \"Gray,\" \"Cinnamon\" or \"Black.\"",
+                "Squirrel was seen flagging its tail. Flagging is a whipping motion used to exaggerate squirrel's size and confuse rivals or predators. Looks as if the squirrel is scribbling with tail into the air.",
+                "Squirrel was seen eating.",
+                "",
+                "Sighters occasionally added commentary on the squirrel location. These notes are provided here.",
+                "Squirrel was heard kukking, a chirpy vocal communication used for a variety of reasons.",
+                "Value is either \"Ground Plane\" or \"Above Ground.\" Sighters were instructed to indicate the location of where the squirrel was when first sighted.",
+                "Squirrel was heard moaning, a high-pitched vocal communication which can indicate the presence of an air predator such as a hawk.",
+                "Squirrel was seen twitching its tail. Looks like a wave running through the tail, like a breakdancer doing the arm wave. Often used to communicate interest, curiosity.",
+                "Sighter notes on other types of interactions between squirrels and humans.",
+                "Squirrel was seen chasing another squirrel.",
+                "Discrete value or string values comprised of \"Gray,\" \"Cinnamon\" or \"Black.\"",
+                "",
+                "",
+                ""
+              ],
+            "columns_format" :
+              [
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {}
+              ],
+            "download_count" : 123869,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "table",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : "2019-10-13T21:47:29.000Z"
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "Environment",
+            "domain_tags" : [ "squirrel census" ],
+            "domain_metadata" :
+              [
+                { "key" : "Update_Automation", "value" : "No" },
+                { "key" : "Update_Date-Made-Public", "value" : "10/15/2019" },
+                {
+                  "key" : "Update_Update-Frequency",
+                  "value" : "Historical data"
+                },
+                {
+                  "key" : "Data-Collection_Data-Collection",
+                  "value" : "2018 Central Park Squirrel Census"
+                },
+                { "key" : "Dataset-Information_Agency", "value" : "Other" }
+              ]
+          },
+        "metadata" : { "domain" : "data.cityofnewyork.us" },
+        "permalink" : "https://data.cityofnewyork.us/d/vfnx-vebw",
+        "link" : "https://data.cityofnewyork.us/Environment/2018-Central-Park-Squirrel-Census-Squirrel-Data/vfnx-vebw",
+        "owner" :
+          {
+            "id" : "5fuc-pqz2",
+            "user_type" : "interactive",
+            "display_name" : "NYC OpenData"
+          },
+        "creator" :
+          {
+            "id" : "5fuc-pqz2",
+            "user_type" : "interactive",
+            "display_name" : "NYC OpenData"
+          }
+      }
+    ],
+  "resultSetSize" : 6,
+  "timings" : { "serviceMillis" : 40, "searchMillis" : [ 5, 11 ] },
+  "warnings" : []
+}

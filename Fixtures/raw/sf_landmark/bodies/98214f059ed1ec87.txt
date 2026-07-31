@@ -1,0 +1,13 @@
+[{"qlegalstatus":"DPW Maintained","count":"142585"}
+,{"qlegalstatus":"Permitted Site","count":"40353"}
+,{"qlegalstatus":"Undocumented","count":"8995"}
+,{"qlegalstatus":"Significant Tree","count":"3148"}
+,{"qlegalstatus":"Planning Code 138.1 required","count":"1143"}
+,{"qlegalstatus":"Section 806 (d)","count":"809"}
+,{"qlegalstatus":"Property Tree","count":"368"}
+,{"qlegalstatus":"Private","count":"348"}
+,{"qlegalstatus":"Landmark tree","count":"244"}
+,{"qlegalstatus":"Prune Opt Out","count":"196"}
+,{"qlegalstatus":"Section 143","count":"131"}
+,{"qlegalstatus":"Street Tree Maintenance Opt Out","count":"58"}
+,{"count":"57"}]

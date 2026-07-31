@@ -1,0 +1,34 @@
+a129f1bada23f9ad	socrata_catalog	200	sfgov tree search	https://api.us.socrata.com/api/catalog/v1?domains=data.sfgov.org&q=tree&limit=100
+2ae5eb6791f3aacd	socrata_catalog	200	catalog tree	https://api.us.socrata.com/api/catalog/v1?search_context=data.sfgov.org&domains=data.sfgov.org&q=tree&limit=60
+e01ea47e6a10bf3d	socrata_catalog	200	onprem catalog landmark tree	https://data.sfgov.org/api/catalog/v1?q=landmark%20tree&limit=40
+857ae6b3120df2a2	socrata_catalog	200	sfgov landmark	https://api.us.socrata.com/api/catalog/v1?search_context=data.sfgov.org&domains=data.sfgov.org&q=landmark&limit=60
+1e21ae8948bb4eeb	socrata_catalog	200	sfgov urban forestry	https://api.us.socrata.com/api/catalog/v1?search_context=data.sfgov.org&domains=data.sfgov.org&q=urban%20forestry&limit=60
+8dcdddf79ccc04b0	arcgis_online_search	200	landmark tree global	https://www.arcgis.com/sharing/rest/search?q=landmark%20tree&f=json&num=50
+090f09300fb3e596	sf_arcgis	200	org service list	https://services.arcgis.com/Zs2aNLFN00jrS4gG/arcgis/rest/services?f=json
+53a06f769aa92227	sf_arcgis	200	Confirmed_Landmark_tree_data_table service meta	https://services.arcgis.com/Zs2aNLFN00jrS4gG/arcgis/rest/services/Confirmed_Landmark_tree_data_table/FeatureServer?f=json
+47ba4f94170a72ea	sf_arcgis	200	Sullivan_Candidate_Landmark_significant_tree_data_table service meta	https://services.arcgis.com/Zs2aNLFN00jrS4gG/arcgis/rest/services/Sullivan_Candidate_Landmark_significant_tree_data_table/FeatureServer?f=json
+ad08ef77e30beb66	arcgis_online_item	200	1d7f24c0623e4762ab020ca86c513257	https://www.arcgis.com/sharing/rest/content/items/1d7f24c0623e4762ab020ca86c513257?f=json
+ac3354faa0e682fb	arcgis_online_item	200	f04cda2b32dd46c9b017e7d5f2cf845a	https://www.arcgis.com/sharing/rest/content/items/f04cda2b32dd46c9b017e7d5f2cf845a?f=json
+926f17b69923a015	sf_arcgis	200	Confirmed_Landmark_tree_data_table layer 0 meta	https://services.arcgis.com/Zs2aNLFN00jrS4gG/arcgis/rest/services/Confirmed_Landmark_tree_data_table/FeatureServer/0?f=json
+36d1b6c9d48e33fb	sf_arcgis	200	Sullivan_Candidate_Landmark_significant_tree_data_table layer 0 meta	https://services.arcgis.com/Zs2aNLFN00jrS4gG/arcgis/rest/services/Sullivan_Candidate_Landmark_significant_tree_data_table/FeatureServer/0?f=json
+55711a9e9e11bf15	sf_arcgis	200	Sullivan_Candidate_Landmark_significant_tree_data_table layer 1 meta	https://services.arcgis.com/Zs2aNLFN00jrS4gG/arcgis/rest/services/Sullivan_Candidate_Landmark_significant_tree_data_table/FeatureServer/1?f=json
+a755fcd96924546c	sf_arcgis	200	count Confirmed_Landmark_tree_data_table 0	https://services.arcgis.com/Zs2aNLFN00jrS4gG/arcgis/rest/services/Confirmed_Landmark_tree_data_table/FeatureServer/0/query?where=1%3D1&returnCountOnly=true&f=json
+bebcda447066eb2b	sf_arcgis	200	count Sullivan_Candidate_Landmark_significant_tree_data_table 0	https://services.arcgis.com/Zs2aNLFN00jrS4gG/arcgis/rest/services/Sullivan_Candidate_Landmark_significant_tree_data_table/FeatureServer/0/query?where=1%3D1&returnCountOnly=true&f=json
+0442cd7ec722b163	sf_arcgis	200	count Sullivan_Candidate_Landmark_significant_tree_data_table 1	https://services.arcgis.com/Zs2aNLFN00jrS4gG/arcgis/rest/services/Sullivan_Candidate_Landmark_significant_tree_data_table/FeatureServer/1/query?where=1%3D1&returnCountOnly=true&f=json
+98214f059ed1ec87	datasf	200	live qlegalstatus counts	https://data.sfgov.org/resource/tkzw-k3nq.json?$select=qlegalstatus,count(*)&$group=qlegalstatus&$order=count(*)%20desc
+653538ef4c01741c	datasf	200	244 landmark rows	https://data.sfgov.org/resource/tkzw-k3nq.json?$where=qlegalstatus%20in%20('Landmark%20tree')&$limit=1000
+74c3ec5fd20b5703	sf_arcgis	200	BUF lookup of 27 missing landmark treeids	https://services.arcgis.com/Zs2aNLFN00jrS4gG/arcgis/rest/services/BUF_Street_Trees/FeatureServer/3/query?where=TREEID%20IN%20%282614%2C2615%2C2616%2C2617%2C2618%2C2619%2C64380%2C105444%2C111205%2C111749%2C111757%2C111763%2C113742%2C251108%2C251109%2C251110%2C251111%2C251112%2C251113%2C251114%2C251115%2C251116%2C262100%2C262274%2C264739%2C264741%2C275826%29&outFields=*&returnGeometry=false&f=json
+58e270c7978c3391	datasf	200	significant tree rows	https://data.sfgov.org/resource/tkzw-k3nq.json?$where=qlegalstatus%20in%20('Significant%20Tree')&$limit=5000
+f3adf8a5e66b7b26	datasf	200	twin treeid lookup	https://data.sfgov.org/resource/tkzw-k3nq.json?$where=treeid%20in%20(262215,262216,262217,248932,231331,151836,138024)&$limit=50
+128bdd425b7aed63	sf_arcgis	200	confirmed landmark all rows	https://services.arcgis.com/Zs2aNLFN00jrS4gG/arcgis/rest/services/Confirmed_Landmark_tree_data_table/FeatureServer/0/query?where=1%3D1&outFields=*&returnGeometry=true&f=json
+5263e8b793949d3d	sfpublicworks	200	landmark roster page	https://sfpublicworks.org/services/significant-and-landmark-trees
+d2e30a74f1786744	datasf	200	Cliff Date Palm anywhere	https://data.sfgov.org/resource/tkzw-k3nq.json?$where=qspecies%20like%20%27%25rupicola%25%27&$limit=200
+7eb9ad0cc2ae2692	datasf	200	Guadalupe Palm anywhere	https://data.sfgov.org/resource/tkzw-k3nq.json?$where=qspecies%20like%20%27%25Brahea%25%27&$limit=200
+321aa52a75d5c9d7	datasf	200	2251 Filbert	https://data.sfgov.org/resource/tkzw-k3nq.json?$where=qaddress%20like%20%27%252251%25Filbert%25%27&$limit=200
+2c6f91a54e0d2422	datasf	200	2694 McAllister	https://data.sfgov.org/resource/tkzw-k3nq.json?$where=qaddress%20like%20%27%252694%25McAllister%25%27&$limit=200
+470d4afd56e537aa	datasf	200	3555 Cesar Chavez	https://data.sfgov.org/resource/tkzw-k3nq.json?$where=qaddress%20like%20%27%253555%25Cesar%25%27&$limit=200
+0e49a1496ab3de4b	datasf	200	Stillings Ave	https://data.sfgov.org/resource/tkzw-k3nq.json?$where=qaddress%20like%20%27%25Stillings%25%27&$limit=200
+9337dc289d381fda	sfenvironment	200	https://www.sfenvironment.org/landmark-tree-program	https://www.sfenvironment.org/landmark-tree-program
+5e2eb80b605c8d39	ordinance	403	https://codelibrary.amlegal.com/codes/san_francisco/latest/sf_publicworks/0-0-0-4204	https://codelibrary.amlegal.com/codes/san_francisco/latest/sf_publicworks/0-0-0-4204
+b8a28d5c2896ec0e	ordinance	200	https://sfenvironment.org/media/10791/download?inline=	https://sfenvironment.org/media/10791/download?inline=
+de27ba3f46496f51	datasf	200	tkzw-k3nq view metadata	https://data.sfgov.org/api/views/tkzw-k3nq.json

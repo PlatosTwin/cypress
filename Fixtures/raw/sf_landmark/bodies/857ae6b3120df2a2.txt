@@ -1,0 +1,1858 @@
+{
+  "results" :
+    [
+      {
+        "resource" :
+          {
+            "name" : "Landmark Districts",
+            "id" : "vnrd-fpg7",
+            "resource_name" : null,
+            "parent_fxf" : [ "knm6-5ej6" ],
+            "description" : "<b><i>***As of November 2023, this map has been updated to use a new format. For details, please see <a href=\"https://data.sfgov.org/stories/s/q44z-zyx4\">here</a>.***</i></b> </br> Landmarks and Landmark Districts as defined and listed in Article 10 of the San Francisco Planning Code (http://planningcode.sfplanning.org). A map of these Landmarks can be found here: http://www.sf-planning.org/index.aspx?page=3313",
+            "attribution" : null,
+            "attribution_link" : null,
+            "contact_email" : null,
+            "type" : "map",
+            "updatedAt" : "2024-03-13T18:50:33.000Z",
+            "createdAt" : "2023-10-16T17:30:00.000Z",
+            "metadata_updated_at" : "2024-03-13T18:50:33.000Z",
+            "data_updated_at" : "2023-10-16T17:22:18.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 27,
+                "page_views_last_month" : 76,
+                "page_views_total" : 28234,
+                "page_views_last_week_log" : 4.807354922057604,
+                "page_views_last_month_log" : 6.266786540694902,
+                "page_views_total_log" : 14.785197010868652
+              },
+            "columns_name" : [],
+            "columns_field_name" : [],
+            "columns_datatype" : [],
+            "columns_description" : [],
+            "columns_format" : [],
+            "download_count" : 3533,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "visualization_canvas_map",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : "2023-10-17T16:14:35.000Z"
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "",
+            "domain_tags" : [],
+            "domain_metadata" :
+              [
+                {
+                  "key" : "Department-Metrics_Publishing-Department",
+                  "value" : "Planning"
+                },
+                { "key" : "Internal-Management_Inventory-ID", "value" : "" },
+                {
+                  "key" : "Publishing-Details_Publishing-frequency",
+                  "value" : "As needed"
+                },
+                { "key" : "Publishing-Details_Geographic-unit", "value" : "" },
+                { "key" : "Publishing-Details_Program-link", "value" : "" },
+                {
+                  "key" : "Publishing-Details_Data-change-frequency",
+                  "value" : "As needed"
+                }
+              ]
+          },
+        "metadata" : { "domain" : "data.sfgov.org" },
+        "permalink" : "https://data.sfgov.org/d/vnrd-fpg7",
+        "link" : "https://data.sfgov.org/dataset/Landmark-Districts/vnrd-fpg7",
+        "owner" :
+          {
+            "id" : "dbag-6qd9",
+            "user_type" : "interactive",
+            "display_name" : "OpenData"
+          },
+        "creator" :
+          {
+            "id" : "dbag-6qd9",
+            "user_type" : "interactive",
+            "display_name" : "OpenData"
+          }
+      },
+      {
+        "resource" :
+          {
+            "name" : "Landmarks",
+            "id" : "rzic-39gi",
+            "resource_name" : null,
+            "parent_fxf" : [],
+            "description" : "Historic Landmarks listed in Article 10 of the Planning Code",
+            "attribution" : null,
+            "attribution_link" : null,
+            "contact_email" : null,
+            "type" : "dataset",
+            "updatedAt" : "2024-11-12T20:49:31.000Z",
+            "createdAt" : "2022-05-14T23:00:07.000Z",
+            "metadata_updated_at" : "2024-11-12T20:49:31.000Z",
+            "data_updated_at" : "2024-05-03T14:22:15.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 14,
+                "page_views_last_month" : 117,
+                "page_views_total" : 1792,
+                "page_views_last_week_log" : 3.9068905956085187,
+                "page_views_last_month_log" : 6.882643049361842,
+                "page_views_total_log" : 10.808159772868375
+              },
+            "columns_name" :
+              [
+                "doccontext",
+                "potcontext",
+                "rbrp",
+                "archbuild",
+                "style",
+                "context",
+                "crit1txt",
+                "crit2",
+                "pimlink",
+                "largephoto",
+                "potcultural",
+                "culturaldist",
+                "ntlreg",
+                "sigsum",
+                "crit3txt",
+                "yearbuilt",
+                "OBJECTID",
+                "Name",
+                "the_geom",
+                "crit3",
+                "crit1",
+                "desdoc",
+                "proptype",
+                "yeardes",
+                "desage",
+                "landmarkno",
+                "thumbail",
+                "cultural_1",
+                "legbus",
+                "crit2txt",
+                "idencultural",
+                "address",
+                "description",
+                "status",
+                "culturalsum",
+                "sigperson"
+              ],
+            "columns_field_name" :
+              [
+                "doccontext",
+                "potcontext",
+                "rbrp",
+                "archbuild",
+                "style",
+                "context",
+                "crit1txt",
+                "crit2",
+                "pimlink",
+                "largephoto",
+                "potcultural",
+                "culturaldist",
+                "ntlreg",
+                "sigsum",
+                "crit3txt",
+                "yearbuilt",
+                "objectid",
+                "name",
+                "the_geom",
+                "crit3",
+                "crit1",
+                "desdoc",
+                "proptype",
+                "yeardes",
+                "desage",
+                "landmarkno",
+                "thumbail",
+                "cultural_1",
+                "legbus",
+                "crit2txt",
+                "idencultural",
+                "address",
+                "description",
+                "status",
+                "culturalsum",
+                "sigperson"
+              ],
+            "columns_datatype" :
+              [
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Number",
+                "Number",
+                "Text",
+                "MultiPolygon",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Number",
+                "Number",
+                "Number",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text"
+              ],
+            "columns_description" :
+              [
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                ""
+              ],
+            "columns_format" :
+              [
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {}
+              ],
+            "download_count" : 9258,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "table",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : "2022-07-23T05:02:28.000Z"
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "Geographic Locations and Boundaries",
+            "domain_tags" : [],
+            "domain_metadata" :
+              [
+                {
+                  "key" : "Department-Metrics_Publishing-Department",
+                  "value" : "Planning"
+                },
+                {
+                  "key" : "Internal-Management_Inventory-ID",
+                  "value" : "CPC-0147"
+                },
+                { "key" : "Publishing-Details_Program-link", "value" : "" },
+                { "key" : "Publishing-Details_Geographic-unit", "value" : "" },
+                {
+                  "key" : "Publishing-Details_Publishing-frequency",
+                  "value" : "As needed"
+                },
+                {
+                  "key" : "Publishing-Details_Data-change-frequency",
+                  "value" : "As needed"
+                }
+              ]
+          },
+        "metadata" : { "domain" : "data.sfgov.org" },
+        "permalink" : "https://data.sfgov.org/d/rzic-39gi",
+        "link" : "https://data.sfgov.org/Geographic-Locations-and-Boundaries/Landmarks/rzic-39gi",
+        "owner" :
+          {
+            "id" : "ft46-kupe",
+            "user_type" : "interactive",
+            "display_name" : "ArcGIS Connector"
+          },
+        "creator" :
+          {
+            "id" : "ft46-kupe",
+            "user_type" : "interactive",
+            "display_name" : "ArcGIS Connector"
+          }
+      },
+      {
+        "resource" :
+          {
+            "name" : "Landmark Districts",
+            "id" : "knm6-5ej6",
+            "resource_name" : null,
+            "parent_fxf" : [],
+            "description" : "Landmarks and Landmark Districts as defined and listed in Article 10 of the San Francisco Planning Code (http://planningcode.sfplanning.org). A map of these Landmarks can be found here: http://www.sf-planning.org/index.aspx?page=3313",
+            "attribution" : null,
+            "attribution_link" : null,
+            "contact_email" : null,
+            "type" : "dataset",
+            "updatedAt" : "2024-03-13T18:50:35.000Z",
+            "createdAt" : "2023-10-16T17:19:50.000Z",
+            "metadata_updated_at" : "2024-03-13T18:50:35.000Z",
+            "data_updated_at" : "2023-10-16T17:22:18.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 4,
+                "page_views_last_month" : 11,
+                "page_views_total" : 634,
+                "page_views_last_week_log" : 2.321928094887362,
+                "page_views_last_month_log" : 3.5849625007211565,
+                "page_views_total_log" : 9.310612781659529
+              },
+            "columns_name" :
+              [
+                "criterionc",
+                "criteriona",
+                "criterionb",
+                "pos",
+                "casenumber",
+                "url",
+                "geometry",
+                "ordinance",
+                "shape_leng",
+                "shape_area",
+                "datelisted",
+                "district",
+                "appendix",
+                "multigeom",
+                "totalprop",
+                "contribute"
+              ],
+            "columns_field_name" :
+              [
+                "criterionc",
+                "criteriona",
+                "criterionb",
+                "pos",
+                "casenumber",
+                "url",
+                "geometry",
+                "ordinance",
+                "shape_leng",
+                "shape_area",
+                "datelisted",
+                "district",
+                "appendix",
+                "multigeom",
+                "totalprop",
+                "contribute"
+              ],
+            "columns_datatype" :
+              [
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "URL",
+                "Polygon",
+                "Text",
+                "Number",
+                "Number",
+                "Calendar date",
+                "Text",
+                "Text",
+                "Checkbox",
+                "Number",
+                "Number"
+              ],
+            "columns_description" :
+              [
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                ""
+              ],
+            "columns_format" :
+              [
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                { "decimalSeparator" : ".", "groupSeparator" : "," },
+                { "decimalSeparator" : ".", "groupSeparator" : "," },
+                {},
+                {},
+                {},
+                {},
+                { "decimalSeparator" : ".", "groupSeparator" : "," },
+                { "decimalSeparator" : ".", "groupSeparator" : "," }
+              ],
+            "download_count" : 231,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "table",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : "2023-10-16T17:22:24.000Z"
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "",
+            "domain_tags" : [],
+            "domain_metadata" :
+              [
+                {
+                  "key" : "Department-Metrics_Publishing-Department",
+                  "value" : "Planning"
+                },
+                { "key" : "Internal-Management_Inventory-ID", "value" : "" },
+                {
+                  "key" : "Publishing-Details_Publishing-frequency",
+                  "value" : "As needed"
+                },
+                { "key" : "Publishing-Details_Geographic-unit", "value" : "" },
+                { "key" : "Publishing-Details_Program-link", "value" : "" },
+                {
+                  "key" : "Publishing-Details_Data-change-frequency",
+                  "value" : "As needed"
+                }
+              ]
+          },
+        "metadata" : { "domain" : "data.sfgov.org" },
+        "permalink" : "https://data.sfgov.org/d/knm6-5ej6",
+        "link" : "https://data.sfgov.org/dataset/Landmark-Districts/knm6-5ej6",
+        "owner" :
+          {
+            "id" : "dbag-6qd9",
+            "user_type" : "interactive",
+            "display_name" : "OpenData"
+          },
+        "creator" :
+          {
+            "id" : "dbag-6qd9",
+            "user_type" : "interactive",
+            "display_name" : "OpenData"
+          }
+      },
+      {
+        "resource" :
+          {
+            "name" : "Landmarks Listed in Article 10 of the San Francisco Planning Code",
+            "id" : "97yj-54sx",
+            "resource_name" : null,
+            "parent_fxf" : [],
+            "description" : "<strong>A. SUMMARY</strong>\nHistoric Landmarks Listed in Article 10 of the San Francisco Planning Code\n\n<strong>B. HOW THE DATASET IS CREATED</strong>\nCreated by the the San Francisco Planning Department.  Areas represent parcel boundaries or streets listed in Article 10 of the Planning Code\n\n<strong>C. UPDATE PROCESS</strong>\nAutomated to refresh daily. The data contents are updated a few times a year when new sites are approved by the Historic Preservation Commission.\n\n<strong>D. HOW TO USE THIS DATASET</strong>\nFor further information:\nhttps://codelibrary.amlegal.com/codes/san_francisco/latest/sf_planning/0-0-0-27871",
+            "attribution" : "City and County of San Francisco Planning Department",
+            "attribution_link" : null,
+            "contact_email" : null,
+            "type" : "dataset",
+            "updatedAt" : "2026-07-31T11:08:03.000Z",
+            "createdAt" : "2021-11-16T19:28:11.000Z",
+            "metadata_updated_at" : "2026-07-31T11:08:02.000Z",
+            "data_updated_at" : "2026-07-31T11:08:03.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 108,
+                "page_views_last_month" : 484,
+                "page_views_total" : 3769,
+                "page_views_last_week_log" : 6.768184324776926,
+                "page_views_last_month_log" : 8.92184093707449,
+                "page_views_total_log" : 11.880348808156025
+              },
+            "columns_name" :
+              [
+                "name",
+                "Address",
+                "LandmarkNo",
+                "the_geom",
+                "DesignationDocument",
+                "Photo",
+                "PIMLink",
+                "YearDesignated",
+                "apn"
+              ],
+            "columns_field_name" :
+              [
+                "name",
+                "address",
+                "landmarkno",
+                "the_geom",
+                "designationdocument",
+                "photo",
+                "pimlink",
+                "yeardesignated",
+                "apn"
+              ],
+            "columns_datatype" :
+              [
+                "Text",
+                "Text",
+                "Number",
+                "MultiPolygon",
+                "URL",
+                "URL",
+                "URL",
+                "Number",
+                "Text"
+              ],
+            "columns_description" :
+              [
+                "Name",
+                "Address of the landmark",
+                "Landmark Number, as listed in the San Francisco Planning Code",
+                "the_geom",
+                "Document that details the designation of the landmark.",
+                "Link to a photo of the landmark.",
+                "Link to the landmark on the San Francisco Property Information Map.",
+                "Year that the landmark was designated.",
+                "APN - Parcel Number"
+              ],
+            "columns_format" : [ {}, {}, {}, {}, {}, {}, {}, {}, {} ],
+            "download_count" : 3616,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "table",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : "2022-01-04T17:06:09.000Z"
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "Housing and Buildings",
+            "domain_tags" : [ "historic", "preservation", "planning", "code" ],
+            "domain_metadata" :
+              [
+                {
+                  "key" : "Department-Metrics_Publishing-Department",
+                  "value" : "Planning"
+                },
+                {
+                  "key" : "Geospatial-API-Pre-release_Enabled",
+                  "value" : "true"
+                },
+                {
+                  "key" : "Internal-Management_Inventory-ID",
+                  "value" : "CPC-0160"
+                },
+                {
+                  "key" : "Publishing-Details_Publishing-frequency",
+                  "value" : "Daily"
+                },
+                { "key" : "Publishing-Details_Geographic-unit", "value" : "" },
+                { "key" : "Publishing-Details_Program-link", "value" : "" },
+                {
+                  "key" : "Publishing-Details_Data-change-frequency",
+                  "value" : "As needed"
+                }
+              ]
+          },
+        "metadata" :
+          {
+            "domain" : "data.sfgov.org",
+            "license" : "Public Domain U.S. Government"
+          },
+        "permalink" : "https://data.sfgov.org/d/97yj-54sx",
+        "link" : "https://data.sfgov.org/Housing-and-Buildings/Landmarks-Listed-in-Article-10-of-the-San-Francisc/97yj-54sx",
+        "owner" :
+          {
+            "id" : "wh9h-jktj",
+            "user_type" : "interactive",
+            "display_name" : "mikewynne"
+          },
+        "creator" :
+          {
+            "id" : "wh9h-jktj",
+            "user_type" : "interactive",
+            "display_name" : "mikewynne"
+          }
+      },
+      {
+        "resource" :
+          {
+            "name" : "Map of Landmarks Listed in Article 10 of the San Francisco Planning Code",
+            "id" : "hycf-nc3x",
+            "resource_name" : null,
+            "parent_fxf" : [ "97yj-54sx" ],
+            "description" : "For further information:\nhttps://codelibrary.amlegal.com/codes/san_francisco/latest/sf_planning/0-0-0-27871",
+            "attribution" : "City and County of San Francisco Planning Department",
+            "attribution_link" : null,
+            "contact_email" : null,
+            "type" : "map",
+            "updatedAt" : "2026-07-31T11:08:03.000Z",
+            "createdAt" : "2021-11-24T00:52:40.000Z",
+            "metadata_updated_at" : "2024-03-13T18:51:25.000Z",
+            "data_updated_at" : "2026-07-31T11:08:03.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 19,
+                "page_views_last_month" : 51,
+                "page_views_total" : 1692,
+                "page_views_last_week_log" : 4.321928094887363,
+                "page_views_last_month_log" : 5.700439718141093,
+                "page_views_total_log" : 10.725366257895642
+              },
+            "columns_name" : [],
+            "columns_field_name" : [],
+            "columns_datatype" : [],
+            "columns_description" : [],
+            "columns_format" : [],
+            "download_count" : 9,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "visualization_canvas_map",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : "2021-11-24T00:53:13.000Z"
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "Housing and Buildings",
+            "domain_tags" : [],
+            "domain_metadata" :
+              [
+                {
+                  "key" : "Department-Metrics_Publishing-Department",
+                  "value" : "Planning"
+                },
+                {
+                  "key" : "Geospatial-API-Pre-release_Enabled",
+                  "value" : "true"
+                },
+                {
+                  "key" : "Internal-Management_Inventory-ID",
+                  "value" : "CPC-0160"
+                },
+                {
+                  "key" : "Publishing-Details_Publishing-frequency",
+                  "value" : "Daily"
+                },
+                { "key" : "Publishing-Details_Geographic-unit", "value" : "" },
+                { "key" : "Publishing-Details_Program-link", "value" : "" },
+                {
+                  "key" : "Publishing-Details_Data-change-frequency",
+                  "value" : "As needed"
+                }
+              ]
+          },
+        "metadata" :
+          {
+            "domain" : "data.sfgov.org",
+            "license" : "Public Domain U.S. Government"
+          },
+        "permalink" : "https://data.sfgov.org/d/hycf-nc3x",
+        "link" : "https://data.sfgov.org/Housing-and-Buildings/Map-of-Landmarks-Listed-in-Article-10-of-the-San-F/hycf-nc3x",
+        "owner" :
+          {
+            "id" : "dbag-6qd9",
+            "user_type" : "interactive",
+            "display_name" : "OpenData"
+          },
+        "creator" :
+          {
+            "id" : "dbag-6qd9",
+            "user_type" : "interactive",
+            "display_name" : "OpenData"
+          }
+      },
+      {
+        "resource" :
+          {
+            "name" : "Analysis Neighborhoods - 2010 census tracts assigned to neighborhoods - Map",
+            "id" : "bwbp-wk3r",
+            "resource_name" : null,
+            "parent_fxf" : [ "m46u-xzix" ],
+            "description" : "<b><i>***As of November 2023, this map has been updated to use a new format. For details, please see <a href=\"https://data.sfgov.org/stories/s/q44z-zyx4\">here</a>.***</i></b> </br> The Department of Public Health and the Mayorâ€™s Office of Housing and Community Development, with support from the Planning Department, created 41 neighborhoods by grouping 2010 Census tracts, using common real estate and residentsâ€™ definitions for the purpose of providing consistency in the analysis and reporting of socio-economic, demographic, and environmental data, and data on City-funded programs and services. They are not codified in Planning Code nor Administrative Code.\nThis dataset is produced by assigning Census tracts to neighborhoods based on existing neighborhood definitions used by Planning and MOHCD. A qualitative assessment is made to identify the appropriate neighborhood for a given tract based on an understanding of population distribution and significant landmarks. Once all tracts have been assigned a neighborhood, the tracts are combined to produce Analysis Neighborhoods which is available at https://data.sfgov.org/d/p5b7-5n3h",
+            "attribution" : null,
+            "attribution_link" : null,
+            "contact_email" : null,
+            "type" : "map",
+            "updatedAt" : "2024-03-13T18:49:58.000Z",
+            "createdAt" : "2023-10-17T18:07:35.000Z",
+            "metadata_updated_at" : "2024-03-13T18:49:58.000Z",
+            "data_updated_at" : "2023-10-17T18:05:43.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 36,
+                "page_views_last_month" : 335,
+                "page_views_total" : 20629,
+                "page_views_last_week_log" : 5.20945336562895,
+                "page_views_last_month_log" : 8.39231742277876,
+                "page_views_total_log" : 14.332456200773846
+              },
+            "columns_name" : [],
+            "columns_field_name" : [],
+            "columns_datatype" : [],
+            "columns_description" : [],
+            "columns_format" : [],
+            "download_count" : 2464,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "visualization_canvas_map",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : "2023-11-01T16:22:17.000Z"
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "",
+            "domain_tags" : [],
+            "domain_metadata" :
+              [
+                {
+                  "key" : "Department-Metrics_Publishing-Department",
+                  "value" : "Planning"
+                },
+                { "key" : "Internal-Management_Inventory-ID", "value" : "" },
+                {
+                  "key" : "Publishing-Details_Publishing-frequency",
+                  "value" : "As needed"
+                },
+                { "key" : "Publishing-Details_Geographic-unit", "value" : "" },
+                { "key" : "Publishing-Details_Program-link", "value" : "" },
+                {
+                  "key" : "Publishing-Details_Data-change-frequency",
+                  "value" : "As needed"
+                }
+              ]
+          },
+        "metadata" : { "domain" : "data.sfgov.org" },
+        "permalink" : "https://data.sfgov.org/d/bwbp-wk3r",
+        "link" : "https://data.sfgov.org/dataset/Analysis-Neighborhoods-2010-census-tracts-assigned/bwbp-wk3r",
+        "owner" :
+          {
+            "id" : "dbag-6qd9",
+            "user_type" : "interactive",
+            "display_name" : "OpenData"
+          },
+        "creator" :
+          {
+            "id" : "dbag-6qd9",
+            "user_type" : "interactive",
+            "display_name" : "OpenData"
+          }
+      },
+      {
+        "resource" :
+          {
+            "name" : "San Francisco Addresses with Units - Enterprise Addressing System",
+            "id" : "ramy-di5m",
+            "resource_name" : null,
+            "parent_fxf" : [],
+            "description" : "<strong>SUMMARY</strong>\nAll active addresses from the City's Enterprise Addressing System (EAS), including sub-addresses, such as units. Includes references to parcel and street centerline data (Note: not all addresses are associated with parcels).  Updated nightly.  For base addresses (not including units) see <a href=\"https://data.sfgov.org/d/3mea-di5p\">the Addresses - Enterprise Address System dataset</a>.\n\n<strong>HOW THE DATASET IS CREATED</strong>\nThis dataset is an extract from the Enterprise Addressing System, maintained by San Francisco's Department of Technology.\n\n<strong>UPDATE PROCESS</strong>\nThis dataset updates nightly.\n\n<strong>RELATED DATASETS</strong>\n<li><a href=\"https://data.sfgov.org/d/3mea-di5p\">the Addresses - Enterprise Address System dataset</a>",
+            "attribution" : "City and County of San Francisco",
+            "attribution_link" : null,
+            "contact_email" : null,
+            "type" : "dataset",
+            "updatedAt" : "2026-07-31T03:16:27.000Z",
+            "createdAt" : "2018-10-11T19:36:31.000Z",
+            "metadata_updated_at" : "2026-07-31T03:11:47.000Z",
+            "data_updated_at" : "2026-07-31T03:16:27.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 324,
+                "page_views_last_month" : 1042,
+                "page_views_total" : 17844,
+                "page_views_last_week_log" : 8.344295907915816,
+                "page_views_last_month_log" : 10.026523442519766,
+                "page_views_total_log" : 14.123232280936387
+              },
+            "columns_name" :
+              [
+                "landmark_aliases",
+                "Latitude",
+                "ZIP Code",
+                "Current Police Districts",
+                "SF Find Neighborhoods",
+                "Analysis Neighborhoods",
+                "EAS SubID",
+                "supdist",
+                "Street Type",
+                "data_as_of",
+                "nhood",
+                "numbertext",
+                "supname",
+                "Street Full Name",
+                "direct_source",
+                "supdistpad",
+                "supervisor",
+                "Address Number",
+                "Parcel Number",
+                "complete_landmark_name",
+                "EAS FullID",
+                "Address Number Suffix",
+                "Street Name",
+                "Unit Number",
+                "Longitude",
+                "Lot",
+                "Block",
+                "CNN",
+                "data_updated_at",
+                "Address",
+                "point",
+                "EAS BaseID",
+                "data_loaded_at",
+                "Current Supervisor Districts"
+              ],
+            "columns_field_name" :
+              [
+                "landmark_aliases",
+                "latitude",
+                "zip_code",
+                ":@computed_region_qgnn_b9vv",
+                ":@computed_region_6qbp_sg9q",
+                ":@computed_region_ajp5_b2md",
+                "eas_subid",
+                "supdist",
+                "street_type",
+                "data_as_of",
+                "nhood",
+                "numbertext",
+                "supname",
+                "street_full_street_name",
+                "direct_source",
+                "supdistpad",
+                "supervisor",
+                "address_number",
+                "parcel_number",
+                "complete_landmark_name",
+                "eas_fullid",
+                "address_number_suffix",
+                "street_name",
+                "unit_number",
+                "longitude",
+                "lot",
+                "block",
+                "cnn",
+                "data_updated_at",
+                "address",
+                "point",
+                "eas_baseid",
+                "data_loaded_at",
+                ":@computed_region_26cr_cadq"
+              ],
+            "columns_datatype" :
+              [
+                "Text",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Text",
+                "Text",
+                "Calendar date",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Number",
+                "Number",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Number",
+                "Text",
+                "Text",
+                "Number",
+                "Calendar date",
+                "Text",
+                "Point",
+                "Number",
+                "Calendar date",
+                "Number"
+              ],
+            "columns_description" :
+              [
+                "Colloquial or official landmark name associated with an address.",
+                "A geographic coordinate expressed in decimal degrees that specifies the north-south position of a point on the Earth's surface and assuming a WGS84 coordinate system.",
+                "A system of 5-digit codes that identifies the individual Post Office or metropolitan area delivery station associated with an address.",
+                "",
+                "",
+                "",
+                "The unique identifier for the sub-address within a base address. For example, a unit or apartment within a building",
+                "Full name of Supervisorial District.",
+                "A word or phrase that follows the Street Name and identifies a type of thoroughfare in a Complete Street Name",
+                "Timestamp the data was updated in the source system",
+                "San Francisco Neighborhood for analysis, per DataSF.",
+                "Supervisor District Number as text (ONE, TWO, ...)",
+                "Last name of current Supervisor of District.",
+                "Street name and street type in a single field",
+                "Source from which the data provider obtained the address, or with which the data provider validated the address.",
+                "Supervisor District Number with zero padding (01,02,...)",
+                "Supervisor District Number",
+                "The numeric identifier for a land parcel, house, building, or other location along a thoroughfare or within a community",
+                "An asessor's parcel number, or APN, is a number assigned to parcels of real property by the Office of the Assessor Recorder for purposes of identification and record-keeping. It is sometimes referred to as the blocklot in City data. It is made up of two parts, the Assessor Block Number and the Assessor Lot Number.  You can find a map of the lots here: https://data.sfgov.org/d/45et-ht7c",
+                "Complete landmark name for an address, if there is a landmark associated.",
+                "The full unique identifier of the entire row (unique across the dataset)",
+                "The portion of the Complete Address Number that follows the Address Number itself",
+                "The portion of the Complete Street Name that identifies the particular thoroughfare",
+                "The letters, numbers, words, or combination thereof used to distinguish different subaddresses of the same type when several occur within the same feature",
+                "A geographic coordinate expressed in decimal degrees that specifies the east-west position of a point on the Earth's surface and assuming a WGS84 coordinate system.",
+                "The full assessor's parcel number is comprised of two parts, the second being the lot number. Lots are assigned by the Office of the Assessor Recorder and are captured within blocks. You can find a map of the lots here: https://data.sfgov.org/d/45et-ht7c",
+                "The full assessor's parcel number is comprised of two parts, the first being the block number. Blocks are assigned by the Office of the Assessor Recorder. You can see a block map here: https://data.sfgov.org/d/ndp2-nsue Blocks are officially recorded in physical block maps. You can find PDFs of those here: https://data.sfgov.org/d/2367-5au8",
+                "Centerline Network Number is the primary key/identifier for a street segment or node assigned by the Department of Public Works in the city's official basemap. Segments refer to lines representing the street, nodes represent points where two or more segments intersect. CNN IDs are often found encoded as text (CNNTEXT) or numbers (CNN). Basemap street segments are available here: https://data.sfgov.org/d/7hfy-8sz8; Basemap intersections (nodes) are here: https://data.sfgov.org/d/ctsg-7znq",
+                "Timestamp the address row was last modified",
+                "The full location of a record often including the street number, name and type; city; state; and zip code",
+                "The system representation of the coordinate (latitude and longitude) for the purposes of mapping within the open data portal.",
+                "The unique identifier for the base address record. For example, the address excluding any sub-units",
+                "Timestamp the data was loaded to the open data portal",
+                ""
+              ],
+            "columns_format" :
+              [
+                {},
+                {},
+                { "noCommas" : "true", "align" : "right" },
+                {},
+                {},
+                {},
+                { "noCommas" : "true", "align" : "right" },
+                {},
+                {},
+                { "view" : "date_ymd_time" },
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                { "noCommas" : "true", "align" : "right" },
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                { "noCommas" : "true", "align" : "right" },
+                { "view" : "date_ymd_time" },
+                {},
+                {},
+                { "noCommas" : "true", "align" : "right" },
+                { "view" : "date_ymd_time" },
+                {}
+              ],
+            "download_count" : 157482,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "table",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : "2025-05-19T21:42:06.000Z"
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "Geographic Locations and Boundaries",
+            "domain_tags" :
+              [
+                "unit",
+                "ref:basemap",
+                "eas",
+                "addresses",
+                "city reference data",
+                "dbi"
+              ],
+            "domain_metadata" :
+              [
+                {
+                  "key" : "Department-Metrics_Publishing-Department",
+                  "value" : "Technology"
+                },
+                {
+                  "key" : "Geospatial-API-Pre-release_Enabled",
+                  "value" : "true"
+                },
+                {
+                  "key" : "Internal-Management_Inventory-ID",
+                  "value" : "TIS-0001"
+                },
+                {
+                  "key" : "Publishing-Details_Publishing-frequency",
+                  "value" : "Daily"
+                },
+                { "key" : "Publishing-Details_Geographic-unit", "value" : "" },
+                { "key" : "Publishing-Details_Program-link", "value" : "" },
+                {
+                  "key" : "Publishing-Details_Data-change-frequency",
+                  "value" : "Daily"
+                },
+                {
+                  "key" : "Detailed-Descriptive_Geographic-unit",
+                  "value" : "Street address"
+                }
+              ]
+          },
+        "metadata" :
+          {
+            "domain" : "data.sfgov.org",
+            "license" : "Open Data Commons Public Domain Dedication and License"
+          },
+        "permalink" : "https://data.sfgov.org/d/ramy-di5m",
+        "link" : "https://data.sfgov.org/Geographic-Locations-and-Boundaries/San-Francisco-Addresses-with-Units-Enterprise-Addr/ramy-di5m",
+        "owner" :
+          {
+            "id" : "dbag-6qd9",
+            "user_type" : "interactive",
+            "display_name" : "OpenData"
+          },
+        "creator" :
+          {
+            "id" : "dbag-6qd9",
+            "user_type" : "interactive",
+            "display_name" : "OpenData"
+          }
+      },
+      {
+        "resource" :
+          {
+            "name" : "Analysis Neighborhoods",
+            "id" : "p5b7-5n3h",
+            "resource_name" : null,
+            "parent_fxf" : [ "j2bu-swwd" ],
+            "description" : "<b><i>***As of November 2023, this map has been updated to use a new format. For details, please see <a href=\"https://data.sfgov.org/stories/s/q44z-zyx4\">here</a>.***</i></b> </br> A. SUMMARY\nThe Department of Public Health and the Mayorâ€™s Office of Housing and Community Development, with support from the Planning Department, created these 41 neighborhoods by grouping 2010 Census tracts, using common real estate and residentsâ€™ definitions for the purpose of providing consistency in the analysis and reporting of socio-economic, demographic, and environmental data, and data on City-funded programs and services. These neighborhoods are not codified in Planning Code nor Administrative Code, although this map is referenced in Planning Code Section 415 as the â€œAmerican Community Survey Neighborhood Profile Boundaries Map.\nNote: These are NOT statistical boundaries as they are not controlled for population size. This is also NOT an official map of neighborhood boundaries in SF but an aggregation of Census tracts and should be used in conjunction with other spatial boundaries for decision making.\nB. HOW THE DATASET IS CREATED\nThis dataset is produced by assigning Census tracts to neighborhoods based on existing neighborhood definitions used by Planning and MOHCD. A qualitative assessment is made to identify the appropriate neighborhood for a given tract based on understanding of population distribution and significant landmarks. Once all tracts have been assigned a neighborhood, the tracts are dissolved to produce this dataset, Analysis Neighborhoods.\nC. UPDATE PROCESS\nThis dataset is static. Changes to the analysis neighborhood boundaries will be evaluated as needed by the Analysis Neighborhood working group led by DataSF and the Planning department and includes staff from various other city departments. Contact us\nfor any questions.\nD. HOW TO USE THIS DATASET\nDownloading this dataset and opening it in Excel may cause some of the data values to be lost or not display properly (particularly the Analysis Neighborhood column). For a simple list of Analysis Neighborhoods without geographic coordinates, click here: https://data.sfgov.org/resource/xfcw-9evu.csv?$select=nhood\nE. RELATED DATASETS\n2020 Census tracts assigned a neighborhood\n2010 Census tracts assigned a neighborhood",
+            "attribution" : null,
+            "attribution_link" : null,
+            "contact_email" : null,
+            "type" : "map",
+            "updatedAt" : "2024-03-13T18:50:18.000Z",
+            "createdAt" : "2023-10-17T18:31:40.000Z",
+            "metadata_updated_at" : "2024-03-13T18:50:18.000Z",
+            "data_updated_at" : "2023-10-17T18:30:11.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 319,
+                "page_views_last_month" : 1650,
+                "page_views_total" : 62117,
+                "page_views_last_week_log" : 8.321928094887362,
+                "page_views_last_month_log" : 10.689124404913258,
+                "page_views_total_log" : 15.92272375987783
+              },
+            "columns_name" : [],
+            "columns_field_name" : [],
+            "columns_datatype" : [],
+            "columns_description" : [],
+            "columns_format" : [],
+            "download_count" : 16280,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "visualization_canvas_map",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : "2023-11-01T16:30:25.000Z"
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "",
+            "domain_tags" : [],
+            "domain_metadata" :
+              [
+                {
+                  "key" : "Department-Metrics_Publishing-Department",
+                  "value" : "Planning"
+                },
+                { "key" : "Internal-Management_Inventory-ID", "value" : "" },
+                {
+                  "key" : "Publishing-Details_Publishing-frequency",
+                  "value" : "As needed"
+                },
+                { "key" : "Publishing-Details_Geographic-unit", "value" : "" },
+                { "key" : "Publishing-Details_Program-link", "value" : "" },
+                {
+                  "key" : "Publishing-Details_Data-change-frequency",
+                  "value" : "As needed"
+                }
+              ]
+          },
+        "metadata" :
+          {
+            "domain" : "data.sfgov.org",
+            "license" : "Open Data Commons Public Domain Dedication and License"
+          },
+        "permalink" : "https://data.sfgov.org/d/p5b7-5n3h",
+        "link" : "https://data.sfgov.org/dataset/Analysis-Neighborhoods/p5b7-5n3h",
+        "owner" :
+          {
+            "id" : "dbag-6qd9",
+            "user_type" : "interactive",
+            "display_name" : "OpenData"
+          },
+        "creator" :
+          {
+            "id" : "dbag-6qd9",
+            "user_type" : "interactive",
+            "display_name" : "OpenData"
+          }
+      },
+      {
+        "resource" :
+          {
+            "name" : "San Francisco Addresses - Enterprise Addressing System",
+            "id" : "3mea-di5p",
+            "resource_name" : null,
+            "parent_fxf" : [],
+            "description" : "<strong>SUMMARY</strong>\nActive base addresses from San Francisco's Enterprise Addressing System (EAS). This dataset does not include sub-addresses, such as units, and does not include a block/lot value for each record. For units and block/lot values, see the <a href=\"https://data.sfgov.org/d/ramy-di5m\">Addresses with Units - Enterprise Addressing System</a> dataset.\n\n<strong>HOW THE DATASET IS CREATED</strong>\nThis dataset is an extract from the Enterprise Addressing System, maintained by San Francisco's Department of Technology.\n\n<strong>UPDATE PROCESS</strong>\nThis dataset updates nightly. \n\n<strong>RELATED DATASETS</strong>\n<li><a href=\"https://data.sfgov.org/d/ramy-di5m\">Addresses with Units - Enterprise Addressing System</a>",
+            "attribution" : "City and County of San Francisco",
+            "attribution_link" : null,
+            "contact_email" : null,
+            "type" : "dataset",
+            "updatedAt" : "2026-07-31T03:13:45.000Z",
+            "createdAt" : "2018-10-11T18:47:34.000Z",
+            "metadata_updated_at" : "2026-07-31T03:11:12.000Z",
+            "data_updated_at" : "2026-07-31T03:13:45.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 328,
+                "page_views_last_month" : 1335,
+                "page_views_total" : 17205,
+                "page_views_last_week_log" : 8.361943773735241,
+                "page_views_last_month_log" : 10.383704292474052,
+                "page_views_total_log" : 14.070624122430266
+              },
+            "columns_name" :
+              [
+                "landmark_aliases",
+                "Address Number",
+                "numbertext",
+                "EAS BaseID",
+                "Address Number Suffix",
+                "supname",
+                "supdistpad",
+                "data_as_of",
+                "point",
+                "data_loaded_at",
+                "supervisor",
+                "direct_source",
+                "Current Supervisor Districts",
+                "Current Police Districts",
+                "SF Find Neighborhoods",
+                "complete_landmark_name",
+                "Street Name",
+                "data_updated_at",
+                "nhood",
+                "Analysis Neighborhoods",
+                "supdist",
+                "Latitude",
+                "Longitude",
+                "Address",
+                "ZIP Code",
+                "Parcel Number",
+                "Street Full Name",
+                "CNN",
+                "Street Type"
+              ],
+            "columns_field_name" :
+              [
+                "landmark_aliases",
+                "address_number",
+                "numbertext",
+                "eas_baseid",
+                "address_number_suffix",
+                "supname",
+                "supdistpad",
+                "data_as_of",
+                "point",
+                "data_loaded_at",
+                "supervisor",
+                "direct_source",
+                ":@computed_region_26cr_cadq",
+                ":@computed_region_qgnn_b9vv",
+                ":@computed_region_6qbp_sg9q",
+                "complete_landmark_name",
+                "street_name",
+                "data_updated_at",
+                "nhood",
+                ":@computed_region_ajp5_b2md",
+                "supdist",
+                "latitude",
+                "longitude",
+                "address",
+                "zip_code",
+                "parcel_number",
+                "street_full_street_name",
+                "cnn",
+                "street_type"
+              ],
+            "columns_datatype" :
+              [
+                "Text",
+                "Number",
+                "Text",
+                "Number",
+                "Text",
+                "Text",
+                "Text",
+                "Calendar date",
+                "Point",
+                "Calendar date",
+                "Number",
+                "Text",
+                "Number",
+                "Number",
+                "Number",
+                "Text",
+                "Text",
+                "Calendar date",
+                "Text",
+                "Number",
+                "Text",
+                "Number",
+                "Number",
+                "Text",
+                "Number",
+                "Text",
+                "Text",
+                "Number",
+                "Text"
+              ],
+            "columns_description" :
+              [
+                "Colloquial or official landmark name associated with an address.",
+                "The numeric identifier for a land parcel, house, building, or other location along a thoroughfare or within a community",
+                "Supervisor District number as text (ONE, TWO, ...)",
+                "The unique identifier for the base address record. For example, the address excluding any sub-units",
+                "The portion of the Complete Address Number that follows the Address Number itself if one exists",
+                "Last name of current Supervisor for District",
+                "Supervisor District Number as text with zero padding (01, 02, ...)",
+                "Timestamp the data was updated in the source system",
+                "The system representation of the coordinate (latitude and longitude) for the purposes of mapping within the open data portal.",
+                "Timestamp the data was loaded to the open data portal",
+                "Supervisor District Number",
+                "Source from which the data provider obtained the address, or with which the data provider validated the address.",
+                "",
+                "",
+                "",
+                "Landmark name for a base address, if associated.",
+                "The portion of the Complete Street Name that identifies the particular thoroughfare",
+                "Timestamp the row was last modified",
+                "San Francisco Neighborhood as per DataSF.",
+                "",
+                "Full name of Supervisorial District",
+                "A geographic coordinate expressed in decimal degrees that specifies the north-south position of a point on the Earth's surface and assuming a WGS84 coordinate system.",
+                "A geographic coordinate expressed in decimal degrees that specifies the east-west position of a point on the Earth's surface and assuming a WGS84 coordinate system.",
+                "The full location of a record often including the street number, name and type; city; state; and zip code",
+                "A system of 5-digit codes that identifies the individual Post Office or metropolitan area delivery station associated with an address.",
+                "An asessor's parcel number, or APN, is a number assigned to parcels of real property by the Office of the Assessor Recorder for purposes of identification and record-keeping. It is sometimes referred to as the blocklot in City data. It is made up of two parts, the Assessor Block Number and the Assessor Lot Number. You can find a map of the lots here: https://data.sfgov.org/d/45et-ht7c",
+                "Street name and street type in a single field",
+                "Centerline Network Number is the primary key/identifier for a street segment or node assigned by the Department of Public Works in the city's official basemap. Segments refer to lines representing the street, nodes represent points where two or more segments intersect. CNN IDs are often found encoded as text (CNNTEXT) or numbers (CNN). Basemap street segments are available here: https://data.sfgov.org/d/7hfy-8sz8; Basemap intersections (nodes) are here: https://data.sfgov.org/d/ctsg-7znq",
+                "A word or phrase that follows the Street Name and identifies a type of thoroughfare in a Complete Street Name"
+              ],
+            "columns_format" :
+              [
+                {},
+                {
+                  "precisionStyle" : "standard",
+                  "noCommas" : "true",
+                  "align" : "right"
+                },
+                {},
+                { "noCommas" : "true", "align" : "right" },
+                {},
+                {},
+                {},
+                { "view" : "date_ymd_time" },
+                {},
+                { "view" : "date_ymd_time" },
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                { "view" : "date_ymd_time" },
+                {},
+                {},
+                {},
+                {},
+                {},
+                { "align" : "right" },
+                { "noCommas" : "true", "align" : "right" },
+                {},
+                {},
+                { "noCommas" : "true", "align" : "right" },
+                {}
+              ],
+            "download_count" : 10180,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "table",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : "2025-05-21T20:25:15.000Z"
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "Geographic Locations and Boundaries",
+            "domain_tags" :
+              [
+                "ref:basemap",
+                "addresses",
+                "city reference data",
+                "dbi",
+                "eas"
+              ],
+            "domain_metadata" :
+              [
+                {
+                  "key" : "Department-Metrics_Publishing-Department",
+                  "value" : "Technology"
+                },
+                {
+                  "key" : "Geospatial-API-Pre-release_Enabled",
+                  "value" : "true"
+                },
+                {
+                  "key" : "Internal-Management_Inventory-ID",
+                  "value" : "TIS-0002"
+                },
+                {
+                  "key" : "Publishing-Details_Is-self-service",
+                  "value" : "Yes"
+                },
+                {
+                  "key" : "Publishing-Details_Publishing-frequency",
+                  "value" : "Daily"
+                },
+                {
+                  "key" : "Publishing-Details_Geographic-unit",
+                  "value" : "Street address"
+                },
+                { "key" : "Publishing-Details_Program-link", "value" : "" },
+                {
+                  "key" : "Publishing-Details_Data-change-frequency",
+                  "value" : "Daily"
+                },
+                {
+                  "key" : "Detailed-Descriptive_Geographic-unit",
+                  "value" : "Street address"
+                }
+              ]
+          },
+        "metadata" :
+          {
+            "domain" : "data.sfgov.org",
+            "license" : "Open Data Commons Public Domain Dedication and License"
+          },
+        "permalink" : "https://data.sfgov.org/d/3mea-di5p",
+        "link" : "https://data.sfgov.org/Geographic-Locations-and-Boundaries/San-Francisco-Addresses-Enterprise-Addressing-Syst/3mea-di5p",
+        "owner" :
+          {
+            "id" : "dbag-6qd9",
+            "user_type" : "interactive",
+            "display_name" : "OpenData"
+          },
+        "creator" :
+          {
+            "id" : "dbag-6qd9",
+            "user_type" : "interactive",
+            "display_name" : "OpenData"
+          }
+      },
+      {
+        "resource" :
+          {
+            "name" : "Analysis Neighborhoods - 2010 census tracts assigned to neighborhoods",
+            "id" : "m46u-xzix",
+            "resource_name" : null,
+            "parent_fxf" : [],
+            "description" : "The Department of Public Health and the Mayor’s Office of Housing and Community Development, with support from the Planning Department, created 41 neighborhoods by grouping 2010 Census tracts, using common real estate and residents’ definitions for the purpose of providing consistency in the analysis and reporting of socio-economic, demographic, and environmental data, and data on City-funded programs and services. They are not codified in Planning Code nor Administrative Code.\nThis dataset is produced by assigning Census tracts to neighborhoods based on existing neighborhood definitions used by Planning and MOHCD. A qualitative assessment is made to identify the appropriate neighborhood for a given tract based on an understanding of population distribution and significant landmarks. Once all tracts have been assigned a neighborhood, the tracts are combined to produce Analysis Neighborhoods which is available at https://data.sfgov.org/d/p5b7-5n3h",
+            "attribution" : null,
+            "attribution_link" : null,
+            "contact_email" : null,
+            "type" : "dataset",
+            "updatedAt" : "2024-03-13T18:50:30.000Z",
+            "createdAt" : "2023-10-17T18:01:32.000Z",
+            "metadata_updated_at" : "2024-03-13T18:50:30.000Z",
+            "data_updated_at" : "2023-10-17T18:05:43.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 4,
+                "page_views_last_month" : 204,
+                "page_views_total" : 1303,
+                "page_views_last_week_log" : 2.321928094887362,
+                "page_views_last_month_log" : 7.679480099505446,
+                "page_views_total_log" : 10.348728154231079
+              },
+            "columns_name" :
+              [
+                "tractce10",
+                "the_geom",
+                "geoid",
+                "nhood",
+                "shape_area",
+                "shape_len"
+              ],
+            "columns_field_name" :
+              [
+                "tractce10",
+                "the_geom",
+                "geoid",
+                "nhood",
+                "shape_area",
+                "shape_len"
+              ],
+            "columns_datatype" :
+              [ "Text", "MultiPolygon", "Text", "Text", "Number", "Number" ],
+            "columns_description" : [ "", "", "", "", "", "" ],
+            "columns_format" : [ {}, {}, {}, {}, {}, {} ],
+            "download_count" : 374,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "table",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : "2023-10-17T18:05:48.000Z"
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "",
+            "domain_tags" : [],
+            "domain_metadata" :
+              [
+                {
+                  "key" : "Department-Metrics_Publishing-Department",
+                  "value" : "Planning"
+                },
+                { "key" : "Internal-Management_Inventory-ID", "value" : "" },
+                {
+                  "key" : "Publishing-Details_Publishing-frequency",
+                  "value" : "As needed"
+                },
+                { "key" : "Publishing-Details_Geographic-unit", "value" : "" },
+                { "key" : "Publishing-Details_Program-link", "value" : "" },
+                {
+                  "key" : "Publishing-Details_Data-change-frequency",
+                  "value" : "As needed"
+                }
+              ]
+          },
+        "metadata" : { "domain" : "data.sfgov.org" },
+        "permalink" : "https://data.sfgov.org/d/m46u-xzix",
+        "link" : "https://data.sfgov.org/dataset/Analysis-Neighborhoods-2010-census-tracts-assigned/m46u-xzix",
+        "owner" :
+          {
+            "id" : "dbag-6qd9",
+            "user_type" : "interactive",
+            "display_name" : "OpenData"
+          },
+        "creator" :
+          {
+            "id" : "dbag-6qd9",
+            "user_type" : "interactive",
+            "display_name" : "OpenData"
+          }
+      },
+      {
+        "resource" :
+          {
+            "name" : "Analysis Neighborhoods",
+            "id" : "j2bu-swwd",
+            "resource_name" : null,
+            "parent_fxf" : [],
+            "description" : "A. SUMMARY\nThe Department of Public Health and the Mayor’s Office of Housing and Community Development, with support from the Planning Department, created these 41 neighborhoods by grouping 2010 Census tracts, using common real estate and residents’ definitions for the purpose of providing consistency in the analysis and reporting of socio-economic, demographic, and environmental data, and data on City-funded programs and services. These neighborhoods are not codified in Planning Code nor Administrative Code, although this map is referenced in Planning Code Section 415 as the “American Community Survey Neighborhood Profile Boundaries Map.\nNote: These are NOT statistical boundaries as they are not controlled for population size. This is also NOT an official map of neighborhood boundaries in SF but an aggregation of Census tracts and should be used in conjunction with other spatial boundaries for decision making.\nB. HOW THE DATASET IS CREATED\nThis dataset is produced by assigning Census tracts to neighborhoods based on existing neighborhood definitions used by Planning and MOHCD. A qualitative assessment is made to identify the appropriate neighborhood for a given tract based on understanding of population distribution and significant landmarks. Once all tracts have been assigned a neighborhood, the tracts are dissolved to produce this dataset, Analysis Neighborhoods.\nC. UPDATE PROCESS\nThis dataset is static. Changes to the analysis neighborhood boundaries will be evaluated as needed by the Analysis Neighborhood working group led by DataSF and the Planning department and includes staff from various other city departments. Contact us\nfor any questions.\nD. HOW TO USE THIS DATASET\nDownloading this dataset and opening it in Excel may cause some of the data values to be lost or not display properly (particularly the Analysis Neighborhood column). For a simple list of Analysis Neighborhoods without geographic coordinates, click here: https://data.sfgov.org/resource/xfcw-9evu.csv?$select=nhood\nE. RELATED DATASETS\n2020 Census tracts assigned a neighborhood\n2010 Census tracts assigned a neighborhood\n <u><a href=\"https://sfgov.maps.arcgis.com/home/item.html?id=09801373234345c4a8722aac1c141e78\">View this dataset on ArcGIS Online</a></u>",
+            "attribution" : null,
+            "attribution_link" : null,
+            "contact_email" : null,
+            "type" : "dataset",
+            "updatedAt" : "2025-09-25T17:50:36.000Z",
+            "createdAt" : "2023-10-17T18:25:57.000Z",
+            "metadata_updated_at" : "2025-09-25T17:50:36.000Z",
+            "data_updated_at" : "2023-10-17T18:30:11.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 95,
+                "page_views_last_month" : 722,
+                "page_views_total" : 7158,
+                "page_views_last_week_log" : 6.584962500721156,
+                "page_views_last_month_log" : 9.497851836951119,
+                "page_views_total_log" : 12.805542364358724
+              },
+            "columns_name" : [ "the_geom", "nhood" ],
+            "columns_field_name" : [ "the_geom", "nhood" ],
+            "columns_datatype" : [ "MultiPolygon", "Text" ],
+            "columns_description" : [ "", "" ],
+            "columns_format" : [ {}, {} ],
+            "download_count" : 2642,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "table",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : "2023-10-17T18:30:17.000Z"
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "Geographic Locations and Boundaries",
+            "domain_tags" : [],
+            "domain_metadata" :
+              [
+                {
+                  "key" : "Department-Metrics_Publishing-Department",
+                  "value" : "Planning"
+                },
+                {
+                  "key" : "Internal-Management_Inventory-ID",
+                  "value" : "CPC-0137"
+                },
+                {
+                  "key" : "Publishing-Details_Publishing-frequency",
+                  "value" : "As needed"
+                },
+                { "key" : "Publishing-Details_Geographic-unit", "value" : "" },
+                { "key" : "Publishing-Details_Program-link", "value" : "" },
+                {
+                  "key" : "Publishing-Details_Data-change-frequency",
+                  "value" : "As needed"
+                },
+                {
+                  "key" : "Detailed-Descriptive_Geographic-unit",
+                  "value" : "Neighborhood"
+                }
+              ]
+          },
+        "metadata" :
+          {
+            "domain" : "data.sfgov.org",
+            "license" : "Open Data Commons Public Domain Dedication and License"
+          },
+        "permalink" : "https://data.sfgov.org/d/j2bu-swwd",
+        "link" : "https://data.sfgov.org/Geographic-Locations-and-Boundaries/Analysis-Neighborhoods/j2bu-swwd",
+        "owner" :
+          {
+            "id" : "dbag-6qd9",
+            "user_type" : "interactive",
+            "display_name" : "OpenData"
+          },
+        "creator" :
+          {
+            "id" : "dbag-6qd9",
+            "user_type" : "interactive",
+            "display_name" : "OpenData"
+          }
+      },
+      {
+        "resource" :
+          {
+            "name" : "Parcels with overlay attributes",
+            "id" : "9grn-xjpx",
+            "resource_name" : null,
+            "parent_fxf" : [],
+            "description" : "<strong>A. SUMMARY</strong>\nThis dataset is derived from <a href=\"https://data.sfgov.org/Geographic-Locations-and-Boundaries/Parcels-Active-and-Retired/acdm-wktn\">parcels</a> and several other overlay administrative boundaries (listed below). The dataset was developed by DataSF as a convenience for matching parcels to districts where appropriate. This can be simpler than running a geospatial process every time you want to join parcels to a boundary. The districts provided here run along streets and are non-overlapping so that the parcels will be contained within a single district.\n\nThe boundaries included are:\n1. <a href=\"https://data.sfgov.org/Geographic-Locations-and-Boundaries/Analysis-Neighborhoods/p5b7-5n3h\">Analysis Neighborhoods</a>\n2. <a href=\"https://data.sfgov.org/Geographic-Locations-and-Boundaries/Current-Supervisor-Districts/8nkz-x4ny\">Supervisor Districts</a>\n3. <a href=\"https://data.sfgov.org/Public-Safety/Current-Police-Districts/wkhw-cjsf\">Police Districts</a>\n4. <a href=\"https://data.sfgov.org/Geographic-Locations-and-Boundaries/Planning-Districts/ttns-6zj3\">Planning Districts</a>\n\n<strong>B. HOW THE DATASET IS CREATED</strong>\nA script runs daily that overlays parcels with each of the boundaries to produce the composite dataset.\n\n<strong>C. UPDATE PROCESS</strong>\nUpdated daily by a script based on the upstream parcels dataset which is also updated daily.\n\n<strong>D. HOW TO USE THIS DATASET</strong>\nYou can use this dataset to match to administrative districts provided here to datasets that contain a parcel number. This can be a simpler process than running these joins spatially. \n\nIn short, we pre-process the spatial overlays to make joins simpler and more performant.",
+            "attribution" : null,
+            "attribution_link" : null,
+            "contact_email" : null,
+            "type" : "dataset",
+            "updatedAt" : "2026-07-31T17:20:14.000Z",
+            "createdAt" : "2018-05-14T21:56:52.000Z",
+            "metadata_updated_at" : "2026-07-31T17:17:56.000Z",
+            "data_updated_at" : "2026-07-31T17:20:14.000Z",
+            "page_views" :
+              {
+                "page_views_last_week" : 61,
+                "page_views_last_month" : 419,
+                "page_views_total" : 5358,
+                "page_views_last_week_log" : 5.954196310386876,
+                "page_views_last_month_log" : 8.714245517666123,
+                "page_views_total_log" : 12.387748100711294
+              },
+            "columns_name" :
+              [
+                "Parcel Number",
+                "Block",
+                "Lot",
+                "Analysis Neighborhood",
+                "Supervisor District",
+                "Planning District",
+                "Planning District Number",
+                "Police District",
+                "Police Company",
+                "the_geom",
+                "data_as_of",
+                "data_loaded_at",
+                "Neighborhoods",
+                "SF Find Neighborhoods",
+                "Current Police Districts",
+                "Current Supervisor Districts",
+                "Analysis Neighborhoods"
+              ],
+            "columns_field_name" :
+              [
+                "parcel_number",
+                "block",
+                "lot",
+                "analysis_neighborhood",
+                "supervisor_district",
+                "planning_district",
+                "planning_district_number",
+                "police_district",
+                "police_company",
+                "the_geom",
+                "data_as_of",
+                "data_loaded_at",
+                ":@computed_region_jwn9_ihcz",
+                ":@computed_region_6qbp_sg9q",
+                ":@computed_region_qgnn_b9vv",
+                ":@computed_region_26cr_cadq",
+                ":@computed_region_ajp5_b2md"
+              ],
+            "columns_datatype" :
+              [
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Text",
+                "Number",
+                "Text",
+                "Text",
+                "Point",
+                "Calendar date",
+                "Calendar date",
+                "Number",
+                "Number",
+                "Number",
+                "Number",
+                "Number"
+              ],
+            "columns_description" :
+              [
+                "An asessor's parcel number, or APN, is a number assigned to parcels of real property by the Office of the Assessor Recorder for purposes of identification and record-keeping. It is sometimes referred to as the blocklot in City data. It is made up of two parts, the Assessor Block Number and the Assessor Lot Number.",
+                "The full assessor's parcel number is comprised of two parts, the first being the block number. Blocks are assigned by the Office of the Assessor Recorder.",
+                "The full assessor's parcel number is comprised of two parts, the second being the lot number. Lots are assigned by the Office of the Assessor Recorder and are part of blocks.",
+                "\"The Department of Public Health and the Mayor's Office of Housing and Community Development, with support from the Planning Department, created 41 neighborhoods by grouping 2010 Census tracts, using common real estate and residentsâ\u0080\u0099 definitions for the purpose of providing consistency in the analysis and reporting of socio-economic, demographic, and environmental data, and data on City-funded programs and services. They are not codified in Planning Code nor Administrative Code.  This boundary is produced by assigning Census tracts to neighborhoods based on existing neighborhood definitions used by Planning and MOHCD. A qualitative assessment was made to identify the appropriate neighborhood for a given tract based on understanding of population distribution and significant landmarks. Once all tracts have been assigned a neighborhood, the tracts were dissolved to produce these boundaries.",
+                "There are 11 members of the Board of Supervisors in San Francisco, each representing a geographic district. These are numbered 1 through 11. See the district boundaries here: https://data.sfgov.org/d/xz9b-wyfc",
+                "These are grouping of census tracts. Planning Districts are used in various areas of the Planning process, mainly for analysis and management but are also in some parts of the General Plan.",
+                "The number corresponding Planning District field",
+                "The corresponding SFPD district.",
+                "The corresponding SFPD district company.",
+                "The centroid of the parcel as reference. Latitude and longitude in EPSG:4326 and encoded in Well Known Text (WKT) format.",
+                "Timestamp row updated in the source system",
+                "Timestamp data loaded to the open data portal",
+                "",
+                "",
+                "",
+                "",
+                ""
+              ],
+            "columns_format" :
+              [
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {},
+                { "view" : "date_ymd_time" },
+                { "view" : "date_ymd_time" },
+                {},
+                {},
+                {},
+                {},
+                {}
+              ],
+            "download_count" : 2461,
+            "provenance" : "official",
+            "lens_view_type" : "tabular",
+            "lens_display_type" : "table",
+            "locked" : false,
+            "backend" : "nbe",
+            "blob_mime_type" : null,
+            "hide_from_data_json" : false,
+            "publication_date" : "2024-03-20T20:13:30.000Z"
+          },
+        "classification" :
+          {
+            "categories" : [],
+            "tags" : [],
+            "domain_category" : "Geographic Locations and Boundaries",
+            "domain_tags" : [ "boundaries", "city reference data" ],
+            "domain_metadata" :
+              [
+                {
+                  "key" : "Department-Metrics_Publishing-Department",
+                  "value" : "GSA - City Administrator's Office"
+                },
+                {
+                  "key" : "Internal-Management_Inventory-ID",
+                  "value" : "ADM-0162"
+                },
+                {
+                  "key" : "Detailed-Descriptive_Geographic-unit",
+                  "value" : "Parcel (block/lot)"
+                },
+                {
+                  "key" : "Publishing-Details_Data-change-frequency",
+                  "value" : "As needed"
+                },
+                { "key" : "Publishing-Details_Program-link", "value" : "" },
+                {
+                  "key" : "Publishing-Details_Publishing-frequency",
+                  "value" : "Daily"
+                },
+                { "key" : "Publishing-Details_Geographic-unit", "value" : "" }
+              ]
+          },
+        "metadata" :
+          {
+            "domain" : "data.sfgov.org",
+            "license" : "Open Data Commons Public Domain Dedication and License"
+          },
+        "permalink" : "https://data.sfgov.org/d/9grn-xjpx",
+        "link" : "https://data.sfgov.org/Geographic-Locations-and-Boundaries/Parcels-with-overlay-attributes/9grn-xjpx",
+        "owner" :
+          {
+            "id" : "dbag-6qd9",
+            "user_type" : "interactive",
+            "display_name" : "OpenData"
+          },
+        "creator" :
+          {
+            "id" : "dbag-6qd9",
+            "user_type" : "interactive",
+            "display_name" : "OpenData"
+          }
+      }
+    ],
+  "resultSetSize" : 12,
+  "timings" : { "serviceMillis" : 29, "searchMillis" : [ 12, 6 ] },
+  "warnings" : []
+}

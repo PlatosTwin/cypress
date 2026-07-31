@@ -1,0 +1,1548 @@
+{
+  "id" : "tkzw-k3nq",
+  "name" : "Street Tree List",
+  "assetType" : "dataset",
+  "attribution" : "San Francisco Public Works",
+  "attributionLink" : "http://www.sfdpw.org",
+  "averageRating" : 0,
+  "category" : "City Infrastructure",
+  "createdAt" : 1348534308,
+  "description" : "List of dpw maintained street trees including: Planting date, species, and location",
+  "diciBackend" : false,
+  "displayType" : "table",
+  "domainCName" : "data.sfgov.org",
+  "downloadCount" : 25798,
+  "hideFromCatalog" : false,
+  "hideFromDataJson" : false,
+  "licenseId" : "PDDL",
+  "locked" : false,
+  "newBackend" : true,
+  "numberOfComments" : 3,
+  "oid" : 39044680,
+  "provenance" : "official",
+  "publicationAppendEnabled" : true,
+  "publicationDate" : 1668465028,
+  "publicationGroup" : 434273,
+  "publicationStage" : "published",
+  "rowsUpdatedAt" : 1785414276,
+  "rowsUpdatedBy" : "hf8p-vup5",
+  "tableId" : 18962801,
+  "totalTimesRated" : 0,
+  "viewCount" : 57059,
+  "viewLastModified" : 1785500081,
+  "viewType" : "tabular",
+  "approvals" : [ {
+    "reviewedAt" : 1464988035,
+    "reviewedAutomatically" : true,
+    "state" : "approved",
+    "submissionId" : 5102265,
+    "submissionObject" : "public_audience_request",
+    "submissionOutcome" : "change_audience",
+    "submittedAt" : 1464988035,
+    "targetAudience" : "public",
+    "workflowId" : 2546,
+    "submissionDetails" : {
+      "permissionType" : "READ"
+    },
+    "submissionOutcomeApplication" : {
+      "failureCount" : 0,
+      "status" : "success"
+    },
+    "submitter" : {
+      "id" : "rcpp-nrjq",
+      "displayName" : "Public Works"
+    }
+  }, {
+    "message" : "The `strict_permissions` flag must be on to enable internal approvals.",
+    "state" : "unsubmittable",
+    "targetAudience" : "internal",
+    "workflowId" : 5264
+  } ],
+  "clientContext" : {
+    "clientContextVariables" : [ ],
+    "inheritedVariables" : { }
+  },
+  "columns" : [ {
+    "id" : 567851276,
+    "name" : "TreeID",
+    "dataTypeName" : "number",
+    "description" : "Unique id of tree",
+    "fieldName" : "treeid",
+    "position" : 1,
+    "renderTypeName" : "number",
+    "tableColumnId" : 4269451,
+    "width" : 172,
+    "cachedContents" : {
+      "non_null" : "198435",
+      "largest" : "276035",
+      "null" : "0",
+      "top" : [ {
+        "item" : "2",
+        "count" : "1"
+      }, {
+        "item" : "3",
+        "count" : "1"
+      }, {
+        "item" : "4",
+        "count" : "1"
+      }, {
+        "item" : "6",
+        "count" : "1"
+      }, {
+        "item" : "10",
+        "count" : "1"
+      }, {
+        "item" : "11",
+        "count" : "1"
+      }, {
+        "item" : "12",
+        "count" : "1"
+      }, {
+        "item" : "18",
+        "count" : "1"
+      }, {
+        "item" : "19",
+        "count" : "1"
+      }, {
+        "item" : "20",
+        "count" : "1"
+      }, {
+        "item" : "21",
+        "count" : "1"
+      }, {
+        "item" : "22",
+        "count" : "1"
+      }, {
+        "item" : "23",
+        "count" : "1"
+      }, {
+        "item" : "25",
+        "count" : "1"
+      }, {
+        "item" : "26",
+        "count" : "1"
+      }, {
+        "item" : "27",
+        "count" : "1"
+      }, {
+        "item" : "28",
+        "count" : "1"
+      }, {
+        "item" : "29",
+        "count" : "1"
+      }, {
+        "item" : "30",
+        "count" : "1"
+      }, {
+        "item" : "1",
+        "count" : "1"
+      } ],
+      "smallest" : "1",
+      "count" : "198435",
+      "cardinality" : "198435"
+    },
+    "format" : {
+      "precisionStyle" : "standard",
+      "noCommas" : "true",
+      "align" : "right"
+    }
+  }, {
+    "id" : 567851277,
+    "name" : "qLegalStatus",
+    "dataTypeName" : "text",
+    "description" : "Legal staus: Permitted or DPW maintained",
+    "fieldName" : "qlegalstatus",
+    "position" : 2,
+    "renderTypeName" : "text",
+    "tableColumnId" : 4269452,
+    "width" : 244,
+    "cachedContents" : {
+      "non_null" : "198378",
+      "largest" : "Undocumented",
+      "null" : "57",
+      "top" : [ {
+        "item" : "DPW Maintained",
+        "count" : "142585"
+      }, {
+        "item" : "Permitted Site",
+        "count" : "40353"
+      }, {
+        "item" : "Undocumented",
+        "count" : "8995"
+      }, {
+        "item" : "Significant Tree",
+        "count" : "3148"
+      }, {
+        "item" : "Planning Code 138.1 required",
+        "count" : "1143"
+      }, {
+        "item" : "Section 806 (d)",
+        "count" : "809"
+      }, {
+        "item" : "Property Tree",
+        "count" : "368"
+      }, {
+        "item" : "Private",
+        "count" : "348"
+      }, {
+        "item" : "Landmark tree",
+        "count" : "244"
+      }, {
+        "item" : "Prune Opt Out",
+        "count" : "196"
+      }, {
+        "item" : "Section 143",
+        "count" : "131"
+      }, {
+        "item" : "Street Tree Maintenance Opt Out",
+        "count" : "58"
+      } ],
+      "smallest" : "DPW Maintained",
+      "count" : "198435",
+      "cardinality" : "198435"
+    },
+    "format" : { }
+  }, {
+    "id" : 567851278,
+    "name" : "qSpecies",
+    "dataTypeName" : "text",
+    "description" : "Species of tree",
+    "fieldName" : "qspecies",
+    "position" : 3,
+    "renderTypeName" : "text",
+    "tableColumnId" : 4269453,
+    "width" : 196,
+    "cachedContents" : {
+      "non_null" : "198435",
+      "largest" : "Ziziphus jujuba :: Jujube",
+      "null" : "0",
+      "top" : [ {
+        "item" : "Platanus x hispanica :: Sycamore: London Plane",
+        "count" : "11953"
+      }, {
+        "item" : "Tree(s) ::",
+        "count" : "11818"
+      }, {
+        "item" : "Lophostemon confertus :: Brisbane Box",
+        "count" : "10309"
+      }, {
+        "item" : "Metrosideros excelsa :: New Zealand Xmas Tree",
+        "count" : "8912"
+      }, {
+        "item" : "Tristaniopsis laurina :: Swamp Myrtle",
+        "count" : "7531"
+      }, {
+        "item" : "Pittosporum undulatum :: Victorian Box",
+        "count" : "7227"
+      }, {
+        "item" : "Prunus cerasifera :: Cherry Plum",
+        "count" : "6670"
+      }, {
+        "item" : "Magnolia grandiflora :: Southern Magnolia",
+        "count" : "6569"
+      }, {
+        "item" : "Arbutus 'Marina' :: Hybrid Strawberry Tree",
+        "count" : "5823"
+      }, {
+        "item" : "Ficus microcarpa nitida 'Green Gem' :: Indian Laurel Fig Tree 'Green Gem'",
+        "count" : "5519"
+      }, {
+        "item" : "Prunus serrulata 'Kwanzan' :: Kwanzan Flowering Cherry",
+        "count" : "3978"
+      }, {
+        "item" : "Acacia melanoxylon :: Blackwood Acacia",
+        "count" : "3959"
+      }, {
+        "item" : "Maytenus boaria :: Mayten",
+        "count" : "3882"
+      }, {
+        "item" : "Olea europaea :: Olive Tree",
+        "count" : "3756"
+      }, {
+        "item" : "Corymbia ficifolia :: Red Flowering Gum",
+        "count" : "3586"
+      }, {
+        "item" : "Ginkgo biloba :: Maidenhair Tree",
+        "count" : "3421"
+      }, {
+        "item" : "Callistemon citrinus :: Lemon Bottlebrush",
+        "count" : "3290"
+      }, {
+        "item" : "Pyrus calleryana :: Ornamental Pear",
+        "count" : "2982"
+      }, {
+        "item" : "Prunus serrulata :: Ornamental Cherry",
+        "count" : "2713"
+      }, {
+        "item" : "Eriobotrya deflexa :: Bronze Loquat",
+        "count" : "2510"
+      } ],
+      "smallest" : "::",
+      "count" : "198435",
+      "cardinality" : "198435"
+    },
+    "format" : { }
+  }, {
+    "id" : 567851279,
+    "name" : "qAddress",
+    "dataTypeName" : "text",
+    "description" : "Address of Tree",
+    "fieldName" : "qaddress",
+    "position" : 4,
+    "renderTypeName" : "text",
+    "tableColumnId" : 4564280,
+    "width" : 100,
+    "cachedContents" : {
+      "non_null" : "196943",
+      "largest" : "9 Young Ct",
+      "null" : "1492",
+      "top" : [ {
+        "item" : "100X Cargo Way",
+        "count" : "135"
+      }, {
+        "item" : "700 Junipero Serra Blvd",
+        "count" : "125"
+      }, {
+        "item" : "1000 San Jose Ave",
+        "count" : "113"
+      }, {
+        "item" : "1200 Sunset Blvd",
+        "count" : "110"
+      }, {
+        "item" : "1600 Sunset Blvd",
+        "count" : "102"
+      }, {
+        "item" : "2301 Sunset Blvd",
+        "count" : "94"
+      }, {
+        "item" : "1501 Sunset Blvd",
+        "count" : "93"
+      }, {
+        "item" : "2401 Sunset Blvd",
+        "count" : "92"
+      }, {
+        "item" : "100 STAIRWAY5",
+        "count" : "87"
+      }, {
+        "item" : "2601 Sunset Blvd",
+        "count" : "84"
+      }, {
+        "item" : "1400 Sunset Blvd",
+        "count" : "83"
+      }, {
+        "item" : "1201 Sunset Blvd",
+        "count" : "80"
+      }, {
+        "item" : "2000 Sunset Blvd",
+        "count" : "80"
+      }, {
+        "item" : "1201 San Jose Ave",
+        "count" : "80"
+      }, {
+        "item" : "2500 Sunset Blvd",
+        "count" : "77"
+      }, {
+        "item" : "900 Junipero Serra Blvd",
+        "count" : "76"
+      }, {
+        "item" : "1100 San Jose Ave",
+        "count" : "75"
+      }, {
+        "item" : "2501 Sunset Blvd",
+        "count" : "74"
+      }, {
+        "item" : "1701 Sunset Blvd",
+        "count" : "73"
+      }, {
+        "item" : "1301 Sunset Blvd",
+        "count" : "72"
+      } ],
+      "smallest" : "0",
+      "count" : "198435",
+      "cardinality" : "198435"
+    },
+    "format" : { }
+  }, {
+    "id" : 567851280,
+    "name" : "SiteOrder",
+    "dataTypeName" : "number",
+    "description" : "Order of tree at address where multiple trees are at same address. Trees are ordered in ascending address order",
+    "fieldName" : "siteorder",
+    "position" : 5,
+    "renderTypeName" : "number",
+    "tableColumnId" : 4269454,
+    "width" : 208,
+    "cachedContents" : {
+      "non_null" : "196601",
+      "largest" : "1700",
+      "null" : "1834",
+      "top" : [ {
+        "item" : "1",
+        "count" : "95323"
+      }, {
+        "item" : "2",
+        "count" : "32667"
+      }, {
+        "item" : "3",
+        "count" : "17239"
+      }, {
+        "item" : "4",
+        "count" : "11146"
+      }, {
+        "item" : "5",
+        "count" : "7455"
+      }, {
+        "item" : "6",
+        "count" : "5291"
+      }, {
+        "item" : "7",
+        "count" : "4030"
+      }, {
+        "item" : "8",
+        "count" : "3170"
+      }, {
+        "item" : "9",
+        "count" : "2545"
+      }, {
+        "item" : "10",
+        "count" : "2085"
+      }, {
+        "item" : "11",
+        "count" : "1722"
+      }, {
+        "item" : "12",
+        "count" : "1433"
+      }, {
+        "item" : "13",
+        "count" : "1160"
+      }, {
+        "item" : "14",
+        "count" : "990"
+      }, {
+        "item" : "15",
+        "count" : "849"
+      }, {
+        "item" : "16",
+        "count" : "719"
+      }, {
+        "item" : "17",
+        "count" : "627"
+      }, {
+        "item" : "18",
+        "count" : "554"
+      }, {
+        "item" : "19",
+        "count" : "485"
+      }, {
+        "item" : "20",
+        "count" : "443"
+      } ],
+      "smallest" : "-50",
+      "count" : "198435",
+      "cardinality" : "198435"
+    },
+    "format" : { }
+  }, {
+    "id" : 567851281,
+    "name" : "qSiteInfo",
+    "dataTypeName" : "text",
+    "description" : "description of location of tree",
+    "fieldName" : "qsiteinfo",
+    "position" : 6,
+    "renderTypeName" : "text",
+    "tableColumnId" : 4269455,
+    "width" : 208,
+    "cachedContents" : {
+      "non_null" : "198435",
+      "largest" : ": Yard",
+      "null" : "0",
+      "top" : [ {
+        "item" : "Sidewalk: Curb side : Cutout",
+        "count" : "156190"
+      }, {
+        "item" : "Sidewalk: Property side : Yard",
+        "count" : "11310"
+      }, {
+        "item" : "Sidewalk: Curb side : Yard",
+        "count" : "9255"
+      }, {
+        "item" : "Median : Cutout",
+        "count" : "5052"
+      }, {
+        "item" : ":",
+        "count" : "4805"
+      }, {
+        "item" : "Front Yard : Yard",
+        "count" : "3432"
+      }, {
+        "item" : "Median : Yard",
+        "count" : "1761"
+      }, {
+        "item" : "Sidewalk: Property side : Cutout",
+        "count" : "1722"
+      }, {
+        "item" : "Sidewalk: Curb side : Pot",
+        "count" : "1691"
+      }, {
+        "item" : "Side Yard : Yard",
+        "count" : "975"
+      }, {
+        "item" : "Back Yard : Yard",
+        "count" : "684"
+      }, {
+        "item" : "Unaccepted Street : Yard",
+        "count" : "378"
+      }, {
+        "item" : "Front Yard : Cutout",
+        "count" : "328"
+      }, {
+        "item" : "unknown : Yard",
+        "count" : "314"
+      }, {
+        "item" : ": Yard",
+        "count" : "170"
+      }, {
+        "item" : "Back Yard : Cutout",
+        "count" : "68"
+      }, {
+        "item" : "Unaccepted Street : Cutout",
+        "count" : "66"
+      }, {
+        "item" : "Side Yard : Cutout",
+        "count" : "50"
+      }, {
+        "item" : "Sidewalk: Curb side :",
+        "count" : "39"
+      }, {
+        "item" : "Sidewalk: Property side : Pot",
+        "count" : "38"
+      } ],
+      "smallest" : ":",
+      "count" : "198435",
+      "cardinality" : "198435"
+    },
+    "format" : { }
+  }, {
+    "id" : 567851282,
+    "name" : "PlantType",
+    "dataTypeName" : "text",
+    "description" : "Landscaping or Tree",
+    "fieldName" : "planttype",
+    "position" : 7,
+    "renderTypeName" : "text",
+    "tableColumnId" : 4269456,
+    "width" : 208,
+    "cachedContents" : {
+      "non_null" : "198435",
+      "largest" : "Tree",
+      "null" : "0",
+      "top" : [ {
+        "item" : "Tree",
+        "count" : "198106"
+      }, {
+        "item" : "Landscaping",
+        "count" : "326"
+      }, {
+        "item" : "tree",
+        "count" : "3"
+      } ],
+      "smallest" : "Landscaping",
+      "count" : "198435",
+      "cardinality" : "198435"
+    },
+    "format" : { }
+  }, {
+    "id" : 567851283,
+    "name" : "qCaretaker",
+    "dataTypeName" : "text",
+    "description" : "Agency or person that is primary caregiver to tree. Owner of Tree",
+    "fieldName" : "qcaretaker",
+    "position" : 8,
+    "renderTypeName" : "text",
+    "tableColumnId" : 4269457,
+    "width" : 220,
+    "cachedContents" : {
+      "non_null" : "198435",
+      "largest" : "War Memorial",
+      "null" : "0",
+      "top" : [ {
+        "item" : "Private",
+        "count" : "165956"
+      }, {
+        "item" : "DPW",
+        "count" : "28630"
+      }, {
+        "item" : "SFUSD",
+        "count" : "1125"
+      }, {
+        "item" : "Port",
+        "count" : "731"
+      }, {
+        "item" : "Rec/Park",
+        "count" : "720"
+      }, {
+        "item" : "PUC",
+        "count" : "261"
+      }, {
+        "item" : "DPW for City Agency",
+        "count" : "214"
+      }, {
+        "item" : "MTA",
+        "count" : "110"
+      }, {
+        "item" : "Dept of Real Estate",
+        "count" : "94"
+      }, {
+        "item" : "Purchasing Dept",
+        "count" : "85"
+      }, {
+        "item" : "Housing Authority",
+        "count" : "73"
+      }, {
+        "item" : "Fire Dept",
+        "count" : "70"
+      }, {
+        "item" : "Health Dept",
+        "count" : "56"
+      }, {
+        "item" : "Police Dept",
+        "count" : "50"
+      }, {
+        "item" : "Infrastructure Design and Construction",
+        "count" : "46"
+      }, {
+        "item" : "Public Library",
+        "count" : "37"
+      }, {
+        "item" : "Mayor Office of Housing",
+        "count" : "37"
+      }, {
+        "item" : "Arts Commission",
+        "count" : "31"
+      }, {
+        "item" : "Office of Mayor",
+        "count" : "27"
+      }, {
+        "item" : "War Memorial",
+        "count" : "20"
+      } ],
+      "smallest" : "Arts Commission",
+      "count" : "198435",
+      "cardinality" : "198435"
+    },
+    "format" : { }
+  }, {
+    "id" : 567851284,
+    "name" : "qCareAssistant",
+    "dataTypeName" : "text",
+    "description" : "Agency or person that is secondary caregiver to tree",
+    "fieldName" : "qcareassistant",
+    "position" : 9,
+    "renderTypeName" : "text",
+    "tableColumnId" : 4269458,
+    "width" : 268,
+    "cachedContents" : {
+      "non_null" : "25451",
+      "largest" : "SFUSD",
+      "null" : "172984",
+      "top" : [ {
+        "item" : "FUF",
+        "count" : "23067"
+      }, {
+        "item" : "DPW",
+        "count" : "809"
+      }, {
+        "item" : "DPW for City Agency",
+        "count" : "796"
+      }, {
+        "item" : "Private",
+        "count" : "236"
+      }, {
+        "item" : "Conservation Corps",
+        "count" : "131"
+      }, {
+        "item" : "Cleary Bros. Landscape",
+        "count" : "116"
+      }, {
+        "item" : "SFUSD",
+        "count" : "103"
+      }, {
+        "item" : "Housing Authority",
+        "count" : "44"
+      }, {
+        "item" : "Rec/Park",
+        "count" : "38"
+      }, {
+        "item" : "Mission Verde",
+        "count" : "32"
+      }, {
+        "item" : "MTA",
+        "count" : "25"
+      }, {
+        "item" : "Port",
+        "count" : "15"
+      }, {
+        "item" : "Clean City",
+        "count" : "12"
+      }, {
+        "item" : "Fire Dept",
+        "count" : "5"
+      }, {
+        "item" : "City College",
+        "count" : "5"
+      }, {
+        "item" : "CAN",
+        "count" : "4"
+      }, {
+        "item" : "PUC",
+        "count" : "4"
+      }, {
+        "item" : "Dept of Real Estate",
+        "count" : "3"
+      }, {
+        "item" : "Arts Commission",
+        "count" : "2"
+      }, {
+        "item" : "Owner Water",
+        "count" : "2"
+      } ],
+      "smallest" : "Arts Commission",
+      "count" : "198435",
+      "cardinality" : "198435"
+    },
+    "format" : { }
+  }, {
+    "id" : 567851285,
+    "name" : "PlantDate",
+    "dataTypeName" : "calendar_date",
+    "description" : "date tree was planted",
+    "fieldName" : "plantdate",
+    "position" : 10,
+    "renderTypeName" : "calendar_date",
+    "tableColumnId" : 4269459,
+    "width" : 208,
+    "cachedContents" : {
+      "non_null" : "72139",
+      "largest" : "2026-07-23T00:00:00.000",
+      "null" : "126296",
+      "top" : [ {
+        "item" : "2000-06-23T00:00:00.000",
+        "count" : "319"
+      }, {
+        "item" : "2002-07-17T00:00:00.000",
+        "count" : "307"
+      }, {
+        "item" : "2001-12-06T00:00:00.000",
+        "count" : "227"
+      }, {
+        "item" : "2000-06-21T00:00:00.000",
+        "count" : "222"
+      }, {
+        "item" : "2000-06-26T00:00:00.000",
+        "count" : "220"
+      }, {
+        "item" : "2001-04-25T00:00:00.000",
+        "count" : "218"
+      }, {
+        "item" : "1998-05-18T00:00:00.000",
+        "count" : "207"
+      }, {
+        "item" : "2001-04-29T00:00:00.000",
+        "count" : "184"
+      }, {
+        "item" : "1997-07-28T00:00:00.000",
+        "count" : "179"
+      }, {
+        "item" : "2000-06-20T00:00:00.000",
+        "count" : "179"
+      }, {
+        "item" : "1998-12-21T00:00:00.000",
+        "count" : "164"
+      }, {
+        "item" : "2008-04-07T00:00:00.000",
+        "count" : "154"
+      }, {
+        "item" : "2002-05-14T00:00:00.000",
+        "count" : "153"
+      }, {
+        "item" : "1998-06-15T00:00:00.000",
+        "count" : "151"
+      }, {
+        "item" : "1995-06-19T00:00:00.000",
+        "count" : "149"
+      }, {
+        "item" : "1998-05-26T00:00:00.000",
+        "count" : "147"
+      }, {
+        "item" : "2008-01-18T00:00:00.000",
+        "count" : "144"
+      }, {
+        "item" : "1996-11-05T00:00:00.000",
+        "count" : "142"
+      }, {
+        "item" : "1995-03-13T00:00:00.000",
+        "count" : "141"
+      }, {
+        "item" : "2006-02-28T00:00:00.000",
+        "count" : "141"
+      } ],
+      "smallest" : "1955-09-19T00:00:00.000",
+      "count" : "198435",
+      "cardinality" : "198435"
+    },
+    "format" : { }
+  }, {
+    "id" : 567851286,
+    "name" : "DBH",
+    "dataTypeName" : "number",
+    "description" : "depth, ,height",
+    "fieldName" : "dbh",
+    "position" : 11,
+    "renderTypeName" : "number",
+    "tableColumnId" : 4269460,
+    "width" : 136,
+    "cachedContents" : {
+      "non_null" : "153857",
+      "largest" : "9999",
+      "null" : "44578",
+      "top" : [ {
+        "item" : "3",
+        "count" : "28570"
+      }, {
+        "item" : "6",
+        "count" : "11726"
+      }, {
+        "item" : "12",
+        "count" : "11680"
+      }, {
+        "item" : "5",
+        "count" : "9176"
+      }, {
+        "item" : "4",
+        "count" : "8930"
+      }, {
+        "item" : "8",
+        "count" : "8152"
+      }, {
+        "item" : "7",
+        "count" : "7497"
+      }, {
+        "item" : "2",
+        "count" : "6989"
+      }, {
+        "item" : "10",
+        "count" : "6250"
+      }, {
+        "item" : "9",
+        "count" : "5983"
+      }, {
+        "item" : "1",
+        "count" : "5923"
+      }, {
+        "item" : "11",
+        "count" : "4905"
+      }, {
+        "item" : "13",
+        "count" : "4322"
+      }, {
+        "item" : "18",
+        "count" : "4202"
+      }, {
+        "item" : "14",
+        "count" : "4133"
+      }, {
+        "item" : "15",
+        "count" : "3683"
+      }, {
+        "item" : "16",
+        "count" : "2966"
+      }, {
+        "item" : "0",
+        "count" : "2051"
+      }, {
+        "item" : "17",
+        "count" : "1990"
+      }, {
+        "item" : "20",
+        "count" : "1677"
+      } ],
+      "smallest" : "0",
+      "count" : "198435",
+      "cardinality" : "198435"
+    },
+    "format" : { }
+  }, {
+    "id" : 567851287,
+    "name" : "PlotSize",
+    "dataTypeName" : "text",
+    "description" : "date tree was planted",
+    "fieldName" : "plotsize",
+    "position" : 12,
+    "renderTypeName" : "text",
+    "tableColumnId" : 4269461,
+    "width" : 196,
+    "cachedContents" : {
+      "non_null" : "147875",
+      "largest" : "witin landscaping plot",
+      "null" : "50560",
+      "top" : [ {
+        "item" : "Width 3ft",
+        "count" : "36865"
+      }, {
+        "item" : "3x3",
+        "count" : "31760"
+      }, {
+        "item" : "Width 0ft",
+        "count" : "17254"
+      }, {
+        "item" : "Width 4ft",
+        "count" : "14053"
+      }, {
+        "item" : "3X3",
+        "count" : "12135"
+      }, {
+        "item" : "Width 2ft",
+        "count" : "7413"
+      }, {
+        "item" : "Width 5ft",
+        "count" : "4562"
+      }, {
+        "item" : "4X4",
+        "count" : "2778"
+      }, {
+        "item" : "Width 6ft",
+        "count" : "2478"
+      }, {
+        "item" : "4x4",
+        "count" : "2370"
+      }, {
+        "item" : "Width 8ft",
+        "count" : "1495"
+      }, {
+        "item" : "Width 10ft",
+        "count" : "1371"
+      }, {
+        "item" : "60",
+        "count" : "782"
+      }, {
+        "item" : "Width 1ft",
+        "count" : "646"
+      }, {
+        "item" : "3X4",
+        "count" : "629"
+      }, {
+        "item" : "5x5",
+        "count" : "580"
+      }, {
+        "item" : "Width 7ft",
+        "count" : "527"
+      }, {
+        "item" : "10",
+        "count" : "379"
+      }, {
+        "item" : "20",
+        "count" : "375"
+      }, {
+        "item" : "2x2",
+        "count" : "371"
+      } ],
+      "smallest" : "?",
+      "count" : "198435",
+      "cardinality" : "198435"
+    },
+    "format" : { }
+  }, {
+    "id" : 567851288,
+    "name" : "PermitNotes",
+    "dataTypeName" : "text",
+    "description" : "Tree permit number reference",
+    "fieldName" : "permitnotes",
+    "position" : 13,
+    "renderTypeName" : "text",
+    "tableColumnId" : 4269462,
+    "width" : 232,
+    "cachedContents" : {
+      "non_null" : "54416",
+      "largest" : "unpermitted private planting on DPW-maintained street",
+      "null" : "144019",
+      "top" : [ {
+        "item" : "Permit Number 45761",
+        "count" : "300"
+      }, {
+        "item" : "Permit Number 794302",
+        "count" : "235"
+      }, {
+        "item" : "Permit Number 44451",
+        "count" : "226"
+      }, {
+        "item" : "Permit Number 43922",
+        "count" : "200"
+      }, {
+        "item" : "Permit Number 43835",
+        "count" : "184"
+      }, {
+        "item" : "Permit Number 46305",
+        "count" : "65"
+      }, {
+        "item" : "Permit Number 792987",
+        "count" : "56"
+      }, {
+        "item" : "Permit Number 768917",
+        "count" : "55"
+      }, {
+        "item" : "Permit Number 39461",
+        "count" : "44"
+      }, {
+        "item" : "Permit Number 40772",
+        "count" : "43"
+      }, {
+        "item" : "Permit Number 47557",
+        "count" : "41"
+      }, {
+        "item" : "Permit Number 772214",
+        "count" : "40"
+      }, {
+        "item" : "Permit Number 39538",
+        "count" : "40"
+      }, {
+        "item" : "Permit Number 38712",
+        "count" : "39"
+      }, {
+        "item" : "Permit Number 769743",
+        "count" : "39"
+      }, {
+        "item" : "Permit Number 51637",
+        "count" : "38"
+      }, {
+        "item" : "Permit Number 52049",
+        "count" : "38"
+      }, {
+        "item" : "Permit Number 56125",
+        "count" : "37"
+      }, {
+        "item" : "Permit Number 34928",
+        "count" : "36"
+      }, {
+        "item" : "Permit Number 41793",
+        "count" : "35"
+      } ],
+      "smallest" : "1014-1016 Diamond St",
+      "count" : "198435",
+      "cardinality" : "198435"
+    },
+    "format" : { }
+  }, {
+    "id" : 567851289,
+    "name" : "XCoord",
+    "dataTypeName" : "number",
+    "description" : "CA State Plane III",
+    "fieldName" : "xcoord",
+    "position" : 14,
+    "renderTypeName" : "number",
+    "tableColumnId" : 4269463,
+    "width" : 172,
+    "cachedContents" : {
+      "non_null" : "195364",
+      "largest" : "6022030.558529075",
+      "null" : "3071",
+      "top" : [ {
+        "item" : "5991123",
+        "count" : "59"
+      }, {
+        "item" : "6014371",
+        "count" : "50"
+      }, {
+        "item" : "6001649",
+        "count" : "49"
+      }, {
+        "item" : "5991178",
+        "count" : "49"
+      }, {
+        "item" : "6011466.9",
+        "count" : "48"
+      }, {
+        "item" : "6005602",
+        "count" : "48"
+      }, {
+        "item" : "5994341.5",
+        "count" : "47"
+      }, {
+        "item" : "2109391",
+        "count" : "45"
+      }, {
+        "item" : "5985224.7663097",
+        "count" : "43"
+      }, {
+        "item" : "6013890.7555668",
+        "count" : "40"
+      }, {
+        "item" : "6009691.5",
+        "count" : "40"
+      }, {
+        "item" : "6017909.652863",
+        "count" : "39"
+      }, {
+        "item" : "5999954.2",
+        "count" : "37"
+      }, {
+        "item" : "5988957.290163272",
+        "count" : "35"
+      }, {
+        "item" : "6012338.051199396",
+        "count" : "35"
+      }, {
+        "item" : "6014165",
+        "count" : "34"
+      }, {
+        "item" : "5984960",
+        "count" : "34"
+      }, {
+        "item" : "5998132.774349132",
+        "count" : "33"
+      }, {
+        "item" : "5984852.8466778",
+        "count" : "33"
+      }, {
+        "item" : "5984817.9532367",
+        "count" : "33"
+      } ],
+      "smallest" : "2109391",
+      "count" : "198435",
+      "cardinality" : "198435"
+    },
+    "format" : {
+      "precisionStyle" : "standard",
+      "noCommas" : "true",
+      "align" : "right"
+    }
+  }, {
+    "id" : 567851290,
+    "name" : "YCoord",
+    "dataTypeName" : "number",
+    "description" : "CA State Plane III",
+    "fieldName" : "ycoord",
+    "position" : 15,
+    "renderTypeName" : "number",
+    "tableColumnId" : 4269464,
+    "width" : 172,
+    "cachedContents" : {
+      "non_null" : "195364",
+      "largest" : "6005733",
+      "null" : "3071",
+      "top" : [ {
+        "item" : "2089585",
+        "count" : "59"
+      }, {
+        "item" : "2116872",
+        "count" : "50"
+      }, {
+        "item" : "2088065",
+        "count" : "49"
+      }, {
+        "item" : "2095572",
+        "count" : "49"
+      }, {
+        "item" : "2112295.6",
+        "count" : "48"
+      }, {
+        "item" : "2110303",
+        "count" : "48"
+      }, {
+        "item" : "2100725.2",
+        "count" : "47"
+      }, {
+        "item" : "6005718",
+        "count" : "45"
+      }, {
+        "item" : "2094165.6248747",
+        "count" : "43"
+      }, {
+        "item" : "2118454.3638402",
+        "count" : "40"
+      }, {
+        "item" : "2108599.6",
+        "count" : "40"
+      }, {
+        "item" : "2094654.0666341",
+        "count" : "39"
+      }, {
+        "item" : "2112061.6",
+        "count" : "37"
+      }, {
+        "item" : "2097975.3605603557",
+        "count" : "35"
+      }, {
+        "item" : "2113764.092244037",
+        "count" : "35"
+      }, {
+        "item" : "2112908",
+        "count" : "34"
+      }, {
+        "item" : "2094729",
+        "count" : "34"
+      }, {
+        "item" : "2104951.7766639",
+        "count" : "33"
+      }, {
+        "item" : "2102317.5089788",
+        "count" : "33"
+      }, {
+        "item" : "2094246.3179038225",
+        "count" : "33"
+      } ],
+      "smallest" : "2013289.413",
+      "count" : "198435",
+      "cardinality" : "198435"
+    },
+    "format" : {
+      "precisionStyle" : "standard",
+      "noCommas" : "true",
+      "align" : "right"
+    }
+  }, {
+    "id" : 567851291,
+    "name" : "Latitude",
+    "dataTypeName" : "number",
+    "description" : "WGS84",
+    "fieldName" : "latitude",
+    "position" : 16,
+    "renderTypeName" : "number",
+    "tableColumnId" : 4667900,
+    "width" : 100,
+    "cachedContents" : {
+      "non_null" : "195364",
+      "largest" : "47.27008332757651",
+      "null" : "3071",
+      "top" : [ {
+        "item" : "37.71709220398339",
+        "count" : "59"
+      }, {
+        "item" : "37.7933347653256",
+        "count" : "50"
+      }, {
+        "item" : "37.71292183863349",
+        "count" : "49"
+      }, {
+        "item" : "37.7341348351459",
+        "count" : "49"
+      }, {
+        "item" : "37.77480659856196",
+        "count" : "48"
+      }, {
+        "item" : "37.78060720394022",
+        "count" : "48"
+      }, {
+        "item" : "37.74786623840206",
+        "count" : "47"
+      }, {
+        "item" : "47.269987373868084",
+        "count" : "45"
+      }, {
+        "item" : "37.729326218104084",
+        "count" : "43"
+      }, {
+        "item" : "37.77035950334671",
+        "count" : "40"
+      }, {
+        "item" : "37.79765285827221",
+        "count" : "40"
+      }, {
+        "item" : "37.73252506519632",
+        "count" : "39"
+      }, {
+        "item" : "37.77931477148804",
+        "count" : "37"
+      }, {
+        "item" : "37.74000439203251",
+        "count" : "35"
+      }, {
+        "item" : "37.78468797436194",
+        "count" : "35"
+      }, {
+        "item" : "37.78243908519536",
+        "count" : "34"
+      }, {
+        "item" : "37.730857606494304",
+        "count" : "34"
+      }, {
+        "item" : "37.75168733222313",
+        "count" : "33"
+      }, {
+        "item" : "37.759221720217866",
+        "count" : "33"
+      }, {
+        "item" : "37.73029436980974",
+        "count" : "33"
+      } ],
+      "smallest" : "37.50900398798948",
+      "count" : "198435",
+      "cardinality" : "198435"
+    },
+    "format" : { }
+  }, {
+    "id" : 567851292,
+    "name" : "Longitude",
+    "dataTypeName" : "number",
+    "description" : "WGS84",
+    "fieldName" : "longitude",
+    "position" : 17,
+    "renderTypeName" : "number",
+    "tableColumnId" : 4667915,
+    "width" : 100,
+    "cachedContents" : {
+      "non_null" : "195364",
+      "largest" : "-122.36662203718492",
+      "null" : "3071",
+      "top" : [ {
+        "item" : "-122.47266163030416",
+        "count" : "59"
+      }, {
+        "item" : "-122.39421312076338",
+        "count" : "50"
+      }, {
+        "item" : "-122.43670666307186",
+        "count" : "49"
+      }, {
+        "item" : "-122.47236077879742",
+        "count" : "49"
+      }, {
+        "item" : "-122.40393937159789",
+        "count" : "48"
+      }, {
+        "item" : "-122.42408713638167",
+        "count" : "48"
+      }, {
+        "item" : "-122.46234443277041",
+        "count" : "47"
+      }, {
+        "item" : "-138.28366965029986",
+        "count" : "45"
+      }, {
+        "item" : "-122.4933860027099",
+        "count" : "43"
+      }, {
+        "item" : "-122.40982038351086",
+        "count" : "40"
+      }, {
+        "item" : "-122.3959857507087",
+        "count" : "40"
+      }, {
+        "item" : "-122.38042410230159",
+        "count" : "39"
+      }, {
+        "item" : "-122.44375035157313",
+        "count" : "37"
+      }, {
+        "item" : "-122.48076127761293",
+        "count" : "35"
+      }, {
+        "item" : "-122.40102883650187",
+        "count" : "35"
+      }, {
+        "item" : "-122.49434282122014",
+        "count" : "34"
+      }, {
+        "item" : "-122.39464818313361",
+        "count" : "34"
+      }, {
+        "item" : "-122.49558761620058",
+        "count" : "33"
+      }, {
+        "item" : "-122.49527267334005",
+        "count" : "33"
+      }, {
+        "item" : "-122.4487678532286",
+        "count" : "33"
+      } ],
+      "smallest" : "-138.28366965029986",
+      "count" : "198435",
+      "cardinality" : "198435"
+    },
+    "format" : { }
+  }, {
+    "id" : 567851293,
+    "name" : "Location",
+    "dataTypeName" : "location",
+    "description" : "Location formatted for mapping",
+    "fieldName" : "location",
+    "position" : 18,
+    "renderTypeName" : "location",
+    "tableColumnId" : 35003181,
+    "width" : 100,
+    "format" : {
+      "view" : "coords",
+      "align" : "left"
+    }
+  }, {
+    "id" : 567851298,
+    "name" : "Fire Prevention Districts",
+    "dataTypeName" : "number",
+    "fieldName" : ":@computed_region_yftq_j783",
+    "position" : 23,
+    "renderTypeName" : "number",
+    "tableColumnId" : 27787425,
+    "computationStrategy" : {
+      "source_columns" : [ "location" ],
+      "type" : "georegion_match_on_point",
+      "parameters" : {
+        "region" : "_yftq-j783",
+        "primary_key" : "_feature_id"
+      }
+    },
+    "format" : { }
+  }, {
+    "id" : 567851299,
+    "name" : "Police Districts",
+    "dataTypeName" : "number",
+    "fieldName" : ":@computed_region_p5aj_wyqh",
+    "position" : 24,
+    "renderTypeName" : "number",
+    "tableColumnId" : 27787426,
+    "computationStrategy" : {
+      "source_columns" : [ "location" ],
+      "type" : "georegion_match_on_point",
+      "parameters" : {
+        "region" : "_p5aj-wyqh",
+        "primary_key" : "_feature_id"
+      }
+    },
+    "format" : { }
+  }, {
+    "id" : 567851300,
+    "name" : "Supervisor Districts",
+    "dataTypeName" : "number",
+    "fieldName" : ":@computed_region_rxqg_mtj9",
+    "position" : 25,
+    "renderTypeName" : "number",
+    "tableColumnId" : 27787444,
+    "computationStrategy" : {
+      "source_columns" : [ "location" ],
+      "type" : "georegion_match_on_point",
+      "parameters" : {
+        "region" : "_rxqg-mtj9",
+        "primary_key" : "_feature_id"
+      }
+    },
+    "format" : { }
+  }, {
+    "id" : 567851301,
+    "name" : "Zip Codes",
+    "dataTypeName" : "number",
+    "fieldName" : ":@computed_region_bh8s_q3mv",
+    "position" : 26,
+    "renderTypeName" : "number",
+    "tableColumnId" : 27787446,
+    "computationStrategy" : {
+      "source_columns" : [ "location" ],
+      "type" : "georegion_match_on_point",
+      "parameters" : {
+        "region" : "_bh8s-q3mv",
+        "primary_key" : "_feature_id"
+      }
+    },
+    "format" : { }
+  }, {
+    "id" : 567851302,
+    "name" : "Neighborhoods (old)",
+    "dataTypeName" : "number",
+    "description" : "",
+    "fieldName" : ":@computed_region_fyvs_ahh9",
+    "position" : 27,
+    "renderTypeName" : "number",
+    "tableColumnId" : 29373561,
+    "computationStrategy" : {
+      "source_columns" : [ "location" ],
+      "type" : "georegion_match_on_point",
+      "parameters" : {
+        "region" : "_fyvs-ahh9",
+        "primary_key" : "_feature_id"
+      }
+    },
+    "format" : { }
+  }, {
+    "id" : 567851303,
+    "name" : "Analysis Neighborhoods",
+    "dataTypeName" : "number",
+    "fieldName" : ":@computed_region_ajp5_b2md",
+    "position" : 28,
+    "renderTypeName" : "number",
+    "tableColumnId" : 144602501,
+    "computationStrategy" : {
+      "source_columns" : [ "location" ],
+      "type" : "georegion_match_on_point",
+      "parameters" : {
+        "region" : "_ajp5-b2md",
+        "primary_key" : "_feature_id"
+      }
+    },
+    "format" : { }
+  } ],
+  "grants" : [ {
+    "inherited" : false,
+    "type" : "viewer",
+    "flags" : [ "public" ]
+  } ],
+  "license" : {
+    "name" : "Open Data Commons Public Domain Dedication and License",
+    "termsLink" : "http://opendatacommons.org/licenses/pddl/1.0/"
+  },
+  "metadata" : {
+    "rdfSubject" : "0",
+    "attachments" : [ {
+      "filename" : "DPW_DataDictionary_Street-Tree-List.pdf",
+      "assetId" : "biK1RHNRcrlnB42VCsuvdib3tybKjazIH4kuDcrOczw",
+      "name" : "DPW_DataDictionary_Street-Tree-List.pdf"
+    }, {
+      "filename" : "DPW_DataDictionary_street-tree-list.xlsx",
+      "assetId" : "7fc0ee7d-1f23-4847-8df4-29e6f0449c26",
+      "name" : "DPW_DataDictionary_street-tree-list.xlsx"
+    } ],
+    "custom_fields" : {
+      "Department Metrics" : {
+        "Publishing Department" : "Public Works"
+      },
+      "Internal Management" : {
+        "Inventory ID" : "DPW-0019"
+      },
+      "Publishing Details" : {
+        "Data change frequency" : "Daily",
+        "Program link" : "",
+        "Publishing frequency" : "Daily",
+        "Geographic unit" : "Latitude/longitude"
+      }
+    },
+    "rowLabel" : "Street tree",
+    "availableDisplayTypes" : [ "table", "fatrow", "page" ],
+    "renderTypeConfig" : {
+      "visible" : {
+        "table" : true
+      }
+    }
+  },
+  "owner" : {
+    "id" : "hf8p-vup5",
+    "disabledAt" : 1711666453,
+    "displayName" : "San Francisco Public Works",
+    "profileImageUrlLarge" : "/api/users/hf8p-vup5/profile_images/LARGE",
+    "profileImageUrlMedium" : "/api/users/hf8p-vup5/profile_images/THUMB",
+    "profileImageUrlSmall" : "/api/users/hf8p-vup5/profile_images/TINY",
+    "screenName" : "San Francisco Public Works",
+    "type" : "interactive",
+    "flags" : [ "acceptedEula" ]
+  },
+  "query" : { },
+  "rights" : [ "read" ],
+  "tableAuthor" : {
+    "id" : "hf8p-vup5",
+    "disabledAt" : 1711666453,
+    "displayName" : "San Francisco Public Works",
+    "profileImageUrlLarge" : "/api/users/hf8p-vup5/profile_images/LARGE",
+    "profileImageUrlMedium" : "/api/users/hf8p-vup5/profile_images/THUMB",
+    "profileImageUrlSmall" : "/api/users/hf8p-vup5/profile_images/TINY",
+    "screenName" : "San Francisco Public Works",
+    "type" : "interactive",
+    "flags" : [ "acceptedEula" ]
+  },
+  "tags" : [ "trees" ],
+  "flags" : [ "default", "federated", "internalToPublicFederatedView", "ownerMayBeContacted", "restorable", "restorePossibleForType" ]
+}

@@ -439,8 +439,13 @@ rare species thought extinct; our seed calls it a nursery cultivar. Written up i
    a designation is one-to-many (six Blue Gums, 184 Dolores palms) and the join is not stable enough
    to re-derive at runtime.
 3. **Decide what a pinless landmark looks like** — four backyard trees the reader cannot go and see.
-   That is a screen question for whoever owns #118, and R27's "a handful of trees to go and see"
-   phrasing suggests it matters.
+   That is a screen question for whoever owns #118, and **R27.1** sharpens it rather than softening
+   it: the owner's stated purpose is that *"the app exists to bring people TO trees"*. Four of the
+   twenty-six are trees nobody can walk to, and one of them (#22, 2251 Filbert) has no record in any
+   inventory we hold. They are still landmarks and the city still lists them; showing them next to
+   twenty-two you can visit, with no distinction, would be the surface answering the wrong question.
+   R27.1 changed nothing about part 1 — the landmark half is editorial and constraint 15 still
+   governs it — but its reason for existing applies here too.
 4. **Do not model the designation as a boolean.** §810 gives it at least four states — temporary
    (215-day clock), designated, rescinded, and designated-but-removed — and the City's own roster
    already carries two removed trees rather than deleting them.

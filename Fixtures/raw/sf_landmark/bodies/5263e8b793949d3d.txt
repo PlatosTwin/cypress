@@ -1,0 +1,1066 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8" />
+<meta name="Generator" content="Drupal 10 (https://www.drupal.org)" />
+<meta name="MobileOptimized" content="width" />
+<meta name="HandheldFriendly" content="true" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<link rel="icon" href="/sites/default/files/favicon_0.ico" type="image/vnd.microsoft.icon" />
+<link rel="canonical" href="https://sfpublicworks.org/services/significant-and-landmark-trees" />
+<link rel="shortlink" href="https://sfpublicworks.org/node/22071" />
+
+    <title>Significant and Landmark Trees | Public Works</title>
+    <link rel="stylesheet" media="all" href="/core/themes/stable9/css/system/components/align.module.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/core/themes/stable9/css/system/components/fieldgroup.module.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/core/themes/stable9/css/system/components/container-inline.module.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/core/themes/stable9/css/system/components/clearfix.module.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/core/themes/stable9/css/system/components/details.module.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/core/themes/stable9/css/system/components/hidden.module.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/core/themes/stable9/css/system/components/item-list.module.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/core/themes/stable9/css/system/components/js.module.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/core/themes/stable9/css/system/components/nowrap.module.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/core/themes/stable9/css/system/components/position-container.module.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/core/themes/stable9/css/system/components/reset-appearance.module.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/core/themes/stable9/css/system/components/resize.module.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/core/themes/stable9/css/system/components/system-status-counter.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/core/themes/stable9/css/system/components/system-status-report-counters.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/core/themes/stable9/css/system/components/system-status-report-general-info.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/core/themes/stable9/css/system/components/tablesort.module.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/modules/contrib/back_to_top/css/back_to_top.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/modules/contrib/paragraphs/css/paragraphs.unpublished.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/core/themes/stable9/css/core/assets/vendor/normalize-css/normalize.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/themes/lcp/css/components/action-links.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/themes/lcp/css/components/breadcrumb.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/themes/lcp/css/components/button.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/themes/lcp/css/components/container-inline.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/themes/lcp/css/components/details.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/themes/lcp/css/components/exposed-filters.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/themes/lcp/css/components/field.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/themes/lcp/css/components/form.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/themes/lcp/css/components/icons.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/themes/lcp/css/components/inline-form.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/themes/lcp/css/components/item-list.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/themes/lcp/css/components/link.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/themes/lcp/css/components/links.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/themes/lcp/css/components/menu.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/themes/lcp/css/components/more-link.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/themes/lcp/css/components/pager.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/themes/lcp/css/components/tabledrag.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/themes/lcp/css/components/tableselect.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/themes/lcp/css/components/tablesort.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/themes/lcp/css/components/tabs.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/themes/lcp/css/components/textarea.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/themes/lcp/css/components/ui-dialog.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" media="all" href="https://cdn.jsdelivr.net/npm/slick-carousel@1.8.0/slick/slick.css" />
+<link rel="stylesheet" media="all" href="https://cdn.jsdelivr.net/npm/slick-carousel@1.8.0/slick/slick-theme.css" />
+<link rel="stylesheet" media="all" href="/themes/lcp/css/components/messages.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/themes/lcp/css/components/node.css?t9i6o1" />
+<link rel="stylesheet" media="all" href="/themes/lcp/css/main.css?t9i6o1" />
+
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet">
+  </head>
+  <body class="node-22071 path-node page-node-type-services">
+        <a href="#main-content" class="visually-hidden focusable skip-link">
+      Skip to main content
+    </a>
+    
+      <div class="dialog-off-canvas-main-canvas" data-off-canvas-main-canvas>
+    <div class="layout-container">
+
+  <header role="banner">
+      <div class="region region-header">
+    <div id="block-lcp-site-branding" class="block block-system block-system-branding-block">
+  
+    
+        <a href="/" rel="home" class="site-logo">
+      <img src="/sites/default/files/logo.jpg" alt="San Francisco Public Works" fetchpriority="high" />
+    </a>
+      </div>
+<div id="block-lcp-translation" class="block block-block-content block-block-contente1de6be7-ac99-440d-9efb-47782d4eed8d">
+  
+    
+      
+            <div class="clearfix text-formatted field field--name-body field--type-text-with-summary field--label-hidden field__item"><div class="language-container"><div class="gtranslate_wrapper">&nbsp;</div><script>window.gtranslateSettings = {"default_language":"en","native_language_names":true,"languages":["en","es","zh-CN","tl","vi"],"wrapper_selector":".gtranslate_wrapper"}</script><script src="https://cdn.gtranslate.net/widgets/latest/ln.js" defer></script></div></div>
+      
+  </div>
+<div id="block-lcp-languageicon" class="block block-block-content block-block-contentfceac0d2-bad4-4c6e-8c93-c093fa9526e2">
+  
+    
+      
+            <div class="clearfix text-formatted field field--name-body field--type-text-with-summary field--label-hidden field__item"><a href="/languageaccess"><svg width="41" height="41" viewBox="0 0 41 41" fill="none"><circle cx="20.7871" cy="20.3125" r="20" fill="#EEF1F4" /><path d="M21.6571 23.3825L19.1171 20.8725L19.1471 20.8425C20.8871 18.9025 22.1271 16.6725 22.8571 14.3125H25.7871V12.3125H18.7871V10.3125H16.7871V12.3125H9.78711V14.3025H20.9571C20.2871 16.2325 19.2271 18.0625 17.7871 19.6625C16.8571 18.6325 16.0871 17.5025 15.4771 16.3125H13.4771C14.2071 17.9425 15.2071 19.4825 16.4571 20.8725L11.3671 25.8925L12.7871 27.3125L17.7871 22.3125L20.8971 25.4225L21.6571 23.3825ZM27.2871 18.3125H25.2871L20.7871 30.3125H22.7871L23.9071 27.3125H28.6571L29.7871 30.3125H31.7871L27.2871 18.3125ZM24.6671 25.3125L26.2871 20.9825L27.9071 25.3125H24.6671Z" fill="#057DBB" /></svg></a></div>
+      
+  </div>
+<div id="block-lcp-handicapicon" class="block block-block-content block-block-content2359fcc1-b813-4110-8074-68d46b7c2880">
+  
+    
+      
+            <div class="clearfix text-formatted field field--name-body field--type-text-with-summary field--label-hidden field__item"><p><a href="/about/accessibility-information" aria-label="Click to read about Accessibility on SF Public Works"><svg width="50" height="50" viewBox="0 0 40 40" fill="none"><circle cx="20" cy="20" r="20" fill="#EEF1F4" /><path d="M28.5 14C25.89 14.7 22.83 15 20 15C17.17 15 14.11 14.7 11.5 14L11 16C12.86 16.5 15 16.83 17 17V30H19V24H21V30H23V17C25 16.83 27.14 16.5 29 16L28.5 14ZM20 14C21.1 14 22 13.1 22 12C22 10.9 21.1 10 20 10C18.9 10 18 10.9 18 12C18 13.1 18.9 14 20 14Z" fill="#057DBB" /></svg>&nbsp;</a></p></div>
+      
+  </div>
+<div class="search-block-form block block-search container-inline" data-drupal-selector="search-block-form" id="block-lcp-search-form-narrow" role="search">
+  
+    
+      <form action="/search/node" method="get" id="search-block-form" accept-charset="UTF-8">
+  <div class="js-form-item form-item js-form-type-search form-type-search js-form-item-keys form-item-keys form-no-label">
+      <label for="edit-keys" class="visually-hidden">Search</label>
+        <div class="search-input">
+  <input title="Enter the terms you wish to search for." data-drupal-selector="edit-keys" type="search" id="edit-keys" name="keys" value="" size="15" maxlength="128" class="form-search" placeholder="Search" />
+  <svg
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <path
+      d="M11 19C15.4183 19 19 15.4183 19 11C19 6.58172 15.4183 3 11 3C6.58172 3 3 6.58172 3 11C3 15.4183 6.58172 19 11 19Z"
+      stroke="#057DBB"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+    <path
+      d="M21 20.9984L16.65 16.6484"
+      stroke="#057DBB"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </svg>
+</div>
+
+        </div>
+<div data-drupal-selector="edit-actions" class="form-actions js-form-wrapper form-wrapper" id="edit-actions"><input data-drupal-selector="edit-submit" type="submit" id="edit-submit" value="Search" class="button js-form-submit form-submit" />
+</div>
+
+</form>
+
+  </div>
+<nav role="navigation" aria-labelledby="block-lcp-main-menu-menu" id="block-lcp-main-menu" class="block block-menu navigation menu--main">
+            
+  <h2 class="visually-hidden" id="block-lcp-main-menu-menu">Main navigation</h2>
+  
+
+        
+              <ul class="menu">
+                    <li class="menu-item menu-item--expanded">
+        <a href="/about" data-drupal-link-system-path="node/2">About Us</a>
+                                <ul class="menu">
+                    <li class="menu-item">
+        <a href="/about/accessibility-information" data-drupal-link-system-path="node/4">Accessibility Information</a>
+              </li>
+                <li class="menu-item">
+        <a href="/about/budget" data-drupal-link-system-path="node/6">Budget</a>
+              </li>
+                <li class="menu-item">
+        <a href="/about/commissions" data-drupal-link-system-path="node/7">Commissions</a>
+              </li>
+                <li class="menu-item menu-item--expanded">
+        <a href="/about/contact-us" data-drupal-link-system-path="node/8">Contact Us</a>
+                                <ul class="menu">
+                    <li class="menu-item">
+        <a href="/about/americans-disabilities-act-ada-access-coordinator" data-drupal-link-system-path="node/9">Americans with Disabilities Act (ADA) Access Coordinator</a>
+              </li>
+        </ul>
+  
+              </li>
+                <li class="menu-item">
+        <a href="/about/core-values" data-drupal-link-system-path="node/10">Core Values</a>
+              </li>
+                <li class="menu-item">
+        <a href="/about/history" data-drupal-link-system-path="node/32">History</a>
+              </li>
+                <li class="menu-item">
+        <a href="/about/works-digital-journal" data-drupal-link-system-path="node/33">In the Works - A Digital Journal</a>
+              </li>
+                <li class="menu-item">
+        <a href="/about/media-inquiries" data-drupal-link-system-path="node/34">Media Inquiries</a>
+              </li>
+                <li class="menu-item">
+        <a href="/about/organization" data-drupal-link-system-path="node/35">Organization</a>
+              </li>
+                <li class="menu-item menu-item--expanded">
+        <a href="/about/press-releases-2024" data-drupal-link-system-path="node/123">Press Releases 2024</a>
+                                <ul class="menu">
+                    <li class="menu-item">
+        <a href="/about/press-releases-2023" data-drupal-link-system-path="node/124">Press Releases 2023</a>
+              </li>
+                <li class="menu-item">
+        <a href="/about/press-releases-2022" data-drupal-link-system-path="node/125">Press Releases 2022</a>
+              </li>
+                <li class="menu-item">
+        <a href="/about/press-releases-2021" data-drupal-link-system-path="node/126">Press Releases 2021</a>
+              </li>
+                <li class="menu-item">
+        <a href="/about/press-releases-2020" data-drupal-link-system-path="node/127">Press Releases 2020</a>
+              </li>
+                <li class="menu-item">
+        <a href="/about/press-releases-2019" data-drupal-link-system-path="node/128">Press Releases 2019</a>
+              </li>
+                <li class="menu-item">
+        <a href="/about/press-releases-2018" data-drupal-link-system-path="node/129">Press Releases 2018</a>
+              </li>
+        </ul>
+  
+              </li>
+                <li class="menu-item">
+        <a href="/about/public-meetings-and-notices" data-drupal-link-system-path="node/133">Public Meetings and Notices</a>
+              </li>
+                <li class="menu-item">
+        <a href="/about/racial-equity-initiative" data-drupal-link-system-path="node/135">Racial Equity Initiative</a>
+              </li>
+                <li class="menu-item menu-item--expanded">
+        <a href="/about/reports" data-drupal-link-system-path="node/136">Reports</a>
+                                <ul class="menu">
+                    <li class="menu-item">
+        <a href="/about/annual-reports" data-drupal-link-system-path="node/137">Annual Reports</a>
+              </li>
+                <li class="menu-item">
+        <a href="/about/climate-action-plan" data-drupal-link-system-path="node/138">Climate Action Plan</a>
+              </li>
+                <li class="menu-item">
+        <a href="/about/fiscal-year-2016-25-draft-ten-year-capital-plan" data-drupal-link-system-path="node/140">Fiscal Year 2016-25 Draft Ten-Year Capital Plan</a>
+              </li>
+                <li class="menu-item">
+        <a href="/about/general-obligation-bond-reports" data-drupal-link-system-path="node/141">General Obligation Bond Reports</a>
+              </li>
+                <li class="menu-item">
+        <a href="/about/management-and-performance-audits" data-drupal-link-system-path="node/142">Management and Performance Audits</a>
+              </li>
+                <li class="menu-item">
+        <a href="/about/sf-public-works-code" data-drupal-link-system-path="node/143">SF Public Works Code</a>
+              </li>
+                <li class="menu-item">
+        <a href="/about/san-francisco-sea-level-rise-action-plan" data-drupal-link-system-path="node/144">San Francisco Sea Level Rise Action Plan</a>
+              </li>
+                <li class="menu-item">
+        <a href="/about/statement-incompatible-activities" data-drupal-link-system-path="node/145">Statement of Incompatible Activities</a>
+              </li>
+                <li class="menu-item">
+        <a href="https://www.sf.gov/resource/2022/annual-surveillance-report-inventory">Surveillance Inventory</a>
+              </li>
+                <li class="menu-item">
+        <a href="/about/2018-2022-strategic-plan-in-brief" data-drupal-link-system-path="node/146">2018-2022 strategic plan in brief</a>
+              </li>
+                <li class="menu-item">
+        <a href="/about/street-cleanliness-and-litters-studies" data-drupal-link-system-path="node/147">Street Cleanliness and Litters Studies</a>
+              </li>
+        </ul>
+  
+              </li>
+                <li class="menu-item">
+        <a href="/workforcedevelopment" data-drupal-link-system-path="node/148">Workforce Development</a>
+              </li>
+        </ul>
+  
+              </li>
+                <li class="menu-item menu-item--expanded">
+        <a href="/get_involved" data-drupal-link-system-path="node/149">Get Involved</a>
+                                <ul class="menu">
+                    <li class="menu-item">
+        <a href="/get_involved/grants" data-drupal-link-system-path="node/150">Grants</a>
+              </li>
+                <li class="menu-item menu-item--expanded">
+        <a href="/get_involved/jobs-internships" data-drupal-link-system-path="node/151">Jobs + Internships</a>
+                                <ul class="menu">
+                    <li class="menu-item">
+        <a href="/get_involved/apprenticeships" data-drupal-link-system-path="node/154">Apprenticeship Programs</a>
+              </li>
+        </ul>
+  
+              </li>
+                <li class="menu-item menu-item--expanded">
+        <a href="/get_involved/neighborhood-improvement" data-drupal-link-system-path="node/155">Neighborhood Improvement</a>
+                                <ul class="menu">
+                    <li class="menu-item">
+        <a href="/get_involved/GBD" data-drupal-link-system-path="node/156">Green Benefit Districts</a>
+              </li>
+                <li class="menu-item">
+        <a href="/streetparks" data-drupal-link-system-path="node/157">Street Parks Program</a>
+              </li>
+        </ul>
+  
+              </li>
+                <li class="menu-item menu-item--expanded">
+        <a href="/volunteer" data-drupal-link-system-path="node/158">Volunteer</a>
+                                <ul class="menu">
+                    <li class="menu-item">
+        <a href="https://www.mobilize.us/sanfrancisco/">Volunteer Event Calendar</a>
+              </li>
+                <li class="menu-item">
+        <a href="/get_involved/adopt-street-program" data-drupal-link-system-path="node/159">Adopt-A-Street Program</a>
+              </li>
+                <li class="menu-item">
+        <a href="/loveourcity" data-drupal-link-system-path="node/160">#LoveOurCity - Neighborhood Beautification Days</a>
+              </li>
+                <li class="menu-item">
+        <a href="/get_involved/graffiti-watch" data-drupal-link-system-path="node/161">Graffiti Watch</a>
+              </li>
+        </ul>
+  
+              </li>
+        </ul>
+  
+              </li>
+                <li class="menu-item menu-item--expanded">
+        <a href="/projects" data-drupal-link-system-path="node/14839">Projects</a>
+                                <ul class="menu">
+                    <li class="menu-item">
+        <a href="/projects" data-drupal-link-system-path="node/14839">Projects list</a>
+              </li>
+                <li class="menu-item">
+        <a href="/project-map" data-drupal-link-system-path="node/14840">Project Map</a>
+              </li>
+        </ul>
+  
+              </li>
+                <li class="menu-item menu-item--expanded">
+        <a href="/services" data-drupal-link-system-path="node/162">Services</a>
+                                <ul class="menu">
+                    <li class="menu-item">
+        <a href="/services/report-problem" data-drupal-link-system-path="node/163">Report a Problem</a>
+              </li>
+                <li class="menu-item menu-item--expanded">
+        <a href="/street-cleaning" data-drupal-link-system-path="node/165">Cleaning Programs</a>
+                                <ul class="menu">
+                    <li class="menu-item">
+        <a href="/services/cleancorridorssf" data-drupal-link-system-path="node/166">CleanCorridorsSF</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/community-corridors-partnership" data-drupal-link-system-path="node/167">Community Corridors Partnership</a>
+              </li>
+                <li class="menu-item">
+        <a href="/oneteam" data-drupal-link-system-path="node/168">Community Engagement – Code Enforcement</a>
+              </li>
+        </ul>
+  
+              </li>
+                <li class="menu-item menu-item--expanded">
+        <a href="/services/contractor-resources" data-drupal-link-system-path="node/169">Contractor Resources</a>
+                                <ul class="menu">
+                    <li class="menu-item">
+        <a href="https://stgint.sfdpw.org/Pages/Contract.aspx">Contracts, Bids and Payments</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/accela" data-drupal-link-system-path="node/171">Accela</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/project-manual-and-reference-documents" data-drupal-link-system-path="node/172">Project Manual and Reference Documents</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/standards-specifications-and-plans" data-drupal-link-system-path="node/21833">Standards Specifications and Plans</a>
+              </li>
+        </ul>
+  
+              </li>
+                <li class="menu-item menu-item--expanded">
+        <a href="/services/garbage-and-waste" data-drupal-link-system-path="node/21834">Garbage and Waste</a>
+                                <ul class="menu">
+                    <li class="menu-item">
+        <a href="/services/public-trash-cans" data-drupal-link-system-path="node/21835">Public Trash Cans</a>
+              </li>
+        </ul>
+  
+              </li>
+                <li class="menu-item menu-item--expanded">
+        <a href="/services/graffiti" data-drupal-link-system-path="node/164">Graffiti</a>
+                                <ul class="menu">
+                    <li class="menu-item">
+        <a href="/services/community-preservation-and-blight-reduction-act" data-drupal-link-system-path="node/21836">Community Preservation and Blight Reduction Act</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/graffiti-abatement-resources" data-drupal-link-system-path="node/21837">Graffiti Abatement Resources</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/graffiti-abatement-tips" data-drupal-link-system-path="node/21838">Graffiti Abatement Tips</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/graffiti-opt-in" data-drupal-link-system-path="node/21839">Graffiti Opt-In Program</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/graffiti-rewards-fund" data-drupal-link-system-path="node/21840">Graffiti Rewards Fund</a>
+              </li>
+                <li class="menu-item">
+        <a href="/get_involved/graffiti-watch" data-drupal-link-system-path="node/161">Graffiti Watch</a>
+              </li>
+        </ul>
+  
+              </li>
+                <li class="menu-item menu-item--expanded">
+        <a href="/services/permits" data-drupal-link-system-path="node/22098">Permits</a>
+                                <ul class="menu">
+                    <li class="menu-item">
+        <a href="/services/culcop" data-drupal-link-system-path="node/22099">CULCOP</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/OET" data-drupal-link-system-path="node/22100">Office of Emerging Technology</a>
+              </li>
+        </ul>
+  
+              </li>
+                <li class="menu-item">
+        <a href="/services/potholes" data-drupal-link-system-path="node/21841">Potholes</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/public-records-request" data-drupal-link-system-path="node/21842">Public Records Requests</a>
+              </li>
+                <li class="menu-item menu-item--expanded">
+        <a href="/services/public-toilets" data-drupal-link-system-path="node/21843">Public Toilets</a>
+                                <ul class="menu">
+                    <li class="menu-item">
+        <a href="/pitstop" data-drupal-link-system-path="node/21844">Pit Stop Public Toilet Program</a>
+              </li>
+        </ul>
+  
+              </li>
+                <li class="menu-item menu-item--expanded">
+        <a href="/services/recycling-and-refuse-collection" data-drupal-link-system-path="node/21845">Recycling and Refuse Collection</a>
+                                <ul class="menu">
+                    <li class="menu-item">
+        <a href="/services/recycle-your-junk-and-bulky-item-collection-information" data-drupal-link-system-path="node/21846">Recycle Your Junk and Bulky Item Collection Information</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/refuserates" data-drupal-link-system-path="node/21847">Refuse Collection and Disposal Rates (Garbage Rates)</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/garbage" data-drupal-link-system-path="node/21848">Toter Retrieval and Storage</a>
+              </li>
+        </ul>
+  
+              </li>
+                <li class="menu-item menu-item--expanded">
+        <a href="/services/storm-preparation" data-drupal-link-system-path="node/21849">Storm Preparation</a>
+                                <ul class="menu">
+                    <li class="menu-item">
+        <a href="/services/overflowing-catchbasins" data-drupal-link-system-path="node/21850">Overflowing Catchbasins</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/sandbags" data-drupal-link-system-path="node/21851">Sandbags</a>
+              </li>
+        </ul>
+  
+              </li>
+                <li class="menu-item">
+        <a href="/services/mechanical-street-sweeping-and-street-cleaning-schedule" data-drupal-link-system-path="node/21852">Mechanical Street Sweeping and Street Cleaning Schedule</a>
+              </li>
+                <li class="menu-item menu-item--expanded">
+        <a href="/services/streets" data-drupal-link-system-path="node/21853">Sidewalks</a>
+                                <ul class="menu">
+                    <li class="menu-item">
+        <a href="/services/curbrampprogram" data-drupal-link-system-path="node/21854">Curb Ramp Program</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/inspection-and-enforcement" data-drupal-link-system-path="node/21855">Inspection and Enforcement</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/sirp" data-drupal-link-system-path="node/21856">Sidewalk Inspection and Repair Program</a>
+              </li>
+        </ul>
+  
+              </li>
+                <li class="menu-item menu-item--expanded">
+        <a href="/street-resurfacing" data-drupal-link-system-path="node/21858">Street Resurfacing Program</a>
+                                <ul class="menu">
+                    <li class="menu-item">
+        <a href="/services/pavementpreservation" data-drupal-link-system-path="node/21859">Pavement Preservation</a>
+              </li>
+        </ul>
+  
+              </li>
+                <li class="menu-item menu-item--expanded">
+        <a href="/services/trees" data-drupal-link-system-path="node/21860">Street Trees and Plants</a>
+                                <ul class="menu">
+                    <li class="menu-item">
+        <a href="/services/ficustrees" data-drupal-link-system-path="node/21861">Ficus Trees</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/greening-projects" data-drupal-link-system-path="node/21862">Greening Projects</a>
+              </li>
+                <li class="menu-item">
+        <a href="/permits-trees-and-plants" data-drupal-link-system-path="node/21863">Permits - Street Trees and Plants</a>
+              </li>
+                <li class="menu-item">
+        <a href="/streettreenursery" data-drupal-link-system-path="node/22063">Street Tree Nursery</a>
+              </li>
+                <li class="menu-item">
+        <a href="/streettreesf" data-drupal-link-system-path="node/22064">StreetTreeSF</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/street-tree-listings" data-drupal-link-system-path="node/22068">Street Tree Listings</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/street-tree-map" data-drupal-link-system-path="node/22072">Street Tree Map and Pruning Schedule</a>
+              </li>
+                <li class="menu-item">
+        <a href="/treeprotection" data-drupal-link-system-path="node/22073">Tree Protection</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/tree-removal-notifications" data-drupal-link-system-path="node/22074">Tree Removal Notifications</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/urban-forest-plan" data-drupal-link-system-path="node/22083">Urban Forest Plan</a>
+              </li>
+        </ul>
+  
+              </li>
+                <li class="menu-item menu-item--expanded">
+        <a href="/services/citysurveyor" data-drupal-link-system-path="node/22084">Subdivisions and Mapping</a>
+                                <ul class="menu">
+                    <li class="menu-item">
+        <a href="/services/monument-preservation" data-drupal-link-system-path="node/22092">Monument Preservation</a>
+              </li>
+        </ul>
+  
+              </li>
+                <li class="menu-item menu-item--expanded">
+        <a href="/services/other-services-z" data-drupal-link-system-path="node/22085">Other Services A-Z</a>
+                                <ul class="menu">
+                    <li class="menu-item">
+        <a href="/services/acceptance" data-drupal-link-system-path="node/22086">Acceptance</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/bag-and-tag-process" data-drupal-link-system-path="node/22087">Bag and Tag Process</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/gifts-public-works" data-drupal-link-system-path="node/22088">Gifts to Public Works</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/establishing-street-names" data-drupal-link-system-path="node/22089">Establishing Street Names</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/news-rack-program" data-drupal-link-system-path="node/22090">News Rack Program</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/missing-sewer-vent-covers" data-drupal-link-system-path="node/22091">Missing Sewer Vent Covers</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/pigeons" data-drupal-link-system-path="node/22093">Pigeons</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/posting-signs" data-drupal-link-system-path="node/22094">Posting Signs</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/street-dedication-and-acceptance" data-drupal-link-system-path="node/22095">Street Dedication and Acceptance</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/unwanted-handbills-and-newspapers" data-drupal-link-system-path="node/22096">Unwanted Handbills and Newspapers</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/utility-undergrounding-information" data-drupal-link-system-path="node/22097">Utility Undergrounding Information</a>
+              </li>
+        </ul>
+  
+              </li>
+        </ul>
+  
+              </li>
+        </ul>
+  
+
+
+  </nav>
+
+  </div>
+
+  </header>
+
+  
+  
+
+    <div class="region region-breadcrumb">
+    <div id="block-lcp-breadcrumbs" class="block block-system block-system-breadcrumb-block">
+  
+    
+        <nav class="breadcrumb" role="navigation" aria-labelledby="system-breadcrumb">
+    <h2 id="system-breadcrumb" class="visually-hidden">Breadcrumb</h2>
+    <ol>
+          <li>
+                  <a href="/">Home</a>
+              </li>
+          <li>
+                  <a href="/services">Services</a>
+              </li>
+          <li>
+                  Significant and Landmark Trees
+              </li>
+        </ol>
+  </nav>
+
+  </div>
+<div id="block-lcp-page-title" class="block block-core block-page-title-block">
+  
+    
+      
+  <h1 class="page-title"><span class="field field--name-title field--type-string field--label-hidden">Significant and Landmark Trees</span>
+</h1>
+
+
+  </div>
+
+  </div>
+
+
+  
+
+  
+
+  <main role="main">
+    <a id="main-content" tabindex="-1"></a>
+          <aside class="layout-sidebar-first" role="complementary">
+          <div class="region region-sidebar-first">
+    <nav role="navigation" aria-labelledby="block-lcp-services-2-menu" id="block-lcp-services-2" class="block block-menu navigation menu--services-menu">
+      
+  <h2 id="block-lcp-services-2-menu">Services</h2>
+  
+
+        
+              <ul class="menu">
+                    <li class="menu-item">
+        <a href="/services/report-problem" data-drupal-link-system-path="node/163">Report a Problem</a>
+              </li>
+                <li class="menu-item menu-item--collapsed">
+        <a href="/services/street-cleaning" data-drupal-link-system-path="node/35306">Street Cleaning</a>
+              </li>
+                <li class="menu-item menu-item--collapsed">
+        <a href="/services/contractor-resources" data-drupal-link-system-path="node/169">Contractor Resources</a>
+              </li>
+                <li class="menu-item menu-item--collapsed">
+        <a href="/services/garbage-and-waste" data-drupal-link-system-path="node/21834">Garbage and Waste</a>
+              </li>
+                <li class="menu-item menu-item--collapsed">
+        <a href="/services/graffiti" data-drupal-link-system-path="node/164">Graffiti</a>
+              </li>
+                <li class="menu-item menu-item--collapsed">
+        <a href="https://sfpublicworks.org/permits">Permits</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/potholes" data-drupal-link-system-path="node/21841">Potholes</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/public-records-request" data-drupal-link-system-path="node/21842">Public Records Requests</a>
+              </li>
+                <li class="menu-item menu-item--collapsed">
+        <a href="/services/public-toilets" data-drupal-link-system-path="node/21843">Public Toilets</a>
+              </li>
+                <li class="menu-item menu-item--collapsed">
+        <a href="/services/recycling-and-refuse-collection" data-drupal-link-system-path="node/21845">Recycling and Refuse Collection</a>
+              </li>
+                <li class="menu-item menu-item--collapsed">
+        <a href="/services/storm-preparation" data-drupal-link-system-path="node/21849">Storm Preparation</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/mechanical-street-sweeping-and-street-cleaning-schedule" data-drupal-link-system-path="node/21852">Mechanical Street Sweeping and Street Cleaning Schedule</a>
+              </li>
+                <li class="menu-item menu-item--collapsed">
+        <a href="/services/streets" data-drupal-link-system-path="node/21853">Sidewalks</a>
+              </li>
+                <li class="menu-item menu-item--collapsed">
+        <a href="/street-resurfacing" data-drupal-link-system-path="node/21858">Street Resurfacing Program</a>
+              </li>
+                <li class="menu-item menu-item--expanded menu-item--active-trail">
+        <a href="/services/trees" data-drupal-link-system-path="node/21860">Street Trees and Plants</a>
+                                <ul class="menu">
+                    <li class="menu-item">
+        <a href="https://sfpublicworks.org/3500treesproject">3,500 Trees Project</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/ficustrees" data-drupal-link-system-path="node/21861">Ficus Trees</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/greening-projects" data-drupal-link-system-path="node/21862">Greening Projects</a>
+              </li>
+                <li class="menu-item menu-item--collapsed">
+        <a href="/permits-trees-and-plants" data-drupal-link-system-path="node/21863">Permits - Street Trees and Plants</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/planting-strategy" data-drupal-link-system-path="node/22062">Planting Strategy</a>
+              </li>
+                <li class="menu-item">
+        <a href="/streettreenursery" data-drupal-link-system-path="node/22063">Street Tree Nursery</a>
+              </li>
+                <li class="menu-item menu-item--collapsed">
+        <a href="/streettreesf" data-drupal-link-system-path="node/22064">StreetTreeSF</a>
+              </li>
+                <li class="menu-item menu-item--expanded menu-item--active-trail">
+        <a href="/services/street-tree-listings" data-drupal-link-system-path="node/22068">Street Tree Listings</a>
+                                <ul class="menu">
+                    <li class="menu-item">
+        <a href="/services/plant-lists-and-palettes" data-drupal-link-system-path="node/22060">Plant Lists and Palettes</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/recommended-street-tree-and-plant-lists" data-drupal-link-system-path="node/22069">Recommended Street Tree and Plant Lists</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/signaturetrees" data-drupal-link-system-path="node/22070">Signature Trees</a>
+              </li>
+                <li class="menu-item menu-item--active-trail">
+        <a href="/services/significant-and-landmark-trees" data-drupal-link-system-path="node/22071" class="is-active" aria-current="page">Significant and Landmark Trees</a>
+              </li>
+        </ul>
+  
+              </li>
+                <li class="menu-item">
+        <a href="/services/street-tree-map" data-drupal-link-system-path="node/22072">Street Tree Map and Pruning Schedule</a>
+              </li>
+                <li class="menu-item">
+        <a href="/treeprotection" data-drupal-link-system-path="node/22073">Tree Protection</a>
+              </li>
+                <li class="menu-item menu-item--collapsed">
+        <a href="/services/tree-removal-notifications" data-drupal-link-system-path="node/22074">Tree Removal Notifications</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/urban-forest-plan" data-drupal-link-system-path="node/22083">Urban Forest Plan</a>
+              </li>
+        </ul>
+  
+              </li>
+                <li class="menu-item menu-item--collapsed">
+        <a href="/services/citysurveyor" data-drupal-link-system-path="node/22084">Subdivisions and Mapping</a>
+              </li>
+                <li class="menu-item menu-item--collapsed">
+        <a href="/services/other-services-z" data-drupal-link-system-path="node/22085">Other Services A-Z</a>
+              </li>
+        </ul>
+  
+
+
+  </nav>
+
+  </div>
+
+      </aside>
+    
+    <div class="layout-content">
+                    <div class="region region-content">
+    <div id="block-lcp-content" class="block block-system block-system-main-block">
+  
+    
+      
+<article data-history-node-id="22071" class="node node--type-services node--promoted node--view-mode-full">
+
+  
+    
+
+      <footer class="node__meta">
+      <article class="profile">
+  </article>
+
+      <div class="node__submitted">
+        Submitted by <span class="field field--name-uid field--type-entity-reference field--label-hidden"><span>admin</span></span>
+ on <span class="field field--name-created field--type-created field--label-hidden"><time datetime="2024-10-06T02:57:25+00:00" title="Sunday, October 6, 2024 - 02:57" class="datetime">Sun, 10/06/2024 - 02:57</time>
+</span>
+        
+      </div>
+    </footer>
+  
+  <div class="node__content">
+    
+      <div class="field field--name-field-content field--type-entity-reference-revisions field--label-hidden field__items">
+              <div class="field__item">  <div class="paragraph paragraph--type--image paragraph--view-mode--default">
+          
+            <div class="field field--name-field-image field--type-image field--label-hidden field__item">  <img loading="lazy" src="/sites/default/files/2024-10/p1010880.jpg" width="4032" height="3024" alt="A lot of people in a park with trees" />
+
+</div>
+      
+      </div>
+</div>
+              <div class="field__item">  <div class="paragraph paragraph--type--small-spacer paragraph--view-mode--default">
+          
+      </div>
+</div>
+              <div class="field__item">  <div class="paragraph paragraph--type--basic-text paragraph--view-mode--default">
+          
+            <div class="clearfix text-formatted field field--name-field-text-info field--type-text-long field--label-hidden field__item"><p>In 2007, The <a href="https://codelibrary.amlegal.com/codes/san_francisco/latest/sf_publicworks/0-0-0-4066">Urban Forestry Ordinance of the Public Works Code</a> was revised by the Board of Supervisors to protect certain trees on private property that are close to the public right-of-way.</p><p>Significant Trees are located on private property, where any portion of the tree’s trunk is within 10 feet of the public right-of-way and meet any one of the following size requirements:</p><ul style="margin-left:40px;"><li><div>20 feet or greater in height,</div></li><li><div>15 feet or greater canopy width, or</div></li><li><div>12 inches or greater diameter of trunk measured at 4.5 feet above grade.</div></li></ul><p>&nbsp;</p><p>These trees are granted the same protections as street trees, and a <a href="/services/remove-street-tree">permit is required before any significant tree can be removed</a>. Permits are required for planting or removing street trees and significant trees.</p><p>Landmark trees are trees that have been designated by the Board of Supervisors as extra special.&nbsp; It may be due to the rareness of the species, their size or age, or extraordinary structure, or ecological contribution.&nbsp; In addition, historical or cultural importance can qualify a tree for Landmark Status.&nbsp; Property owners, any member of the Board of Supervisors, Planning Commission, the Landmarks Advisory Board, and/or directors of a city department may nominate trees on public or private land to protect and preserve their value and presence in the community under the San Francisco Landmark Tree Program.&nbsp;&nbsp;</p><p>Trees that are designated by the city for landmark status are protected from physical damage and removal.&nbsp;</p><p>&nbsp;</p><p><strong>List of Designated Landmark Trees</strong></p><ol><li>1801 Bush Street (Adjacent):&nbsp;Six Blue Gum&nbsp;Eucalyptus (<em>Eucalyptus globulus</em>)</li><li>3rd Street and Yosemite Median Triangle:&nbsp;Brazilian Pepper (<em>Schinus terebinthifolius</em>)</li><li>1701 Franklin Street:&nbsp;Flaxleaf Paperbark (<em>Melaleuca linariifolia</em>)</li><li>555 Battery Street:&nbsp;Sweet Bay (<em>Laurus nobilis</em>)</li><li>1221 Stanyan Street:&nbsp;New Zealand Christmas Tree (M<em>etrosiderous excelsus</em>)</li><li>Dolores Street Center Island:&nbsp;All Canary Island Date Palms (<em>Phoenix canariensis</em>)</li><li>Quesada Street Median (West of 3rd Street to dead end): 13 Canary Island Date Palms (<em>Phoenix canariensis</em>)</li><li>Dolores Street Median (Across 730 Dolores Street and second from 1546 Dolores Street):&nbsp;Two Cliff Date Palms (<em>Phoenix rupicola</em>)</li><li>Dolores Street Median (Across&nbsp;1608-1650 Dolores Street):&nbsp;The grove of Guadalupe Palm (<em>Brahea edulis</em>)</li><li><span style="color:#a9a9a9;">20-28 Rosemont Terrace: Coast Live Oak (</span><em><span style="color:#a9a9a9;">Quercus agrifolia</span></em><span style="color:#a9a9a9;">) - removed due to structural failure </span></li><li>730 28th Avenue (Backyard):&nbsp;California Buckeye (<em>Aesculus californica</em>)</li><li>4124 23rd Street (Backyard):&nbsp;Coast Live Oak (<em>Quercus agrifolia</em>)</li><li>3555 Cesar Chavez Street: Moreton Bay Fig (<em>Ficus macrophylla</em>) </li><li>500 Cortland Avenue (Bernal Heights Library): Two Flowering Ash (<em>Fraxinus ornus</em>) </li><li>Bernal Heights Natural Area (Folsom and Bernal Height Blvd Intersection): Blue Elderberry (<em>Sambucus mexicana</em>)</li><li>2626 Vallejo Street (Backyard):&nbsp;Monterey Cypress (<em>Cupressus macrocarpa</em>)</li><li>115 Parker Avenue (Backyard):&nbsp;Howell’s Manzanita (<em>Arctostaphylos hispidule</em>)</li><li>757 Pennsylvania Avenue (Behind, Assessor's Block 416B, Lot 11):&nbsp;California Buckeye tree (<em>Aesculus californica</em>)</li><li>46 Stillings Avenue: Coast Redwood (<em>Sequoia sempervirens</em>)</li><li>3066 Market Street (Behind, Assessor's Block 2656, Lot 20): Giant Sequoia Tree (<em>Sequoiadendron giganteum</em>) </li><li>46A Cook Street: Norfolk-Island Cook Pine Hybrid (<em>Araucaria spp.</em>)</li><li>2251 Filbert St. (Backyard): Canary Island Pine (<em>Pinus canariensis</em>) </li><li><span style="color:#a9a9a9;">2694 McAllister Street: California buckeye (</span><em><span style="color:#a9a9a9;">Aesculus californica</span></em><span style="color:#a9a9a9;">)&nbsp;- removed due to tree death.</span></li><li>20th Street at Noe Street (Public right-of-way): Cork Oak (<em>Quercus suber</em>)</li><li>313 Scott Street: Coast Redwood (<em>Sequoia sempervirens</em>)</li><li>4 Montclair Terrace (backyard): Coast Redwood (<em>Sequoia sempervirens</em>)</li></ol><p>&nbsp;</p><p>To nominate a remarkable tree, visit the&nbsp;<a href="http://www.sfenvironment.org/buildings-environments/urban-forestry/landmark-tree-program" target="_blank">Landmark Tree Program webpage at SF Environment</a>.</p><p>&nbsp;</p><p>For additional information, contact us at:<br>San Francisco Public Works<br>Bureau of Urban Forestry<br>49 South Van Ness Avenue, Suite 1000 (<a href="https://www.google.com/maps/place/49+Van+Ness+Ave,+San+Francisco,+CA+94103/@37.7730132,-122.4187659,3a,75y,27.44h,118.48t/data=!3m6!1e1!3m4!1svY0npMoMxxTT6x6-CpoXJA!2e0!7i16384!8i8192!4m5!3m4!1s0x8085809ec7703bed:0x15b64efa0e6f6313!8m2!3d37.7741788!4d-122.4185136?hl=en" target="_blank">Map</a>)<br>San Francisco, CA 94103<br>628-652-TREE (8733)<br>urbanforestry@sfdpw.org</p></div>
+      
+      </div>
+</div>
+          </div>
+  
+  </div>
+
+</article>
+
+  </div>
+<div data-drupal-messages-fallback class="hidden"></div>
+
+  </div>
+
+    </div>
+  </main>
+
+      <footer role="contentinfo">
+        <div class="region region-footer">
+    <div id="block-lcp-mission" class="block block-block-content block-block-contenta0647196-08f5-4c56-aad5-eb52a6eacb7a">
+  
+      <h2>Mission</h2>
+    
+      
+            <div class="clearfix text-formatted field field--name-body field--type-text-with-summary field--label-hidden field__item"><p>San Francisco Public Works is one of the largest and most complex municipal operations in the City, with a 1,600-member workforce and a $384 million annual operating budget. The department's active capital project portfolio exceeds $3 billion. As one of San Francisco oldest City departments, it is also one of the most forward-thinking. Keeping San Francisco beautiful, safe and sustainable.</p><h3>Additional Resources</h3><p class="additional"><a href="http://sfgov.org/"><img src="/sites/default/files/inline-images/small_CitySealHiRes_white-150x150.png" data-entity-uuid="c86c5975-d771-468b-b87b-001ef0937846" data-entity-type="file" alt="SFGOV logo" width="90" height="90" class="align-left" loading="lazy"></a><a href="http://sf311.org/"><img src="/sites/default/files/inline-images/logo2_0.jpg" data-entity-uuid="aa042fc3-d959-417e-a5be-31a66e95deaa" data-entity-type="file" alt="311 logo" width="192" height="188" class="align-left" loading="lazy"></a></p></div>
+      
+  </div>
+<nav role="navigation" aria-labelledby="block-lcp-aboutus-menu" id="block-lcp-aboutus" class="block block-menu navigation menu--about-us-menu">
+      
+  <h2 id="block-lcp-aboutus-menu">About Us</h2>
+  
+
+        
+              <ul class="menu">
+                    <li class="menu-item menu-item--collapsed">
+        <a href="/about/accessibility-information" data-drupal-link-system-path="node/4">Accessibility Information</a>
+              </li>
+                <li class="menu-item">
+        <a href="/about/budget" data-drupal-link-system-path="node/6">Budget</a>
+              </li>
+                <li class="menu-item">
+        <a href="/about/commissions" data-drupal-link-system-path="node/7">Commissions</a>
+              </li>
+                <li class="menu-item menu-item--collapsed">
+        <a href="/about/contact-us" data-drupal-link-system-path="node/8">Contact Us</a>
+              </li>
+                <li class="menu-item">
+        <a href="/about/core-values" data-drupal-link-system-path="node/10">Core Values</a>
+              </li>
+                <li class="menu-item">
+        <a href="https://www.sfpublicworkstv.org/125years">History</a>
+              </li>
+                <li class="menu-item">
+        <a href="/about/works-digital-journal" data-drupal-link-system-path="node/33">In the Works - A Digital Journal</a>
+              </li>
+                <li class="menu-item">
+        <a href="/about/media-inquiries" data-drupal-link-system-path="node/34">Media Inquiries</a>
+              </li>
+                <li class="menu-item">
+        <a href="/about/organization" data-drupal-link-system-path="node/35">Organization</a>
+              </li>
+                <li class="menu-item menu-item--collapsed">
+        <a href="/about/press-releases-2025" data-drupal-link-system-path="node/24772">Press Releases</a>
+              </li>
+                <li class="menu-item">
+        <a href="/about/public-meetings-and-notices" data-drupal-link-system-path="node/133">Public Meetings and Notices</a>
+              </li>
+                <li class="menu-item">
+        <a href="https://sfpublicworks.org/services/public-records-requests">Public Records Requests</a>
+              </li>
+                <li class="menu-item">
+        <a href="/about/racial-equity-initiative" data-drupal-link-system-path="node/135">Racial Equity Initiative</a>
+              </li>
+                <li class="menu-item menu-item--collapsed">
+        <a href="/about/reports" data-drupal-link-system-path="node/136">Reports</a>
+              </li>
+                <li class="menu-item">
+        <a href="/workforcedevelopment" data-drupal-link-system-path="node/148">Workforce Development</a>
+              </li>
+        </ul>
+  
+
+
+  </nav>
+<nav role="navigation" aria-labelledby="block-lcp-getinvolved-menu" id="block-lcp-getinvolved" class="block block-menu navigation menu--get-involved-menu">
+      
+  <h2 id="block-lcp-getinvolved-menu">Get Involved</h2>
+  
+
+        
+              <ul class="menu">
+                    <li class="menu-item">
+        <a href="/get_involved/grants" data-drupal-link-system-path="node/150">Grants</a>
+              </li>
+                <li class="menu-item menu-item--collapsed">
+        <a href="/get_involved/jobs-internships" data-drupal-link-system-path="node/151">Jobs + Internships</a>
+              </li>
+                <li class="menu-item menu-item--collapsed">
+        <a href="/get_involved/neighborhood-improvement" data-drupal-link-system-path="node/155">Neighborhood Improvement</a>
+              </li>
+                <li class="menu-item menu-item--collapsed">
+        <a href="/volunteer" data-drupal-link-system-path="node/158">Volunteer</a>
+              </li>
+        </ul>
+  
+
+
+  </nav>
+<nav role="navigation" aria-labelledby="block-lcp-projects-menu" id="block-lcp-projects" class="block block-menu navigation menu--projects-menu">
+      
+  <h2 id="block-lcp-projects-menu">Projects</h2>
+  
+
+        
+              <ul class="menu">
+                    <li class="menu-item">
+        <a href="/projects" data-drupal-link-system-path="node/14839">Portfolio</a>
+              </li>
+                <li class="menu-item">
+        <a href="/project-map" data-drupal-link-system-path="node/14840">Map</a>
+              </li>
+        </ul>
+  
+
+
+  </nav>
+<nav role="navigation" aria-labelledby="block-lcp-services-menu" id="block-lcp-services" class="block block-menu navigation menu--services-menu">
+      
+  <h2 id="block-lcp-services-menu">Services</h2>
+  
+
+        
+              <ul class="menu">
+                    <li class="menu-item">
+        <a href="/services/report-problem" data-drupal-link-system-path="node/163">Report a Problem</a>
+              </li>
+                <li class="menu-item menu-item--collapsed">
+        <a href="/services/street-cleaning" data-drupal-link-system-path="node/35306">Street Cleaning</a>
+              </li>
+                <li class="menu-item menu-item--collapsed">
+        <a href="/services/contractor-resources" data-drupal-link-system-path="node/169">Contractor Resources</a>
+              </li>
+                <li class="menu-item menu-item--collapsed">
+        <a href="/services/garbage-and-waste" data-drupal-link-system-path="node/21834">Garbage and Waste</a>
+              </li>
+                <li class="menu-item menu-item--collapsed">
+        <a href="/services/graffiti" data-drupal-link-system-path="node/164">Graffiti</a>
+              </li>
+                <li class="menu-item menu-item--collapsed">
+        <a href="https://sfpublicworks.org/permits">Permits</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/potholes" data-drupal-link-system-path="node/21841">Potholes</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/public-records-request" data-drupal-link-system-path="node/21842">Public Records Requests</a>
+              </li>
+                <li class="menu-item menu-item--collapsed">
+        <a href="/services/public-toilets" data-drupal-link-system-path="node/21843">Public Toilets</a>
+              </li>
+                <li class="menu-item menu-item--collapsed">
+        <a href="/services/recycling-and-refuse-collection" data-drupal-link-system-path="node/21845">Recycling and Refuse Collection</a>
+              </li>
+                <li class="menu-item menu-item--collapsed">
+        <a href="/services/storm-preparation" data-drupal-link-system-path="node/21849">Storm Preparation</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/mechanical-street-sweeping-and-street-cleaning-schedule" data-drupal-link-system-path="node/21852">Mechanical Street Sweeping and Street Cleaning Schedule</a>
+              </li>
+                <li class="menu-item menu-item--collapsed">
+        <a href="/services/streets" data-drupal-link-system-path="node/21853">Sidewalks</a>
+              </li>
+                <li class="menu-item menu-item--collapsed">
+        <a href="/street-resurfacing" data-drupal-link-system-path="node/21858">Street Resurfacing Program</a>
+              </li>
+                <li class="menu-item menu-item--expanded menu-item--active-trail">
+        <a href="/services/trees" data-drupal-link-system-path="node/21860">Street Trees and Plants</a>
+                                <ul class="menu">
+                    <li class="menu-item">
+        <a href="https://sfpublicworks.org/3500treesproject">3,500 Trees Project</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/ficustrees" data-drupal-link-system-path="node/21861">Ficus Trees</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/greening-projects" data-drupal-link-system-path="node/21862">Greening Projects</a>
+              </li>
+                <li class="menu-item menu-item--collapsed">
+        <a href="/permits-trees-and-plants" data-drupal-link-system-path="node/21863">Permits - Street Trees and Plants</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/planting-strategy" data-drupal-link-system-path="node/22062">Planting Strategy</a>
+              </li>
+                <li class="menu-item">
+        <a href="/streettreenursery" data-drupal-link-system-path="node/22063">Street Tree Nursery</a>
+              </li>
+                <li class="menu-item menu-item--collapsed">
+        <a href="/streettreesf" data-drupal-link-system-path="node/22064">StreetTreeSF</a>
+              </li>
+                <li class="menu-item menu-item--expanded menu-item--active-trail">
+        <a href="/services/street-tree-listings" data-drupal-link-system-path="node/22068">Street Tree Listings</a>
+                                <ul class="menu">
+                    <li class="menu-item">
+        <a href="/services/plant-lists-and-palettes" data-drupal-link-system-path="node/22060">Plant Lists and Palettes</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/recommended-street-tree-and-plant-lists" data-drupal-link-system-path="node/22069">Recommended Street Tree and Plant Lists</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/signaturetrees" data-drupal-link-system-path="node/22070">Signature Trees</a>
+              </li>
+                <li class="menu-item menu-item--active-trail">
+        <a href="/services/significant-and-landmark-trees" data-drupal-link-system-path="node/22071" class="is-active" aria-current="page">Significant and Landmark Trees</a>
+              </li>
+        </ul>
+  
+              </li>
+                <li class="menu-item">
+        <a href="/services/street-tree-map" data-drupal-link-system-path="node/22072">Street Tree Map and Pruning Schedule</a>
+              </li>
+                <li class="menu-item">
+        <a href="/treeprotection" data-drupal-link-system-path="node/22073">Tree Protection</a>
+              </li>
+                <li class="menu-item menu-item--collapsed">
+        <a href="/services/tree-removal-notifications" data-drupal-link-system-path="node/22074">Tree Removal Notifications</a>
+              </li>
+                <li class="menu-item">
+        <a href="/services/urban-forest-plan" data-drupal-link-system-path="node/22083">Urban Forest Plan</a>
+              </li>
+        </ul>
+  
+              </li>
+                <li class="menu-item menu-item--collapsed">
+        <a href="/services/citysurveyor" data-drupal-link-system-path="node/22084">Subdivisions and Mapping</a>
+              </li>
+                <li class="menu-item menu-item--collapsed">
+        <a href="/services/other-services-z" data-drupal-link-system-path="node/22085">Other Services A-Z</a>
+              </li>
+        </ul>
+  
+
+
+  </nav>
+
+  </div>
+
+    </footer>
+  
+      <div class="secondary-footer" role="contentinfo">
+        <div class="region region-secondary-footer">
+    <div id="block-lcp-contactinfo" class="block block-block-content block-block-contentf95f5c0d-0641-45d3-b250-68a9134daa52">
+  
+    
+      
+            <div class="clearfix text-formatted field field--name-body field--type-text-with-summary field--label-hidden field__item"><p><strong>San Francisco Public Works</strong><br>49 South Van Ness Ave.<br>San Francisco, CA 94103<br><br><a href="https://sf.gov/">City and County of San Francisco</a></p></div>
+      
+  </div>
+<div id="block-lcp-socialmedialinks" class="block block-block-content block-block-content1d5011bd-cd3a-4412-9609-96b608556548">
+  
+    
+      
+            <div class="clearfix text-formatted field field--name-body field--type-text-with-summary field--label-hidden field__item"><p>Follow us:</p><ul class="follow-us"><li><a href="https://www.facebook.com/sfpublicworks"><img data-entity-uuid="58b0a370-2a2a-4992-829d-f03eb5098559" data-entity-type="file" src="/sites/default/files/inline-images/fb_0.png" width="512" height="512" alt="Facebook logo" loading="lazy"></a></li><li><a href="https://x.com/sfpublicworks"><img data-entity-uuid="74e89b11-8fde-4e0a-9225-f6396323ff40" data-entity-type="file" src="/sites/default/files/inline-images/x.png" width="512" height="512" alt="X Social Icon" loading="lazy"></a></li><li><a href="https://www.youtube.com/user/SFPublicWorks"><img data-entity-uuid="8cf15ef2-5d8b-4a24-955a-67bec9f0edf1" data-entity-type="file" src="/sites/default/files/inline-images/youtube.png" width="512" height="512" alt="Youtube Logo" loading="lazy"></a></li><li><a href="https://www.instagram.com/sfpublicworks/"><img data-entity-uuid="ca01c978-b1da-4679-8112-b70c538c1c37" data-entity-type="file" src="/sites/default/files/inline-images/instagram.png" width="512" height="512" alt="Instagram Icon" loading="lazy"></a></li><li><a href="https://www.linkedin.com/company/sfpublicworks/"><img data-entity-uuid="6667b916-562c-498c-be3d-329486378f9c" data-entity-type="file" src="/sites/default/files/inline-images/linked.png" width="512" height="512" alt="Linked In Logo" loading="lazy"></a></li><li><a href="https://soundcloud.com/sfpublicworks"><img data-entity-uuid="16e77b8c-9871-4311-ac03-e590a03e7986" data-entity-type="file" src="/sites/default/files/inline-images/soundcloud.png" width="512" height="512" alt="Sound Cloud Logo" loading="lazy"></a></li></ul><p>&nbsp;</p></div>
+      
+  </div>
+
+  </div>
+
+    </div>
+  
+</div>
+  </div>
+
+    
+    <script type="application/json" data-drupal-selector="drupal-settings-json">{"path":{"baseUrl":"\/","pathPrefix":"","currentPath":"node\/22071","currentPathIsAdmin":false,"isFront":false,"currentLanguage":"en"},"pluralDelimiter":"\u0003","suppressDeprecationErrors":true,"back_to_top":{"back_to_top_button_trigger":100,"back_to_top_speed":1200,"back_to_top_prevent_on_mobile":false,"back_to_top_prevent_in_admin":false,"back_to_top_button_type":"image","back_to_top_button_text":"Back to top"},"ajaxTrustedUrl":{"\/search\/node":true},"user":{"uid":0,"permissionsHash":"3122c3e88786725dc7ea2e39c3de0e310013a3f37a271f1fe401ac04fe5456a2"}}</script>
+<script src="/core/assets/vendor/jquery/jquery.min.js?v=3.7.1"></script>
+<script src="/core/assets/vendor/once/once.min.js?v=1.0.1"></script>
+<script src="/core/misc/drupalSettingsLoader.js?v=10.6.2"></script>
+<script src="/core/misc/drupal.js?v=10.6.2"></script>
+<script src="/core/misc/drupal.init.js?v=10.6.2"></script>
+<script src="/modules/contrib/back_to_top/js/back_to_top.js?v=10.6.2"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/isotope-layout@3/dist/isotope.pkgd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/slick-carousel@1.8.0/slick/slick.min.js"></script>
+<script src="/themes/lcp/js/main.js?v=1.73&amp;v=10.6.2"></script>
+<script src="/themes/lcp/js/projects.js?1_2=&amp;v=10.6.2"></script>
+
+  </body>
+</html>
