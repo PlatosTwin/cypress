@@ -58,9 +58,14 @@ struct MapFilterChips: View {
 /// clipping touches on this project before, leaving a control that reports `isHittable` and answers
 /// nobody.
 ///
-/// **3 · The remainder is inside the container.** E38's sentence is a row of this list rather than a
-/// caption under it, so the reader who hears the rows hears what they are a page of in the same
-/// sweep, and so it scrolls with them rather than being the one thing that never moves.
+/// **3 · The remainder sentence is inside the card and outside the scroll, and that arrangement was
+/// arrived at by looking rather than by thinking.** It began as the last row of the scrolling list,
+/// on the reasoning that a reader who hears the rows should hear what they are a page of in the same
+/// sweep. Typed into the running app, `a` drew six rows, filled the cap exactly, and left
+/// `Showing 6 of at least 100 matching species` **below the fold** — E38's own defect, reproduced one
+/// level down by the change that was written to prevent it. It is now pinned under the scroll: still
+/// inside the accessibility container, so the sweep is unchanged, and never scrollable away, because
+/// the one sentence that says the list is a page cannot be a thing you have to scroll to find.
 struct MapSuggestionList: View {
 
     let suggestions: MapSuggestions
@@ -79,32 +84,36 @@ struct MapSuggestionList: View {
 
     var body: some View {
         if case let .listing(listing) = suggestions, !listing.rows.isEmpty {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(listing.rows.enumerated()), id: \.element.id) { index, species in
-                        if index > 0 { rule }
-                        row(species)
-                    }
-                    if let sentence = MapSuggestionCopy.remainder(
-                        listing.remainder, shown: listing.rows.count
-                    ) {
-                        rule
-                        Text(sentence)
-                            .font(CypressFont.body13)
-                            .foregroundStyle(CypressColor.textMuted)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, CypressSpacing.gutterBottomCard)
-                            .padding(.vertical, CypressSpacing.gutterBottomCard)
+            VStack(alignment: .leading, spacing: 0) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(listing.rows.enumerated()), id: \.element.id) { index, species in
+                            if index > 0 { rule }
+                            row(species)
+                        }
                     }
                 }
+                // The rows are as tall as they want to be until they are not allowed to be, which is
+                // what `.frame(maxHeight:)` on a `ScrollView` means. Whatever it cuts off is reachable
+                // by scrolling, and the part-row at the cut is what says so.
+                .frame(maxHeight: availableHeight * Self.share)
+                // `.fixedSize` in the vertical only, so a short list does not inherit the cap as a
+                // *height*. Without it a two-row dropdown is two rows in half a screen of white.
+                .fixedSize(horizontal: false, vertical: true)
+
+                if let sentence = MapSuggestionCopy.remainder(
+                    listing.remainder, shown: listing.rows.count
+                ) {
+                    rule
+                    Text(sentence)
+                        .font(CypressFont.body13)
+                        .foregroundStyle(CypressColor.textMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, CypressSpacing.gutterBottomCard)
+                        .padding(.vertical, CypressSpacing.gutterBottomCard)
+                }
             }
-            // The list is as tall as it wants to be until it is not allowed to be, which is what
-            // `.frame(maxHeight:)` on a `ScrollView` means: no scrolling at all at the drawn size.
-            .frame(maxHeight: availableHeight * Self.share)
-            // `.fixedSize` in the vertical only, so a short list does not inherit the cap as a
-            // *height*. Without it a two-row dropdown is a two-row card in half a screen of white.
-            .fixedSize(horizontal: false, vertical: true)
             .background {
                 RoundedRectangle(cornerRadius: CypressRadius.cardLg, style: .continuous)
                     .fill(CypressColor.surfaceCard)

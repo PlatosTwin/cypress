@@ -249,7 +249,21 @@ struct MapHomeView: View {
         // Two absolutely positioned blocks, exactly as 01 describes them — a `Spacer` between them
         // would make the whole overlay one greedy stack, and a greedy stack inside `MapCanvas`'s
         // ZStack sizes against the map rather than against the screen.
+        //
+        // **The bottom block is applied first, so the top block draws over it** — and that ordering
+        // is now load-bearing rather than incidental. It was the other way round, which is the order
+        // `.overlay` was written in rather than an order anyone chose, and at AX5 with the suggestion
+        // list open the FAB sat *on top of* the sentence that says the list is a page: `Showing 6 of
+        // at least 100 match……. Keep ty…… it.` Seen on the running app, not reasoned about. The
+        // chrome the reader is currently typing into outranks the control they are not.
+        //
+        // Nothing moves as a result. The two blocks only overlap at accessibility sizes, where they
+        // already did, and the top block hit-tests only where it draws — its stack has no background
+        // and the empty width beside a chip has never taken a touch.
         Color.clear
+            .overlay(alignment: .bottom) {
+                bottomChrome
+            }
             .overlay(alignment: .top) {
                 VStack(alignment: .leading, spacing: MapLayout.chipRowTop) {
                     SearchBar(text: $model.searchText, focus: $searchFocused)
@@ -299,29 +313,34 @@ struct MapHomeView: View {
                 }
             }
             #endif
-            .overlay(alignment: .bottom) {
-                VStack(alignment: .trailing, spacing: 0) {
-                    // Above the FAB and right-aligned with it, inside the same absolutely positioned
-                    // block — which is the position MapKit's own `MapUserLocationButton` could not
-                    // have been given (`MapRecentre`, and ERRATA E110 for why the arithmetic here is
-                    // not something a system control can be dropped into).
-                    MapRecentreButton(engagement: recentreEngagement) { recentre() }
-                        .padding(.horizontal, MapLayout.sideInset - MapLayout.cardInset)
-                        .padding(.bottom, MapLayout.locateToFabGap)
-                    // `present`, not `push` (ERRATA E127). The visit flow is a `fullScreenCover` off
-                    // `AppRouter.sheet` — `RootView.destination(for:)` answers a *pushed* `.identify`
-                    // with `NotBuiltYetView`, because a pushed one is a programming error the way a
-                    // pushed `.share` is. So the app's one specified entrance to screen 02 landed on
-                    // "Not built yet", which is also the only way to reach "add this tree".
-                    IdentifyFAB { router.present(.identify(nil)) }
-                        .padding(.horizontal, MapLayout.sideInset - MapLayout.cardInset)
-                        .padding(.bottom, MapLayout.fabToCardGap)
-                    bottomSlot
-                }
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .padding(.horizontal, MapLayout.cardInset)
-                .padding(.bottom, MapLayout.tabBarHeight + MapLayout.cardToTabBarGap)
-            }
+    }
+
+    /// The recentre control, the FAB and the one bottom slot, as one absolutely positioned block.
+    ///
+    /// Lifted out of `chrome` unchanged so the two blocks could be reordered without the diff
+    /// pretending anything inside either of them moved. See the comment at the reorder.
+    private var bottomChrome: some View {
+        VStack(alignment: .trailing, spacing: 0) {
+            // Above the FAB and right-aligned with it, inside the same absolutely positioned
+            // block — which is the position MapKit's own `MapUserLocationButton` could not
+            // have been given (`MapRecentre`, and ERRATA E110 for why the arithmetic here is
+            // not something a system control can be dropped into).
+            MapRecentreButton(engagement: recentreEngagement) { recentre() }
+                .padding(.horizontal, MapLayout.sideInset - MapLayout.cardInset)
+                .padding(.bottom, MapLayout.locateToFabGap)
+            // `present`, not `push` (ERRATA E127). The visit flow is a `fullScreenCover` off
+            // `AppRouter.sheet` — `RootView.destination(for:)` answers a *pushed* `.identify`
+            // with `NotBuiltYetView`, because a pushed one is a programming error the way a
+            // pushed `.share` is. So the app's one specified entrance to screen 02 landed on
+            // "Not built yet", which is also the only way to reach "add this tree".
+            IdentifyFAB { router.present(.identify(nil)) }
+                .padding(.horizontal, MapLayout.sideInset - MapLayout.cardInset)
+                .padding(.bottom, MapLayout.fabToCardGap)
+            bottomSlot
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .padding(.horizontal, MapLayout.cardInset)
+        .padding(.bottom, MapLayout.tabBarHeight + MapLayout.cardToTabBarGap)
     }
 
     /// One slot, four possible occupants, in priority order: the answer to a recentre press, the
