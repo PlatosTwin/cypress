@@ -292,8 +292,8 @@ struct CityRecordPresentation {
     /// the definition of noise.
     ///
     /// So: a statement about the record, in the section that is about the record, in the same voice as
-    /// the subtitle's `SF city inventory`. Provenance sentences repeat by nature — that one is on
-    /// every screen too.
+    /// the subtitle's provenance element, which names the same inventory (`recordSource`).
+    /// Provenance sentences repeat by nature — that one is on every screen too.
     ///
     /// ── The line this must not cross ──────────────────────────────────────────────────────────
     /// It is here because a person asked, not because absences are worth listing. The inventory also

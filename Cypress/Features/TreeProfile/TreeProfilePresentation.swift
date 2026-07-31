@@ -356,11 +356,11 @@ struct TreeProfilePresentation {
     /// A symmetric second arm would have to be a sentence about a species that does not exist.
     ///
     /// The symmetry the placement rule is really about is honoured, one level up and already: a city
-    /// row's species reads `SF city inventory` and a community row's reads `community-added,
+    /// row's species reads its inventory's name and a community row's reads `community-added,
     /// unverified`, both on this same line, and neither is the marked case. This element only says
     /// *which part* of a community record the contributor authored — and it is not evaluative, in
-    /// exactly `placementNote`'s sense: it names the author, the way `SF city inventory` names a
-    /// source without praising it. It does not say "unconfirmed", "guess", or "may be wrong". A
+    /// exactly `placementNote`'s sense: it names the author, the way `recordSource` names an
+    /// inventory without praising it. It does not say "unconfirmed", "guess", or "may be wrong". A
     /// contributor who planted the tree knows it better than any row in the seed does.
     ///
     /// **Community rows with a species only.** A city row's species is the city's and `provenance`
@@ -418,7 +418,7 @@ struct TreeProfilePresentation {
     /// is a suspect coordinate. It would also be untrue to the record — a hand-placed pin is not the
     /// worse pin, and is very often the better one, because the contributor could see the tree and the
     /// phone could not, and a fix in an SF street canyon is routinely 20–40 m out. So the two arms are
-    /// symmetric and neither is evaluative: they name the instrument, the way `SF city inventory`
+    /// symmetric and neither is evaluative: they name the instrument, the way `recordSource`
     /// names a source without praising it. `TreePlacement` carries the argument in full.
     ///
     /// The words are the owner's own — "added via pin by hand instead of by gps" — kept rather than
@@ -1003,7 +1003,7 @@ struct TreeProfilePresentation {
     /// cannot make (E63's defect). When neither way of knowing has an answer there is no sentence,
     /// which asserts nothing.
     ///
-    /// ── Why it is outside "What San Francisco has on file" ────────────────────────────────────
+    /// ── Why it is outside "What the city has on file" ─────────────────────────────────────────
     /// On a city row this is Cypress's *reading* of `legalStatus` and `caretaker`, and that reading is
     /// a rule in `LandContext.inferred(from:)` which can be wrong about any individual tree. Inside a
     /// section headed with the city's name, under a card badged `city record`, it would be the app's
