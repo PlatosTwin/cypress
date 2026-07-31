@@ -423,8 +423,9 @@ Both would be visible on a great-trees screen today, and both are constraint-15 
 | #3, 1701 Franklin St | Flaxleaf Paperbark, *Melaleuca linariifolia* | `7946` → *Melaleuca ericifolia*, "Heath Melaleuca" |
 
 The first is not a spelling difference. The whole reason that tree is a landmark is that it is a
-rare species thought extinct; our seed calls it a nursery cultivar. Written up in
-`docs/errata-pending/landmark-trees.md`.
+rare species thought extinct; our seed calls it a nursery cultivar. Written up as **ERRATA E178**,
+alongside **E179** (the `Landmark tree` flag is not the register, in either direction) and **E180**
+(`legal_status` reaches `city` rows from the other inventory).
 
 ---
 
