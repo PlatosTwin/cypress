@@ -151,10 +151,63 @@ public struct AlmanacQueries {
              GROUP BY t.species_current
              ORDER BY tree_count DESC, species_name
             """)
-        _ = try statement.bind(scope.bindings.merging([":from": from, ":to": to]) { a, _ in a })
+        _ = try statement.bind(scope.bindings.merging([":from": from, ":to": to] as [String: SQLiteBindable?]) { a, _ in a })
         return try statement.fetchAll { row in
             (name: try row.stringIfPresent("species_name"), treeCount: try row.int("tree_count"))
         }
+    }
+
+    /// The same trees `plantings` counted, as pins a map can draw, nearest first (ERRATA **E182**).
+    ///
+    /// **A second read of the same predicate, deliberately, and the split is `vacantSites`'.** The
+    /// grouped read above prints two things the reader sees — a total and the leading species — and
+    /// the total may never become the size of a page (ERRATA E38). So the count comes from the
+    /// aggregate over the whole window and the rows come from here, capped, and `PinSet.isComplete`
+    /// compares the two rather than either one claiming to be the other.
+    ///
+    /// The `WHERE` clause is copied from `plantings` word for word and must stay that way: the row's
+    /// sentence counts one set and its map draws another only if these two drift apart. The `LEFT`
+    /// join and `Self.standing` are there for the reasons they are there in every other read in this
+    /// file, so a newly planted tree with no species is still on the map the row's own count included
+    /// it in.
+    public func plantingPins(
+        scope: AlmanacScope,
+        from: String,
+        to: String,
+        near coordinate: Coordinate,
+        limit: Int,
+        connection: SQLiteConnection
+    ) throws -> [TreePin] {
+        // Longitude degrees are shorter than latitude degrees by cos(lat); squaring the ratio makes
+        // the two terms comparable, exactly as `TreeQueries.nearest` does it.
+        let longitudeWeight = pow(cos(coordinate.latitude * .pi / 180), 2)
+        let statement = try connection.cachedStatement("""
+            SELECT t.\(schema.treeIdentityColumn) AS tree_uuid,
+                   t.lat AS lat,
+                   t.lon AS lon,
+                   t.status AS status,
+                   t.source AS source,
+                   t.verification_state AS verification_state,
+                   s.\(schema.speciesIdentityColumn) AS species_uuid
+              FROM \(seed).trees t
+              LEFT JOIN \(seed).species s ON s.id = t.species_current
+             WHERE \(scope.predicate("t"))
+               AND t.planted_on BETWEEN :from AND :to
+               AND t.deleted_at IS NULL
+               AND \(Self.standing)
+             ORDER BY (t.lat - :lat) * (t.lat - :lat)
+                    + (t.lon - :lon) * (t.lon - :lon) * :lonWeight
+             LIMIT :limit
+            """)
+        _ = try statement.bind(scope.bindings.merging([
+            ":from": from,
+            ":to": to,
+            ":lat": coordinate.latitude,
+            ":lon": coordinate.longitude,
+            ":lonWeight": longitudeWeight,
+            ":limit": limit
+        ] as [String: SQLiteBindable?]) { a, _ in a })
+        return try statement.fetchAll { row in try Self.pin(from: row) }
     }
 
     // MARK: - Who lives here
@@ -274,7 +327,7 @@ public struct AlmanacQueries {
         _ = try statement.bind(scope.bindings.merging([
             ":since": plantedOnOrAfter,
             ":limit": limit
-        ]) { a, _ in a })
+        ] as [String: SQLiteBindable?]) { a, _ in a })
         return try statement.fetchAll { row in try Self.pin(from: row) }
     }
 
@@ -355,7 +408,7 @@ public struct AlmanacQueries {
         _ = try statement.bind(scope.bindings.merging([
             ":since": since,
             ":flowering": PhenologyTag.flowering.rawValue
-        ]) { a, _ in a })
+        ] as [String: SQLiteBindable?]) { a, _ in a })
         return try statement.fetchOne { row in
             (
                 treeID: try row.uuid("tree_uuid"),
@@ -438,7 +491,7 @@ public struct AlmanacQueries {
             ":lon": coordinate.longitude,
             ":lonWeight": longitudeWeight,
             ":limit": limit
-        ]) { a, _ in a })
+        ] as [String: SQLiteBindable?]) { a, _ in a })
         // `species_uuid` is a literal NULL rather than a join, and that is a measurement rather than
         // a shortcut: `species_current` is NULL on all 12,518 vacant sites (`AlmanacVacantSiteTests`
         // asserts it against the shipped seed), so a `LEFT JOIN` here could only ever return NULL.

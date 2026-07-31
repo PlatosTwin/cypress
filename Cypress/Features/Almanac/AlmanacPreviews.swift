@@ -154,10 +154,17 @@ private enum AlmanacFixtures {
     /// Every block present — the state SCREENS.md draws, with the seed's numbers in it.
     static let full = Almanac(
         neighborhood: AlmanacNeighborhood(
-            name: "Sunset/Parkside",
+            area: .named("Sunset/Parkside"),
             firstBloom: bloom,
             elder: elder,
-            newestNeighbors: RecentPlanting(treeCount: 23, leadingSpecies: ["Ginkgo", "NZ tea tree"]),
+            newestNeighbors: RecentPlanting(
+                treeCount: 23,
+                leadingSpecies: ["Ginkgo", "NZ tea tree"],
+                // The pins the row hands its map (ERRATA E182). Fewer than the count, so the
+                // preview also exercises `PinSet.isComplete` being false and the destination
+                // saying which page it is holding.
+                nearest: (0..<12).map { pin(400 + $0) }
+            ),
             composition: composition,
             coverage: coverage(9, farthestM: 900),
             vacantSites: vacantSites()
@@ -171,7 +178,7 @@ private enum AlmanacFixtures {
     /// neighbourhood, so §4's walking sentence is withheld.
     static let freshInstall = Almanac(
         neighborhood: AlmanacNeighborhood(
-            name: "Sunset/Parkside",
+            area: .named("Sunset/Parkside"),
             firstBloom: nil,
             elder: elder,
             newestNeighbors: nil,
@@ -185,7 +192,7 @@ private enum AlmanacFixtures {
     /// One sighting rather than three: the row draws, the headcount does not (A8).
     static let singleObserver = Almanac(
         neighborhood: AlmanacNeighborhood(
-            name: "Sunset/Parkside",
+            area: .named("Sunset/Parkside"),
             firstBloom: bloomAlone,
             elder: elder,
             newestNeighbors: nil,
@@ -196,6 +203,24 @@ private enum AlmanacFixtures {
 
     /// No location fix, so no area. Header, footnote, nothing else.
     static let noArea = Almanac.empty
+
+    /// **The fallback area** (RULINGS R29): a reader in a city the record holds trees for and
+    /// boundaries for. The pill is a distance, and the sentence under the header says so.
+    static let radiusArea = Almanac(
+        neighborhood: AlmanacNeighborhood(
+            area: .radius(metres: AlmanacLimits.fallbackRadiusM),
+            firstBloom: nil,
+            elder: elder,
+            newestNeighbors: RecentPlanting(
+                treeCount: 5,
+                leadingSpecies: ["Ornamental Pear"],
+                nearest: (0..<5).map { pin(500 + $0) }
+            ),
+            composition: composition,
+            coverage: coverage(4, farthestM: 700),
+            vacantSites: vacantSites(count: 1_000)
+        )
+    )
 }
 
 // MARK: - Previews

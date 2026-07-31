@@ -138,11 +138,18 @@ struct AlmanacScreen: View {
                         )
                         .padding(.top, CypressSpacing.labelSectionTop)
                         .padding(.horizontal, CypressSpacing.gutter)
-                    } else if let presentation {
+                    } else if let presentation, presentation.hasArea {
+                        areaNote(presentation)
                         seasonBlock(presentation)
                         compositionBlock(presentation)
                         vacantSitesBlock(presentation)
                         coverageBlock(presentation)
+                    } else if presentation != nil {
+                        // A finished read that resolved no area — the reader is standing outside
+                        // every inventory in the record (ERRATA E182). Ordered after the block above
+                        // and before the failure arm because those three exhaust the loaded states:
+                        // `presentation` is non-nil only when the read succeeded.
+                        outOfRange
                     } else if hasFailed {
                         failure
                     }
@@ -181,6 +188,28 @@ struct AlmanacScreen: View {
         }
     }
 
+    // MARK: - The area, when it is a distance rather than a place (RULINGS R29)
+
+    /// One muted sentence under the header, present only for the fallback area.
+    ///
+    /// **NOT SPECIFIED** by SCREENS.md 12, which draws one area and names it. It is a sentence and
+    /// not a card because it is not a state the reader has to act on — everything below it is real
+    /// and correct — it is the qualifier that stops `Within a 15-minute walk` being read as the name
+    /// of a neighborhood. Same treatment as `PinSetPresentation.coverage`'s second line, which
+    /// exists for the same kind of reason: a claim above it is only honest with it there.
+    @ViewBuilder
+    private func areaNote(_ presentation: AlmanacPresentation) -> some View {
+        if let note = presentation.areaNote {
+            Text(note)
+                .font(CypressFont.body125)
+                .foregroundStyle(CypressColor.textMuted)
+                .lineSpacing(CypressFont.LineSpacing.body125)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, CypressSpacing.labelSectionTop)
+                .padding(.horizontal, CypressSpacing.gutter)
+        }
+    }
+
     // MARK: - §2 This season (C10 ×3)
 
     /// Micro-label plus up to three C10 rows, `VStack(spacing:7)`.
@@ -200,7 +229,7 @@ struct AlmanacScreen: View {
                             accent: row.accent,
                             title: row.title,
                             subtitle: row.subtitle,
-                            action: row.treeID.flatMap { id in onOpenTree.map { open in { open(id) } } }
+                            action: action(for: row)
                         )
                     }
                 }
@@ -208,6 +237,30 @@ struct AlmanacScreen: View {
             .padding(.top, CypressSpacing.labelSectionTop)
             .padding(.horizontal, CypressSpacing.gutter)
         }
+    }
+
+    /// Where a §2 row goes when it is pressed, or nil when it goes nowhere.
+    ///
+    /// **A row names one record or counts several, and those are two destinations** — a profile and
+    /// a map. The elder and the first bloom are each one tree and open it; `Newest neighbors` counts
+    /// this spring's plantings and opens the same map screen the coverage gap and the vacant sites
+    /// open, because the question a count of trees raises is *where* and this app answers that in
+    /// one place (ERRATA E129, E144, and E182 for this row).
+    ///
+    /// The owner's report was exactly this row: *"Clicking on newest neighbors on neighborhood
+    /// almanac should show them on the map."* It was the last counted row on screen 12 with nothing
+    /// behind it.
+    ///
+    /// Nil when nobody is listening, which keeps a row that cannot go anywhere from looking like one
+    /// that can — the judgement `GroveTabRow` made about its two inert pills.
+    private func action(for row: AlmanacPresentation.SeasonRow) -> (() -> Void)? {
+        if let id = row.treeID, let onOpenTree {
+            return { onOpenTree(id) }
+        }
+        if let group = row.group, let onShowGroup {
+            return { onShowGroup(group) }
+        }
+        return nil
     }
 
     // MARK: - Where a tree could go (R10) — one C10 row, a statement between §3 and §4
@@ -303,6 +356,37 @@ struct AlmanacScreen: View {
             .padding(.top, CypressSpacing.labelSectionTop)
             .padding(.horizontal, CypressSpacing.gutter)
         }
+    }
+
+    // MARK: - Nowhere the record reaches (ERRATA E182)
+
+    /// The read finished, the fix is good, and no inventory in the file covers this ground.
+    ///
+    /// **NOT SPECIFIED** by SCREENS.md 12, which draws one city. Before this arm the state drew
+    /// nothing at all — the same picture as a read still in flight, on the screen E126 calls the
+    /// last place to conflate what is not there with what could not be asked. Every San Jose reader
+    /// was in it, and after R29 a reader anywhere outside the record still is.
+    ///
+    /// No button. There is genuinely nothing to press: a retry would read the same file and get the
+    /// same answer, and a control that cannot change the outcome is worse than no control (the same
+    /// judgement `AlmanacCopy.loadFailed`'s retry is *not* an instance of, because that read really
+    /// can succeed the second time).
+    private var outOfRange: some View {
+        VStack(alignment: .leading, spacing: CypressSpacing.gapVitality) {
+            Text(AlmanacCopy.outOfRangeTitle)
+                .font(CypressFont.body145Bold)
+                .foregroundStyle(CypressColor.textInk)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(AlmanacCopy.outOfRangeBody)
+                .font(CypressFont.body125)
+                .foregroundStyle(CypressColor.textMuted)
+                .lineSpacing(CypressFont.LineSpacing.body125)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, CypressSpacing.labelSectionTop)
+        .padding(.horizontal, CypressSpacing.gutter)
     }
 
     // MARK: - The read that did not arrive

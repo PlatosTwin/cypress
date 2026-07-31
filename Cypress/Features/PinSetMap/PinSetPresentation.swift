@@ -178,6 +178,9 @@ enum PinSetCopy {
         switch subject {
         case .coverageGap: return AlmanacCopy.coverageLabel
         case .vacantSites: return AlmanacCopy.vacantLabel
+        // The row's own title, `Newest neighbors`, for the same reason the two above it are the
+        // labels over their blocks: it is the string the reader pressed (ERRATA E182).
+        case .newestNeighbors: return AlmanacCopy.newestTitle
         // The record's own display name, carried from the screen the reader pressed the control on.
         // Same rule as the two above it: the title of this screen is a string that already existed
         // and that the reader has just read, rather than one invented at the destination.
@@ -190,6 +193,10 @@ enum PinSetCopy {
         switch set.subject {
         case .coverageGap: return AlmanacCopy.coverageTitle(count: set.count, locale: locale)
         case .vacantSites: return AlmanacCopy.vacantTitle(count: set.count, locale: locale)
+        // Carried, not rebuilt. `newestSubtitle` needs the leading species and the two other cases
+        // here need only a count, so re-deriving it would mean this screen holding a species list
+        // whose only job is to agree with the row it came from (ERRATA E182).
+        case let .newestNeighbors(sentence): return sentence
         // **The street, because the reader is on foot.** A person holding this screen is trying to
         // walk to the thing, and the address is the one fact that gets them onto the right block
         // without reading the map at all. 8,943 of the seed's rows carry no address; that is said

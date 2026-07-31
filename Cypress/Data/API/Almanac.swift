@@ -43,15 +43,44 @@ public struct Almanac: Hashable, Sendable {
     public static var empty: Almanac { Almanac(neighborhood: nil) }
 }
 
-// MARK: - The neighbourhood
+// MARK: - The area
 
-/// One SF Analysis Neighborhood, and everything screen 12 says about it.
+/// **What the almanac is about** — RULINGS R29, ERRATA E182.
+///
+/// A4 fixed the unit as an SF Analysis Neighborhood. D16 made the destination a merged national
+/// inventory, and the seed already holds two cities, only one of which publishes polygons we carry.
+/// R29's answer is a named area where the record holds one and a stated distance where it does not,
+/// and this type is that answer: the two cases are different promises and the screen says which one
+/// it is making rather than calling both "your area".
+public enum AlmanacArea: Hashable, Sendable {
+
+    /// A polygon the seed carries, named by the city that drew it.
+    ///
+    /// The name is the seed's own, verbatim (A4, ERRATA E2). Never prettified: SF's official set has
+    /// no "Outer Sunset" — the mock's pill names a place the dataset the product committed to does
+    /// not carry (ERRATA E47).
+    case named(String)
+
+    /// Everything within this many metres of the reader, because no boundary in the record covers
+    /// where they are standing.
+    case radius(metres: Double)
+}
+
+// MARK: - The neighborhood
+
+/// One area, and everything screen 12 says about it.
 public struct AlmanacNeighborhood: Hashable, Sendable {
 
-    /// The seed's own name for the polygon, verbatim (A4, ERRATA E2). Never prettified: SF's
-    /// official set has no "Outer Sunset" — the mock's pill names a place the dataset the product
-    /// committed to does not carry (ERRATA E47).
-    public let name: String
+    /// The area this almanac is about (R29).
+    public let area: AlmanacArea
+
+    /// The area's name, when it has one. `nil` for a radius, and that `nil` is load-bearing:
+    /// `PinSet.neighborhoodName` documents that "an area we could not name must not be named", and
+    /// a distance is not a name.
+    public var name: String? {
+        guard case let .named(name) = area else { return nil }
+        return name
+    }
 
     /// SCREENS.md 12 §2 row 1 — the year's first recorded flowering in this neighbourhood.
     /// `nil` below A9's floor of one sighting.
@@ -74,7 +103,7 @@ public struct AlmanacNeighborhood: Hashable, Sendable {
     public let vacantSites: VacantSites?
 
     public init(
-        name: String,
+        area: AlmanacArea,
         firstBloom: BloomFirst? = nil,
         elder: ElderTree? = nil,
         newestNeighbors: RecentPlanting? = nil,
@@ -82,7 +111,7 @@ public struct AlmanacNeighborhood: Hashable, Sendable {
         coverage: CoverageGap? = nil,
         vacantSites: VacantSites? = nil
     ) {
-        self.name = name
+        self.area = area
         self.firstBloom = firstBloom
         self.elder = elder
         self.newestNeighbors = newestNeighbors
@@ -208,9 +237,25 @@ public struct RecentPlanting: Hashable, Sendable {
     /// carries no species.
     public let leadingSpecies: [String]
 
-    public init(treeCount: Int, leadingSpecies: [String]) {
+    /// The trees themselves, nearest first, capped at `AlmanacLimits.recentPlantingRowLimit`
+    /// (ERRATA **E182**, the owner's own report: *"Clicking on newest neighbors on neighborhood
+    /// almanac should show them on the map."*).
+    ///
+    /// This row was the last counted row on screen 12 that named a group and could not say where it
+    /// was — the identical defect E129 fixed on the coverage gap and the vacant sites, and E144 on a
+    /// single record. It is fixed the identical way, with the same type and the same destination,
+    /// because a third route onto the map would be a third chance to answer *where* differently.
+    ///
+    /// `treeCount` stays the total over the whole window and these are a page of it, exactly as
+    /// `VacantSites` splits the two. In the shipped seed the page is never a page — the busiest
+    /// neighborhood holds five spring plantings — but the cap is real and `PinSet.isComplete`
+    /// compares against the total rather than trusting that.
+    public let nearest: [TreePin]
+
+    public init(treeCount: Int, leadingSpecies: [String], nearest: [TreePin] = []) {
         self.treeCount = treeCount
         self.leadingSpecies = leadingSpecies
+        self.nearest = nearest
     }
 }
 
@@ -341,6 +386,38 @@ public enum AlmanacLimits {
     /// exactly what E12 measured as the point where the pin layer starts lying about how many
     /// records there are.
     public static let vacantSiteRowLimit = 20
+
+    /// How many of this spring's plantings the `Newest neighbors` row carries to its map
+    /// (ERRATA E182).
+    ///
+    /// The same number as `vacantSiteRowLimit`, for the same measured reason and stated once more
+    /// rather than shared: 20 pins is about the density `MapLayout.defaultSpanMetres` was chosen for,
+    /// and above it E12's finding is that the pin layer starts lying about how many records there
+    /// are. It is a much looser cap here — the busiest neighborhood in the shipped seed holds five
+    /// spring plantings — which is why it is a cap and not a page size anybody has to think about.
+    public static let recentPlantingRowLimit = 20
+
+    /// The radius of the fallback area, when no polygon in the record covers the reader
+    /// (RULINGS **R29**).
+    ///
+    /// **1,200 m, which is `AlmanacMetrics.walkRadiusM`, and the coincidence is the choice.** Two
+    /// things had to be true of this number and one number satisfies both:
+    ///
+    /// - **It has to be a neighborhood-sized area, or the screen's thresholds change meaning.** SF's
+    ///   41 Analysis Neighborhoods span 0.015–0.045 degrees of latitude; a 1,200 m radius is 0.0216,
+    ///   which sits inside that range rather than beside it. Measured on the shipped seed, the circle
+    ///   around downtown San Jose holds 6,963 records and 167 species — between Outer Richmond
+    ///   (6,216) and Noe Valley (6,361). A smaller area would cross the cold-start floors less often
+    ///   and quietly empty panels that were populating (DECISIONS §2.6).
+    /// - **§4's second sentence has to stay honest.** The coverage card says "All nine are within a
+    ///   15-minute walk" only when it has checked, against `AlmanacMetrics.walkRadiusM`. Setting the
+    ///   fallback to the same distance makes that check pass by construction inside the fallback,
+    ///   which is the sentence being *true* rather than the check being skipped.
+    ///
+    /// The two constants are deliberately not one. If they ever diverge, the fallback area may hold
+    /// a tree §4 declines to call walkable, which costs a true sentence rather than printing a false
+    /// one — the safe direction, and the direction `walkRadiusM`'s own note already picks.
+    public static let fallbackRadiusM: Double = 1_200
 }
 
 // MARK: - Default
