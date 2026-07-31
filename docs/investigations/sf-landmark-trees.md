@@ -296,14 +296,17 @@ honest denominator is **26**.
 Crosswalking the SFPW roster to the flag and to the seed, by address and species:
 
 | | designations | of 26 |
-|---|---:|---|
+|---|---:|---:|
 | Reachable by the key join on `legal_status = 'Landmark tree'` alone | **19** | **73%** |
 | Present on the roster but never flagged in DataSF, yet findable in the seed by species + address | 3 | 12% |
-| — #8 Cliff Date Palms (*Phoenix rupicola*), Dolores median → seed `25023`, flagged `DPW Maintained` | | |
-| — #9 Guadalupe Palm grove (*Brahea edulis*), 1608 Dolores → seed `25132`/`25133`, flagged `DPW Maintained` | | |
-| — #23 California Buckeye, 2694 McAllister (removed 2022) → seed `255909`, flagged `Significant Tree` | | |
 | **Reachable at all** | **22** | **85%** |
 | **Not in the seed under any method** | **4** | **15%** |
+
+The three that the flag misses but the seed holds anyway, each verified by hand:
+
+- **#8** Cliff Date Palms (*Phoenix rupicola*), Dolores median → seed `25023`, flagged `DPW Maintained`
+- **#9** Guadalupe Palm grove (*Brahea edulis*), 1608 Dolores → seed `25132`/`25133`, flagged `DPW Maintained`
+- **#23** California Buckeye, 2694 McAllister (removed 2022) → seed `255909`, flagged `Significant Tree`
 
 The four, hand-checked against the seed at the City's own published coordinates within 40 m:
 
