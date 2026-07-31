@@ -745,7 +745,9 @@ public struct TreeQueries {
     private var treeColumns: String {
         """
         t.\(schema.treeIdentityColumn) AS tree_uuid,
-               t.external_ref AS external_ref, t.source AS source,
+               t.external_ref AS external_ref,
+               \(schema.hasIdSpace ? "t.id_space" : "NULL") AS id_space,
+               t.source AS source,
                t.lat AS lat, t.lon AS lon, t.address AS address, t.site_type AS site_type,
                t.status AS status, t.planted_year AS planted_year,
                t.dbh_city_cm_min AS dbh_city_cm_min, t.dbh_city_cm_max AS dbh_city_cm_max,
@@ -788,8 +790,10 @@ public struct TreeQueries {
 
         return Tree(
             id: try row.uuid("tree_uuid"),
-            // INTEGER in the current seed, TEXT in the original; sqlite renders either as text.
+            // TEXT since the v14 pass, INTEGER before it; sqlite renders either as text.
             externalRef: try row.stringIfPresent("external_ref"),
+            // NULL on a seed built before the v14 pass, which held one city and one id space.
+            idSpace: try row.stringIfPresent("id_space"),
             source: try row.value("source", TreeSource.self),
             coordinate: Coordinate(latitude: try row.double("lat"), longitude: try row.double("lon")),
             address: try row.stringIfPresent("address"),

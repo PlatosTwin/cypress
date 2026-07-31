@@ -196,7 +196,31 @@ extension LandContext {
     /// actual park trees are largely not in this dataset at all. For #69 that is a feature: a
     /// contributor adding a tree in Golden Gate Park is adding something the city inventory does not
     /// have.
-    public static func inferred(from record: CityRecord) -> LandContext? {
+    /// ── The rule is San Francisco's, and it now says so (#129, ERRATA E176) ──────────────────
+    ///
+    /// Every string matched below is a **DataSF `qLegalStatus` / `qCaretaker` value**. Read against
+    /// another city's inventory the function does not fail, which is the problem: it answers
+    /// confidently and wrongly. Measured against the 52,788 San Jose rows the v14 seed carries, whose
+    /// `legal_status` is San Jose's `OWNEDBY`:
+    ///
+    /// | San Jose value           | rows   | what this rule would return | why it is wrong |
+    /// |--------------------------|-------:|-----------------------------|-----------------|
+    /// | `Private`                | 48,036 | `.privateProperty`          | San Jose's model is that the *adjacent owner* maintains the street tree. The tree is in the right-of-way; `OWNEDBY` names who is responsible, not whose land it is. This is `caretaker`'s trap, one column to the left. |
+    /// | `San Jose`               |  2,593 | `.otherPublic`              | falls through to `caretaker`, which reads `General Fund` — a budget line, not an agency, and certainly not a location |
+    /// | *(blank)*                |  2,158 | `.otherPublic`              | same fall-through, same budget line |
+    ///
+    /// So all 52,788 rows of a layer literally called *Street Trees* would resolve, and **not one of
+    /// them to `.street`.** That is worse than nil: nil draws nothing, and this draws a sentence that
+    /// is false on a screen that presents it as the city's own record.
+    ///
+    /// The fix is not a San Jose branch — inventing one would be a design decision made in passing,
+    /// and San Jose's `GROWSPACE` (`Park Strip`, `Well/Pit`, `Median`) is a better signal than
+    /// `OWNEDBY` anyway. The fix is that a rule written over one publisher's vocabulary does not run
+    /// against another's. `idSpace` nil means "not stated", which is how every seed built before the
+    /// v14 pass reads and is correct for those files: they hold San Francisco and nothing else.
+    /// RULINGS R24.
+    public static func inferred(from record: CityRecord, idSpace: String? = nil) -> LandContext? {
+        if let idSpace, idSpace != "sf" { return nil }
         switch record.legalStatus {
         // Jurisdiction: the public right-of-way. "Permitted Site" is a planting DPW issued a permit
         // for, which is a sidewalk site; the two Planning Code sections and Public Works Code

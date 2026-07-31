@@ -243,7 +243,7 @@ struct CityRecordSectionTests {
             TreeProfile(
                 tree: tree,
                 inventorySource: InventorySource(
-                    id: "city",
+                    id: "sf_city",
                     name: "SF Public Works street tree inventory",
                     url: "https://example.invalid",
                     snapshotDate: InventorySource.date(fromISODay: "2026-07-26")
@@ -525,20 +525,20 @@ struct CityRecordSectionTests {
                 return try #require(try queries.tree(id: uuid, connection: connection))
             }
             return (
-                try row("status = 'vacant_site' AND inventory_source = 'datasf'"),
-                try row("status = 'alive' AND inventory_source = 'city'")
+                try row("status = 'vacant_site' AND inventory_source = 'sf_datasf'"),
+                try row("status = 'alive' AND inventory_source = 'sf_city'")
             )
         }
 
         let site = picked.0
         let tree = picked.1
-        #expect(site.inventorySourceID == "datasf")
-        #expect(tree.inventorySourceID == "city")
+        #expect(site.inventorySourceID == "sf_datasf")
+        #expect(tree.inventorySourceID == "sf_city")
 
         let siteSource = try #require(LocalAPI.provenance(of: site, in: store))
         let treeSource = try #require(LocalAPI.provenance(of: tree, in: store))
-        #expect(siteSource.id == "datasf")
-        #expect(treeSource.id == "city")
+        #expect(siteSource.id == "sf_datasf")
+        #expect(treeSource.id == "sf_city")
         #expect(siteSource.name != treeSource.name, "two inventories, one name")
 
         let note = try #require(

@@ -88,31 +88,58 @@ struct InventoryContractTests {
         return (store, meta)
     }
 
-    @Test("every tree's uuid is derived from its source id under the seed's declared prefix")
+    @Test("every tree's uuid is derived from its source id under ITS OWN id space's prefix")
     func identityIsAPureFunctionOfTheSourceId() async throws {
         let (store, meta) = try await Self.openSeed()
-        // A seed built before the contract existed carries no prefix. It was built in one id space
-        // with an empty one, so that is the honest fallback — and it is stated here rather than
-        // silently assumed anywhere else.
-        let prefix = meta["identity_prefix"] ?? ""
+        let seed = try #require(store.seed)
 
-        let rows = try await store.queue.read { connection -> [(String, Int)] in
-            let statement = try connection.prepare("""
-                SELECT uuid, external_ref FROM \(SeedDatabase.schemaName).trees
-                 WHERE external_ref IS NOT NULL
-                """)
+        // ── Why the prefix is read per row and not once per file ──────────────────────────────
+        // It used to be `meta["identity_prefix"] ?? ""` for all 145,837 rows, which was right while
+        // the whole file was one id space and became WRONG for one of them the moment a second city
+        // landed: San Jose's uuids are derived under `us-ca-sj:` and San Francisco's under the
+        // frozen empty string. A single file-wide prefix cannot be right for both, and a test that
+        // used one would either fail on every San Jose row or, if somebody "fixed" it by taking the
+        // majority, stop checking San Jose at all.
+        //
+        // So the prefix comes from `id_spaces`, joined on the row's own `id_space`. A seed built
+        // before the v14 pass has neither table nor column; it was built in one space with an empty
+        // prefix, and that is the honest fallback, stated here rather than assumed elsewhere.
+        let rows = try await store.queue.read { connection -> [(String, String, String)] in
+            let sql = seed.hasIdSpace
+                ? """
+                  SELECT t.uuid AS uuid, t.external_ref AS external_ref,
+                         s.identity_prefix AS prefix
+                    FROM \(SeedDatabase.schemaName).trees t
+                    JOIN \(SeedDatabase.schemaName).id_spaces s ON s.id = t.id_space
+                   WHERE t.external_ref IS NOT NULL
+                  """
+                : """
+                  SELECT uuid, CAST(external_ref AS TEXT) AS external_ref, '' AS prefix
+                    FROM \(SeedDatabase.schemaName).trees
+                   WHERE external_ref IS NOT NULL
+                  """
+            let statement = try connection.prepare(sql)
             defer { statement.finalize() }
-            return try statement.fetchAll { (try $0.string("uuid"), try $0.int("external_ref")) }
+            return try statement.fetchAll {
+                (try $0.string("uuid"), try $0.string("external_ref"), try $0.string("prefix"))
+            }
         }
 
         #expect(rows.count > 100_000, "only \(rows.count) rows carry an external_ref; the corpus is not the seed")
 
+        // On a seed built before v14 this falls back to the file-wide empty prefix, which is what
+        // that file's rows were derived with.
+        let fallbackPrefix = meta["identity_prefix"] ?? ""
+
         var mismatches: [String] = []
-        for (uuid, ref) in rows {
-            let expected = Self.uuidV5(namespace: Self.treeNamespace, name: "\(prefix)\(ref)")
+        for (uuid, ref, prefix) in rows {
+            let effective = seed.hasIdSpace ? prefix : fallbackPrefix
+            let expected = Self.uuidV5(namespace: Self.treeNamespace, name: "\(effective)\(ref)")
                 .uuidString.lowercased()
             if expected != uuid.lowercased() {
-                if mismatches.count < 5 { mismatches.append("ref \(ref): seed \(uuid), derived \(expected)") }
+                if mismatches.count < 5 {
+                    mismatches.append("ref '\(effective)\(ref)': seed \(uuid), derived \(expected)")
+                }
             }
         }
         let detail = mismatches.joined(separator: "\n")
@@ -120,6 +147,94 @@ struct InventoryContractTests {
             mismatches.isEmpty,
             "\(mismatches.count)+ rows have a uuid that is not uuid5(NS_TREE, prefix + external_ref). Every public tree URL is derived this way, so this is a citation break, not a cosmetic one:\n\(detail)"
         )
+    }
+
+    /// **The collision the id space exists to prevent, asserted against the shipped file.**
+    ///
+    /// ERRATA E169's worked example is Los Angeles TreeID 276198 against San Francisco TreeID
+    /// 276198. San Jose supplies the real one: `FACILITYID` and `TreeID` are both small-integer
+    /// asset numberings and they overlap outright. Before the v14 pass this was not a wrong answer,
+    /// it was `sqlite3.IntegrityError: UNIQUE constraint failed: trees.external_ref` partway through
+    /// the second city.
+    ///
+    /// Two things are checked and they fail differently: that the same ref really does occur in both
+    /// spaces (otherwise the second assertion is vacuous), and that the two rows are different trees
+    /// with different uuids.
+    @Test("two cities' identical ids are two different trees")
+    func twoCitiesShareIdsAndNotIdentities() async throws {
+        let (store, _) = try await Self.openSeed()
+        let seed = try #require(store.seed)
+        guard seed.hasIdSpace else { return }
+
+        let shared = try await store.queue.read { connection -> [(String, String, String)] in
+            let statement = try connection.prepare("""
+                SELECT t.external_ref AS external_ref, t.id_space AS id_space, t.uuid AS uuid
+                  FROM \(SeedDatabase.schemaName).trees t
+                 WHERE t.external_ref IN (
+                       SELECT external_ref FROM \(SeedDatabase.schemaName).trees
+                        GROUP BY external_ref HAVING COUNT(DISTINCT id_space) > 1
+                       )
+                 ORDER BY CAST(t.external_ref AS INTEGER), t.id_space
+                 LIMIT 200
+                """)
+            defer { statement.finalize() }
+            return try statement.fetchAll {
+                (try $0.string("external_ref"), try $0.string("id_space"), try $0.string("uuid"))
+            }
+        }
+
+        // The control. If no ref is shared, everything below passes without measuring anything —
+        // which is exactly the inert-test failure this project has had once already.
+        #expect(
+            shared.count >= 2,
+            "no external_ref occurs in two id spaces, so this test proves nothing. Either the seed holds one city, or the id spaces are not what they claim."
+        )
+
+        var byRef: [String: [String: String]] = [:]
+        for (ref, space, uuid) in shared { byRef[ref, default: [:]][space] = uuid }
+        for (ref, bySpace) in byRef where bySpace.count > 1 {
+            #expect(
+                Set(bySpace.values).count == bySpace.count,
+                "external_ref '\(ref)' has the same uuid in \(bySpace.keys.sorted()); two cities' asset ids collided into one identity"
+            )
+        }
+    }
+
+    /// Every row's declared id space is one the file itself declares, and its inventory's space is
+    /// the same one. A row whose `id_space` is not in `id_spaces` is a uuid derived with a prefix
+    /// nothing in the file records.
+    @Test("every row's id space and inventory are declared by the file")
+    func theFileDeclaresItsOwnVocabulary() async throws {
+        let (store, _) = try await Self.openSeed()
+        let seed = try #require(store.seed)
+        guard seed.hasIdSpace else { return }
+
+        let orphans = try await store.queue.read { connection -> Int in
+            let statement = try connection.prepare("""
+                SELECT COUNT(*) AS n FROM \(SeedDatabase.schemaName).trees t
+                 WHERE t.id_space NOT IN (SELECT id FROM \(SeedDatabase.schemaName).id_spaces)
+                    OR t.inventory_source NOT IN (SELECT id FROM \(SeedDatabase.schemaName).inventories)
+                    OR t.id_space <> (SELECT id_space FROM \(SeedDatabase.schemaName).inventories
+                                       WHERE id = t.inventory_source)
+                """)
+            defer { statement.finalize() }
+            return try statement.fetchOne { try $0.int("n") } ?? -1
+        }
+        #expect(orphans == 0, "\(orphans) rows name an id space or inventory the file does not declare, or disagree with their own inventory's space")
+
+        // And every declared inventory really did contribute rows. `inventories` is written for
+        // exactly the contributors, so a row for an inventory with no trees means the build wrote a
+        // vocabulary it did not use — and `SELECT * FROM inventories` stops describing the file.
+        let idle = try await store.queue.read { connection -> [String] in
+            let statement = try connection.prepare("""
+                SELECT i.id AS id FROM \(SeedDatabase.schemaName).inventories i
+                 WHERE NOT EXISTS (SELECT 1 FROM \(SeedDatabase.schemaName).trees t
+                                    WHERE t.inventory_source = i.id)
+                """)
+            defer { statement.finalize() }
+            return try statement.fetchAll { try $0.string("id") }
+        }
+        #expect(idle.isEmpty, "inventories \(idle) are declared but contributed no row")
     }
 
     @Test("the seed's rows all come from one id space, and it is the one its uuids were derived in")
@@ -150,9 +265,23 @@ struct InventoryContractTests {
                 InventorySource(id: inventory, seedMeta: meta) != nil,
                 "no inventory named '\(inventory)' can be described from this seed's receipt"
             )
-            // And on a seed the contract built, its id space must be the one the file's uuids were
-            // derived in. A seed mixing two spaces has uuids derived two ways and half are wrong.
-            guard let declared else { continue }
+            // And on a seed the contract built, the receipt's declared space for this inventory must
+            // be the one its own rows carry.
+            //
+            // ── What this used to assert, and why it could not stay ────────────────────────────
+            // It compared every inventory's space against the file-wide `identity_id_space`, on the
+            // reasoning that "a seed mixing two spaces has uuids derived two ways and half are
+            // wrong". That was right while a file could only hold one space and is the exact
+            // assumption the v14 pass removed: the shipped seed now holds `sf` and `us-ca-sj`, both
+            // derived correctly, each under its own frozen prefix. Keeping the old comparison would
+            // have made the correct outcome the red one.
+            //
+            // The property that actually matters survives and is stronger, because it is per row
+            // rather than per file: an inventory's declared space must equal the space its own rows
+            // were written with. `identityIsAPureFunctionOfTheSourceId` then re-derives every uuid
+            // through that space's prefix, so a mislabelled inventory fails there too, over 198,625
+            // rows.
+            guard declared != nil else { continue }
             // Folded in from what used to be a test of its own. A receipt that names a contract
             // must name the one in this repo — a seed filtered through some other file is a seed
             // whose rules nobody here can read. It lives inside a live test rather than beside one
@@ -164,11 +293,30 @@ struct InventoryContractTests {
                     "the seed says it was filtered through '\(named)', which is not the contract in this repo"
                 )
             }
-            let space = meta["inventory_\(inventory)_id_space"]
-            #expect(
-                space == declared,
-                "rows say inventory_source='\(inventory)', whose id space is \(space ?? "undeclared") but whose uuids were derived in '\(declared)'"
-            )
+            let declaredSpace = meta["inventory_\(inventory)_id_space"]
+            let rowSpaces = try await store.queue.read { connection -> [String] in
+                guard store.seed?.hasIdSpace == true else { return [] }
+                let statement = try connection.prepare("""
+                    SELECT DISTINCT id_space AS s FROM \(SeedDatabase.schemaName).trees
+                     WHERE inventory_source = ? ORDER BY s
+                    """)
+                defer { statement.finalize() }
+                try statement.bind(inventory, at: 1)
+                return try statement.fetchAll { try $0.string("s") }
+            }
+            if rowSpaces.isEmpty {
+                // A seed built before v14: no per-row space to compare against, so the receipt's
+                // own claim is all there is and the file-wide one is right for it.
+                #expect(
+                    declaredSpace == meta["identity_id_space"],
+                    "rows say inventory_source='\(inventory)', whose id space is \(declaredSpace ?? "undeclared") but whose uuids were derived in '\(meta["identity_id_space"] ?? "")'"
+                )
+            } else {
+                #expect(
+                    rowSpaces == [declaredSpace ?? ""],
+                    "inventory '\(inventory)' is declared in id space \(declaredSpace ?? "undeclared") but its rows carry \(rowSpaces)"
+                )
+            }
         }
     }
 
@@ -234,7 +382,8 @@ struct InventoryContractTests {
         // `DBH` null. If the sentinel leaked, the zeros would acquire a bucket and only the 6,372
         // nulls would lack one. So the count of city rows with NO bucket is the discriminator, and
         // it has to be the sum.
-        let source = meta["trees_source"] ?? "datasf"
+        // `sf_city` since the v14 pass renamed it; `city` on any seed built before.
+        let source = meta["trees_source"] ?? "sf_datasf"
 
         let noBucket = try await store.queue.read { connection -> Int in
             let statement = try connection.prepare("""
@@ -246,7 +395,7 @@ struct InventoryContractTests {
             return try statement.fetchOne { try $0.int("n") } ?? -1
         }
 
-        if source == "city" {
+        if source == "sf_city" || source == "city" {
             #expect(
                 noBucket == 9_019,
                 "\(noBucket) city rows carry no DBH bucket, expected 2,647 zeros + 6,372 nulls = 9,019. Below 9,019 means the 'not recorded' zero was read as a measurement."

@@ -98,6 +98,48 @@ CREATE TABLE neighborhoods (
     updated_at   TEXT NOT NULL
 );
 
+-- ----------------------------------------------------- id spaces, inventories --
+-- THE SEED DECLARES ITS OWN VOCABULARY INSTEAD OF THE SCHEMA ENUMERATING IT.
+--
+-- `trees.inventory_source` used to carry `CHECK (inventory_source IN
+-- ('city','datasf'))` -- a closed two-value list, which is a hard failure the
+-- first time a second city is ingested (ERRATA E169 reproduced it:
+-- `sqlite3.IntegrityError: CHECK constraint failed`). The CHECK's real job is
+-- "no row may name an inventory the receipt cannot describe", and a hardcoded
+-- list is the wrong instrument for that: every new city would edit the schema.
+--
+-- So these two tables are written by `build_seed.py` from `INVENTORIES` and
+-- `ID_SPACES` in `Tools/inventory_contract.py`, **for exactly the inventories
+-- that contributed rows**, and the vocabulary becomes a foreign key. A city that
+-- shipped no rows is not in here, so `SELECT * FROM inventories` is a list of
+-- what this file actually holds rather than a list of what the builder knows
+-- about.
+--
+-- `id_spaces.identity_prefix` is the load-bearing column. `trees.uuid` is
+-- `uuid5(NS_TREE, identity_prefix || external_ref)` and until now the prefix
+-- lived in ONE `seed_meta` key, which was correct only while the whole file was
+-- one id space. With two, a single key is a claim that is wrong for one of them.
+-- Reading it per space out of a table is what lets the contract test re-derive
+-- every row's uuid rather than trust one.
+CREATE TABLE id_spaces (
+    id              TEXT PRIMARY KEY,
+    -- Prepended to a source's own id to make the uuid5 seed string. FROZEN per
+    -- space: changing one rewrites every public tree URL in it (DECISIONS 13).
+    -- `sf`'s is the empty string and is the one space permitted to have one.
+    identity_prefix TEXT NOT NULL,
+    note            TEXT NOT NULL,
+    CHECK (id <> '')
+);
+
+CREATE TABLE inventories (
+    id        TEXT PRIMARY KEY,
+    id_space  TEXT NOT NULL REFERENCES id_spaces(id),
+    name      TEXT NOT NULL,
+    url       TEXT NOT NULL,
+    CHECK (id <> ''),
+    CHECK (name <> '')
+);
+
 -- ------------------------------------------------------------------ trees --
 -- Deviations from section 4:
 --   geom geometry(Point,4326)   -> lat REAL + lon REAL (WGS84 degrees)
@@ -109,21 +151,40 @@ CREATE TABLE neighborhoods (
 --                                  via `build_seed.py --with-city-raw`. The
 --                                  column is always declared so the schema
 --                                  contract does not move.
---   external_ref text           -> INTEGER. Every DataSF TreeID observed is
---                                  numeric (verified across all 195,309 rows).
+--   external_ref text           -> TEXT NOT NULL, beside id_space TEXT NOT NULL,
+--                                  unique over the PAIR. See below.
 --
--- `external_ref` IS A SOURCE-LOCAL ID UNDER A GLOBAL UNIQUE CONSTRAINT, AND THAT
--- IS A BLOCKER FOR A SECOND CITY. It is labelled "DataSF TreeID" below because
--- that is what it holds today, and both of San Francisco's inventories draw from
--- that one numbering scheme. A second city's inventory does not: Los Angeles
--- TreeID 276198 and San Francisco TreeID 276198 are different trees, and today
--- the second INSERT simply fails on this index.
+-- `external_ref` WAS A SOURCE-LOCAL ID UNDER A GLOBAL UNIQUE CONSTRAINT, WHICH
+-- WAS THE BLOCKER FOR A SECOND CITY (ERRATA E169, reproduced:
+-- `sqlite3.IntegrityError: UNIQUE constraint failed: trees.external_ref`).
+-- San Jose FACILITYID 3 and San Francisco TreeID 3 are two different trees and
+-- both exist; the second INSERT simply failed on the index.
 --
--- The uuid derivation is already safe against it -- identity is qualified by id
--- space (see the namespace block in Tools/build_seed.py and ID_SPACES in
--- Tools/inventory_contract.py) -- but this column is not. Widening it to
--- (id_space, external_ref) or storing the qualified string is work for whoever
--- ingests a second id space, and it has to happen before the ingest, not after.
+-- Widened in the v14 seed pass (#129, ERRATA E176) to `UNIQUE (id_space,
+-- external_ref)`, with the id space stored beside the ref rather than folded
+-- into it:
+--
+--   * `id_space` holds the `ID_SPACES` key -- `sf`, `us-ca-sj` -- so "which
+--     numbering is this row's id drawn from" is a column and not a parse. The
+--     alternative, storing the qualified seed string `us-ca-sj:3` in one column,
+--     is worse for exactly that reason, and the id space is a thing the receipt
+--     and the UI both need to be able to name.
+--   * `external_ref` is TEXT, NOT INTEGER: `InventoryRecord.source_ref` is
+--     defined as the source's own id VERBATIM AS A STRING, and nothing
+--     guarantees the third city's is numeric. San Jose's FACILITYID is a string
+--     field in its own layer. Storing it as an integer would have made the
+--     column's type a property of the first two sources that happened to arrive.
+--   * NOT NULL, which is a decision and not a tidy-up. SQLite treats NULLs as
+--     distinct in a unique index, so a nullable `external_ref` would let every
+--     identity-less row escape the constraint the column exists for. The
+--     contract does permit `source_ref=None` (Oakland publishes nothing but a
+--     row number), and such a source cannot be a row in THIS file until the
+--     schema grows a representation for it -- `emit()` stops the build rather
+--     than writing one. See RULINGS R24.
+--
+-- The uuid derivation was already safe -- identity is qualified by id space (see
+-- the namespace block in Tools/build_seed.py and ID_SPACES in
+-- Tools/inventory_contract.py) -- and now the column is too.
 --
 -- THE SIX CITY COLUMNS CARRY NO CHECK, AND THAT IS THE DECISION.
 -- Every closed vocabulary in the *app* schema carries its vocabulary in a CHECK,
@@ -185,12 +246,16 @@ CREATE TABLE neighborhoods (
 CREATE TABLE trees (
     id                 INTEGER PRIMARY KEY,     -- internal join key
     uuid               TEXT NOT NULL UNIQUE,    -- stable citable identity
-    external_ref       INTEGER UNIQUE,          -- DataSF TreeID
+    -- The source's own id, verbatim as a string, and the numbering it is drawn
+    -- from. Unique over the pair, never over the ref alone -- see the block above.
+    id_space           TEXT NOT NULL REFERENCES id_spaces(id),
+    external_ref       TEXT NOT NULL,           -- SF TreeID | SJ FACILITYID
     source             TEXT NOT NULL,           -- city_import | community
-    -- WHICH OF SAN FRANCISCO'S TWO INVENTORIES LISTED THIS RECORD. 'city' or
-    -- 'datasf', matching `--source` and `seed_meta.trees_source`.
+    -- WHICH INVENTORY LISTED THIS RECORD. An `inventories.id` -- 'sf_city',
+    -- 'sf_datasf', 'sj_street_tree' -- and a foreign key rather than a CHECK,
+    -- so a new city is a row in a table and not an edit to this schema.
     --
-    -- Under `--source datasf` every row says 'datasf' and the column is
+    -- Under `--source datasf` every row says 'sf_datasf' and the column is
     -- redundant. Under `--source city` it is not: the row set is the city's
     -- operational layer, but that layer has no vacant-site category at all
     -- (`PlantType` is `Tree` on all 133,577 of its records), so the seed's
@@ -200,7 +265,7 @@ CREATE TABLE trees (
     -- given row came from -- otherwise the provenance sentence on screen is a
     -- claim about the file rather than about the record, and for 12,260 of
     -- them it would be the wrong inventory's name.
-    inventory_source   TEXT NOT NULL,           -- city | datasf
+    inventory_source   TEXT NOT NULL REFERENCES inventories(id),
     lat                REAL NOT NULL,
     lon                REAL NOT NULL,
     address            TEXT,
@@ -228,8 +293,14 @@ CREATE TABLE trees (
     created_at         TEXT NOT NULL,
     updated_at         TEXT NOT NULL,
     deleted_at         TEXT,
+    -- One id per numbering, and the numbering is part of the key. Replaces the
+    -- column-level `external_ref INTEGER UNIQUE` that could not hold two cities.
+    UNIQUE (id_space, external_ref),
     CHECK (status IN ('alive','declining','dead_reported','removed','vacant_site')),
-    CHECK (inventory_source IN ('city','datasf')),
+    -- Non-emptiness plus the foreign key above. The vocabulary lives in
+    -- `inventories`, which the build writes; it is not enumerated here.
+    CHECK (inventory_source <> ''),
+    CHECK (external_ref <> ''),
     CHECK (verification_state IN ('unverified','org_verified','city_record')),
     CHECK ((dbh_city_cm_min IS NULL) = (dbh_city_cm_max IS NULL)),
     CHECK (city_raw IS NULL OR json_valid(city_raw)),

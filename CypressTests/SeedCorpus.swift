@@ -94,9 +94,18 @@ struct SeedCorpus: Sendable {
             .split(separator: ",")
             .map { String($0).trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty })
-        switch source {
-        case "city": return .city(absentColumns: absent)
-        case "datasf": return .dataSF(absentColumns: absent)
+        // Which corpus a file is depends on TWO facts now, not one: which San Francisco inventory
+        // decided its trees, and whether a second city's rows are in it. `id_spaces_in_file` is
+        // written by the v14 pass and is absent on every earlier seed, which is exactly right —
+        // those files hold one space.
+        let spaces = Set((meta["id_spaces_in_file"] ?? "")
+            .split(separator: ",")
+            .map { String($0).trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty })
+        switch (source, spaces.contains("us-ca-sj")) {
+        case ("sf_city", false), ("city", false): return .city(absentColumns: absent)
+        case ("sf_city", true), ("city", true): return .cityWithSanJose(absentColumns: absent)
+        case ("sf_datasf", _), ("datasf", _): return .dataSF(absentColumns: absent)
         default:
             Issue.record("seed_meta.trees_source is '\(source)', which no corpus is pinned for")
             return .dataSF(absentColumns: absent)
@@ -149,6 +158,59 @@ struct SeedCorpus: Sendable {
             landContextOtherPublic: 460,
             landContextCityPark: 71,
             landContextUnplaced: 3_506,
+            neighborhoodsWithNoVacantSite: 0,
+            datedVacantSites: 9_237,
+            sunsetVacantSites: 1_436,
+            sunsetTreesWithSpecies: 9_504,
+            sunsetTreesLeftJoined: 9_512,
+            sunsetSpeciesInMix: 201,
+            densestScreenfulFloor: 4_000
+        )
+    }
+
+    /// **San Francisco as above, plus central San Jose.** What ships after #129, built with
+    /// `--source city --sj-extent downtown`.
+    ///
+    /// **52,788 San Jose rows on top of San Francisco's 145,837**, out of a 344,879-record corpus
+    /// that was read and validated in full. Ingesting and shipping are two decisions (ERRATA E176):
+    /// what a phone gets is a contiguous window over central San Jose — downtown, SoFA, Japantown,
+    /// Naglee Park, the Alameda, north Willow Glen — **complete inside it**, because a sampled corpus
+    /// would put invisible holes between real trees on a real block while looking fine in aggregate.
+    ///
+    /// **Three numbers here are the same as `city`'s and that is the finding, not an oversight.**
+    /// `landContextStreet`, `landContextPrivate`, `landContextOtherPublic` and `landContextCityPark`
+    /// do not move, because `LandContext.inferred(from:idSpace:)` refuses to read San Francisco's
+    /// `qLegalStatus` vocabulary against San Jose's `OWNEDBY` (R24). So all 52,788 San Jose rows land
+    /// in `landContextUnplaced`, which goes 3,506 → 56,294. Before that refusal they resolved —
+    /// 48,036 of them to `.privateProperty`, on a layer called *Street Trees*.
+    ///
+    /// **`sunset*` and `neighborhoodsWithNoVacantSite` do not move either**, for a related reason
+    /// worth stating: the seed's `neighborhoods` table is San Francisco's 41 Analysis Neighborhoods
+    /// and nothing else, so every San Jose row carries `neighborhood_id IS NULL` and is invisible to
+    /// every neighbourhood-scoped surface in the app, the almanac included.
+    static func cityWithSanJose(absentColumns: Set<String>) -> SeedCorpus {
+        SeedCorpus(
+            source: "sf_city",
+            absentColumns: absentColumns,
+            trees: 198_625,
+            species: 738,
+            vacantSites: 24_200,
+            cityColumnRows: [
+                "legal_status": 192_912,
+                "caretaker": 195_119,
+                "care_assistant": 10_595,
+                "plant_type": 197_526,
+                "plot_size": 166_746,
+                "permit_notes": 78_095
+            ],
+            distinctPlotSizes: 411,
+            plotSizesShown: 148_116,
+            plotSizesRefused: 18_630,
+            landContextStreet: 137_204,
+            landContextPrivate: 4_596,
+            landContextOtherPublic: 460,
+            landContextCityPark: 71,
+            landContextUnplaced: 56_294,
             neighborhoodsWithNoVacantSite: 0,
             datedVacantSites: 9_237,
             sunsetVacantSites: 1_436,
