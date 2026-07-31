@@ -292,11 +292,19 @@ map is back on the reader, dot dead centre, and **the pan is gone**.
 
 That is #85's shape returning through a door #85 did not close: "the map snaps back to your location
 and cannot be panned away". The mechanism is not the `@State` discard this entry is about, so
-`echo(_:)` does not fix it and was not expected to. A pan is a *gesture*: it moves `MKMapView`'s
+`echo(_:)` does not fix it and was not expected to.
+
+Two things are true and only one of them is the cause. A pan is a *gesture*: it moves `MKMapView`'s
 camera and mints no `MapCameraRequest`, so `MapHomeView.position` still holds the last request the app
-made — the fly-to-you from launch. Leaving the tab tears the map view down; returning builds a fresh
-one whose coordinator has `appliedSequence == nil`, so that stale request is applied to the new map as
-if it were new. The reader's pan was never represented in the value that survived.
+made and the reader's pan is never represented in any value that survives the tab. That is the
+standing hazard. But the thing that actually re-aims the camera is simpler and is exactly what the
+guard rail names: **`hasCentredOnUser` is `@State` on a tab root that SwiftUI rebuilds**, so returning
+to the tab resets the one-shot, `.task` runs `centreOnUserIfNeeded()` again, it finds a fix, and it
+mints a *fresh* fly-to. The map re-centres on every appearance. `#85` closed that for later fixes
+arriving within one visit; it did not close it for a second visit.
+
+Both readings agree the view's state was rebuilt, which is what the observation shows; whoever fixes
+it should confirm which of the two drives the camera before choosing where to put the flag.
 
 **It is almost certainly not this branch's.** On main, `makeUIView` called
 `setRegion(position.region, animated: false)` on the same stale request for the same reason. This was
