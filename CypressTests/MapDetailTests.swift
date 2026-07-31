@@ -331,7 +331,7 @@ struct MapDetailTests {
         }
         let subject = try #require(before.first { $0.status == .alive })
 
-        try await api.debugMarkRemoved(treeID: subject.id)
+        try await api.debugMarkStatus(treeID: subject.id, .removed)
 
         guard case let .pins(after) = try await api.mapContent(in: viewport) else {
             Issue.record("a zoom-16 viewport did not return pins")

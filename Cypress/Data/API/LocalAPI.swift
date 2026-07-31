@@ -1493,6 +1493,18 @@ public actor LocalAPI: CypressAPI {
         return tree.id
     }
 
+    /// Test seam (ERRATA E170): read one flag back, including a resolved one.
+    ///
+    /// `openReviews` returns open flags only, so a dismissal is invisible through the shipping read —
+    /// which is exactly what a test of the dismissal must not accept as proof. "The row left the
+    /// queue" is also what a soft-delete, a lost write or a `notFound` would look like. This reads
+    /// the row and lets the test assert `.dismissed` rather than absence.
+    public func debugReviewFlag(id: UUID) async throws -> ReviewFlag? {
+        try await store.queue.read { connection in
+            try contributions.reviewFlag(id: id, connection: connection)
+        }
+    }
+
     /// Test seam (ERRATA E124-B, widened by E170): open a status review of a given kind on a real seed
     /// tree, returning its flag id, so the deep-link harness can put the moderation surface in front of
     /// a screenshot with a genuine record behind it. Inserts the same flag a screen 05 check-in would,

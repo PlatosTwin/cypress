@@ -87,6 +87,26 @@ struct CheckInView: View {
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .task { await model.loadSpecies() }
+        // The confirmation step `ObservationStatus.opensReviewFlag` was written for and never had
+        // (ERRATA E170). Cancelling leaves the card exactly as it was: the model holds the proposed
+        // status aside and never touches the draft until this returns.
+        .confirmationDialog(
+            CheckInCopy.reviewConfirmTitle(for: model.pendingStatus ?? .alive),
+            isPresented: reviewConfirmPresented,
+            titleVisibility: .visible
+        ) {
+            Button(CheckInCopy.reviewConfirmAction) { model.confirmPendingStatus() }
+            Button(CheckInCopy.reviewCancel, role: .cancel) { model.cancelPendingStatus() }
+        } message: {
+            Text(CheckInCopy.reviewConfirmMessage)
+        }
+    }
+
+    private var reviewConfirmPresented: Binding<Bool> {
+        Binding(
+            get: { model.pendingStatus != nil },
+            set: { if !$0 { model.cancelPendingStatus() } }
+        )
     }
 
     // MARK: - 1 · Status
@@ -102,6 +122,16 @@ struct CheckInView: View {
                 selection: statusBinding,
                 label: ObservationStatusLabel.text(for:)
             )
+
+            // Drawn only under the two segments that raise a review flag (ERRATA E170). See
+            // `CheckInCopy.reviewNotice` for why it is not permanent and why it names no city.
+            if model.draft.status.opensReviewFlag {
+                Text(CheckInCopy.reviewNotice)
+                    .font(CypressFont.body12)
+                    .foregroundStyle(CypressColor.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
     }
 

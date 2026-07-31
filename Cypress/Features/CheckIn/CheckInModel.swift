@@ -94,8 +94,40 @@ final class CheckInModel {
 
     // MARK: - Filling in
 
+    /// A tap on a status segment — which for two of the four is a question rather than a setting
+    /// (ERRATA E170).
+    ///
+    /// `ObservationStatus.opensReviewFlag` has documented "the two cases that trigger a confirmation
+    /// dialog and a review flag" since it was written and had no caller in shipping code: the flag
+    /// half happened, the dialog half did not, and screen 05 moved the segment on one tap. The two it
+    /// names are the only segments on this card whose effect leaves the contributor — they put a
+    /// review in front of another person, and confirming one moves the tree's status. That is worth a
+    /// second tap, and the sentence in the dialog is the only place a contributor is told where the
+    /// report goes.
+    ///
+    /// Only on a *change* to one of the two. Re-tapping a segment that is already selected asks
+    /// nothing, because nothing new is being claimed.
     func select(status: ObservationStatus) {
-        draft.status = status
+        guard status.opensReviewFlag, status != draft.status else {
+            draft.status = status
+            return
+        }
+        pendingStatus = status
+    }
+
+    /// The status a tap has proposed and the contributor has not confirmed. Nil the rest of the time,
+    /// which is nearly always. The draft is untouched while this is set — a dismissed dialog leaves
+    /// the card exactly as it was, rather than leaving a claim behind that nobody agreed to.
+    private(set) var pendingStatus: ObservationStatus?
+
+    func confirmPendingStatus() {
+        guard let pendingStatus else { return }
+        draft.status = pendingStatus
+        self.pendingStatus = nil
+    }
+
+    func cancelPendingStatus() {
+        pendingStatus = nil
     }
 
     /// Tapping the selected row again clears it: every field is optional, so a rating a contributor

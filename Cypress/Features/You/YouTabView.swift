@@ -157,16 +157,18 @@ struct YouTabView: View {
 
     // MARK: - Reviews (leads only, ERRATA E124-B)
 
-    /// The removal-review queue. Draws nothing at all unless `moderation.canModerate` — a non-lead
-    /// never sees the section, and the authority that actually protects a tree is on the confirm write
-    /// (`LocalAPI.confirmRemoval`), not on whether this view drew.
+    /// The status-review queue — `appears_removed` and `appears_dead` alike (ERRATA E170). Draws
+    /// nothing at all unless `moderation.canModerate` — a non-lead never sees the section, and the
+    /// authority that actually protects a tree is on the write (`LocalAPI.confirmReview` and
+    /// `dismissReview`), not on whether this view drew.
     @ViewBuilder
     private var moderationSection: some View {
         if moderation.canModerate {
             ModerationReviewList(
                 items: moderation.items,
                 onOpen: { router?.push(.treeProfile($0.treeID)) },
-                onConfirm: { item in Task { await moderation.confirm(item) } }
+                onConfirm: { item in Task { await moderation.confirm(item) } },
+                onDismiss: { item in Task { await moderation.dismiss(item) } }
             )
             .padding(.top, CypressSpacing.labelSectionTop)
             .padding(.horizontal, CypressSpacing.gutter)

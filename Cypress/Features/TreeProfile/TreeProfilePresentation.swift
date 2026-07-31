@@ -158,6 +158,38 @@ struct TreeProfilePresentation {
     /// such status cannot be added without answering the question. See ERRATA (E95).
     var acceptsContributions: Bool { tree.status.acceptsNewContributions }
 
+    /// The sentence a confirmed-dead tree's profile says about itself, or nil (ERRATA E170).
+    ///
+    /// ── Why a profile needed a sentence and not just a badge ───────────────────────────────
+    /// `dead_reported` is the one status this screen renders that a reader cannot infer from anything
+    /// else on it. A memorial announces itself — screen 19, no CTA, no check-in, a `REMOVED` badge. A
+    /// confirmed-dead tree renders as an ordinary profile with every button live, because
+    /// `TreeStatus.deadReported.acceptsNewContributions` is `true` and that is deliberate: a dead
+    /// street tree is a hazard, and reporting it is the single most useful thing a passer-by can do.
+    /// So the screen was silently identical to a live tree nobody had checked in on.
+    ///
+    /// The `DEAD` badge alone would not do it. A badge is a word, and the word this one needs is
+    /// three facts: somebody reported it, a reviewer agreed, and the buttons below are still meant
+    /// for you. The last of those is why the sentence ends where it does.
+    ///
+    /// **Not "the city has been told."** Nothing tells the city — see `CommunityNote`'s header and
+    /// DECISIONS §3.3 — and this is the surface where that temptation is strongest, because "dead"
+    /// is the status a reader most wants to believe somebody official is acting on.
+    var deadNotice: String? {
+        guard tree.status == .deadReported else { return nil }
+        return Self.deadNoticeText
+    }
+
+    /// **NOT SPECIFIED** — SCREENS.md draws no confirmed-dead profile.
+    static let deadNoticeText = """
+        Reported dead, and a community reviewer confirmed it. It is still standing, so anything you \
+        see here is still worth reporting.
+        """
+
+    /// The bolded front of `deadNotice`, in `recognitionTip`'s shape — the one Callout lead-in this
+    /// screen already draws.
+    static let deadNoticeLeadIn = "Confirmed dead:"
+
     // MARK: - Quad action row (C8)
 
     /// Which of C8's four cells this record may offer.
