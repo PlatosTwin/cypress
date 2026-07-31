@@ -115,3 +115,27 @@ Every one of them was watched failing before it was believed. Restricting `openR
 `[.appearsRemoved]`, pointing `appears_dead`'s `confirmedStatus` at `.removed`, and dropping
 `dismissReview`'s role gate turned the suite red in exactly the places those three things are
 watched; the same for `select(status:)`, the badge ordering, the pin label and the moderation copy.
+
+**Two real fixes came out of doing that**, which is the argument for doing it at all:
+
+- `openReviews()[0]` is how this suite reached the flag, and under the very defect being fixed the
+  queue comes back empty. The subscript killed the test *process* — `Fatal error: Index out of
+  range` — and xcodebuild then reported `Test run with 0 tests in 2 suites passed`. A crash is not a
+  failure: it takes the rest of the run with it and reports as the wrong thing entirely, which on
+  this project is the exact shape of a suite ratifying a defect. It is `#require` now.
+- The pin-label override was written as "if the status is `deadReported`, say so", which quietly
+  outranked DECISIONS §3.16. A community-added tree confirmed dead would have lost the community's
+  words. It fires on the drawn memorial pin only, so the *lie* is fixed and the precedence is not
+  widened — `Community-added tree` is incomplete, not untrue, and that is a different problem.
+
+---
+
+**Driven on the device, not inferred.** Screen 05: tapping `Appears dead` raises `Report this tree as
+dead? / A community reviewer checks this before the tree's status changes. Nothing is sent to the
+city.`; Cancel leaves the card on `Alive` with no notice line; `Report it` selects the segment and
+draws the notice under it. The You tab, seeded with both kinds, drew `Reported dead · Confirm dead`
+above `Reported removed · Confirm removed`, each with its own `Dismiss`. Confirming the dead one
+resolved it out of the queue, and the tree behind it — Kwanzan Flowering Cherry, 50 Hancock St, a
+real seed record, SF #238248 — then drew the `DEAD` badge, the `Confirmed dead:` Callout, a live
+`Be the first to photograph this tree`, `Check in · under a minute`, and all four quad cells
+including REPORT. Not screen 19.
