@@ -241,6 +241,7 @@ final class AimableMapView: MKMapView {
         guard onFirstLayout != nil, !bounds.isEmpty else { return }
         let announce = onFirstLayout
         onFirstLayout = nil
+        NSLog("CYPROBE layoutSubviews bounds=%@", NSCoder.string(for: bounds))
         // Not `announce?()`. See the note above: a `setRegion` made from inside a layout pass is
         // performed but never reported, and this file's whole camera story is told by that report.
         DispatchQueue.main.async { announce?() }
@@ -476,8 +477,15 @@ struct MapAnnotationLayer: UIViewRepresentable {
             // `AimableMapView.onFirstLayout` will bring it back the moment there is a map for it.
             // Every other early return here is a camera the reader has already moved away from;
             // this one is a camera nobody has been shown yet.
-            guard MapAnnotationLayer.canAim(mapView) else { return }
-            if let applied = appliedSequence, request.sequence <= applied { return }
+            guard MapAnnotationLayer.canAim(mapView) else {
+                NSLog("CYPROBE apply REFUSE-no-area seq=%d", request.sequence)
+                return
+            }
+            if let applied = appliedSequence, request.sequence <= applied {
+                NSLog("CYPROBE apply REJECT seq=%d applied=%d", request.sequence, applied)
+                return
+            }
+            NSLog("CYPROBE apply ACCEPT seq=%d to=%f", request.sequence, request.region.center.latitude)
             appliedSequence = request.sequence
             // Reduce Motion snaps the camera instead of flying it. The zoom is the answer to a tap,
             // not the way the answer is delivered — `CypressMotion.resolved`'s rule, applied at the
@@ -502,6 +510,7 @@ struct MapAnnotationLayer: UIViewRepresentable {
             // the reader" and to remember where they left it — never to move the camera — so writing
             // it here cannot recreate E140.
             parent.region = request.region
+            NSLog("CYPROBE apply WROTE parent.region=%f readback=%f", request.region.center.latitude, parent.region.center.latitude)
         }
 
         /// The map has just been given a size. Aim it at whatever the app is asking for now.
@@ -539,6 +548,7 @@ struct MapAnnotationLayer: UIViewRepresentable {
         /// its own ticket whether or not it names the same place, so the second press works without
         /// this handler having any opinion about the camera at all.
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
+            NSLog("CYPROBE settle region=%f span=%f", mapView.region.center.latitude, mapView.region.span.latitudeDelta)
             parent.region = mapView.region
         }
 
