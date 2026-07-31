@@ -989,6 +989,7 @@ rhetorical:
 
 - **Belovedness is a state, not a position.** A tree is beloved or it is not. There is no first, no
   order, no number shown, and no "top ten". This is the same move D1 made on the almanac.
+  **← SUPERSEDED the same day by R27.1 below. The owner overruled it. Do not build to this bullet.**
 - **It has a floor, and the floor is a privacy mechanism as much as a cold-start one.** DECISIONS
   already sets the precedent — caretakers are shown only at ≥3 distinct people. Favourites are private
   (R2, D11), so a threshold of one would publish a private bookmark and a threshold of two would make
@@ -998,14 +999,75 @@ rhetorical:
   of trees to go and see, drawn from those over the floor, and the order carries no meaning. If the set
   is larger than the view, it rotates rather than truncates to the "top" — E38 applies, and a page is
   not a total.
+  **← SUPERSEDED the same day by R27.1 below. The owner overruled it. Do not build to this bullet.**
 
 **What this costs, stated rather than buried:** the owner asked "most favorites? most photos?" and the
 answer is neither, in the superlative sense. There is no "most". A reader who wants to know which tree
 in the Mission is the single most loved will not find out, and that is the intended outcome, because
 every mechanism that answers it is a leaderboard wearing a different noun.
+**← This paragraph is the part the owner rejected, and they were right. See R27.1.**
 
 **Deliberately not decided here:** the numeric floor (it wants the real distribution of favourites per
 tree, which nobody has looked at yet — count it before choosing it); whether photographs and favourites
 should count toward the same state or two different ones; and whether "neighbourhood" here means the
 analysis-neighbourhood geometry already in `Fixtures/raw/sf_analysis_neighborhoods.geojson` or the
 viewport the reader is looking at.
+
+### R27.1 — trees may be ranked; people may not. The owner overruled R27's second half, and the distinction it was missing is whose actions are being counted
+
+Recorded 2026-07-31, hours after R27, at the owner's direction: *"I DO want people to be able to find
+the most loved tree in the mission. No need to know which has most photos, etc. But part of the point
+of the app is to bring people TO trees, and knowing which ones are beloved can help people navigate to
+new and interesting ones."*
+
+**What R27 got wrong.** It read D1 as forbidding ranking, and D1 does not. D1 forbids ranking **people**
+— "nothing counts a person's actions, no streaks and no leaderboards" — and every reason given for it
+is a reason about people: farmable metrics, drive-by check-ins, extrinsic reward crowding out intrinsic
+users. A ranked list of *trees* contains no person, exposes no person, and rewards no person. R27
+generalised a constraint on one noun to a different noun and called the result principle. The owner's
+correction also supplies the purpose R27 had lost sight of: **the app exists to bring people to trees.**
+A discovery surface that refuses to say which tree is worth the walk is not being principled, it is
+being useless.
+
+**The ruling.**
+
+**1 · A neighbourhood's beloved trees is an ordered list, and it says which is first.** Rank by how many
+distinct people have favourited the tree. Show the ordering. Showing the number too is permitted and
+preferred — ranking while coyly hiding the count is the worst of both, since the reader infers a number
+anyway and cannot tell how thin the margin is.
+
+**2 · The floor from R27 survives untouched, and its job is privacy, not modesty.** Favourites are
+private (R2, D11). A tree below the floor must not appear in the ranking at all, because at a count of
+one the surface publishes somebody's private bookmark and at two it is inferable to whoever knows they
+are the other. The floor is a k-anonymity threshold; DECISIONS' existing precedent is ≥3 distinct
+people. It is not negotiable downward for a sparser neighbourhood — a neighbourhood with nothing above
+the floor shows nothing and says why (E126), rather than lowering the bar to fill the screen.
+
+**3 · No person is named, counted, or reachable through the list.** The ranking is over trees. Nothing
+in it links to who favourited anything, no contributor appears, and there is no route from a beloved
+tree to the set of people who love it. D1 and D11 are untouched by this ruling and remain absolute.
+
+**4 · The one panel finding that survives is real, and the owner's own framing answers it.** The
+round-2 panel's objection (DECISIONS §2.6) was that ranked attention routes toward Grandmother Cypress
+and away from the young street trees that most need eyes. That is a genuine failure mode and this
+ruling does not dismiss it — but the owner asked for a surface that brings people to **"new and
+interesting"** trees, which is not the same as the same famous tree every time. So the list is
+**personalised by exclusion**: a tree you have already favourited, photographed or visited drops out of
+your own view of it. The ranking is global and honest; what it shows *you* is the part of it you have
+not met. This costs nothing in integrity — the order is unchanged, nothing is fabricated, and the
+reader who wants the famous one can search for it — and it converts the panel's objection into the
+feature the owner asked for.
+
+**5 · Favourites only.** The owner was explicit that photo counts are not wanted here. One signal, one
+meaning: *how many people chose to keep this tree*. Do not blend photographs, visits or care events
+into a composite score — a composite is unreadable, unfalsifiable, and is the shape that eventually
+grows into a leaderboard.
+
+**Still open, inherited from R27:** the numeric floor, which wants the real distribution of favourites
+per tree before it is chosen — count it, do not guess it; and whether "neighbourhood" means the
+analysis-neighbourhood geometry in `Fixtures/raw/sf_analysis_neighborhoods.geojson` or the viewport the
+reader is looking at. **New and open:** whether the ranking is stable enough to be worth ordering at
+local-beta volumes. With a handful of devices, first place may be a tree with four favourites and second
+a tree with three, and an order that reshuffles on one tap is a worse answer than no order. Measure the
+real spread before shipping the numbers, and if the margins are that thin, say so on the screen rather
+than presenting a coin flip as a ranking.
