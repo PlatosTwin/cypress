@@ -173,6 +173,11 @@ CITY_META_NAME = "city_street_trees.meta.json"
 SOURCES = ("city", "datasf")
 DEFAULT_SOURCE = "city"
 
+# How much of San Jose goes in. `none` is San Francisco alone, which is what
+# every existing test and every previous build means. See `SJ_SHIP_WINDOW` for
+# why `downtown` exists and why it is a window rather than a sample.
+SJ_EXTENTS = ("none", "downtown", "full")
+
 # San Francisco bounding box used to reject null-island rows, state-plane
 # leakage and out-of-county geocodes. Deliberately a little generous: it spans
 # Ocean Beach / Lands End in the west (-122.514) to Hunters Point (-122.348) and
@@ -185,6 +190,126 @@ SF_BBOX = {
     "min_lon": -122.5400,
     "max_lon": -122.3300,
 }
+
+# San Jose's own extent, on the same job: reject null-island rows, state-plane
+# leakage and anything the layer serves that is not San Jose. Generous enough to
+# hold the whole incorporated city (Alviso in the north at ~37.43, Coyote Valley
+# in the south at ~37.16, Alum Rock in the east at ~-121.75, and the west edge
+# against Campbell/Saratoga at ~-122.06).
+#
+# IT IS ALSO THE E172 CHECK IN THE BUILD RATHER THAN ONLY IN THE FETCH. Santa
+# Monica's datastore serves Springfield, Illinois at offset 0; an ingest whose
+# only geography check ran in the downloader would have one place to fail rather
+# than two.
+SJ_BBOX = {
+    "min_lat": 37.1000,
+    "max_lat": 37.5000,
+    "min_lon": -122.1000,
+    "max_lon": -121.6500,
+}
+
+# The admission box for each id space. `accepts()` reads this rather than
+# SF_BBOX: a bounding box is a fact about a city, and applying San Francisco's to
+# San Jose's rows would reject all 344,879 of them without a word.
+BBOX_BY_ID_SPACE = {
+    "sf": SF_BBOX,
+    "us-ca-sj": SJ_BBOX,
+}
+
+# `--source` names one of SAN FRANCISCO'S two inventories and is unchanged; the
+# `inventories.id` those two rows carry gained an `sf_` prefix in the v14 pass
+# (E169: `city` is a poor identifier once there is more than one city). Prefixing
+# the flag as well would make it say the city twice.
+SF_INVENTORY_FOR_SOURCE = {"city": "sf_city", "datasf": "sf_datasf"}
+
+# The San Jose cache written by `Tools/fetch_san_jose_trees.py`. As with the SF
+# city layer, this script only ever READS the cache; it never touches the
+# service, so a rebuild costs San Jose nothing.
+SJ_NDJSON = "sj_street_trees.ndjson"
+SJ_META = "sj_street_trees.meta.json"
+
+# The checked-in species-string map, ONE FILE PER ID SPACE. A species string is a
+# publisher's own spelling, so two publishers' strings do not belong in one file
+# named after one of them. `sf_species_map.csv` is the historical name and stays.
+SPECIES_MAP_FILES = {
+    "sf": "sf_species_map.csv",
+    "us-ca-sj": "sj_species_map.csv",
+}
+
+# ---------------------------------------------------------------------------
+# WHAT SHIPS TO A PHONE, WHICH IS NOT WHAT IS INGESTED
+# ---------------------------------------------------------------------------
+# San Jose is 344,879 records against San Francisco's 145,837. Ingesting all of
+# them is the point of the contract and costs nothing but build time. SHIPPING
+# all of them is a different decision with a different unit: the seed is a file
+# inside the .app, it is already 78 MB for San Francisco alone (~535 bytes/row),
+# and San Jose entire would add roughly 185 MB for a total near 265 MB. That is
+# past Apple's cellular-download ceiling and unreasonable for a local beta.
+#
+# So a subset ships, and WHICH KIND of subset is the whole decision:
+#
+#   * NOT a random sample. A 1-in-4 sample looks fine in aggregate and is a lie
+#     at the grain the app actually operates at: somebody standing on a street
+#     sees three of the four trees in front of them missing, with no way to tell
+#     a sampled-out tree from one the city never listed. The map's implicit
+#     promise is "every tree on this block".
+#   * NOT trees-only. 75,886 of San Jose's records are vacant sites and
+#     `VACANTSITE` is the entire reason this source was chosen (E172); dropping
+#     them would throw away the finding.
+#   * A CONTIGUOUS GEOGRAPHIC WINDOW, complete inside it. Within the window the
+#     inventory is whole -- every tree, every planting site, every stump the city
+#     lists. Outside it there is nothing at all, which is a visible, explainable
+#     absence rather than an invisible dilution. A beta tester walks blocks, not
+#     counties.
+#
+# The window is central San Jose: downtown, SoFA, Japantown, Naglee Park, the
+# Alameda, the north end of Willow Glen, and Roosevelt Park. Bounds are stated
+# here, in the build, so the shipped file's own extent is a checked-in fact
+# rather than something to be measured off the database afterwards.
+SJ_SHIP_WINDOW = {
+    "min_lat": 37.3050,
+    "max_lat": 37.3700,
+    "min_lon": -121.9300,
+    "max_lon": -121.8550,
+}
+
+
+def load_san_jose_layer(raw_dir: str):
+    """`Fixtures/raw/sj_street_trees.{ndjson,meta.json}` -> (features, meta).
+
+    Cache-only, exactly like `load_city_layer`: the fetch is
+    `Tools/fetch_san_jose_trees.py`'s job and is run separately, politely, once.
+    If the cache is absent the build stops and says how to make it, rather than
+    quietly building a seed with no San Jose in it.
+    """
+    ndjson_path = os.path.join(raw_dir, SJ_NDJSON)
+    meta_path = os.path.join(raw_dir, SJ_META)
+    if not os.path.exists(ndjson_path):
+        die(
+            f"{ndjson_path} is absent. Run:\n"
+            f"    python3 Tools/fetch_san_jose_trees.py --verify\n"
+            f"It pages San Jose's public layer sequentially and caches it; a page "
+            f"already on disk is never re-fetched."
+        )
+    features = []
+    with open(ndjson_path, "r", encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if line:
+                features.append(json.loads(line))
+    meta = {}
+    if os.path.exists(meta_path):
+        with open(meta_path, "r", encoding="utf-8") as fh:
+            meta = json.load(fh)
+    written = meta.get("rows_written")
+    if written is not None and written != len(features):
+        die(
+            f"{SJ_META} says {written} rows and {SJ_NDJSON} holds {len(features)}; "
+            f"the cache is inconsistent. Re-run Tools/fetch_san_jose_trees.py."
+        )
+    log(f"san jose cache: {len(features):,} features, extracted "
+        f"{meta.get('extracted_on', 'unknown')}")
+    return features, meta
 
 # ---------------------------------------------------------------------------
 # The ingest contract, and the per-source adapters that satisfy it
@@ -220,6 +345,7 @@ from inventory_adapters import (  # noqa: E402
     RETIRED_SPECIES_NAMES,
     SFCityLayerAdapter,
     SFDataSFAdapter,
+    SanJoseStreetTreeAdapter,
     normalise_species_key,
     parse_qspecies,
 )
@@ -540,6 +666,48 @@ CREATE TABLE neighborhoods (
     updated_at   TEXT NOT NULL
 );
 
+-- ----------------------------------------------------- id spaces, inventories --
+-- THE SEED DECLARES ITS OWN VOCABULARY INSTEAD OF THE SCHEMA ENUMERATING IT.
+--
+-- `trees.inventory_source` used to carry `CHECK (inventory_source IN
+-- ('city','datasf'))` -- a closed two-value list, which is a hard failure the
+-- first time a second city is ingested (ERRATA E169 reproduced it:
+-- `sqlite3.IntegrityError: CHECK constraint failed`). The CHECK's real job is
+-- "no row may name an inventory the receipt cannot describe", and a hardcoded
+-- list is the wrong instrument for that: every new city would edit the schema.
+--
+-- So these two tables are written by `build_seed.py` from `INVENTORIES` and
+-- `ID_SPACES` in `Tools/inventory_contract.py`, **for exactly the inventories
+-- that contributed rows**, and the vocabulary becomes a foreign key. A city that
+-- shipped no rows is not in here, so `SELECT * FROM inventories` is a list of
+-- what this file actually holds rather than a list of what the builder knows
+-- about.
+--
+-- `id_spaces.identity_prefix` is the load-bearing column. `trees.uuid` is
+-- `uuid5(NS_TREE, identity_prefix || external_ref)` and until now the prefix
+-- lived in ONE `seed_meta` key, which was correct only while the whole file was
+-- one id space. With two, a single key is a claim that is wrong for one of them.
+-- Reading it per space out of a table is what lets the contract test re-derive
+-- every row's uuid rather than trust one.
+CREATE TABLE id_spaces (
+    id              TEXT PRIMARY KEY,
+    -- Prepended to a source's own id to make the uuid5 seed string. FROZEN per
+    -- space: changing one rewrites every public tree URL in it (DECISIONS 13).
+    -- `sf`'s is the empty string and is the one space permitted to have one.
+    identity_prefix TEXT NOT NULL,
+    note            TEXT NOT NULL,
+    CHECK (id <> '')
+);
+
+CREATE TABLE inventories (
+    id        TEXT PRIMARY KEY,
+    id_space  TEXT NOT NULL REFERENCES id_spaces(id),
+    name      TEXT NOT NULL,
+    url       TEXT NOT NULL,
+    CHECK (id <> ''),
+    CHECK (name <> '')
+);
+
 -- ------------------------------------------------------------------ trees --
 -- Deviations from section 4:
 --   geom geometry(Point,4326)   -> lat REAL + lon REAL (WGS84 degrees)
@@ -551,21 +719,40 @@ CREATE TABLE neighborhoods (
 --                                  via `build_seed.py --with-city-raw`. The
 --                                  column is always declared so the schema
 --                                  contract does not move.
---   external_ref text           -> INTEGER. Every DataSF TreeID observed is
---                                  numeric (verified across all 195,309 rows).
+--   external_ref text           -> TEXT NOT NULL, beside id_space TEXT NOT NULL,
+--                                  unique over the PAIR. See below.
 --
--- `external_ref` IS A SOURCE-LOCAL ID UNDER A GLOBAL UNIQUE CONSTRAINT, AND THAT
--- IS A BLOCKER FOR A SECOND CITY. It is labelled "DataSF TreeID" below because
--- that is what it holds today, and both of San Francisco's inventories draw from
--- that one numbering scheme. A second city's inventory does not: Los Angeles
--- TreeID 276198 and San Francisco TreeID 276198 are different trees, and today
--- the second INSERT simply fails on this index.
+-- `external_ref` WAS A SOURCE-LOCAL ID UNDER A GLOBAL UNIQUE CONSTRAINT, WHICH
+-- WAS THE BLOCKER FOR A SECOND CITY (ERRATA E169, reproduced:
+-- `sqlite3.IntegrityError: UNIQUE constraint failed: trees.external_ref`).
+-- San Jose FACILITYID 3 and San Francisco TreeID 3 are two different trees and
+-- both exist; the second INSERT simply failed on the index.
 --
--- The uuid derivation is already safe against it -- identity is qualified by id
--- space (see the namespace block in Tools/build_seed.py and ID_SPACES in
--- Tools/inventory_contract.py) -- but this column is not. Widening it to
--- (id_space, external_ref) or storing the qualified string is work for whoever
--- ingests a second id space, and it has to happen before the ingest, not after.
+-- Widened in the v14 seed pass (#129, ERRATA E176) to `UNIQUE (id_space,
+-- external_ref)`, with the id space stored beside the ref rather than folded
+-- into it:
+--
+--   * `id_space` holds the `ID_SPACES` key -- `sf`, `us-ca-sj` -- so "which
+--     numbering is this row's id drawn from" is a column and not a parse. The
+--     alternative, storing the qualified seed string `us-ca-sj:3` in one column,
+--     is worse for exactly that reason, and the id space is a thing the receipt
+--     and the UI both need to be able to name.
+--   * `external_ref` is TEXT, NOT INTEGER: `InventoryRecord.source_ref` is
+--     defined as the source's own id VERBATIM AS A STRING, and nothing
+--     guarantees the third city's is numeric. San Jose's FACILITYID is a string
+--     field in its own layer. Storing it as an integer would have made the
+--     column's type a property of the first two sources that happened to arrive.
+--   * NOT NULL, which is a decision and not a tidy-up. SQLite treats NULLs as
+--     distinct in a unique index, so a nullable `external_ref` would let every
+--     identity-less row escape the constraint the column exists for. The
+--     contract does permit `source_ref=None` (Oakland publishes nothing but a
+--     row number), and such a source cannot be a row in THIS file until the
+--     schema grows a representation for it -- `emit()` stops the build rather
+--     than writing one. See RULINGS R24.
+--
+-- The uuid derivation was already safe -- identity is qualified by id space (see
+-- the namespace block in Tools/build_seed.py and ID_SPACES in
+-- Tools/inventory_contract.py) -- and now the column is too.
 --
 -- THE SIX CITY COLUMNS CARRY NO CHECK, AND THAT IS THE DECISION.
 -- Every closed vocabulary in the *app* schema carries its vocabulary in a CHECK,
@@ -627,12 +814,16 @@ CREATE TABLE neighborhoods (
 CREATE TABLE trees (
     id                 INTEGER PRIMARY KEY,     -- internal join key
     uuid               TEXT NOT NULL UNIQUE,    -- stable citable identity
-    external_ref       INTEGER UNIQUE,          -- DataSF TreeID
+    -- The source's own id, verbatim as a string, and the numbering it is drawn
+    -- from. Unique over the pair, never over the ref alone -- see the block above.
+    id_space           TEXT NOT NULL REFERENCES id_spaces(id),
+    external_ref       TEXT NOT NULL,           -- SF TreeID | SJ FACILITYID
     source             TEXT NOT NULL,           -- city_import | community
-    -- WHICH OF SAN FRANCISCO'S TWO INVENTORIES LISTED THIS RECORD. 'city' or
-    -- 'datasf', matching `--source` and `seed_meta.trees_source`.
+    -- WHICH INVENTORY LISTED THIS RECORD. An `inventories.id` -- 'sf_city',
+    -- 'sf_datasf', 'sj_street_tree' -- and a foreign key rather than a CHECK,
+    -- so a new city is a row in a table and not an edit to this schema.
     --
-    -- Under `--source datasf` every row says 'datasf' and the column is
+    -- Under `--source datasf` every row says 'sf_datasf' and the column is
     -- redundant. Under `--source city` it is not: the row set is the city's
     -- operational layer, but that layer has no vacant-site category at all
     -- (`PlantType` is `Tree` on all 133,577 of its records), so the seed's
@@ -642,7 +833,7 @@ CREATE TABLE trees (
     -- given row came from -- otherwise the provenance sentence on screen is a
     -- claim about the file rather than about the record, and for 12,260 of
     -- them it would be the wrong inventory's name.
-    inventory_source   TEXT NOT NULL,           -- city | datasf
+    inventory_source   TEXT NOT NULL REFERENCES inventories(id),
     lat                REAL NOT NULL,
     lon                REAL NOT NULL,
     address            TEXT,
@@ -670,8 +861,14 @@ CREATE TABLE trees (
     created_at         TEXT NOT NULL,
     updated_at         TEXT NOT NULL,
     deleted_at         TEXT,
+    -- One id per numbering, and the numbering is part of the key. Replaces the
+    -- column-level `external_ref INTEGER UNIQUE` that could not hold two cities.
+    UNIQUE (id_space, external_ref),
     CHECK (status IN ('alive','declining','dead_reported','removed','vacant_site')),
-    CHECK (inventory_source IN ('city','datasf')),
+    -- Non-emptiness plus the foreign key above. The vocabulary lives in
+    -- `inventories`, which the build writes; it is not enumerated here.
+    CHECK (inventory_source <> ''),
+    CHECK (external_ref <> ''),
     CHECK (verification_state IN ('unverified','org_verified','city_record')),
     CHECK ((dbh_city_cm_min IS NULL) = (dbh_city_cm_max IS NULL)),
     CHECK (city_raw IS NULL OR json_valid(city_raw)),
@@ -991,9 +1188,11 @@ def load_neighborhoods(path: str):
 
 
 def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
-          source: str = DEFAULT_SOURCE) -> int:
+          source: str = DEFAULT_SOURCE, sj_extent: str = "none") -> int:
     if source not in SOURCES:
         die(f"--source must be one of {', '.join(SOURCES)}, got {source!r}")
+    if sj_extent not in SJ_EXTENTS:
+        die(f"--sj-extent must be one of {', '.join(SJ_EXTENTS)}, got {sj_extent!r}")
     raw_dir = os.path.join(repo_root, "Fixtures", "raw")
     seed_dir = os.path.join(repo_root, "Fixtures", "seed")
     fixtures_dir = os.path.join(repo_root, "Fixtures")
@@ -1022,6 +1221,11 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             f"{city_meta.get('server_last_edit_date')}")
         enrichment = load_datasf_attributes(csv_path)
         log(f"enrichment index: {len(enrichment):,} DataSF rows by TreeID")
+
+    sj_rows, sj_meta, sj_window = None, {}, None
+    if sj_extent != "none":
+        sj_rows, sj_meta = load_san_jose_layer(raw_dir)
+        sj_window = SJ_SHIP_WINDOW if sj_extent == "downtown" else None
 
     # ---------------------------------------------------------- neighborhoods
     neighborhoods = []
@@ -1088,6 +1292,14 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
         "export_vacant_carried": 0,
         "export_vacant_city_lists_tree": 0,
         "export_vacant_city_lists_site": 0,
+        # San Jose, under `--sj-extent` other than `none`.
+        "sj_source_rows": 0,
+        "sj_kept": 0,
+        # Records read and validated but deliberately not shipped, because they
+        # fall outside `SJ_SHIP_WINDOW`. This is the one drop counter in the
+        # build that is a PRODUCT decision rather than a data defect, and it is
+        # named so it cannot be read as one.
+        "sj_outside_ship_window": 0,
         # ---- what the contract made countable -------------------------------
         # Records whose source says the thing growing there is not a tree
         # (`Shrub`, `Private shrub`, `Privet`). The seed's `status` vocabulary
@@ -1107,7 +1319,12 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
 
     species_by_key = {}      # normalised scientific name -> species row dict
     qspecies_stats = {}      # raw qSpecies string -> dict
+    # (id space, source ref) pairs already emitted. THE PAIR, not the ref: San
+    # Jose FACILITYID 3 and San Francisco TreeID 3 are two different trees.
     seen_external_refs = set()
+    # Which inventories actually put a row in the file. `inventories` is written
+    # from this at the end, so the table describes the file and not the builder.
+    contributing_inventories = set()
     city_kind_by_ref = {}    # TreeID -> contract kind, city rows only
 
     tree_rows = []
@@ -1146,9 +1363,11 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             stats["contract_violations"] += 1
             die("record {}/{} violates the ingest contract: {}".format(
                 record.inventory, record.source_ref, "; ".join(problems)))
+        # The box belongs to the record's own city, not to the file's first one.
+        bbox = BBOX_BY_ID_SPACE[require_inventory(record.inventory).id_space]
         if not (
-            SF_BBOX["min_lat"] <= record.lat <= SF_BBOX["max_lat"]
-            and SF_BBOX["min_lon"] <= record.lon <= SF_BBOX["max_lon"]
+            bbox["min_lat"] <= record.lat <= bbox["max_lat"]
+            and bbox["min_lon"] <= record.lon <= bbox["max_lon"]
         ):
             stats["dropped_out_of_bbox"] += 1
             return False
@@ -1170,23 +1389,39 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
         # made the DataSF -> city switch reversible with zero uuids moved
         # (E156). A second CITY gets its own space and its own frozen prefix, so
         # its TreeID 276198 cannot mint the uuid of `1 TWIN PEAKS BLVD`.
+        #
+        # The space is the RECORD's, resolved through its own inventory. It used
+        # to be the file's -- one `id_space` variable derived from `--source` --
+        # which was correct only while a seed held one city.
+        record_space = ID_SPACES[require_inventory(record.inventory).id_space]
+        contributing_inventories.add(record.inventory)
         if record.has_stable_identity:
-            uuid_seed = record.identity_seed(id_space)
-            external_ref = (
-                int(record.source_ref) if record.source_ref.isdigit() else record.source_ref
-            )
+            uuid_seed = record.identity_seed(record_space)
+            # VERBATIM, AS A STRING. It used to be coerced to an integer when it
+            # looked like one, which made the column's type a property of the
+            # first two sources that arrived. `source_ref` is defined as the
+            # source's own id as a string and the column is TEXT now.
+            external_ref = record.source_ref
         else:
-            # No id from the source: no stable external identity is derivable, so
-            # key the uuid on the record's own immutable facts instead. A
-            # materially weaker promise, and `has_stable_identity` says so.
-            uuid_seed = f"{record.lat:.7f},{record.lon:.7f},{record.species_text or ''}"
-            external_ref = None
+            # No id from the source. The contract permits this -- Oakland
+            # publishes nothing but a row number -- but `trees.external_ref` is
+            # NOT NULL, because a nullable column under `UNIQUE (id_space,
+            # external_ref)` lets every such row escape the constraint (SQLite
+            # treats NULLs as distinct). So this seed cannot hold one, and it
+            # says so instead of writing a row nobody can identify. RULINGS R24.
+            die(
+                f"record {record.inventory}/(no source_ref) at "
+                f"{record.lat:.6f},{record.lon:.6f} has no stable identity, and "
+                f"trees.external_ref is NOT NULL. A source that publishes no id "
+                f"needs a decision (RULINGS R24), not a NULL that silently "
+                f"escapes UNIQUE (id_space, external_ref)."
+            )
         tree_uuid = str(uuid.uuid5(NS_TREE, uuid_seed))
 
         # ---- where this row's FACTS came from, counted only now that the row is
         # certain to ship. `seed_meta.rows_enriched` is a claim about the file.
         if source == "city":
-            if record.inventory == "city":
+            if record.inventory == "sf_city":
                 if record.attributes_from is None:
                     stats["city_only_rows"] += 1
                 else:
@@ -1196,9 +1431,16 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
         qs = qspecies_stats.setdefault(
             record.species_text or "",
             {"kind": kind, "confidence": record.species_confidence or 0.0,
-             "species_id": None, "species_uuid": None, "count": 0},
+             "species_id": None, "species_uuid": None, "count": 0, "spaces": set()},
         )
         qs["count"] += 1
+        # Which id space's vocabulary this string belongs to. San Francisco's
+        # `Ulmus parvifolia :: Chinese Elm` and San Jose's `Ulmus parvifolia` are
+        # two different sources' spellings and they are written to two different
+        # checked-in files, each named for the space it describes -- a file called
+        # `sf_species_map.csv` holding San Jose strings would be the same quiet
+        # falsehood as a provenance line naming the wrong inventory.
+        qs["spaces"].add(record_space.id)
 
         # ---- species.
         species_id = None
@@ -1248,6 +1490,14 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             stats["dbh_present"] += 1
 
         # ---- neighborhood stamp
+        #
+        # THE POLYGONS ARE SAN FRANCISCO'S ANALYSIS NEIGHBORHOODS AND ONLY
+        # THOSE. A San Jose row falls in none of them and gets NULL, which is
+        # the honest answer -- there is no San Jose neighbourhood layer in this
+        # seed -- and it is also a real product consequence rather than a
+        # cosmetic one: every neighbourhood-scoped surface (the almanac, screen
+        # 12) is keyed on this column. See ERRATA E176 for what that does to the
+        # almanac with two cities present.
         neighborhood_id = None
         if strtree is not None:
             pt = Point(record.lon, record.lat)
@@ -1272,6 +1522,7 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             [
                 tree_id,
                 tree_uuid,
+                record_space.id,
                 external_ref,
                 "city_import",
                 record.inventory,
@@ -1314,7 +1565,23 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
     # replaces existed to bound exactly that, and a normalisation that can only be
     # computed from the whole corpus is worth the memory.
     horizon_year = datetime.fromisoformat(NOW).year + 1
-    id_space = ID_SPACES[require_inventory(source).id_space]
+    sf_inventory = SF_INVENTORY_FOR_SOURCE[source]
+    id_space = ID_SPACES[require_inventory(sf_inventory).id_space]
+
+    def already_seen(record) -> bool:
+        """Has this (id space, source ref) already been emitted?
+
+        KEYED ON THE PAIR, not on the ref. San Jose FACILITYID 3 and San
+        Francisco TreeID 3 are two different trees; a set of bare refs would have
+        silently dropped one of them as a duplicate, which is the same defect as
+        the old `external_ref INTEGER UNIQUE` wearing different clothes.
+        """
+        return (require_inventory(record.inventory).id_space, record.source_ref) in seen_external_refs
+
+    def mark_seen(record) -> None:
+        seen_external_refs.add(
+            (require_inventory(record.inventory).id_space, record.source_ref)
+        )
 
     if source == "datasf":
         primary = SFDataSFAdapter(csv_path, horizon_year, with_raw=with_city_raw, limit=limit)
@@ -1325,10 +1592,10 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
         if not accepts(record):
             continue
         if record.source_ref is not None:
-            if record.source_ref in seen_external_refs:
+            if already_seen(record):
                 stats["dropped_dupe_treeid"] += 1
                 continue
-            seen_external_refs.add(record.source_ref)
+            mark_seen(record)
             if source == "city":
                 # Kept so the second pass can say which kind of overlap it found
                 # when the export calls a site empty and this layer lists it.
@@ -1382,7 +1649,7 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             if not accepts(record):
                 continue
             if record.source_ref is not None:
-                if record.source_ref in seen_external_refs:
+                if already_seen(record):
                     # The city's layer already listed this TreeID and the first
                     # pass emitted it. Which of the two cases this is -- a
                     # contradiction the city won, or an empty site both
@@ -1392,7 +1659,7 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
                     else:
                         stats["export_vacant_city_lists_tree"] += 1
                     continue
-                seen_external_refs.add(record.source_ref)
+                mark_seen(record)
             stats["export_vacant_carried"] += 1
             emit(record)
 
@@ -1404,12 +1671,54 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             f"a living tree at that TreeID, {stats['export_vacant_city_lists_site']:,} already "
             f"in the seed as the city's own empty site")
 
+    # ---- the second CITY. -------------------------------------------------
+    #
+    # Everything above this line is San Francisco's two inventories in one id
+    # space. This is the first time the seed holds rows from a second, and it
+    # goes through the same `accepts` / `emit` pair as everything else -- which
+    # is the point of the contract, and is why this block is short.
+    #
+    # INGESTING AND SHIPPING ARE TWO DECISIONS. `--sj-extent full` reads all
+    # 344,879 records and is what proves the contract carries the corpus;
+    # `--sj-extent downtown` is what ships, and the window it applies is stated
+    # in `SJ_SHIP_WINDOW` with its reasoning. See ERRATA E176.
+    if sj_rows is not None:
+        sj = SanJoseStreetTreeAdapter(sj_rows, limit=limit)
+        for record in sj.records():
+            if not accepts(record):
+                continue
+            if sj_window is not None and not (
+                sj_window["min_lat"] <= record.lat <= sj_window["max_lat"]
+                and sj_window["min_lon"] <= record.lon <= sj_window["max_lon"]
+            ):
+                stats["sj_outside_ship_window"] += 1
+                continue
+            if record.source_ref is not None:
+                if already_seen(record):
+                    stats["dropped_dupe_treeid"] += 1
+                    continue
+                mark_seen(record)
+            emit(record)
+            stats["sj_kept"] += 1
+            if sj.stats["source_rows"] % 50000 == 0:
+                log(f"  san jose: {sj.stats['source_rows']:,} rows read / "
+                    f"{stats['kept']:,} kept in total ({time.time() - t0:.0f}s)")
+
+        stats["sj_source_rows"] = sj.stats["source_rows"]
+        stats["dropped_no_coords"] += sj.stats["dropped_no_coords"]
+        for key, value in sj.stats.items():
+            if key not in ("source_rows", "dropped_no_coords"):
+                stats["sj_" + key] = value
+        log(f"san jose: {sj.stats['source_rows']:,} rows read, "
+            f"{stats['sj_outside_ship_window']:,} outside the ship window, "
+            f"{sj.stats['kind_inferred_from_absent_species']:,} rows whose kind is ours")
+
     # ---- #95, applied. One spelling per case-folded value in the columns the app
     # compares against a literal. `WHERE plant_type = 'Tree'` used to drop three
     # rows spelled `tree`; the seed contract now fails if any such pair returns.
     stats["case_normalised_values"] = 0
     column_index = {name: index for index, name in enumerate(
-        ["id", "uuid", "external_ref", "source", "inventory_source", "lat", "lon", "address", "site_type",
+        ["id", "uuid", "id_space", "external_ref", "source", "inventory_source", "lat", "lon", "address", "site_type",
          "neighborhood_id", "status", "species_current", "planted_year", "planted_on",
          "dbh_city_cm_min", "dbh_city_cm_max", "site_lineage", "verification_state"]
         + [name for name, _ in CITY_RECORD_COLUMNS]
@@ -1428,6 +1737,34 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
         stats["case_normalised_values"] += changed
         log(f"#95 {column}: folded {len(mapping)} case-variant spelling(s) over "
             f"{changed:,} rows -> {sorted(set(mapping.values()))}")
+
+    # ---- the vocabulary this file's own rows are checked against.
+    #
+    # Written for EXACTLY the inventories that contributed rows, so `SELECT *
+    # FROM inventories` describes the file rather than the builder. This is what
+    # replaced `CHECK (inventory_source IN ('city','datasf'))`: the constraint is
+    # now a foreign key into these rows, and a new city is a row here instead of
+    # an edit to a shipped schema (ERRATA E169 blocker 2, E176).
+    #
+    # BEFORE the trees insert, because `PRAGMA foreign_keys = ON` is in the
+    # schema and `trees.inventory_source REFERENCES inventories(id)` is enforced
+    # at insert time. A parent written afterwards is a build that fails on its
+    # first row.
+    contributing = sorted(contributing_inventories)
+    if not contributing:
+        die("no inventory contributed a row; the seed would have an empty vocabulary")
+    spaces = sorted({INVENTORIES[i].id_space for i in contributing})
+    conn.executemany(
+        "INSERT INTO id_spaces(id,identity_prefix,note) VALUES(?,?,?)",
+        [(s, ID_SPACES[s].identity_prefix, ID_SPACES[s].note) for s in spaces],
+    )
+    conn.executemany(
+        "INSERT INTO inventories(id,id_space,name,url) VALUES(?,?,?,?)",
+        [(i, INVENTORIES[i].id_space, INVENTORIES[i].name, INVENTORIES[i].url)
+         for i in contributing],
+    )
+    conn.commit()
+    log(f"inventories: {', '.join(contributing)} in id space(s) {', '.join(spaces)}")
 
     flush(conn, species_by_key, tree_rows, rtree_rows, assertion_rows)
 
@@ -1490,9 +1827,11 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
 
     # ------------------------------------------------------- species map table
     map_rows = []
+    spaces_by_string = {}
     for qs_string, info in sorted(
         qspecies_stats.items(), key=lambda kv: (-kv[1]["count"], kv[0])
     ):
+        spaces_by_string[qs_string] = info["spaces"]
         map_rows.append(
             (
                 qs_string,
@@ -1511,21 +1850,37 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
         map_rows,
     )
 
-    with open(map_path, "w", encoding="utf-8", newline="") as fh:
-        w = csv.writer(fh)
-        # species_id carries the species UUID, not the internal integer id:
-        # integer ids depend on CSV row order, uuids are order-independent and
-        # survive a rebuild, which is what a checked-in mapping file needs.
-        #
-        # An empty species_id is the honest answer for three kinds of string: a
-        # vacant-site placeholder, a string that names no taxon
-        # (NON_TAXON_SPECIES), and nothing else. This file is REGENERATED by
-        # every build, so a correction belongs in the tables at the top of this
-        # script, not in the CSV — editing the CSV loses the edit on the next run.
-        w.writerow(["qSpecies_string", "species_id", "confidence"])
-        for qs_string, _sid, suuid, conf, _stub, _ph, _nt, _count in map_rows:
-            w.writerow([qs_string, suuid or "", f"{conf:.2f}"])
-    log(f"wrote {map_path} ({len(map_rows)} distinct qSpecies strings)")
+    # ONE CHECKED-IN FILE PER ID SPACE, EACH NAMED FOR THE SPACE IT DESCRIBES.
+    # `sf_species_map.csv` is San Francisco's vocabulary -- the `Genus species ::
+    # Common name` packed strings the DataSF export publishes -- and San Jose's
+    # `NAMESCIENTIFIC` is a different vocabulary from a different publisher.
+    # Writing both into a file called `sf_species_map.csv` would put another
+    # city's strings under San Francisco's name, which is the same class of quiet
+    # falsehood as a provenance line naming the wrong inventory. The `species_map`
+    # TABLE in the database holds every string in the file, because that table is
+    # a property of the file rather than of any one city.
+    for space_id, file_name in SPECIES_MAP_FILES.items():
+        rows_for_space = [
+            row for row in map_rows if space_id in spaces_by_string.get(row[0], set())
+        ]
+        if not rows_for_space:
+            continue
+        path = os.path.join(fixtures_dir, file_name)
+        with open(path, "w", encoding="utf-8", newline="") as fh:
+            w = csv.writer(fh)
+            # species_id carries the species UUID, not the internal integer id:
+            # integer ids depend on CSV row order, uuids are order-independent and
+            # survive a rebuild, which is what a checked-in mapping file needs.
+            #
+            # An empty species_id is the honest answer for three kinds of string: a
+            # vacant-site placeholder, a string that names no taxon
+            # (NON_TAXON_SPECIES), and nothing else. This file is REGENERATED by
+            # every build, so a correction belongs in the tables at the top of this
+            # script, not in the CSV — editing the CSV loses the edit on the next run.
+            w.writerow(["qSpecies_string", "species_id", "confidence"])
+            for qs_string, _sid, suuid, conf, _stub, _ph, _nt, _count in rows_for_space:
+                w.writerow([qs_string, suuid or "", f"{conf:.2f}"])
+        log(f"wrote {path} ({len(rows_for_space)} distinct species strings in id space {space_id})")
 
     # ---- which inventory this seed is, and WHEN it was taken.
     #
@@ -1537,7 +1892,13 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
     # same cache still says 2026.
     if source == "city":
         source_meta = {
-            "trees_source": "city",
+            # The inventory id, which is now `sf_city` and used to be `city`
+            # (E169: a poor identifier once there is more than one city). It is
+            # the same string `trees.inventory_source` stores and the same key
+            # `inventory_<id>_*` below is built from, and those three agreeing is
+            # what lets `InventorySource(id:seedMeta:)` resolve a row's
+            # provenance without knowing any city's name in advance.
+            "trees_source": "sf_city",
             "trees_source_name": "SF Public Works street tree inventory",
             "trees_source_url": CITY_LAYER_SERVICE,
             "trees_source_map_url": CITY_LAYER_MAP_URL,
@@ -1546,7 +1907,7 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             "trees_source_feature_count": str(city_meta.get("server_feature_count") or ""),
             # Which trees exist is the city's answer; these seven columns are the
             # export's, for the records both list. See `load_datasf_attributes`.
-            "attributes_source": "datasf",
+            "attributes_source": "sf_datasf",
             "attributes_dataset_id": TREES_DATASET_ID,
             "attributes_snapshot_on": NOW[:10],
             "attributes_columns": ",".join(ENRICHED_COLUMNS),
@@ -1555,13 +1916,14 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             # The vacant planting sites, which are the export's rows and not the
             # layer's -- it has no such category. `trees.inventory_source` says
             # which inventory each row came from; these are the totals.
-            "sites_source": "datasf",
+            "sites_source": "sf_datasf",
             # The second pass's own row accounting, so the seed contract can close
             # the arithmetic over both passes: rows read = rows shipped + rows
             # dropped, with nothing unexplained on either side.
             "export_vacant_rows_read": str(stats["export_vacant_rows"]),
-            "rows_from_city": str(stats["kept"] - stats["export_vacant_carried"]),
-            "rows_from_datasf": str(stats["export_vacant_carried"]),
+            "rows_from_sf_city":
+                str(stats["kept"] - stats["export_vacant_carried"] - stats["sj_kept"]),
+            "rows_from_sf_datasf": str(stats["export_vacant_carried"]),
             "export_vacant_sites_excluded_city_lists_tree":
                 str(stats["export_vacant_city_lists_tree"]),
             "export_vacant_sites_already_city_listed":
@@ -1571,27 +1933,27 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             # The app resolves a row's provenance line through these, so a seed
             # built from two inventories can say which one each record came from
             # instead of putting one name over all of them.
-            "inventory_city_name": "SF Public Works street tree inventory",
-            "inventory_city_url": CITY_LAYER_SERVICE,
-            "inventory_city_snapshot_on": city_meta["extracted_on"],
+            "inventory_sf_city_name": "SF Public Works street tree inventory",
+            "inventory_sf_city_url": CITY_LAYER_SERVICE,
+            "inventory_sf_city_snapshot_on": city_meta["extracted_on"],
             # Which numbering scheme this inventory's ids -- and therefore its
             # uuids -- are drawn from. Both of San Francisco's are `sf`, on
             # purpose: they publish the same TreeID space, so a record listed by
             # both keeps one identity across a source switch (E156). A second
             # CITY declares its own space, and a seed holding rows from two
             # spaces is a seed whose uuids were derived two ways.
-            "inventory_city_id_space": INVENTORIES["city"].id_space,
-            "inventory_datasf_name": "DataSF Street Tree List",
-            "inventory_datasf_url": TREES_CSV_URL,
-            "inventory_datasf_snapshot_on": NOW[:10],
-            "inventory_datasf_id_space": INVENTORIES["datasf"].id_space,
+            "inventory_sf_city_id_space": INVENTORIES["sf_city"].id_space,
+            "inventory_sf_datasf_name": "DataSF Street Tree List",
+            "inventory_sf_datasf_url": TREES_CSV_URL,
+            "inventory_sf_datasf_snapshot_on": NOW[:10],
+            "inventory_sf_datasf_id_space": INVENTORIES["sf_datasf"].id_space,
             # Nothing is unavailable outright: the two state-plane coordinates are
             # the same point as lat/lon and were never ingested from either source.
             "columns_absent_from_source": "",
         }
     else:
         source_meta = {
-            "trees_source": "datasf",
+            "trees_source": "sf_datasf",
             "trees_source_name": "DataSF Street Tree List",
             "trees_dataset_id": TREES_DATASET_ID,
             "trees_source_url": TREES_CSV_URL,
@@ -1599,13 +1961,54 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             # is the dataset's own last update, which is what SEED_EPOCH is set to
             # (ERRATA E1). Stated rather than left to be inferred from `generated_at`.
             "trees_snapshot_on": NOW[:10],
-            "rows_from_datasf": str(stats["kept"]),
-            "inventory_datasf_name": "DataSF Street Tree List",
-            "inventory_datasf_url": TREES_CSV_URL,
-            "inventory_datasf_snapshot_on": NOW[:10],
-            "inventory_datasf_id_space": INVENTORIES["datasf"].id_space,
+            "rows_from_sf_datasf": str(stats["kept"] - stats["sj_kept"]),
+            "inventory_sf_datasf_name": "DataSF Street Tree List",
+            "inventory_sf_datasf_url": TREES_CSV_URL,
+            "inventory_sf_datasf_snapshot_on": NOW[:10],
+            "inventory_sf_datasf_id_space": INVENTORIES["sf_datasf"].id_space,
             "columns_absent_from_source": "",
         }
+
+    # San Jose's own receipt keys, written only when San Jose contributed rows.
+    # Same `inventory_<id>_*` shape as San Francisco's two, because the app
+    # resolves a row's provenance line by that shape and knows no city's name.
+    sj_meta_keys = {}
+    if sj_rows is not None:
+        sj_meta_keys = {
+            "inventory_sj_street_tree_name": INVENTORIES["sj_street_tree"].name,
+            "inventory_sj_street_tree_url": INVENTORIES["sj_street_tree"].url,
+            "inventory_sj_street_tree_snapshot_on": sj_meta.get("extracted_on", ""),
+            "inventory_sj_street_tree_id_space": INVENTORIES["sj_street_tree"].id_space,
+            "inventory_sj_street_tree_licence": "CC-BY",
+            "rows_from_sj_street_tree": str(stats["sj_kept"]),
+            # THE TWO NUMBERS THAT MUST NOT BE CONFLATED (#129). The first is
+            # what the ingest read and validated; the second is what a phone
+            # gets. A reader who sees only one of them cannot tell a corpus that
+            # was never fetched from one that was deliberately not shipped.
+            "sj_source_feature_count": str(sj_meta.get("server_feature_count", "")),
+            "sj_rows_read": str(stats["sj_source_rows"]),
+            "sj_rows_shipped": str(stats["sj_kept"]),
+            "sj_rows_outside_ship_window": str(stats["sj_outside_ship_window"]),
+            "sj_ship_extent": sj_extent,
+            "sj_ship_window": json.dumps(sj_window) if sj_window else "",
+            # The adapter's own accounting of where San Jose disagrees with
+            # itself. OVER THE ROWS READ, not the rows shipped: the adapter
+            # classifies every record it yields and the ship window is applied
+            # after, so under `--sj-extent downtown` these describe the whole
+            # 344,879-record corpus and `sj_rows_shipped` describes the file.
+            "sj_kind_from_vacancy_flag": str(stats.get("sj_kind_from_vacancy_flag", 0)),
+            "sj_kind_from_species_vocabulary":
+                str(stats.get("sj_kind_from_species_vocabulary", 0)),
+            "sj_kind_inferred_from_absent_species":
+                str(stats.get("sj_kind_inferred_from_absent_species", 0)),
+            "sj_vacant_sites_naming_a_taxon":
+                str(stats.get("sj_vacant_sites_naming_a_taxon", 0)),
+            "sj_planting_sites_with_a_trunk_diameter":
+                str(stats.get("sj_planting_sites_with_a_trunk_diameter", 0)),
+            "sj_trunk_diameter_over_ceiling":
+                str(stats.get("sj_trunk_diameter_over_ceiling", 0)),
+        }
+    source_meta = {**source_meta, **sj_meta_keys}
 
     meta = {
         "generator": "Tools/build_seed.py",
@@ -1651,11 +2054,20 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             str(stats["planting_sites_inferred_from_absent_species"]),
         "records_not_a_tree": str(stats["records_not_a_tree"]),
         "ingest_contract": "Tools/inventory_contract.py",
-        # The id space this seed's uuids are derived in, and the prefix they are
-        # derived with. A second city changes both, and a reader of the file can
-        # tell without reading the builder.
-        "identity_id_space": require_inventory(source).id_space,
-        "identity_prefix": ID_SPACES[require_inventory(source).id_space].identity_prefix,
+        # The id space the PRIMARY inventory's uuids are derived in, and the
+        # prefix they are derived with.
+        #
+        # THESE TWO ARE NO LONGER A STATEMENT ABOUT THE WHOLE FILE, and a reader
+        # who treats them as one is wrong for every San Jose row. They are kept
+        # because a seed built before the v14 pass has nothing else, and because
+        # they are still right for a single-city file. The per-row answer is
+        # `trees.id_space` joined to `id_spaces.identity_prefix`, and
+        # `id_spaces_in_file` below says outright when there is more than one.
+        "identity_id_space": require_inventory(sf_inventory).id_space,
+        "identity_prefix": ID_SPACES[require_inventory(sf_inventory).id_space].identity_prefix,
+        "id_spaces_in_file": ",".join(
+            sorted({INVENTORIES[i].id_space for i in contributing_inventories})
+        ),
         "species_with_leaf_retention": str(content_stats["leaf_retention"]),
         "species_with_family": str(content_stats["family"]),
         "species_curated": str(content_stats["curated"]),
@@ -1696,6 +2108,13 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
     print(f"  SF bbox                lat [{SF_BBOX['min_lat']}, {SF_BBOX['max_lat']}]  "
           f"lon [{SF_BBOX['min_lon']}, {SF_BBOX['max_lon']}]")
     print(f"  city_raw               {'populated' if with_city_raw else 'NULL (--with-city-raw to populate)'}")
+    if sj_rows is not None:
+        print(f"  san jose               --sj-extent {sj_extent}  "
+              f"({stats['sj_source_rows']:,} read, {stats['sj_kept']:,} shipped, "
+              f"{stats['sj_outside_ship_window']:,} outside the ship window)")
+        if sj_window:
+            print(f"  SJ ship window         lat [{sj_window['min_lat']}, {sj_window['max_lat']}]  "
+                  f"lon [{sj_window['min_lon']}, {sj_window['max_lon']}]")
     print(f"  source rows read       {stats['source_rows']:,}")
     print(f"    dropped, no coords   {stats['dropped_no_coords']:,}")
     print(f"    dropped, out of bbox {stats['dropped_out_of_bbox']:,}")
@@ -1708,8 +2127,11 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
         print(f"    already in, city lists it empty too "
               f"{stats['export_vacant_city_lists_site']:,}")
     print(f"  trees written          {stats['kept']:,}")
+    if sj_rows is not None:
+        print(f"    from san jose        {stats['sj_kept']:,}")
     if source == "city":
-        print(f"    from city layer      {stats['kept'] - stats['export_vacant_carried']:,}")
+        print(f"    from city layer      "
+              f"{stats['kept'] - stats['export_vacant_carried'] - stats['sj_kept']:,}")
         print(f"    from datasf export   {stats['export_vacant_carried']:,}")
     print(f"    status=alive         {stats['alive']:,}")
     print(f"    status=vacant_site   {stats['vacant_site']:,}")
@@ -1764,9 +2186,10 @@ def flush(conn, species_by_key, tree_rows, rtree_rows, assertion_rows) -> None:
         ],
     )
     city_columns = ",".join(name for name, _ in CITY_RECORD_COLUMNS)
-    placeholders = ",".join("?" * (22 + len(CITY_RECORD_COLUMNS)))
+    # 23, not 22: `id_space` joined the column list in the v14 pass.
+    placeholders = ",".join("?" * (23 + len(CITY_RECORD_COLUMNS)))
     conn.executemany(
-        "INSERT INTO trees(id,uuid,external_ref,source,inventory_source,lat,lon,address,site_type,"
+        "INSERT INTO trees(id,uuid,id_space,external_ref,source,inventory_source,lat,lon,address,site_type,"
         "neighborhood_id,status,species_current,planted_year,planted_on,"
         "dbh_city_cm_min,dbh_city_cm_max,site_lineage,verification_state,"
         f"{city_columns},city_raw,"
@@ -1811,8 +2234,21 @@ def main() -> int:
              "what shipped before #91). Both paths are supported and tested; see "
              "docs/investigations/city-tree-source.md for what changes between them.",
     )
+    ap.add_argument(
+        "--sj-extent",
+        choices=SJ_EXTENTS,
+        default="none",
+        help="how much of San Jose's Street Tree layer goes in. `none` is San "
+             "Francisco alone, which is what every build before #129 meant. "
+             "`downtown` ships the central-San-Jose window in SJ_SHIP_WINDOW, "
+             "complete inside it. `full` ingests all 344,879 records, which "
+             "proves the contract carries the corpus and produces a file far too "
+             "large to ship. Reads the cache written by "
+             "Tools/fetch_san_jose_trees.py and never touches the service.",
+    )
     args = ap.parse_args()
-    return build(args.repo_root, args.fetch, args.limit, args.with_city_raw, args.source)
+    return build(args.repo_root, args.fetch, args.limit, args.with_city_raw, args.source,
+                 args.sj_extent)
 
 
 if __name__ == "__main__":

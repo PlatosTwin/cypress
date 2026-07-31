@@ -232,9 +232,16 @@ class Inventory:
     url: str
 
 
+# RENAMED IN THE v14 SEED PASS: `city` -> `sf_city`, `datasf` -> `sf_datasf`.
+# E169 said it first and E172 restated it: `city` is a poor identifier once there
+# is more than one city in the file, and `trees.inventory_source` is a STORED
+# value, so the rename is a schema change and belongs with the two constraint
+# changes rather than before or after them. `--source city|datasf` is unchanged --
+# that flag answers "which of San Francisco's two inventories", and prefixing it
+# would make the flag say the city twice.
 INVENTORIES = {
-    "city": Inventory(
-        id="city",
+    "sf_city": Inventory(
+        id="sf_city",
         id_space="sf",
         name="SF Public Works street tree inventory",
         url=(
@@ -242,8 +249,8 @@ INVENTORIES = {
             "BUF_Street_Trees/FeatureServer/3"
         ),
     ),
-    "datasf": Inventory(
-        id="datasf",
+    "sf_datasf": Inventory(
+        id="sf_datasf",
         id_space="sf",
         name="DataSF Street Tree List",
         url="https://data.sfgov.org/api/views/tkzw-k3nq/rows.csv?accessType=DOWNLOAD",

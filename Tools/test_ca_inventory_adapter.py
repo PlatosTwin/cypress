@@ -158,7 +158,7 @@ def test_the_registry_still_agrees_with_itself():
     inventory = require_inventory("sj_street_tree")
     check(inventory.id_space == "us-ca-sj", "San Jose's inventory is in the wrong id space")
     check(
-        INVENTORIES["sj_street_tree"].id_space != INVENTORIES["city"].id_space,
+        INVENTORIES["sj_street_tree"].id_space != INVENTORIES["sf_city"].id_space,
         "San Jose shares an id space with San Francisco; their uuids would collide",
     )
 
