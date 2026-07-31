@@ -317,6 +317,45 @@ with E140's ticket rule and with #85. It should not be bolted onto a merge about
 
 ---
 
+#### The suite, on merged main, at the end of this round
+
+iPhone 16 Pro, private derived data, location granted with a fix at 37.7599, −122.4148.
+
+    Test run with 899 tests in 85 suites passed after 101.468 seconds
+    Executed 42 tests, with 1 test skipped and 2 failures in 411.356 seconds
+
+The unit suite is clean — no issues at all, #123's `VisitCameraSessionTests` red having landed on main
+as E171.
+
+**The one skip is structural and cannot be fixed in the test.**
+`MapRecentreUITests.testPressingItWithLocationDeniedExplainsRatherThanDoingNothing` needs location
+*denied*; `MapCentredStateUITests` and `MapSearchUITests` need it *granted with a fix*. Both are set
+outside the test process by `simctl privacy`, so one invocation on one simulator can exercise the
+granted paths or the refused one, never both. Whichever way the machine is set, something skips and
+the run is still green. The fix belongs to how the suite is invoked — a second pass with location
+revoked and `-only-testing` on the refusal tests — not to any file in it. Worth knowing before
+trusting a green here, and worth knowing that three UI test files each document a *different*
+`simctl location` in their own headers (37.7599,−122.4148; 37.78485,−122.4215; and, implicitly,
+`MapLayout.defaultCentre`), so no single device fix satisfies all of them.
+
+**The two failures share one cause and it is not the camera.** Both are XCUITest refusing to resolve
+hittability of a map pin:
+
+    Failed to determine hittability of "City tree, Southern Magnolia" Button:
+    Activation point invalid and no suggested hit points based on element frame
+
+They are `AccessibilityTreeTests.testNoUnlabelledButtonsOnLaunch` and
+`DeepLinkVoiceOverTests.testPinAdjust`, and both reach it through a helper that walks every button on
+screen and asks `isHittable`. It is **intermittent**: across three clean runs on this branch the first
+of them failed, passed, and failed. Whether it predates this branch was **not established** — it would
+take a run on main with the same device fix, which was not done. What can be said is that #115 working
+changes what that helper walks: the map now opens on the reader's own street with a screenful of pins
+rather than on a park with almost none, so a walk over ~290 annotation views is now the normal case
+rather than the rare one. That makes this branch a plausible aggravator of a pre-existing fragility,
+and an implausible cause of a new one.
+
+---
+
 #### #100 was not the defect it was reported as
 
 Reported as: the recentre control's accessibility state does not track whether the map is centred, so
