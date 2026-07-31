@@ -490,6 +490,37 @@ against the merge base touches **no file under `Cypress/`** — only `Tools/`, `
 main's (`bd5e85b7e8add690…` in both `Fixtures/seed/` and `Cypress/Resources/`). The app binary under
 test was main's.
 
+### A second failure, observed on main and handed over unsolved
+
+`VisitCameraSessionTests.theAddTreeWellIsAPortraitCaptureFrame` (#113) fails at
+`VisitCameraSessionTests.swift:808`:
+
+```
+Expectation failed: (ratio → 0.75) == (3.0 / 4.0 → 0.75)
+```
+
+Both sides print `0.75`, so they differ below the printed precision.
+
+**It is main's, measured rather than argued.** `git checkout ad1e748` in this worktree, run the
+suite alone, same failure — with this branch's commits absent entirely. It also survives
+`rm -rf` of the derived data and a full clean rebuild, and reproduces with `-only-testing` on that
+one suite, so it is neither stale DerivedData nor test ordering. (An earlier full run of this branch
+reported 859 passing; that run reused derived data which has since been discarded, so the clean
+rebuild appears to have *revealed* this rather than caused it. Worth knowing before trusting any
+green from an incremental build here.)
+
+**What is known about it, for whoever owns #113.** Of the four assertions in that test, three pass —
+`ratio < 1`, `ratio == 1 / VisitMetrics.Camera.captureAspectRatio`, and
+`abs(width / ratio - 481) < 1` — so `ratio` is approximately 0.75 and is consistently derived. Only
+the comparison against the literal `3.0 / 4.0` fails. The source is
+`static var wellAspectRatio: CGFloat { 1 / Camera.captureAspectRatio }` over
+`static let captureAspectRatio: CGFloat = 4.0 / 3.0`, and there is exactly one definition of each.
+A faithful standalone replication — same nesting, same `CGFloat`, same computed `static var`, same
+unannotated literal — evaluates to bit-identical `0.75` and passes every one of the four. So the
+arithmetic as written is correct and the divergence is in how the app target builds or evaluates it.
+**I could not establish whether this is a product defect or a test artefact**, and I did not change
+a file to chase it, because nothing in it is this task's.
+
 ---
 
 ## 7. The numbers this produced
