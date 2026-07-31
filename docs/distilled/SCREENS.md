@@ -181,6 +181,7 @@ The spec page states the three roles verbatim:
 - `Display · Source Serif 4—the field guide voice` → sample `Ginkgo biloba, planted 1987` (26px/600)
 - `Body · Alegreya Sans—the walking voice` → sample `Watered, mulched. Thirty seconds, next tree.` (16px)
 - `Data · Spline Sans Mono—the record voice` → sample `DBH 64 cm · taped · SF #114-88` (13px)
+  (the sample now reads `#114-88` on screen — see the note under screen 03's stat grid)
 
 Closing note (verbatim):
 > Serif for tree names and story. Sans for everything you do. Mono for anything that enters the record—numbers always carry their method.
@@ -757,6 +758,15 @@ empty/no-GPS state.
    | `Planted` | `1898` | — |
    | `City record` | `SF #114-88` | — |
 
+> **Departed from, deliberately — #137 / RULINGS R28.** These strings were drawn when San
+> Francisco was the only city in the seed. It now holds San Jose as well and D16 makes it one
+> of many, so `SF city inventory` and the `SF ` in `SF #114-88` stated a city on rows that are
+> not San Francisco's, while the provenance line on the same screen named the right one. The
+> record number keeps the publisher's own id and drops the prefix (`#114-88`); the provenance
+> element names the row's own inventory, from `inventories.name`
+> (`City of San Jose Street Tree inventory`), and falls back to the city-neutral
+> `city inventory` when the seed cannot say which. Everything else on these lines stands.
+
 **Affordances:** hero → photo timeline (**NOT SPECIFIED**); `Visit` → 04; `Care` → 09 sheet;
 `Share` → 10 sheet; `Report` → 06; DBH/Height cards → 11 (caption on 11: "Lives under Details on
 the tree profile"); activity row → the observation behind it.
@@ -1189,6 +1199,7 @@ Intro: *The unglamorous screens that make the app trustworthy: a brand-new tree 
    - `Brisbane Box` — Serif 25px/600.
    - `PLANTED 2024` badge (C13).
    - `Lophostemon confertus · SF city inventory` — Serif italic 14.5px, `#66735F`.
+     (drawn; departed from by R28 — see the note under 03's stat grid)
 4. **Recognize-it callout** (C14 green) — `margin:12px 16px 0`:
    **`How to recognize it:`** ` glossy oval leaves in whorls; smooth bark peeling to cream and rust.`
 5. **Stat grid** (C11, `padding:12px 16px 0`):
@@ -1197,7 +1208,7 @@ Intro: *The unglamorous screens that make the app trustworthy: a brand-new tree 
    |---|---|---|
    | `DBH` | `8 cm` | `city record` |
    | `Site` | `Sidewalk cut` | — |
-   | `City record` | `SF #201-33` | — |
+   | `City record` | `SF #201-33` | — | (drawn; `#201-33` on screen, R28)
    | `Watch for` | `First-summer thirst` — **13px/700 sans, not mono**, `margin-top:2px` | — |
 
 6. **CTA** (C6) — `padding:14px 16px 0`: **`Be the first to photograph this tree`**
@@ -1381,7 +1392,7 @@ Anchor: `id="screen-19"` (linked from the 01 caption).
    | Label | Value |
    |---|---|
    | `On record` | `23 years` |
-   | `City record` | `SF #088-21` |
+   | `City record` | `SF #088-21` | (drawn; `#088-21` on screen, R28)
 
 **Read-only enforcement:** no Visit CTA, no quad action row, no foliage strip. That absence *is*
 the read-only state.

@@ -2,8 +2,9 @@
 //  CityRecordPresentation.swift
 //  Cypress — Features/TreeProfile
 //
-//  Screen 03/14 §9b · **What San Francisco has on file** — the city's own six columns, read out on
-//  the tree's landing page.
+//  Screen 03/14 §9b · **What the city has on file** — the publishing inventory's own six columns,
+//  read out on the tree's landing page. It said *San Francisco* until #137; RULINGS R28 has why the
+//  header, the subtitle label, the record number and the pruning sentence all stopped naming one city.
 //
 //  **NOT SPECIFIED.** SCREENS.md has no such section. It exists because the project owner asked for
 //  it in as many words — *"Want to see more city details about trees e.g. when planted next pruning
@@ -14,7 +15,7 @@
 //  ── The one thing this section must never become ──────────────────────────────────────────
 //  A panel of facts that reads as *Cypress's* facts. BUILD-PLAN §5 makes provenance a queryable
 //  property rather than something a screen remembers, and the profile's subtitle already tells a
-//  reader whether this record is `SF city inventory` or `community-added, unverified`. So every card
+//  reader which inventory this record is from, or that it is `community-added, unverified`. So every card
 //  here is a `StatCard.Value.cityRecord`, which is the vocabulary D7 already built for exactly this
 //  distinction: the value in mono with C12's `city record` badge beside it, reading out as "from the
 //  city record". No new badge, no new card, no second vocabulary for a distinction the app already
@@ -291,8 +292,8 @@ struct CityRecordPresentation {
     /// the definition of noise.
     ///
     /// So: a statement about the record, in the section that is about the record, in the same voice as
-    /// the subtitle's `SF city inventory`. Provenance sentences repeat by nature — that one is on
-    /// every screen too.
+    /// the subtitle's provenance element, which names the same inventory (`recordSource`).
+    /// Provenance sentences repeat by nature — that one is on every screen too.
     ///
     /// ── The line this must not cross ──────────────────────────────────────────────────────────
     /// It is here because a person asked, not because absences are worth listing. The inventory also
@@ -300,7 +301,35 @@ struct CityRecordPresentation {
     /// of those get a line. If this section ever grows a second one, the honest move is a single
     /// "what the city does not record" sentence rather than a growing list — and at that point this
     /// one should be folded into it rather than joined by it.
-    static let pruningNote = CityRecordCopy.pruningNote
+    ///
+    /// ── And it is San Francisco's sentence, so it does not run anywhere else (RULINGS R28) ────
+    /// Nil for any id space but `sf`. This is `LandContext.inferred(from:idSpace:)`'s shape and
+    /// R24's rule applied to copy rather than to an inference: *a statement about a publisher's
+    /// column list is qualified by the id space it was written for, and must decline outside it.*
+    ///
+    /// The sentence is not a label that could be translated — it is a specific, sourced claim about
+    /// what San Francisco publishes: DataSF `tkzw-k3nq` has eighteen columns and no pruning event,
+    /// and SF Public Works' own layer carries `Prune_Status` and `Prune_Year` **at keymap-grid
+    /// grain**, which is what "by block, not by tree" reports (E143, #91). San Jose's Street Tree
+    /// layer publishes no pruning field at all, so the true sentence there is a *different* claim —
+    /// "this inventory records nothing about pruning" rather than "it records it at the wrong
+    /// grain" — and it would be Cypress stating what is and is not in another city's field list on
+    /// the strength of one adapter's column list rather than the city's published metadata. R24's
+    /// test is "was this rule written from **this** publisher's documentation", and for San Jose it
+    /// was not.
+    ///
+    /// **So a San Jose reader gets one fewer sentence, and that is the honest outcome rather than a
+    /// gap to fill.** The section is not empty for them — the cards and the provenance line both
+    /// draw — so E126's "a surface with nothing on it must say why" is not engaged; what E126 and E9
+    /// do govern is the temptation to pad, and a translated sentence would be exactly the
+    /// plausible-looking stand-in both refuse. Absence renders as absence.
+    ///
+    /// Nil `idSpace` keeps the sentence, matching `LandContext.inferred(from:idSpace:)` exactly: a
+    /// seed built before the column existed is San Francisco's alone, and the sentence is true of it.
+    static func pruningNote(idSpace: String?) -> String? {
+        guard idSpace == nil || idSpace == CityRecordCopy.sanFranciscoIDSpace else { return nil }
+        return CityRecordCopy.pruningNote
+    }
 
     /// **`permitNotes` is not shown, at all.** 52,580 rows, and it is two columns wearing one name.
     ///
@@ -335,14 +364,28 @@ struct CityRecordPresentation {
 /// decision, and a decision is worth a test that does not have to render a `View` to read it.
 enum CityRecordCopy {
 
-    /// The section header. It names the city, because the section's whole job is to say whose facts
-    /// these are before the first one is read.
+    /// The section header. It says whose facts these are before the first one is read.
     ///
-    /// **Not "City record", which is already a card in the grid above it** (`SF #13284`, the DataSF
-    /// `TreeID`, specified by SCREENS.md 14). That card stays where it is drawn — moving a specified
+    /// **Not "City record", which is already a card in the grid above it** (`#13284`, the publisher's
+    /// own id, specified by SCREENS.md 14). That card stays where it is drawn — moving a specified
     /// element to make room for an unspecified one is not a trade this round had standing to make —
     /// so this header is worded to sit above it without colliding with it.
-    static let header = "What San Francisco has on file"
+    ///
+    /// ── It used to read `What San Francisco has on file`, and RULINGS R28 overruled it ─────────
+    /// It was drawn when San Francisco was the only city in the file. It is now one of two and D16
+    /// makes it one of many, so the header stated the wrong city on 52,788 rows while the provenance
+    /// line **inside the same section** named San Jose correctly.
+    ///
+    /// **This is the one of the four surfaces R28 fixed that does not derive from the row, and the
+    /// reason is the type.** The header is a micro-label — uppercase mono with letter-spacing — and
+    /// the value the row can honestly supply is the inventory's own published name
+    /// (`City of San Jose Street Tree inventory`, 38 characters). Set in that face at that width it
+    /// is four wrapped lines of shouting above a two-card grid. So the header names the *kind* of
+    /// source, which is true of every municipal inventory the merged table will ever hold, and the
+    /// section's own last line names *which one*, in full, with the day it was read
+    /// (`inventoryProvenanceNote`). A constant that is true everywhere is not the same defect as a
+    /// constant that is true in one city.
+    static let header = "What the city has on file"
 
     static let plantTypeLabel = "City lists this as"
     static let legalStatusLabel = "Legal status"
@@ -402,6 +445,10 @@ enum CityRecordCopy {
 
     // ── Pruning ──────────────────────────────────────────────────────────────────────────────
 
+    /// The id space `pruningNote` was written from, and the only one it runs in. The same literal
+    /// `LandContext.inferred(from:idSpace:)` guards on, for the same reason (R24).
+    static let sanFranciscoIDSpace = "sf"
+
     static let pruneOptOutStatus = "Prune Opt Out"
     static let maintenanceOptOutStatus = "Street Tree Maintenance Opt Out"
 
@@ -437,6 +484,56 @@ enum CityRecordCopy {
         + "nothing about when this tree was last pruned."
 
     // ── Provenance ───────────────────────────────────────────────────────────────────────────
+
+    /// **Where this record came from, in the subtitle's voice — asked of the row, never of the copy.**
+    ///
+    /// SCREENS.md 14 draws `Lophostemon confertus · SF city inventory`, and until RULINGS R28 that
+    /// second element was a literal on a `switch` over `TreeSource`. It was written when the seed
+    /// held one city; it now holds two and D16 makes it one of many, so it said *San Francisco* over
+    /// 52,788 San Jose rows while the provenance line at the foot of the same screen said San Jose.
+    ///
+    /// **The string returned here is `InventorySource.name` — byte for byte the one
+    /// `provenanceNote` puts at the bottom of the screen.** That is the point rather than a
+    /// coincidence: the top of the profile and the bottom of it now read from one value, so they
+    /// cannot disagree again for any city, in any seed. `InventorySource`'s own documentation
+    /// already declared `name` to be "the phrase the app puts on screen"; this line simply was not
+    /// asking for it.
+    ///
+    /// **The fallback is city-neutral rather than San Francisco.** A seed built before the
+    /// `inventory_*` receipt keys, or a row whose inventory the receipt does not name, cannot say
+    /// *which* inventory — but `source == .cityImport` still says it is a municipal one, and that is
+    /// the distinction SCREENS.md drew this element for (`city inventory` against
+    /// `community-added, unverified`). Naming a city we cannot derive is the defect; naming the
+    /// category we can is not.
+    static func recordSource(_ source: TreeSource, inventory: InventorySource?) -> String {
+        switch source {
+        case .cityImport: return inventory?.name ?? unnamedCityInventory
+        case .community: return communityAdded
+        }
+    }
+
+    /// See `recordSource`. Not `SF city inventory`, and never again a city this app cannot derive.
+    static let unnamedCityInventory = "city inventory"
+    static let communityAdded = "community-added, unverified"
+
+    /// `#167879` — the publishing inventory's own id for this record, which is the citable one
+    /// (BUILD-PLAN §7, RULINGS R18).
+    ///
+    /// **The `SF ` that used to lead it is gone, and R28 records why the number survived and the
+    /// city half did not.** `SF #167879` was doing two jobs. The number is San Francisco's `TreeID`
+    /// or San Jose's `FACILITYID` — different columns, same kind of thing, and the only string a
+    /// reader can carry back to the city that issued it. The prefix named a city, and on a San Jose
+    /// row it named the wrong one.
+    ///
+    /// **It is not replaced by the qualified identity.** `us-ca-sj:167879` is R18's *identity* key —
+    /// the string the uuid is derived from — and it exists so two cities' numberings cannot collide
+    /// in one table. It is Cypress's namespacing, not the city's record number, and printing it
+    /// would hand the reader a slug that means nothing in San Jose's own asset system.
+    ///
+    /// Nothing is lost by dropping the prefix, because the card's label already reads `City record`
+    /// and *which* city is stated twice more on the same screen — in the subtitle (`recordSource`)
+    /// and in the section's provenance line (`provenanceNote`), both derived from the row.
+    static func recordNumber(_ ref: String) -> String { "#\(ref)" }
 
     /// `From the SF Public Works street tree inventory, 26 July 2026.`
     ///

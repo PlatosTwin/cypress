@@ -656,9 +656,13 @@ public struct TreeProfile: Hashable, Sendable {
 
     /// Which city inventory this record came out of, and when that inventory was read.
     ///
-    /// A property of the seed rather than of the tree, so every profile in one build carries the
-    /// same value; it travels on the payload because the presentation layer may not reach past
-    /// `CypressAPI` for it (ARCHITECTURE §4).
+    /// **A property of the row, not of the file.** It read the other way once, and the sentence is
+    /// corrected here rather than deleted because it is the belief that kept four surfaces on the
+    /// tree profile saying `SF` (ERRATA E181): a value that is the same for every tree in a build is
+    /// not worth asking a row for. It is not the same for every tree. `LocalAPI.provenance(of:in:)`
+    /// resolves it from `trees.inventory_source`, and the shipped seed holds three inventories
+    /// across two cities. It travels on the payload because the presentation layer may not reach
+    /// past `CypressAPI` for it (ARCHITECTURE §4).
     ///
     /// `nil` for a community-added tree — nobody's inventory lists it, and the honest surface for
     /// that is no provenance line rather than one naming a source the record did not come from.

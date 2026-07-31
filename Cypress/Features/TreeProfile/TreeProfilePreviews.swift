@@ -619,7 +619,7 @@ func treeProfilePreview(
     treeProfilePreview(TreeProfileSeedFixtures.vacant)
 }
 
-// ── §9b · What San Francisco has on file (ERRATA E145) ───────────────────────────────────────
+// ── §9b · What the city has on file (ERRATA E145, E181) ──────────────────────────────────────
 
 #Preview("9b · Every city column, FUF among them") {
     treeProfilePreview(TreeProfileSeedFixtures.fullCityRecord)

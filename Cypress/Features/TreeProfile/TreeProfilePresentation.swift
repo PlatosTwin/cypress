@@ -322,12 +322,14 @@ struct TreeProfilePresentation {
         return parts.joined(separator: " · ")
     }
 
-    /// "SF city inventory" vs "community-added, unverified" — the two labels SCREENS.md ships.
+    /// Where the record came from — **read off this row's inventory, not off a literal**.
+    ///
+    /// SCREENS.md ships `SF city inventory` against `community-added, unverified`. The second is
+    /// unchanged; the first now names the inventory the row is actually from, which is San Jose's on
+    /// 52,788 rows of the shipped seed. See `CityRecordCopy.recordSource` for the whole argument and
+    /// RULINGS R28 for the mock pin this overruled.
     var provenance: String {
-        switch tree.source {
-        case .cityImport: return "SF city inventory"
-        case .community: return "community-added, unverified"
-        }
+        CityRecordCopy.recordSource(tree.source, inventory: profile.inventorySource)
     }
 
     /// Who said what species this is, when the answer is "a contributor did".
@@ -354,11 +356,11 @@ struct TreeProfilePresentation {
     /// A symmetric second arm would have to be a sentence about a species that does not exist.
     ///
     /// The symmetry the placement rule is really about is honoured, one level up and already: a city
-    /// row's species reads `SF city inventory` and a community row's reads `community-added,
+    /// row's species reads its inventory's name and a community row's reads `community-added,
     /// unverified`, both on this same line, and neither is the marked case. This element only says
     /// *which part* of a community record the contributor authored — and it is not evaluative, in
-    /// exactly `placementNote`'s sense: it names the author, the way `SF city inventory` names a
-    /// source without praising it. It does not say "unconfirmed", "guess", or "may be wrong". A
+    /// exactly `placementNote`'s sense: it names the author, the way `recordSource` names an
+    /// inventory without praising it. It does not say "unconfirmed", "guess", or "may be wrong". A
     /// contributor who planted the tree knows it better than any row in the seed does.
     ///
     /// **Community rows with a species only.** A city row's species is the city's and `provenance`
@@ -416,7 +418,7 @@ struct TreeProfilePresentation {
     /// is a suspect coordinate. It would also be untrue to the record — a hand-placed pin is not the
     /// worse pin, and is very often the better one, because the contributor could see the tree and the
     /// phone could not, and a fix in an SF street canyon is routinely 20–40 m out. So the two arms are
-    /// symmetric and neither is evaluative: they name the instrument, the way `SF city inventory`
+    /// symmetric and neither is evaluative: they name the instrument, the way `recordSource`
     /// names a source without praising it. `TreePlacement` carries the argument in full.
     ///
     /// The words are the owner's own — "added via pin by hand instead of by gps" — kept rather than
@@ -916,10 +918,12 @@ struct TreeProfilePresentation {
         return "\(range.lowerBound)–\(range.upperBound) cm"
     }
 
-    /// `SF #13284` — the DataSF `TreeID`, which is the citable city record (BUILD-PLAN §7).
+    /// `#13284` — the publishing inventory's own id, which is the citable city record (BUILD-PLAN
+    /// §7). SF's `TreeID`, San Jose's `FACILITYID`. See `CityRecordCopy.recordNumber` for why the
+    /// `SF ` prefix did not survive a second city and the number did (RULINGS R28).
     var cityRecordText: String? {
         guard tree.source == .cityImport, let ref = tree.externalRef, !ref.isEmpty else { return nil }
-        return "SF #\(ref)"
+        return CityRecordCopy.recordNumber(ref)
     }
 
     /// 14's `Watch for` card. Authored species care content only — 20 of the curated 40 carry any
@@ -999,7 +1003,7 @@ struct TreeProfilePresentation {
     /// cannot make (E63's defect). When neither way of knowing has an answer there is no sentence,
     /// which asserts nothing.
     ///
-    /// ── Why it is outside "What San Francisco has on file" ────────────────────────────────────
+    /// ── Why it is outside "What the city has on file" ─────────────────────────────────────────
     /// On a city row this is Cypress's *reading* of `legalStatus` and `caretaker`, and that reading is
     /// a rule in `LandContext.inferred(from:)` which can be wrong about any individual tree. Inside a
     /// section headed with the city's name, under a card badged `city record`, it would be the app's
@@ -1019,7 +1023,7 @@ struct TreeProfilePresentation {
         }
     }
 
-    // MARK: - What San Francisco has on file (task #68)
+    // MARK: - What the city has on file (task #68, made city-agnostic by #137/R28)
 
     /// The city's own six columns, prepared for the grid — or `nil` when there is no section to draw.
     ///
@@ -1041,16 +1045,20 @@ struct TreeProfilePresentation {
     /// The opt-out arrangement first, because it is a fact about *this* tree and answers the reader
     /// who has just read `Prune Opt Out` on the card above; the general note second, because it is a
     /// fact about the dataset. Empty when there is no section.
+    ///
+    /// **The pruning note is San Francisco's and is absent outside it** — see
+    /// `CityRecordPresentation.pruningNote(idSpace:)`. A San Jose tree's section is a shorter list,
+    /// not a list with a substitute in it (RULINGS R28).
     var cityRecordNotes: [String] {
         guard showsCityRecordSection else { return [] }
         var notes: [String] = []
         if let optOut = cityRecord?.maintenanceOptOutNote() { notes.append(optOut) }
-        notes.append(CityRecordPresentation.pruningNote)
+        if let pruning = CityRecordPresentation.pruningNote(idSpace: tree.idSpace) { notes.append(pruning) }
         if let provenance = inventoryProvenanceNote { notes.append(provenance) }
         return notes
     }
 
-    /// Whether "What San Francisco has on file" draws.
+    /// Whether "What the city has on file" draws.
     ///
     /// **Cards, or a provenance line.** It used to be cards alone, and `CityRecordPresentation`
     /// still explains why: a header over an empty grid is worse than no header, so a record whose

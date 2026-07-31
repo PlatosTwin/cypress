@@ -358,11 +358,17 @@ struct MemorialPresentation: Equatable {
             )
         }
 
-        // `SF #088-21` — the DataSF `TreeID`, the citable city record (BUILD-PLAN §7). The same rule
-        // `TreeProfilePresentation.cityRecordText` states for 03 and 14.
+        // `#088-21` — the publishing inventory's own id, the citable city record (BUILD-PLAN §7).
+        // The same rule `TreeProfilePresentation.cityRecordText` states for 03 and 14, and the same
+        // one string, so a memorial cannot start naming a city the other two screens have stopped
+        // naming (`CityRecordCopy.recordNumber`, RULINGS R28).
         if tree.source == .cityImport, let ref = tree.externalRef, !ref.isEmpty {
             stats.append(
-                Stat(id: "cityRecord", label: MemorialCopy.cityRecordStatLabel, value: "SF #\(ref)")
+                Stat(
+                    id: "cityRecord",
+                    label: MemorialCopy.cityRecordStatLabel,
+                    value: CityRecordCopy.recordNumber(ref)
+                )
             )
         }
 

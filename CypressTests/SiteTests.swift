@@ -139,8 +139,8 @@ struct SiteTests {
             SiteCopy.headerTitle,
             SiteCopy.fallbackTitle,
             SiteCopy.kind,
-            SiteCopy.provenance(.cityImport),
-            SiteCopy.provenance(.community),
+            SiteCopy.provenance(.cityImport, inventory: nil),
+            SiteCopy.provenance(.community, inventory: nil),
             SiteCopy.statementLeadIn,
             SiteCopy.statementBody,
             SiteCopy.siteLabel,
@@ -309,7 +309,7 @@ struct SiteTests {
         let subject = SitePresentation(profile: SiteTests.profile(community))
 
         #expect(!subject.stats.contains { $0.id == "cityRecord" })
-        #expect(subject.subtitle.hasSuffix(SiteCopy.provenance(.community)))
+        #expect(subject.subtitle.hasSuffix(SiteCopy.provenance(.community, inventory: nil)))
     }
 
     // MARK: - 3. `nearest` is a claim
@@ -505,7 +505,10 @@ struct SiteTests {
         let subject = SitePresentation(profile: SiteTests.profile())
 
         #expect(subject.title == "666 Rhode Island St")
-        #expect(subject.subtitle == "Vacant planting site · SF city inventory")
+        // Was `Vacant planting site · SF city inventory` until #137. This fixture carries no
+        // inventory, so the line falls back to the city-neutral category rather than to a city the
+        // row cannot name; `aSanJoseSiteNamesSanJose` covers a row that can.
+        #expect(subject.subtitle == "Vacant planting site · city inventory")
     }
 
     /// A site the city listed without an address falls back to the noun — and then the italic line
@@ -515,7 +518,7 @@ struct SiteTests {
         let subject = SitePresentation(profile: SiteTests.profile(SiteTests.site(address: nil)))
 
         #expect(subject.title == SiteCopy.fallbackTitle)
-        #expect(subject.subtitle == SiteCopy.provenance(.cityImport))
+        #expect(subject.subtitle == SiteCopy.provenance(.cityImport, inventory: nil))
         #expect(!subject.subtitle.contains(SiteCopy.kind))
         #expect(!subject.subtitle.hasPrefix(" · "))
     }

@@ -103,7 +103,8 @@ struct SitePresentation: Equatable {
         self.title = SiteCopy.title(profile: profile)
         self.subtitle = SiteCopy.subtitle(
             title: SiteCopy.title(profile: profile),
-            source: tree.source
+            source: tree.source,
+            inventory: profile.inventorySource
         )
 
         self.statementLeadIn = SiteCopy.statementLeadIn
@@ -137,10 +138,13 @@ struct SitePresentation: Equatable {
             stats.append(Stat(id: "site", label: SiteCopy.siteLabel, value: siteType))
         }
 
-        // `SF #13284` — the citable city record (BUILD-PLAN §7), under the same rule 03, 14 and 19
-        // all apply: only a city row has one.
+        // `#13284` — the citable city record (BUILD-PLAN §7), under the same rule 03, 14 and 19 all
+        // apply: only a city row has one. The `SF ` prefix went with #137; see
+        // `CityRecordCopy.recordNumber`.
         if tree.source == .cityImport, let ref = tree.externalRef, !ref.isEmpty {
-            stats.append(Stat(id: "cityRecord", label: SiteCopy.cityRecordLabel, value: "SF #\(ref)"))
+            stats.append(
+                Stat(id: "cityRecord", label: SiteCopy.cityRecordLabel, value: CityRecordCopy.recordNumber(ref))
+            )
         }
 
         if let neighborhood = profile.neighborhoodName, !neighborhood.isEmpty {
@@ -205,26 +209,28 @@ enum SiteCopy {
 
     static let fallbackTitle = "Planting site"
 
-    /// `Vacant planting site · SF city inventory`.
+    /// `Vacant planting site · DataSF Street Tree List`.
     ///
     /// Same rule as 03 and 14: name the record with every fact the H1 has not already used, then
     /// state where it came from. Provenance is required, not optional (BUILD-PLAN §5: no UI-only
     /// provenance), so this line is never empty even where the H1 already said everything else.
-    static func subtitle(title: String, source: TreeSource) -> String {
+    static func subtitle(title: String, source: TreeSource, inventory: InventorySource?) -> String {
         var parts: [String] = []
         if title != fallbackTitle { parts.append(kind) }
-        parts.append(provenance(source))
+        parts.append(provenance(source, inventory: inventory))
         return parts.joined(separator: " · ")
     }
 
     static let kind = "Vacant planting site"
 
-    /// The two labels the app already ships for where a record came from.
-    static func provenance(_ source: TreeSource) -> String {
-        switch source {
-        case .cityImport: return "SF city inventory"
-        case .community: return "community-added, unverified"
-        }
+    /// Where the record came from, from the row's own inventory.
+    ///
+    /// **It read `SF city inventory` and 11,787 of the seed's vacant sites are San Jose's** — this
+    /// screen carried the identical defect #137 found on the tree profile, on the identical line,
+    /// while `provenanceNote` twenty points below already named San Jose correctly. One derivation
+    /// now feeds both (`CityRecordCopy.recordSource`), so the two lines cannot drift apart again.
+    static func provenance(_ source: TreeSource, inventory: InventorySource?) -> String {
+        CityRecordCopy.recordSource(source, inventory: inventory)
     }
 
     // MARK: The statement

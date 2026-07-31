@@ -226,7 +226,7 @@ struct MemorialPresentationTests {
         #expect(presentation.bannerLeadIn == "Removed by the city, May 2026.")
         #expect(presentation.subtitle == "Red Flowering Gum · Corymbia ficifolia · 2003–2026")
         #expect(presentation.stats.first(where: { $0.id == "onRecord" })?.value == "23 years")
-        #expect(presentation.stats.first(where: { $0.id == "cityRecord" })?.value == "SF #088-21")
+        #expect(presentation.stats.first(where: { $0.id == "cityRecord" })?.value == "#088-21")
 
         let cityRow = presentation.moments.first { $0.kind == .cityRecord }
         #expect(cityRow?.label == "City record")

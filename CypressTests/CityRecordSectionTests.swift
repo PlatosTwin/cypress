@@ -2,8 +2,9 @@ import Foundation
 import Testing
 @testable import Cypress
 
-/// **What San Francisco has on file** — screen 03/14 §9b, the section that reads `CityRecord` out
-/// onto the tree's landing page (ERRATA E145).
+/// **What the city has on file** — screen 03/14 §9b, the section that reads `CityRecord` out
+/// onto the tree's landing page (ERRATA E145, and ERRATA E181 for the four surfaces that stopped
+/// saying San Francisco about San Jose).
 ///
 /// ── Why so much of this runs against the whole seed ───────────────────────────────────────────
 /// `CityRecordPresentation` makes exactly three kinds of decision — what to show, how to say it, and
@@ -260,8 +261,13 @@ struct CityRecordSectionTests {
     /// The general note is on every tree that draws the section, because it is a statement about the
     /// inventory rather than about the tree — and it never becomes an `Unknown` field, because a
     /// field would be a claim that the value exists and Cypress has not got it.
-    @Test("every city record says on screen that the inventory holds no pruning dates")
-    func thePruningAnswerIsOnScreen() {
+    @Test("every San Francisco city record says on screen that the inventory holds no pruning dates")
+    func thePruningAnswerIsOnScreen() throws {
+        // The fixtures carry no id space, which `pruningNote(idSpace:)` reads as San Francisco for
+        // the reason `LandContext.inferred(from:idSpace:)` does — a seed built before the column
+        // existed holds one city. The San Jose half of the rule is asserted against real rows in
+        // `theSanJoseSentenceIsAbsentRatherThanTranslated`.
+        let pruning = try #require(CityRecordPresentation.pruningNote(idSpace: nil))
         for profile in [
             TreeProfileSeedFixtures.fullCityRecord,
             TreeProfileSeedFixtures.bareCityRecord,
@@ -270,7 +276,7 @@ struct CityRecordSectionTests {
             TreeProfileSeedFixtures.coldStart,
         ] {
             let presentation = Self.presentation(profile)
-            #expect(presentation.cityRecordNotes.last == CityRecordPresentation.pruningNote)
+            #expect(presentation.cityRecordNotes.last == pruning)
             // No field, no blank, no placeholder anywhere in the grid.
             let labels = presentation.cityRecord?.facts.map(\.label) ?? []
             #expect(labels.contains { $0.lowercased().contains("prun") } == false)
@@ -298,9 +304,9 @@ struct CityRecordSectionTests {
     }
 
     @Test("a tree with no opt-out carries only the note about the dataset")
-    func anOrdinaryTreeCarriesOnlyTheGeneralNote() {
+    func anOrdinaryTreeCarriesOnlyTheGeneralNote() throws {
         let presentation = Self.presentation(TreeProfileSeedFixtures.fullCityRecord)
-        #expect(presentation.cityRecordNotes == [CityRecordPresentation.pruningNote])
+        #expect(presentation.cityRecordNotes == [try #require(CityRecordPresentation.pruningNote(idSpace: nil))])
     }
 
     /// The two opt-out statuses are the only ones that get a sentence — asserted over the seed's
@@ -475,7 +481,12 @@ struct CityRecordSectionTests {
             #expect(presentation.landContextNote == nil)
         }
         #expect(facts.contains { $0.id == "permitNotes" } == false)
-        #expect(presentation.cityRecordNotes.contains(CityRecordPresentation.pruningNote))
+        // Conditional rather than `#require`d: the predicate above is a `LIMIT 1` over a table that
+        // now holds two cities, and the pruning sentence is San Francisco's alone (R28). Asserting
+        // it unconditionally would make this test's subject depend on which row SQLite handed back.
+        if let pruning = CityRecordPresentation.pruningNote(idSpace: tree.idSpace) {
+            #expect(presentation.cityRecordNotes.contains(pruning))
+        }
 
         // The provenance line, end to end: `seed_meta` → `CypressStore.seedProvenance` →
         // `TreeProfile` → the section's last sentence. This is the fix for the defect that made
@@ -550,5 +561,189 @@ struct CityRecordSectionTests {
             note.contains(treeSource.name) == false,
             "the site credits the inventory that has never listed it: \(note)"
         )
+    }
+
+    // MARK: - #137 / ERRATA E181 — the screen says one city, and it is the row's
+
+    /// One row out of each inventory the shipped seed actually holds, with its resolved source.
+    ///
+    /// Returns nothing on a seed built before `trees.inventory_source`, and on a one-inventory seed
+    /// there is simply one entry — the sweeps below still run, they just have no second city to
+    /// disagree with.
+    private static func oneRowPerInventory(
+        _ store: CypressStore
+    ) async throws -> [(tree: Tree, source: InventorySource)] {
+        guard let schema = store.seed, schema.hasInventorySource else { return [] }
+        let queries = TreeQueries(schema: schema, seedHasSoftDeletedTrees: store.seedHasSoftDeletedTrees)
+
+        return try await store.queue.read { connection in
+            var picked: [(tree: Tree, source: InventorySource)] = []
+            for id in store.seedInventories.keys.sorted() {
+                let statement = try connection.cachedStatement("""
+                    SELECT uuid FROM \(SeedDatabase.schemaName).trees
+                     WHERE inventory_source = :id AND status = 'alive'
+                     LIMIT 1
+                    """)
+                _ = try statement.bind([":id": id])
+                guard let uuid = try statement.fetchOne({ try $0.uuid("uuid") }),
+                      let record = try queries.tree(id: uuid, connection: connection),
+                      let source = LocalAPI.provenance(of: record, in: store)
+                else { continue }
+                picked.append((record.tree, source))
+            }
+            return picked
+        }
+    }
+
+    /// Words that mean *a city other than this row's*. A San Jose row's screen may not contain San
+    /// Francisco's, and vice versa.
+    private static func foreignCityMarkers(idSpace: String?) -> [String] {
+        switch idSpace {
+        case "us-ca-sj": return ["SF", "San Francisco", "DataSF"]
+        case "sf": return ["San Jose"]
+        default: return []
+        }
+    }
+
+    /// **The regression this whole entry exists for.** Four surfaces on the tree profile named San
+    /// Francisco from a literal while the fifth — the provenance line at the foot of the same
+    /// section — named San Jose from the row. One screen, two answers.
+    ///
+    /// So this asserts the property rather than the strings: **every city-naming surface on the
+    /// profile agrees with the row's own inventory**, swept over one live row from each inventory
+    /// the seed holds. It fails on any of the four independently, and it keeps failing as cities
+    /// three through thirty arrive, because nothing in it names a city.
+    @Test("no surface on a profile names a city other than the row's own inventory")
+    func everyCitySurfaceNamesTheRowsOwnInventory() async throws {
+        let store = try await Self.store()
+        let rows = try await Self.oneRowPerInventory(store)
+        guard !rows.isEmpty else { return }
+
+        for (tree, source) in rows {
+            let presentation = Self.presentation(TreeProfile(tree: tree, inventorySource: source))
+
+            // 1 · the subtitle's provenance element is this inventory's own name, which is byte for
+            //     byte what the provenance line at the bottom of the screen uses.
+            #expect(
+                presentation.provenance == source.name,
+                "\(source.id): subtitle says \(presentation.provenance)"
+            )
+            #expect(presentation.subtitle.contains(source.name))
+
+            // 2 · every drawn string on the section, swept for another city's name.
+            var drawn = [presentation.subtitle, CityRecordCopy.header]
+            drawn += presentation.cityRecordNotes
+            drawn += (presentation.cityRecord?.facts ?? []).flatMap { [$0.label, $0.value] }
+            if let record = presentation.cityRecordText { drawn.append(record) }
+
+            for marker in Self.foreignCityMarkers(idSpace: tree.idSpace) {
+                let offenders = drawn.filter { $0.contains(marker) }
+                #expect(
+                    offenders.isEmpty,
+                    "a \(tree.idSpace ?? "?") row's profile says \(marker): \(offenders)"
+                )
+            }
+        }
+    }
+
+    /// **The record number is the publisher's, and the city half of it did not survive a second
+    /// city.** `SF #167879` named a city and a number; the number is San Francisco's `TreeID` or
+    /// San Jose's `FACILITYID` and travels back to whoever issued it, while the prefix was a
+    /// literal that was wrong on 52,788 rows.
+    ///
+    /// Asserted as `"#" + the row's own ref` rather than against a fixed string, so it cannot be
+    /// satisfied by swapping one hardcoded city for another.
+    @Test("the city record card is the publisher's own number and nothing else")
+    func theRecordNumberIsTheRowsOwnRef() async throws {
+        let store = try await Self.store()
+        let rows = try await Self.oneRowPerInventory(store)
+        guard !rows.isEmpty else { return }
+
+        for (tree, source) in rows {
+            let presentation = Self.presentation(TreeProfile(tree: tree, inventorySource: source))
+            let ref = try #require(tree.externalRef, "\(source.id): a seed row with no external ref")
+            #expect(presentation.cityRecordText == "#\(ref)")
+            // R18's qualified identity is how the seed keeps two cities' numberings apart. It is
+            // Cypress's namespacing, not a number the city would recognize, and it stays off screen.
+            #expect(presentation.cityRecordText?.contains(":") == false)
+        }
+    }
+
+    /// **A sentence with no analog in the other city is absent there, not translated** (R28).
+    ///
+    /// The pruning note is a sourced claim about what San Francisco publishes — DataSF's eighteen
+    /// columns, and SF Public Works' `Prune_Year` at keymap-grid grain. San Jose's Street Tree layer
+    /// publishes no pruning field at all, which is a *different* statement, and Cypress has not read
+    /// that city's published metadata to make it. R24's rule is that a derivation over a
+    /// publisher's vocabulary declines outside the id space it was written for; this is that rule
+    /// applied to a sentence.
+    ///
+    /// **And the section is not left empty by the absence**, which is the half E126 governs: a San
+    /// Jose row still draws its cards and still says which inventory it came from and when.
+    @Test("San Jose gets no pruning sentence, and is not handed a substitute for one")
+    func theSanJoseSentenceIsAbsentRatherThanTranslated() async throws {
+        let store = try await Self.store()
+        let rows = try await Self.oneRowPerInventory(store)
+        guard rows.contains(where: { $0.tree.idSpace == "us-ca-sj" }) else { return }
+
+        for (tree, source) in rows {
+            let presentation = Self.presentation(TreeProfile(tree: tree, inventorySource: source))
+            let notes = presentation.cityRecordNotes
+            let saysPruning = notes.contains { $0.lowercased().contains("prun") }
+
+            if tree.idSpace == "sf" {
+                #expect(saysPruning, "San Francisco's own sentence stopped drawing on its own rows")
+            } else {
+                #expect(
+                    !saysPruning,
+                    "a \(tree.idSpace ?? "?") row was handed San Francisco's pruning claim: \(notes)"
+                )
+            }
+
+            // The section still says where the facts came from, in every city. An absent sentence
+            // must not take the provenance line with it.
+            #expect(presentation.showsCityRecordSection)
+            #expect(notes.last == presentation.inventoryProvenanceNote)
+        }
+    }
+
+    /// A San Jose vacant planting site — 11,787 of them in the shipped seed — carries the identical
+    /// line the tree profile did, on a screen whose provenance note was already correct.
+    @Test("a vacant site's subtitle names the inventory that listed it, in whichever city")
+    func aSiteSubtitleNamesItsOwnInventory() async throws {
+        let store = try await Self.store()
+        guard let schema = store.seed, schema.hasInventorySource else { return }
+        let queries = TreeQueries(schema: schema, seedHasSoftDeletedTrees: store.seedHasSoftDeletedTrees)
+
+        let sites = try await store.queue.read { connection -> [(Tree, InventorySource)] in
+            var found: [(Tree, InventorySource)] = []
+            for space in ["sf", "us-ca-sj"] {
+                let statement = try connection.cachedStatement("""
+                    SELECT uuid FROM \(SeedDatabase.schemaName).trees
+                     WHERE status = 'vacant_site' AND id_space = :space
+                     LIMIT 1
+                    """)
+                _ = try statement.bind([":space": space])
+                guard let uuid = try statement.fetchOne({ try $0.uuid("uuid") }),
+                      let record = try queries.tree(id: uuid, connection: connection),
+                      let source = LocalAPI.provenance(of: record, in: store)
+                else { continue }
+                found.append((record.tree, source))
+            }
+            return found
+        }
+        guard sites.count == 2 else { return }
+
+        for (tree, source) in sites {
+            let subject = SitePresentation(profile: TreeProfile(tree: tree, inventorySource: source))
+            #expect(subject.subtitle.hasSuffix(source.name), "the site line reads: \(subject.subtitle)")
+            #expect(subject.provenanceNote?.contains(source.name) == true)
+            for marker in Self.foreignCityMarkers(idSpace: tree.idSpace) {
+                #expect(
+                    !subject.subtitle.contains(marker),
+                    "a \(tree.idSpace ?? "?") site says \(marker): \(subject.subtitle)"
+                )
+            }
+        }
     }
 }

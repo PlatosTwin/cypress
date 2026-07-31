@@ -497,7 +497,7 @@ struct ScreenSweepShots {
         })
     }
 
-    // MARK: - §9b · What San Francisco has on file (ERRATA E145)
+    // MARK: - §9b · What the city has on file (ERRATA E145, E181)
 
     /// The five states of the city-record section, light and dark.
     ///
