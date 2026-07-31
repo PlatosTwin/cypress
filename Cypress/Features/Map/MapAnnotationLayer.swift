@@ -209,6 +209,56 @@ enum MapPinImage {
 
 // MARK: - The map view
 
+/// An `MKMapView` that says when it first has an area to draw in.
+///
+/// **A `UIViewRepresentable` has no layout hook, and this one needs exactly one** (ERRATA E168).
+/// `makeUIView` and the `updateUIView` passes around it can all run while the view is still
+/// `bounds == .zero`, and a camera cannot be aimed at a map with no area — so the opening camera has
+/// to wait for a size. Waiting is safe only if something wakes the layer when the size arrives:
+/// screen 01 re-runs its body 240 times a second and would have produced another pass on its own,
+/// but the two other screens that draw this basemap are quiet, and a quiet screen would have sat on
+/// MapKit's default region forever.
+///
+/// One callback, fired once, then released. It is not a general layout observer and must not become
+/// one — everything else this file does is driven by `updateUIView`, and it stays that way.
+///
+/// **The callback is delivered *after* the layout pass, not inside it — but not for the reason this
+/// note used to give.** The first fix for E168 claimed that "a `setRegion` made from inside a layout
+/// pass is performed but never reported", and that is false. Measured on a cold launch with the aim
+/// arriving from `updateUIView`, `regionDidChangeAnimated` was delivered every time, in the same
+/// millisecond as the `setRegion` that caused it, carrying exactly the right region. What was
+/// actually losing the camera is where the *write* happened, not whether the callback arrived — see
+/// `Coordinator.echo(_:)`, which is where E168's real mechanism is recorded.
+///
+/// The hop is kept anyway, on a narrower claim: driving a map's camera from inside its own
+/// `layoutSubviews` is a re-entrant geometry change on a view that is mid-layout, and one runloop
+/// turn costs a frame nobody can see.
+///
+/// **Be honest about what this hook does on screen 01: nothing.** Measured on every launch traced,
+/// it loses the race to `updateUIView` and its `applyCameraIfChanged` is a `REJECT` of a ticket
+/// already spent. Removing the hop, or the whole hook, changes no observable behaviour there and no
+/// test — that was built and run, both ways. Do not read the paragraphs above as a description of
+/// something that fires.
+///
+/// **What it is actually for, since `mapViewDidChangeVisibleRegion` was gated.** That callback now
+/// refuses to report a camera until this layer has aimed the map once, because an unaimed map
+/// reports MapKit's default and screen 16's pin follows it (see `Coordinator`'s note there, and the
+/// 2,300 km pin). With that gate in place, a map that is never aimed never reports anything at all:
+/// screen 01 would fetch no trees and the pin would never track. This hook is the guarantee that the
+/// aim always arrives, on any screen, however quiet. That is a real job and it is the only one it
+/// has — it is no longer speculative insurance, and it is no longer about the region echo.
+final class AimableMapView: MKMapView {
+    var onFirstLayout: (() -> Void)?
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard onFirstLayout != nil, !bounds.isEmpty else { return }
+        let announce = onFirstLayout
+        onFirstLayout = nil
+        DispatchQueue.main.async { announce?() }
+    }
+}
+
 /// The `MKMapView` that draws screen 01's basemap, pins, clusters, GPS dot and parchment wash.
 ///
 /// The parameter list is `MapKitBasemap`'s, unchanged, because this is a swap behind C18's seam and
@@ -232,9 +282,18 @@ struct MapAnnotationLayer: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
+    /// Whether this map view has an area to aim a camera at. See `AimableMapView` and E168.
+    static func canAim(_ mapView: MKMapView) -> Bool { !mapView.bounds.isEmpty }
+
     func makeUIView(context: Context) -> MKMapView {
-        let mapView = MKMapView()
+        let mapView = AimableMapView()
         mapView.delegate = context.coordinator
+        mapView.onFirstLayout = { [weak mapView] in
+            guard let mapView else { return }
+            // Whatever the app wants **now**, not whatever it wanted when the view was made. Between
+            // those two moments the first GPS fix can land, and on a cold launch it usually does.
+            context.coordinator.aimAtCurrentRequest(mapView)
+        }
 
         // "the city reads as street geometry rather than a busy consumer map": no POI pins, no
         // traffic, no 3-D. What is left is the street network and the water, which is what the mock
@@ -262,8 +321,25 @@ struct MapAnnotationLayer: UIViewRepresentable {
         )
 
         context.coordinator.installWash(on: mapView, isDark: colorScheme == .dark)
-        context.coordinator.appliedSequence = position.sequence
-        mapView.setRegion(position.region, animated: false)
+        // **The opening camera is *not* applied here any more, and this is ERRATA E168 — the whole
+        // of why the app opened on Mission Dolores Park with a perfect GPS fix in hand.**
+        //
+        // A freshly constructed `MKMapView()` has `bounds == .zero`; SwiftUI lays it out afterwards.
+        // `setRegion` on a map view with no area does not take — measured, on this screen, at launch:
+        // the region set to 37.7596 read back as **37.3346**, MapKit's own default. What it does do
+        // is leave MapKit holding the request, to be applied when the view finally has a size.
+        //
+        // Both halves of that were fatal. The ticket was recorded as applied when it had not been, so
+        // the moment the first GPS fix minted the *next* request the layer had already burnt its
+        // number and every later pass was dropped as stale — `REJECT seq=1 applied=1`, forever, with
+        // no retry, because `MapHomeView.hasCentredOnUser` is a one-shot and had already fired. And
+        // the region MapKit was holding was then applied *after* the fly-to that did get through, so
+        // even the pass that reached the map was overwritten by an opening camera from before it.
+        //
+        // So nothing is applied until there is a map to apply it to. `applyCameraIfChanged` refuses a
+        // view with no area without spending the ticket, and the first laid-out pass drives the
+        // camera to whatever the app wants **by then** — the remembered opening camera if no fix has
+        // landed, the reader's own location if one has. Either order arrives at the same place.
         return mapView
     }
 
@@ -279,6 +355,7 @@ struct MapAnnotationLayer: UIViewRepresentable {
     /// Clearing the annotations and overlays and dropping the delegate is what lets each one go when
     /// the view that owned it does.
     static func dismantleUIView(_ mapView: MKMapView, coordinator: Coordinator) {
+        (mapView as? AimableMapView)?.onFirstLayout = nil
         mapView.delegate = nil
         mapView.removeAnnotations(mapView.annotations)
         mapView.removeOverlays(mapView.overlays)
@@ -405,19 +482,112 @@ struct MapAnnotationLayer: UIViewRepresentable {
         /// geometry of a stale request is the wrong answer. See `MapCameraRequest` for the
         /// measurement, and ERRATA E140 for what it cost.
         func applyCameraIfChanged(_ request: MapCameraRequest, to mapView: MKMapView) {
+            // **A map with no area cannot be aimed, and pretending otherwise spends the ticket
+            // (ERRATA E168).** This is the *only* condition under which a request is passed over
+            // without being recorded: it has not been superseded, it has not been applied, and
+            // `AimableMapView.onFirstLayout` will bring it back the moment there is a map for it.
+            // Every other early return here is a camera the reader has already moved away from;
+            // this one is a camera nobody has been shown yet.
+            guard MapAnnotationLayer.canAim(mapView) else { return }
             if let applied = appliedSequence, request.sequence <= applied { return }
             appliedSequence = request.sequence
             // Reduce Motion snaps the camera instead of flying it. The zoom is the answer to a tap,
             // not the way the answer is delivered — `CypressMotion.resolved`'s rule, applied at the
             // one place on this screen where a camera actually moves.
             mapView.setRegion(request.region, animated: !UIAccessibility.isReduceMotionEnabled)
+            // **What we just asked for, told to the screen out of band** (ERRATA E168).
+            //
+            // `regionDidChangeAnimated` is the authority on where the camera *ended up* and refines
+            // this a moment later. This write exists because the settle is not guaranteed to be an
+            // event the screen can hear — see `echo(_:)`, which is where the whole mechanism is
+            // explained and why neither writer may assign `parent.region` directly.
+            //
+            // This drives nothing. `region` is read to size a cluster zoom, to answer "is the map on
+            // the reader" and to remember where they left it — never to move the camera — so writing
+            // it here cannot recreate E140.
+            echo(request.region)
+        }
+
+        /// **Hands a camera back to the screen, one runloop turn later — never inline.**
+        ///
+        /// This is ERRATA E168, and the mechanism is not the one the first fix for it described.
+        ///
+        /// Both writers of `MapHomeView.region` — the line above and `regionDidChangeAnimated` —
+        /// can run *inside a SwiftUI view-update pass*, because `applyCameraIfChanged` is called
+        /// from `updateUIView` and `MKMapView.setRegion` delivers its settle **synchronously** from
+        /// within that call. A `@State` write made during a view update is discarded by SwiftUI, so
+        /// both of them were writing into a value that stayed exactly as it was.
+        ///
+        /// Measured on a cold launch, iPhone 16 Pro, static fix at 37.7599, −122.4148 — the probe
+        /// trace this note is written from, timestamps in milliseconds:
+        ///
+        ///     .857  settle region=37.132840 span=97.992432   ← outside the pass. Lands.
+        ///     .870  apply  ACCEPT seq=0 to=37.759600         ← from updateUIView
+        ///     .870  settle region=37.759600 span=0.002084    ← same millisecond: synchronous
+        ///     .871  apply  WROTE parent.region=37.759600 readback=37.132840
+        ///     .909  apply  ACCEPT seq=1 to=37.759900         ← the fly-to-you, from updateUIView
+        ///     .915  settle region=37.759900 span=0.002084    ← delivered
+        ///     .916  apply  WROTE parent.region=37.759900 readback=37.132840
+        ///
+        /// Two things in that trace overturn what this file used to say. **The settle is delivered** —
+        /// twice, carrying exactly the right region — so "a `setRegion` made from inside a layout
+        /// pass is performed but never reported" was never the fault. And the one write that *did*
+        /// land is the one at `.857`, the only one made outside an update pass. What the screen was
+        /// left holding, 37.1328 −95.7856 at a span of 98°, is the continental United States: MapKit's
+        /// own default, read back off a map that had not been aimed yet, sitting behind a map of
+        /// Folsom Street with the reader's dot in the middle of it.
+        ///
+        /// One hop through the main queue makes the write an ordinary event again. It is used by
+        /// **both** writers rather than only the one that is known to be unsafe today: the settle is
+        /// synchronous under `setRegion` and asynchronous after a real flight, and a value whose
+        /// safety depends on which of those happened is a value that will be wrong again.
+        ///
+        /// The lag is one turn, and nothing reads `region` on a deadline: a cluster tap sizes "two
+        /// zoom levels in" from it, `MapRecentre` asks it whether the map is on the reader, and
+        /// `MapCameraMemory` writes it down when the reader leaves.
+        private func echo(_ region: MKCoordinateRegion) {
+            DispatchQueue.main.async { [weak self] in self?.parent.region = region }
+        }
+
+        /// The map has just been given a size. Aim it at whatever the app is asking for now.
+        ///
+        /// Not at whatever it was asking for when `makeUIView` ran: the first GPS fix lands in that
+        /// window on a cold launch, and the request it minted is the one the reader is owed. See
+        /// `AimableMapView` and ERRATA E168.
+        func aimAtCurrentRequest(_ mapView: MKMapView) {
+            applyCameraIfChanged(parent.position, to: mapView)
         }
 
         /// Continuous, once per frame of a pan — the same cadence
         /// `.onMapCameraChange(frequency: .continuous)` had. `MapModel.cameraDidChange` is what
         /// decides whether any given one of these is worth a database read, and it already ignores
         /// a camera that is still inside the box it fetched.
+        ///
+        /// **Silent until this layer has aimed the map at least once, and that is not a nicety —
+        /// it is a pin 2,300 km from the tree it belongs to** (ERRATA E168).
+        ///
+        /// The E168 fix stopped `makeUIView` setting a region and made `applyCameraIfChanged` refuse
+        /// a map with no area. Both are right, and together they open a window that did not exist
+        /// before: between construction and the first laid-out pass the map has never been aimed, and
+        /// what it reports as its visible region in that window is **MapKit's own default** — 37.1328,
+        /// −95.7856, a span of 98°, the continental United States.
+        ///
+        /// This callback fires in that window. On screen 01 it cost only a wasted fetch over a
+        /// bounding box the size of North America. On screen 16 it is load-bearing in the worst way:
+        /// `VisitPinAdjustView` follows this callback directly — `pin = VisitPinAdjust.centre(of:
+        /// box)`, the midpoint of the reported region — so the pin the contributor is about to attach
+        /// to a real tree was being dragged to the middle of Kansas before they touched anything.
+        /// Measured: the pin read `2344980 m east of where you are standing`, against a great-circle
+        /// distance of 2,343,915 m from the fix to MapKit's default centre. A 0.05 % match is an
+        /// identification, not a coincidence.
+        ///
+        /// `appliedSequence` is exactly the question "has this layer ever aimed this map", so it is
+        /// the honest gate. The contract of this callback is *the app moved the camera, here is where
+        /// it is now*; a camera nobody asked for has no business being reported through it. Nothing is
+        /// lost by waiting, because `AimableMapView.onFirstLayout` guarantees the aim arrives — which
+        /// is the job that hook now has, and the only one it does.
         func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
+            guard appliedSequence != nil else { return }
             parent.onCameraChange(
                 BoundingBox(mapView.region),
                 MapZoom.level(
@@ -438,8 +608,12 @@ struct MapAnnotationLayer: UIViewRepresentable {
         /// camera back to the reader's own location. The map could not be moved. A press now mints
         /// its own ticket whether or not it names the same place, so the second press works without
         /// this handler having any opinion about the camera at all.
+        ///
+        /// **Through `echo(_:)`, not by assignment.** MapKit delivers this synchronously from inside
+        /// `setRegion`, which this file calls from `updateUIView`, so a direct write lands in the
+        /// middle of a SwiftUI view update and is discarded. See `echo(_:)` and ERRATA E168.
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
-            parent.region = mapView.region
+            echo(mapView.region)
         }
 
         // MARK: The annotations

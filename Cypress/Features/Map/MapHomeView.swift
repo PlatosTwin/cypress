@@ -48,12 +48,35 @@ struct MapHomeView: View {
 
     @Environment(AppRouter.self) private var router
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
     @State private var model: MapModel
-    @State private var position: MapCameraRequest = .opening(MapLayout.region(around: MapLayout.defaultCentre))
+    /// **Where the map opens: the camera this install was last left on** (#115).
+    ///
+    /// It was `MapLayout.defaultCentre` — Mission Dolores Park — unconditionally, for everyone,
+    /// forever. See `MapOpeningCamera` for why a place the reader has actually been beats a
+    /// stranger's park, and ERRATA E168 for the separate defect that stopped even the *fix* from
+    /// reaching the camera once it arrived.
+    ///
+    /// `MapCameraMemory.remembered` reads a value this process loaded once, so the re-evaluation of
+    /// this default expression on every one of `RootView`'s body passes costs a struct copy and no
+    /// I/O — which is the constraint the whole of #84 was about.
+    @State private var position: MapCameraRequest = .opening(
+        MapOpening.openingRegion(remembered: MapCameraMemory.shared.remembered)
+    )
     /// The last region MapKit reported, so a cluster tap knows what "two zoom levels in" means.
-    @State private var region = MapLayout.region(around: MapLayout.defaultCentre)
+    @State private var region = MapOpening.openingRegion(
+        remembered: MapCameraMemory.shared.remembered
+    )
     /// One-shot: the first fix recentres the map, later ones must not yank it out from under a pan.
+    ///
+    /// **Kept, deliberately.** Task #85 was "the map snaps back to your location and cannot be panned
+    /// away" and this flag is what closed it; #115 is about the map arriving on the reader in the
+    /// first place, which is a different sentence. What changed is that it is now consulted from two
+    /// places rather than one — see `centreOnUserIfNeeded()`.
     @State private var hasCentredOnUser = false
+    /// Whether the current wait for a location has gone on long enough to owe the reader a sentence.
+    /// Driven by the task below; the decision it feeds is `MapOpening.standing`.
+    @State private var waited = false
     /// The answer to a press of the recentre control that could not move the camera. See
     /// `MapRecentre` — the whole point of the control is that no press is ever silent.
     @State private var recentreAnswer: RecentreAnswer?
@@ -101,12 +124,56 @@ struct MapHomeView: View {
         .toolbar(.hidden, for: .navigationBar)
         .task {
             location.start()
+            // **The fix may already be here, and `.onChange` cannot see a value that never changes.**
+            //
+            // `MapLocationProvider` is the composition root's, shared with screens 09, 12, 16 and the
+            // whole visit flow, and any of them can have started it — `RootView` wires
+            // `onRequestLocation: { location.start() }` in three places. Arrive on screen 01 after one
+            // of those and `availability` is *already* `.located`, so the `.onChange` below never
+            // fires, the one-shot never runs, and the map sits on its opening camera with a perfect
+            // fix in hand. That is #115 by a second road, and it is the one no amount of camera
+            // correctness would have fixed.
+            centreOnUserIfNeeded()
             #if DEBUG
             // Off unless `CYPRESS_MAP_PROBE=1` is in the environment. See `MapFrameProbe`.
             MapFrameProbe.shared.start()
             #endif
             await model.fetch()
         }
+        // The wait, timed. Restarted whenever *what* is being waited for changes, and cancelled
+        // outright when there is nothing to wait for — `MapOpening.Wait` collapses every `.located`
+        // to the same value, so a reader walking down a street does not restart this on every fix.
+        .task(id: MapOpening.wait(for: location.availability)) {
+            waited = false
+            guard MapOpening.wait(for: location.availability) != .none else { return }
+            try? await Task.sleep(for: MapOpening.patience)
+            guard !Task.isCancelled else { return }
+            waited = true
+        }
+        // Remembering where the reader left the map, at the two moments they stop looking at it.
+        //
+        // **The camera is read here rather than watched.** This began as an
+        // `.onChange(of: cameraSnapshot)` feeding an in-memory note, which is the obvious shape and
+        // was wrong twice over. It put a struct comparison on a body that runs 240 times a second
+        // (#84's hot path) to collect a value that is wanted at most twice per visit to the screen.
+        // And, measured on the device, it did not work: nothing was ever written, and the screen went
+        // on saying "The map is over the middle of the city" to somebody who had been looking at
+        // Folsom Street a second earlier.
+        //
+        // **That second reason was misdiagnosed and the real cause was E168.** `region` was not
+        // carrying an intermediate value the modifier missed; it was carrying MapKit's default —
+        // span 98°, which `isWorthRemembering` correctly refuses — because every write that would
+        // have replaced it was being discarded by SwiftUI. No shape of watcher would have helped. The
+        // memory works now because `MapAnnotationLayer.Coordinator.echo(_:)` was fixed, and it is
+        // verified: one granted launch, backgrounded, leaves `map.lastCamera` holding
+        // `(37.759899, −122.414803, 0.001081, 0.001362)`.
+        //
+        // The first reason stands on its own, so the shape does not go back. Asking `region` what it
+        // holds at the moment of leaving needs no watching and costs nothing while the reader pans.
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { rememberCamera() }
+        }
+        .onDisappear { rememberCamera() }
         #if DEBUG
         .onChange(of: model.content) { _, content in
             MapFrameProbe.shared.note(markers: content.markerCount, zoom: model.viewport?.zoom ?? 0)
@@ -116,15 +183,11 @@ struct MapHomeView: View {
             // Any change in what the app knows about the user answers whatever the last press was
             // told to wait for — a grant arriving from Settings, or the first fix landing.
             recentreAnswer = nil
-            guard let coordinate = availability.coordinate else { return }
+            guard availability.coordinate != nil else { return }
             // Two reasons to move on a fix, and they want different cameras. The one-shot opening
             // recentre goes to the screen's own opening scale, because there is no scale the reader
             // chose yet. A press that was held for this fix keeps whatever they have since zoomed to.
-            if !hasCentredOnUser {
-                hasCentredOnUser = true
-                recentreWhenFixArrives = false
-                flyTo(coordinate, metres: MapLayout.defaultSpanMetres)
-            } else if recentreWhenFixArrives {
+            if !centreOnUserIfNeeded(), recentreWhenFixArrives, let coordinate = availability.coordinate {
                 recentreWhenFixArrives = false
                 flyTo(coordinate, metres: nil)
                 speak(MapRecentreCopy.spokenCentred)
@@ -256,18 +319,97 @@ struct MapHomeView: View {
                 MapTreeCard(subject: subject, userCoordinate: location.availability.coordinate) {
                     router.push(MapHomeView.route(for: subject.pin))
                 }
-            } else if location.availability.isRefused {
-                MapLocationNotice(
-                    title: MapLocationCopy.title(location.availability),
-                    message: MapLocationCopy.message,
-                    onOpenSettings: openSettings
-                )
+            } else {
+                standingNotice
             }
+        }
+    }
+
+    /// **What the map says, unprompted, about the place it is showing instead of you.**
+    ///
+    /// It used to be one notice in one state: refused. Everything else drew nothing at all, so a map
+    /// that had opened somewhere the reader had never been and was still waiting on CoreLocation —
+    /// or had never been given permission in the first place — simply sat there, silent, looking
+    /// exactly like a map that had decided this was where they were.
+    ///
+    /// ERRATA E126 is the rule ("a screen showing something other than what you asked for must say
+    /// why") and E158 is the warning: screen 11 spent its whole life telling people their GPS fix was
+    /// "too weak" when their phone had merely not answered yet, and the cold-launch population was
+    /// the *entire* population of that message. Four states, four sentences, and the two that are
+    /// waits are told apart from each other as well as from the two that are refusals — see
+    /// `MapOpening.Standing`.
+    @ViewBuilder
+    private var standingNotice: some View {
+        switch MapOpening.standing(
+            availability: location.availability,
+            waited: waited,
+            showing: showing
+        ) {
+        case .nothing:
+            EmptyView()
+        case let .notAsked(showing):
+            // No Settings button: this is not a state Settings fixes. The way out is the permission
+            // sheet, which the recentre control raises — and says so, in its hint.
+            MapLocationNotice(
+                title: MapOpeningCopy.notAskedTitle,
+                message: MapOpeningCopy.notAskedMessage(showing)
+            )
+        case let .searching(showing):
+            MapLocationNotice(
+                title: MapOpeningCopy.searchingTitle,
+                message: MapOpeningCopy.searchingMessage(showing)
+            )
+        case let .refused(availability, showing):
+            MapLocationNotice(
+                title: MapLocationCopy.title(availability),
+                message: MapLocationCopy.message(showing),
+                onOpenSettings: openSettings
+            )
         }
     }
 
     private func openSettings() {
         if let url = location.settingsURL { UIApplication.shared.open(url) }
+    }
+
+    // MARK: - Opening on the reader
+
+    /// The one-shot, in one place, callable from both the moment the screen appears and the moment a
+    /// fix lands — whichever happens second is the one that finds a coordinate (#115).
+    ///
+    /// Returns whether it moved the camera, so the fix handler can tell "the opening centring just
+    /// used this fix" from "the opening centring already happened and this fix is for a held press".
+    /// Those wanted different cameras before and still do.
+    @discardableResult
+    private func centreOnUserIfNeeded() -> Bool {
+        guard !hasCentredOnUser, let coordinate = location.availability.coordinate else { return false }
+        hasCentredOnUser = true
+        recentreWhenFixArrives = false
+        flyTo(coordinate, metres: MapLayout.defaultSpanMetres)
+        return true
+    }
+
+    /// Hands the camera the reader is leaving behind to `MapCameraMemory`, and writes it down.
+    ///
+    /// Called on exactly two edges — the app leaving the foreground, and this screen going away —
+    /// which between them cover every way somebody stops looking at the map.
+    private func rememberCamera() {
+        MapCameraMemory.shared.note(cameraSnapshot)
+        MapCameraMemory.shared.flush()
+    }
+
+    /// The settled camera, in the form `MapCameraMemory` stores.
+    private var cameraSnapshot: MapCameraMemory.Snapshot {
+        MapCameraMemory.Snapshot(
+            centre: Coordinate(region.center),
+            latitudeSpan: region.span.latitudeDelta,
+            longitudeSpan: region.span.longitudeDelta
+        )
+    }
+
+    /// Which of the two things the map is showing while it cannot show the reader.
+    private var showing: MapOpening.Showing {
+        MapOpening.showing(remembered: MapCameraMemory.shared.hasRememberedCamera)
     }
 
     // MARK: - Recentre
