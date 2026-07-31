@@ -93,7 +93,8 @@ working "where a tree could go" can decline them and no build that has them is
 disagreeing with the city about anything. A `city-no-sites` flag would only ever
 be selected by somebody reproducing a measurement in an errata entry, and the
 cost of it is a third path to test forever. `--source city` means what it says
-now; the numbers it used to produce are in docs/errata-pending/city-source.md.
+now; the numbers it used to produce are in ERRATA E156, in the paragraph reading
+"This is what `--source city` means now, not a third flag value."
 
 Both paths are live and both are tested. Reverting to the export is one command:
 
