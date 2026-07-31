@@ -567,61 +567,33 @@ final class MapFilterAccessibilityTests: XCTestCase {
 
     }
 
-    /// **The year control's caveat arrives as one phrase, not as two clauses either side of an em
-    /// dash.**
-    ///
-    /// R23 §4's sentence is the only thing keeping the year narrowing honest about the 80.78 % of the
-    /// seed it cannot judge, and it is exactly the sentence somebody later splits into two `Text`s to
-    /// get the line breaks they want — leaving a listener to hear "About 4 in 5 trees have no
-    /// recorded planting date" and then, separately, "none of them can appear under a year". It
-    /// renders off the chip's state rather than off the map's contents, so it holds under any
-    /// viewport.
-    ///
-    /// ── Getting to it, and what that took ────────────────────────────────────────────────────────
-    /// **A SwiftUI `Menu`'s items are not in the app's accessibility tree as XCUITest sees it.** The
-    /// first version of this waited fifteen seconds for `app.buttons["2010s"]`, then fifteen more for
-    /// `app.descendants(matching: .any)["2010s"]`, and reported "the year control opened no menu" —
-    /// about a menu that had opened. Photographed on the running simulator to be sure: tapping `Year`
-    /// draws the platter with `Any year · Before 1990 · 1990s · 2000s · 2010s · 2020s` on it. The
-    /// platter is hosted outside the app's own element tree, which is why it is looked for in the
-    /// system process as well. Nothing here is a claim that the menu is unreachable to a *reader* —
-    /// it is the system's own control, and R23 chose it partly for that.
-    func testTheYearCaveatIsOnePhrase() throws {
-        let app = launch()
-        _ = requireField(app)
-
-        chip(Self.yearChip, app).tap()
-        let decade = try XCTUnwrap(
-            menuItem("2010s", app),
-            "tapping the year control put “2010s” in neither the app's element tree nor the system's"
-        )
-        decade.tap()
-
-        XCTAssertTrue(
-            wait { (self.chip(Self.yearChip, app).value as? String) == "2010s" },
-            "choosing a decade left the year control announcing "
-                + "“\(chip(Self.yearChip, app).value as? String ?? "nothing")”"
-        )
-
-        let caveat = app.staticTexts[
-            "About 4 in 5 trees have no recorded planting date—none of them can appear under a year."
-        ]
-        XCTAssertTrue(
-            caveat.waitForExistence(timeout: 25),
-            "the year control is on and the sentence that says what it cannot judge is not one "
-                + "element in the tree — a listener hears the clauses apart, or not at all"
-        )
-    }
-
-    /// An open `Menu`'s item, wherever the platter is hosted.
-    private func menuItem(_ label: String, _ app: XCUIApplication) -> XCUIElement? {
-        let inApp = app.descendants(matching: .any)[label]
-        if inApp.waitForExistence(timeout: 8) { return inApp }
-        let system = XCUIApplication(bundleIdentifier: "com.apple.springboard")
-        let inSystem = system.descendants(matching: .any)[label]
-        if inSystem.waitForExistence(timeout: 8) { return inSystem }
-        return nil
-    }
+    // ── The year control's caveat, and why there is no UI test for it ───────────────────────────
+    //
+    // R23 §4's `MapYearFilterCopy.setAside` is the sentence that keeps the year narrowing honest
+    // about the 80.78 % of the seed it cannot judge, and it is two clauses either side of an em dash
+    // — exactly the sentence somebody later splits into two `Text`s to get the line breaks they
+    // want. A test that it reaches the tree as one element was written here and is **deliberately
+    // gone**, because it could not be driven honestly:
+    //
+    //   · `app.buttons["2010s"]` finds nothing. So does
+    //     `app.descendants(matching: .any)["2010s"]`, and so does the same query against
+    //     `com.apple.springboard`. Three waits, forty-five seconds, no element.
+    //   · The menu **is** opening. Photographed on the running simulator: tapping `Year` draws the
+    //     platter with `Any year · Before 1990 · 1990s · 2000s · 2010s · 2020s` on it. A SwiftUI
+    //     `Menu`'s platter is simply not in any element tree XCUITest hands back here.
+    //
+    // The failing test said "the year control opened no menu", which is a sentence about the app and
+    // was a sentence about XCUITest — the same class of mistake as tasks #101 and #104, and the one
+    // this file's header is about. Driving the platter by coordinate would have been a test that
+    // depends on where a system control draws its rows, which is worse than no test.
+    //
+    // **What covers it instead, and what is genuinely uncovered.** The sentence's *text* and the
+    // 80.78 % it quotes are pinned against the shipped seed by `MapFilterTests` and
+    // `MapYearCoverageTests`. The *mechanism* that puts it in the tree as one element is
+    // `MapFilterStatus.line`, which is the same code path the result line uses and which
+    // `testTheResultLineIsOneCountingPhrase` below proves against the running app. What is not
+    // covered is this particular sentence being rendered through it, and no filter this file can set
+    // reaches that branch. Recorded in ERRATA E183 rather than faked.
 
     /// **The result line is one counting phrase, not a number and some words beside it.**
     ///
@@ -946,12 +918,24 @@ final class MapFilterAccessibilityTests: XCTestCase {
         // the same label on a different surface and a filter over labels cannot tell them apart —
         // the first version of this assertion read `["Clear filters", "Yours", …]` and was reporting
         // the notice's button as the first thing in the filter row.
-        let rowOrder = app.otherElements[Self.rowLabel].buttons.allElementsBoundByIndex.map(\.label)
+        let rowButtons = app.otherElements[Self.rowLabel].buttons.allElementsBoundByIndex
+        let rowOrder = rowButtons.map(\.label).filter { !$0.isEmpty }
         XCTAssertEqual(
             rowOrder,
             ["Yours", "In bloom", "Needs care", Self.yearChip, Self.moreChip, Self.clear],
             "with the suggestion list open the filter row is reached in this order: \(rowOrder)"
         )
+        // **The row holds one unlabelled control and it must stay unreachable.** SwiftUI's `Menu`
+        // leaves an extra element behind the year chip with an empty label; `AccessibilityTreeTests`
+        // only inspects buttons that are hittable, so nothing else in the suite would notice if it
+        // became so. An interactive element that announces the word "button" and nothing else is
+        // ERRATA E103's defect, caught here structurally.
+        for blank in rowButtons where blank.label.isEmpty {
+            XCTAssertFalse(
+                blank.isHittable,
+                "an unlabelled control at \(blank.frame) is reachable inside the filter row"
+            )
+        }
 
         // ── What is deliberately *not* asserted here, and why it is a finding ────────────────────
         // R25 §1 states the swipe order as "field → suggestions → chips → status line, which is the
