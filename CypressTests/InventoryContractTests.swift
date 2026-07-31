@@ -488,12 +488,27 @@ struct InventoryContractTests {
             defer { statement.finalize() }
             return try statement.fetchOne { try $0.int("n") } ?? -1
         }
-        // `non_taxon_rows` predates this task and is in every receipt. It is the same population
-        // counted at ingest, so the two must agree — and if they ever stop, one of "the source
-        // named no taxon" and "the seed has no species for this row" has quietly changed meaning.
+        // ── The identity this used to assert, and why it was San Francisco's ──────────────────
+        // It was `non_taxon_rows == aliveWithNoSpecies`, on the reasoning that the only way to be
+        // alive with no species is to be a record whose source named no taxon. That held because
+        // neither of San Francisco's inventories can say "a tree is here and I do not know which".
+        // **San Jose can, and does**: `NAMESCIENTIFIC = 'Unknown'` on a row the vacancy flag calls
+        // occupied is a tree of unknown species, which is R18's own answer — treating it as a
+        // placeholder would delete those trees from the map, and minting a species from it would put
+        // `Unknown` in the field guide.
+        //
+        // So the population is now a sum of two different facts and is asserted as one. Equality
+        // still holds inside `sf`, where it is still true.
+        // `treesOfUnknownSpecies` is pinned as a literal per corpus, so this is not the tautology it
+        // would be if the test derived the remainder and then asserted it equals the remainder. A
+        // build that started minting a species called `Unknown` (#103's mechanism), or that started
+        // dropping those 705 trees off the map, moves one side and not the other.
+        let corpus = try await SeedCorpus.current(store)
+        let notATreeCount = Int(meta["non_taxon_rows"] ?? "") ?? -1
+        let unknownSpecies = corpus.treesOfUnknownSpecies
         #expect(
-            meta["non_taxon_rows"] == String(aliveWithNoSpecies),
-            "\(aliveWithNoSpecies) rows are alive with no species but the receipt counts \(meta["non_taxon_rows"] ?? "nothing") non-taxon rows"
+            notATreeCount + unknownSpecies == aliveWithNoSpecies,
+            "\(aliveWithNoSpecies) rows are alive with no species; the receipt counts \(notATreeCount) non-taxon rows and \(unknownSpecies) are trees the source called a tree of unknown species, which do not add up"
         )
         #expect(
             aliveWithNoSpecies > 0,
@@ -502,8 +517,8 @@ struct InventoryContractTests {
 
         guard let text = meta["records_not_a_tree"], let notATree = Int(text) else { return }
         #expect(
-            notATree == aliveWithNoSpecies,
-            "the receipt counts \(notATree) not-a-tree records but \(aliveWithNoSpecies) rows are alive with no species; one of the two has drifted"
+            notATree + unknownSpecies == aliveWithNoSpecies,
+            "the receipt counts \(notATree) not-a-tree records and \(unknownSpecies) trees of unknown species, but \(aliveWithNoSpecies) rows are alive with no species; one of the three has drifted"
         )
     }
 

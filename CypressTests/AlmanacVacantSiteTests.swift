@@ -85,6 +85,26 @@ struct AlmanacVacantSiteTests {
 
         // The almanac reads `neighborhood_id = ? AND deleted_at IS NULL`, so a site outside that
         // scope is a site no neighbourhood surface could ever count.
+        //
+        // ── The hole a second city opened, asserted rather than left to be discovered ──────────
+        // `seed.neighborhoods` is San Francisco's 41 Analysis Neighborhoods and nothing else, so
+        // every San Jose row carries `neighborhood_id IS NULL` and is invisible to the almanac, the
+        // coverage panel and the neighbourhood species mix. Nothing renders wrongly — a whole city's
+        // rows simply never appear. That is a known hole in the shipped build (ERRATA E176), and it
+        // is pinned here as an exact number so that fixing it, or making it worse, is a red test
+        // rather than a thing somebody notices in the field.
+        let outOfScope = try await Self.count(
+            """
+            SELECT COUNT(*) AS n FROM \(Self.seed).trees
+             WHERE status = 'vacant_site' AND neighborhood_id IS NULL
+            """,
+            on: store
+        )
+        #expect(
+            outOfScope == corpus.vacantSitesWithNoNeighbourhood,
+            "\(outOfScope) vacant sites sit outside every neighbourhood, expected \(corpus.vacantSitesWithNoNeighbourhood); a neighbourhood layer for the second city would change this"
+        )
+
         let inScope = try await Self.count(
             """
             SELECT COUNT(*) AS n FROM \(Self.seed).trees
@@ -92,7 +112,7 @@ struct AlmanacVacantSiteTests {
             """,
             on: store
         )
-        #expect(inScope == corpus.vacantSites)
+        #expect(inScope == corpus.vacantSites - corpus.vacantSitesWithNoNeighbourhood)
 
         // A site has no species. This is the fact the inner join is wrongly credited with acting on.
         let withSpecies = try await Self.count(

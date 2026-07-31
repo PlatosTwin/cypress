@@ -233,23 +233,31 @@ struct CityRecordTests {
         let store = try await Self.store()
         let corpus = try await SeedCorpus.current(store)
 
+        // **Grouped by id space as well as by the two columns, because the mapping is now qualified
+        // by one (R24).** `legal_status` holds DataSF's `qLegalStatus` for an `sf` row and San Jose's
+        // `OWNEDBY` for a `us-ca-sj` one. Reading them as one vocabulary is exactly what this test
+        // would have ratified: before the qualifier existed it counted 52,632 rows as
+        // `.privateProperty` — 48,036 of them San Jose street trees whose adjacent owner waters them.
+        let hasIdSpace = store.seed?.hasIdSpace == true
         var counts: [LandContext?: Int] = [:]
         try await store.queue.read { connection in
             let statement = try connection.cachedStatement("""
-                SELECT legal_status AS legal_status, caretaker AS caretaker, count(*) AS n
+                SELECT legal_status AS legal_status, caretaker AS caretaker,
+                       \(hasIdSpace ? "id_space" : "'sf'") AS id_space, count(*) AS n
                   FROM \(SeedDatabase.schemaName).trees
-                 GROUP BY legal_status, caretaker
+                 GROUP BY legal_status, caretaker, id_space
                 """)
-            for row in try statement.fetchAll({ row -> (CityRecord, Int) in
+            for row in try statement.fetchAll({ row -> (CityRecord, String, Int) in
                 (
                     CityRecord(
                         legalStatus: try row.stringIfPresent("legal_status"),
                         caretaker: try row.stringIfPresent("caretaker")
                     ),
+                    try row.string("id_space"),
                     try row.int("n")
                 )
             }) {
-                counts[LandContext.inferred(from: row.0), default: 0] += row.1
+                counts[LandContext.inferred(from: row.0, idSpace: row.1), default: 0] += row.2
             }
         }
 
@@ -270,20 +278,42 @@ struct CityRecordTests {
             (counts[LandContext?.none] ?? 0) == corpus.landContextUnplaced,
             "\(counts[LandContext?.none] ?? 0) rows resolved to no context, expected \(corpus.landContextUnplaced)"
         )
-        // An unplaced row must be one that says neither thing, never one the mapping failed on. The
-        // 3,506 under `--source city` are records only SF Public Works lists, so the DataSF export
-        // has no row to carry `qLegalStatus` or `qCaretaker` across from.
+        // An unplaced row must be unplaced for one of exactly TWO reasons, never because the mapping
+        // failed on it:
+        //
+        //   1. the record says neither thing. The 3,506 under `--source city` are records only SF
+        //      Public Works lists, so the DataSF export has no row to carry `qLegalStatus` or
+        //      `qCaretaker` across from.
+        //   2. the row is in an id space this mapping was not written for, and it declined (R24).
+        //      52,788 San Jose rows, every one of which the mapping WOULD have placed — 48,036 of
+        //      them wrongly, as private property, on a layer called Street Trees.
+        //
+        // Decomposed rather than totalled, because the two are different facts and a change that
+        // turned one into the other would balance a single sum without anybody noticing.
         let saysNeither = try await store.queue.read { connection -> Int in
             let statement = try connection.prepare("""
                 SELECT COUNT(*) AS n FROM \(SeedDatabase.schemaName).trees
                  WHERE COALESCE(legal_status, '') = '' AND COALESCE(caretaker, '') = ''
+                   \(hasIdSpace ? "AND id_space = 'sf'" : "")
+                """)
+            defer { statement.finalize() }
+            return try statement.fetchOne { try $0.int("n") } ?? -1
+        }
+        let declined = try await store.queue.read { connection -> Int in
+            guard hasIdSpace else { return 0 }
+            let statement = try connection.prepare("""
+                SELECT COUNT(*) AS n FROM \(SeedDatabase.schemaName).trees WHERE id_space <> 'sf'
                 """)
             defer { statement.finalize() }
             return try statement.fetchOne { try $0.int("n") } ?? -1
         }
         #expect(
-            saysNeither == corpus.landContextUnplaced,
-            "\(corpus.landContextUnplaced) rows are unplaced but \(saysNeither) say neither thing; the mapping failed on the difference"
+            declined == corpus.landContextDeclinedForeignVocabulary,
+            "\(declined) rows are outside the mapping's id space, expected \(corpus.landContextDeclinedForeignVocabulary)"
+        )
+        #expect(
+            saysNeither + declined == corpus.landContextUnplaced,
+            "\(corpus.landContextUnplaced) rows are unplaced but \(saysNeither) say neither thing and \(declined) are in a foreign id space; the mapping failed on the difference"
         )
         #expect(counts.values.reduce(0, +) == corpus.trees)
     }
