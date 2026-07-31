@@ -220,12 +220,17 @@ no field anywhere in the ingest in which a source could say what a record was*, 
 inferred it from a missing species. San Jose is a source that says. The consequence is measurable
 and it is the reason this recommendation is not close:
 
-| | San Francisco (`datasf`, shipped) | San Jose |
+| | San Francisco, `--source datasf` | San Jose |
 |---|---:|---:|
-| records | 145,837 | 344,879 |
+| records in the corpus | 195,309 (E11) | 344,879 |
 | kind stated by the source | — | **344,818** |
-| kind **inferred from an absent species** | **1,777** | **61** |
-| share of the corpus that is our guess | 1.2% | **0.018%** |
+| kind **inferred from an absent species** | **1,777** (E169's receipt) | **61** |
+| share of the corpus that is our guess | 0.91% | **0.018%** |
+
+The San Francisco column is the `--source datasf` build, because that is the build whose receipt
+produced the 1,777. The shipped seed is `--source city` (E156), whose split between stated and
+inferred E169 explicitly records as **not measured** — the cached extract was absent from that
+machine — so no figure for it is quoted here either.
 
 It also carries `TRUNKDIAM` as a double in inches, which is what `InventoryRecord.dbh_in` means.
 Sacramento and Santa Monica publish DBH as a *range*, so the contract yields NULL for every row of

@@ -16,8 +16,10 @@ licence, because nothing found required one.
 carries `VACANTSITE` — `Yes`/`No`, 344,879 rows, null on 680. E169's finding was that until the
 contract existed there was no field anywhere in the ingest in which a source could state this, so
 `build_seed.py` inferred it from a missing species. Against San Jose that inference is reached by
-**61 rows of 344,879 — 0.018% of the corpus**, against **1,777 of 145,837 — 1.2%** in the shipped
-DataSF seed. For Los Angeles, Sacramento, Santa Monica, Oakland, San Mateo and Long Beach the
+**61 rows of 344,879 — 0.018% of the corpus**, against **1,777 of the 195,309-row `--source datasf`
+corpus (E11) — 0.91%**. The shipped seed is `--source city`, whose split between stated and inferred
+E169 records as not measured, so no figure for it is quoted. For Los Angeles, Sacramento, Santa
+Monica, Oakland, San Mateo and Long Beach the
 inference would be reached by *every record*, because none of them publishes a vacancy or site
 concept at all.
 

@@ -662,8 +662,9 @@ class SanJoseStreetTreeAdapter:
     `Yes`/`No` -- which is the field E169 says no source had. So almost every
     record here reaches `KindBasis.STATED` or `STATED_CATEGORY`, and
     `INFERRED_FROM_ABSENT_SPECIES` is reached by 61 rows out of 344,879 rather
-    than by 1,777 out of 145,837. That number is the point: the basis is not a
-    formality, it is a measurement of how much of the corpus is our guess.
+    than by 1,777 out of the 195,309-row `--source datasf` corpus (E11, E169) --
+    0.018% against 0.91%. That number is the point: the basis is not a formality,
+    it is a measurement of how much of the corpus is our guess.
 
     It also disagrees with itself, and the disagreements are the interesting
     part. Measured on 2026-07-31:
