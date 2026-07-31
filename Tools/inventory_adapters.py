@@ -646,10 +646,11 @@ SJ_VACANCY_SPECIES = {"vacant site"}
 SJ_NON_TREE_SPECIES = {"stump"}
 
 #: San Jose's `TRUNKDIAM` is a double in inches, aliased "Trunk Diameter (DBH) (in)".
-#: `0` appears on 72,142 rows, of which 72,142 - 2,701 = 69,441 are flagged vacant,
-#: so it is this source's "no trunk to measure" rather than a zero-inch trunk. Two
-#: rows exceed 400 in (2,304 and 445); the same 400 in ceiling the SF adapter uses
-#: rejects them. Both counts measured 2026-07-31.
+#: `0` appears on 72,142 rows and only 2,701 of those are `VACANTSITE = 'No'`, so
+#: on the other 69,441 it sits beside a site the city says is empty: it is this
+#: source's "no trunk to measure" rather than a zero-inch trunk. Two rows exceed
+#: 400 in (2,304 and 445); the same 400 in ceiling the SF adapter uses rejects
+#: them. All counts measured against the live layer 2026-07-31.
 SJ_DBH_CEILING_IN = 400.0
 
 
@@ -678,10 +679,11 @@ class SanJoseStreetTreeAdapter:
         `Vacant site` on a site the flag calls occupied. Same rule, other
         direction: the flag decides the kind for `Vacant site`, and `Stump`
         still yields `not_a_tree` because a stump is a thing that is there.
-      * 1,808 `Vacant site` rows carry a positive `TRUNKDIAM`. A planting site
-        with a measured trunk is not a fact, it is two records that were never
-        reconciled, so `dbh_in` is dropped on any planting site and the count
-        goes to `planting_sites_with_a_trunk_diameter`.
+      * 3,666 rows are `VACANTSITE = 'Yes'` with a positive `TRUNKDIAM`, 1,808 of
+        them with the literal `Vacant site` in the species field as well. A
+        planting site with a measured trunk is not a fact, it is two records that
+        were never reconciled, so `dbh_in` is dropped on any planting site and
+        the count goes to `planting_sites_with_a_trunk_diameter`.
 
     NOT A ROUND TRIP THROUGH ANOTHER CITY'S FORMAT. `NAMESCIENTIFIC` is one
     clean field, so it is read into `scientific_name` directly. Nothing in this
