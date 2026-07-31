@@ -134,6 +134,149 @@ struct MapFilterStatus: View {
     }
 }
 
+// MARK: - Search suggestions
+
+/// The species that drop under C20 as you type (task #109, ruling **R25**).
+///
+/// **NOT SPECIFIED** — SCREENS.md 01:667 lists "search results" among the surfaces it does not draw,
+/// and §2's C20 is a pill with one glyph in it. `MapSuggestions` is where the design is argued; this
+/// file only draws it.
+///
+/// ── Three properties of this view are load-bearing, and each one is a way it could have gone wrong ─
+///
+/// **1 · It is in the flow, not an overlay.** The obvious dropdown floats over the chips below it,
+/// and it would have been wrong twice: an overlay leaves the chips underneath *hittable* by an
+/// assistive technology while a sighted reader cannot see them — the covered-but-reachable failure
+/// `DeepLinkVoiceOverTests.testAModalIsolatesTheScreenBehindIt` exists for — and it puts the rows
+/// somewhere other than immediately after the field in the element tree, which is where a VoiceOver
+/// reader looks for them. In the flow, the chips move down and stay real, and the swipe order is
+/// field → suggestions → chips, which is the order the words are in.
+///
+/// **2 · It is bounded and it scrolls.** Six rows of two serif lines is about a third of the display
+/// at the drawn size and rather more than the whole of it at AX5, where each row is a wrapped
+/// paragraph. So the list takes at most `share` of the height it was given and scrolls inside that,
+/// which is R14's answer on screen 04 and R22's on the add screen, applied a third time. **The cap is
+/// a `ScrollView` and not `.clipped()`**, deliberately: `.clipped()` has clipped drawing without
+/// clipping touches on this project before, leaving a control that reports `isHittable` and answers
+/// nobody.
+///
+/// **3 · The remainder sentence is inside the card and outside the scroll, and that arrangement was
+/// arrived at by looking rather than by thinking.** It began as the last row of the scrolling list,
+/// on the reasoning that a reader who hears the rows should hear what they are a page of in the same
+/// sweep. Typed into the running app, `a` drew six rows, filled the cap exactly, and left
+/// `Showing 6 of at least 100 matching species` **below the fold** — E38's own defect, reproduced one
+/// level down by the change that was written to prevent it. It is now pinned under the scroll: still
+/// inside the accessibility container, so the sweep is unchanged, and never scrollable away, because
+/// the one sentence that says the list is a page cannot be a thing you have to scroll to find.
+struct MapSuggestionList: View {
+
+    let suggestions: MapSuggestions
+    /// The height this list may take a share of — the chrome's own, measured by the caller.
+    let availableHeight: CGFloat
+    let onChoose: (Species) -> Void
+
+    /// How much of the screen a dropdown may take before it stops being a hint about the map and
+    /// starts being a screen in front of it.
+    ///
+    /// Half, which at the drawn size is more than six rows need (so nothing scrolls and nothing is
+    /// hidden) and at AX5 is about three (so the rest scrolls). Chosen against the running app at
+    /// both sizes, per R25 — a share large enough that the list is not a peephole, small enough that
+    /// the FAB and the tree card are never underneath it.
+    static let share: CGFloat = 0.5
+
+    var body: some View {
+        if case let .listing(listing) = suggestions, !listing.rows.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(listing.rows.enumerated()), id: \.element.id) { index, species in
+                            if index > 0 { rule }
+                            row(species)
+                        }
+                    }
+                }
+                // The rows are as tall as they want to be until they are not allowed to be, which is
+                // what `.frame(maxHeight:)` on a `ScrollView` means. Whatever it cuts off is reachable
+                // by scrolling, and the part-row at the cut is what says so.
+                .frame(maxHeight: availableHeight * Self.share)
+                // `.fixedSize` in the vertical only, so a short list does not inherit the cap as a
+                // *height*. Without it a two-row dropdown is two rows in half a screen of white.
+                .fixedSize(horizontal: false, vertical: true)
+
+                if let sentence = MapSuggestionCopy.remainder(
+                    listing.remainder, shown: listing.rows.count
+                ) {
+                    rule
+                    Text(sentence)
+                        .font(CypressFont.body13)
+                        .foregroundStyle(CypressColor.textMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, CypressSpacing.gutterBottomCard)
+                        .padding(.vertical, CypressSpacing.gutterBottomCard)
+                }
+            }
+            .background {
+                RoundedRectangle(cornerRadius: CypressRadius.cardLg, style: .continuous)
+                    .fill(CypressColor.surfaceCard)
+            }
+            .cypressBorder(CypressColor.borderCool, radius: CypressRadius.cardLg)
+            .cypressShadow(light: CypressShadow.bottomCard, dark: CypressShadow.Dark.xl)
+            // A container rather than a combine: the rows must stay separately reachable, and the
+            // container's own label is what tells a reader navigating by element that a list arrived
+            // under the field they are typing in.
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(MapSuggestionCopy.listLabel(listing.rows.count))
+        }
+    }
+
+    /// One species. The same pairing `SpeciesPickView` draws and `SpeciesTile` draws — common name in
+    /// the serif list face, scientific name in the italic serif under it — so that a species looks
+    /// like a species everywhere in this app rather than looking like a search result here.
+    ///
+    /// **Nothing else is on the row, and that is a decision** (R25): no thumbnail, because C22's
+    /// gradient is derived from the name rather than photographed and would add four colours over the
+    /// map for no information; and no count of trees, because a per-species count is a read of a
+    /// 195,309-row table on the typing path, and a count of what is *in view* is not the same number
+    /// as a count of what is in the city — which is E38 again, one row further down.
+    private func row(_ species: Species) -> some View {
+        Button {
+            onChoose(species)
+        } label: {
+            VStack(alignment: .leading, spacing: CypressSpacing.gapVitality) {
+                Text(MapSuggestionCopy.name(species))
+                    .font(CypressFont.listNameSerif)
+                    .foregroundStyle(CypressColor.textInk)
+                    .multilineTextAlignment(.leading)
+                if let latin = MapSuggestionCopy.latin(species) {
+                    Text(latin)
+                        .font(CypressFont.latinName135)
+                        .foregroundStyle(CypressColor.textMuted)
+                        .multilineTextAlignment(.leading)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, CypressSpacing.gutterBottomCard)
+            .padding(.vertical, CypressSpacing.gutterBottomCard)
+            // The row is the target, not the words in it. Two lines of 17.5 and 13.5 with this
+            // padding clear 44 pt on their own, and `contentShape` is what makes the gap beside a
+            // short name part of the same press.
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(MapSuggestionCopy.rowLabel(species))
+        .accessibilityAddTraits(.isButton)
+    }
+
+    private var rule: some View {
+        Rectangle()
+            .fill(CypressColor.borderCool)
+            .frame(height: CypressSpacing.Component.hairline)
+            .accessibilityHidden(true)
+    }
+}
+
 // MARK: - Search status
 
 /// What the map is showing for the query in C20, when that needs saying.

@@ -83,6 +83,12 @@ struct MapHomeView: View {
     /// A press made while waiting for the first fix. The notice promises the map will move when one
     /// arrives; this is the promise, held.
     @State private var recentreWhenFixArrives = false
+    /// Whether C20 is being typed into, which is the whole condition for the suggestion dropdown
+    /// existing (task #109, ruling R25).
+    ///
+    /// `SearchBar` still owns a focus of its own for every other caller — R16's argument for that is
+    /// untouched — and takes this one only because this screen has something that has to *read* it.
+    @FocusState private var searchFocused: Bool
 
     /// The two presses that produce words instead of a camera move.
     private enum RecentreAnswer: Equatable {
@@ -101,7 +107,16 @@ struct MapHomeView: View {
             ZStack(alignment: .bottom) {
                 MapCanvas(
                     basemap: { basemap },
-                    overlay: { chrome(topInset: proxy.safeAreaInsets.top) }
+                    overlay: {
+                        chrome(
+                            topInset: proxy.safeAreaInsets.top,
+                            // For the suggestion dropdown's cap. It takes a share of the display
+                            // rather than a fixed number of points, because the thing it must not
+                            // swallow — the map, the FAB, the tree card — is measured in shares of
+                            // the display too. See `MapSuggestionList.share`.
+                            availableHeight: proxy.size.height
+                        )
+                    }
                 )
                 BottomTabBar(selection: tabBinding)
             }
@@ -228,16 +243,51 @@ struct MapHomeView: View {
     // MARK: - Overlay
 
     @ViewBuilder
-    private func chrome(topInset: CGFloat) -> some View {
+    private func chrome(topInset: CGFloat, availableHeight: CGFloat) -> some View {
         @Bindable var model = model
 
         // Two absolutely positioned blocks, exactly as 01 describes them — a `Spacer` between them
         // would make the whole overlay one greedy stack, and a greedy stack inside `MapCanvas`'s
         // ZStack sizes against the map rather than against the screen.
+        //
+        // **The bottom block is applied first, so the top block draws over it** — and that ordering
+        // is now load-bearing rather than incidental. It was the other way round, which is the order
+        // `.overlay` was written in rather than an order anyone chose, and at AX5 with the suggestion
+        // list open the FAB sat *on top of* the sentence that says the list is a page: `Showing 6 of
+        // at least 100 match……. Keep ty…… it.` Seen on the running app, not reasoned about. The
+        // chrome the reader is currently typing into outranks the control they are not.
+        //
+        // Nothing moves as a result. The two blocks only overlap at accessibility sizes, where they
+        // already did, and the top block hit-tests only where it draws — its stack has no background
+        // and the empty width beside a chip has never taken a touch.
         Color.clear
+            .overlay(alignment: .bottom) {
+                bottomChrome
+            }
             .overlay(alignment: .top) {
                 VStack(alignment: .leading, spacing: MapLayout.chipRowTop) {
-                    SearchBar(text: $model.searchText)
+                    SearchBar(text: $model.searchText, focus: $searchFocused)
+                    // **Between the bar and the chips, in the flow** — task #109, ruling R25. Not an
+                    // overlay: an overlay would leave the chips underneath reachable by an assistive
+                    // technology while invisible to everyone else, and would put the rows somewhere
+                    // other than immediately after the field in the element tree. See
+                    // `MapSuggestionList`.
+                    //
+                    // Gated on focus, because a dropdown belongs to the act of typing. Pressing
+                    // R16's `Done` puts the keyboard away to look at the map, and a list still
+                    // sitting over that map would be the same complaint one layer up.
+                    if searchFocused {
+                        MapSuggestionList(
+                            suggestions: model.suggestions,
+                            availableHeight: availableHeight
+                        ) { species in
+                            model.chooseSuggestion(species)
+                            // Choosing is the end of a query, so the keyboard goes — the deliberate
+                            // opposite of the ✕, which clears and keeps focus because clearing is
+                            // the start of the next one (R16).
+                            searchFocused = false
+                        }
+                    }
                     MapFilterChips(filter: $model.filter)
                     // Below the chips, so the C20 → chips order the accessibility tests walk is
                     // exactly as it was. Draws nothing unless the search has something to say.
@@ -274,29 +324,34 @@ struct MapHomeView: View {
                 }
             }
             #endif
-            .overlay(alignment: .bottom) {
-                VStack(alignment: .trailing, spacing: 0) {
-                    // Above the FAB and right-aligned with it, inside the same absolutely positioned
-                    // block — which is the position MapKit's own `MapUserLocationButton` could not
-                    // have been given (`MapRecentre`, and ERRATA E110 for why the arithmetic here is
-                    // not something a system control can be dropped into).
-                    MapRecentreButton(engagement: recentreEngagement) { recentre() }
-                        .padding(.horizontal, MapLayout.sideInset - MapLayout.cardInset)
-                        .padding(.bottom, MapLayout.locateToFabGap)
-                    // `present`, not `push` (ERRATA E127). The visit flow is a `fullScreenCover` off
-                    // `AppRouter.sheet` — `RootView.destination(for:)` answers a *pushed* `.identify`
-                    // with `NotBuiltYetView`, because a pushed one is a programming error the way a
-                    // pushed `.share` is. So the app's one specified entrance to screen 02 landed on
-                    // "Not built yet", which is also the only way to reach "add this tree".
-                    IdentifyFAB { router.present(.identify(nil)) }
-                        .padding(.horizontal, MapLayout.sideInset - MapLayout.cardInset)
-                        .padding(.bottom, MapLayout.fabToCardGap)
-                    bottomSlot
-                }
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .padding(.horizontal, MapLayout.cardInset)
-                .padding(.bottom, MapLayout.tabBarHeight + MapLayout.cardToTabBarGap)
-            }
+    }
+
+    /// The recentre control, the FAB and the one bottom slot, as one absolutely positioned block.
+    ///
+    /// Lifted out of `chrome` unchanged so the two blocks could be reordered without the diff
+    /// pretending anything inside either of them moved. See the comment at the reorder.
+    private var bottomChrome: some View {
+        VStack(alignment: .trailing, spacing: 0) {
+            // Above the FAB and right-aligned with it, inside the same absolutely positioned
+            // block — which is the position MapKit's own `MapUserLocationButton` could not
+            // have been given (`MapRecentre`, and ERRATA E110 for why the arithmetic here is
+            // not something a system control can be dropped into).
+            MapRecentreButton(engagement: recentreEngagement) { recentre() }
+                .padding(.horizontal, MapLayout.sideInset - MapLayout.cardInset)
+                .padding(.bottom, MapLayout.locateToFabGap)
+            // `present`, not `push` (ERRATA E127). The visit flow is a `fullScreenCover` off
+            // `AppRouter.sheet` — `RootView.destination(for:)` answers a *pushed* `.identify`
+            // with `NotBuiltYetView`, because a pushed one is a programming error the way a
+            // pushed `.share` is. So the app's one specified entrance to screen 02 landed on
+            // "Not built yet", which is also the only way to reach "add this tree".
+            IdentifyFAB { router.present(.identify(nil)) }
+                .padding(.horizontal, MapLayout.sideInset - MapLayout.cardInset)
+                .padding(.bottom, MapLayout.fabToCardGap)
+            bottomSlot
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .padding(.horizontal, MapLayout.cardInset)
+        .padding(.bottom, MapLayout.tabBarHeight + MapLayout.cardToTabBarGap)
     }
 
     /// One slot, four possible occupants, in priority order: the answer to a recentre press, the
