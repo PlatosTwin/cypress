@@ -11,7 +11,7 @@
 //  **States/variants**, it says "**NOT SPECIFIED:** search results" (:667). §2's C20 draws a pill
 //  with one leading magnifier and a placeholder and nothing else; §5's gap list carries the same
 //  hole. So there is no drawn suggestion list at any text size, and DECISIONS constraint 21 says
-//  stop rather than invent one. `docs/rulings-pending/search-suggestions.md` **R25** is that stop,
+//  stop rather than invent one. RULINGS **R25** is that stop,
 //  answered under the standing delegation, and this file is the machinery it decided on.
 //
 //  Two rulings already stand on this same control and neither is disturbed:
