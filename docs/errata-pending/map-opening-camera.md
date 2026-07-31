@@ -151,6 +151,53 @@ SwiftUI update pass reproduces neither condition.
 
 ---
 
+#### The second regression this fix introduced: a pin 2,300 km from its tree
+
+Worse than anything above, and it is the fix's own doing rather than the original defect's.
+
+Two of the changes made for E168 are individually correct. `makeUIView` no longer sets a region, and
+`applyCameraIfChanged` refuses a map with no area without spending the ticket. Together they open a
+window that did not exist on main, where the camera was set in `makeUIView` at the earliest possible
+moment: **between construction and the first laid-out pass, the map has never been aimed at all**, and
+what `MKMapView` reports as its visible region in that window is its own default — 37.1328, −95.7856,
+span 98°.
+
+`mapViewDidChangeVisibleRegion` fires during that window and reports it.
+
+On screen 01 that was invisible and nearly free: one wasted fetch over a bounding box the size of
+North America, discarded by `MapModel.cameraDidChange` as soon as a real camera arrived. On **screen
+16** it is not free at all. `VisitPinAdjustView` follows this callback directly — its whole design is
+that the map moves under a fixed reticle and the pin *is* the middle of the map:
+
+    onCameraChange: { box, _ in … pin = VisitPinAdjust.centre(of: box) }
+
+So the pin a contributor is about to attach to a tree they are standing next to was being dragged to
+the middle of Kansas before they touched anything. Measured on merged main in clean derived data:
+
+    testPinAdjust                             failed (18.685 s)   hittability: activation point invalid
+    testTheNudgeControlsActuallyMoveThePin    failed  (9.009 s)
+    testThePinSaysWhenItHasGoneAsFarAsItGoes  failed (12.416 s)
+        XCTAssertEqual failed: ("2344980 m east of where you are standing.")
+
+2,344,980 m observed, against a great-circle distance of **2,343,915 m** from the fix to MapKit's
+default centre. A 0.05 % match is an identification, not a resemblance. The first of the three fails
+differently only because a pin in Kansas has no activation point on a map of San Francisco.
+
+**The gate.** `mapViewDidChangeVisibleRegion` now returns unless `appliedSequence != nil`.
+That property is exactly the question "has this layer ever aimed this map", and the callback's
+contract is *the app moved the camera, here is where it is now* — a camera nobody asked for has no
+business travelling through it. All three tests pass with the gate and fail without it, which is the
+red-then-green this entry is entitled to claim.
+
+**Two lessons, and the second is the one worth carrying.** The first is ordinary: a fix that makes a
+value arrive *later* has to be checked against everything that reads it *earlier*. The second is that
+this branch's own tests could not see it. Screen 01 is where all the attention went, and on screen 01
+the same defect is a rounding error in a database query. It surfaced only because screen 16 happens to
+wire a user-visible artefact straight to the same callback — and it surfaced as three red tests that
+were initially, and wrongly, written off as derived-data contamination.
+
+---
+
 #### Where the map opens now, and what it says about it
 
 **Opening on the reader is only two thirds of "100% of the time", and the third part is the one that
