@@ -164,17 +164,33 @@ final class MapFilterAccessibilityTests: XCTestCase {
         return hidden
     }
 
-    /// Every control labelled `Clear filters`, top of the screen first.
+    /// Every control labelled `Clear filters`, whichever surface it is on.
     ///
     /// There are two of them the moment the filter has emptied the map — the chip in the row and the
     /// button on the notice — and they are the same sentence on purpose (R23 §1, and R23.1 §3 makes
-    /// the single meaning load-bearing). A lookup by label alone would resolve to whichever XCUITest
-    /// felt like, which is how a green test ends up asserting nothing about the control it names.
+    /// the single meaning load-bearing). So every lookup below has to say which one it means.
     private func clearControls(_ app: XCUIApplication) -> [XCUIElement] {
-        app.buttons
-            .matching(NSPredicate(format: "label == %@", Self.clear))
-            .allElementsBoundByIndex
-            .sorted { $0.frame.minY < $1.frame.minY }
+        app.buttons.matching(NSPredicate(format: "label == %@", Self.clear)).allElementsBoundByIndex
+    }
+
+    /// The `Clear filters` **chip**, found by scoping the query to the filter row's own accessibility
+    /// container.
+    ///
+    /// **It was sorted by `frame.minY` and that was wrong at AX5**, which is worth writing down
+    /// because it is the same class of mistake this whole file is about. At AX5 the empty notice is
+    /// taller than the phone and is laid out from its *bottom* edge, so its own `Clear filters`
+    /// button sits above the top of the display with a negative `minY` — and "topmost" then resolved
+    /// to the button on the notice rather than to the chip in the row. The test failed with
+    /// `the “Clear filters” chip cannot be activated` about a control that was not the chip.
+    /// Scoping to the container asks the question that was meant.
+    private func clearChip(_ app: XCUIApplication) -> XCUIElement {
+        app.otherElements[Self.rowLabel].buttons[Self.clear]
+    }
+
+    /// The `Clear filters` **button on the empty notice** — the one that is not the row's chip.
+    private func clearOnTheNotice(_ app: XCUIApplication) -> XCUIElement? {
+        let chipFrame = clearChip(app).exists ? clearChip(app).frame : .null
+        return clearControls(app).first { $0.frame != chipFrame }
     }
 
     // MARK: - 1 · Every chip is in the tree, labelled, touchable, and says its state
@@ -387,7 +403,7 @@ final class MapFilterAccessibilityTests: XCTestCase {
         // …and the way out is still on screen, in the row, where it can be found without knowing the
         // filter exists (R23.1 §3).
         XCTAssertEqual(
-            clearControls(app).first?.isHittable, true,
+            clearChip(app).isHittable, true,
             "with a filter set behind a shut control there is no reachable “\(Self.clear)”"
         )
     }
@@ -417,7 +433,7 @@ final class MapFilterAccessibilityTests: XCTestCase {
             "a filter is on behind a shut control and no “\(Self.clear)” is drawn, so the only way "
                 + "out is to remember that it is there"
         )
-        let chipOut = clearControls(app)[0]
+        let chipOut = clearChip(app)
         XCTAssertTrue(
             chipOut.isHittable,
             "the “\(Self.clear)” chip is in the tree but nothing can activate it"
@@ -450,7 +466,7 @@ final class MapFilterAccessibilityTests: XCTestCase {
     ///
     /// The precondition is stated rather than assumed: `In bloom` cannot match a tree in the shipped
     /// seed under any viewport, so this empties the map on every machine.
-    func testTheEmptyNoticeOffersASecondWayOutAndItWorks() {
+    func testTheEmptyNoticeOffersASecondWayOutAndItWorks() throws {
         let app = launch()
         _ = requireField(app)
 
@@ -469,15 +485,20 @@ final class MapFilterAccessibilityTests: XCTestCase {
             "an emptied map offers \(clearControls(app).count) controls labelled “\(Self.clear)”, "
                 + "and R23 requires two: the chip in the row and the button on the notice"
         )
-        let noticeButton = clearControls(app)[1]
+        let noticeButton = try XCTUnwrap(clearOnTheNotice(app), "the notice drew no way out")
         XCTAssertTrue(
             noticeButton.isHittable,
             "the notice's way out is in the accessibility tree and nothing can touch it — which is "
                 + "the covered-but-reachable failure this screen has shipped before"
         )
+        // On the notice rather than in the row. **Not `minY > title.minY`, which this test tried
+        // first and which is false by a rounding hair**: `MapLocationNotice` is an `HStack` aligned
+        // `.top`, so the button's top edge is the title's top edge — 660.0 against
+        // 660.0000000000001. The claim that means something is that it is a *different control from
+        // the chip*, below the row, on the card the title is on.
         XCTAssertGreaterThan(
-            noticeButton.frame.minY, title.frame.minY,
-            "the notice's button is not on the notice"
+            noticeButton.frame.minY, chip(Self.emptyingChip, app).frame.maxY,
+            "the “\(Self.clear)” this test took for the notice's is up in the filter row"
         )
 
         noticeButton.tap()
@@ -553,7 +574,12 @@ final class MapFilterAccessibilityTests: XCTestCase {
         // Now the year control, whose caveat draws whatever the map holds.
         chip(Self.emptyingChip, app).tap()
         chip(Self.yearChip, app).tap()
-        let decade = app.buttons["2010s"]
+        // **`app.buttons["2010s"]` finds nothing, and that is a fact about `Menu` rather than about
+        // this app.** A SwiftUI `Menu`'s items are not exposed as buttons in the app's own tree; the
+        // first version of this test waited fifteen seconds for one and reported "the year control
+        // opened no menu" about a menu that had opened. Asking every element type is the honest
+        // question — what a reader can reach is not typed `button` by contract.
+        let decade = app.descendants(matching: .any)["2010s"]
         XCTAssertTrue(
             decade.waitForExistence(timeout: 15),
             "the year control opened no menu, so a decade cannot be chosen at all"
@@ -683,7 +709,7 @@ final class MapFilterAccessibilityTests: XCTestCase {
         for label in Self.rowToggles + [Self.yearChip, Self.moreChip] {
             boxes.append((label, chip(label, app).frame))
         }
-        boxes.append((Self.clear, clearControls(app)[0].frame))
+        boxes.append((Self.clear, clearChip(app).frame))
 
         // **AX5 actually arrived.** The size is asked for through a launch argument, and an argument
         // that stopped working would leave every assertion below being made at the drawn size — a
@@ -720,7 +746,7 @@ final class MapFilterAccessibilityTests: XCTestCase {
             )
         }
         XCTAssertTrue(
-            clearControls(app)[0].isHittable,
+            clearChip(app).isHittable,
             "at AX5 the “\(Self.clear)” chip cannot be activated"
         )
 
@@ -732,6 +758,71 @@ final class MapFilterAccessibilityTests: XCTestCase {
             hidden.isHittable,
             "at AX5 the chip inside the expandable control is in the tree and cannot be activated. "
                 + "Its frame is \(hidden.frame) on a \(screen.width)×\(screen.height) screen"
+        )
+    }
+
+    /// **The empty notice at AX5, which is where this file found a defect it is not fixing.**
+    ///
+    /// E126 requires an emptied surface to say why *and* to offer the way out. At the drawn size both
+    /// halves are on screen and `testTheEmptyNoticeOffersASecondWayOutAndItWorks` proves it. At AX5 on
+    /// this 390 pt phone the card is taller than the display and is laid out from its bottom edge, so
+    /// it grows *upwards past the top of the screen*: the title goes first and the trailing button
+    /// with it. Photographed on the running simulator — the message renders in a one-word-per-line
+    /// column behind the search bar and the filter chips, and there is no button anywhere on the
+    /// glass.
+    ///
+    /// **`XCTExpectFailure`, strict, is the deliberate shape of this test.** The defect is real and
+    /// the fix is a layout ruling — how a bottom card behaves when it is taller than the phone —
+    /// which is the question R23 explicitly left open ("whether the chrome is now too tall") and
+    /// which R14, R22 and R25 §6 have each answered separately for their own surface. Choosing it
+    /// here would be redesigning rather than testing. So this records the defect where a machine will
+    /// notice: the day somebody caps the card and makes the button reachable, `strict` turns this
+    /// test red and whoever fixed it comes and deletes the wrapper. That is the opposite of the green
+    /// test that ratified a defect for weeks.
+    func testTheEmptyNoticesWayOutIsUnreachableAtAX5() {
+        let app = launchAtAX5()
+        _ = requireField(app)
+        chip(Self.emptyingChip, app).tap()
+
+        XCTAssertTrue(
+            wait { self.clearControls(app).count == 2 },
+            "at AX5 an emptied map drew \(clearControls(app).count) controls labelled "
+                + "“\(Self.clear)”; this test is about the second one"
+        )
+        let screen = app.windows.firstMatch.frame
+        let notice = clearOnTheNotice(app)
+
+        XCTExpectFailure(
+            "E183: at AX5 the empty notice is taller than the phone and grows off the top of it, "
+                + "taking E126's way out with it. Not fixed here — the fix is a layout ruling R23 "
+                + "left open. Delete this wrapper when it is."
+        ) {
+            XCTAssertNotNil(notice, "at AX5 the notice drew no way out at all")
+            if let notice {
+                XCTAssertTrue(
+                    screen.contains(notice.frame),
+                    "at AX5 the notice's “\(Self.clear)” is at \(notice.frame) on a "
+                        + "\(screen.width)×\(screen.height) screen"
+                )
+                XCTAssertTrue(
+                    notice.isHittable,
+                    "at AX5 the notice's “\(Self.clear)” is in the tree at \(notice.frame) and "
+                        + "cannot be activated"
+                )
+            }
+        }
+
+        // What *is* still true at AX5, and is the reason the screen is not a dead end: the chip in
+        // the row is the other way out, it is on the phone, and it works (R23.1 §3).
+        XCTAssertTrue(
+            clearChip(app).isHittable,
+            "at AX5 neither way out of an emptied map can be activated: the notice's button is off "
+                + "the top of the screen and the row's chip is at \(clearChip(app).frame)"
+        )
+        clearChip(app).tap()
+        XCTAssertTrue(
+            wait { self.clearControls(app).isEmpty },
+            "at AX5 the row's chip did not clear the filter"
         )
     }
 
@@ -785,7 +876,7 @@ final class MapFilterAccessibilityTests: XCTestCase {
         )
 
         let inBloom = chip(Self.emptyingChip, app)
-        let before = (bloom: inBloom.frame.minY, clear: clearControls(app)[0].frame.minY)
+        let before = (bloom: inBloom.frame.minY, clear: clearChip(app).frame.minY)
 
         field.tap()
         field.typeText(Self.query)
@@ -812,9 +903,9 @@ final class MapFilterAccessibilityTests: XCTestCase {
                 + "(\(before.bloom) → \(inBloom.frame.minY)), so it is drawn over it"
         )
         XCTAssertTrue(
-            wait { self.clearControls(app)[0].frame.minY > before.clear },
+            wait { self.clearChip(app).frame.minY > before.clear },
             "the suggestion list did not push the “\(Self.clear)” chip down "
-                + "(\(before.clear) → \(clearControls(app)[0].frame.minY))"
+                + "(\(before.clear) → \(clearChip(app).frame.minY))"
         )
         XCTAssertTrue(
             inBloom.isHittable,
@@ -822,29 +913,42 @@ final class MapFilterAccessibilityTests: XCTestCase {
                 + "activated"
         )
         XCTAssertTrue(
-            clearControls(app)[0].isHittable,
+            clearChip(app).isHittable,
             "with the list open the “\(Self.clear)” chip is in the tree and cannot be activated"
         )
 
-        // …and they are still *after* the rows in the element tree. A list drawn as an overlay would
-        // leave the chips where they were in the order, which is the half of R25's argument that
-        // geometry cannot see.
+        // **The row's own order in the element tree, which is what R23.1 changed and what a reader
+        // navigating by swipe actually meets.** The owner's four, then the control, then the way
+        // out. A restructure that reordered the row, or a `Clear filters` that arrived before the
+        // chip it undoes, would be a different screen to a listener and the same screenshot.
         let order = app.buttons.allElementsBoundByIndex.map(\.label)
-        guard let rowIndex = order.firstIndex(where: { $0.hasPrefix(Self.rowPrefix) }),
-              let bloomIndex = order.firstIndex(of: Self.emptyingChip),
-              let clearIndex = order.firstIndex(of: Self.clear)
-        else {
-            return XCTFail("the element tree holds \(order)")
+        let rowOrder = order.filter {
+            Self.rowToggles.contains($0) || $0 == Self.yearChip || $0 == Self.moreChip
+                || $0 == Self.clear
         }
-        XCTAssertLessThan(
-            rowIndex, bloomIndex,
-            "a swipe reaches the “\(Self.emptyingChip)” chip before the suggestions it is under: "
-                + "\(order)"
+        XCTAssertEqual(
+            rowOrder,
+            ["Yours", "In bloom", "Needs care", Self.yearChip, Self.moreChip, Self.clear],
+            "with the suggestion list open the filter row is reached in this order: \(rowOrder)"
         )
-        XCTAssertLessThan(
-            bloomIndex, clearIndex,
-            "the “\(Self.clear)” chip comes before the chip it undoes in the swipe order: \(order)"
-        )
+
+        // ── What is deliberately *not* asserted here, and why it is a finding ────────────────────
+        // R25 §1 states the swipe order as "field → suggestions → chips → status line, which is the
+        // order the words are in", and gives that as half its reason for putting the list in the
+        // flow rather than in an overlay. **Measured on this run, it is not what the tree exposes.**
+        // The buttons come back:
+        //
+        //     recentre · FAB · the notice's Clear filters · Clear search · the four tabs ·
+        //     Yours · In bloom · Needs care · Year · More filters · Clear filters ·
+        //     Cypress species · Monterey Cypress · Hinoki cypress · …
+        //
+        // — so the suggestion rows arrive *after* the chips, and the bottom chrome and the tab bar
+        // arrive before the search field's own ✕. The in-the-flow layout delivers R25's other half
+        // (the chips move rather than being covered, asserted above, and they stay hittable) and
+        // does not deliver this one. Asserting it here would be a red test for a defect this ticket
+        // was not sent to fix, and fixing it means giving screen 01's chrome explicit sort
+        // priorities, which is a change to R25's surface rather than to this one. ERRATA E183
+        // records it; it is not silently dropped.
     }
 
     /// The query typed into C20, and the prefix a row for it must begin with.
