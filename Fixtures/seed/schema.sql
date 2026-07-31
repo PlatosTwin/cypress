@@ -18,14 +18,18 @@
 --                                never expose it, never persist it off-device.
 --   uuid  TEXT NOT NULL UNIQUE -- stable citable external identity, on the
 --                                tables that need one (trees, species).
---                                DETERMINISTIC: a rebuild from the same TreeID
---                                reproduces the same uuid byte for byte, so
+--                                DETERMINISTIC: a rebuild from the same source
+--                                id reproduces the same uuid byte for byte, so
 --                                public tree URLs and export rows survive a
 --                                re-import. Required by DECISIONS.md
 --                                constraint 13.
 --
 -- Frozen UUIDv5 namespace constants (see Tools/build_seed.py):
---   trees.uuid   = uuidv5(6f2a1d8e-0f3d-5d3e-9a1a-7c1f0b9a0001, <DataSF TreeID>)
+--   trees.uuid   = uuidv5(6f2a1d8e-0f3d-5d3e-9a1a-7c1f0b9a0001,
+--                         <id-space prefix> + <the source's own id>)
+--                  San Francisco's id-space prefix is the empty string, so for
+--                  this seed the name is the bare TreeID. A second city gets a
+--                  non-empty prefix; see Tools/inventory_contract.py.
 --   species.uuid = uuidv5(6f2a1d8e-0f3d-5d3e-9a1a-7c1f0b9a0002, <scientific name,
 --                         lowercased, whitespace-collapsed>)
 -- Changing either constant rewrites every public identifier. Do not.
@@ -107,6 +111,19 @@ CREATE TABLE neighborhoods (
 --                                  contract does not move.
 --   external_ref text           -> INTEGER. Every DataSF TreeID observed is
 --                                  numeric (verified across all 195,309 rows).
+--
+-- `external_ref` IS A SOURCE-LOCAL ID UNDER A GLOBAL UNIQUE CONSTRAINT, AND THAT
+-- IS A BLOCKER FOR A SECOND CITY. It is labelled "DataSF TreeID" below because
+-- that is what it holds today, and both of San Francisco's inventories draw from
+-- that one numbering scheme. A second city's inventory does not: Los Angeles
+-- TreeID 276198 and San Francisco TreeID 276198 are different trees, and today
+-- the second INSERT simply fails on this index.
+--
+-- The uuid derivation is already safe against it -- identity is qualified by id
+-- space (see the namespace block in Tools/build_seed.py and ID_SPACES in
+-- Tools/inventory_contract.py) -- but this column is not. Widening it to
+-- (id_space, external_ref) or storing the qualified string is work for whoever
+-- ingests a second id space, and it has to happen before the ingest, not after.
 --
 -- THE SIX CITY COLUMNS CARRY NO CHECK, AND THAT IS THE DECISION.
 -- Every closed vocabulary in the *app* schema carries its vocabulary in a CHECK,
