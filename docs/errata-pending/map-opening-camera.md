@@ -275,6 +275,40 @@ real.
 
 ---
 
+#### #128, tested on this branch: the ticket is inverted, and the real defect is #85's shape
+
+Reported by the owner walking the app: *"Going Map > Journal > Map, you land NOT where you're
+actually located when you go back to map, which shouldn't happen."*
+
+Driven on the device rather than reasoned about, on this branch, with a fix at 37.7599, −122.4148.
+
+**As worded it does not reproduce.** Map → Journal → Map with the camera untouched lands on Folsom &
+9th with the reader's dot dead centre and the control reading `Centred on you`. You land exactly where
+you are located, which is what the ticket asks for.
+
+**What does reproduce is the opposite, and it is worse.** Pan the map away first — south to Folsom &
+20th, the dot off screen, the control correctly reading `Not centred` — then Journal, then Map. The
+map is back on the reader, dot dead centre, and **the pan is gone**.
+
+That is #85's shape returning through a door #85 did not close: "the map snaps back to your location
+and cannot be panned away". The mechanism is not the `@State` discard this entry is about, so
+`echo(_:)` does not fix it and was not expected to. A pan is a *gesture*: it moves `MKMapView`'s
+camera and mints no `MapCameraRequest`, so `MapHomeView.position` still holds the last request the app
+made — the fly-to-you from launch. Leaving the tab tears the map view down; returning builds a fresh
+one whose coordinator has `appliedSequence == nil`, so that stale request is applied to the new map as
+if it were new. The reader's pan was never represented in the value that survived.
+
+**It is almost certainly not this branch's.** On main, `makeUIView` called
+`setRegion(position.region, animated: false)` on the same stale request for the same reason. This was
+**not** verified by running main — it is read off the two versions of the file, and should be treated
+as inference until somebody runs it.
+
+Recorded and not fixed here. The fix is a real design decision — what a fresh map view owes a request
+it has never applied but that has already been superseded by a gesture — and it interacts directly
+with E140's ticket rule and with #85. It should not be bolted onto a merge about the opening camera.
+
+---
+
 #### #100 was not the defect it was reported as
 
 Reported as: the recentre control's accessibility state does not track whether the map is centred, so
