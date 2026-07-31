@@ -34,9 +34,21 @@ final class MapCentredStateUITests: XCTestCase {
     /// `MapRecentreCopy.value(.centred)`.
     private static let centred = "Centred on you"
 
-    /// The two states that mean "this simulator has no fix for the app to centre on", spoken by
-    /// `MapRecentreCopy.value`. Either one makes the assertion below meaningless rather than false.
-    private static let fixless = ["Location is off", "Finding you", "Not centred yet"]
+    /// The states that mean "this simulator has no fix for the app to centre on", spoken by
+    /// `MapRecentreCopy.value`. Any one of them makes the assertion below meaningless rather than
+    /// false, so it skips.
+    ///
+    /// **Copied from `MapRecentreCopy.value` exactly, and it used to not be.** The list carried
+    /// `"Not centred yet"`, which that function has never returned — a string one word away from
+    /// `"Not centred"`, which is the failure this file exists to catch, sitting in the list of
+    /// reasons not to look. And it was missing `askable` entirely, so a simulator that had never been
+    /// granted location — the state every fresh simulator is in — did not skip. It **failed**, with
+    /// a message blaming #115 for a phone that had simply never been asked.
+    private static let fixless = [
+        "Location is off",           // MapRecentre.Engagement.unavailable
+        "Finding you",               // .searching
+        "Cypress has not been given your location",  // .askable
+    ]
 
     /// **The owner's sentence, as a test: "opening the app should open on where you're located right
     /// now" (#115).**
@@ -47,6 +59,25 @@ final class MapCentredStateUITests: XCTestCase {
     /// — Mission Dolores Park — and moved only if `location.availability` happened to *change* after
     /// this screen's `.onChange` was installed. A provider some other screen had already started was
     /// therefore a map that never centred at all.
+    ///
+    /// **This is the only witness in the suite for E168, and that was measured rather than assumed.**
+    /// Two deliberate breaks were built and run against the whole of this file, on an iPhone 16 Pro
+    /// with a static fix at 37.7599, −122.4148:
+    ///
+    /// - Restore the inline write in `MapAnnotationLayer.Coordinator.echo(_:)` — the actual defect —
+    ///   and this test fails in 25 s with `("Not centred") is not equal to ("Centred on you")`. The
+    ///   other test in this file, the one that presses first, **passes** on that same build, because
+    ///   a press produces a real animated flight whose settle arrives outside the update pass and
+    ///   therefore lands. That is the whole of "still not centred at launch, and a press fixes it",
+    ///   and it is why the unpressed test is the one that matters.
+    /// - Remove the main-queue hop from `AimableMapView.layoutSubviews` and aim re-entrantly from
+    ///   inside the layout pass: both tests stay **green**. On screen 01 that hook never applies a
+    ///   camera at all — `updateUIView` reaches `applyCameraIfChanged` first every launch and spends
+    ///   the ticket — so there is nothing for a test to see. Recorded so nobody spends an afternoon
+    ///   hunting for the test that guards it: there is none, and there is nothing to guard.
+    ///
+    /// The skip below is honest and it is also a hole: on a machine with no fix this regression goes
+    /// unwatched, silently, in a green run. Grant location and set one before trusting a green here.
     func testTheMapOpensOnTheReaderWithoutBeingAsked() throws {
         let app = XCUIApplication()
         app.launch()
