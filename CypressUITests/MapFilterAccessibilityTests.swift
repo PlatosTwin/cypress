@@ -536,22 +536,16 @@ final class MapFilterAccessibilityTests: XCTestCase {
             .allElementsBoundByIndex
     }
 
-    /// **The count yields when the notice is already speaking, and the year caveat is one phrase.**
+    /// **The count yields when the notice is already speaking.**
     ///
-    /// Two conditionals in one launch, both of the kind that rots because nothing looks at them:
+    /// R23 §5, found by running the app rather than by reading it: a `0 trees` pill sat in the chrome
+    /// while `No trees of yours here` sat in the card below — the same fact twice, weaker phrasing on
+    /// top. `MapModel.filterResult` returns nil over an empty map now, and nothing else in the suite
+    /// asks whether it still does. That is exactly the shape of conditional that rots, because it is
+    /// invisible in every state but one.
     ///
-    /// 1. R23 §5 — found by running the app, not by reading it — a `0 trees` pill sat in the chrome
-    ///    while `No trees of yours here` sat in the card below: the same fact twice, weaker phrasing
-    ///    on top. `MapModel.filterResult` now returns nil over an empty map. Nothing else in the
-    ///    suite asks whether it still does.
-    /// 2. The year control's caveat has to arrive as **one** element. It is two clauses joined by an
-    ///    em dash, which is exactly the sentence somebody later splits into two `Text`s to get the
-    ///    line breaks they want, leaving a listener to hear "About 4 in 5 trees have no recorded
-    ///    planting date" and then, separately, "none of them can appear under a year".
-    ///
-    /// Both halves hold under any viewport: `In bloom` matches nothing anywhere, and the caveat is
-    /// rendered off the chip's state rather than off the map's contents.
-    func testTheCountYieldsToTheNoticeAndTheYearCaveatIsOnePhrase() {
+    /// It holds under any viewport: `In bloom` matches nothing anywhere in the shipped seed.
+    func testTheCountYieldsToTheNotice() {
         let app = launch()
         _ = requireField(app)
 
@@ -571,18 +565,35 @@ final class MapFilterAccessibilityTests: XCTestCase {
                 + "chrome above it saying the same thing in weaker words (R23 §5)"
         )
 
-        // Now the year control, whose caveat draws whatever the map holds.
-        chip(Self.emptyingChip, app).tap()
+    }
+
+    /// **The year control's caveat arrives as one phrase, not as two clauses either side of an em
+    /// dash.**
+    ///
+    /// R23 §4's sentence is the only thing keeping the year narrowing honest about the 80.78 % of the
+    /// seed it cannot judge, and it is exactly the sentence somebody later splits into two `Text`s to
+    /// get the line breaks they want — leaving a listener to hear "About 4 in 5 trees have no
+    /// recorded planting date" and then, separately, "none of them can appear under a year". It
+    /// renders off the chip's state rather than off the map's contents, so it holds under any
+    /// viewport.
+    ///
+    /// ── Getting to it, and what that took ────────────────────────────────────────────────────────
+    /// **A SwiftUI `Menu`'s items are not in the app's accessibility tree as XCUITest sees it.** The
+    /// first version of this waited fifteen seconds for `app.buttons["2010s"]`, then fifteen more for
+    /// `app.descendants(matching: .any)["2010s"]`, and reported "the year control opened no menu" —
+    /// about a menu that had opened. Photographed on the running simulator to be sure: tapping `Year`
+    /// draws the platter with `Any year · Before 1990 · 1990s · 2000s · 2010s · 2020s` on it. The
+    /// platter is hosted outside the app's own element tree, which is why it is looked for in the
+    /// system process as well. Nothing here is a claim that the menu is unreachable to a *reader* —
+    /// it is the system's own control, and R23 chose it partly for that.
+    func testTheYearCaveatIsOnePhrase() throws {
+        let app = launch()
+        _ = requireField(app)
+
         chip(Self.yearChip, app).tap()
-        // **`app.buttons["2010s"]` finds nothing, and that is a fact about `Menu` rather than about
-        // this app.** A SwiftUI `Menu`'s items are not exposed as buttons in the app's own tree; the
-        // first version of this test waited fifteen seconds for one and reported "the year control
-        // opened no menu" about a menu that had opened. Asking every element type is the honest
-        // question — what a reader can reach is not typed `button` by contract.
-        let decade = app.descendants(matching: .any)["2010s"]
-        XCTAssertTrue(
-            decade.waitForExistence(timeout: 15),
-            "the year control opened no menu, so a decade cannot be chosen at all"
+        let decade = try XCTUnwrap(
+            menuItem("2010s", app),
+            "tapping the year control put “2010s” in neither the app's element tree nor the system's"
         )
         decade.tap()
 
@@ -600,6 +611,16 @@ final class MapFilterAccessibilityTests: XCTestCase {
             "the year control is on and the sentence that says what it cannot judge is not one "
                 + "element in the tree — a listener hears the clauses apart, or not at all"
         )
+    }
+
+    /// An open `Menu`'s item, wherever the platter is hosted.
+    private func menuItem(_ label: String, _ app: XCUIApplication) -> XCUIElement? {
+        let inApp = app.descendants(matching: .any)[label]
+        if inApp.waitForExistence(timeout: 8) { return inApp }
+        let system = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let inSystem = system.descendants(matching: .any)[label]
+        if inSystem.waitForExistence(timeout: 8) { return inSystem }
+        return nil
     }
 
     /// **The result line is one counting phrase, not a number and some words beside it.**
@@ -921,11 +942,11 @@ final class MapFilterAccessibilityTests: XCTestCase {
         // navigating by swipe actually meets.** The owner's four, then the control, then the way
         // out. A restructure that reordered the row, or a `Clear filters` that arrived before the
         // chip it undoes, would be a different screen to a listener and the same screenshot.
-        let order = app.buttons.allElementsBoundByIndex.map(\.label)
-        let rowOrder = order.filter {
-            Self.rowToggles.contains($0) || $0 == Self.yearChip || $0 == Self.moreChip
-                || $0 == Self.clear
-        }
+        // Scoped to the row's own container, because the notice's `Clear filters` is a control with
+        // the same label on a different surface and a filter over labels cannot tell them apart —
+        // the first version of this assertion read `["Clear filters", "Yours", …]` and was reporting
+        // the notice's button as the first thing in the filter row.
+        let rowOrder = app.otherElements[Self.rowLabel].buttons.allElementsBoundByIndex.map(\.label)
         XCTAssertEqual(
             rowOrder,
             ["Yours", "In bloom", "Needs care", Self.yearChip, Self.moreChip, Self.clear],
