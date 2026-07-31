@@ -41,15 +41,20 @@ the chips move down and stay real, and the swipe order is field → suggestions 
 which is the order the words are in. `MapSuggestionUITests` asserts both halves: the chips move rather
 than being covered, and they stay hittable.
 
-**2 · Six rows, and the seventh thing on the list is a sentence about the rest.**
+**2 · Six rows, and under them — never inside the scroll — a sentence about the rest.**
 
 Not `MapSearch.speciesLimit`'s 100, which is the right number for narrowing a *map* — every extra
 species there is another pin the reader might be hunting and nothing is read in a list. Not
 `SpeciesPickModel.resultLimit`'s 25 either, which is the right number for a screen whose whole job is
 the list and which may scroll as long as it likes. This list floats over the map that is answering the
-question, so every row it adds hides some of the answer. Six two-line rows is about a third of the
-display at the drawn size, which leaves the FAB, the tree card and the lower two thirds of the city
-visible underneath. That was looked at on the running app, not reasoned about.
+question, so every row it adds hides some of the answer.
+
+**Measured on an iPhone 16e rather than estimated:** a two-line row is about 79 pt, so six of them are
+around 480 pt — more than the cap allows, which means five and a bit rows are drawn and the part-row
+at the cut is what says the list scrolls. That is a better dropdown than six rows exactly, and it is
+not what this ruling first assumed; the assumption was "about a third of the display", and the running
+app said otherwise. The number stayed at six because the cap, not the count, is what governs how much
+of the map is hidden.
 
 **3 · A page is not a total, and the list may not print a number nobody counted (E38).**
 
@@ -69,6 +74,14 @@ and the third is the whole point:
 **and** when 555 did, and the reverse is not. A caller that flattened the two cases into one would
 print a total the app has never counted. The sentence names the way out — a list that says "there are
 more" without saying how to see them has told the reader they are stuck.
+
+**And the sentence is pinned under the scroll rather than being the last row of it.** It began as the
+last row, on the reasoning that a reader who hears the rows should hear what they are a page of in the
+same sweep. Typed into the running app, `a` drew six rows, filled the cap exactly, and put
+`Showing 6 of at least 100 matching species` **below the fold** — E38's own defect, reproduced one
+level down by the change written to prevent it. It is now inside the card and outside the scroll:
+still one sweep for VoiceOver, and never scrollable away, because the one sentence that says the list
+is a page cannot be a thing you have to scroll to find.
 
 **4 · No matches draws no list, because the sentence for that state already exists thirty points
 below.**
@@ -105,6 +118,21 @@ out would get the fewest of them, and the remainder sentence would then have to 
 truncations. The cap is a `ScrollView`'s `maxHeight` and deliberately **not** `.clipped()`, which has
 clipped drawing without clipping touches on this project before and left a control reporting
 `isHittable` while answering nobody.
+
+**Two costs of part 6, stated rather than buried.** At AX5 on a 390 pt phone the card is most of the
+usable display: about one and a half rows of scroll, plus a four-line remainder sentence that is not
+allowed to be cut. And the filter chips, pushed down by a card that tall, land behind the keyboard for
+as long as the list is open — visible again the moment it closes, which is enough on a screen where
+the reader is currently typing a species name rather than filtering by bloom. Both were looked at on
+the running app.
+
+**One thing outside this ticket had to move for part 6 to be true, and it is worth naming.** Screen
+01's chrome is two absolutely positioned blocks, and the bottom one — recentre, FAB, tree card — was
+applied *after* the top one, so it drew over it. At the drawn size the two never overlap and nobody
+noticed. At AX5 with the list open, the FAB sat squarely over the sentence that says the list is a
+page: `Showing 6 of at least 100 match……. Keep ty…… it.` The blocks are now applied in the other
+order, so the chrome the reader is typing into outranks the control they are not. Nothing inside
+either block changed.
 
 ---
 

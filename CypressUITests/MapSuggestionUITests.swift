@@ -47,7 +47,27 @@ final class MapSuggestionUITests: XCTestCase {
     /// first (E165, and `SpeciesSearchTests` pins it). Every assertion below rests on the seed rather
     /// than on the viewport, which is what makes this file machine-independent.
     private static let query = "cypress"
-    private static let expectedRow = "Monterey Cypress, Hesperocyparis macrocarpa"
+
+    /// The common name of a species the catalogue certainly holds for that query.
+    private static let expectedName = "Monterey Cypress"
+
+    /// **The scientific name is deliberately not written down, and the first draft of this file
+    /// wrote it down.** It said `Monterey Cypress, Hesperocyparis macrocarpa`, copied out of
+    /// `SCREENS.md` 02 — and the seed spells that species `Cupressus macrocarpa`, so three tests here
+    /// went red reporting `typing “cypress” drew no suggestions`, which is a sentence about the
+    /// dropdown being broken and was in fact a sentence about the mock. The same class of mistake as
+    /// tasks #101 and #104: a test asserting something it had assumed rather than asked.
+    ///
+    /// What the row actually has to prove is *structural* — one element, the common name, a comma,
+    /// and a second name after it — and that is provable without knowing which second name. So this
+    /// matches a prefix and then asserts there is something behind it.
+    private static var rowPrefix: String { expectedName + ", " }
+
+    private func suggestionRow(_ app: XCUIApplication) -> XCUIElement {
+        app.buttons
+            .matching(NSPredicate(format: "label BEGINSWITH %@", Self.rowPrefix))
+            .firstMatch
+    }
 
     /// Polls. The bar debounces and then reads a 95 MB attached database; what is worth asserting is
     /// where the screen settles, never when.
@@ -72,7 +92,7 @@ final class MapSuggestionUITests: XCTestCase {
         let app = launch()
         let field = field(app)
 
-        let row = app.buttons[Self.expectedRow]
+        let row = suggestionRow(app)
         XCTAssertFalse(row.exists, "a suggestion is drawn before anything has been typed")
 
         field.tap()
@@ -80,7 +100,15 @@ final class MapSuggestionUITests: XCTestCase {
 
         XCTAssertTrue(
             row.waitForExistence(timeout: 20),
-            "typing “\(Self.query)” drew no row for \(Self.expectedRow)"
+            "typing “\(Self.query)” drew no row beginning “\(Self.rowPrefix)”"
+        )
+        // The comma is matched by the prefix; this is the half after it. A row that announced only
+        // the common name would satisfy an equality against the common name and would be exactly the
+        // defect the owner's request is about — they asked for both names.
+        let latin = String(row.label.dropFirst(Self.rowPrefix.count))
+        XCTAssertFalse(
+            latin.trimmingCharacters(in: .whitespaces).isEmpty,
+            "the suggestion row announces “\(row.label)” — a common name and nothing behind the comma"
         )
         XCTAssertTrue(
             row.isHittable,
@@ -107,12 +135,12 @@ final class MapSuggestionUITests: XCTestCase {
         field.tap()
         field.typeText(Self.query)
 
-        let row = app.buttons[Self.expectedRow]
+        let row = suggestionRow(app)
         XCTAssertTrue(row.waitForExistence(timeout: 20), "typing “\(Self.query)” drew no suggestions")
         row.tap()
 
         XCTAssertTrue(
-            wait { (field.value as? String) == "Monterey Cypress" },
+            wait { (field.value as? String) == Self.expectedName },
             "after choosing a suggestion the field holds “\(field.value as? String ?? "")”"
         )
         // And the list closes over its own answer, rather than sitting on the map the choice was made
@@ -161,7 +189,7 @@ final class MapSuggestionUITests: XCTestCase {
         field.tap()
         field.typeText(Self.query)
         XCTAssertTrue(
-            app.buttons[Self.expectedRow].waitForExistence(timeout: 20),
+            suggestionRow(app).waitForExistence(timeout: 20),
             "typing “\(Self.query)” drew no suggestions"
         )
 
@@ -187,7 +215,7 @@ final class MapSuggestionUITests: XCTestCase {
         field.tap()
         field.typeText(Self.query)
 
-        let row = app.buttons[Self.expectedRow]
+        let row = suggestionRow(app)
         XCTAssertTrue(row.waitForExistence(timeout: 20), "typing “\(Self.query)” drew no suggestions")
 
         let done = app.buttons["Done"]
