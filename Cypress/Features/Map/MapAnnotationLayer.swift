@@ -232,10 +232,21 @@ enum MapPinImage {
 ///
 /// The hop is kept anyway, on a narrower claim: driving a map's camera from inside its own
 /// `layoutSubviews` is a re-entrant geometry change on a view that is mid-layout, and one runloop
-/// turn costs a frame nobody can see. It is **not** load-bearing for the region echo any more, and
-/// on screen 01 it is not load-bearing at all — measured, this hook loses the race to `updateUIView`
-/// on every launch and its `applyCameraIfChanged` is a `REJECT` of a ticket already spent. It earns
-/// its place on the two quiet screens, where nothing else would produce a pass once the size lands.
+/// turn costs a frame nobody can see.
+///
+/// **Be honest about what this hook does on screen 01: nothing.** Measured on every launch traced,
+/// it loses the race to `updateUIView` and its `applyCameraIfChanged` is a `REJECT` of a ticket
+/// already spent. Removing the hop, or the whole hook, changes no observable behaviour there and no
+/// test — that was built and run, both ways. Do not read the paragraphs above as a description of
+/// something that fires.
+///
+/// **What it is actually for, since `mapViewDidChangeVisibleRegion` was gated.** That callback now
+/// refuses to report a camera until this layer has aimed the map once, because an unaimed map
+/// reports MapKit's default and screen 16's pin follows it (see `Coordinator`'s note there, and the
+/// 2,300 km pin). With that gate in place, a map that is never aimed never reports anything at all:
+/// screen 01 would fetch no trees and the pin would never track. This hook is the guarantee that the
+/// aim always arrives, on any screen, however quiet. That is a real job and it is the only one it
+/// has — it is no longer speculative insurance, and it is no longer about the region echo.
 final class AimableMapView: MKMapView {
     var onFirstLayout: (() -> Void)?
 
@@ -551,7 +562,32 @@ struct MapAnnotationLayer: UIViewRepresentable {
         /// `.onMapCameraChange(frequency: .continuous)` had. `MapModel.cameraDidChange` is what
         /// decides whether any given one of these is worth a database read, and it already ignores
         /// a camera that is still inside the box it fetched.
+        ///
+        /// **Silent until this layer has aimed the map at least once, and that is not a nicety —
+        /// it is a pin 2,300 km from the tree it belongs to** (ERRATA E168).
+        ///
+        /// The E168 fix stopped `makeUIView` setting a region and made `applyCameraIfChanged` refuse
+        /// a map with no area. Both are right, and together they open a window that did not exist
+        /// before: between construction and the first laid-out pass the map has never been aimed, and
+        /// what it reports as its visible region in that window is **MapKit's own default** — 37.1328,
+        /// −95.7856, a span of 98°, the continental United States.
+        ///
+        /// This callback fires in that window. On screen 01 it cost only a wasted fetch over a
+        /// bounding box the size of North America. On screen 16 it is load-bearing in the worst way:
+        /// `VisitPinAdjustView` follows this callback directly — `pin = VisitPinAdjust.centre(of:
+        /// box)`, the midpoint of the reported region — so the pin the contributor is about to attach
+        /// to a real tree was being dragged to the middle of Kansas before they touched anything.
+        /// Measured: the pin read `2344980 m east of where you are standing`, against a great-circle
+        /// distance of 2,343,915 m from the fix to MapKit's default centre. A 0.05 % match is an
+        /// identification, not a coincidence.
+        ///
+        /// `appliedSequence` is exactly the question "has this layer ever aimed this map", so it is
+        /// the honest gate. The contract of this callback is *the app moved the camera, here is where
+        /// it is now*; a camera nobody asked for has no business being reported through it. Nothing is
+        /// lost by waiting, because `AimableMapView.onFirstLayout` guarantees the aim arrives — which
+        /// is the job that hook now has, and the only one it does.
         func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
+            guard appliedSequence != nil else { return }
             parent.onCameraChange(
                 BoundingBox(mapView.region),
                 MapZoom.level(

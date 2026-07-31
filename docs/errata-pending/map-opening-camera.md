@@ -124,9 +124,21 @@ Two things follow, and both are worth more than the green line.
 **The re-entrancy break is invisible because there is nothing to see.** On screen 01 the
 `onFirstLayout` hook never applies a camera at all: `updateUIView` reaches `applyCameraIfChanged`
 first on every launch and spends the ticket, so the hook only ever logs `REJECT` (line `.885` above).
-No test guards it because no behaviour depends on it. The main-queue hop is kept on a narrower
-claim — do not drive a view's camera from inside its own layout — and its note now says so instead of
-claiming to be load-bearing.
+No test guards it because no behaviour depends on it.
+
+**Say this plainly, because the comment above it does not read that way.** `AimableMapView`'s
+`DispatchQueue.main.async` carries a long, careful, confident note about re-entrancy, and the next
+person to read it will assume it is load-bearing. On screen 01, as currently wired, **it is dead in
+practice** — the whole hook, not just the hop. Mutating it either way changes no observable behaviour
+and no test.
+
+**It should nonetheless stay, and the reason changed during this round.** When it was written it was
+insurance against a screen too quiet to produce another `updateUIView` pass once the size landed —
+speculative, and on the one screen anybody measured, unnecessary. It stopped being speculative when
+`mapViewDidChangeVisibleRegion` was gated on `appliedSequence != nil` (below): with that gate, a map
+that is never aimed never reports a camera at all, so screen 01 would never fetch a tree and screen
+16's pin would never track. The hook is now the thing that guarantees the aim eventually happens, and
+that is a real job. Its note has been rewritten to claim that job and not the other one.
 
 **Under the real break, the *pressed* test still passes.** A press produces a genuine animated flight
 whose settle arrives outside the update pass and therefore lands. That is the entire content of "still
