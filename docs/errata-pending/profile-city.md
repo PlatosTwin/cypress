@@ -185,4 +185,53 @@ difference.
 
 ### What the running app showed
 
-APP_OUTPUT_PLACEHOLDER
+Built, installed and launched on iPhone 16 Pro with a simulated fix in downtown San Jose
+(37.3352, -121.8895). A green suite has repeatedly said nothing about this screen, and it did not say
+everything here either — see the accident below.
+
+**A San Jose tree, `Platanus acerifolia`, `FACILITYID` 167961.** Reached two ways: by tapping its pin
+on the map, and deterministically through `CYPRESS_SCREEN=treeProfile` with `DebugDeepLink.centre`
+pointed at San Jose for the length of one build (**reverted; nothing in that file is committed**).
+All four surfaces, top to bottom:
+
+```
+Platanus acerifolia
+City of San Jose Street Tree inventory          ← was `SF city inventory`
+…
+CITY RECORD  #167961                            ← was `SF #167961`
+WHAT THE CITY HAS ON FILE                       ← was `WHAT SAN FRANCISCO HAS ON FILE`
+  CITY LISTS THIS AS  N/A        city record
+  LEGAL STATUS        Private    city record
+  CARED FOR BY        General Fund  city record
+From the City of San Jose Street Tree inventory, July 31, 2026.
+```
+
+**No pruning sentence**, and the section closes on its provenance line instead. The screen's first
+italic line and its last sentence are now the same string, which is the whole point of the change —
+and the three cards under the header are E180's seam, exactly as reported above and still unfixed.
+
+**A San Francisco tree, `Magnolia grandiflora`, `TreeID` 229291**, on the same build:
+
+```
+Southern Magnolia  [REMOVED]
+Magnolia grandiflora · SF Public Works street tree inventory
+…
+CITY RECORD  #229291
+Cypress reads the city's record as a tree on a street.
+WHAT THE CITY HAS ON FILE
+  LEGAL STATUS  DPW Maintained · CARED FOR BY  A private party · PLOT SIZE  6 ft wide
+The city's street tree inventory records pruning by block, not by tree, so it says nothing
+about when this tree was last pruned.
+From the SF Public Works street tree inventory, July 31, 2026.
+```
+
+San Francisco keeps its pruning sentence, its land-context line and its full card set, and its
+subtitle now names the inventory rather than a city — so the top of the SF screen agrees with the
+bottom too, which it did not before either. A second SF tree (`Phoenix canariensis`, `#24998`,
+warm profile with photographs) read the same way.
+
+**The accident that is worth more than the check.** The first San Jose profile photographed still
+carried the pruning sentence with the other three surfaces already correct — because the binary
+installed was the M4 mutant, built minutes earlier and never replaced. It is an exact picture of the
+half-fixed state, and it is also the reason to distrust a screenshot taken without checking which
+build produced it. Rebuilt, reinstalled, re-photographed; the sentence is gone.
