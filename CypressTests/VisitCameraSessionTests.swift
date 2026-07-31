@@ -959,10 +959,26 @@ struct VisitCameraSessionTests {
         )
 
         // 3 · and something is actually drawn down there.
+        //
+        // **The 6 pt offset is load-bearing.** The well's own dashed border is several hundred
+        // pixels of not-the-page-colour lying immediately under its last filled row, and counting
+        // those made this claim pass on the very layout it was written to fail: at AX5 before the
+        // fix the well was clipped by the footer with nothing at all beneath it, and its own bottom
+        // edge answered for the form. The `if` is the other half — past the clip there is no band
+        // left, and a `Range` with its bounds the wrong way round traps rather than failing.
+        //
+        // The page and the well's fill are 5/255 apart on every channel, so this tolerance treats
+        // them as the same nothing. That is deliberate: a well that reappeared below `inkStart`
+        // must not be able to answer for the form either.
         let page = Self.srgb(CypressColor.surfaceScreen)
         var ink = 0
-        for y in (well.upperBound + 2)..<band.upperBound where y < bitmap.height {
-            for x in 0..<bitmap.width where !bitmap.matches(x, y, page, tolerance: 12) { ink += 1 }
+        let inkStart = well.upperBound + 6
+        if inkStart < band.upperBound {
+            for y in inkStart..<band.upperBound where y < bitmap.height {
+                for x in 0..<bitmap.width where !bitmap.matches(x, y, page, tolerance: 12) {
+                    ink += 1
+                }
+            }
         }
         #expect(
             ink >= 200,

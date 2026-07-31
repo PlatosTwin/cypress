@@ -90,10 +90,12 @@ enum VisitMetrics {
         /// Reported by the project owner: *"Screen for Add this Tree has the photo square fill the
         /// entire vertical area so it's not clear to the user that there is content below the photo
         /// that they can fill out."* Measured on the running app, iPhone 16e (390 × 844 pt): the
-        /// composer's scroll viewport is 581 pt and the well drew 476 of it — **82 %**. At AX5 the
-        /// viewport falls to 255 pt and the well's 476 does not fit in it at all, so the entire
+        /// composer's scroll viewport was 573 pt and the well drew 476 of it — **83 %**. At AX5 the
+        /// viewport falls to 247 pt and the well's 476 does not fit in it at all, so the entire
         /// first screenful was one grey box clipped at the footer, with the form, the pin row and
-        /// the land question all below a fold nothing on the screen admitted to.
+        /// the land question all below a fold nothing on the screen admitted to. On the 393 × 852
+        /// phone the tests host, the same two numbers are 78 % of a 620 pt viewport and 219 drawn
+        /// rows of a 290 pt one.
         ///
         /// **E162 refused a cap and the refusal was right about the wrong thing.** Its argument:
         /// "any well shorter than its own capture crops the live preview again, which is the

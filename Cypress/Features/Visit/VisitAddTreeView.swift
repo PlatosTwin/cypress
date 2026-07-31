@@ -133,7 +133,8 @@ struct VisitAddTreeView: View {
     /// is what makes the ceiling mean what it says.** "The well takes at most two thirds of the
     /// viewport" is only "a third of the viewport shows the form" if the well starts at the top of
     /// the viewport — with the chip above it inside the scroll, the chip's height came out of the
-    /// third, and at AX5 the chip is 78 pt of a 255 pt viewport, which is the whole of it. The chip
+    /// third, and at AX5 the chip is 68 pt of a 290 pt viewport on the phone the tests host (78 of
+    /// 247 on the iPhone 16e this was reported against), which is the whole of it. The chip
     /// is a statement about the screen rather than a row of the form (it is screen 02's status row,
     /// and 02 does not scroll it either), so pinning it is what it was always describing.
     private var composer: some View {
