@@ -675,8 +675,11 @@ enum CypressColor {
     // ΔE 0.099 — and a badge is a filled 28 pt circle carrying a number, which is not a thing a
     // reader confuses with an 18 pt dot at any hue. The tightest against another *pin* is slot B
     // after dark against the GPS dot (ΔE 0.110), separated by three further channels: the dot
-    // carries no glyph, it is the only mark on the map with an 8 pt halo, and it is drawn *under*
-    // every tree (`zPriority = .min`). Both are reproduced by `Tools/map_species_palette.py`.
+    // carries no glyph, it is the only mark on the map with an 8 pt halo, and it never sits *beside*
+    // a slot-B pin at the same visual rank — it is drawn on top of every tree (task #150,
+    // `MapLayout.userDotZPriority`; it was under them, `zPriority = .min`, when this ΔE was first
+    // argued, and the halo and glyph channels carried the distinction in both arrangements). Both
+    // palettes are reproduced by `Tools/map_species_palette.py`.
 
     /// Species slot A — plum `#7B226D` ↔ `#FC9FE9`. OKLCh 335°, L 0.42 ↔ 0.82, C 0.15 ↔ 0.14.
     /// Worst ground 5.34:1 light (ocean), 5.69:1 dark (park ring). Carries the **dot**.
