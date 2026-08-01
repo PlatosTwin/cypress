@@ -126,6 +126,26 @@ final class MapModel {
         didSet { if filter != oldValue { filterDidChange(from: oldValue) } }
     }
 
+    /// Whether the two condition chips could match anything at all (task #136, RULINGS R31).
+    ///
+    /// `.none` — both disabled — until the read lands, which is the honest resting state: a chip
+    /// may not look alive on the strength of data nobody has checked for. The read is once per
+    /// appearance of the screen (`MapHomeView`'s `.task`), not per pan: what it answers is a fact
+    /// about the whole store, and the store changes it only through writes that happen on other
+    /// screens — so returning to the map is exactly the moment the answer can have moved. That is
+    /// also what makes R31's "each chip self-enables the moment its data exists" true without a
+    /// flag: the first community observation standing a declining tree flips `needsCare` on the
+    /// next arrival here.
+    private(set) var conditionAvailability: MapConditionAvailability = .none
+
+    /// Re-asks the store. The month is this model's own injected clock, so the bloom half is a
+    /// deterministic function in tests rather than a read of the wall.
+    func refreshConditionAvailability() async {
+        let month = calendar.component(.month, from: now())
+        let next = (try? await api.mapConditionAvailability(month: month)) ?? .none
+        if next != conditionAvailability { conditionAvailability = next }
+    }
+
     private(set) var viewport: MapViewport?
     private(set) var content: MapContent = .pins([]) {
         didSet { recomputeAdmittedPins() }

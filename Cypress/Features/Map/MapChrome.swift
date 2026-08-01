@@ -12,28 +12,40 @@ import SwiftUI
 
 // MARK: - Filter chips
 
-/// Screen 01's filter row (#116, RULINGS R23, restructured by **R23.1**).
+/// Screen 01's filter row (#116, RULINGS R23, restructured by **R23.1**, and again by task #145).
 ///
-/// `Yours · In bloom · Needs care · Year ▾ · More filters`, plus a `Clear filters` chip that appears
-/// only when something is on. SCREENS.md 01 §12 drew `All / In bloom / Needs care`, single-select;
-/// the owner asked for four narrowings and they are not alternatives to each other, so the row became
+/// `Yours · In bloom · Needs care · More filters`, plus a `Clear filters` chip that appears only
+/// when something is on. SCREENS.md 01 §12 drew `All / In bloom / Needs care`, single-select; the
+/// owner asked for four narrowings and they are not alternatives to each other, so the row became
 /// a conjunction and `All` became the row with nothing selected. `MapFilter`'s header is the full
 /// argument, including why there is no species chip — the legend is the species control.
 ///
-/// **What R23.1 changed, and what it did not.** The owner, walking the app: "Only filters that should
-/// show are yours, in bloom, needs care, and year — and favorites (and any others we add later)
-/// should go to a separate expandable filter button." So `Favorites` came out of the row and the row
-/// grew a control that holds it, and the visible four are drawn in the owner's own order. The
+/// **What R23.1 changed, and what #145 changed after it.** R23.1 moved `Favorites` behind the
+/// expandable control; #145 is the owner's follow-up directive cutting the visible row to `Yours ·
+/// In bloom · Needs care` and sending `Year` behind the same control, beside `Favorites`. The
 /// conjunction, the absent `All`, the single `Clear filters`, the legend-as-species-filter, the
 /// result line and the empty notice are all untouched — see `MapExtraFilter` for the drawer's
-/// contents and `docs/RULINGS.md` R23.1 for what was superseded.
+/// contents and `docs/RULINGS.md` R23.1 for the hazard a hidden narrowing carries, which `Year`
+/// now shares: R23.1's three channels (fill, count, spoken names) cover it through the same
+/// `MapFilter.activeExtras` expression, so a decade set behind a shut control is still announced.
+///
+/// **The two condition chips can render disabled, with the reason on the chip** (task #136,
+/// RULINGS R31). A chip that cannot match any tree anywhere is a control that promises and cannot
+/// deliver, so while `MapConditionAvailability` says no match exists the chip spends no tap and
+/// says why itself — see `unavailableConditionChip`.
 ///
 /// **It wraps rather than scrolls**, borrowing `FlowRow` from the legend, and for the reason stated
 /// there: "a horizontal scroller on top of a map is a gesture competing with the pan underneath it —
-/// the one interaction screen 01 cannot afford to make ambiguous". Six chips do not fit one 361 pt
-/// line at default size, let alone at AX5.
+/// the one interaction screen 01 cannot afford to make ambiguous". Five chips do not fit one 361 pt
+/// line at default size once one of them carries a sentence, let alone at AX5.
 struct MapFilterChips: View {
     @Binding var filter: MapModel.Filter
+
+    /// Whether the two condition chips could match anything at all (R31). Defaults to `.none` —
+    /// both disabled — which is the honest resting state: the chips promise nothing until the
+    /// model's read says the data exists, and `.none` is also what the two preview-double screens
+    /// that never read availability truthfully have.
+    var availability: MapConditionAvailability = .none
 
     /// Whether the expandable control is open.
     ///
@@ -51,8 +63,8 @@ struct MapFilterChips: View {
         // to everyone else.
         VStack(alignment: .leading, spacing: MapLayout.chipGap) {
             FlowRow(spacing: MapLayout.chipGap, lineSpacing: MapLayout.chipGap) {
-                // The owner's four, in the owner's order. `Yours` is the membership half that stayed;
-                // `Favorites` is behind `moreChip`.
+                // The owner's visible three, in the owner's order (#145). `Yours` is the membership
+                // half that stayed; `Favorites` and `Year` are behind `moreChip`.
                 chip(
                     MapFilterCopy.membershipLabel(.yours),
                     isOn: filter.membership == .yours
@@ -64,12 +76,17 @@ struct MapFilterChips: View {
                 }
 
                 ForEach(MapFilter.Condition.allCases) { condition in
-                    chip(condition.label, isOn: filter.condition == condition) {
-                        filter.condition = filter.condition == condition ? nil : condition
+                    if availability.isEnabled(condition) {
+                        chip(condition.label, isOn: filter.condition == condition) {
+                            filter.condition = filter.condition == condition ? nil : condition
+                        }
+                    } else {
+                        // R31: no match exists anywhere, so the chip spends no tap and carries
+                        // the reason itself.
+                        unavailableConditionChip(condition)
                     }
                 }
 
-                yearChip
                 moreChip
 
                 if filter.isActive {
@@ -105,11 +122,20 @@ struct MapFilterChips: View {
             isExpanded.toggle()
         }
         .accessibilityLabel(MapFilterCopy.moreLabel)
-        .accessibilityValue(MapFilterCopy.moreValue(isExpanded: isExpanded, active: active))
+        .accessibilityValue(
+            MapFilterCopy.moreValue(
+                isExpanded: isExpanded,
+                // `label(in:)`, so a hidden narrowing that carries a value speaks it — a listener
+                // hears `Collapsed, on: Year: 2010s`, not a dimension with no answer (R23.1 §2).
+                activeNames: active.map { $0.label(in: filter) }
+            )
+        )
         .accessibilityHint(MapFilterCopy.moreHint)
     }
 
-    /// What is behind the control: `MapExtraFilter.allCases`, and nothing written out by hand.
+    /// What is behind the control: `MapExtraFilter.allCases`, and nothing written out by hand —
+    /// the `ForEach` is over the cases, and the switch below only says which *control* draws each
+    /// one, because `year` is a value chosen from a menu and `favorites` is a toggle (#145).
     ///
     /// It takes the search bar's own capsule fill rather than a new surface, for `MapFilterStatus`'s
     /// reason — it is another block of chrome in the same strip, and screen 01 has enough kinds of
@@ -118,7 +144,14 @@ struct MapFilterChips: View {
     private var drawer: some View {
         FlowRow(spacing: MapLayout.chipGap, lineSpacing: MapLayout.chipGap) {
             ForEach(MapExtraFilter.allCases) { extra in
-                chip(extra.label, isOn: extra.isOn(filter)) { extra.toggle(in: &filter) }
+                switch extra {
+                case .favorites:
+                    chip(extra.label(in: filter), isOn: extra.isOn(filter)) {
+                        MapExtraFilter.toggleFavorites(in: &filter)
+                    }
+                case .year:
+                    yearChip
+                }
             }
         }
         .padding(.vertical, CypressSpacing.Component.chipPaddingVFilter)
@@ -135,10 +168,13 @@ struct MapFilterChips: View {
         .accessibilityLabel(MapFilterCopy.moreLabel)
     }
 
-    /// The one chip that carries a value rather than a state.
+    /// The one chip that carries a value rather than a state. **In the drawer since #145** — the
+    /// owner cut the visible row to `Yours · In bloom · Needs care`, so the decade lives behind
+    /// `More filters` beside `Favorites`, and R23.1's three channels are what keep a decade set
+    /// behind a shut control from narrowing the map invisibly.
     ///
     /// A `Menu` rather than a sixth and seventh chip per decade: five decades plus `Any year` is
-    /// five more capsules on a row already carrying five, over a map. The menu is the system's own,
+    /// five more capsules over a map. The menu is the system's own,
     /// which means it is already a ≥44 pt target list, already Dynamic Type correct, and already
     /// dismissible by the gesture readers expect — none of which a hand-drawn popover over MapKit
     /// would be. It draws no SF Symbol: the label carries the chosen decade in words
@@ -168,6 +204,50 @@ struct MapFilterChips: View {
             // The fill and the weight say "on" and neither reaches a listener, so the state travels
             // as a value the way `MapRecentreButton`'s engagement does.
             .accessibilityValue(MapFilterCopy.chipValue(isOn: isOn))
+    }
+
+    /// **A condition chip that cannot match any tree anywhere** (task #136, RULINGS R31).
+    ///
+    /// Still visible, still in the row, never enabled-looking: the label stays so the vocabulary of
+    /// the row does not shift under the reader, and the reason lives **on the chip's own surface** —
+    /// drawn under the label, and spoken as the chip's `accessibilityValue`, so both channels get
+    /// the same sentence. The tap is never spent: a disabled control cannot reach the E126 card,
+    /// which would only repeat what the chip already says.
+    ///
+    /// It is a disabled `Button` rather than a static label so the element keeps its button-ness
+    /// and gains the system's dimmed state, which is how an assistive technology says "a control,
+    /// currently not one" — the same two facts the muted ink says to a sighted reader.
+    ///
+    /// **The width is fixed, and that is `FlowRow`'s doing.** `FlowRow` measures every child
+    /// unconstrained, so a chip holding a sentence would take the sentence's one-line width and
+    /// hang off the phone — E183's M10, the exact defect `testTheFilterRowWrapsAndStaysOnThePhoneAtAX5`
+    /// exists to catch. A fixed width makes the measured size the drawn size, and the sentence
+    /// wraps inside it at every type size.
+    private func unavailableConditionChip(_ condition: MapFilter.Condition) -> some View {
+        let reason = MapFilterCopy.conditionUnavailableReason(condition, availability: availability)
+        return Button {} label: {
+            VStack(alignment: .leading, spacing: MapLayout.cardMetaTop) {
+                Text(condition.label)
+                    .font(CypressFont.body13)
+                    .foregroundStyle(CypressColor.textMuted)
+                Text(reason)
+                    .font(CypressFont.body12)
+                    .foregroundStyle(CypressColor.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(width: MapLayout.unavailableChipWidth, alignment: .leading)
+            .padding(.vertical, CypressSpacing.Component.chipPaddingVFilter)
+            .padding(.horizontal, CypressSpacing.Component.chipPaddingHFilter)
+            .background {
+                RoundedRectangle(cornerRadius: CypressRadius.cardSm, style: .continuous)
+                    .fill(CypressColor.searchFill)
+            }
+            .cypressBorder(CypressColor.searchBorder, radius: CypressRadius.cardSm)
+        }
+        .buttonStyle(.plain)
+        .disabled(true)
+        .accessibilityLabel(condition.label)
+        .accessibilityValue(reason)
     }
 }
 

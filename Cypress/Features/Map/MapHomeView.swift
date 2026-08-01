@@ -153,6 +153,10 @@ struct MapHomeView: View {
             // Off unless `CYPRESS_MAP_PROBE=1` is in the environment. See `MapFrameProbe`.
             MapFrameProbe.shared.start()
             #endif
+            // Once per appearance, before the fetch: whether the condition chips could match
+            // anything at all (R31). Returning to this screen is exactly when the answer can have
+            // moved — the writes that change it happen elsewhere.
+            await model.refreshConditionAvailability()
             await model.fetch()
         }
         // The wait, timed. Restarted whenever *what* is being waited for changes, and cancelled
@@ -288,7 +292,7 @@ struct MapHomeView: View {
                             searchFocused = false
                         }
                     }
-                    MapFilterChips(filter: $model.filter)
+                    MapFilterChips(filter: $model.filter, availability: model.conditionAvailability)
                     // Below the chips, so the C20 → chips order the accessibility tests walk is
                     // exactly as it was. Draws nothing unless the search has something to say.
                     MapSearchStatus(search: model.search)
