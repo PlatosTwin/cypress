@@ -944,7 +944,10 @@ negotiable:
 - **`Needs care` and `In bloom` keep their places** inside the conjunction. They are the mock's own and
   they still mean what they meant. `In bloom` still matches nothing, because every `seasonal` in the
   shipped seed is `{}` and inventing bloom months is what BUILD-PLAN §15 forbids — that was already
-  true and this ruling does not change it.
+  true and this ruling does not change it. *(→ Stale as of E189: the seed this bullet measured has
+  been replaced, and 511 of 569 species now carry seasonal data. The bullet's reasoning stands; its
+  factual claim about the seed does not. `MapConditionAvailability` now asks the seed instead of a
+  document.)*
 
 `membership` is single-select *within itself*: `Yours ∩ Favourites` is a set so small and so
 unmotivated that offering it would be a control nobody wants. Tapping the other one swaps.
@@ -1932,7 +1935,9 @@ a different door. That is exactly why the collapsed chip has to say that somethi
 - **What goes in the control next.** It is an extension point; nothing is queued for it. The species
   dimension is specifically *not* a candidate (§2 of R23).
 - **Whether `In bloom` and `Needs care` should survive at all.** Both match nothing in the shipped seed
-  — `In bloom` because every `seasonal` is `{}` (R23 already says so), and `Needs care` because
+  *(→ half stale as of E189: `In bloom` now matches for nine months of the year against the current
+  seed; `Needs care` remains exactly as written)* — `In bloom` because every `seasonal` is `{}` (R23
+  already says so, and is stale the same way), and `Needs care` because
   `MapPinKind.needsCare` is `status == .declining` and the seed carries only `alive` (174,425) and
   `vacant_site` (24,200). R23 left the first open on the grounds that the curated species pipeline is
   what fixes it. The second is the same shape of question and the owner has just re-confirmed both
@@ -2011,6 +2016,17 @@ decides: what a chip does during the time it cannot possibly match, which for bo
 now. Every `seasonal` value in the seed is `{}`, and the seed's only statuses are `alive` and
 `vacant_site` (R23.1's findings). A chip whose only possible outcome is E126's apology card is
 #59's defect wearing filter clothes: a control that promises and cannot deliver.
+
+> **Correction at implementation (E189).** The premise this ruling inherited from R23 had expired:
+> the current seed carries seasonal data on 511 of 569 species, so `In bloom` is not impossible —
+> it is *seasonal*, live nine months of the year and dead three. The ruling's mechanism survives
+> intact and gains a case: availability is asked of the store per month (`MapConditionAvailability`),
+> and the disabled chip now speaks **three** sentences, not two — the debt sentence only when no
+> calendar exists at all, an out-of-season sentence when the calendars are merely quiet, and the
+> invitation for `Needs care`, which is exactly as this ruling described. The self-enable clause
+> ("the data's arrival is the switch") turned out to be the whole design; the two-sentence framing
+> was the part written from a stale document. Four documents carried the expired claim — this is
+> the row-for-row lesson from the postmortem, in the rulings themselves.
 
 **Decision: the chips render enabled-looking never; they render disabled with the reason on the
 chip's own surface, and the two reasons are different sentences, because the two waits are

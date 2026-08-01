@@ -11176,3 +11176,232 @@ frame to the screen's pixel grid before comparing. Lowering the constant is not 
 
 Until it lands, a full-suite run on the 16e reports exactly this one failure; the unit suite
 (966 tests, 91 suites) and every other UI test pass.
+
+### E188 — Year moves behind the expandable control, and the impossible chips carry their reasons (tasks #145, #136)
+
+## #145 — the row is the owner's three
+
+Owner directive: the visible row is `Yours · In bloom · Needs care`; `Year` joins `Favorites` in
+the expandable control. This supersedes R23.1's drawn row (`Yours · In bloom · Needs care · Year ▾
+· More filters`) the way R23.1 superseded R23 §1's — the substance R23.1 argued is untouched and
+now covers one more narrowing:
+
+- `MapExtraFilter` grew a `year` case. The guard channels (`MapFilter.activeExtras` → collapsed
+  count, fill, spoken value) reach it through the same single expression, so a decade set behind a
+  shut control announces itself: `Collapsed, on: Year: 2010s`. The case's `label(in:)` carries the
+  decade because the spoken value is the only channel a listener has while the drawer is shut.
+- The drawer stopped assuming its contents are toggles: `year` is a value chosen from a menu, so
+  the uniform `toggle(in:)` is gone; each case declares `isOn`/`label(in:)` and the drawer switch
+  says which control draws it. `MapFilterCopy.moreValue` now takes names, not cases.
+- The year chip's own contract (Menu, `Any year` value, decade label, E175 caveat) moved intact.
+
+## #136 — R31 implemented, with one honest addition
+
+The condition chips render disabled with the reason on the chip's surface (drawn under the label,
+spoken as the chip's `accessibilityValue`), never spending a tap on the E126 card; each enables
+itself when matching data exists (`MapConditionAvailability`, read once per appearance). The final
+copy, drafted per R31's delegation, in R23 §6's register (em dashes unspaced, §5.7):
+
+- `In bloom`, calendars missing (R31's debt): *"Our bloom calendars are still being written—no
+  tree can match this yet."*
+- `In bloom`, calendars present but nothing blooms this month (the state the seed measurement
+  added — see the companion pending entry on the refuted `{}` premise): *"Nothing on the map is in
+  its bloom months right now—this comes back when something is."*
+- `Needs care` (the invitation): *"No one has reported a struggling tree yet—yours could be the
+  first."*
+
+The disabled chip is a fixed-width control (`MapLayout.unavailableChipWidth`) because `FlowRow`
+measures children unconstrained and a sentence-bearing chip would otherwise hang off the phone —
+E183's M10 by construction.
+
+## Test changes
+
+- `MapFilterAccessibilityTests` rewritten to the new arrangement. The file lost its machine-stable
+  map-emptier: `In bloom` cannot be tapped while disabled and is *enabled* most of the year, so
+  the empty-state tests drive `Favorites` through the drawer and guard-skip (announced) on a
+  device that has favorites. `Needs care` is the stable R31 witness — disabled on every machine.
+- `MapSuggestionUITests.testTheChipsUnderTheListAreNotCoveredButReachable` watches `Yours` instead
+  of `In bloom` for the same month-dependence reason.
+- Unit: `MapConditionAvailabilityTests` (availability pins, injected-data flips, copy-fact tests
+  under R30's rule), plus the `MapFilterTests` drawer tests updated. Mutations M-A (year label
+  drops its decade) and M-B (availability ignores overrides) each produced a distinct red.
+
+### E189 — The seed carries bloom calendars, and four documents say it cannot (found under task #136)
+
+## The premise, and where it is written
+
+R23 ("`In bloom` still matches nothing, because every `seasonal` in the shipped seed is `{}`"),
+R23.1 (repeats it under "deliberately not decided"), R31 ("Every `seasonal` value in the seed is
+`{}` … which for both chips is right now"), E183 §5 (records the same for `Needs care` and leans on
+R23's sentence for `In bloom`), and `SeasonalWindowTests`' header ("every `seasonal` in the shipped
+seed is empty") all state that no species carries seasonal data.
+
+## The measurement
+
+Against the seed this build ships (`cypress-seed.sqlite`, md5 `815ed501445e6f188cc7898e6b2901cb`,
+identical in the main checkout's `Cypress/Resources/` and `Fixtures/seed/`):
+
+- **511 of 569 species carry a non-empty `seasonal` JSON**; 11 carry non-empty `bloom_months`.
+- Trees standing under a species whose calendar names the month, `deleted_at IS NULL`:
+  Jan 5,513 · Feb 27,531 · Mar 28,235 · Apr 16,701 · May 14,608 · Jun 14,608 · **Jul 17,080** ·
+  Aug 2,472 · Sep 2,472 · **Oct–Dec 0**.
+
+So `In bloom` is not "impossible until the curated pipeline lands". It is **seasonal**: live nine
+months of the year against this seed, dead the other three. `Needs care` is exactly as recorded —
+the only statuses are `alive` (174,425) and `vacant_site` (24,200).
+
+## What #136 built against the corrected premise
+
+- `MapConditionAvailability` (new `CypressAPI` read) answers "could this chip match anything at
+  all", per month, from the store — R31's "the data's arrival is the switch", which now switches
+  `In bloom` with the seasons as well as with the pipeline.
+- The availability carries `hasAnyBloomCalendar`, because `inBloom == false` is two different
+  facts, and the disabled chip's sentence must not claim the calendars are unwritten when they are
+  merely out of season. Three sentences ship: R31's debt sentence (no calendars), an out-of-season
+  sentence (calendars, no bloom this month), and the invitation for `Needs care`.
+- `CypressTests/MapConditionAvailabilityTests` pins the seed facts (July blooms, November does
+  not, `needsCare` never) the way `MapYearFilterCopy.undatedShareOfSeed` pins coverage, so a
+  re-ingest that moves the calendars fails loudly.
+
+## What should be corrected at merge
+
+R23 / R23.1 / R31's "every seasonal is `{}`" sentences are stale as statements about the present
+seed (they may have been true of an earlier build; nothing in git tracks the binary, so when the
+calendars arrived is not recoverable from history). `SeasonalWindowTests`' header sentence
+likewise. None of these were edited from this branch — rulings are amended only by the
+orchestrator, and the one amendment granted to this branch was R25 §1 (#143).
+
+### E190 — A deliberate pan died at the Journal tab, and the one-shot was re-arming itself (task #128)
+
+## The mechanism, verified (the ticket's suspicion was right, and it was only half the story)
+
+`RootView` builds each tab root on a `switch`, so Map → Journal → Map destroys `MapHomeView` and
+remakes it. Two things died with it:
+
+1. **`hasCentredOnUser` (@State) re-armed** — the ticket's suspected mechanism, confirmed in code.
+   The remade screen re-ran the one-shot fly-to-you over whatever camera the reader had, which is
+   closed ticket #85's defect arriving through the tab bar. E168's `Coordinator.echo` fix never
+   covered this: that was about camera *writes* landing, not about a one-shot re-arming.
+2. **The opening `@State` re-read `MapCameraMemory.remembered`** — which is frozen at launch *by
+   design* ("where you left the map last time" must not drift as the reader pans). So even with no
+   fix and no one-shot, a within-session pan reopened on last launch's camera. The plain
+   tab-switch-lands-correctly observation in the ticket holds only because an untouched camera and
+   the re-centred one coincide.
+
+## The fix, on the seam the brief named
+
+`MapCameraMemory` (session-scoped, in-memory, survives the identity reset) grew two facts:
+
+- **`sessionSnapshot`** — the camera the reader left screen 01 on this session, written by the
+  same `note()` the persistence path uses, behind the same `isWorthRemembering` gate (the seam
+  E168 verification proved). `openingSnapshot` = session ?? launch, and the remade screen opens on
+  it.
+- **`readerMovedCamera`** — set by a pan or pinch that *began on the glass*, observed by two
+  additive gesture recognizers on the `MKMapView` (`cancelsTouchesInView = false`, simultaneous
+  recognition). Never set by comparing camera values — E140 established no such comparison can
+  tell a reader's move from a stale update pass. The one-shot consults it: a camera the reader
+  deliberately moved is theirs; a camera they never touched may still centre on them (#115's
+  promise kept — the flag is per-process, so a relaunch still opens on the reader).
+
+No re-centre on appearance was added anywhere; the one-shot still fires at most once per process
+unless the reader has claimed the camera, in which case never.
+
+## Tests
+
+- Unit: `MapOpeningCameraTests` — session-beats-launch precedence (and `remembered` still frozen),
+  `isWorthRemembering` gating the session snapshot, flag lifecycle. Mutation M-D (note() stops
+  writing the session snapshot) went red saying the right thing.
+- UI: `MapPanTabSwitchUITests`, both directions, witnessing the camera through the recentre
+  control's accessibility value (`MapCentredStateUITests`' technique, fixless-skips included):
+  a pan survives Journal-and-back (held open 8 s so a re-arming one-shot would hang itself), and
+  an untouched camera still centres after the round trip.
+
+### E191 — The location dot jumped between fixes and hid under the pins (tasks #149, #150)
+
+## #149 — the glide
+
+`Coordinator.syncUserDot` wrote the new fix straight into the annotation's KVO'd `coordinate`, so
+the view moved in one frame: a walking reader's dot teleported a few metres once a second. The fix
+wraps the same write in a `UIView` animation — `MKMapView`'s own mechanism for interpolating an
+annotation between coordinates, on the render server, inside #75's architecture. One object, one
+view, zero SwiftUI passes: nothing per-update touches observable state, so the E139
+~50-sessions-a-second class stays dead (the existing "an update that changes nothing costs
+nothing" contract in `updateUIView` is untouched).
+
+Three deliberate non-glides: the first fix (nothing to glide from), Reduce Motion (the position is
+the answer, not the delivery — `applyCameraIfChanged`'s own rule), and a jump past
+`MapLayout.userDotSnapDegrees` (~1 km): a teleport animated at 1 km/s would claim a journey that
+never happened. Duration is `MapLayout.userDotGlideSeconds` (1 s, linear) to match CoreLocation's
+~1 Hz cadence.
+
+**Verified on the simulator with a moving `simctl location start` scenario, measured rather than
+eyeballed**: an east–west pass at 15 m/s with fixes at 1 Hz, screenshotted every 0.33 s, put the
+dot's measured centre at x = 8 → 100 → 198 px across three consecutive frames — continuous
+intermediate positions between fixes, where a snapping dot would have held one x for two of any
+three frames and jumped ~150 px once a second. The dot also survived a 90-second scenario with
+the tree card's distance line updating live. **Device verification is still owed** — E139 stands
+as the warning that map-performance conclusions from the simulator are historically wrong, so the
+glide's cost and feel need the owner's phone before this is called done-done.
+
+## #150 — the z-order
+
+`MapMarkerView.apply` gave the dot `zPriority = .min` — under every tree pin — so on any dense
+block the reader's own position vanished. The ordering is now three named tiers on `MapLayout`,
+declared together so call sites cannot disagree:
+
+- `userDotZPriority = .max` — the dot, topmost, above the selected pin's #89 emphasis too. It is
+  small, single, and `isEnabled == false` (it steals no taps from the pins beneath it).
+- `selectedPinZPriority = 750` — above every unselected neighbour (the reticle must not be
+  half-covered, #89), below the dot.
+- `pinZPriority = .defaultUnselected` — everything else, and the `prepareForReuse` floor.
+
+Asserted structurally — the layer exposes `zPriority` — in
+`MapMarkerRenderingTests.userDotIsTopmost` (dot > selected > unselected, reuse resets); mutation
+M-C (dot back to `.min`) went red saying the right thing. Screenshot with the fix placed on a seed
+tree's own coordinates is in the branch report.
+
+### E192 — The swipe order is declared with sort priorities, and the instrument that "measured" it cannot see them (task #143)
+
+## The fix
+
+Screen 01's chrome now carries explicit `accessibilitySortPriority` values (the ticket's named
+mechanism): the top block over the bottom block over the tab bar; within the top block the field
+(6), the suggestion list (5), the chips (4), the search status (3), the filter status (2), the
+legend (1). R25 §1's text is amended in place on the same branch. The row the priorities pin is
+#145's (`Yours · In bloom · Needs care · More filters`).
+
+## The finding: `app.buttons` order is XCUITest's, not a listener's
+
+The swipe-order test the ticket asked for was written against E183 §3's own instrument — the order
+`app.buttons.allElementsBoundByIndex` returns — and proved red against the pre-fix tree. Against
+the fixed tree it returned the **identical 24-element order**. Two further instrumented runs:
+
+- Wrapping the sorted siblings in `.accessibilityElement(children: .contain)` *does* change the
+  enumeration (the channel sees structure), but not to the priority order — and the contained
+  block's children enumerated ✕ → chips → suggestions against both declaration order and
+  priorities.
+- Forcing the container to rebuild when the list appears (`.id` keyed on focus) hangs
+  `typeText`'s run loop for 30 s. Reverted.
+
+The enumeration also violates the view hierarchy (elements of one VStack enumerate on both sides
+of a different ZStack sibling), geometry, and creation order — it is an XCTest-internal traversal,
+insensitive to `accessibilitySortPriority`, and therefore not a proxy for VoiceOver's reading
+order in either direction.
+
+Two consequences worth recording:
+
+1. **E183 §3 should be read as a fact about XCUITest enumeration, not about the swipe order.** Its
+   own listing contradicts its prose — `Clear search` precedes the four tabs in the measured
+   array quoted there. The defect it pointed at was real in kind (nothing declared the reading
+   order), but the specific sequence it printed is the instrument's.
+2. **No test in `CypressUITests` may assert reading order through `app.buttons` indices.** The
+   comment block left in `MapFilterAccessibilityTests` (where the deleted test stood) says so, on
+   E183 §4's precedent: a sentence about XCUITest must not ship as a sentence about the app.
+
+## The debt
+
+`accessibilitySortPriority` ships on Apple's documented contract ("higher priorities are sorted
+first", relative to same-level elements). **Verification is owed on the physical phone with
+VoiceOver on** — swipe forward from the search field with the list open and confirm field → ✕ →
+suggestions → chips → status → legend → bottom chrome → tabs. Flag for the owner's device pass
+alongside #149's glide.

@@ -11,8 +11,10 @@ import Testing
 /// rows in January, a month the authored calendar says the tree is still in leaf, with no override
 /// available to a rater standing in front of it (ERRATA E33).
 ///
-/// Latent today — every `seasonal` in the shipped seed is empty — so these are the tests that stand
-/// in for content that has not landed yet.
+/// No longer latent: the current seed carries seasonal data on 511 of 569 species (E189), so these
+/// windows run against real calendars. The sentence that used to stand here — "every `seasonal` in
+/// the shipped seed is empty" — was true of an earlier seed and aged into a false comment (E189
+/// records the correction; `MapConditionAvailabilityTests` pins the live facts).
 @Suite("Seasonal windows")
 struct SeasonalWindowTests {
 
