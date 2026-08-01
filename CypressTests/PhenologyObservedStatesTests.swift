@@ -21,6 +21,7 @@
 //
 
 import Foundation
+import SwiftUI
 import Testing
 @testable import Cypress
 
@@ -151,5 +152,74 @@ struct PhenologyObservedStatesTests {
     @Test("no species record still means no chip row — the one gate left untouched")
     func nilSpeciesStillOffersNothing() {
         #expect(VisitPhenologyVocabulary.tags(for: nil).isEmpty)
+    }
+
+    /// `VisitGates.phenologyVocabulary()` had no caller anywhere in the repository — a gate that
+    /// has never run is not a gate, by this project's own line. Wired in here, where its subject
+    /// now lives.
+    @Test("the framework-free phenology gate runs, and agrees")
+    func visitGateRunsAndPasses() async throws {
+        let failures = try await VisitGates.phenologyVocabulary()
+        #expect(failures.isEmpty, "\(failures.count) gate failures:\n\(failures.joined(separator: "\n"))")
+    }
+}
+
+// MARK: - Photographed
+
+/// Screen 04's tray, photographed in the states #151 changed — the uncurated Cassia that had no
+/// row at all — and the states that must not have moved: the curated London Plane's full row and
+/// the no-species tray, which still draws none.
+@MainActor
+@Suite("Observed-state chips · photographed (#151)")
+struct PhenologyObservedStatesShots {
+
+    /// The tray over a given species record, through the same preview double the camera's own
+    /// fixtures use. The simulator has no camera, so the viewfinder is the designed placeholder;
+    /// the subject here is the tray below it.
+    private static func camera(species: Species?, displayName: String) -> VisitCameraView {
+        VisitCameraView(
+            treeID: VisitPreviewFixtures.cypress.id,
+            treeDisplayName: displayName,
+            gpsAccuracyM: { 9 },
+            api: VisitPreviewAPI(
+                profile: TreeProfile(tree: VisitPreviewFixtures.cypress, species: species)
+            ),
+            outbox: VisitPreviewFixtures.outbox(),
+            attribution: VisitPreviewFixtures.attribution,
+            onSaved: { _ in },
+            onClose: {}
+        )
+    }
+
+    @Test("the tray for sf/222615's species, a curated control, and the no-species state")
+    func photograph() async throws {
+        print("SHOT DIR \(ScreenSweepShots.outputDirectory.path)")
+
+        // The report: an uncurated species, empty calendar. Before #151 this tray had no chip row.
+        let cassia = try PhenologyObservedStatesTests.goldMedallion()
+        #expect(await ScreenSweepShots.pair("n151-1-camera-cassia-222615") {
+            Self.camera(species: cassia, displayName: "Gold Medallion Tree")
+        })
+
+        // The control: a curated deciduous species with a full calendar — the row it always had,
+        // in the order it always had it.
+        let plane = try Species(
+            scientificName: "Platanus × acerifolia",
+            commonName: "London Plane",
+            leafRetention: .deciduous,
+            seasonal: SeasonalCalendar(
+                bloomMonths: [4, 5], fallColorMonths: [10, 11],
+                fruitMonths: [9, 10], newGrowthMonths: [3, 4]
+            ),
+            curated: true
+        )
+        #expect(await ScreenSweepShots.pair("n151-2-camera-london-plane") {
+            Self.camera(species: plane, displayName: "London Plane")
+        })
+
+        // The gate left standing: no species record, no row.
+        #expect(await ScreenSweepShots.pair("n151-3-camera-no-species") {
+            Self.camera(species: nil, displayName: "Tree")
+        })
     }
 }

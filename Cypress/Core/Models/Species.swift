@@ -248,25 +248,30 @@ public struct Species: CoreEntity {
 }
 
 extension Species {
-    /// The phenology events this species may legitimately surface (D5).
+    /// The phenology states an observer may report against this species.
     ///
-    /// Fall colour is absent for evergreens by construction, so a chip set built from this
-    /// property cannot show "Fall color starting!" on a Monterey Cypress.
+    /// **A tag here is the observer's report of what is in front of them, not the app's claim
+    /// about the species** (see docs/rulings-pending/observed-states-not-gated.md, #151). The
+    /// species record — its calendar, its curation, its habit — may order or hint, but it never
+    /// gates what a person standing at the tree is allowed to say they see. The one exclusion is
+    /// D5's, and it stands because it is a *sourced fact*: a species known to be evergreen is
+    /// never asked about fall colour or bare, since either tag would contradict the record rather
+    /// than inform it (DECISIONS §3.14, and the schema CHECK behind it).
     ///
-    /// **Unknown habit yields the empty set** (ERRATA E9). Every remaining tag — even `fullLeaf`,
-    /// which looks harmless — is a claim about what this tree does over a year, and the whole
-    /// vocabulary hangs off an attribute nobody has established. The long tail already renders
-    /// "name, family, and a generic silhouette" and nothing else (BUILD-PLAN §8); an unsourced
-    /// species gets the same treatment rather than a partial vocabulary.
+    /// An **unknown habit therefore yields the full set**, not the empty one it used to (the old
+    /// reading of ERRATA E9). Withholding `fallColor` from an unsourced species would itself
+    /// assert "this is an evergreen" — precisely the unsourced claim E9 exists to prevent. E9's
+    /// real subject — the APP's own phenology surfaces (screen 07's section, the season strip) —
+    /// still renders nothing for an unknown habit; that is `SpeciesPresentation.showsPhenology`
+    /// and `FoliageStrip.enforcingD5`, not this property.
     public var availablePhenologyTags: Set<PhenologyTag> {
-        guard let leafRetention else { return [] }
         var tags: Set<PhenologyTag> = [.fullLeaf, .flowering, .fruiting, .leafOut]
-        if leafRetention.canShowFallColor {
+        // `!= false`, deliberately: only a *known* evergreen excludes. `nil` is "nobody sourced
+        // the habit", and an exclusion needs a fact.
+        if leafRetention?.canShowFallColor != false {
             tags.insert(.fallColor)
             tags.insert(.bare)
         }
-        if !seasonal.bloomMonths.isEmpty { tags.insert(.flowering) }
-        if !seasonal.fruitMonths.isEmpty { tags.insert(.fruiting) }
         return tags
     }
 

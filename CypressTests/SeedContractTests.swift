@@ -94,10 +94,12 @@ struct SeedContractTests {
             curated: true
         )
 
-        // No phenology chip, anywhere: not fall colour, not a neutral one. What the chip row and
-        // the season strip then do with an empty vocabulary is checked in `VisitGates`.
-        #expect(unknown.availablePhenologyTags.isEmpty)
-        #expect(PhenologyTag.validated(PhenologyTag.allCases, for: unknown).isEmpty)
+        // The APP still asserts nothing for an unknown habit — no habit chip, no season strip
+        // (checked in `VisitGates` and `SpeciesPresentationTests`). But the OBSERVER's vocabulary
+        // is no longer emptied by the gap (#151, docs/rulings-pending/observed-states-not-gated.md):
+        // excluding fall colour would itself claim "evergreen", which nobody sourced.
+        #expect(unknown.availablePhenologyTags == Set(PhenologyTag.allCases))
+        #expect(PhenologyTag.validated(PhenologyTag.allCases, for: unknown) == PhenologyTag.allCases)
 
         // No leaf-on window to state, and therefore no month in which the vitality UI is
         // suppressed — suppression asserts the tree is out of leaf, which nobody established.
