@@ -15,10 +15,11 @@
 //  - **The label does not change.** `Favorite` in both states, because it is a noun naming the
 //    thing rather than a verb naming the next tap. `Unfavorite` under the same cell is how a
 //    control starts lying about what it is.
-//  - **The state is not carried by colour alone.** The selected cell takes an accent label *and* a
-//    heavier border *and* a heavier weight, and it announces itself through `.isSelected` and a
-//    spoken value. A toggle whose on-state is a hue fails for anyone who cannot see the hue, and
-//    ERRATA E103 is this app's own record of a state that reached nobody.
+//  - **The state is not carried by colour alone.** The selected cell inverts to the accent fill
+//    under the accent's own label colour (task #153) *and* takes a heavier border *and* a heavier
+//    weight, and it announces itself through `.isSelected` and a spoken value. A toggle whose
+//    on-state is a hue fails for anyone who cannot see the hue, and ERRATA E103 is this app's own
+//    record of a state that reached nobody.
 //
 //  Tap targets: a cell is ~31pt tall as drawn (`padding:9px 2px` + a 12pt label). The cell keeps
 //  that size; `.cypressHitArea()` gives it 44pt.
@@ -143,30 +144,34 @@ struct QuadActionRow: View {
     /// The idle cell is SCREENS.md §2 C8 verbatim: white card, `border.cool` hairline, 12/600
     /// `text.body`.
     ///
-    /// The selected cell is RULINGS R2, minus one clause it could not have. R2 says "the heart
-    /// glyph fills, glyph and label take `accent`, the card fill takes the same tinted surface a
-    /// selected filter chip takes". **There is no heart glyph to fill**: §2 C8 marks the four icons
-    /// NOT SPECIFIED and §5 gap 3 repeats it, so this row has never drawn one, and inventing a
-    /// heart for one of four text cells is a drawn decision (DECISIONS constraint 21) on the very
-    /// component R2 is careful to treat as already-drawn. The day design lands the four icons, the
-    /// filled/outline pair is one line here. See ERRATA (E112).
+    /// The selected cell is RULINGS R2, minus one clause it could not have. R2 says the label and
+    /// border take `accent` and the label does not change. **There is no heart glyph to fill**:
+    /// §2 C8 marks the four icons NOT SPECIFIED and §5 gap 3 repeats it, so this row has never
+    /// drawn one, and inventing a heart for one of four text cells is a drawn decision (DECISIONS
+    /// constraint 21) on the very component R2 is careful to treat as already-drawn. The day
+    /// design lands the four icons, the filled/outline pair is one line here. See ERRATA (E112).
     ///
-    /// What is left carries the state in three channels rather than one:
+    /// **The fill inverts, since task #153.** E112 built R2's "tinted surface" clause as
+    /// `callout.green.fill`, and the owner reported the result from a device walk as no state at
+    /// all: pale green against the idle white, with the label moving between two dark greens, is a
+    /// difference a screen indoors can show and a phone in daylight cannot. The selected cell now
+    /// takes the treatment the app's other selected text control already has — C4's selected
+    /// filter chip: `cta.fill` under `cta.label` — so "this tree is yours" reads at the same
+    /// strength as "this filter is on". Tokens only, no glyph; see
+    /// docs/rulings-pending/favorite-on-state-contrast.md until the ruling is numbered.
     ///
-    /// - **fill** — `callout.green.fill`, the app's existing tinted green surface, which C14 and
-    ///   C4's sanity pill already sit on. No new token; R2's "rather than inventing a fill" is the
-    ///   whole instruction.
-    /// - **label and border** — `cta.fill`, the accent, which is what "takes `accent`" resolves to
-    ///   in a palette whose accent role token is `ctaFill` (`CypressColor` §1.1: the scheme-
-    ///   dependent roles are `ctaFill`, `pinFill`, `selectionFill`, `accentAmber`).
-    /// - **border width and weight** — `hairlineStrong` and 12/800 against `hairline` and 12/600.
-    ///   These are the channels that survive greyscale, and they are why this state does not fail
-    ///   the way E103's did.
+    /// The state still carries in more channels than hue:
+    ///
+    /// - **fill and label** — `cta.fill` under `cta.label`, the selected-filter-chip pair, which
+    ///   inverts the cell's luminance in both schemes. That inversion is itself a channel that
+    ///   survives greyscale, which the old tinted surface was not.
+    /// - **border width and weight** — `hairlineStrong` and 12/800 against `hairline` and 12/600,
+    ///   unchanged from E112. These are why this state does not fail the way E103's did.
     static func appearance(isSelected: Bool) -> Appearance {
         isSelected
             ? Appearance(
-                fill: CypressColor.calloutGreenFill,
-                label: CypressColor.ctaFill,
+                fill: CypressColor.ctaFill,
+                label: CypressColor.ctaLabel,
                 border: CypressColor.ctaFill,
                 borderWidth: CypressSpacing.Component.hairlineStrong,
                 font: CypressFont.body12ExtraBold
