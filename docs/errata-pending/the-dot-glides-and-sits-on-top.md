@@ -18,10 +18,14 @@ the answer, not the delivery — `applyCameraIfChanged`'s own rule), and a jump 
 never happened. Duration is `MapLayout.userDotGlideSeconds` (1 s, linear) to match CoreLocation's
 ~1 Hz cadence.
 
-**Verified on the simulator with a moving `simctl location start` scenario; device verification is
-still owed** — E139 stands as the warning that map-performance conclusions from the simulator are
-historically wrong, so the glide's cost and feel need the owner's phone before this is called
-done-done.
+**Verified on the simulator with a moving `simctl location start` scenario, measured rather than
+eyeballed**: an east–west pass at 15 m/s with fixes at 1 Hz, screenshotted every 0.33 s, put the
+dot's measured centre at x = 8 → 100 → 198 px across three consecutive frames — continuous
+intermediate positions between fixes, where a snapping dot would have held one x for two of any
+three frames and jumped ~150 px once a second. The dot also survived a 90-second scenario with
+the tree card's distance line updating live. **Device verification is still owed** — E139 stands
+as the warning that map-performance conclusions from the simulator are historically wrong, so the
+glide's cost and feel need the owner's phone before this is called done-done.
 
 ## #150 — the z-order
 
