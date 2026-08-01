@@ -34,10 +34,10 @@ struct CareLogDraft: Hashable {
     /// independent; ordering for the record comes from `orderedActions`.
     var actions: Set<CareAction> = []
 
-    /// 09 §5's optional well covers "Photo or note". The well is drawn and no editor behind it is
-    /// specified, so nothing in the view sets these two — the same gap screen 05's well has
-    /// (ERRATA E25). They are carried here rather than bolted on later because `CareEvent` already
-    /// takes both and the writer's shape is what a picker would have to satisfy.
+    /// 09 §5's optional well covers "Photo or note". E25 recorded the well drawn with no editor
+    /// behind it; these two were carried here anyway because `CareEvent` already takes both. Since
+    /// task #147 (owner report, 2026-07-31) the well opens into the two fields and the view sets
+    /// both — the writer's shape needed no change, which is what carrying them bought.
     var note: String?
     var photos: [OutboxPhoto] = []
 
@@ -103,8 +103,25 @@ enum CareLogCopy {
     /// 09 §3, verbatim.
     static let subtitle = "Toggle what you did. Thirty seconds, then back to your walk."
 
-    /// 09 §5's well copy, verbatim. Inert, per ERRATA E25.
+    /// 09 §5's well copy, verbatim. A control since task #147 — one tap opens the two fields.
     static let optionalWell = "Photo or note (optional)"
+
+    // ── The opened well (task #147). **NOT SPECIFIED** — 09 draws the well closed, so these
+    // strings are designed here, each stating a fact and stopping (ARCHITECTURE §5.7).
+
+    /// What tapping the well does. A hint, not a relabel: the well is named by its own sentence,
+    /// and R2's rule holds — a control is named for what it is, not for the next tap.
+    static let optionalWellHint = "Opens a note field and a photo picker"
+
+    /// Screen 04's own prompt, verbatim, so "a sentence you may leave" asks the same way on both
+    /// contribution surfaces.
+    static let notePrompt = "Anything worth remembering?"
+
+    static let addPhoto = "Add a photo"
+    /// The fact of the attachment, and nothing about where it will go — the footnote already says
+    /// what this record joins.
+    static let photoAttached = "Photo attached"
+    static let removePhoto = "Remove"
 
     /// 09 §6.
     static let doneCTA = "Done"

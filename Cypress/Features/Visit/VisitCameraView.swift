@@ -431,8 +431,14 @@ struct VisitCameraView: View {
         }
     }
 
+    /// The ✕ asks the model what it means before it acts (task #152): over a captured shot it
+    /// discards that shot and the viewfinder comes back — session, framing selection, note and
+    /// tags intact — and only over the live viewfinder does it leave. `model.closeLabel` keeps the
+    /// spoken name honest about which of the two the next tap is.
     private var closeButton: some View {
-        Button(action: onClose) {
+        Button {
+            if model.performClose() { onClose() }
+        } label: {
             ZStack {
                 Circle().fill(VisitColor.cameraCloseFill)
                 VisitCloseGlyph()
@@ -450,7 +456,7 @@ struct VisitCameraView: View {
         .buttonStyle(.plain)
         .padding(.top, CypressSpacing.Device.statusBarInset)
         .padding(.leading, CypressSpacing.gutter)
-        .accessibilityLabel("Close the camera")
+        .accessibilityLabel(model.closeLabel)
     }
 
     // MARK: - Controls

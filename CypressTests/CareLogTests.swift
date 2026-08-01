@@ -138,4 +138,144 @@ struct CareLogTests {
         )
         #expect(event.note == nil)
     }
+
+    // MARK: - The opened well (task #147)
+    //
+    // Owner report, 2026-07-31: "the care log has a space for photo/note but neither can be
+    // added." Diagnosis: the drawn-but-inert class — E25 recorded the well with no editor behind
+    // it while `CareLogDraft`, the writer and the schema (`care_events.note`, the photo path)
+    // could all carry both the whole time. These tests prove the two fields now reach the record.
+
+    @Test("the note typed behind the well reaches the care event, trimmed")
+    @MainActor
+    func theNoteRoundTrips() async throws {
+        let store = try await CypressStore.inMemory()
+        let photoDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cypress-t147-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: photoDirectory) }
+        let api = LocalAPI(store: store, deviceID: Self.deviceID, photoDirectory: photoDirectory)
+        let outbox = OutboxQueue(queue: store.queue, transport: APIOutboxTransport(api: api))
+        let tree = try await Self.addTree(api: api)
+
+        let model = CareLogModel(
+            treeID: tree.id,
+            api: api,
+            outbox: outbox,
+            attribution: .anonymous(deviceID: Self.deviceID)
+        )
+        model.toggle(.watered)
+        model.isEditingExtras = true
+        model.note = "  Basin was bone dry  "
+        await model.save()
+
+        // The fact is read back off the store, not off the draft: a round trip, not an echo.
+        let events = try await api.treeProfile(id: tree.id).careEvents.items
+        #expect(events.count == 1)
+        #expect(events.first?.note == "Basin was bone dry")
+        #expect(events.first?.actions == [.watered])
+    }
+
+    @Test("the photo picked behind the well rides the outbox and lands on the tree")
+    @MainActor
+    func thePhotoRoundTrips() async throws {
+        let store = try await CypressStore.inMemory()
+        let photoDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cypress-t147-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: photoDirectory) }
+        let api = LocalAPI(store: store, deviceID: Self.deviceID, photoDirectory: photoDirectory)
+        let outbox = OutboxQueue(queue: store.queue, transport: APIOutboxTransport(api: api))
+        let tree = try await Self.addTree(api: api)
+
+        let model = CareLogModel(
+            treeID: tree.id,
+            api: api,
+            outbox: outbox,
+            attribution: .anonymous(deviceID: Self.deviceID)
+        )
+        model.toggle(.mulched)
+        model.attachPhoto(try VisitCameraSessionTests.jpeg(width: 220, height: 160))
+        #expect(model.hasPhoto)
+        await model.save()
+
+        // The photograph is a row on the tree, uploaded — a storage key, a real file — and it is
+        // `.other` with no visit id, which is what distinguishes it from the community-add's own
+        // full-tree photo on this same tree.
+        let photos = try await api.treeProfile(id: tree.id).photos.items
+            .filter { $0.shotType == .other }
+        #expect(photos.count == 1, "the care photo did not land: \(photos.count) rows")
+        let photo = try #require(photos.first)
+        #expect(photo.visitID == nil)
+        let key = try #require(photo.storageKey, "the care photo was never uploaded")
+        let url = photoDirectory.appendingPathComponent((key as NSString).lastPathComponent)
+        #expect(FileManager.default.fileExists(atPath: url.path), "the stored file is missing")
+        let size = try #require(PhotoBinary.pixelSize(atPath: url.path))
+        #expect(size.width == 220 && size.height == 160)
+    }
+
+    @Test("a re-pick replaces the photo, and removing it is a real removal")
+    @MainActor
+    func thePhotoIsReplaceableAndRemovable() async throws {
+        let store = try await CypressStore.inMemory()
+        let queue = OutboxQueue(queue: store.queue, transport: OutboxTestSupport.ScriptedTransport())
+        let model = CareLogModel(
+            treeID: Self.treeID,
+            api: VisitPreviewAPI(),
+            outbox: queue,
+            attribution: .anonymous(deviceID: Self.deviceID)
+        )
+
+        model.attachPhoto(try VisitCameraSessionTests.jpeg(width: 60, height: 60))
+        let firstPath = try #require(model.draft.photos.first?.path)
+        model.attachPhoto(try VisitCameraSessionTests.jpeg(width: 90, height: 90))
+        defer { try? FileManager.default.removeItem(atPath: firstPath) }
+
+        // One photograph, one staged file: the sheet's id names the path, so a second pick
+        // overwrites rather than accumulating staged bytes nobody references.
+        #expect(model.draft.photos.count == 1)
+        #expect(model.draft.photos.first?.path == firstPath)
+        let size = try #require(PhotoBinary.pixelSize(atPath: firstPath))
+        #expect(size.width == 90 && size.height == 90, "the re-pick did not replace the file")
+
+        model.removePhoto()
+        #expect(!model.hasPhoto)
+        #expect(model.draft.photos.isEmpty)
+    }
+
+    @Test("the strings behind the well keep the sheet's own rules")
+    func openedWellCopy() {
+        // The same sweeps the closed sheet's copy passes (ARCHITECTURE §5.4, D1), over the strings
+        // the opened well adds — the failure mode R30 records is a word no test was watching.
+        let everything = [
+            CareLogCopy.optionalWellHint, CareLogCopy.notePrompt,
+            CareLogCopy.addPhoto, CareLogCopy.photoAttached, CareLogCopy.removePhoto,
+        ].joined(separator: " ").lowercased()
+        for forbidden in ["sent to the city", "routed to", "reported to", "notified"] {
+            #expect(everything.contains(forbidden) == false)
+        }
+        for forbidden in ["streak", "points", "rank", "badge", "total"] {
+            #expect(everything.contains(forbidden) == false)
+        }
+        // One vocabulary for "a sentence you may leave": the prompt is screen 04's, verbatim, read
+        // off nothing here because 04's is a literal in its view — this pin is the agreement.
+        #expect(CareLogCopy.notePrompt == "Anything worth remembering?")
+    }
+
+    // MARK: - Fixtures for the round trips
+
+    /// A community tree for the record to hang off — `requireTree` refuses a care event for a tree
+    /// that does not exist, and the in-memory store attaches no seed.
+    @MainActor
+    private static func addTree(api: LocalAPI) async throws -> Tree {
+        try await api.addTree(
+            TreeDraft(
+                coordinate: Coordinate(latitude: 37.7601, longitude: -122.4271),
+                photoLocalPath: try VisitPhotoStaging.write(
+                    try VisitCameraSessionTests.jpeg(width: 32, height: 32),
+                    for: UUID(),
+                    shotType: .fullTree
+                ),
+                attribution: .anonymous(deviceID: Self.deviceID)
+            )
+        )
+    }
 }

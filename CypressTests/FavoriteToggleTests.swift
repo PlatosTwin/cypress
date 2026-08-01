@@ -304,11 +304,16 @@ struct FavoriteToggleTests {
         let off = QuadActionRow.appearance(isSelected: false)
 
         #expect(on != off)
-        // The colour channels, which are R2's own description of the state.
-        #expect(on.label == CypressColor.ctaFill)
-        #expect(on.fill == CypressColor.calloutGreenFill)
+        // The colour channels. Since task #153 the selected cell takes the selected filter chip's
+        // own pair — the accent fill under the accent's label colour — because E112's tinted
+        // surface read as no state at all on a phone in daylight. The facts asserted: the two
+        // fills differ, the two labels differ, and the selected pair is the accent pair.
+        #expect(on.label == CypressColor.ctaLabel)
+        #expect(on.fill == CypressColor.ctaFill)
         #expect(off.fill == CypressColor.surfaceCard)
         #expect(off.label == CypressColor.textBody)
+        #expect(on.fill != off.fill)
+        #expect(on.label != off.label)
         // The two that survive greyscale. ERRATA E103 is this app's record of a state that reached
         // nobody, and a toggle whose on-state is a hue fails the same way for anyone who cannot see
         // the hue.
