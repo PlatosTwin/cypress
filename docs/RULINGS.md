@@ -2186,3 +2186,39 @@ change than #151 requires. Proposed, not done.
 `CypressTests/PhenologyObservedStatesTests.swift` — the reported record (seed `sf/222615`,
 Cassia leptophylla, species row 209) through the real read path, the empty-calendar and
 unknown-habit cases, D5's surviving exclusion, and the seasonal order of a known calendar.
+
+### R36 — local for the slow heavy layer, live for the fast thin layer (owner-ratified architecture)
+
+*Owner, 2026-08-01, ratifying the recommendation in `docs/investigations/api-hosting.md` after
+challenging it — the challenge and its answer are both part of the record.*
+
+D16 says one database, available over an API. This ruling says which parts of it travel which
+way, and it turns on a freshness split the owner's challenge surfaced: **the city layer changes
+at ingest cadence** — a live query API serves rows exactly as old as the last ingest run, the
+same age a published file would be — while **the community layer is the thing that must be live**,
+because the community-review loop means seeing other people's contributions, and no downloaded
+file can show a bloom sighting from an hour ago.
+
+**The architecture:**
+
+- **Base layer — versioned per-city SQLite files** published by the ingest pipeline to object
+  storage with a manifest. The app geolocates, offers the reader's city on first launch, and
+  background-refreshes when the manifest says a newer version exists. The map's pan loop, species
+  search, the almanac's aggregates and the filter distributions keep running against local SQLite,
+  which two performance campaigns (E130, E139) made fast and no $2 server could match.
+- **Live layer — a thin API on a small Fly machine** that starts as the write-only contribution
+  sync endpoint the outbox already expects, and grows read endpoints for the community delta
+  ("contributions in this viewport since my last sync") when multi-user surfaces land — R27.1's
+  beloved trees is the first feature that cannot exist without it.
+- **Platform: Fly.io + Tigris primary** (the owner's existing footprint; egress is the whole bill
+  for this workload and Tigris zero-rates it), **Cloudflare Workers + R2 + D1 the named fallback.**
+  Vercel is ruled out on its Hobby tier's non-commercial term colliding with D14's paid org tier.
+- **Shape B — a live query API over the full corpus — is the documented fallback**, not the plan,
+  reached only if cross-city queries outgrow what a phone can hold.
+
+**Consequences that are binding:** (a) NYC-scale cities arrive as downloadable files, never as
+bundle growth — the 103 MB bundled seed becomes a bootstrap, not the distribution; (b) any data
+served or published must carry its source's attribution obligations (NYC's verbatim disclaimer
+is the first); (c) seed-coverage constants (`MapFilter.undatedShareOfSeed` and kin) become
+properties of the *installed* cities, which is a known open edge to design at #157, not a
+surprise to find later.
