@@ -182,22 +182,23 @@ enum VisitPhenologyVocabulary {
 
     /// The chips to offer, in order.
     ///
-    /// Three gates, all from the documents:
+    /// One gate left, and a ruling behind the two that fell (#151,
+    /// docs/rulings-pending/observed-states-not-gated.md — an observer's tag is their report of
+    /// what is in front of them, not the app's claim about the species, so what the record does
+    /// not know cannot empty this row):
     ///
-    /// 1. **No species record → nothing.** There is no vocabulary to validate against, and guessing
-    ///    at one is the bug D5 names.
-    /// 2. **Not curated → nothing.** 529 of the seed's 569 species have no authored field-guide
-    ///    entry (BUILD-PLAN §8); that long tail "renders name, family, and a generic silhouette" —
-    ///    *no phenology surface at all*. Offering "Flowering" for a species whose seasonal calendar
-    ///    nobody has authored would be a phenological claim the record does not make, which is
-    ///    precisely BUILD-PLAN §15's prohibition.
-    /// 3. **Habit unknown → nothing**, which `Species.availablePhenologyTags` enforces one layer
-    ///    down (ERRATA E9). The whole vocabulary hangs off `leaf_retention`, so a curated species
-    ///    with no sourced habit still surfaces no chips.
-    ///
-    /// Consequence, stated plainly: **the chip row is offered for the curated 40 and nobody else.**
+    /// - **No species record → nothing, still.** `VisitPhenologyChips` and `Chip.phenology(_:for:)`
+    ///   are built over a non-optional `Species`; whether this last gate should also fall is
+    ///   proposed, not done, in the pending ruling.
+    /// - **The curated gate is gone.** It offered the row "for the curated 40 and nobody else",
+    ///   and it is what left the owner of #151 in front of a flowering Cassia leptophylla —
+    ///   mapped, sourced habit, `curated = 0` like 529 of the seed's 569 species — with no way to
+    ///   say "flowering".
+    /// - **The unknown-habit gate is gone** with it (`Species.availablePhenologyTags`). D5's
+    ///   evergreen exclusion survives one layer down, because it is a sourced fact rather than a
+    ///   gap in one: a known evergreen is still never asked about fall colour or bare.
     static func tags(for species: Species?) -> [PhenologyTag] {
-        guard let species, species.curated else { return [] }
+        guard let species else { return [] }
         return order.filter { $0.isAvailable(for: species) }
     }
 }

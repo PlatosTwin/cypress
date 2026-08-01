@@ -773,9 +773,11 @@ struct VisitCameraSessionTests {
     /// A curated species with a sourced deciduous habit and both calendars — the state that offers the
     /// whole phenology vocabulary, and the state no fixture in this project had ever reached.
     ///
-    /// `VisitPhenologyVocabulary` offers the row "for the curated 40 and nobody else", so almost
-    /// nothing reaches it; London Plane is both one of the 40 and the commonest street tree in San
-    /// Francisco, which is exactly why the owner met this defect and the suite never did.
+    /// `VisitPhenologyVocabulary` offered the row "for the curated 40 and nobody else" at the
+    /// time, so almost nothing reached it; London Plane is both one of the 40 and the commonest
+    /// street tree in San Francisco, which is exactly why the owner met this defect and the suite
+    /// never did. (#151 later removed that gate — the six-chip row is the common case now, which
+    /// makes this layout property more load-bearing, not less.)
     static let londonPlane = try! Species(
         scientificName: "Platanus × acerifolia",
         commonName: "London Plane",

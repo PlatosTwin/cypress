@@ -679,9 +679,11 @@ struct VisitCameraView: View {
 /// offers all six tags, and six chips want about 537 pt in the 361 pt this row has. At `.large`, on a
 /// 393 pt phone, the result read `Leaf/out · Full/leaf · Flow/ering · Fruit/ing · Fall/colo/r ·
 /// Bar/e`: every label broken mid-word, one of them across three lines. It stayed invisible for so
-/// long because almost nothing reaches this state — `VisitPhenologyVocabulary` offers the row "for
-/// the curated 40 and nobody else", and no preview or fixture stood screen 04 over one of the 40 with
-/// a sourced habit on it.
+/// long because almost nothing reached this state at the time — `VisitPhenologyVocabulary` then
+/// offered the row "for the curated 40 and nobody else", and no preview or fixture stood screen 04
+/// over one of the 40 with a sourced habit on it. (That gate fell with #151 — the row is offered for
+/// any tree with a species record now, which makes this layout the common case rather than the rare
+/// one.)
 ///
 /// `CypressChipFlow` is the component the app's other three chip rows already use (screen 05's
 /// structure flags, the add screen's land row, and the framing row below), and it is the same fix for

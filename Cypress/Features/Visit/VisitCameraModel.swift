@@ -40,8 +40,9 @@ final class VisitCameraModel {
     /// not have to load a profile before it can draw.
     let treeDisplayName: String
 
-    /// The species record, once loaded. `nil` for the seed's long tail — and a `nil` species means
-    /// **no phenology chips at all**, because there is no vocabulary to validate against (D5).
+    /// The species record, once loaded. `nil` for an unmapped row, a non-taxon row, or a profile
+    /// read that has not landed — and a `nil` species still means **no phenology chips**, the one
+    /// gate the #151 ruling left standing (docs/rulings-pending/observed-states-not-gated.md).
     private(set) var species: Species?
 
     /// The last full-tree photo of this tree, at 30 % opacity behind the viewfinder. `nil` on a
@@ -158,8 +159,10 @@ final class VisitCameraModel {
         return ghost == nil ? "no ghost yet · first photo" : "ghost overlay 30%"
     }
 
-    /// D5, the whole of it. See `VisitPhenologyVocabulary` for the two gates and why the row is
-    /// empty against today's seed.
+    /// The observed-state row. See `VisitPhenologyVocabulary` for the one gate left (no species
+    /// record) and the ruling that removed the others (#151): any tree with a species record —
+    /// curated or not, habit sourced or not — offers the row, with D5's evergreen exclusion the
+    /// only subtraction.
     var availablePhenologyTags: [PhenologyTag] {
         VisitPhenologyVocabulary.tags(for: species)
     }

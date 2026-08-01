@@ -97,11 +97,14 @@ struct SpeciesPresentationTests {
         #expect(SpeciesTaxonomyChip.habit(.semiDeciduous)?.label == "Semi-deciduous")
     }
 
-    @Test("an unsourced habit carries no phenology vocabulary either, in any month")
-    func unknownHabitHasNoTagsAndNoLeafOnWindow() throws {
+    @Test("an unsourced habit draws no phenology surface in any month — the app's silence, not the observer's")
+    func unknownHabitHasNoSurfaceAndNoLeafOnWindow() throws {
         let species = try Self.unsourcedHabit()
-        // The Core half of E9, asserted here because screen 07's chip is the visible end of it.
-        #expect(species.availablePhenologyTags.isEmpty)
+        // E9's surviving half: screen 07 asserts nothing about a habit nobody sourced. The other
+        // half — the observer's check-in vocabulary — is no longer emptied by the gap (#151,
+        // docs/rulings-pending/observed-states-not-gated.md), which is a statement about the
+        // visit flow, not about this page: `showsPhenology` below stays false in every month.
+        #expect(species.availablePhenologyTags == Set(PhenologyTag.allCases))
         #expect(species.leafOnMonths == nil)
         for month in 1...12 {
             #expect(Self.presentation(species, month: month).showsPhenology == false)

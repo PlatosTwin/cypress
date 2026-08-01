@@ -391,14 +391,17 @@ public enum VisitGates {
             )
         }
 
-        // --- No species record at all.
+        // --- No species record at all: the one gate the #151 ruling left standing
+        // (docs/rulings-pending/observed-states-not-gated.md).
         expect(VisitPhenologyVocabulary.tags(for: nil).isEmpty, "no species, no chips", into: &failures)
 
-        // --- Uncurated: the whole of today's seed. No phenology surface at all (BUILD-PLAN §8).
+        // --- Uncurated: the whole of today's seed — and the whole of #151. An observer at an
+        // uncurated tree reports what they see; curation gates the app's own field-guide surfaces,
+        // never the observer's vocabulary.
         let uncurated = try species("Liquidambar orientalis", .deciduous, curated: false)
         expect(
-            VisitPhenologyVocabulary.tags(for: uncurated).isEmpty,
-            "an uncurated species must offer no phenology chips",
+            VisitPhenologyVocabulary.tags(for: uncurated) == VisitPhenologyVocabulary.order,
+            "an uncurated species must offer the full observed-state list (#151)",
             into: &failures
         )
 
@@ -419,18 +422,19 @@ public enum VisitGates {
             into: &failures
         )
 
-        // --- Habit unknown: no chip at all, even though the entry is curated. 59 of the seed's
-        // 569 species are in this state and every one of them is a species somebody authored
-        // content for and nobody could source a leaf retention for (ERRATA E9).
+        // --- Habit unknown: the full list (#151). Withholding fall colour from an unsourced
+        // species would itself assert "this is an evergreen" — the unsourced claim E9 forbids.
+        // E9 still governs the APP's own surfaces (the season strip below, screen 07's section);
+        // it no longer governs what the observer may report.
         let unknownHabit = try species("Ficus laurel", nil, curated: true)
         expect(
-            VisitPhenologyVocabulary.tags(for: unknownHabit).isEmpty,
-            "a species whose habit no source states must offer no phenology chips",
+            VisitPhenologyVocabulary.tags(for: unknownHabit) == VisitPhenologyVocabulary.order,
+            "a species whose habit no source states must still offer the observer the full list",
             into: &failures
         )
         expect(
-            PhenologyTag.validated(PhenologyTag.allCases, for: unknownHabit).isEmpty,
-            "the outbox write must drop every phenology tag for a species with no habit",
+            PhenologyTag.validated(PhenologyTag.allCases, for: unknownHabit).count == PhenologyTag.allCases.count,
+            "the outbox write must keep every tag the observer of an unsourced species picked",
             into: &failures
         )
 
