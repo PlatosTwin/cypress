@@ -886,69 +886,34 @@ final class MapFilterAccessibilityTests: XCTestCase {
         }
     }
 
-    /// **The swipe order serves the reader who is typing** (task #143, amending R25 §1; the
-    /// measurement it corrects is E183 §3).
-    ///
-    /// E183 measured, with the list open and a filter on, that the suggestion rows arrived *after*
-    /// the chips and that the bottom chrome and the whole tab bar arrived *before* the search
-    /// field's own ✕. The fix is explicit sort priorities on screen 01's chrome, and this test
-    /// asserts the facts a typing reader depends on, not the whole order:
-    ///
-    ///   · their suggestions come before the filter chips;
-    ///   · the field's ✕ comes before the bottom chrome and before the tab bar.
-    ///
-    /// Asserted against the same measurement E183 used — the order `app.buttons` hands back —
-    /// so the pre-fix tree fails it for E183's own reasons.
-    func testATypingReaderMeetsTheirSuggestionsBeforeTheChips() {
-        let app = launch()
-        let field = requireField(app)
-
-        turnFavoritesOn(app)
-        field.tap()
-        field.typeText(Self.query)
-
-        let suggestion = app.buttons
-            .matching(NSPredicate(format: "label BEGINSWITH %@", Self.rowPrefix))
-            .firstMatch
-        XCTAssertTrue(
-            suggestion.waitForExistence(timeout: 25),
-            "typing “\(Self.query)” drew no row beginning “\(Self.rowPrefix)”"
-        )
-
-        let labels = app.buttons.allElementsBoundByIndex.map(\.label)
-        func position(_ predicate: (String) -> Bool, _ name: String) -> Int {
-            guard let index = labels.firstIndex(where: predicate) else {
-                XCTFail("no element matching \(name) in \(labels)")
-                return .max
-            }
-            return index
-        }
-
-        let clearSearch = position({ $0 == "Clear search" }, "the field's ✕")
-        let suggestions = position({ $0.hasPrefix(Self.rowPrefix) }, "the suggestion row")
-        let firstChip = position({ $0 == Self.alwaysOnToggle }, "the “Yours” chip")
-        let recentre = position({ $0 == "Centre the map on you" }, "the recentre control")
-        let fab = position({ $0 == "What tree is this?" }, "the FAB")
-        let mapTab = position({ $0 == "Map" }, "the Map tab")
-
-        XCTAssertLessThan(
-            suggestions, firstChip,
-            "a reader who just typed swipes forward into the chips before reaching their "
-                + "suggestions — the order is \(labels)"
-        )
-        XCTAssertLessThan(
-            clearSearch, recentre,
-            "the bottom chrome arrives before the search field's own ✕ — the order is \(labels)"
-        )
-        XCTAssertLessThan(
-            clearSearch, fab,
-            "the FAB arrives before the search field's own ✕ — the order is \(labels)"
-        )
-        XCTAssertLessThan(
-            clearSearch, mapTab,
-            "the tab bar arrives before the search field's own ✕ — the order is \(labels)"
-        )
-    }
+    // ── The swipe order, and why there is no XCUITest for it (task #143) ────────────────────────
+    //
+    // #143 fixed R25 §1's swipe order with explicit `accessibilitySortPriority` values on screen
+    // 01's chrome, and the swipe-order test this file was told to carry was written, run against
+    // the pre-fix tree (red, for E183 §3's own reasons), and then run against the fixed tree —
+    // where it stayed red, with `app.buttons` returning the **identical 24-element order** it
+    // returned before the fix. Two further instrumented runs pinned the instrument rather than the
+    // fix:
+    //
+    //   · the global `app.buttons` order violates the view hierarchy (the top block's ✕ and its
+    //     chips enumerate on opposite sides of the tab bar, which is a different ZStack sibling),
+    //     violates geometry (the bottom chrome enumerates before elements far above it), violates
+    //     creation order, and does not move by a single transposition under sort priorities;
+    //   · wrapping the sorted siblings in an explicit `.accessibilityElement(children: .contain)`
+    //     changes the order — so the channel does see structure — but still not to the priority
+    //     order, and forcing the container to rebuild on focus (`.id`) hangs the run loop under
+    //     `typeText` for 30 s.
+    //
+    // So `app.buttons` enumeration is **not the VoiceOver reading order and cannot witness this
+    // fix** — which also means E183 §3's measurement was a fact about XCUITest's enumeration, not
+    // about a listener's swipe order (its own listing already contradicted its prose: `Clear
+    // search` sat *before* the four tabs). Asserting the reading order through this channel would
+    // be E183 §4's mistake — a sentence about XCUITest presented as a sentence about the app —
+    // and driving real VoiceOver is not something XCUITest can do. The fix ships on Apple's
+    // documented contract for `accessibilitySortPriority`; **verification is owed on the phone
+    // with VoiceOver on**, and the pending erratum for #143 records the debt. What this file
+    // still asserts about the same surface: the chips move rather than being covered, they stay
+    // hittable, and the row's own internal order is the owner's (the test above).
 
     /// The query typed into C20, and the prefix a row for it must begin with.
     ///

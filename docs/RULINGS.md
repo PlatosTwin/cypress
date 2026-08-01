@@ -1200,10 +1200,17 @@ chrome carries explicit `accessibilitySortPriority` values — the top block ove
 over the tab bar, and within the top block the field, then the suggestions, then the chips, then
 the status lines, then the legend. Note the chips are #145's row by the time this lands (`Yours ·
 In bloom · Needs care · More filters`), so the order the priorities pin is over that row.
-`MapFilterAccessibilityTests.testATypingReaderMeetsTheirSuggestionsBeforeTheChips` asserts the two
-facts a typing reader depends on — suggestions before chips, and the ✕ before the recentre control,
-the FAB and the tabs — and was run red against the pre-priority tree before the fix landed. The
-paragraph above is otherwise undisturbed; nothing else in this ruling moves.
+
+**And the correction carries its own caveat, measured the hard way.** A swipe-order test was
+written against E183 §3's own instrument — the order `app.buttons` hands back — run red against
+the pre-fix tree, and then run against the fixed tree, where it returned the *identical*
+24-element order: that enumeration violates the view hierarchy, geometry and creation order at
+once, and does not move under sort priorities at all, so it is XCUITest's internal order and not a
+listener's swipe order. (E183 §3's listing already disagreed with its own prose — `Clear search`
+sat before the four tabs in it.) Asserting the reading order through that channel would be E183
+§4's mistake, so no test claims it; the fix stands on Apple's documented contract for
+`accessibilitySortPriority`, and **verification with VoiceOver on the physical phone is owed**.
+The paragraph above is otherwise undisturbed; nothing else in this ruling moves.
 
 **2 · Six rows, and under them — never inside the scroll — a sentence about the rest.**
 
