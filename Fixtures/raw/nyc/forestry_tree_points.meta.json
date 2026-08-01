@@ -1,0 +1,1411 @@
+{
+  "id" : "hn5i-inap",
+  "name" : "Forestry Tree Points",
+  "assetType" : "dataset",
+  "attribution" : "Department of Parks and Recreation",
+  "averageRating" : 0,
+  "category" : "Environment",
+  "createdAt" : 1488814161,
+  "description" : "Record of Forestry tree points for NYC Parks & Recreation. \n\nTree Points and Planting Spaces form the basis of ForMS 2.0’s data inventory and are the core entities that all Service Requests, Inspections, and Work Orders are associated to.  The system has built-in rules to ensure that every Tree Point has a Planting Space and each Planting Space can have no more than one active Tree Point at a given time.  Locations that have had one tree removed and another tree replanted will appear in ForMS 2.0 as a single Planting Space associated with one retired Tree Point (that has a removal Work Order) and one active Tree Point.\n\nThis dataset can be joined to the Forestry Planting Spaces dataset by joining PlantingSpaceGlobalID from Forestry Tree Points to GLOBALID from Forestry Planting Spaces.\n\nUser guide: https://docs.google.com/document/d/1PVPWFi-WExkG3rvnagQDoBbqfsGzxCKNmR6n678nUeU/edit?usp=sharing\n\nData dictionary: https://docs.google.com/spreadsheets/d/1yMfZgcsrvx9M0b3-ZdEQ3WCk2dFxgitCWytTrJSwEAs/edit?usp=sharing",
+  "diciBackend" : false,
+  "displayType" : "table",
+  "downloadCount" : 24475,
+  "hideFromCatalog" : false,
+  "hideFromDataJson" : false,
+  "locked" : false,
+  "newBackend" : true,
+  "numberOfComments" : 0,
+  "oid" : 39279286,
+  "provenance" : "official",
+  "publicationAppendEnabled" : false,
+  "publicationDate" : 1675639995,
+  "publicationGroup" : 14070555,
+  "publicationStage" : "published",
+  "rowClass" : "",
+  "rowsUpdatedAt" : 1785361360,
+  "rowsUpdatedBy" : "yrqv-pmyz",
+  "tableId" : 19044376,
+  "totalTimesRated" : 0,
+  "viewCount" : 16523,
+  "viewLastModified" : 1785361220,
+  "viewType" : "tabular",
+  "approvals" : [ {
+    "reviewedAt" : 1582823439,
+    "reviewedAutomatically" : true,
+    "state" : "approved",
+    "submissionId" : 5280559,
+    "submissionObject" : "public_audience_request",
+    "submissionOutcome" : "change_audience",
+    "submittedAt" : 1582823439,
+    "targetAudience" : "public",
+    "workflowId" : 2285,
+    "submissionDetails" : {
+      "permissionType" : "READ"
+    },
+    "submissionOutcomeApplication" : {
+      "endedAt" : 1582823439,
+      "failureCount" : 0,
+      "startedAt" : 1582823439,
+      "status" : "success"
+    },
+    "submitter" : {
+      "id" : "yrqv-pmyz",
+      "displayName" : "NYC Parks Open Data Team"
+    }
+  } ],
+  "clientContext" : {
+    "clientContextVariables" : [ ],
+    "inheritedVariables" : { }
+  },
+  "columns" : [ {
+    "id" : 571348423,
+    "name" : "OBJECTID",
+    "dataTypeName" : "number",
+    "description" : "Unique identifier for each tree point",
+    "fieldName" : "objectid",
+    "position" : 1,
+    "renderTypeName" : "number",
+    "tableColumnId" : 44436596,
+    "width" : 196,
+    "cachedContents" : {
+      "non_null" : "1120697",
+      "largest" : "17768724",
+      "null" : "0",
+      "top" : [ {
+        "item" : "13616730",
+        "count" : "1"
+      }, {
+        "item" : "3347350",
+        "count" : "1"
+      }, {
+        "item" : "15802259",
+        "count" : "1"
+      }, {
+        "item" : "3765424",
+        "count" : "1"
+      }, {
+        "item" : "5585594",
+        "count" : "1"
+      }, {
+        "item" : "4705403",
+        "count" : "1"
+      }, {
+        "item" : "3361802",
+        "count" : "1"
+      }, {
+        "item" : "5778084",
+        "count" : "1"
+      }, {
+        "item" : "2419319",
+        "count" : "1"
+      }, {
+        "item" : "6201523",
+        "count" : "1"
+      }, {
+        "item" : "4997547",
+        "count" : "1"
+      }, {
+        "item" : "5064399",
+        "count" : "1"
+      }, {
+        "item" : "4658374",
+        "count" : "1"
+      }, {
+        "item" : "4632171",
+        "count" : "1"
+      }, {
+        "item" : "5381186",
+        "count" : "1"
+      }, {
+        "item" : "2507990",
+        "count" : "1"
+      }, {
+        "item" : "16753026",
+        "count" : "1"
+      }, {
+        "item" : "5701138",
+        "count" : "1"
+      }, {
+        "item" : "5102252",
+        "count" : "1"
+      }, {
+        "item" : "2593014",
+        "count" : "1"
+      } ],
+      "smallest" : "86823",
+      "count" : "1120697",
+      "cardinality" : "1120697"
+    },
+    "format" : {
+      "precisionStyle" : "standard",
+      "noCommas" : "true",
+      "align" : "right"
+    }
+  }, {
+    "id" : 571348424,
+    "name" : "DBH",
+    "dataTypeName" : "number",
+    "description" : "Diameter of tree at breast height (4.5 feet off the ground)",
+    "fieldName" : "dbh",
+    "position" : 2,
+    "renderTypeName" : "number",
+    "tableColumnId" : 44436597,
+    "width" : 136,
+    "cachedContents" : {
+      "non_null" : "1096401",
+      "largest" : "2427",
+      "null" : "24296",
+      "top" : [ {
+        "item" : "3",
+        "count" : "169605"
+      }, {
+        "item" : "4",
+        "count" : "60123"
+      }, {
+        "item" : "6",
+        "count" : "57616"
+      }, {
+        "item" : "5",
+        "count" : "56865"
+      }, {
+        "item" : "2",
+        "count" : "52687"
+      }, {
+        "item" : "8",
+        "count" : "51250"
+      }, {
+        "item" : "7",
+        "count" : "50885"
+      }, {
+        "item" : "10",
+        "count" : "45665"
+      }, {
+        "item" : "9",
+        "count" : "43931"
+      }, {
+        "item" : "11",
+        "count" : "40740"
+      }, {
+        "item" : "12",
+        "count" : "40283"
+      }, {
+        "item" : "13",
+        "count" : "34398"
+      }, {
+        "item" : "14",
+        "count" : "33579"
+      }, {
+        "item" : "15",
+        "count" : "30639"
+      }, {
+        "item" : "16",
+        "count" : "28656"
+      }, {
+        "item" : "18",
+        "count" : "25817"
+      }, {
+        "item" : "17",
+        "count" : "24200"
+      }, {
+        "item" : "0",
+        "count" : "22510"
+      }, {
+        "item" : "20",
+        "count" : "20992"
+      }, {
+        "item" : "19",
+        "count" : "19865"
+      } ],
+      "smallest" : "0",
+      "count" : "1120697",
+      "cardinality" : "1120697"
+    },
+    "format" : {
+      "precisionStyle" : "standard",
+      "noCommas" : "false",
+      "align" : "right"
+    }
+  }, {
+    "id" : 571348425,
+    "name" : "TPStructure",
+    "dataTypeName" : "text",
+    "description" : "Indicates the current physical state of the tree (stump, shaft, or entire tree intact)",
+    "fieldName" : "tpstructure",
+    "position" : 3,
+    "renderTypeName" : "text",
+    "tableColumnId" : 44436598,
+    "width" : 232,
+    "cachedContents" : {
+      "non_null" : "1120686",
+      "largest" : "Stump - Uprooted",
+      "null" : "11",
+      "top" : [ {
+        "item" : "Full",
+        "count" : "899094"
+      }, {
+        "item" : "Retired",
+        "count" : "173626"
+      }, {
+        "item" : "Stump",
+        "count" : "43768"
+      }, {
+        "item" : "Shaft",
+        "count" : "2526"
+      }, {
+        "item" : "Stump - Uprooted",
+        "count" : "1672"
+      } ],
+      "smallest" : "Full",
+      "count" : "1120697",
+      "cardinality" : "1120697"
+    },
+    "format" : {
+      "displayStyle" : "plain",
+      "align" : "left"
+    }
+  }, {
+    "id" : 571348426,
+    "name" : "TPCondition",
+    "dataTypeName" : "text",
+    "description" : "Indicates condition of the tree based on biological health and physical structure",
+    "fieldName" : "tpcondition",
+    "position" : 4,
+    "renderTypeName" : "text",
+    "tableColumnId" : 44436599,
+    "width" : 232,
+    "cachedContents" : {
+      "non_null" : "1120686",
+      "largest" : "Unknown",
+      "null" : "11",
+      "top" : [ {
+        "item" : "Good",
+        "count" : "472602"
+      }, {
+        "item" : "Fair",
+        "count" : "320907"
+      }, {
+        "item" : "Dead",
+        "count" : "127582"
+      }, {
+        "item" : "Excellent",
+        "count" : "110969"
+      }, {
+        "item" : "Poor",
+        "count" : "48771"
+      }, {
+        "item" : "Unknown",
+        "count" : "33067"
+      }, {
+        "item" : "Critical",
+        "count" : "6788"
+      } ],
+      "smallest" : "Critical",
+      "count" : "1120697",
+      "cardinality" : "1120697"
+    },
+    "format" : {
+      "displayStyle" : "plain",
+      "align" : "left"
+    }
+  }, {
+    "id" : 571348427,
+    "name" : "StumpDiameter",
+    "dataTypeName" : "text",
+    "description" : "Diameter of exposed stump face",
+    "fieldName" : "stumpdiameter",
+    "position" : 5,
+    "renderTypeName" : "text",
+    "tableColumnId" : 44436600,
+    "width" : 256,
+    "cachedContents" : {
+      "non_null" : "427701",
+      "largest" : "99",
+      "null" : "692996",
+      "top" : [ {
+        "item" : "0",
+        "count" : "330077"
+      }, {
+        "item" : "12",
+        "count" : "4778"
+      }, {
+        "item" : "3",
+        "count" : "4683"
+      }, {
+        "item" : "10",
+        "count" : "4407"
+      }, {
+        "item" : "6",
+        "count" : "4355"
+      }, {
+        "item" : "5",
+        "count" : "4249"
+      }, {
+        "item" : "8",
+        "count" : "4069"
+      }, {
+        "item" : "4",
+        "count" : "4049"
+      }, {
+        "item" : "14",
+        "count" : "3714"
+      }, {
+        "item" : "18",
+        "count" : "3509"
+      }, {
+        "item" : "16",
+        "count" : "3505"
+      }, {
+        "item" : "15",
+        "count" : "3474"
+      }, {
+        "item" : "20",
+        "count" : "3329"
+      }, {
+        "item" : "7",
+        "count" : "3279"
+      }, {
+        "item" : "13",
+        "count" : "3118"
+      }, {
+        "item" : "9",
+        "count" : "3002"
+      }, {
+        "item" : "11",
+        "count" : "2899"
+      }, {
+        "item" : "24",
+        "count" : "2719"
+      }, {
+        "item" : "17",
+        "count" : "2658"
+      }, {
+        "item" : "22",
+        "count" : "2395"
+      } ],
+      "smallest" : "0",
+      "count" : "1120697",
+      "cardinality" : "1120697"
+    },
+    "format" : {
+      "displayStyle" : "plain",
+      "align" : "left"
+    }
+  }, {
+    "id" : 571348428,
+    "name" : "PlantingSpaceGlobalID",
+    "dataTypeName" : "text",
+    "description" : "Unique identifier for planting space associated with tree point",
+    "fieldName" : "plantingspaceglobalid",
+    "position" : 6,
+    "renderTypeName" : "text",
+    "tableColumnId" : 44436601,
+    "width" : 352,
+    "cachedContents" : {
+      "non_null" : "1120697",
+      "largest" : "FFFFFA05-23DE-4D07-B78D-CCEDD7A21357",
+      "null" : "0",
+      "top" : [ {
+        "item" : "F36329F1-FE75-40B4-AFB1-CADBC8189396",
+        "count" : "6"
+      }, {
+        "item" : "3AFD1B0E-B883-4D6A-B58F-A2D748E75A01",
+        "count" : "6"
+      }, {
+        "item" : "D9099130-CC60-4939-9998-499B720D5925",
+        "count" : "6"
+      }, {
+        "item" : "B8E9701B-C063-4D16-A4C6-F42DCF29ADF3",
+        "count" : "6"
+      }, {
+        "item" : "0512D72E-6DE6-4960-88F2-7A6D46219F20",
+        "count" : "6"
+      }, {
+        "item" : "2CC41510-E0A6-4DA9-AD44-1DE36802EE60",
+        "count" : "6"
+      }, {
+        "item" : "39A3C46D-6440-485F-85DA-7081D24170BF",
+        "count" : "6"
+      }, {
+        "item" : "132E611E-0482-4EB9-9B53-8E463BD29618",
+        "count" : "6"
+      }, {
+        "item" : "038561B8-7CD6-4CEC-B820-41C01CD4D056",
+        "count" : "6"
+      }, {
+        "item" : "0E93D68D-5946-42AB-9A97-4F0A12E21C5E",
+        "count" : "5"
+      }, {
+        "item" : "BC3AF0C1-7191-42D6-B715-402AFAE154CC",
+        "count" : "5"
+      }, {
+        "item" : "D10DFA63-722C-4E14-83E4-0E82D9E695BF",
+        "count" : "5"
+      }, {
+        "item" : "7FCD6AB5-23FC-442D-A2D4-04BEB353E994",
+        "count" : "5"
+      }, {
+        "item" : "29464C12-8C6F-446C-8FC9-408ACBC82BA5",
+        "count" : "5"
+      }, {
+        "item" : "67A6CA5B-3F6D-440E-B517-4D2930EAF390",
+        "count" : "5"
+      }, {
+        "item" : "40687E37-A77F-448D-BEAC-8DFCFC72E8FD",
+        "count" : "5"
+      }, {
+        "item" : "0FEC63B4-6AAF-4160-A821-71738A8BC2AD",
+        "count" : "5"
+      }, {
+        "item" : "13163535-68CB-4710-9865-26C70E66DE36",
+        "count" : "5"
+      }, {
+        "item" : "D219B5AF-2146-42E2-A58F-CF856C20755B",
+        "count" : "5"
+      }, {
+        "item" : "F6CCA308-96E0-4897-B85D-0C58B1002D7D",
+        "count" : "5"
+      } ],
+      "smallest" : "00002684-11DD-498A-8F11-207CDC30A5C9",
+      "count" : "1120697",
+      "cardinality" : "1120697"
+    },
+    "format" : {
+      "displayStyle" : "plain",
+      "align" : "left"
+    }
+  }, {
+    "id" : 571348429,
+    "name" : "Geometry",
+    "dataTypeName" : "text",
+    "description" : "Geometry for planting space in well known text\n",
+    "fieldName" : "geometry",
+    "position" : 7,
+    "renderTypeName" : "text",
+    "tableColumnId" : 58543321,
+    "width" : 100,
+    "cachedContents" : {
+      "non_null" : "1120697",
+      "largest" : "POINT(-74.25498585716618 40.50512039539129)",
+      "null" : "0",
+      "top" : [ {
+        "item" : "POINT(-73.91059749631333 40.822680856747446)",
+        "count" : "6"
+      }, {
+        "item" : "POINT(-73.96425854944663 40.67216807361007)",
+        "count" : "6"
+      }, {
+        "item" : "POINT(-73.8299181560228 40.76840718920489)",
+        "count" : "6"
+      }, {
+        "item" : "POINT(-73.90509503012358 40.82987377471716)",
+        "count" : "6"
+      }, {
+        "item" : "POINT(-73.74881308002178 40.775992127729836)",
+        "count" : "6"
+      }, {
+        "item" : "POINT(-73.9671519096021 40.69551879223747)",
+        "count" : "6"
+      }, {
+        "item" : "POINT(-73.88138073887349 40.72364969444484)",
+        "count" : "6"
+      }, {
+        "item" : "POINT(-73.97317981655793 40.63777238890411)",
+        "count" : "6"
+      }, {
+        "item" : "POINT(-73.93806793662293 40.85121765024867)",
+        "count" : "6"
+      }, {
+        "item" : "POINT(-74.00618194618762 40.7494647147408)",
+        "count" : "5"
+      }, {
+        "item" : "POINT(-74.13499612218165 40.62009870814318)",
+        "count" : "5"
+      }, {
+        "item" : "POINT(-73.9115656920551 40.821249450927716)",
+        "count" : "5"
+      }, {
+        "item" : "POINT(-73.96529606831297 40.800838980208084)",
+        "count" : "5"
+      }, {
+        "item" : "POINT(-73.83339085013918 40.65495635384735)",
+        "count" : "5"
+      }, {
+        "item" : "POINT(-73.99065987949469 40.72371717661132)",
+        "count" : "5"
+      }, {
+        "item" : "POINT(-73.94832726585794 40.78817680681199)",
+        "count" : "5"
+      }, {
+        "item" : "POINT(-73.96728733359451 40.76942236978915)",
+        "count" : "5"
+      }, {
+        "item" : "POINT(-74.00195077978955 40.64924668525746)",
+        "count" : "5"
+      }, {
+        "item" : "POINT(-73.99149365996972 40.720851542031895)",
+        "count" : "5"
+      }, {
+        "item" : "POINT(-73.91594538628196 40.82818549403041)",
+        "count" : "5"
+      } ],
+      "smallest" : "POINT(-73.69808293842301 40.735934418453176)",
+      "count" : "1120697",
+      "cardinality" : "1120697"
+    },
+    "format" : { }
+  }, {
+    "id" : 571348430,
+    "name" : "GlobalID",
+    "dataTypeName" : "text",
+    "description" : "Unique identifier for each tree point",
+    "fieldName" : "globalid",
+    "position" : 8,
+    "renderTypeName" : "text",
+    "tableColumnId" : 44436603,
+    "width" : 196,
+    "cachedContents" : {
+      "non_null" : "1120697",
+      "largest" : "FFFFF6B2-D3BC-4D3A-800D-EA25BC16AB7A",
+      "null" : "0",
+      "top" : [ {
+        "item" : "0731F22C-2AF0-48E3-8B58-30E28AFFFED0",
+        "count" : "1"
+      }, {
+        "item" : "74CB936B-5C12-459E-8547-2DCAF26DBA4C",
+        "count" : "1"
+      }, {
+        "item" : "73BC156A-B9F7-4151-A0BD-EBF9EDB946A1",
+        "count" : "1"
+      }, {
+        "item" : "8575517D-9728-4347-AB18-F6711C026576",
+        "count" : "1"
+      }, {
+        "item" : "95158AE3-D063-4D95-8199-3C91DF39FDC9",
+        "count" : "1"
+      }, {
+        "item" : "4491EAC7-8EB9-4597-9E25-FCD4047CD787",
+        "count" : "1"
+      }, {
+        "item" : "09D6C8BD-5003-46D4-A9D0-C97BE327219C",
+        "count" : "1"
+      }, {
+        "item" : "D6C6410F-7C23-4DD1-81DA-8282D8ECEDF2",
+        "count" : "1"
+      }, {
+        "item" : "D539D162-8EB2-4D31-8DB8-D36D4E977F2C",
+        "count" : "1"
+      }, {
+        "item" : "0A926370-A6F5-4919-ABE3-362A40E84743",
+        "count" : "1"
+      }, {
+        "item" : "6127EEF8-C343-4418-80DD-E04703EFDF35",
+        "count" : "1"
+      }, {
+        "item" : "0FF9959A-0769-483D-80E5-404136209928",
+        "count" : "1"
+      }, {
+        "item" : "F6AC81F4-6D3D-40C9-961D-57DBEEADB9B9",
+        "count" : "1"
+      }, {
+        "item" : "1EB0AEA1-41BB-4BC3-80C9-5F55C95A956A",
+        "count" : "1"
+      }, {
+        "item" : "542D5C20-B9BD-4EC2-9BED-114E1C5BD36C",
+        "count" : "1"
+      }, {
+        "item" : "BF76D89B-9B02-4F15-BE1F-8743FE33D6C1",
+        "count" : "1"
+      }, {
+        "item" : "8B78A9B3-6F6F-4E40-AD62-34D1509A1450",
+        "count" : "1"
+      }, {
+        "item" : "283DD7AA-7F6B-4900-80E5-79FA6B78A7EB",
+        "count" : "1"
+      }, {
+        "item" : "48BE1136-91E4-4003-876C-47C20BBEB6BA",
+        "count" : "1"
+      }, {
+        "item" : "A56E7921-F851-4E78-A8E9-CAB4A870249B",
+        "count" : "1"
+      } ],
+      "smallest" : "00000206-8C0F-45FA-94E0-8E6FDD126504",
+      "count" : "1120697",
+      "cardinality" : "1120697"
+    },
+    "format" : {
+      "displayStyle" : "plain",
+      "align" : "left"
+    }
+  }, {
+    "id" : 571348431,
+    "name" : "GenusSpecies",
+    "dataTypeName" : "text",
+    "description" : "Tree species, includes gensus and specific epithet plus common name",
+    "fieldName" : "genusspecies",
+    "position" : 9,
+    "renderTypeName" : "text",
+    "tableColumnId" : 44436604,
+    "width" : 244,
+    "cachedContents" : {
+      "non_null" : "1120661",
+      "largest" : "Zelkova serrata 'Wireless' - 'Wireless' Zelkova",
+      "null" : "36",
+      "top" : [ {
+        "item" : "Platanus x acerifolia - London planetree",
+        "count" : "112907"
+      }, {
+        "item" : "Gleditsia triacanthos var. inermis - Thornless honeylocust",
+        "count" : "77764"
+      }, {
+        "item" : "Quercus palustris - pin oak",
+        "count" : "76381"
+      }, {
+        "item" : "Pyrus calleryana - Callery pear",
+        "count" : "65408"
+      }, {
+        "item" : "Acer platanoides - Norway maple",
+        "count" : "47670"
+      }, {
+        "item" : "Zelkova serrata - Japanese zelkova",
+        "count" : "38144"
+      }, {
+        "item" : "Unknown - Unknown",
+        "count" : "37868"
+      }, {
+        "item" : "Tilia cordata - littleleaf linden",
+        "count" : "36918"
+      }, {
+        "item" : "Prunus serrulata 'Green leaf' - 'Green leaf' Japanese flowering cherry",
+        "count" : "29202"
+      }, {
+        "item" : "Acer rubrum - red maple",
+        "count" : "26203"
+      }, {
+        "item" : "Ginkgo biloba - maidenhair tree",
+        "count" : "25606"
+      }, {
+        "item" : "Styphnolobium japonicum - Japanese pagoda tree",
+        "count" : "23371"
+      }, {
+        "item" : "Fraxinus pennsylvanica - Green ash",
+        "count" : "20765"
+      }, {
+        "item" : "Liquidambar styraciflua - sweetgum",
+        "count" : "19706"
+      }, {
+        "item" : "Quercus rubra - northern red oak",
+        "count" : "18183"
+      }, {
+        "item" : "Quercus bicolor - swamp white oak",
+        "count" : "16208"
+      }, {
+        "item" : "Tilia americana - American basswood",
+        "count" : "15455"
+      }, {
+        "item" : "Ulmus americana - American elm",
+        "count" : "15293"
+      }, {
+        "item" : "Acer saccharinum - silver maple",
+        "count" : "15087"
+      }, {
+        "item" : "Cercis canadensis - eastern redbud",
+        "count" : "10954"
+      } ],
+      "smallest" : "Abies alba - silver fir",
+      "count" : "1120697",
+      "cardinality" : "1120697"
+    },
+    "format" : {
+      "displayStyle" : "plain",
+      "align" : "left"
+    }
+  }, {
+    "id" : 571348447,
+    "name" : "CreatedDate",
+    "dataTypeName" : "text",
+    "description" : "Date tree point record was created",
+    "fieldName" : "createddate",
+    "position" : 10,
+    "renderTypeName" : "text",
+    "tableColumnId" : 145588226,
+    "width" : 232,
+    "cachedContents" : {
+      "non_null" : "1120697",
+      "largest" : "2026-07-28 20:18:00",
+      "null" : "0",
+      "top" : [ {
+        "item" : "2016-11-02 16:59:52",
+        "count" : "72462"
+      }, {
+        "item" : "2018-11-07 11:11:11",
+        "count" : "23842"
+      }, {
+        "item" : "2018-04-11 11:11:11",
+        "count" : "17429"
+      }, {
+        "item" : "2017-11-15 11:11:11",
+        "count" : "15607"
+      }, {
+        "item" : "2018-08-01 11:11:11",
+        "count" : "15559"
+      }, {
+        "item" : "2016-11-02 16:59:00",
+        "count" : "12154"
+      }, {
+        "item" : "2018-06-01 11:11:11",
+        "count" : "11983"
+      }, {
+        "item" : "2016-10-27 11:11:11",
+        "count" : "11124"
+      }, {
+        "item" : "2017-10-12 11:11:11",
+        "count" : "10617"
+      }, {
+        "item" : "2016-10-27 11:11:00",
+        "count" : "6248"
+      }, {
+        "item" : "2017-08-17 11:11:11",
+        "count" : "5570"
+      }, {
+        "item" : "2019-01-24 11:11:11",
+        "count" : "4716"
+      }, {
+        "item" : "2017-07-06 11:11:11",
+        "count" : "3717"
+      }, {
+        "item" : "2018-05-02 11:11:11",
+        "count" : "3632"
+      }, {
+        "item" : "2017-12-20 11:11:11",
+        "count" : "3147"
+      }, {
+        "item" : "2017-04-20 11:11:11",
+        "count" : "2794"
+      }, {
+        "item" : "2024-12-17 20:37:22",
+        "count" : "1872"
+      }, {
+        "item" : "2017-10-12 11:11:00",
+        "count" : "1754"
+      }, {
+        "item" : "2017-05-18 11:11:11",
+        "count" : "1496"
+      }, {
+        "item" : "2017-11-15 11:11:00",
+        "count" : "1363"
+      } ],
+      "smallest" : "2015-02-28 05:00:00",
+      "count" : "1120697",
+      "cardinality" : "1120697"
+    },
+    "format" : {
+      "view" : "date_time",
+      "align" : "left"
+    }
+  }, {
+    "id" : 571348448,
+    "name" : "UpdatedDate",
+    "dataTypeName" : "text",
+    "description" : "Date tree point record was last updated",
+    "fieldName" : "updateddate",
+    "position" : 11,
+    "renderTypeName" : "text",
+    "tableColumnId" : 145588227,
+    "width" : 232,
+    "cachedContents" : {
+      "non_null" : "925464",
+      "largest" : "2026-07-28 22:17:00",
+      "null" : "195233",
+      "top" : [ {
+        "item" : "2017-11-21 04:11:11",
+        "count" : "8421"
+      }, {
+        "item" : "2024-04-16 19:33:59",
+        "count" : "2581"
+      }, {
+        "item" : "2017-04-13 11:11:11",
+        "count" : "1838"
+      }, {
+        "item" : "2020-05-26 15:00:00",
+        "count" : "1328"
+      }, {
+        "item" : "2018-10-29 14:17:45",
+        "count" : "864"
+      }, {
+        "item" : "2024-10-22 19:48:18",
+        "count" : "433"
+      }, {
+        "item" : "2019-02-20 16:20:47",
+        "count" : "271"
+      }, {
+        "item" : "2025-12-03 12:00:00",
+        "count" : "117"
+      }, {
+        "item" : "2020-01-03 00:00:00",
+        "count" : "87"
+      }, {
+        "item" : "2018-05-01 00:00:00",
+        "count" : "48"
+      }, {
+        "item" : "2018-04-24 00:00:00",
+        "count" : "46"
+      }, {
+        "item" : "2018-05-02 00:00:00",
+        "count" : "46"
+      }, {
+        "item" : "2018-04-23 00:00:00",
+        "count" : "44"
+      }, {
+        "item" : "2018-04-30 00:00:00",
+        "count" : "43"
+      }, {
+        "item" : "2018-04-20 00:00:00",
+        "count" : "41"
+      }, {
+        "item" : "2018-05-21 00:00:00",
+        "count" : "40"
+      }, {
+        "item" : "2018-05-22 00:00:00",
+        "count" : "40"
+      }, {
+        "item" : "2018-05-23 00:00:00",
+        "count" : "40"
+      }, {
+        "item" : "2018-04-26 00:00:00",
+        "count" : "39"
+      }, {
+        "item" : "2018-05-03 00:00:00",
+        "count" : "39"
+      } ],
+      "smallest" : "2015-03-11 04:00:00",
+      "count" : "1120697",
+      "cardinality" : "1120697"
+    },
+    "format" : {
+      "view" : "date_time",
+      "align" : "left"
+    }
+  }, {
+    "id" : 571348449,
+    "name" : "PlantedDate",
+    "dataTypeName" : "text",
+    "description" : "Date tree was planted",
+    "fieldName" : "planteddate",
+    "position" : 12,
+    "renderTypeName" : "text",
+    "tableColumnId" : 145588228,
+    "width" : 232,
+    "cachedContents" : {
+      "non_null" : "136690",
+      "largest" : "2108-11-23 05:00:00",
+      "null" : "984007",
+      "top" : [ {
+        "item" : "2023-05-15 04:00:00",
+        "count" : "570"
+      }, {
+        "item" : "2021-12-15 05:00:00",
+        "count" : "432"
+      }, {
+        "item" : "2025-12-13 05:00:00",
+        "count" : "421"
+      }, {
+        "item" : "2025-12-22 05:00:00",
+        "count" : "402"
+      }, {
+        "item" : "2025-05-01 04:00:00",
+        "count" : "383"
+      }, {
+        "item" : "2025-12-18 05:00:00",
+        "count" : "382"
+      }, {
+        "item" : "2021-12-13 05:00:00",
+        "count" : "372"
+      }, {
+        "item" : "2025-12-12 05:00:00",
+        "count" : "371"
+      }, {
+        "item" : "2020-12-15 05:00:00",
+        "count" : "367"
+      }, {
+        "item" : "2025-12-05 05:00:00",
+        "count" : "367"
+      }, {
+        "item" : "2025-12-20 05:00:00",
+        "count" : "366"
+      }, {
+        "item" : "2024-12-02 05:00:00",
+        "count" : "363"
+      }, {
+        "item" : "2024-12-17 05:00:00",
+        "count" : "360"
+      }, {
+        "item" : "2025-12-10 05:00:00",
+        "count" : "360"
+      }, {
+        "item" : "2021-12-10 05:00:00",
+        "count" : "358"
+      }, {
+        "item" : "2023-12-12 05:00:00",
+        "count" : "355"
+      }, {
+        "item" : "2023-12-13 05:00:00",
+        "count" : "355"
+      }, {
+        "item" : "2025-12-03 05:00:00",
+        "count" : "352"
+      }, {
+        "item" : "2024-12-03 05:00:00",
+        "count" : "349"
+      }, {
+        "item" : "2025-12-09 05:00:00",
+        "count" : "341"
+      } ],
+      "smallest" : "2000-12-12 05:00:00",
+      "count" : "1120697",
+      "cardinality" : "1120697"
+    },
+    "format" : {
+      "view" : "date_time",
+      "align" : "left"
+    }
+  }, {
+    "id" : 571348435,
+    "name" : "RiskRating",
+    "dataTypeName" : "text",
+    "description" : "Risk rating of the most recent risk assessment inspection",
+    "fieldName" : "riskrating",
+    "position" : 13,
+    "renderTypeName" : "text",
+    "tableColumnId" : 44436610,
+    "width" : 220,
+    "cachedContents" : {
+      "non_null" : "665399",
+      "largest" : "9",
+      "null" : "455298",
+      "top" : [ {
+        "item" : "6",
+        "count" : "153973"
+      }, {
+        "item" : "7",
+        "count" : "136205"
+      }, {
+        "item" : "3",
+        "count" : "95280"
+      }, {
+        "item" : "5",
+        "count" : "92904"
+      }, {
+        "item" : "8",
+        "count" : "87622"
+      }, {
+        "item" : "4",
+        "count" : "43999"
+      }, {
+        "item" : "9",
+        "count" : "39563"
+      }, {
+        "item" : "10",
+        "count" : "11261"
+      }, {
+        "item" : "11",
+        "count" : "3067"
+      }, {
+        "item" : "12",
+        "count" : "1453"
+      }, {
+        "item" : "2",
+        "count" : "36"
+      }, {
+        "item" : "1",
+        "count" : "22"
+      }, {
+        "item" : "0",
+        "count" : "14"
+      } ],
+      "smallest" : "0",
+      "count" : "1120697",
+      "cardinality" : "1120697"
+    },
+    "format" : {
+      "displayStyle" : "plain",
+      "align" : "left"
+    }
+  }, {
+    "id" : 571348450,
+    "name" : "RiskRatingDate",
+    "dataTypeName" : "text",
+    "description" : "Date of most recent risk assessment inspection",
+    "fieldName" : "riskratingdate",
+    "position" : 14,
+    "renderTypeName" : "text",
+    "tableColumnId" : 145588229,
+    "width" : 268,
+    "cachedContents" : {
+      "non_null" : "665402",
+      "largest" : "2026-07-28 21:48:18",
+      "null" : "455295",
+      "top" : [ {
+        "item" : "2020-01-03 00:00:00",
+        "count" : "107"
+      }, {
+        "item" : "2019-11-08 00:00:00",
+        "count" : "64"
+      }, {
+        "item" : "2017-09-13 04:00:00",
+        "count" : "43"
+      }, {
+        "item" : "2017-09-15 04:00:00",
+        "count" : "36"
+      }, {
+        "item" : "2017-03-23 04:00:00",
+        "count" : "31"
+      }, {
+        "item" : "2017-05-10 04:00:00",
+        "count" : "29"
+      }, {
+        "item" : "2017-04-18 04:00:00",
+        "count" : "28"
+      }, {
+        "item" : "2017-03-21 04:00:00",
+        "count" : "27"
+      }, {
+        "item" : "2017-07-10 04:00:00",
+        "count" : "26"
+      }, {
+        "item" : "2017-06-01 04:00:00",
+        "count" : "25"
+      }, {
+        "item" : "2017-04-19 04:00:00",
+        "count" : "25"
+      }, {
+        "item" : "2017-05-20 04:00:00",
+        "count" : "25"
+      }, {
+        "item" : "2017-05-27 04:00:00",
+        "count" : "25"
+      }, {
+        "item" : "2017-09-01 04:00:00",
+        "count" : "25"
+      }, {
+        "item" : "2017-03-31 04:00:00",
+        "count" : "23"
+      }, {
+        "item" : "2017-08-12 04:00:00",
+        "count" : "21"
+      }, {
+        "item" : "2017-08-28 04:00:00",
+        "count" : "20"
+      }, {
+        "item" : "2017-05-05 04:00:00",
+        "count" : "20"
+      }, {
+        "item" : "2017-04-17 04:00:00",
+        "count" : "20"
+      }, {
+        "item" : "2017-08-02 04:00:00",
+        "count" : "19"
+      } ],
+      "smallest" : "2015-03-26 10:46:35",
+      "count" : "1120697",
+      "cardinality" : "1120697"
+    },
+    "format" : {
+      "view" : "date_time",
+      "align" : "left"
+    }
+  }, {
+    "id" : 571348451,
+    "name" : "Location",
+    "dataTypeName" : "point",
+    "description" : "",
+    "fieldName" : "location",
+    "position" : 15,
+    "renderTypeName" : "point",
+    "tableColumnId" : 145588230,
+    "width" : 100,
+    "cachedContents" : {
+      "non_null" : "1120697",
+      "null" : "0",
+      "top" : [ {
+        "item" : {
+          "coordinates" : [ -73.90509503012358, 40.82987377471716 ],
+          "type" : "Point"
+        },
+        "count" : "6"
+      }, {
+        "item" : {
+          "coordinates" : [ -73.8299181560228, 40.76840718920489 ],
+          "type" : "Point"
+        },
+        "count" : "6"
+      }, {
+        "item" : {
+          "coordinates" : [ -73.88138073887349, 40.72364969444484 ],
+          "type" : "Point"
+        },
+        "count" : "6"
+      }, {
+        "item" : {
+          "coordinates" : [ -73.91059749631333, 40.822680856747446 ],
+          "type" : "Point"
+        },
+        "count" : "6"
+      }, {
+        "item" : {
+          "coordinates" : [ -73.97317981655793, 40.63777238890411 ],
+          "type" : "Point"
+        },
+        "count" : "6"
+      }, {
+        "item" : {
+          "coordinates" : [ -73.74881308002178, 40.775992127729836 ],
+          "type" : "Point"
+        },
+        "count" : "6"
+      }, {
+        "item" : {
+          "coordinates" : [ -73.9671519096021, 40.69551879223747 ],
+          "type" : "Point"
+        },
+        "count" : "6"
+      }, {
+        "item" : {
+          "coordinates" : [ -73.93806793662293, 40.85121765024867 ],
+          "type" : "Point"
+        },
+        "count" : "6"
+      }, {
+        "item" : {
+          "coordinates" : [ -73.96425854944663, 40.67216807361007 ],
+          "type" : "Point"
+        },
+        "count" : "6"
+      }, {
+        "item" : {
+          "coordinates" : [ -73.84801708221835, 40.83760823038376 ],
+          "type" : "Point"
+        },
+        "count" : "5"
+      }, {
+        "item" : {
+          "coordinates" : [ -73.95962620697402, 40.68243849573394 ],
+          "type" : "Point"
+        },
+        "count" : "5"
+      }, {
+        "item" : {
+          "coordinates" : [ -73.9837655796464, 40.7173887745752 ],
+          "type" : "Point"
+        },
+        "count" : "5"
+      }, {
+        "item" : {
+          "coordinates" : [ -73.94823044173219, 40.78813462714155 ],
+          "type" : "Point"
+        },
+        "count" : "5"
+      }, {
+        "item" : {
+          "coordinates" : [ -73.88376278761245, 40.7557150395255 ],
+          "type" : "Point"
+        },
+        "count" : "5"
+      }, {
+        "item" : {
+          "coordinates" : [ -73.99065987949469, 40.72371717661132 ],
+          "type" : "Point"
+        },
+        "count" : "5"
+      }, {
+        "item" : {
+          "coordinates" : [ -73.9917266725788, 40.767163767984776 ],
+          "type" : "Point"
+        },
+        "count" : "5"
+      }, {
+        "item" : {
+          "coordinates" : [ -73.90202656663001, 40.848680199599926 ],
+          "type" : "Point"
+        },
+        "count" : "5"
+      }, {
+        "item" : {
+          "coordinates" : [ -74.10570640215701, 40.62939384584744 ],
+          "type" : "Point"
+        },
+        "count" : "5"
+      }, {
+        "item" : {
+          "coordinates" : [ -73.94999644451535, 40.83057643298972 ],
+          "type" : "Point"
+        },
+        "count" : "5"
+      }, {
+        "item" : {
+          "coordinates" : [ -73.9193711571614, 40.83408045938964 ],
+          "type" : "Point"
+        },
+        "count" : "5"
+      } ],
+      "count" : "1120697",
+      "cardinality" : "1120697"
+    },
+    "format" : { }
+  }, {
+    "id" : 571348452,
+    "name" : "Zip Codes 2",
+    "dataTypeName" : "number",
+    "description" : "This column was automatically created in order to record in what polygon from the dataset 'Zip Codes' (efsh-h5xi) the point in column 'location' is located.  This enables the creation of region maps (choropleths) in the visualization canvas and data lens.",
+    "fieldName" : ":@computed_region_efsh_h5xi",
+    "position" : 25,
+    "renderTypeName" : "number",
+    "tableColumnId" : 145588231,
+    "computationStrategy" : {
+      "source_columns" : [ "location" ],
+      "type" : "georegion_match_on_point",
+      "parameters" : {
+        "region" : "_efsh-h5xi",
+        "primary_key" : "_feature_id"
+      }
+    },
+    "format" : { }
+  }, {
+    "id" : 571348453,
+    "name" : "Community Districts 2",
+    "dataTypeName" : "number",
+    "description" : "This column was automatically created in order to record in what polygon from the dataset 'Community Districts' (f5dn-yrer) the point in column 'location' is located.  This enables the creation of region maps (choropleths) in the visualization canvas and data lens.",
+    "fieldName" : ":@computed_region_f5dn_yrer",
+    "position" : 26,
+    "renderTypeName" : "number",
+    "tableColumnId" : 145588232,
+    "computationStrategy" : {
+      "source_columns" : [ "location" ],
+      "type" : "georegion_match_on_point",
+      "parameters" : {
+        "region" : "_f5dn-yrer",
+        "primary_key" : "_feature_id"
+      }
+    },
+    "format" : { }
+  }, {
+    "id" : 571348454,
+    "name" : "Borough Boundaries 2",
+    "dataTypeName" : "number",
+    "description" : "This column was automatically created in order to record in what polygon from the dataset 'Borough Boundaries' (yeji-bk3q) the point in column 'location' is located.  This enables the creation of region maps (choropleths) in the visualization canvas and data lens.",
+    "fieldName" : ":@computed_region_yeji_bk3q",
+    "position" : 27,
+    "renderTypeName" : "number",
+    "tableColumnId" : 145588233,
+    "computationStrategy" : {
+      "source_columns" : [ "location" ],
+      "type" : "georegion_match_on_point",
+      "parameters" : {
+        "region" : "_yeji-bk3q",
+        "primary_key" : "_feature_id"
+      }
+    },
+    "format" : { }
+  }, {
+    "id" : 571348455,
+    "name" : "City Council Districts 2",
+    "dataTypeName" : "number",
+    "description" : "This column was automatically created in order to record in what polygon from the dataset 'City Council Districts' (92fq-4b7q) the point in column 'location' is located.  This enables the creation of region maps (choropleths) in the visualization canvas and data lens.",
+    "fieldName" : ":@computed_region_92fq_4b7q",
+    "position" : 28,
+    "renderTypeName" : "number",
+    "tableColumnId" : 145588234,
+    "computationStrategy" : {
+      "source_columns" : [ "location" ],
+      "type" : "georegion_match_on_point",
+      "parameters" : {
+        "region" : "_92fq-4b7q",
+        "primary_key" : "_feature_id"
+      }
+    },
+    "format" : { }
+  }, {
+    "id" : 571348456,
+    "name" : "Police Precincts 2",
+    "dataTypeName" : "number",
+    "description" : "This column was automatically created in order to record in what polygon from the dataset 'Police Precincts' (sbqj-enih) the point in column 'location' is located.  This enables the creation of region maps (choropleths) in the visualization canvas and data lens.",
+    "fieldName" : ":@computed_region_sbqj_enih",
+    "position" : 29,
+    "renderTypeName" : "number",
+    "tableColumnId" : 145588235,
+    "computationStrategy" : {
+      "source_columns" : [ "location" ],
+      "type" : "georegion_match_on_point",
+      "parameters" : {
+        "region" : "_sbqj-enih",
+        "primary_key" : "_feature_id"
+      }
+    },
+    "format" : { }
+  } ],
+  "grants" : [ {
+    "inherited" : false,
+    "type" : "viewer",
+    "flags" : [ "public" ]
+  } ],
+  "metadata" : {
+    "rdfSubject" : "0",
+    "rdfClass" : "",
+    "jsonQuery" : {
+      "order" : [ {
+        "columnFieldName" : "objectid",
+        "ascending" : true
+      } ]
+    },
+    "custom_fields" : {
+      "Data Collection" : {
+        "Data Collection" : "Forestry Management System (ForMS)"
+      },
+      "Update" : {
+        "Automation" : "Yes",
+        "Date Made Public" : "3/8/2017",
+        "Update Frequency" : "Every 2 weeks"
+      },
+      "Dataset Information" : {
+        "Agency" : "Department of Parks and Recreation (DPR)"
+      }
+    },
+    "availableDisplayTypes" : [ "table", "fatrow", "page" ],
+    "renderTypeConfig" : {
+      "visible" : {
+        "table" : true
+      }
+    }
+  },
+  "owner" : {
+    "id" : "5fuc-pqz2",
+    "displayName" : "NYC OpenData",
+    "profileImageUrlLarge" : "/api/users/5fuc-pqz2/profile_images/LARGE",
+    "profileImageUrlMedium" : "/api/users/5fuc-pqz2/profile_images/THUMB",
+    "profileImageUrlSmall" : "/api/users/5fuc-pqz2/profile_images/TINY",
+    "screenName" : "NYC OpenData",
+    "type" : "interactive",
+    "flags" : [ "acceptedEula", "mayBeStoriesCoOwner" ]
+  },
+  "query" : {
+    "orderBys" : [ {
+      "ascending" : true,
+      "expression" : {
+        "columnId" : 571348423,
+        "type" : "column"
+      }
+    } ]
+  },
+  "rights" : [ "read" ],
+  "tableAuthor" : {
+    "id" : "5fuc-pqz2",
+    "displayName" : "NYC OpenData",
+    "profileImageUrlLarge" : "/api/users/5fuc-pqz2/profile_images/LARGE",
+    "profileImageUrlMedium" : "/api/users/5fuc-pqz2/profile_images/THUMB",
+    "profileImageUrlSmall" : "/api/users/5fuc-pqz2/profile_images/TINY",
+    "screenName" : "NYC OpenData",
+    "type" : "interactive",
+    "flags" : [ "acceptedEula", "mayBeStoriesCoOwner" ]
+  },
+  "tags" : [ "parks", "trees", "forestry" ],
+  "flags" : [ "default", "ownerMayBeContacted", "restorable", "restorePossibleForType" ]
+}

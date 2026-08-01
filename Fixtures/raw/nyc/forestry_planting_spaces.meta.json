@@ -1,0 +1,2878 @@
+{
+  "id" : "82zj-84is",
+  "name" : "Forestry Planting Spaces",
+  "assetType" : "dataset",
+  "attribution" : "Department of Parks and Recreation (DPR)",
+  "averageRating" : 0,
+  "category" : "Environment",
+  "createdAt" : 1488841461,
+  "description" : "Record of Forestry planting spaces for NYC Parks & Recreation. \n\nTree Points and Planting Spaces form the basis of ForMS 2.0’s data inventory and are the core entities that all Service Requests, Inspections, and Work Orders are associated to.  The system has built-in rules to ensure that every Tree Point has a Planting Space and each Planting Space can have no more than one active Tree Point at a given time.  Locations that have had one tree removed and another tree replanted will appear in ForMS 2.0 as a single Planting Space associated with one retired Tree Point (that has a removal Work Order) and one active Tree Point.\n\nUser guide: https://docs.google.com/document/d/1PVPWFi-WExkG3rvnagQDoBbqfsGzxCKNmR6n678nUeU/edit?usp=sharing\n\nData dictionary: https://docs.google.com/spreadsheets/d/1yMfZgcsrvx9M0b3-ZdEQ3WCk2dFxgitCWytTrJSwEAs/edit?usp=sharing",
+  "diciBackend" : false,
+  "displayType" : "table",
+  "downloadCount" : 19962,
+  "hideFromCatalog" : false,
+  "hideFromDataJson" : false,
+  "locked" : false,
+  "newBackend" : true,
+  "numberOfComments" : 0,
+  "oid" : 39294548,
+  "provenance" : "official",
+  "publicationAppendEnabled" : false,
+  "publicationDate" : 1676038254,
+  "publicationGroup" : 14071473,
+  "publicationStage" : "published",
+  "rowClass" : "",
+  "rowsUpdatedAt" : 1741186456,
+  "tableId" : 19050638,
+  "totalTimesRated" : 0,
+  "viewCount" : 5533,
+  "viewLastModified" : 1741186251,
+  "viewType" : "tabular",
+  "approvals" : [ {
+    "reviewedAt" : 1582823473,
+    "reviewedAutomatically" : true,
+    "state" : "approved",
+    "submissionId" : 5291289,
+    "submissionObject" : "public_audience_request",
+    "submissionOutcome" : "change_audience",
+    "submittedAt" : 1582823473,
+    "targetAudience" : "public",
+    "workflowId" : 2285,
+    "submissionDetails" : {
+      "permissionType" : "READ"
+    },
+    "submissionOutcomeApplication" : {
+      "endedAt" : 1582823473,
+      "failureCount" : 0,
+      "startedAt" : 1582823473,
+      "status" : "success"
+    },
+    "submitter" : {
+      "id" : "yrqv-pmyz",
+      "displayName" : "NYC Parks Open Data Team"
+    }
+  } ],
+  "clientContext" : {
+    "clientContextVariables" : [ ],
+    "inheritedVariables" : { }
+  },
+  "columns" : [ {
+    "id" : 571626735,
+    "name" : "OBJECTID",
+    "dataTypeName" : "number",
+    "description" : "Unique identifier for each inspection",
+    "fieldName" : "objectid",
+    "position" : 1,
+    "renderTypeName" : "number",
+    "tableColumnId" : 44456840,
+    "width" : 196,
+    "cachedContents" : {
+      "non_null" : "1091709",
+      "largest" : "13017621",
+      "null" : "0",
+      "top" : [ {
+        "item" : "10859958",
+        "count" : "2"
+      }, {
+        "item" : "10879780",
+        "count" : "2"
+      }, {
+        "item" : "10852643",
+        "count" : "2"
+      }, {
+        "item" : "10859957",
+        "count" : "2"
+      }, {
+        "item" : "10869392",
+        "count" : "2"
+      }, {
+        "item" : "10879325",
+        "count" : "2"
+      }, {
+        "item" : "10848329",
+        "count" : "2"
+      }, {
+        "item" : "10852642",
+        "count" : "2"
+      }, {
+        "item" : "10856453",
+        "count" : "2"
+      }, {
+        "item" : "10859956",
+        "count" : "2"
+      }, {
+        "item" : "10864014",
+        "count" : "2"
+      }, {
+        "item" : "10869391",
+        "count" : "2"
+      }, {
+        "item" : "10875425",
+        "count" : "2"
+      }, {
+        "item" : "10879324",
+        "count" : "2"
+      }, {
+        "item" : "10846961",
+        "count" : "2"
+      }, {
+        "item" : "10848328",
+        "count" : "2"
+      }, {
+        "item" : "10850402",
+        "count" : "2"
+      }, {
+        "item" : "10852641",
+        "count" : "2"
+      }, {
+        "item" : "10853974",
+        "count" : "2"
+      }, {
+        "item" : "10856431",
+        "count" : "2"
+      } ],
+      "smallest" : "118422",
+      "count" : "1091709",
+      "cardinality" : "1084845"
+    },
+    "format" : {
+      "precisionStyle" : "standard",
+      "noCommas" : "true",
+      "align" : "right"
+    }
+  }, {
+    "id" : 571626736,
+    "name" : "Borough",
+    "dataTypeName" : "text",
+    "description" : "Borough planting space is in",
+    "fieldName" : "boroughcode",
+    "position" : 2,
+    "renderTypeName" : "text",
+    "tableColumnId" : 44456843,
+    "width" : 232,
+    "cachedContents" : {
+      "non_null" : "1091196",
+      "largest" : "Staten Island",
+      "null" : "513",
+      "top" : [ {
+        "item" : "Queens",
+        "count" : "371611"
+      }, {
+        "item" : "Brooklyn",
+        "count" : "283820"
+      }, {
+        "item" : "Bronx",
+        "count" : "163353"
+      }, {
+        "item" : "Staten Island",
+        "count" : "154047"
+      }, {
+        "item" : "Manhattan",
+        "count" : "118365"
+      } ],
+      "smallest" : "Bronx",
+      "count" : "1091709",
+      "cardinality" : "5"
+    },
+    "format" : {
+      "displayStyle" : "plain",
+      "align" : "left"
+    }
+  }, {
+    "id" : 571626737,
+    "name" : "Number",
+    "dataTypeName" : "text",
+    "description" : "Building number of the Planting Space address",
+    "fieldName" : "buildingnumber",
+    "position" : 3,
+    "renderTypeName" : "text",
+    "tableColumnId" : 44456847,
+    "width" : 268,
+    "cachedContents" : {
+      "non_null" : "877570",
+      "largest" : "ZN-01",
+      "null" : "214139",
+      "top" : [ {
+        "item" : "*",
+        "count" : "3144"
+      }, {
+        "item" : "1",
+        "count" : "2295"
+      }, {
+        "item" : "15",
+        "count" : "2142"
+      }, {
+        "item" : "2",
+        "count" : "2028"
+      }, {
+        "item" : "50",
+        "count" : "1688"
+      }, {
+        "item" : "100",
+        "count" : "1639"
+      }, {
+        "item" : "20",
+        "count" : "1598"
+      }, {
+        "item" : "10",
+        "count" : "1591"
+      }, {
+        "item" : "25",
+        "count" : "1588"
+      }, {
+        "item" : "40",
+        "count" : "1569"
+      }, {
+        "item" : "11",
+        "count" : "1398"
+      }, {
+        "item" : "120",
+        "count" : "1361"
+      }, {
+        "item" : "200",
+        "count" : "1354"
+      }, {
+        "item" : "30",
+        "count" : "1343"
+      }, {
+        "item" : "101",
+        "count" : "1319"
+      }, {
+        "item" : "16",
+        "count" : "1313"
+      }, {
+        "item" : "55",
+        "count" : "1301"
+      }, {
+        "item" : "21",
+        "count" : "1290"
+      }, {
+        "item" : "35",
+        "count" : "1259"
+      }, {
+        "item" : "60",
+        "count" : "1257"
+      } ],
+      "smallest" : "=",
+      "count" : "1091709",
+      "cardinality" : "42969"
+    },
+    "format" : {
+      "displayStyle" : "plain",
+      "align" : "left"
+    }
+  }, {
+    "id" : 571626738,
+    "name" : "Street",
+    "dataTypeName" : "text",
+    "description" : "Street name of the Planting Space address",
+    "fieldName" : "streetname",
+    "position" : 4,
+    "renderTypeName" : "text",
+    "tableColumnId" : 44456848,
+    "width" : 220,
+    "cachedContents" : {
+      "non_null" : "877684",
+      "largest" : "ZWICKY AVENUE",
+      "null" : "214025",
+      "top" : [ {
+        "item" : "BROADWAY",
+        "count" : "3678"
+      }, {
+        "item" : "OCEAN PARKWAY",
+        "count" : "2740"
+      }, {
+        "item" : "5 AVENUE",
+        "count" : "2599"
+      }, {
+        "item" : "3 AVENUE",
+        "count" : "2527"
+      }, {
+        "item" : "LINDEN BOULEVARD",
+        "count" : "1961"
+      }, {
+        "item" : "PARK AVENUE",
+        "count" : "1891"
+      }, {
+        "item" : "BEDFORD AVENUE",
+        "count" : "1825"
+      }, {
+        "item" : "GRAND CONCOURSE",
+        "count" : "1766"
+      }, {
+        "item" : "FRANCIS LEWIS BOULEVARD",
+        "count" : "1615"
+      }, {
+        "item" : "HYLAN BOULEVARD",
+        "count" : "1498"
+      }, {
+        "item" : "QUEENS BOULEVARD",
+        "count" : "1464"
+      }, {
+        "item" : "RIVERSIDE DRIVE",
+        "count" : "1431"
+      }, {
+        "item" : "79 STREET",
+        "count" : "1392"
+      }, {
+        "item" : "78 STREET",
+        "count" : "1376"
+      }, {
+        "item" : "RICHMOND AVENUE",
+        "count" : "1371"
+      }, {
+        "item" : "2 AVENUE",
+        "count" : "1370"
+      }, {
+        "item" : "80 STREET",
+        "count" : "1366"
+      }, {
+        "item" : "1 AVENUE",
+        "count" : "1293"
+      }, {
+        "item" : "EASTERN PARKWAY",
+        "count" : "1274"
+      }, {
+        "item" : "81 STREET",
+        "count" : "1263"
+      } ],
+      "smallest" : "/",
+      "count" : "1091709",
+      "cardinality" : "17836"
+    },
+    "format" : {
+      "displayStyle" : "plain",
+      "align" : "left"
+    }
+  }, {
+    "id" : 571626739,
+    "name" : "PSSite",
+    "dataTypeName" : "text",
+    "description" : "Indicates if planting space is in a park or on the street",
+    "fieldName" : "pssite",
+    "position" : 5,
+    "renderTypeName" : "text",
+    "tableColumnId" : 44456849,
+    "width" : 172,
+    "cachedContents" : {
+      "non_null" : "1089799",
+      "largest" : "Street",
+      "null" : "1910",
+      "top" : [ {
+        "item" : "Street",
+        "count" : "881312"
+      }, {
+        "item" : "Park",
+        "count" : "208487"
+      } ],
+      "smallest" : "Park",
+      "count" : "1091709",
+      "cardinality" : "2"
+    },
+    "format" : {
+      "displayStyle" : "plain",
+      "align" : "left"
+    }
+  }, {
+    "id" : 571626740,
+    "name" : "PlantingSpaceOnStreet",
+    "dataTypeName" : "text",
+    "description" : "Street that Planting Space is on, may not be the same as address if property is a corner lot",
+    "fieldName" : "plantingspaceonstreet",
+    "position" : 6,
+    "renderTypeName" : "text",
+    "tableColumnId" : 44456850,
+    "width" : 352,
+    "cachedContents" : {
+      "non_null" : "314607",
+      "largest" : "ZULETTE AVENUE",
+      "null" : "777102",
+      "top" : [ {
+        "item" : "1F",
+        "count" : "30299"
+      }, {
+        "item" : "1f",
+        "count" : "10236"
+      }, {
+        "item" : "2F",
+        "count" : "8073"
+      }, {
+        "item" : "1S",
+        "count" : "3865"
+      }, {
+        "item" : "3F",
+        "count" : "2762"
+      }, {
+        "item" : "2S",
+        "count" : "2665"
+      }, {
+        "item" : "1X",
+        "count" : "2429"
+      }, {
+        "item" : "2f",
+        "count" : "2370"
+      }, {
+        "item" : "3S",
+        "count" : "1560"
+      }, {
+        "item" : "4F",
+        "count" : "1232"
+      }, {
+        "item" : "[MAP]",
+        "count" : "845"
+      }, {
+        "item" : "MEDIAN",
+        "count" : "838"
+      }, {
+        "item" : "2X",
+        "count" : "838"
+      }, {
+        "item" : "1x",
+        "count" : "827"
+      }, {
+        "item" : "1A",
+        "count" : "783"
+      }, {
+        "item" : "4S",
+        "count" : "772"
+      }, {
+        "item" : "BROADWAY",
+        "count" : "724"
+      }, {
+        "item" : "3f",
+        "count" : "647"
+      }, {
+        "item" : "ASTORIA PARK",
+        "count" : "610"
+      }, {
+        "item" : "5F",
+        "count" : "561"
+      } ],
+      "smallest" : "/",
+      "count" : "1091709",
+      "cardinality" : "26211"
+    },
+    "format" : {
+      "displayStyle" : "plain",
+      "align" : "left"
+    }
+  }, {
+    "id" : 571626741,
+    "name" : "Width",
+    "dataTypeName" : "text",
+    "description" : "Width of planting space",
+    "fieldName" : "width",
+    "position" : 7,
+    "renderTypeName" : "text",
+    "tableColumnId" : 44456851,
+    "width" : 160,
+    "cachedContents" : {
+      "non_null" : "2336",
+      "largest" : "99.0",
+      "null" : "1089373",
+      "top" : [ {
+        "item" : "60.0",
+        "count" : "282"
+      }, {
+        "item" : "72.0",
+        "count" : "200"
+      }, {
+        "item" : "5.0",
+        "count" : "187"
+      }, {
+        "item" : "48.0",
+        "count" : "156"
+      }, {
+        "item" : "6.0",
+        "count" : "145"
+      }, {
+        "item" : "25.0",
+        "count" : "134"
+      }, {
+        "item" : "10.0",
+        "count" : "105"
+      }, {
+        "item" : "3.0",
+        "count" : "79"
+      }, {
+        "item" : "12.0",
+        "count" : "62"
+      }, {
+        "item" : "4.0",
+        "count" : "54"
+      }, {
+        "item" : "8.0",
+        "count" : "48"
+      }, {
+        "item" : "36.0",
+        "count" : "43"
+      }, {
+        "item" : "20.0",
+        "count" : "43"
+      }, {
+        "item" : "18.0",
+        "count" : "39"
+      }, {
+        "item" : "14.0",
+        "count" : "39"
+      }, {
+        "item" : "2.0",
+        "count" : "38"
+      }, {
+        "item" : "16.0",
+        "count" : "38"
+      }, {
+        "item" : "54.0",
+        "count" : "34"
+      }, {
+        "item" : "30.0",
+        "count" : "33"
+      }, {
+        "item" : "24.0",
+        "count" : "26"
+      } ],
+      "smallest" : "0.0",
+      "count" : "1091709",
+      "cardinality" : "89"
+    },
+    "format" : {
+      "displayStyle" : "plain",
+      "align" : "left"
+    }
+  }, {
+    "id" : 571626742,
+    "name" : "Length",
+    "dataTypeName" : "text",
+    "description" : "Length of planting space",
+    "fieldName" : "length",
+    "position" : 8,
+    "renderTypeName" : "text",
+    "tableColumnId" : 44456852,
+    "width" : 172,
+    "cachedContents" : {
+      "non_null" : "1425",
+      "largest" : "99.0",
+      "null" : "1090284",
+      "top" : [ {
+        "item" : "72.0",
+        "count" : "270"
+      }, {
+        "item" : "120.0",
+        "count" : "229"
+      }, {
+        "item" : "96.0",
+        "count" : "151"
+      }, {
+        "item" : "6.0",
+        "count" : "115"
+      }, {
+        "item" : "5.0",
+        "count" : "103"
+      }, {
+        "item" : "25.0",
+        "count" : "100"
+      }, {
+        "item" : "60.0",
+        "count" : "60"
+      }, {
+        "item" : "10.0",
+        "count" : "40"
+      }, {
+        "item" : "20.0",
+        "count" : "24"
+      }, {
+        "item" : "84.0",
+        "count" : "23"
+      }, {
+        "item" : "90.0",
+        "count" : "22"
+      }, {
+        "item" : "4.0",
+        "count" : "21"
+      }, {
+        "item" : "121.0",
+        "count" : "17"
+      }, {
+        "item" : "15.0",
+        "count" : "14"
+      }, {
+        "item" : "30.0",
+        "count" : "12"
+      }, {
+        "item" : "144.0",
+        "count" : "9"
+      }, {
+        "item" : "1.0",
+        "count" : "9"
+      }, {
+        "item" : "3.0",
+        "count" : "9"
+      }, {
+        "item" : "122.0",
+        "count" : "9"
+      }, {
+        "item" : "7.0",
+        "count" : "8"
+      } ],
+      "smallest" : "0.0",
+      "count" : "1091709",
+      "cardinality" : "96"
+    },
+    "format" : {
+      "displayStyle" : "plain",
+      "align" : "left"
+    }
+  }, {
+    "id" : 571626743,
+    "name" : "ParkName",
+    "dataTypeName" : "text",
+    "description" : "Name of park planting space is in",
+    "fieldName" : "parkname",
+    "position" : 9,
+    "renderTypeName" : "text",
+    "tableColumnId" : 44456853,
+    "width" : 196,
+    "cachedContents" : {
+      "non_null" : "215190",
+      "largest" : "Zion Triangle",
+      "null" : "876519",
+      "top" : [ {
+        "item" : "PROSPECT PARK WEST",
+        "count" : "12273"
+      }, {
+        "item" : "Flushing Meadows Corona Park",
+        "count" : "9964"
+      }, {
+        "item" : "Riverside Park",
+        "count" : "5709"
+      }, {
+        "item" : "Pelham Bay Park",
+        "count" : "5291"
+      }, {
+        "item" : "Van Cortlandt Park",
+        "count" : "4308"
+      }, {
+        "item" : "Crotona Park",
+        "count" : "3020"
+      }, {
+        "item" : "Bronx Park",
+        "count" : "2672"
+      }, {
+        "item" : "Mosholu Parkway",
+        "count" : "2656"
+      }, {
+        "item" : "Pelham Parkway",
+        "count" : "2613"
+      }, {
+        "item" : "Forest Park",
+        "count" : "2388"
+      }, {
+        "item" : "Baisley Pond Park",
+        "count" : "2288"
+      }, {
+        "item" : "Wards Island Park",
+        "count" : "2262"
+      }, {
+        "item" : "Franklin D. Roosevelt Boardwalk and Beach",
+        "count" : "2203"
+      }, {
+        "item" : "Alley Pond Park",
+        "count" : "2186"
+      }, {
+        "item" : "Bronx River Parkway",
+        "count" : "2143"
+      }, {
+        "item" : "Belt Parkway/Shore Parkway",
+        "count" : "2126"
+      }, {
+        "item" : "Randall's Island Park",
+        "count" : "2105"
+      }, {
+        "item" : "Hutchinson River Parkway",
+        "count" : "2055"
+      }, {
+        "item" : "Hart Island",
+        "count" : "1876"
+      }, {
+        "item" : "Brookville Park",
+        "count" : "1701"
+      } ],
+      "smallest" : "100% Playground",
+      "count" : "1091709",
+      "cardinality" : "2126"
+    },
+    "format" : {
+      "displayStyle" : "plain",
+      "align" : "left"
+    }
+  }, {
+    "id" : 571626744,
+    "name" : "ParkZone",
+    "dataTypeName" : "text",
+    "description" : "Name of park planting space is in",
+    "fieldName" : "parkzone",
+    "position" : 10,
+    "renderTypeName" : "text",
+    "tableColumnId" : 44456854,
+    "width" : 196,
+    "cachedContents" : {
+      "non_null" : "60023",
+      "largest" : "zoo",
+      "null" : "1031686",
+      "top" : [ {
+        "item" : "X003-ZN01",
+        "count" : "951"
+      }, {
+        "item" : "X003-ZN02",
+        "count" : "921"
+      }, {
+        "item" : "R065-ZN08",
+        "count" : "704"
+      }, {
+        "item" : "R065-ZN11",
+        "count" : "632"
+      }, {
+        "item" : "R031-ZN02",
+        "count" : "612"
+      }, {
+        "item" : "B082-ZN04",
+        "count" : "538"
+      }, {
+        "item" : "X010-ZN09",
+        "count" : "476"
+      }, {
+        "item" : "X010-ZN05",
+        "count" : "474"
+      }, {
+        "item" : "Q004-ZN01",
+        "count" : "472"
+      }, {
+        "item" : "R046-ZN05",
+        "count" : "462"
+      }, {
+        "item" : "X092-ZN12",
+        "count" : "458"
+      }, {
+        "item" : "X002-ZN04",
+        "count" : "456"
+      }, {
+        "item" : "Q004-ZN02",
+        "count" : "451"
+      }, {
+        "item" : "X003-ZN03",
+        "count" : "437"
+      }, {
+        "item" : "X002-ZN01",
+        "count" : "430"
+      }, {
+        "item" : "Q005-ZN03",
+        "count" : "428"
+      }, {
+        "item" : "Q005-ZN05",
+        "count" : "416"
+      }, {
+        "item" : "R046-ZN04",
+        "count" : "404"
+      }, {
+        "item" : "B058-ZN03",
+        "count" : "396"
+      }, {
+        "item" : "Q005-ZN04",
+        "count" : "396"
+      } ],
+      "smallest" : "2",
+      "count" : "1091709",
+      "cardinality" : "1433"
+    },
+    "format" : {
+      "displayStyle" : "plain",
+      "align" : "left"
+    }
+  }, {
+    "id" : 571626745,
+    "name" : "CrossStreet1",
+    "dataTypeName" : "text",
+    "description" : "First cross street",
+    "fieldName" : "crossstreet1",
+    "position" : 11,
+    "renderTypeName" : "text",
+    "tableColumnId" : 44456855,
+    "width" : 244,
+    "cachedContents" : {
+      "non_null" : "889194",
+      "largest" : "ZWICKY AVENUE",
+      "null" : "202515",
+      "top" : [ {
+        "item" : "BEND",
+        "count" : "16449"
+      }, {
+        "item" : "DEAD END",
+        "count" : "9861"
+      }, {
+        "item" : "BROADWAY",
+        "count" : "4967"
+      }, {
+        "item" : "7 AVENUE",
+        "count" : "3711"
+      }, {
+        "item" : "3 AVENUE",
+        "count" : "3680"
+      }, {
+        "item" : "8 AVENUE",
+        "count" : "3201"
+      }, {
+        "item" : "1 AVENUE",
+        "count" : "2956"
+      }, {
+        "item" : "5 AVENUE",
+        "count" : "2886"
+      }, {
+        "item" : "2 AVENUE",
+        "count" : "2883"
+      }, {
+        "item" : "HYLAN BOULEVARD",
+        "count" : "2533"
+      }, {
+        "item" : "6 AVENUE",
+        "count" : "2464"
+      }, {
+        "item" : "4 AVENUE",
+        "count" : "2434"
+      }, {
+        "item" : "BEDFORD AVENUE",
+        "count" : "2385"
+      }, {
+        "item" : "LINDEN BOULEVARD",
+        "count" : "2258"
+      }, {
+        "item" : "AMSTERDAM AVENUE",
+        "count" : "2258"
+      }, {
+        "item" : "35 AVENUE",
+        "count" : "2248"
+      }, {
+        "item" : "9 AVENUE",
+        "count" : "2088"
+      }, {
+        "item" : "10 AVENUE",
+        "count" : "2050"
+      }, {
+        "item" : "34 AVENUE",
+        "count" : "2036"
+      }, {
+        "item" : "JAMAICA AVENUE",
+        "count" : "1977"
+      } ],
+      "smallest" : "0",
+      "count" : "1091709",
+      "cardinality" : "14920"
+    },
+    "format" : {
+      "displayStyle" : "plain",
+      "align" : "left"
+    }
+  }, {
+    "id" : 571626746,
+    "name" : "CrossStreet2",
+    "dataTypeName" : "text",
+    "description" : "Second cross street",
+    "fieldName" : "crossstreet2",
+    "position" : 12,
+    "renderTypeName" : "text",
+    "tableColumnId" : 44456856,
+    "width" : 244,
+    "cachedContents" : {
+      "non_null" : "888225",
+      "largest" : "ZWICKY AVENUE",
+      "null" : "203484",
+      "top" : [ {
+        "item" : "BEND",
+        "count" : "16786"
+      }, {
+        "item" : "DEAD END",
+        "count" : "7372"
+      }, {
+        "item" : "5 AVENUE",
+        "count" : "5389"
+      }, {
+        "item" : "3 AVENUE",
+        "count" : "5313"
+      }, {
+        "item" : "BROADWAY",
+        "count" : "4131"
+      }, {
+        "item" : "7 AVENUE",
+        "count" : "3595"
+      }, {
+        "item" : "2 AVENUE",
+        "count" : "3385"
+      }, {
+        "item" : "8 AVENUE",
+        "count" : "3240"
+      }, {
+        "item" : "4 AVENUE",
+        "count" : "2954"
+      }, {
+        "item" : "PARK AVENUE",
+        "count" : "2457"
+      }, {
+        "item" : "AMSTERDAM AVENUE",
+        "count" : "2364"
+      }, {
+        "item" : "HYLAN BOULEVARD",
+        "count" : "2355"
+      }, {
+        "item" : "89 AVENUE",
+        "count" : "2336"
+      }, {
+        "item" : "BEDFORD AVENUE",
+        "count" : "2334"
+      }, {
+        "item" : "LINDEN BOULEVARD",
+        "count" : "2133"
+      }, {
+        "item" : "6 AVENUE",
+        "count" : "2117"
+      }, {
+        "item" : "1 AVENUE",
+        "count" : "2114"
+      }, {
+        "item" : "35 AVENUE",
+        "count" : "2113"
+      }, {
+        "item" : "9 AVENUE",
+        "count" : "2104"
+      }, {
+        "item" : "HILLSIDE AVENUE",
+        "count" : "2069"
+      } ],
+      "smallest" : "100 AV",
+      "count" : "1091709",
+      "cardinality" : "15194"
+    },
+    "format" : {
+      "displayStyle" : "plain",
+      "align" : "left"
+    }
+  }, {
+    "id" : 571626747,
+    "name" : "CommunityBoard",
+    "dataTypeName" : "number",
+    "description" : "New York City community board",
+    "fieldName" : "communityboard",
+    "position" : 13,
+    "renderTypeName" : "number",
+    "tableColumnId" : 44456857,
+    "width" : 268,
+    "cachedContents" : {
+      "non_null" : "1091205",
+      "largest" : "595.0",
+      "null" : "504",
+      "top" : [ {
+        "item" : "503.0",
+        "count" : "71413"
+      }, {
+        "item" : "413.0",
+        "count" : "50789"
+      }, {
+        "item" : "407.0",
+        "count" : "45212"
+      }, {
+        "item" : "501.0",
+        "count" : "41614"
+      }, {
+        "item" : "412.0",
+        "count" : "41587"
+      }, {
+        "item" : "411.0",
+        "count" : "40185"
+      }, {
+        "item" : "502.0",
+        "count" : "38500"
+      }, {
+        "item" : "318.0",
+        "count" : "28601"
+      }, {
+        "item" : "408.0",
+        "count" : "28354"
+      }, {
+        "item" : "405.0",
+        "count" : "25868"
+      }, {
+        "item" : "305.0",
+        "count" : "22232"
+      }, {
+        "item" : "410.0",
+        "count" : "21604"
+      }, {
+        "item" : "315.0",
+        "count" : "20322"
+      }, {
+        "item" : "210.0",
+        "count" : "20280"
+      }, {
+        "item" : "301.0",
+        "count" : "20223"
+      }, {
+        "item" : "401.0",
+        "count" : "20222"
+      }, {
+        "item" : "212.0",
+        "count" : "19105"
+      }, {
+        "item" : "310.0",
+        "count" : "18211"
+      }, {
+        "item" : "414.0",
+        "count" : "18094"
+      }, {
+        "item" : "312.0",
+        "count" : "16867"
+      } ],
+      "smallest" : "0.0",
+      "count" : "1091709",
+      "cardinality" : "72"
+    },
+    "format" : {
+      "precisionStyle" : "standard",
+      "noCommas" : "false",
+      "align" : "right"
+    }
+  }, {
+    "id" : 571626748,
+    "name" : "SanitationZone",
+    "dataTypeName" : "text",
+    "description" : "DSNY sanitation zone",
+    "fieldName" : "sanitationzone",
+    "position" : 14,
+    "renderTypeName" : "text",
+    "tableColumnId" : 44456858,
+    "width" : 268,
+    "cachedContents" : {
+      "non_null" : "1056684",
+      "largest" : "SI",
+      "null" : "35025",
+      "top" : [ {
+        "item" : "QE",
+        "count" : "19111"
+      }, {
+        "item" : "BKS",
+        "count" : "10320"
+      }, {
+        "item" : "2031A",
+        "count" : "6064"
+      }, {
+        "item" : "5012D",
+        "count" : "6054"
+      }, {
+        "item" : "5011C",
+        "count" : "5307"
+      }, {
+        "item" : "4131C",
+        "count" : "5119"
+      }, {
+        "item" : "2021A",
+        "count" : "4787"
+      }, {
+        "item" : "4126C",
+        "count" : "4666"
+      }, {
+        "item" : "QW",
+        "count" : "4665"
+      }, {
+        "item" : "2062A",
+        "count" : "4617"
+      }, {
+        "item" : "5024E",
+        "count" : "4538"
+      }, {
+        "item" : "5037E",
+        "count" : "4412"
+      }, {
+        "item" : "5034D",
+        "count" : "4373"
+      }, {
+        "item" : "5024C",
+        "count" : "4336"
+      }, {
+        "item" : "2031B",
+        "count" : "4280"
+      }, {
+        "item" : "5036C",
+        "count" : "4271"
+      }, {
+        "item" : "3132B",
+        "count" : "4141"
+      }, {
+        "item" : "5013E",
+        "count" : "4126"
+      }, {
+        "item" : "2091B",
+        "count" : "4087"
+      }, {
+        "item" : "2012A",
+        "count" : "4066"
+      } ],
+      "smallest" : "1011A",
+      "count" : "1091709",
+      "cardinality" : "768"
+    },
+    "format" : {
+      "displayStyle" : "plain",
+      "align" : "left"
+    }
+  }, {
+    "id" : 571626749,
+    "name" : "Postcode",
+    "dataTypeName" : "text",
+    "description" : "Zipcode",
+    "fieldName" : "zipcode",
+    "position" : 15,
+    "renderTypeName" : "text",
+    "tableColumnId" : 44456859,
+    "width" : 184,
+    "cachedContents" : {
+      "non_null" : "1017238",
+      "largest" : "12345.0",
+      "null" : "74471",
+      "top" : [ {
+        "item" : "10312.0",
+        "count" : "28247"
+      }, {
+        "item" : "10314.0",
+        "count" : "23005"
+      }, {
+        "item" : "11215.0",
+        "count" : "19891"
+      }, {
+        "item" : "10306.0",
+        "count" : "18147"
+      }, {
+        "item" : "10309.0",
+        "count" : "16494"
+      }, {
+        "item" : "11385.0",
+        "count" : "14930"
+      }, {
+        "item" : "11234.0",
+        "count" : "14826"
+      }, {
+        "item" : "11368.0",
+        "count" : "13462"
+      }, {
+        "item" : "11434.0",
+        "count" : "12855"
+      }, {
+        "item" : "10305.0",
+        "count" : "12168"
+      }, {
+        "item" : "11357.0",
+        "count" : "11733"
+      }, {
+        "item" : "11236.0",
+        "count" : "10758"
+      }, {
+        "item" : "10469.0",
+        "count" : "10458"
+      }, {
+        "item" : "11364.0",
+        "count" : "10409"
+      }, {
+        "item" : "10467.0",
+        "count" : "10258"
+      }, {
+        "item" : "10301.0",
+        "count" : "10245"
+      }, {
+        "item" : "11365.0",
+        "count" : "10162"
+      }, {
+        "item" : "11208.0",
+        "count" : "10033"
+      }, {
+        "item" : "11230.0",
+        "count" : "9973"
+      }, {
+        "item" : "11413.0",
+        "count" : "9820"
+      } ],
+      "smallest" : "10001.0",
+      "count" : "1091709",
+      "cardinality" : "207"
+    },
+    "format" : {
+      "displayStyle" : "plain",
+      "align" : "left"
+    }
+  }, {
+    "id" : 571626750,
+    "name" : "Council District",
+    "dataTypeName" : "number",
+    "description" : "New York City council district",
+    "fieldName" : "citycouncil",
+    "position" : 16,
+    "renderTypeName" : "number",
+    "tableColumnId" : 44456860,
+    "width" : 232,
+    "cachedContents" : {
+      "non_null" : "1017626",
+      "largest" : "51.0",
+      "null" : "74083",
+      "top" : [ {
+        "item" : "51.0",
+        "count" : "66054"
+      }, {
+        "item" : "50.0",
+        "count" : "48178"
+      }, {
+        "item" : "19.0",
+        "count" : "46091"
+      }, {
+        "item" : "23.0",
+        "count" : "41880"
+      }, {
+        "item" : "49.0",
+        "count" : "32857"
+      }, {
+        "item" : "31.0",
+        "count" : "31285"
+      }, {
+        "item" : "27.0",
+        "count" : "30937"
+      }, {
+        "item" : "13.0",
+        "count" : "30637"
+      }, {
+        "item" : "39.0",
+        "count" : "29883"
+      }, {
+        "item" : "32.0",
+        "count" : "26636"
+      }, {
+        "item" : "30.0",
+        "count" : "25507"
+      }, {
+        "item" : "24.0",
+        "count" : "25338"
+      }, {
+        "item" : "46.0",
+        "count" : "24561"
+      }, {
+        "item" : "28.0",
+        "count" : "22865"
+      }, {
+        "item" : "11.0",
+        "count" : "22606"
+      }, {
+        "item" : "43.0",
+        "count" : "22431"
+      }, {
+        "item" : "20.0",
+        "count" : "19492"
+      }, {
+        "item" : "29.0",
+        "count" : "19491"
+      }, {
+        "item" : "33.0",
+        "count" : "19181"
+      }, {
+        "item" : "48.0",
+        "count" : "18283"
+      } ],
+      "smallest" : "0.0",
+      "count" : "1091709",
+      "cardinality" : "52"
+    },
+    "format" : {
+      "precisionStyle" : "standard",
+      "noCommas" : "false",
+      "align" : "right"
+    }
+  }, {
+    "id" : 571626751,
+    "name" : "StateSenate",
+    "dataTypeName" : "number",
+    "description" : "New York State senate district",
+    "fieldName" : "statesenate",
+    "position" : 17,
+    "renderTypeName" : "number",
+    "tableColumnId" : 44456861,
+    "width" : 232,
+    "cachedContents" : {
+      "non_null" : "1017626",
+      "largest" : "59.0",
+      "null" : "74083",
+      "top" : [ {
+        "item" : "24.0",
+        "count" : "119910"
+      }, {
+        "item" : "11.0",
+        "count" : "90487"
+      }, {
+        "item" : "15.0",
+        "count" : "59485"
+      }, {
+        "item" : "34.0",
+        "count" : "55348"
+      }, {
+        "item" : "14.0",
+        "count" : "54381"
+      }, {
+        "item" : "10.0",
+        "count" : "49295"
+      }, {
+        "item" : "23.0",
+        "count" : "42116"
+      }, {
+        "item" : "21.0",
+        "count" : "41611"
+      }, {
+        "item" : "22.0",
+        "count" : "40191"
+      }, {
+        "item" : "19.0",
+        "count" : "39053"
+      }, {
+        "item" : "16.0",
+        "count" : "34730"
+      }, {
+        "item" : "12.0",
+        "count" : "32740"
+      }, {
+        "item" : "25.0",
+        "count" : "32644"
+      }, {
+        "item" : "13.0",
+        "count" : "30871"
+      }, {
+        "item" : "17.0",
+        "count" : "29641"
+      }, {
+        "item" : "18.0",
+        "count" : "27965"
+      }, {
+        "item" : "26.0",
+        "count" : "27274"
+      }, {
+        "item" : "29.0",
+        "count" : "26705"
+      }, {
+        "item" : "31.0",
+        "count" : "25304"
+      }, {
+        "item" : "36.0",
+        "count" : "25237"
+      } ],
+      "smallest" : "0.0",
+      "count" : "1091709",
+      "cardinality" : "31"
+    },
+    "format" : {
+      "precisionStyle" : "standard",
+      "noCommas" : "false",
+      "align" : "right"
+    }
+  }, {
+    "id" : 571626752,
+    "name" : "StateAssembly",
+    "dataTypeName" : "number",
+    "description" : "New York State assembly\ndistrict",
+    "fieldName" : "stateassembly",
+    "position" : 18,
+    "renderTypeName" : "number",
+    "tableColumnId" : 44456862,
+    "width" : 256,
+    "cachedContents" : {
+      "non_null" : "1017626",
+      "largest" : "87.0",
+      "null" : "74083",
+      "top" : [ {
+        "item" : "62.0",
+        "count" : "59493"
+      }, {
+        "item" : "26.0",
+        "count" : "36759"
+      }, {
+        "item" : "64.0",
+        "count" : "35240"
+      }, {
+        "item" : "63.0",
+        "count" : "32460"
+      }, {
+        "item" : "25.0",
+        "count" : "29735"
+      }, {
+        "item" : "33.0",
+        "count" : "28442"
+      }, {
+        "item" : "27.0",
+        "count" : "26979"
+      }, {
+        "item" : "61.0",
+        "count" : "25492"
+      }, {
+        "item" : "24.0",
+        "count" : "25175"
+      }, {
+        "item" : "29.0",
+        "count" : "25072"
+      }, {
+        "item" : "82.0",
+        "count" : "24837"
+      }, {
+        "item" : "44.0",
+        "count" : "24611"
+      }, {
+        "item" : "23.0",
+        "count" : "23743"
+      }, {
+        "item" : "31.0",
+        "count" : "20915"
+      }, {
+        "item" : "59.0",
+        "count" : "19461"
+      }, {
+        "item" : "32.0",
+        "count" : "19124"
+      }, {
+        "item" : "81.0",
+        "count" : "18989"
+      }, {
+        "item" : "28.0",
+        "count" : "17821"
+      }, {
+        "item" : "37.0",
+        "count" : "16203"
+      }, {
+        "item" : "52.0",
+        "count" : "16149"
+      } ],
+      "smallest" : "0.0",
+      "count" : "1091709",
+      "cardinality" : "66"
+    },
+    "format" : {
+      "precisionStyle" : "standard",
+      "noCommas" : "false",
+      "align" : "right"
+    }
+  }, {
+    "id" : 571626753,
+    "name" : "Congressional",
+    "dataTypeName" : "number",
+    "description" : "U.S. congressional district",
+    "fieldName" : "congressional",
+    "position" : 19,
+    "renderTypeName" : "number",
+    "tableColumnId" : 44456863,
+    "width" : 256,
+    "cachedContents" : {
+      "non_null" : "1017626",
+      "largest" : "17.0",
+      "null" : "74083",
+      "top" : [ {
+        "item" : "11.0",
+        "count" : "175795"
+      }, {
+        "item" : "6.0",
+        "count" : "114231"
+      }, {
+        "item" : "5.0",
+        "count" : "112456"
+      }, {
+        "item" : "14.0",
+        "count" : "87528"
+      }, {
+        "item" : "8.0",
+        "count" : "84766"
+      }, {
+        "item" : "9.0",
+        "count" : "81601"
+      }, {
+        "item" : "7.0",
+        "count" : "64621"
+      }, {
+        "item" : "15.0",
+        "count" : "62445"
+      }, {
+        "item" : "10.0",
+        "count" : "57376"
+      }, {
+        "item" : "13.0",
+        "count" : "54625"
+      }, {
+        "item" : "12.0",
+        "count" : "54074"
+      }, {
+        "item" : "3.0",
+        "count" : "38525"
+      }, {
+        "item" : "16.0",
+        "count" : "29303"
+      }, {
+        "item" : "17.0",
+        "count" : "261"
+      }, {
+        "item" : "0.0",
+        "count" : "19"
+      } ],
+      "smallest" : "0.0",
+      "count" : "1091709",
+      "cardinality" : "15"
+    },
+    "format" : {
+      "precisionStyle" : "standard",
+      "noCommas" : "false",
+      "align" : "right"
+    }
+  }, {
+    "id" : 571626754,
+    "name" : "PhysicalID",
+    "dataTypeName" : "text",
+    "description" : "PhysicalID of CSCL line\nsegment that the planting\nspace address is associated\nwith",
+    "fieldName" : "physicalid",
+    "position" : 20,
+    "renderTypeName" : "text",
+    "tableColumnId" : 44456864,
+    "width" : 220,
+    "cachedContents" : {
+      "non_null" : "773013",
+      "largest" : "9999",
+      "null" : "318696",
+      "top" : [ {
+        "item" : "0038824",
+        "count" : "275"
+      }, {
+        "item" : "0078970",
+        "count" : "195"
+      }, {
+        "item" : "0086291",
+        "count" : "182"
+      }, {
+        "item" : "0038820",
+        "count" : "163"
+      }, {
+        "item" : "0038821",
+        "count" : "159"
+      }, {
+        "item" : "0038823",
+        "count" : "147"
+      }, {
+        "item" : "0038822",
+        "count" : "144"
+      }, {
+        "item" : "0038819",
+        "count" : "143"
+      }, {
+        "item" : "0011392",
+        "count" : "141"
+      }, {
+        "item" : "0038816",
+        "count" : "130"
+      }, {
+        "item" : "0038815",
+        "count" : "128"
+      }, {
+        "item" : "0038836",
+        "count" : "124"
+      }, {
+        "item" : "0048555",
+        "count" : "121"
+      }, {
+        "item" : "0048633",
+        "count" : "120"
+      }, {
+        "item" : "0047291",
+        "count" : "120"
+      }, {
+        "item" : "0048551",
+        "count" : "118"
+      }, {
+        "item" : "0048548",
+        "count" : "118"
+      }, {
+        "item" : "0038841",
+        "count" : "117"
+      }, {
+        "item" : "106945",
+        "count" : "116"
+      }, {
+        "item" : "0038843",
+        "count" : "115"
+      } ],
+      "smallest" : "0000003",
+      "count" : "1091709",
+      "cardinality" : "76824"
+    },
+    "format" : {
+      "displayStyle" : "plain",
+      "align" : "left"
+    }
+  }, {
+    "id" : 571626755,
+    "name" : "PSStatus",
+    "dataTypeName" : "text",
+    "description" : "Indicates if planting space is\npopulated, empty, or retired",
+    "fieldName" : "psstatus",
+    "position" : 21,
+    "renderTypeName" : "text",
+    "tableColumnId" : 44456866,
+    "width" : 196,
+    "cachedContents" : {
+      "non_null" : "1091709",
+      "largest" : "Retired - DNP",
+      "null" : "0",
+      "top" : [ {
+        "item" : "Populated",
+        "count" : "945458"
+      }, {
+        "item" : "Empty",
+        "count" : "139609"
+      }, {
+        "item" : "Retired",
+        "count" : "3365"
+      }, {
+        "item" : "Empty - DNP",
+        "count" : "1813"
+      }, {
+        "item" : "Retired - DNP",
+        "count" : "1464"
+      } ],
+      "smallest" : "Empty",
+      "count" : "1091709",
+      "cardinality" : "5"
+    },
+    "format" : {
+      "displayStyle" : "plain",
+      "align" : "left"
+    }
+  }, {
+    "id" : 571626756,
+    "name" : "Geometry",
+    "dataTypeName" : "text",
+    "description" : "Geometry for planting space in well known text\n",
+    "fieldName" : "geometry",
+    "position" : 22,
+    "renderTypeName" : "text",
+    "tableColumnId" : 58543056,
+    "width" : 100,
+    "cachedContents" : {
+      "non_null" : "1091709",
+      "largest" : "POINT(-74.25498585716618 40.50512039539145)",
+      "null" : "0",
+      "top" : [ {
+        "item" : "POINT(-73.98628456355274 40.69312770758)",
+        "count" : "4"
+      }, {
+        "item" : "POINT(-73.72843244026265 40.700923242370294)",
+        "count" : "4"
+      }, {
+        "item" : "POINT(-73.91413396036916 40.90042632400095)",
+        "count" : "4"
+      }, {
+        "item" : "POINT(-74.09587663708679 40.579650156866364)",
+        "count" : "4"
+      }, {
+        "item" : "POINT(-73.9861522395987 40.69338254408128)",
+        "count" : "3"
+      }, {
+        "item" : "POINT(-73.92409681773036 40.6685749707709)",
+        "count" : "3"
+      }, {
+        "item" : "POINT(-73.9573086095528 40.801323586721324)",
+        "count" : "3"
+      }, {
+        "item" : "POINT(-73.80032983257021 40.67140063796309)",
+        "count" : "2"
+      }, {
+        "item" : "POINT(-73.77769259248689 40.67496389896033)",
+        "count" : "2"
+      }, {
+        "item" : "POINT(-73.80038171926874 40.67139513207654)",
+        "count" : "2"
+      }, {
+        "item" : "POINT(-73.76214925035667 40.69069907752573)",
+        "count" : "2"
+      }, {
+        "item" : "POINT(-73.77762904307956 40.675017385209)",
+        "count" : "2"
+      }, {
+        "item" : "POINT(-73.78913958161384 40.66981592705025)",
+        "count" : "2"
+      }, {
+        "item" : "POINT(-73.80030851015701 40.67140192302563)",
+        "count" : "2"
+      }, {
+        "item" : "POINT(-73.75362953653901 40.603240025427795)",
+        "count" : "2"
+      }, {
+        "item" : "POINT(-73.74445600638236 40.663648550192846)",
+        "count" : "2"
+      }, {
+        "item" : "POINT(-73.75370681375327 40.70251095511355)",
+        "count" : "2"
+      }, {
+        "item" : "POINT(-73.73733171819735 40.665445439112865)",
+        "count" : "2"
+      }, {
+        "item" : "POINT(-73.74055075970719 40.70289341807746)",
+        "count" : "2"
+      }, {
+        "item" : "POINT(-73.74442652763905 40.663568173283224)",
+        "count" : "2"
+      } ],
+      "smallest" : "POINT(-73.69808293842301 40.735934418453176)",
+      "count" : "1091709",
+      "cardinality" : "1084719"
+    },
+    "format" : { }
+  }, {
+    "id" : 571626757,
+    "name" : "GlobalID",
+    "dataTypeName" : "text",
+    "description" : "Unique identifier for each\ninspection",
+    "fieldName" : "globalid",
+    "position" : 23,
+    "renderTypeName" : "text",
+    "tableColumnId" : 44456874,
+    "width" : 196,
+    "cachedContents" : {
+      "non_null" : "1091709",
+      "largest" : "FFFFFA05-23DE-4D07-B78D-CCEDD7A21357",
+      "null" : "0",
+      "top" : [ {
+        "item" : "8F0E9667-8C2A-4415-9BE1-F7B3939FCE2F",
+        "count" : "2"
+      }, {
+        "item" : "2CA04486-A826-45CC-9A14-0A2AF8730E3D",
+        "count" : "2"
+      }, {
+        "item" : "D2A4CBA6-655F-4824-9BB9-9F78BDF7656C",
+        "count" : "2"
+      }, {
+        "item" : "D9E62A4C-8E00-4B89-8211-49EE70F65F43",
+        "count" : "2"
+      }, {
+        "item" : "648374C4-78D3-4184-BDB6-44557E76326F",
+        "count" : "2"
+      }, {
+        "item" : "D7272B1E-DDBB-4F24-9EBC-1565D1456747",
+        "count" : "2"
+      }, {
+        "item" : "B1E75547-5002-46B7-9911-A4B869521969",
+        "count" : "2"
+      }, {
+        "item" : "D3D8A9F2-9076-4439-895F-3B2D16FCFA8F",
+        "count" : "2"
+      }, {
+        "item" : "6E06875C-A94D-43E7-96E8-2D97CC4C3332",
+        "count" : "2"
+      }, {
+        "item" : "070A6BD2-6F8A-4C78-86E3-19CE2B116050",
+        "count" : "2"
+      }, {
+        "item" : "6C312F40-7D0B-443C-8242-2E87503BC625",
+        "count" : "2"
+      }, {
+        "item" : "E602458E-2C6A-46CB-845A-0C99B022350E",
+        "count" : "2"
+      }, {
+        "item" : "859BC637-038C-46B7-9F7C-ACB875059D51",
+        "count" : "2"
+      }, {
+        "item" : "7000CED6-7751-4A0E-BAA4-C98EAFD2D870",
+        "count" : "2"
+      }, {
+        "item" : "DBFC2A6D-E4C5-483B-9352-D89FEADD04CE",
+        "count" : "2"
+      }, {
+        "item" : "1426997A-09C8-42BF-9A49-83858A32B59A",
+        "count" : "2"
+      }, {
+        "item" : "D1166ACE-BB5A-4A58-9AAA-1314337DDEB6",
+        "count" : "2"
+      }, {
+        "item" : "4B0145BD-3681-4D8E-B017-3FFEC78272E1",
+        "count" : "2"
+      }, {
+        "item" : "1A69EAC0-E806-46B9-98B2-1DBF0A403B8B",
+        "count" : "2"
+      }, {
+        "item" : "D14B29F8-8CF2-49F0-A441-A6F1D2BC4E30",
+        "count" : "2"
+      } ],
+      "smallest" : "00002684-11DD-498A-8F11-207CDC30A5C9",
+      "count" : "1091709",
+      "cardinality" : "1084845"
+    },
+    "format" : {
+      "displayStyle" : "plain",
+      "align" : "left"
+    }
+  }, {
+    "id" : 571626781,
+    "name" : "CreatedDate",
+    "dataTypeName" : "text",
+    "description" : "Date of record creation",
+    "fieldName" : "createddate",
+    "position" : 24,
+    "renderTypeName" : "text",
+    "tableColumnId" : 145693341,
+    "width" : 232,
+    "cachedContents" : {
+      "non_null" : "1091702",
+      "largest" : "2025-02-27T21:53:00",
+      "null" : "7",
+      "top" : [ {
+        "item" : "2016-11-02T16:56:04",
+        "count" : "77489"
+      }, {
+        "item" : "2018-11-07T11:11:11",
+        "count" : "24794"
+      }, {
+        "item" : "2018-04-11T11:11:11",
+        "count" : "18628"
+      }, {
+        "item" : "2017-11-15T11:11:11",
+        "count" : "16758"
+      }, {
+        "item" : "2018-08-01T11:11:11",
+        "count" : "16133"
+      }, {
+        "item" : "2018-06-01T11:11:11",
+        "count" : "12348"
+      }, {
+        "item" : "2017-10-12T11:11:11",
+        "count" : "11802"
+      }, {
+        "item" : "2016-11-02T16:56:00",
+        "count" : "7570"
+      }, {
+        "item" : "2017-08-17T11:11:11",
+        "count" : "6142"
+      }, {
+        "item" : "2019-01-24T11:11:11",
+        "count" : "4835"
+      }, {
+        "item" : "2017-07-06T11:11:11",
+        "count" : "4101"
+      }, {
+        "item" : "2018-05-02T11:11:11",
+        "count" : "3964"
+      }, {
+        "item" : "2017-12-20T11:11:11",
+        "count" : "3302"
+      }, {
+        "item" : "2017-04-20T11:11:11",
+        "count" : "2932"
+      }, {
+        "item" : "2024-12-17T20:37:22",
+        "count" : "1876"
+      }, {
+        "item" : "2017-05-18T11:11:11",
+        "count" : "1623"
+      }, {
+        "item" : "2015-07-23T16:16:31",
+        "count" : "1097"
+      }, {
+        "item" : "2017-07-06T11:11:00",
+        "count" : "1042"
+      }, {
+        "item" : "2017-10-12T11:11:00",
+        "count" : "816"
+      }, {
+        "item" : "2024-04-16T19:34:56",
+        "count" : "739"
+      } ],
+      "smallest" : "2015-02-28T05:00:00",
+      "count" : "1091709",
+      "cardinality" : "404957"
+    },
+    "format" : {
+      "view" : "date_time",
+      "align" : "left"
+    }
+  }, {
+    "id" : 571626779,
+    "name" : "UpdatedDate",
+    "dataTypeName" : "text",
+    "description" : "Date record was updated last",
+    "fieldName" : "updateddate",
+    "position" : 25,
+    "renderTypeName" : "text",
+    "tableColumnId" : 145693339,
+    "width" : 232,
+    "cachedContents" : {
+      "non_null" : "717761",
+      "largest" : "2025-02-27T21:58:32",
+      "null" : "373948",
+      "top" : [ {
+        "item" : "2017-06-14T11:11:11",
+        "count" : "1987"
+      }, {
+        "item" : "2020-05-26T15:00:00",
+        "count" : "977"
+      }, {
+        "item" : "2019-02-20T16:20:53",
+        "count" : "191"
+      }, {
+        "item" : "2017-12-06T15:10:28",
+        "count" : "76"
+      }, {
+        "item" : "2023-08-07T15:09:00",
+        "count" : "16"
+      }, {
+        "item" : "2023-08-07T15:10:00",
+        "count" : "14"
+      }, {
+        "item" : "2023-08-07T14:54:00",
+        "count" : "14"
+      }, {
+        "item" : "2023-08-07T15:00:00",
+        "count" : "12"
+      }, {
+        "item" : "2023-08-07T15:04:00",
+        "count" : "12"
+      }, {
+        "item" : "2023-08-07T14:55:00",
+        "count" : "12"
+      }, {
+        "item" : "2023-06-16T18:23:00",
+        "count" : "11"
+      }, {
+        "item" : "2023-06-16T18:41:00",
+        "count" : "11"
+      }, {
+        "item" : "2023-06-16T18:35:00",
+        "count" : "11"
+      }, {
+        "item" : "2022-07-13T18:55:00",
+        "count" : "11"
+      }, {
+        "item" : "2023-06-16T18:48:00",
+        "count" : "10"
+      }, {
+        "item" : "2023-09-13T16:42:00",
+        "count" : "10"
+      }, {
+        "item" : "2023-09-13T17:20:00",
+        "count" : "10"
+      }, {
+        "item" : "2023-06-16T18:25:00",
+        "count" : "10"
+      }, {
+        "item" : "2022-07-13T18:56:00",
+        "count" : "10"
+      }, {
+        "item" : "2023-08-07T14:43:00",
+        "count" : "10"
+      } ],
+      "smallest" : "2015-03-04T05:00:00",
+      "count" : "1091709",
+      "cardinality" : "694367"
+    },
+    "format" : {
+      "view" : "date_time",
+      "align" : "left"
+    }
+  }, {
+    "id" : 571626760,
+    "name" : "Jurisdiction",
+    "dataTypeName" : "text",
+    "description" : "Indicates if planting space is under DPR or other jurisdiction",
+    "fieldName" : "jurisdiction",
+    "position" : 26,
+    "renderTypeName" : "text",
+    "tableColumnId" : 44456890,
+    "width" : 244,
+    "cachedContents" : {
+      "non_null" : "161447",
+      "largest" : "Unknown",
+      "null" : "930262",
+      "top" : [ {
+        "item" : "DPR",
+        "count" : "151852"
+      }, {
+        "item" : "Green Thumb",
+        "count" : "4782"
+      }, {
+        "item" : "Private",
+        "count" : "2502"
+      }, {
+        "item" : "Unknown",
+        "count" : "1377"
+      }, {
+        "item" : "Other Agency",
+        "count" : "835"
+      }, {
+        "item" : "DEP",
+        "count" : "66"
+      }, {
+        "item" : "GI Asset",
+        "count" : "10"
+      }, {
+        "item" : "DOT",
+        "count" : "9"
+      }, {
+        "item" : "MTA",
+        "count" : "6"
+      }, {
+        "item" : "NYCHA",
+        "count" : "5"
+      }, {
+        "item" : "DCAS",
+        "count" : "2"
+      }, {
+        "item" : "DOE",
+        "count" : "1"
+      } ],
+      "smallest" : "DCAS",
+      "count" : "1091709",
+      "cardinality" : "12"
+    },
+    "format" : {
+      "displayStyle" : "plain",
+      "align" : "left"
+    }
+  }, {
+    "id" : 571626761,
+    "name" : "OverheadUtilities",
+    "dataTypeName" : "text",
+    "description" : "Indicates if there are overhead utility wires (1) or not (0)",
+    "fieldName" : "overheadutilities",
+    "position" : 27,
+    "renderTypeName" : "text",
+    "tableColumnId" : 44456891,
+    "width" : 304,
+    "cachedContents" : {
+      "non_null" : "37170",
+      "largest" : "1.0",
+      "null" : "1054539",
+      "top" : [ {
+        "item" : "1.0",
+        "count" : "23830"
+      }, {
+        "item" : "0.0",
+        "count" : "13340"
+      } ],
+      "smallest" : "0.0",
+      "count" : "1091709",
+      "cardinality" : "2"
+    },
+    "format" : {
+      "displayStyle" : "plain",
+      "align" : "left"
+    }
+  }, {
+    "id" : 571626762,
+    "name" : "TreeGuard",
+    "dataTypeName" : "text",
+    "description" : "This is a new field and is barely populated",
+    "fieldName" : "treeguard",
+    "position" : 28,
+    "renderTypeName" : "text",
+    "tableColumnId" : 44456892,
+    "width" : 208,
+    "cachedContents" : {
+      "non_null" : "22865",
+      "largest" : "None",
+      "null" : "1068844",
+      "top" : [ {
+        "item" : "None",
+        "count" : "18988"
+      }, {
+        "item" : "Helpful",
+        "count" : "3692"
+      }, {
+        "item" : "Harmful",
+        "count" : "185"
+      } ],
+      "smallest" : "Harmful",
+      "count" : "1091709",
+      "cardinality" : "3"
+    },
+    "format" : {
+      "displayStyle" : "plain",
+      "align" : "left"
+    }
+  }, {
+    "id" : 571626763,
+    "name" : "Latitude",
+    "dataTypeName" : "number",
+    "fieldName" : "latitude",
+    "position" : 29,
+    "renderTypeName" : "number",
+    "tableColumnId" : 53282302,
+    "width" : 100,
+    "cachedContents" : {
+      "non_null" : "483038",
+      "largest" : "40.912745",
+      "null" : "608671",
+      "top" : [ {
+        "item" : "40.875013",
+        "count" : "115"
+      }, {
+        "item" : "40.838613",
+        "count" : "98"
+      }, {
+        "item" : "40.612318",
+        "count" : "79"
+      }, {
+        "item" : "40.839217",
+        "count" : "79"
+      }, {
+        "item" : "40.633335",
+        "count" : "78"
+      }, {
+        "item" : "40.731724",
+        "count" : "74"
+      }, {
+        "item" : "40.83611",
+        "count" : "71"
+      }, {
+        "item" : "40.837675",
+        "count" : "68"
+      }, {
+        "item" : "40.656249",
+        "count" : "67"
+      }, {
+        "item" : "40.887111",
+        "count" : "64"
+      }, {
+        "item" : "40.84057",
+        "count" : "62"
+      }, {
+        "item" : "40.648557",
+        "count" : "57"
+      }, {
+        "item" : "40.883588",
+        "count" : "57"
+      }, {
+        "item" : "40.657667",
+        "count" : "56"
+      }, {
+        "item" : "40.710932",
+        "count" : "55"
+      }, {
+        "item" : "40.666335",
+        "count" : "52"
+      }, {
+        "item" : "40.743712",
+        "count" : "47"
+      }, {
+        "item" : "40.675452",
+        "count" : "47"
+      }, {
+        "item" : "40.65023",
+        "count" : "46"
+      }, {
+        "item" : "40.748265",
+        "count" : "46"
+      } ],
+      "smallest" : "40.499017",
+      "count" : "1091709",
+      "cardinality" : "178187"
+    },
+    "format" : { }
+  }, {
+    "id" : 571626764,
+    "name" : "Longitude",
+    "dataTypeName" : "number",
+    "fieldName" : "longitude",
+    "position" : 30,
+    "renderTypeName" : "number",
+    "tableColumnId" : 53282303,
+    "width" : 100,
+    "cachedContents" : {
+      "non_null" : "483038",
+      "largest" : "-73.70038099999999",
+      "null" : "608671",
+      "top" : [ {
+        "item" : "-73.828362",
+        "count" : "115"
+      }, {
+        "item" : "-73.856525",
+        "count" : "99"
+      }, {
+        "item" : "-73.93572899999999",
+        "count" : "79"
+      }, {
+        "item" : "-73.858934",
+        "count" : "77"
+      }, {
+        "item" : "-73.88597300000001",
+        "count" : "77"
+      }, {
+        "item" : "-74.023732",
+        "count" : "74"
+      }, {
+        "item" : "-73.86199499999999",
+        "count" : "68"
+      }, {
+        "item" : "-73.865712",
+        "count" : "67"
+      }, {
+        "item" : "-73.977896",
+        "count" : "67"
+      }, {
+        "item" : "-73.913697",
+        "count" : "65"
+      }, {
+        "item" : "-73.85886000000001",
+        "count" : "62"
+      }, {
+        "item" : "-73.84401",
+        "count" : "56"
+      }, {
+        "item" : "-73.87923000000001",
+        "count" : "56"
+      }, {
+        "item" : "-73.87703999999999",
+        "count" : "54"
+      }, {
+        "item" : "-73.99542599999999",
+        "count" : "52"
+      }, {
+        "item" : "-73.827825",
+        "count" : "51"
+      }, {
+        "item" : "-73.881472",
+        "count" : "51"
+      }, {
+        "item" : "-73.873366",
+        "count" : "46"
+      }, {
+        "item" : "-73.924983",
+        "count" : "46"
+      }, {
+        "item" : "-74.010869",
+        "count" : "45"
+      } ],
+      "smallest" : "-74.254302",
+      "count" : "1091709",
+      "cardinality" : "196994"
+    },
+    "format" : { }
+  }, {
+    "id" : 571626765,
+    "name" : "Census Tract",
+    "dataTypeName" : "number",
+    "fieldName" : "census_tract",
+    "position" : 31,
+    "renderTypeName" : "number",
+    "tableColumnId" : 53282306,
+    "width" : 100,
+    "cachedContents" : {
+      "non_null" : "483016",
+      "largest" : "1621",
+      "null" : "608693",
+      "top" : [ {
+        "item" : "892.01",
+        "count" : "3492"
+      }, {
+        "item" : "1571.01",
+        "count" : "2169"
+      }, {
+        "item" : "884",
+        "count" : "2055"
+      }, {
+        "item" : "1579.01",
+        "count" : "1904"
+      }, {
+        "item" : "1579.02",
+        "count" : "1677"
+      }, {
+        "item" : "134",
+        "count" : "1527"
+      }, {
+        "item" : "122",
+        "count" : "1475"
+      }, {
+        "item" : "991",
+        "count" : "1472"
+      }, {
+        "item" : "330",
+        "count" : "1403"
+      }, {
+        "item" : "1333",
+        "count" : "1347"
+      }, {
+        "item" : "169",
+        "count" : "1319"
+      }, {
+        "item" : "132",
+        "count" : "1302"
+      }, {
+        "item" : "1059",
+        "count" : "1261"
+      }, {
+        "item" : "1417",
+        "count" : "1243"
+      }, {
+        "item" : "1579.03",
+        "count" : "1225"
+      }, {
+        "item" : "702.01",
+        "count" : "1218"
+      }, {
+        "item" : "138",
+        "count" : "1216"
+      }, {
+        "item" : "151",
+        "count" : "1214"
+      }, {
+        "item" : "77",
+        "count" : "1207"
+      }, {
+        "item" : "118",
+        "count" : "1198"
+      } ],
+      "smallest" : "1",
+      "count" : "1091709",
+      "cardinality" : "1491"
+    },
+    "format" : {
+      "precisionStyle" : "standard",
+      "noCommas" : "true",
+      "align" : "right"
+    }
+  }, {
+    "id" : 571626766,
+    "name" : "BIN",
+    "dataTypeName" : "number",
+    "fieldName" : "bin",
+    "position" : 32,
+    "renderTypeName" : "number",
+    "tableColumnId" : 53282307,
+    "width" : 100,
+    "cachedContents" : {
+      "non_null" : "466629",
+      "largest" : "5176654",
+      "null" : "625080",
+      "top" : [ {
+        "item" : "4000000",
+        "count" : "1643"
+      }, {
+        "item" : "3000000",
+        "count" : "1427"
+      }, {
+        "item" : "2000000",
+        "count" : "879"
+      }, {
+        "item" : "1000000",
+        "count" : "837"
+      }, {
+        "item" : "5000000",
+        "count" : "238"
+      }, {
+        "item" : "3336349",
+        "count" : "73"
+      }, {
+        "item" : "2085869",
+        "count" : "64"
+      }, {
+        "item" : "3321834",
+        "count" : "56"
+      }, {
+        "item" : "1084826",
+        "count" : "53"
+      }, {
+        "item" : "1012266",
+        "count" : "52"
+      }, {
+        "item" : "4257078",
+        "count" : "51"
+      }, {
+        "item" : "1076741",
+        "count" : "51"
+      }, {
+        "item" : "4014554",
+        "count" : "48"
+      }, {
+        "item" : "1083927",
+        "count" : "47"
+      }, {
+        "item" : "2003061",
+        "count" : "46"
+      }, {
+        "item" : "1079184",
+        "count" : "46"
+      }, {
+        "item" : "4445259",
+        "count" : "44"
+      }, {
+        "item" : "1066406",
+        "count" : "42"
+      }, {
+        "item" : "3189540",
+        "count" : "40"
+      }, {
+        "item" : "1022057",
+        "count" : "40"
+      } ],
+      "smallest" : "1000000",
+      "count" : "1091709",
+      "cardinality" : "270165"
+    },
+    "format" : {
+      "precisionStyle" : "standard",
+      "noCommas" : "true",
+      "align" : "right"
+    }
+  }, {
+    "id" : 571626767,
+    "name" : "BBL",
+    "dataTypeName" : "number",
+    "fieldName" : "bbl",
+    "position" : 33,
+    "renderTypeName" : "number",
+    "tableColumnId" : 53282308,
+    "width" : 100,
+    "cachedContents" : {
+      "non_null" : "466629",
+      "largest" : "5080470090",
+      "null" : "625080",
+      "top" : [ {
+        "item" : "1009720001",
+        "count" : "275"
+      }, {
+        "item" : "1009780001",
+        "count" : "162"
+      }, {
+        "item" : "4124950002",
+        "count" : "126"
+      }, {
+        "item" : "3083290225",
+        "count" : "126"
+      }, {
+        "item" : "2051410120",
+        "count" : "115"
+      }, {
+        "item" : "4076320002",
+        "count" : "105"
+      }, {
+        "item" : "2039437501",
+        "count" : "98"
+      }, {
+        "item" : "4085150002",
+        "count" : "92"
+      }, {
+        "item" : "4071150002",
+        "count" : "88"
+      }, {
+        "item" : "2049050003",
+        "count" : "80"
+      }, {
+        "item" : "1021120058",
+        "count" : "79"
+      }, {
+        "item" : "4084400001",
+        "count" : "77"
+      }, {
+        "item" : "4077390003",
+        "count" : "76"
+      }, {
+        "item" : "3061430001",
+        "count" : "73"
+      }, {
+        "item" : "4077420003",
+        "count" : "71"
+      }, {
+        "item" : "2039387501",
+        "count" : "71"
+      }, {
+        "item" : "4084010675",
+        "count" : "69"
+      }, {
+        "item" : "4084410001",
+        "count" : "69"
+      }, {
+        "item" : "2039377501",
+        "count" : "68"
+      }, {
+        "item" : "4076747501",
+        "count" : "68"
+      } ],
+      "smallest" : "0",
+      "count" : "1091709",
+      "cardinality" : "263298"
+    },
+    "format" : {
+      "precisionStyle" : "standard",
+      "noCommas" : "true",
+      "align" : "right"
+    }
+  }, {
+    "id" : 571626768,
+    "name" : "NTA",
+    "dataTypeName" : "text",
+    "fieldName" : "nta",
+    "position" : 34,
+    "renderTypeName" : "text",
+    "tableColumnId" : 53282309,
+    "width" : 100,
+    "cachedContents" : {
+      "non_null" : "497178",
+      "largest" : "Yankee Stadium-Macombs Dam Park",
+      "null" : "594531",
+      "top" : [ {
+        "item" : "/",
+        "count" : "14162"
+      }, {
+        "item" : "Bayside",
+        "count" : "7831"
+      }, {
+        "item" : "Murray Hill-Broadway Flushing",
+        "count" : "7235"
+      }, {
+        "item" : "South Ozone Park",
+        "count" : "7101"
+      }, {
+        "item" : "Auburndale",
+        "count" : "7054"
+      }, {
+        "item" : "BK82 /",
+        "count" : "6203"
+      }, {
+        "item" : "Queens Village",
+        "count" : "6198"
+      }, {
+        "item" : "Jackson Heights",
+        "count" : "6107"
+      }, {
+        "item" : "Whitestone-Beechhurst",
+        "count" : "6058"
+      }, {
+        "item" : "Glen Oaks-Floral Park-New Hyde Park",
+        "count" : "6048"
+      }, {
+        "item" : "Howard Beach-Lindenwood",
+        "count" : "5913"
+      }, {
+        "item" : "Bay Ridge",
+        "count" : "5562"
+      }, {
+        "item" : "Borough Park",
+        "count" : "5457"
+      }, {
+        "item" : "Canarsie",
+        "count" : "5368"
+      }, {
+        "item" : "Bensonhurst",
+        "count" : "5246"
+      }, {
+        "item" : "St. Albans",
+        "count" : "5182"
+      }, {
+        "item" : "Astoria (North)-Ditmars-Steinway",
+        "count" : "4926"
+      }, {
+        "item" : "Bellerose",
+        "count" : "4896"
+      }, {
+        "item" : "Forest Hills",
+        "count" : "4757"
+      }, {
+        "item" : "Baisley Park",
+        "count" : "4461"
+      } ],
+      "smallest" : "/",
+      "count" : "1091709",
+      "cardinality" : "393"
+    },
+    "format" : { }
+  }, {
+    "id" : 571626780,
+    "name" : "Location",
+    "dataTypeName" : "point",
+    "description" : "",
+    "fieldName" : "location",
+    "position" : 35,
+    "renderTypeName" : "point",
+    "tableColumnId" : 145693340,
+    "width" : 100,
+    "cachedContents" : {
+      "non_null" : "1091709",
+      "null" : "0",
+      "top" : [ {
+        "item" : {
+          "coordinates" : [ -74.09587663708679, 40.579650156866364 ],
+          "type" : "Point"
+        },
+        "count" : "4"
+      }, {
+        "item" : {
+          "coordinates" : [ -73.91413396036916, 40.90042632400095 ],
+          "type" : "Point"
+        },
+        "count" : "4"
+      }, {
+        "item" : {
+          "coordinates" : [ -73.98628456355274, 40.69312770758 ],
+          "type" : "Point"
+        },
+        "count" : "4"
+      }, {
+        "item" : {
+          "coordinates" : [ -73.72843244026265, 40.700923242370294 ],
+          "type" : "Point"
+        },
+        "count" : "4"
+      }, {
+        "item" : {
+          "coordinates" : [ -73.9861522395987, 40.69338254408128 ],
+          "type" : "Point"
+        },
+        "count" : "3"
+      }, {
+        "item" : {
+          "coordinates" : [ -73.92409681773036, 40.6685749707709 ],
+          "type" : "Point"
+        },
+        "count" : "3"
+      }, {
+        "item" : {
+          "coordinates" : [ -73.9573086095528, 40.801323586721324 ],
+          "type" : "Point"
+        },
+        "count" : "3"
+      }, {
+        "item" : {
+          "coordinates" : [ -73.93718889345965, 40.73457996714598 ],
+          "type" : "Point"
+        },
+        "count" : "2"
+      }, {
+        "item" : {
+          "coordinates" : [ -73.87416827431325, 40.65664507356192 ],
+          "type" : "Point"
+        },
+        "count" : "2"
+      }, {
+        "item" : {
+          "coordinates" : [ -74.24935984160115, 40.507632801821394 ],
+          "type" : "Point"
+        },
+        "count" : "2"
+      }, {
+        "item" : {
+          "coordinates" : [ -73.88242642579145, 40.86656917442744 ],
+          "type" : "Point"
+        },
+        "count" : "2"
+      }, {
+        "item" : {
+          "coordinates" : [ -73.93968726370755, 40.6171318556597 ],
+          "type" : "Point"
+        },
+        "count" : "2"
+      }, {
+        "item" : {
+          "coordinates" : [ -73.98643392487504, 40.678799089759714 ],
+          "type" : "Point"
+        },
+        "count" : "2"
+      }, {
+        "item" : {
+          "coordinates" : [ -73.72809465750265, 40.679523613912494 ],
+          "type" : "Point"
+        },
+        "count" : "2"
+      }, {
+        "item" : {
+          "coordinates" : [ -73.86525850688267, 40.75755536453614 ],
+          "type" : "Point"
+        },
+        "count" : "2"
+      }, {
+        "item" : {
+          "coordinates" : [ -73.90066894020858, 40.6609276969072 ],
+          "type" : "Point"
+        },
+        "count" : "2"
+      }, {
+        "item" : {
+          "coordinates" : [ -73.74220970850521, 40.697102466977974 ],
+          "type" : "Point"
+        },
+        "count" : "2"
+      }, {
+        "item" : {
+          "coordinates" : [ -74.12970930994219, 40.61553903751872 ],
+          "type" : "Point"
+        },
+        "count" : "2"
+      }, {
+        "item" : {
+          "coordinates" : [ -74.20472077822062, 40.537275634070085 ],
+          "type" : "Point"
+        },
+        "count" : "2"
+      }, {
+        "item" : {
+          "coordinates" : [ -73.74391849368098, 40.66334115177506 ],
+          "type" : "Point"
+        },
+        "count" : "2"
+      } ],
+      "count" : "1091709",
+      "cardinality" : "1084719"
+    },
+    "format" : { }
+  }, {
+    "id" : 571626782,
+    "name" : "Zip Codes 2",
+    "dataTypeName" : "number",
+    "description" : "This column was automatically created in order to record in what polygon from the dataset 'Zip Codes' (efsh-h5xi) the point in column 'location' is located.  This enables the creation of region maps (choropleths) in the visualization canvas and data lens.",
+    "fieldName" : ":@computed_region_efsh_h5xi",
+    "position" : 45,
+    "renderTypeName" : "number",
+    "tableColumnId" : 145693342,
+    "computationStrategy" : {
+      "source_columns" : [ "location" ],
+      "type" : "georegion_match_on_point",
+      "parameters" : {
+        "region" : "_efsh-h5xi",
+        "primary_key" : "_feature_id"
+      }
+    },
+    "format" : { }
+  }, {
+    "id" : 571626783,
+    "name" : "Community Districts 2",
+    "dataTypeName" : "number",
+    "description" : "This column was automatically created in order to record in what polygon from the dataset 'Community Districts' (f5dn-yrer) the point in column 'location' is located.  This enables the creation of region maps (choropleths) in the visualization canvas and data lens.",
+    "fieldName" : ":@computed_region_f5dn_yrer",
+    "position" : 46,
+    "renderTypeName" : "number",
+    "tableColumnId" : 145693343,
+    "computationStrategy" : {
+      "source_columns" : [ "location" ],
+      "type" : "georegion_match_on_point",
+      "parameters" : {
+        "region" : "_f5dn-yrer",
+        "primary_key" : "_feature_id"
+      }
+    },
+    "format" : { }
+  }, {
+    "id" : 571626784,
+    "name" : "Borough Boundaries 2",
+    "dataTypeName" : "number",
+    "description" : "This column was automatically created in order to record in what polygon from the dataset 'Borough Boundaries' (yeji-bk3q) the point in column 'location' is located.  This enables the creation of region maps (choropleths) in the visualization canvas and data lens.",
+    "fieldName" : ":@computed_region_yeji_bk3q",
+    "position" : 47,
+    "renderTypeName" : "number",
+    "tableColumnId" : 145693344,
+    "computationStrategy" : {
+      "source_columns" : [ "location" ],
+      "type" : "georegion_match_on_point",
+      "parameters" : {
+        "region" : "_yeji-bk3q",
+        "primary_key" : "_feature_id"
+      }
+    },
+    "format" : { }
+  }, {
+    "id" : 571626785,
+    "name" : "City Council Districts 2",
+    "dataTypeName" : "number",
+    "description" : "This column was automatically created in order to record in what polygon from the dataset 'City Council Districts' (92fq-4b7q) the point in column 'location' is located.  This enables the creation of region maps (choropleths) in the visualization canvas and data lens.",
+    "fieldName" : ":@computed_region_92fq_4b7q",
+    "position" : 48,
+    "renderTypeName" : "number",
+    "tableColumnId" : 145693345,
+    "computationStrategy" : {
+      "source_columns" : [ "location" ],
+      "type" : "georegion_match_on_point",
+      "parameters" : {
+        "region" : "_92fq-4b7q",
+        "primary_key" : "_feature_id"
+      }
+    },
+    "format" : { }
+  }, {
+    "id" : 571626786,
+    "name" : "Police Precincts 2",
+    "dataTypeName" : "number",
+    "description" : "This column was automatically created in order to record in what polygon from the dataset 'Police Precincts' (sbqj-enih) the point in column 'location' is located.  This enables the creation of region maps (choropleths) in the visualization canvas and data lens.",
+    "fieldName" : ":@computed_region_sbqj_enih",
+    "position" : 49,
+    "renderTypeName" : "number",
+    "tableColumnId" : 145693346,
+    "computationStrategy" : {
+      "source_columns" : [ "location" ],
+      "type" : "georegion_match_on_point",
+      "parameters" : {
+        "region" : "_sbqj-enih",
+        "primary_key" : "_feature_id"
+      }
+    },
+    "format" : { }
+  } ],
+  "grants" : [ {
+    "inherited" : false,
+    "type" : "viewer",
+    "flags" : [ "public" ]
+  } ],
+  "metadata" : {
+    "rdfSubject" : "0",
+    "rdfClass" : "",
+    "jsonQuery" : {
+      "order" : [ {
+        "columnFieldName" : "objectid",
+        "ascending" : true
+      } ]
+    },
+    "custom_fields" : {
+      "Data Collection" : {
+        "Data Collection" : "Forestry Management System (ForMS)"
+      },
+      "Update" : {
+        "Automation" : "Yes",
+        "Date Made Public" : "3/8/2017",
+        "Update Frequency" : "Every 2 weeks"
+      },
+      "Dataset Information" : {
+        "Agency" : "Department of Parks and Recreation (DPR)"
+      }
+    },
+    "availableDisplayTypes" : [ "table", "fatrow", "page" ],
+    "renderTypeConfig" : {
+      "visible" : {
+        "table" : true
+      }
+    }
+  },
+  "owner" : {
+    "id" : "5fuc-pqz2",
+    "displayName" : "NYC OpenData",
+    "profileImageUrlLarge" : "/api/users/5fuc-pqz2/profile_images/LARGE",
+    "profileImageUrlMedium" : "/api/users/5fuc-pqz2/profile_images/THUMB",
+    "profileImageUrlSmall" : "/api/users/5fuc-pqz2/profile_images/TINY",
+    "screenName" : "NYC OpenData",
+    "type" : "interactive",
+    "flags" : [ "acceptedEula", "mayBeStoriesCoOwner" ]
+  },
+  "query" : {
+    "orderBys" : [ {
+      "ascending" : true,
+      "expression" : {
+        "columnId" : 571626735,
+        "type" : "column"
+      }
+    } ]
+  },
+  "rights" : [ "read" ],
+  "tableAuthor" : {
+    "id" : "5fuc-pqz2",
+    "displayName" : "NYC OpenData",
+    "profileImageUrlLarge" : "/api/users/5fuc-pqz2/profile_images/LARGE",
+    "profileImageUrlMedium" : "/api/users/5fuc-pqz2/profile_images/THUMB",
+    "profileImageUrlSmall" : "/api/users/5fuc-pqz2/profile_images/TINY",
+    "screenName" : "NYC OpenData",
+    "type" : "interactive",
+    "flags" : [ "acceptedEula", "mayBeStoriesCoOwner" ]
+  },
+  "flags" : [ "default", "ownerMayBeContacted", "restorable", "restorePossibleForType" ]
+}
