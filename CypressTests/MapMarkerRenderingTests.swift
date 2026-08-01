@@ -167,15 +167,13 @@ struct MapMarkerRenderingTests {
         pinView.apply(annotation: pinView.annotation!, isDark: false)
         #expect(
             dotView.zPriority.rawValue > pinView.zPriority.rawValue,
-            "the reader's dot (\(dotView.zPriority.rawValue)) sits under an ordinary pin "
-                + "(\(pinView.zPriority.rawValue)) — the one mark every other mark is relative to, hidden by them"
+            "the reader's dot (\(dotView.zPriority.rawValue)) sits under an ordinary pin (\(pinView.zPriority.rawValue)), the one mark every other mark is relative to, hidden by them"
         )
 
         pinView.setSelectedAppearance(true)
         #expect(
             dotView.zPriority.rawValue > pinView.zPriority.rawValue,
-            "the selected pin (\(pinView.zPriority.rawValue)) covers the reader's dot "
-                + "(\(dotView.zPriority.rawValue))"
+            "the selected pin (\(pinView.zPriority.rawValue)) covers the reader's dot (\(dotView.zPriority.rawValue))"
         )
         #expect(
             pinView.zPriority.rawValue > MapLayout.pinZPriority.rawValue,
