@@ -2041,3 +2041,97 @@ handed. Task #88 is the orchestrator's own.
 > sections above, R31 warned that a ruling stating a false fact about a screen is worse than
 > silence; this correction exists so R32 is not that ruling. The lesson is E118/E183's again:
 > **a ruling is written from the code and the screen, never from a ticket.**
+
+### R33 — The favorite's on state inverts to the accent pair (task #153)
+
+**The finding.** From the owner's device walk of 2026-07-31 (task #153): tapping `Favorite` on
+screen 03 persists correctly — E184's refresh-race fix holds, `FavoriteRoundTripTests` proves the
+write — but the owner reported the button as rendering identically in both states, so a tap gives
+no confirmation.
+
+**The premise, checked before building on it.** The claim "renders identically" is false of the
+code as written: E112 built R2's selected appearance and it has been on every build since —
+`callout.green.fill` card, `cta.fill` label and border, `hairlineStrong` against `hairline`,
+12/800 against 12/600, photographed in both schemes by `FavoriteAppearanceShots`. What the report
+is evidence of is not a missing state but an **illegible** one: in light mode the on-fill is
+`#EFF3E3` against the idle `#FFFFFF` and the label moves between two dark greens (`#1D4634` and
+`#3C4A3E`); in dark mode the two fills are `#1A241A` against `#18251D`. A difference a screen
+shows indoors and a phone in daylight does not. The channels that survive greyscale — border
+width and weight — are real but small at a 12pt label.
+
+**The ruling: the selected cell takes the selected filter chip's own treatment.**
+
+- fill `cta.fill`, label `cta.label` — the exact pair C4's `filterSelected` draws, which is the
+  app's established rendering of "this text control is on". `#1D4634` under white in light,
+  mint `#8EC3A5` under near-black in dark.
+- border `cta.fill` at `hairlineStrong`, and 12/800, both unchanged from E112.
+- No glyph. R2's correction and R30 both stand: C8 has no heart, and this change draws nothing —
+  the state change is fill, tint and weight, all existing tokens.
+- The label stays `Favorite` in both states (R2), and the spoken value/`.isSelected` trait are
+  unchanged.
+
+**What this departs from and why that is allowed.** R2's clause "the card fill takes the app's
+existing tinted green surface" is superseded for this one cell: the tinted surface was tried,
+shipped (E112), and reported unreadable by the decision-owner from the field, which is a stronger
+record than the ruling's original guess at a fill. The luminance inversion is itself a channel
+that survives greyscale, so the state now carries in fill-luminance, border width and weight —
+one more channel than E112 had, not one fewer.
+
+**Verification.** `FavoriteToggleTests` asserts the two appearances differ as facts (distinct
+fill, label, border width, font) and that the selected pair clears 4.5:1 in both schemes;
+`FavoriteAppearanceShots` photographs both states, light and dark. Camera-truth on the physical
+phone remains the owner's to confirm.
+
+### R34 — The photo browser gains segmented access by framing (task #154)
+
+**The report.** Owner's device walk, 2026-07-31: "the photo browser shows ONLY full-tree shots;
+leaf and trunk photos are unreachable."
+
+**The premise, checked before building on it — and refuted at the code level.** There is no
+`.fullTree` filter anywhere on the browsing path. `ContributionStore.photos(treeID:)` selects
+every undeleted row of every shot type; `TreePhotosModel.load()` filters only
+`isVisibleToItsContributor` (tombstones); screen 20 draws every row it gets and already captions
+them `Trunk`, `Leaf close-up`, `Photo`. The capture, staging, outbox and upload path carries the
+framing end-to-end (E152), and `VisitCameraSessionTests.threePhotographsRoundTrip` proves three
+framings land as three rows. Nothing to check under #47 either: the full-tree preference lives
+only in the hero *heuristic* (`Photo.isBestPhotoShot`, `PhotoHero.choose` tier 3), which is not
+on the browser's path.
+
+What the owner most plausibly saw: photo binaries upload only when `photoUploadsAllowed`
+(the wi-fi gate) — a visit's JSON can land while its trunk/leaf binaries sit `awaitingWifi`, and
+in that window the only photographs *in the table* are community-add photos, which `addTree`
+inserts directly and labels `.fullTree`. That is a browser showing only full-tree shots, with the
+mechanism in the outbox rather than in a filter. Field confirmation is the owner's — check the
+outbox screen for `awaitingWifi` rows next walk.
+
+**The decision (pre-authorized in the task): the browser gains a segmented subject filter, in
+place, no new screen.**
+
+- Segments: `All · Full tree · Trunk · Leaf close-up` — the whole timeline first, then the three
+  framings screen 04 offers, in the chip row's own order, each named by
+  `TreePhotosPresentation.subject(_:)` so the segment and the caption cannot spell one framing
+  two ways.
+- No segment for `.other`. Nothing in the app lets somebody frame a shot as "other" — the value
+  exists for care photos and for pre-shot-type outbox rows — so a segment would name a choice
+  nobody made. `.other` rows are on the timeline under `All`.
+- The filter is a **view** of the timeline, not a different read: the hero, `deletablePhotoIDs`
+  and the community-add sentence keep answering for the tree. An empty slice of a photographed
+  tree gets its own sentence naming the framing, because "no photos of this tree yet" would be
+  false with the timeline one tap away.
+
+**Hero voting is untouched — and one premise in the task is corrected on the record.** The task
+says "keep hero voting full-tree-only". The shipped rule (E125, A3's escape clause) is that a
+thumbs-up is the manual pin and **overrides** the full-tree heuristic — an up-voted leaf can lead
+the page, deliberately, because a person's "this one" outranks a shot type. This change does not
+touch `PhotoHero`; narrowing the vote's power to full-tree would be a reversal of E125, which a
+browser-affordance ticket has no standing to make. What "full-tree-only" is true of is the
+*heuristic tier*: with no votes, the hero is still the most recent full tree.
+
+**The anonymized-photos half of the ask.** No, ownerless photos are not excluded by any browser
+filter — screen 20 gates on `deletedAt` alone, and under `LocalAPI` `ownPhotoIDs` is every row on
+the device, so `TreeProfilePresentation.visiblePhotos` keeps them too. The latent risk sits one
+layer out, for whichever round builds `RemoteAPI`: `visiblePhotos` shows a non-own photo only if
+`isPubliclyVisible`, and nothing in the app can ever set `.approved` — so the day `ownPhotoIDs`
+becomes a real ownership set, an anonymized (`PhotoOwner.nobody`) photo drops out of the hero,
+the pill count and the season strip while remaining in the browser. That is #131's territory and
+is not fixed here; it is named so the next round does not find it by report.

@@ -67,7 +67,7 @@ struct TreePhotosView: View {
 
                         // The subject filter (task #154). A view of the timeline, not a different
                         // read — see `TreePhotosModel.subjectFilter` and the design note in
-                        // docs/rulings-pending/photo-browser-shot-types.md until it is numbered.
+                        // R34.
                         SegmentedControl(
                             options: TreePhotosPresentation.subjectSegments,
                             selection: Binding(

@@ -158,7 +158,7 @@ struct QuadActionRow: View {
     /// takes the treatment the app's other selected text control already has — C4's selected
     /// filter chip: `cta.fill` under `cta.label` — so "this tree is yours" reads at the same
     /// strength as "this filter is on". Tokens only, no glyph; see
-    /// docs/rulings-pending/favorite-on-state-contrast.md until the ruling is numbered.
+    /// R33.
     ///
     /// The state still carries in more channels than hue:
     ///
