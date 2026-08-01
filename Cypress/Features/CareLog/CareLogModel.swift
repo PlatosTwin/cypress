@@ -110,6 +110,9 @@ final class CareLogModel {
         self.treeDisplayName = treeDisplayName
         self.draft = initialDraft
         self.note = initialDraft.note ?? ""
+        // A draft that already carries a note or a photo has an open well by definition — a
+        // fixture handing one in must render the fields, not a closed well hiding what it holds.
+        self.isEditingExtras = initialDraft.note != nil || !initialDraft.photos.isEmpty
         self.now = now
         self.onSaved = onSaved
     }
