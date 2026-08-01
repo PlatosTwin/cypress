@@ -283,6 +283,48 @@ final class VisitCameraModel {
         snapshots[shotType] = nil
     }
 
+    // MARK: - The ✕ (task #152)
+
+    /// What the ✕ on the viewfinder means right now. Two meanings, decided by what is under it.
+    enum CloseIntent: Equatable {
+        /// A captured photograph is on screen: the ✕ discards **this shot** and returns to the
+        /// live viewfinder. The session survives — the other framings' photographs, the selected
+        /// chip, the note and the tags all stay.
+        case discardShot
+        /// The live viewfinder is on screen: the ✕ leaves the camera.
+        case leaveCamera
+    }
+
+    /// Reported from the owner's device walk (task #152): ✕ over a captured shot exited to the
+    /// tree profile. On this screen a captured photograph replaces the live preview for the
+    /// selected framing (`hasSnapped`), so the ✕ over it reads as "not this shot" — the same
+    /// gesture the shutter's retake makes — and not as "abandon the session". Only over the live
+    /// viewfinder does ✕ mean leave.
+    var closeIntent: CloseIntent { hasSnapped ? .discardShot : .leaveCamera }
+
+    /// Performs the ✕ and returns whether the caller should dismiss the screen.
+    ///
+    /// The discard is `retake()` exactly — one implementation of "this framing's photograph goes,
+    /// nothing else does" — so the ✕ and the shutter cannot drift apart about what a discard is.
+    @discardableResult
+    func performClose() -> Bool {
+        switch closeIntent {
+        case .discardShot:
+            retake()
+            return false
+        case .leaveCamera:
+            return true
+        }
+    }
+
+    /// The ✕'s spoken name, which must not promise "close" while the tap would discard a shot.
+    var closeLabel: String {
+        switch closeIntent {
+        case .discardShot: return "Discard this photo"
+        case .leaveCamera: return "Close the camera"
+        }
+    }
+
     // MARK: - The write
 
     /// "Log visit".

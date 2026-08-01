@@ -419,6 +419,68 @@ struct VisitCameraSessionTests {
         #expect(!model.canLogVisit)
     }
 
+    // MARK: - 4b · The ✕ over a captured shot discards the shot, not the session (task #152)
+    //
+    // Reported from the owner's device walk of 2026-07-31: ✕ after capturing exited to the tree
+    // profile. The ✕ over a captured photograph means "not this shot" — the viewfinder comes back
+    // and the session survives. Only over the live viewfinder does ✕ leave.
+    //
+    // The camera itself cannot be driven in a simulator (`useLibraryImage` is the only capture
+    // path there, behind a system PhotosPicker no UI test can script reliably), so the decision is
+    // covered here at the unit level, on the same model the view asks. The physical-phone pass is
+    // the owner's, as with every camera behaviour.
+
+    @Test("the ✕ over a captured shot discards that shot and stays")
+    func closeOverACapturedShotDiscardsAndStays() throws {
+        let model = Self.model()
+        try Self.shootAll(model, [.fullTree, .trunk])
+        defer { Self.removeStaged(model.draft.photoPaths) }
+
+        model.shotType = .trunk
+        #expect(model.hasSnapped)
+        #expect(model.closeIntent == .discardShot)
+
+        let dismisses = model.performClose()
+        #expect(!dismisses, "the ✕ over a captured shot left the camera")
+        // The live viewfinder is back for this framing…
+        #expect(!model.hasSnapped, "the captured trunk is still on screen")
+        #expect(model.snapshot == nil)
+        #expect(model.draft.photo(shotType: .trunk) == nil)
+        // …and the session survived: the selection, the other framing's photograph, the save.
+        #expect(model.shotType == .trunk, "the framing selection was reset")
+        #expect(model.draft.photo(shotType: .fullTree) != nil, "the full tree went with the trunk")
+        #expect(model.canLogVisit, "the session stopped being saveable")
+    }
+
+    @Test("the ✕ over the live viewfinder leaves — so discard-then-✕ is two taps out")
+    func closeOverTheViewfinderLeaves() throws {
+        let model = Self.model()
+        #expect(model.closeIntent == .leaveCamera)
+        #expect(model.performClose(), "the ✕ over the live viewfinder did not leave")
+
+        // After a discard the next ✕ is over the live viewfinder again, and that one leaves.
+        model.useLibraryImage(try Self.jpeg(.fullTree))
+        defer { Self.removeStaged(model.draft.photoPaths) }
+        #expect(model.closeIntent == .discardShot)
+        #expect(!model.performClose())
+        #expect(model.closeIntent == .leaveCamera)
+        #expect(model.performClose())
+    }
+
+    @Test("the ✕'s spoken name changes with what it would do")
+    func closeLabelFollowsIntent() throws {
+        // The fact, not the phrasing (R30's rule): the two states must not share a name, because a
+        // listener over a captured shot who hears the viewfinder's name is being promised an exit.
+        let model = Self.model()
+        let overViewfinder = model.closeLabel
+        model.useLibraryImage(try Self.jpeg(.fullTree))
+        defer { Self.removeStaged(model.draft.photoPaths) }
+        let overCapturedShot = model.closeLabel
+        #expect(!overViewfinder.isEmpty)
+        #expect(!overCapturedShot.isEmpty)
+        #expect(overViewfinder != overCapturedShot, "one name for two different taps")
+    }
+
     // MARK: - 5 · The chip row, wearing three marks, at AX5
 
     /// #45's overflow, re-checked under the pressure a third meaningful control adds — and a correction
