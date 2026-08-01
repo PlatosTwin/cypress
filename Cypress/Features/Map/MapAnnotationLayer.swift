@@ -277,6 +277,15 @@ struct MapAnnotationLayer: UIViewRepresentable {
     var onCameraChange: (BoundingBox, Int) -> Void
     var onSelectPin: (TreePin) -> Void
     var onSelectCluster: (TreeCluster) -> Void
+    /// Fired when a pan or pinch **begins on the glass** — a reader's own hand, never the app's
+    /// camera writes (task #128). Optional and nil on the two quiet screens that draw this
+    /// basemap; screen 01 uses it to mark the camera as the reader's.
+    ///
+    /// A gesture, not a camera comparison: E140 established that no comparison of camera values
+    /// can tell a reader's move from a stale update pass, so the one honest signal is the touch
+    /// itself. The recognizers are additive observers (`cancelsTouchesInView = false`, recognizing
+    /// simultaneously) and steal nothing from MapKit's own handling.
+    var onReaderGesture: (() -> Void)?
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -319,6 +328,23 @@ struct MapAnnotationLayer: UIViewRepresentable {
             MapMarkerView.self,
             forAnnotationViewWithReuseIdentifier: MapMarkerView.reuseIdentifier
         )
+
+        // The reader's own hand on the glass, observed without being interfered with (#128). One
+        // recognizer per gesture family that moves a camera; `.rotation` is left out because a
+        // rotation does not change where the camera is looking, and the flag this feeds gates a
+        // *re-centre*.
+        for recognizer in [
+            UIPanGestureRecognizer(
+                target: context.coordinator, action: #selector(Coordinator.readerGesture(_:))
+            ),
+            UIPinchGestureRecognizer(
+                target: context.coordinator, action: #selector(Coordinator.readerGesture(_:))
+            ),
+        ] {
+            recognizer.cancelsTouchesInView = false
+            recognizer.delegate = context.coordinator
+            mapView.addGestureRecognizer(recognizer)
+        }
 
         context.coordinator.installWash(on: mapView, isDark: colorScheme == .dark)
         // **The opening camera is *not* applied here any more, and this is ERRATA E168 — the whole
@@ -389,7 +415,16 @@ struct MapAnnotationLayer: UIViewRepresentable {
     // MARK: - Coordinator
 
     @MainActor
-    final class Coordinator: NSObject, MKMapViewDelegate {
+    final class Coordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate {
+
+        /// The observers added in `makeUIView` must not fight MapKit's own recognizers — theirs do
+        /// the panning; ours only report that a pan happened (#128).
+        nonisolated func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
+        ) -> Bool {
+            true
+        }
 
         var parent: MapAnnotationLayer
         var isDark = false
@@ -616,6 +651,15 @@ struct MapAnnotationLayer: UIViewRepresentable {
             echo(mapView.region)
         }
 
+        // MARK: The reader's hand (#128)
+
+        /// A pan or pinch began on the glass. Reported once per gesture, at `.began`, so the
+        /// callback costs nothing per frame of the drag.
+        @objc func readerGesture(_ recognizer: UIGestureRecognizer) {
+            guard recognizer.state == .began else { return }
+            parent.onReaderGesture?()
+        }
+
         // MARK: The annotations
 
         /// Add and remove the difference, and nothing else.
@@ -689,6 +733,19 @@ struct MapAnnotationLayer: UIViewRepresentable {
         }
 
         /// The dot moves; it is not rebuilt. See `UserDotAnnotation`.
+        ///
+        /// **And it glides** (task #149). A bare write to the KVO'd coordinate moves the view in
+        /// one frame, so a walking reader's dot jumped a few metres once a second — position as a
+        /// slideshow. Wrapping the write in a `UIView` animation is `MKMapView`'s own mechanism
+        /// for animating an annotation between coordinates: one object, one view, interpolated on
+        /// the render server, no SwiftUI pass anywhere (the E139 class this file exists to keep
+        /// out). Linear, because a dot that eases is a dot that stops walking twice a second.
+        ///
+        /// Three cases do not glide, each for its own reason: the first fix (there is nothing to
+        /// glide *from*), Reduce Motion (the new position is the answer, not the delivery — the
+        /// same rule `applyCameraIfChanged` follows), and a teleport past
+        /// `MapLayout.userDotSnapDegrees` (an animation would claim a journey that never
+        /// happened).
         func syncUserDot(_ coordinate: Coordinate?, on mapView: MKMapView) {
             guard let coordinate else {
                 if let userDot { mapView.removeAnnotation(userDot) }
@@ -697,9 +754,23 @@ struct MapAnnotationLayer: UIViewRepresentable {
             }
             let next = coordinate.clLocationCoordinate
             if let userDot {
-                if userDot.coordinate.latitude != next.latitude
-                    || userDot.coordinate.longitude != next.longitude {
+                let current = userDot.coordinate
+                guard current.latitude != next.latitude
+                        || current.longitude != next.longitude else { return }
+                let jump = max(
+                    abs(current.latitude - next.latitude),
+                    abs(current.longitude - next.longitude)
+                )
+                if UIAccessibility.isReduceMotionEnabled || jump > MapLayout.userDotSnapDegrees {
                     userDot.coordinate = next
+                } else {
+                    UIView.animate(
+                        withDuration: MapLayout.userDotGlideSeconds,
+                        delay: 0,
+                        options: [.curveLinear, .allowUserInteraction, .beginFromCurrentState]
+                    ) {
+                        userDot.coordinate = next
+                    }
                 }
                 return
             }
@@ -824,9 +895,13 @@ final class MapMarkerView: MKAnnotationView {
         default: return
         }
         image = MapPinImage.image(for: kind, isDark: isDark)
-        // The reader's dot belongs under every tree, and a cluster badge over them. `MKAnnotation`
-        // has no z-order of its own; `displayPriority` and `zPriority` are what MapKit reads.
-        zPriority = annotation is UserDotAnnotation ? .min : .defaultUnselected
+        // **The reader's dot is topmost — above tree pins, above the selected pin's emphasis**
+        // (task #150; the ordering and its argument live on `MapLayout`). It was `.min`, and the
+        // running screen showed the dot vanishing under any dense block's pins — the one mark
+        // every other mark is relative to, hidden by them.
+        zPriority = annotation is UserDotAnnotation
+            ? MapLayout.userDotZPriority
+            : MapLayout.pinZPriority
         displayPriority = .required
         isEnabled = !(annotation is UserDotAnnotation)
         applyAccessibility(for: annotation)
@@ -870,7 +945,9 @@ final class MapMarkerView: MKAnnotationView {
     func setSelectedAppearance(_ isSelected: Bool) {
         let scale = isSelected ? MapLayout.selectedPinScale : 1
         transform = CGAffineTransform(scaleX: scale, y: scale)
-        zPriority = isSelected ? .max : .defaultUnselected
+        // Above its neighbours, below the reader's dot (task #150; see `MapLayout`'s z-order
+        // block). `.max` belongs to the dot now, so selection takes the tier under it.
+        zPriority = isSelected ? MapLayout.selectedPinZPriority : MapLayout.pinZPriority
         setReticle(isSelected)
     }
 
@@ -976,7 +1053,7 @@ final class MapMarkerView: MKAnnotationView {
     override func prepareForReuse() {
         super.prepareForReuse()
         transform = .identity
-        zPriority = .defaultUnselected
+        zPriority = MapLayout.pinZPriority
         pulseLayer?.removeFromSuperlayer()
         pulseLayer = nil
         setReticle(false)

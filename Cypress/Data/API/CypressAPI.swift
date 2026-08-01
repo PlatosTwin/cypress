@@ -193,6 +193,19 @@ public protocol CypressAPI: Sendable {
     /// app failed to load because a requirement lived in an extension and dispatched statically.
     func mapMembership(_ kind: MapMembership) async throws -> Set<UUID>
 
+    /// Whether the map's two condition chips could match anything at all (task #136, RULINGS R31).
+    ///
+    /// Not a BUILD-PLAN §6 endpoint: it exists because the shipped seed cannot satisfy either chip
+    /// and R31 requires a chip in that position to render disabled rather than spend a tap on
+    /// E126's card — and to re-enable itself the moment matching data exists, which only the store
+    /// can say. `month` is the caller's clock (`MapModel` injects its own), so the bloom half is
+    /// testable without the wall.
+    ///
+    /// Defaulted in `MapConditionAvailability.swift` to `.none`, which is what an implementation
+    /// with no inventory truthfully has. **Declared here and not only in an extension** — see
+    /// `photoData` above, and ERRATA E125.
+    func mapConditionAvailability(month: Int) async throws -> MapConditionAvailability
+
     // MARK: - Reports and export
 
     /// `POST /reports/hazard-redirect` — logs that a 311 redirect was shown. Analytics only, no

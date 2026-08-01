@@ -121,9 +121,10 @@ struct MapFilter: Equatable, Sendable {
     /// SCREENS.md 01 §12's own two, unchanged in meaning.
     ///
     /// **The declaration order is the row's drawn order and is load-bearing** (R23.1). The owner
-    /// listed the visible chips as "yours, in bloom, needs care, and year", so `inBloom` comes
-    /// first here; `MapFilterChips` draws `allCases` and does not re-sort it, which keeps the
-    /// owner's order in one place rather than in a literal beside the view.
+    /// listed the chips as "yours, in bloom, needs care, and year", so `inBloom` comes first here;
+    /// `MapFilterChips` draws `allCases` and does not re-sort it, which keeps the owner's order in
+    /// one place rather than in a literal beside the view. (#145 later moved `Year` off the row
+    /// into the expandable control; the order of these two is untouched by that.)
     enum Condition: String, CaseIterable, Identifiable, Sendable {
         case inBloom
         case needsCare
@@ -183,7 +184,8 @@ struct MapFilter: Equatable, Sendable {
 
 // MARK: - The narrowings that are not in the row
 
-/// **Everything the filter can ask that the row does not have a chip for** (RULINGS **R23.1**).
+/// **Everything the filter can ask that the row does not have a chip for** (RULINGS **R23.1**, and
+/// task #145 for `year`).
 ///
 /// ── Why this is a type and not an `if` in the view ───────────────────────────────────────────
 /// The owner's instruction was "favorites (and any others we add later) should go to a separate
@@ -193,41 +195,60 @@ struct MapFilter: Equatable, Sendable {
 /// be a second inline chip, the collapsed control would need a hand-updated count, and the day
 /// somebody forgot to update it is the day a filter is on with nothing on screen saying so.
 ///
-/// So the drawer draws `allCases`, the collapsed chip counts and names `allCases`, and adding a
-/// narrowing later is one case here plus its two arms below. Nothing in `MapFilterChips` changes.
+/// The drawer draws `allCases`, the collapsed chip counts `allCases`, and `MapFilter.activeExtras`
+/// is the one expression all three channels read. Adding a narrowing later is one case here — its
+/// `isOn` and its `label(in:)` — plus one arm in `MapFilterChips.drawer` saying what control draws
+/// it. `year` is the case that proved the drawer could not assume its contents are toggles: a
+/// decade is a *value*, chosen from a menu, and a uniform `toggle(in:)` had no honest meaning for
+/// it, so the per-case surface here is the two questions every hidden narrowing must answer
+/// (am I on; what am I called) and the control itself is the drawer's business.
 ///
 /// ── Why the arms live here rather than on `MapFilter` ────────────────────────────────────────
-/// `isOn` and `toggle` are the *whole* definition of what a hidden narrowing means, and keeping them
-/// beside the case is what makes the case the only thing a new one has to write. `favorites` reads
-/// and writes `MapFilter.membership`, which is single-select within itself (R23 §1) — so turning
-/// `Favorites` on from inside the drawer turns `Yours` off in the row above it, which is the same
-/// swap R23 specified, now crossing a surface.
+/// `isOn` and `label(in:)` are the definition of what a hidden narrowing *means* to the three
+/// channels that must not disagree (the collapsed chip's count, its fill, its spoken value), and
+/// keeping them beside the case is what makes the case the only thing a new one has to write.
+/// `favorites` reads `MapFilter.membership`, which is single-select within itself (R23 §1) — so
+/// turning `Favorites` on from inside the drawer turns `Yours` off in the row above it, which is
+/// the same swap R23 specified, now crossing a surface.
 enum MapExtraFilter: String, CaseIterable, Identifiable, Sendable {
 
     /// Trees hearted on screen 03 (D9, E89). In the row until R23.1, behind the control since.
     case favorites
 
+    /// The planting decade (#116, E175). In the row until #145; the owner's directive cut the
+    /// visible chips to `Yours · In bloom · Needs care` and sent `Year` here beside `Favorites`.
+    case year
+
     var id: String { rawValue }
 
-    var label: String {
+    /// What this narrowing is called, **carrying its value when it has one**.
+    ///
+    /// The collapsed control's spoken value is built from these, and it is the only channel that
+    /// reaches a listener while the drawer is shut (R23.1 §2) — so `year` must speak its decade
+    /// here. `Year` alone would tell a listener the map is narrowed by year and leave them opening
+    /// the drawer to find out to what, which is the E126 hazard half-fixed.
+    func label(in filter: MapFilter) -> String {
         switch self {
         case .favorites: return MapFilterCopy.membershipLabel(.favorites)
+        case .year: return MapYearFilterCopy.label(filter.decade)
         }
     }
 
     func isOn(_ filter: MapFilter) -> Bool {
         switch self {
         case .favorites: return filter.membership == .favorites
+        case .year: return filter.decade != nil
         }
     }
 
-    /// A toggle, like every other chip in this feature: a conjunction with no way to remove one
-    /// term is a conjunction you can only escape wholesale (R23 §1).
-    func toggle(in filter: inout MapFilter) {
-        switch self {
-        case .favorites:
-            filter.membership = filter.membership == .favorites ? nil : .favorites
-        }
+    /// Turns `Favorites` on or off. A toggle, like every other chip in this feature: a conjunction
+    /// with no way to remove one term is a conjunction you can only escape wholesale (R23 §1).
+    ///
+    /// Deliberately not a uniform requirement of the enum — `year` is set through its menu and
+    /// cleared by choosing `Any year` (or by `Clear filters`), and a `toggle` that had to invent a
+    /// decade to mean "on" would be a control answering a question nobody asked.
+    static func toggleFavorites(in filter: inout MapFilter) {
+        filter.membership = filter.membership == .favorites ? nil : .favorites
     }
 }
 
@@ -294,15 +315,66 @@ enum MapFilterCopy {
     ///
     /// Names rather than a number here, because the constraint that made the label count instead —
     /// the width of a chip row on a phone — does not apply to a spoken string.
-    static func moreValue(isExpanded: Bool, active: [MapExtraFilter]) -> String {
+    ///
+    /// Takes the names rather than the cases because a name can carry a value — `Year: 2010s` —
+    /// and the value is read off the filter, which this copy type deliberately does not hold. The
+    /// caller derives the names from `MapFilter.activeExtras`, the one expression all three
+    /// channels read, via `MapExtraFilter.label(in:)`.
+    static func moreValue(isExpanded: Bool, activeNames: [String]) -> String {
         let state = isExpanded ? "Expanded" : "Collapsed"
-        guard !active.isEmpty else { return state }
-        return "\(state), on: " + active.map(\.label).joined(separator: ", ")
+        guard !activeNames.isEmpty else { return state }
+        return "\(state), on: " + activeNames.joined(separator: ", ")
     }
 
     /// Why a reader would open it. It says what is *behind* the control rather than what pressing it
     /// does, because "expands" is already the value's job.
     static let moreHint = "Holds the narrowings that are not chips in the row."
+
+    // MARK: The two chips that cannot match yet (task #136, RULINGS R31)
+
+    /// **Why a condition chip is disabled, said on the chip's own surface.**
+    ///
+    /// R31: a chip whose only possible outcome is E126's apology card is #59's defect wearing
+    /// filter clothes — a control that promises and cannot deliver. So while no tree anywhere in
+    /// the data could match, the chip renders disabled with the reason on it, visually and as its
+    /// accessibility value, and the tap is never spent on a card that says what the chip already
+    /// said.
+    ///
+    /// **Two different sentences, because the two waits are different in kind** (R31). `In bloom`
+    /// waits on us — the curated species pipeline (#6) owes the calendars, and D5's schema is ready
+    /// for them — so its sentence is the app being honest about its own debt. `Needs care` waits on
+    /// the neighborhood: `declining` is a status no city publishes, so it arrives through community
+    /// observation or not at all, and its sentence is an invitation.
+    ///
+    /// Each chip re-enables itself the moment matching data exists — no flag, no release; the
+    /// data's arrival is the switch (`MapConditionAvailability`, read per appearance by
+    /// `MapModel.refreshConditionAvailability`).
+    ///
+    /// **`In bloom` has a third state R31 did not draft for, found by measuring the seed rather
+    /// than believing the record.** R31 (and R23, and E183 §5) say every `seasonal` in the shipped
+    /// seed is `{}`; the seed this build ships carries bloom calendars for 11 species, and no month
+    /// from October to December names a blooming tree anywhere in it. A chip disabled in November
+    /// under the "calendars are still being written" sentence would be the app claiming a debt it
+    /// has partly paid — E175's class of sentence, confidently wrong — so out-of-season gets its
+    /// own words, and `MapConditionAvailability.hasAnyBloomCalendar` is what picks between them.
+    ///
+    /// No spaces around em dashes (ARCHITECTURE §5.7). Tested under R30's rule: the tests assert
+    /// the sentences exist, differ per fact, and travel on the chip — never that they contain a
+    /// phrase.
+    static func conditionUnavailableReason(
+        _ condition: MapFilter.Condition,
+        availability: MapConditionAvailability
+    ) -> String {
+        switch condition {
+        case .inBloom:
+            return availability.hasAnyBloomCalendar
+                ? "Nothing on the map is in its bloom months right now—this comes back when "
+                    + "something is."
+                : "Our bloom calendars are still being written—no tree can match this yet."
+        case .needsCare:
+            return "No one has reported a struggling tree yet—yours could be the first."
+        }
+    }
 
     // MARK: The result line
 
@@ -444,4 +516,19 @@ enum MapYearFilterCopy {
     /// coverage figure is therefore always provisional, and the only thing keeping it honest is that
     /// this constant is asserted against the seed rather than remembered from the day it was true.
     static let undatedShareOfSeed = 0.8078
+}
+
+// MARK: - What the availability answers, per chip (task #136, RULINGS R31)
+
+extension MapConditionAvailability {
+    /// Whether this condition chip is a live control or R31's disabled one.
+    ///
+    /// Lives here rather than on the `Data` type because `MapFilter.Condition` is this feature's
+    /// vocabulary; the availability itself is the store's answer and knows nothing about chips.
+    func isEnabled(_ condition: MapFilter.Condition) -> Bool {
+        switch condition {
+        case .inBloom: return inBloom
+        case .needsCare: return needsCare
+        }
+    }
 }

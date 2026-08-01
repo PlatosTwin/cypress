@@ -535,13 +535,21 @@ struct MapSpeciesColourTests {
             reuseIdentifier: MapMarkerView.reuseIdentifier
         )
         view.setSelectedAppearance(true)
-        #expect(view.zPriority == .max, "a reticle half-covered by the neighbour it distinguishes is not a mark")
+        // The relationship, not the raw constant: selection must outrank every unselected
+        // neighbour — a reticle half-covered by the pin it distinguishes is not a mark — and it
+        // sits *below* the reader's dot, which task #150 made the topmost thing on the map.
+        // `.max` belongs to the dot now; `MapLayout`'s z-order block is the one ladder, and
+        // `MapMarkerRenderingTests.userDotIsTopmost` holds the dot's end of it.
+        #expect(view.zPriority.rawValue > MapLayout.pinZPriority.rawValue,
+                "a reticle half-covered by the neighbour it distinguishes is not a mark")
+        #expect(view.zPriority.rawValue < MapLayout.userDotZPriority.rawValue,
+                "a selected pin above the reader's dot hides the one mark every other mark is relative to (#150)")
         view.setSelectedAppearance(false)
-        #expect(view.zPriority == .defaultUnselected)
+        #expect(view.zPriority == MapLayout.pinZPriority)
         view.setSelectedAppearance(true)
         view.prepareForReuse()
         #expect(view.transform == .identity)
-        #expect(view.zPriority == .defaultUnselected, "a recycled view arrived still wearing the last selection")
+        #expect(view.zPriority == MapLayout.pinZPriority, "a recycled view arrived still wearing the last selection")
     }
 
     // MARK: - OKLCh, for the two assertions that need it

@@ -1188,6 +1188,30 @@ the chips move down and stay real, and the swipe order is field → suggestions 
 which is the order the words are in. `MapSuggestionUITests` asserts both halves: the chips move rather
 than being covered, and they stay hittable.
 
+**← CORRECTED 2026-08-01 (task #143; the measurement is ERRATA E183 §3).** The last two sentences
+overstated what the layout delivered. Being in the flow made the *geometry* right — the chips move
+down and stay hittable, which was asserted and true — but the swipe-order claim was written from the
+view code's order, not from the tree, and the tree exposed something else: the suggestion rows
+arrived **after** the chips, and the bottom chrome plus the whole tab bar arrived **before** the
+field's own ✕ (a consequence, in part, of this very ruling's block reorder in part 6, which applies
+the bottom block first so the top draws over it — drawing order and reading order want opposite
+arrangements). The stated order is now true and is *declared* rather than inherited: screen 01's
+chrome carries explicit `accessibilitySortPriority` values — the top block over the bottom block
+over the tab bar, and within the top block the field, then the suggestions, then the chips, then
+the status lines, then the legend. Note the chips are #145's row by the time this lands (`Yours ·
+In bloom · Needs care · More filters`), so the order the priorities pin is over that row.
+
+**And the correction carries its own caveat, measured the hard way.** A swipe-order test was
+written against E183 §3's own instrument — the order `app.buttons` hands back — run red against
+the pre-fix tree, and then run against the fixed tree, where it returned the *identical*
+24-element order: that enumeration violates the view hierarchy, geometry and creation order at
+once, and does not move under sort priorities at all, so it is XCUITest's internal order and not a
+listener's swipe order. (E183 §3's listing already disagreed with its own prose — `Clear search`
+sat before the four tabs in it.) Asserting the reading order through that channel would be E183
+§4's mistake, so no test claims it; the fix stands on Apple's documented contract for
+`accessibilitySortPriority`, and **verification with VoiceOver on the physical phone is owed**.
+The paragraph above is otherwise undisturbed; nothing else in this ruling moves.
+
 **2 · Six rows, and under them — never inside the scroll — a sentence about the rest.**
 
 Not `MapSearch.speciesLimit`'s 100, which is the right number for narrowing a *map* — every extra

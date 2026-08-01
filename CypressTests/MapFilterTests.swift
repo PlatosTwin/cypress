@@ -548,27 +548,55 @@ struct MapFilterTests {
     /// hazard fixed for sighted readers only.
     @Test("the control announces whether it is open and what is on inside it")
     func moreValueSaysStateAndContents() {
-        let shutEmpty = MapFilterCopy.moreValue(isExpanded: false, active: [])
-        let openEmpty = MapFilterCopy.moreValue(isExpanded: true, active: [])
+        let shutEmpty = MapFilterCopy.moreValue(isExpanded: false, activeNames: [])
+        let openEmpty = MapFilterCopy.moreValue(isExpanded: true, activeNames: [])
         #expect(shutEmpty != openEmpty, "open and shut announce the same thing: \(shutEmpty)")
 
-        let shutOn = MapFilterCopy.moreValue(isExpanded: false, active: [.favorites])
+        let favoritesOn = MapFilter(membership: .favorites)
+        let names = favoritesOn.activeExtras.map { $0.label(in: favoritesOn) }
+        let shutOn = MapFilterCopy.moreValue(isExpanded: false, activeNames: names)
         #expect(shutOn != shutEmpty,
                 "a shut control with a filter on announces “\(shutOn)”, the same as an empty one: the map is narrowed by a cause nothing on screen names")
-        #expect(shutOn.contains(MapExtraFilter.favorites.label),
+        #expect(shutOn.contains(MapExtraFilter.favorites.label(in: favoritesOn)),
                 "the shut control does not name what is on: \(shutOn)")
         // The names, not a count: a spoken string has no width, which is the whole reason the label
         // and the value divide the work the way they do.
         #expect(!shutOn.contains("1"), "the spoken value counts where it should name: \(shutOn)")
     }
 
+    /// **A hidden narrowing that carries a value speaks the value, not just the dimension** (#145).
+    ///
+    /// `Year` is set from a menu inside a control that may be shut by the time anyone listens. The
+    /// shut control's spoken names are built from `label(in:)`, so a listener has to get the decade
+    /// — the dimension alone would tell them the map is narrowed by year and leave them opening the
+    /// drawer to learn to what.
+    @Test("the year narrowing names its decade through the shut control")
+    func yearSpeaksItsDecadeWhileHidden() {
+        var filter = MapFilter.all
+        let resting = MapExtraFilter.year.label(in: filter)
+        filter.decade = .twentyTens
+
+        let chosen = MapExtraFilter.year.label(in: filter)
+        #expect(chosen != resting,
+                "a chosen decade and no decade produce the same name: “\(chosen)”")
+        #expect(chosen.contains(MapFilter.Decade.twentyTens.label),
+                "the hidden year narrowing is named “\(chosen)”, which does not say which decade is on")
+
+        let names = filter.activeExtras.map { $0.label(in: filter) }
+        let spoken = MapFilterCopy.moreValue(isExpanded: false, activeNames: names)
+        #expect(spoken.contains(MapFilter.Decade.twentyTens.label),
+                "the shut control announces “\(spoken)” while the map is narrowed to the 2010s")
+    }
+
     /// **The drawer is an extension point, and `activeExtras` is the one expression its three
     /// channels read.**
     ///
-    /// The owner asked for "favorites (and any others we add later)". The test that matters is not
-    /// that `favorites` works — it is that nothing here is written per-case, so the second narrowing
-    /// to arrive is one enum case and two switch arms. Every assertion below is over `allCases`.
-    @Test("every hidden narrowing toggles, reports itself, and clears with the rest")
+    /// The owner asked for "favorites (and any others we add later)"; `year` is the later one
+    /// (#145), and it is also the case that proved the drawer's contents are not all toggles — a
+    /// decade is a value, so each case is turned on below the way its own control does it, and the
+    /// claims that stay uniform (reports itself, activates the filter, clears with the rest) are
+    /// asserted over `allCases`.
+    @Test("every hidden narrowing reports itself and clears with the rest")
     func extraFiltersAreDrivenByTheirOwnCases() {
         #expect(!MapExtraFilter.allCases.isEmpty)
         for extra in MapExtraFilter.allCases {
@@ -576,25 +604,34 @@ struct MapFilterTests {
             #expect(!extra.isOn(filter), "\(extra) reads as on over an unfiltered map")
             #expect(filter.activeExtras.isEmpty)
 
-            extra.toggle(in: &filter)
+            switch extra {
+            case .favorites: MapExtraFilter.toggleFavorites(in: &filter)
+            case .year: filter.decade = .twentyTens
+            }
             #expect(extra.isOn(filter), "\(extra) did not come on")
             #expect(filter.isActive,
                     "\(extra) is on and the filter is not active, so no “Clear filters” would draw and the only way out would be to remember it is there (R23.1 §3)")
             #expect(filter.activeExtras.map(\.id) == [extra.id],
                     "\(extra) is on and activeExtras reports \(filter.activeExtras.map(\.id))")
-            #expect(!extra.label.isEmpty, "\(extra) has no words")
-
-            // A toggle, like every other chip in this feature.
-            extra.toggle(in: &filter)
-            #expect(!extra.isOn(filter), "\(extra) could not be turned off again")
+            #expect(!extra.label(in: filter).isEmpty, "\(extra) has no words")
 
             // …and the one clear-everything control reaches it. This is R23.1 §3: if the way out of
             // a hidden filter were also hidden, a reader would have to know the filter existed to
             // find the control that removes it.
-            extra.toggle(in: &filter)
             filter = .all
             #expect(!extra.isOn(filter), "clearing every filter left \(extra) on")
         }
+    }
+
+    /// `Favorites` is still a toggle, and the membership swap still crosses the two surfaces
+    /// (R23 §1, R23.1): turning it on inside the drawer turns `Yours` off in the row above.
+    @Test("favorites toggles, and turning it on takes Yours off")
+    func favoritesToggleStillSwapsMembership() {
+        var filter = MapFilter(membership: .yours)
+        MapExtraFilter.toggleFavorites(in: &filter)
+        #expect(filter.membership == .favorites, "the swap did not cross the two surfaces")
+        MapExtraFilter.toggleFavorites(in: &filter)
+        #expect(filter.membership == nil, "favorites could not be turned off again")
     }
 
     /// The row is the owner's four, in the owner's order: "yours, in bloom, needs care, and year".

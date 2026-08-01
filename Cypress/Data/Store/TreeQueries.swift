@@ -456,6 +456,39 @@ public struct TreeQueries {
         return try statement.fetchAll(Self.decodePin)
     }
 
+    // MARK: - Could a condition chip match anything at all (task #136, RULINGS R31)
+
+    /// Whether any tree in the inventory carries `status`. Index-driven — `idx_trees_status` —
+    /// so the common answer ("no declining tree anywhere", true of the shipped seed) is one index
+    /// probe, not a table scan. Called once per appearance of screen 01, never on the pan path.
+    public func anyTree(withStatus status: TreeStatus, connection: SQLiteConnection) throws -> Bool {
+        let softDeleted = seedHasSoftDeletedTrees ? "AND t.deleted_at IS NULL" : ""
+        let statement = try connection.cachedStatement("""
+        SELECT 1 AS tree_exists
+          FROM \(seed).trees t
+         WHERE t.status = :status \(softDeleted)
+         LIMIT 1
+        """)
+        _ = try statement.bind(status.rawValue, forName: ":status")
+        return try statement.fetchOne { _ in true } ?? false
+    }
+
+    /// Whether any tree's `species_current` is one of `rowIDs`. Answered through
+    /// `idx_trees_species_current`; the ids arrive through `json_each` for `pins(rowIDs:)`'s
+    /// reason — constant statement text, one cached preparation.
+    public func anyTree(withSpeciesRowIDs rowIDs: [Int64], connection: SQLiteConnection) throws -> Bool {
+        guard !rowIDs.isEmpty else { return false }
+        let softDeleted = seedHasSoftDeletedTrees ? "AND t.deleted_at IS NULL" : ""
+        let statement = try connection.cachedStatement("""
+        SELECT 1 AS tree_exists
+          FROM \(seed).trees t
+         WHERE t.species_current IN (SELECT value FROM json_each(:rowids)) \(softDeleted)
+         LIMIT 1
+        """)
+        _ = try statement.bind("[\(rowIDs.map(String.init).joined(separator: ","))]", forName: ":rowids")
+        return try statement.fetchOne { _ in true } ?? false
+    }
+
     // MARK: - The statements, as text
     //
     // The three map statements are built by named methods rather than inline, so the plan gate can
