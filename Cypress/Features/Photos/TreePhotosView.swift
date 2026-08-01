@@ -65,6 +65,18 @@ struct TreePhotosView: View {
                             .foregroundStyle(CypressColor.textMuted)
                             .fixedSize(horizontal: false, vertical: true)
 
+                        // The subject filter (task #154). A view of the timeline, not a different
+                        // read — see `TreePhotosModel.subjectFilter` and the design note in
+                        // docs/rulings-pending/photo-browser-shot-types.md until it is numbered.
+                        SegmentedControl(
+                            options: TreePhotosPresentation.subjectSegments,
+                            selection: Binding(
+                                get: { model.subjectFilter },
+                                set: { model.subjectFilter = $0 }
+                            ),
+                            label: TreePhotosPresentation.segmentLabel
+                        )
+
                         // Both failures read the same way and neither is swallowed. The deletion one
                         // matters more: the person has just confirmed something irreversible, and
                         // silence after that reads as "it worked".
@@ -75,7 +87,16 @@ struct TreePhotosView: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }
 
-                        ForEach(model.photos) { photo in
+                        if model.filterHasNoPhotos, let subject = model.subjectFilter {
+                            // The narrowing is why the list is empty, and the sentence says so —
+                            // "no photos of this tree" would be false with the timeline one tap away.
+                            Text(TreePhotosPresentation.emptyFilteredText(subject))
+                                .font(CypressFont.body13)
+                                .foregroundStyle(CypressColor.textFaint)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        ForEach(model.filteredPhotos) { photo in
                             card(photo)
                         }
                     }
@@ -339,6 +360,26 @@ enum TreePhotosPresentation {
         case .other: return "Photo"
         }
     }
+
+    // MARK: - The subject filter (task #154)
+
+    /// The four segments: the whole timeline, then the three framings screen 04 offers, in the
+    /// chip row's own order. `.other` gets no segment — nothing in the app lets somebody *frame* a
+    /// shot as "other", so a segment for it would name a choice nobody made; rows stored as
+    /// `.other` (care photos, pre-shot-type outbox rows) are on the timeline under `All`.
+    static let subjectSegments: [ShotType?] = [nil, .fullTree, .trunk, .leaf]
+
+    /// The segment's word is the caption's word — `subject(_:)`, the string already under every
+    /// photograph — so the filter and the row it keeps cannot name one framing two ways.
+    static func segmentLabel(_ segment: ShotType?) -> String {
+        segment.map(subject) ?? TreePhotosCopy.allSubjects
+    }
+
+    /// Why a narrowed list is empty. It names the framing, because "no photos of this tree yet"
+    /// is false of a tree whose photographs are one tap away under `All`.
+    static func emptyFilteredText(_ subject: ShotType) -> String {
+        "No \(Self.subject(subject).lowercased()) photos of this tree yet"
+    }
 }
 
 // MARK: - Copy
@@ -347,6 +388,9 @@ enum TreePhotosPresentation {
 enum TreePhotosCopy {
     static let title = "Photos"
     static let heroBadge = "Hero"
+    /// The unfiltered segment (task #154). "All" and not "All photos": the segment sits beside
+    /// three subjects and reads as one of them.
+    static let allSubjects = "All"
     static let explainer = "The photo with the most thumbs up leads this tree's page."
     static let empty = "No photos of this tree yet"
     static let voteFailed = "That vote could not be saved. Try again."

@@ -69,9 +69,31 @@ final class TreePhotosModel {
     }
 
     /// The photograph screen 03 leads with, by the one rule in `Core`.
+    ///
+    /// Over the **whole** timeline, never the filtered slice (task #154): the hero is a fact about
+    /// the tree, and a browser narrowed to trunks must not start claiming a trunk leads the page.
     var heroID: UUID? { PhotoHero.choose(from: photos, tallies: tallies)?.id }
 
     var isEmpty: Bool { !isLoading && photos.isEmpty }
+
+    // MARK: - The subject filter (task #154)
+
+    /// The framing the list is narrowed to, or nil for the whole timeline. A view of the same
+    /// series, not a different read: `photos` stays whole, so the hero, the deletion gate and the
+    /// community-add sentence keep answering for the tree rather than for the slice.
+    var subjectFilter: ShotType?
+
+    /// What the list draws under the current filter.
+    var filteredPhotos: [Photo] {
+        guard let subjectFilter else { return photos }
+        return photos.filter { $0.shotType == subjectFilter }
+    }
+
+    /// Whether the narrowing, not the tree, is why the list is empty — the state that gets its own
+    /// sentence, because "no photos" would be false of a tree whose timeline is one tap away.
+    var filterHasNoPhotos: Bool {
+        !isLoading && !photos.isEmpty && filteredPhotos.isEmpty
+    }
 
     func tally(_ photoID: UUID) -> PhotoTally { tallies[photoID] ?? .none }
 
