@@ -2026,3 +2026,18 @@ community row's `land_context`, which required the reader to say it; it is never
 Implementation note: `ReportModel` holds a `treeID` and never reads the tree — the gate needs the
 read, and the read belongs in the model rather than the presentation guessing from what it was
 handed. Task #88 is the orchestrator's own.
+
+> **Correction, same day, before any code was written to this ruling.** R32 was written from
+> ticket #88's text, and the ticket was stale: commit `c970795` (2026-07-25) had already closed
+> the hole, recorded as **E146**, with tests (`LandContextScreenTests`) and a design that is
+> better than this ruling in one respect R32 now defers to. Where R32 said "no 311 copy, no 311
+> button," the shipped screen **demotes the call to a plain `Call 311 anyway` instead of deleting
+> it** — because a contributor's land answer can be wrong too, and the harm of suppressing a real
+> safety call runs one way. The shipped screen also distinguishes a *stated* private context
+> (demote) from one *inferred* from the city's own record (inform, don't act) — R32's "never
+> inferred" sentence, made sharper. E146's design stands in full; R32's two contributions that
+> survive are the framing that city rows keep 311 regardless of `caretaker`, which the shipped
+> code independently agrees with, and the record of the owner-delegated decision itself. Two
+> sections above, R31 warned that a ruling stating a false fact about a screen is worse than
+> silence; this correction exists so R32 is not that ruling. The lesson is E118/E183's again:
+> **a ruling is written from the code and the screen, never from a ticket.**
