@@ -57,15 +57,21 @@ struct MapHomeView: View {
     /// stranger's park, and ERRATA E168 for the separate defect that stopped even the *fix* from
     /// reaching the camera once it arrived.
     ///
-    /// `MapCameraMemory.remembered` reads a value this process loaded once, so the re-evaluation of
-    /// this default expression on every one of `RootView`'s body passes costs a struct copy and no
-    /// I/O — which is the constraint the whole of #84 was about.
+    /// `MapCameraMemory.openingSnapshot` reads values this process holds in memory, so the
+    /// re-evaluation of this default expression on every one of `RootView`'s body passes costs a
+    /// struct copy and no I/O — which is the constraint the whole of #84 was about.
+    ///
+    /// **`openingSnapshot`, not `remembered`** (task #128). `RootView` builds tab roots on a
+    /// `switch`, so Map → Journal → Map remakes this view and re-runs this initializer — and a
+    /// screen that reopened on the *last launch's* camera would throw away the pan the reader made
+    /// a second ago. The session snapshot is noted by `rememberCamera()` on the same `onDisappear`
+    /// the tab switch fires, so it is always written before this can be read.
     @State private var position: MapCameraRequest = .opening(
-        MapOpening.openingRegion(remembered: MapCameraMemory.shared.remembered)
+        MapOpening.openingRegion(remembered: MapCameraMemory.shared.openingSnapshot)
     )
     /// The last region MapKit reported, so a cluster tap knows what "two zoom levels in" means.
     @State private var region = MapOpening.openingRegion(
-        remembered: MapCameraMemory.shared.remembered
+        remembered: MapCameraMemory.shared.openingSnapshot
     )
     /// One-shot: the first fix recentres the map, later ones must not yank it out from under a pan.
     ///
@@ -73,6 +79,12 @@ struct MapHomeView: View {
     /// away" and this flag is what closed it; #115 is about the map arriving on the reader in the
     /// first place, which is a different sentence. What changed is that it is now consulted from two
     /// places rather than one — see `centreOnUserIfNeeded()`.
+    ///
+    /// **And it is no longer the only gate** (task #128). It is `@State` on a view `RootView`
+    /// remakes on every tab switch, so by itself it re-arms on every return to this screen — which
+    /// re-ran the one-shot and re-centred a camera the reader had deliberately panned away: #85's
+    /// defect arriving through the tab bar. `centreOnUserIfNeeded()` therefore also consults
+    /// `MapCameraMemory.shared.readerMovedCamera`, which survives the identity reset.
     @State private var hasCentredOnUser = false
     /// Whether the current wait for a location has gone on long enough to owe the reader a sentence.
     /// Driven by the task below; the decision it feeds is `MapOpening.standing`.
@@ -118,6 +130,12 @@ struct MapHomeView: View {
                         )
                     }
                 )
+                // The map and everything typed into it come before the tab bar in the swipe order
+                // (task #143, R25 §1 as amended; the measurement is E183 §3: the four tabs arrived
+                // before the search field's own ✕). Priority on the canvas rather than a negative
+                // one on the bar, so the bar keeps default order against anything else a screen
+                // composes it with.
+                .accessibilitySortPriority(1)
                 BottomTabBar(selection: tabBinding)
             }
             .ignoresSafeArea()
@@ -240,7 +258,12 @@ struct MapHomeView: View {
                 recentreAnswer = nil
                 model.select(pin)
             },
-            onSelectCluster: zoom(into:)
+            onSelectCluster: zoom(into:),
+            onReaderGesture: {
+                // The camera is the reader's from the first touch (task #128). The flag outlives
+                // this view's identity, which is the point — see `centreOnUserIfNeeded()`.
+                MapCameraMemory.shared.noteReaderMovedCamera()
+            }
         )
     }
 
@@ -264,13 +287,24 @@ struct MapHomeView: View {
         // Nothing moves as a result. The two blocks only overlap at accessibility sizes, where they
         // already did, and the top block hit-tests only where it draws — its stack has no background
         // and the empty width beside a chip has never taken a touch.
+        // ── The swipe order is declared, not inherited (task #143) ────────────────────────────
+        // R25 §1 claimed "field → suggestions → chips → status line" and E183 §3 measured the tree
+        // exposing something else: the suggestion rows after the chips, and the bottom chrome plus
+        // the tab bar before the field's own ✕ — partly a consequence of R25's own block reorder
+        // (bottom applied first so the top draws over it). Drawing order and reading order want
+        // opposite arrangements, so the reading order is now said explicitly: the top block (the
+        // thing the reader is typing into) outranks the bottom block, and inside the top block the
+        // field, the list, the chips and the status lines carry descending priorities. Higher
+        // sorts first; priorities compare among siblings, which each of these sets is.
         Color.clear
             .overlay(alignment: .bottom) {
                 bottomChrome
+                    .accessibilitySortPriority(1)
             }
             .overlay(alignment: .top) {
                 VStack(alignment: .leading, spacing: MapLayout.chipRowTop) {
                     SearchBar(text: $model.searchText, focus: $searchFocused)
+                        .accessibilitySortPriority(6)
                     // **Between the bar and the chips, in the flow** — task #109, ruling R25. Not an
                     // overlay: an overlay would leave the chips underneath reachable by an assistive
                     // technology while invisible to everyone else, and would put the rows somewhere
@@ -291,11 +325,17 @@ struct MapHomeView: View {
                             // the start of the next one (R16).
                             searchFocused = false
                         }
+                        // Before the chips, which is where a reader who has just typed goes
+                        // looking (R25 §1 as amended by #143 — geometry already said this and the
+                        // tree did not, E183 §3).
+                        .accessibilitySortPriority(5)
                     }
                     MapFilterChips(filter: $model.filter, availability: model.conditionAvailability)
+                        .accessibilitySortPriority(4)
                     // Below the chips, so the C20 → chips order the accessibility tests walk is
                     // exactly as it was. Draws nothing unless the search has something to say.
                     MapSearchStatus(search: model.search)
+                        .accessibilitySortPriority(3)
                     // What the filter found, and the year control's caveat about the 74 % of rows
                     // that carry no planting date (#116, ERRATA E175). Draws nothing when no filter
                     // is on, so an un-narrowed screen 01 is exactly as it was.
@@ -303,6 +343,7 @@ struct MapHomeView: View {
                         result: model.filterResult,
                         showsYearCaveat: model.filter.decade != nil
                     )
+                    .accessibilitySortPriority(2)
                     // And below that, for the same reason. The key to the species colouring — which
                     // names the four species the map has coloured, and draws nothing when it has
                     // coloured none. **It is also the species filter** (#116) — see
@@ -311,7 +352,10 @@ struct MapHomeView: View {
                         palette: model.speciesPalette,
                         selection: $model.filter.speciesID
                     )
+                    .accessibilitySortPriority(1)
                 }
+                // The whole block the reader is typing into outranks the bottom chrome beside it.
+                .accessibilitySortPriority(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, MapLayout.sideInset)
                 .padding(.top, topInset + MapLayout.searchTopInset)
@@ -470,7 +514,15 @@ struct MapHomeView: View {
     /// Those wanted different cameras before and still do.
     @discardableResult
     private func centreOnUserIfNeeded() -> Bool {
-        guard !hasCentredOnUser, let coordinate = location.availability.coordinate else { return false }
+        // **A camera the reader deliberately moved is theirs** (task #128). The `@State` one-shot
+        // resets every time `RootView`'s tab switch remakes this view, so on its own it re-centred
+        // the map on every return — #85's defect verbatim, through a different door. The memory's
+        // flag is set by a real gesture on the glass (never by comparing cameras, E140) and lives
+        // for the process, so a pan survives Journal-and-back. A camera the reader never touched
+        // still centres on them here, which is #115's promise kept.
+        guard !hasCentredOnUser,
+              !MapCameraMemory.shared.readerMovedCamera,
+              let coordinate = location.availability.coordinate else { return false }
         hasCentredOnUser = true
         recentreWhenFixArrives = false
         flyTo(coordinate, metres: MapLayout.defaultSpanMetres)

@@ -109,12 +109,47 @@ final class MapCameraMemory {
     ///
     /// The screen says different things in the two cases, so this is asked rather than inferred from
     /// `remembered != nil` at some later moment when it would no longer be the same question.
-    var hasRememberedCamera: Bool { remembered != nil }
+    var hasRememberedCamera: Bool { openingSnapshot != nil }
+
+    /// The camera the reader left screen 01 on **during this process** — written by `note(_:)`,
+    /// which `MapHomeView.rememberCamera` calls on the two edges where they stop looking at it.
+    ///
+    /// Separate from `remembered`, which is frozen at launch on purpose ("where you left the map
+    /// last time" must not drift as the reader pans). This is the *within-session* answer, and it
+    /// exists for task #128: `RootView` builds each tab root on a `switch`, so Map → Journal → Map
+    /// destroys and remakes `MapHomeView`, every `@State` with it — the returning screen has to be
+    /// able to ask a surviving object what camera the reader just had.
+    private(set) var sessionSnapshot: Snapshot?
+
+    /// Where screen 01 should open *now*: the camera from earlier in this session if there is one,
+    /// else the one from the last launch, else nothing (the caller falls back to the city).
+    var openingSnapshot: Snapshot? {
+        sessionSnapshot ?? remembered
+    }
+
+    /// **Whether the reader has deliberately moved the camera this session** (task #128).
+    ///
+    /// Set from the annotation layer's own gesture recognizers — a pan or a pinch that began on
+    /// the glass — and never from any comparison of camera values, which E140 established cannot
+    /// distinguish a reader's move from a stale update pass. It gates exactly one thing:
+    /// `MapHomeView`'s one-shot fly-to-you, which must not run on a reappearance of the screen
+    /// when the camera on it is one the reader chose. A camera they never touched may still centre
+    /// on them; a camera they moved is theirs (#85, #115, #128 — the three corners this flag sits
+    /// between).
+    ///
+    /// In-memory and session-scoped on purpose: across a relaunch the one-shot is #115's promise
+    /// ("opening the app should open on where you're located right now") and must keep firing.
+    private(set) var readerMovedCamera = false
+
+    func noteReaderMovedCamera() {
+        readerMovedCamera = true
+    }
 
     /// A settled camera. **In memory only** — see the header on the cost model.
     func note(_ snapshot: Snapshot) {
         guard Self.isWorthRemembering(snapshot) else { return }
         loadIfNeeded()
+        sessionSnapshot = snapshot
         guard current != snapshot else { return }
         current = snapshot
         isDirty = true
@@ -137,6 +172,8 @@ final class MapCameraMemory {
         launchSnapshot = nil
         current = nil
         isDirty = false
+        sessionSnapshot = nil
+        readerMovedCamera = false
     }
 
     private func loadIfNeeded() {

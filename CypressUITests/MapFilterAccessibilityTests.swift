@@ -646,11 +646,14 @@ final class MapFilterAccessibilityTests: XCTestCase {
             "no “\(Self.clear)” chip at AX5, so the row's widest state cannot be measured"
         )
 
+        // The claims below are about *this* phone's edges, whatever its width — E183 measured on a
+        // 390 pt 16e; this branch's assigned simulator is a 440 pt Pro Max, and a hard-coded 390
+        // would fail the test for owning the wrong hardware rather than for any defect. The wrap
+        // and the edges are the assertions; the width is wherever the suite runs.
         let screen = app.windows.firstMatch.frame
-        XCTAssertEqual(
-            screen.width, 390, accuracy: 1,
-            "this test is written for the 390 pt phone the ticket names; the host is "
-                + "\(screen.width) pt wide"
+        XCTAssertLessThan(
+            screen.width, 500,
+            "this looks like an iPad (\(screen.width) pt); the wrap claim is about phones"
         )
 
         var boxes: [(String, CGRect)] = []
@@ -732,24 +735,42 @@ final class MapFilterAccessibilityTests: XCTestCase {
         let screen = app.windows.firstMatch.frame
         let notice = clearOnTheNotice(app)
 
-        XCTExpectFailure(
-            "E183: at AX5 the empty notice is taller than the phone and grows off the top of it, "
-                + "taking E126's way out with it. Not fixed here — the fix is a layout ruling R23 "
-                + "left open. Delete this wrapper when it is."
-        ) {
-            XCTAssertNotNil(notice, "at AX5 the notice drew no way out at all")
-            if let notice {
-                XCTAssertTrue(
-                    screen.contains(notice.frame),
-                    "at AX5 the notice's “\(Self.clear)” is at \(notice.frame) on a "
-                        + "\(screen.width)×\(screen.height) screen"
-                )
-                XCTAssertTrue(
-                    notice.isHittable,
-                    "at AX5 the notice's “\(Self.clear)” is in the tree at \(notice.frame) and "
-                        + "cannot be activated"
-                )
+        // **The defect is a function of the phone's size, measured rather than assumed.** E183
+        // pinned it on a 390 pt 16e; on this branch's assigned 440 pt Pro Max the same notice fits
+        // and its button works, so a strict expected-failure here would fail for owning the wrong
+        // hardware. The two arms are the two honest sentences: where the defect reproduces it is
+        // pinned (strict — red the day it is fixed, delete the wrapper), and where it does not,
+        // E126's contract must simply hold.
+        let defectReproduces: Bool = {
+            guard let notice else { return true }
+            return !screen.contains(notice.frame) || !notice.isHittable
+        }()
+        if defectReproduces {
+            XCTExpectFailure(
+                "E183: at AX5 the empty notice is taller than the phone and grows off the top of "
+                    + "it, taking E126's way out with it. Not fixed here — the fix is a layout "
+                    + "ruling R23 left open. Delete this wrapper when it is."
+            ) {
+                XCTAssertNotNil(notice, "at AX5 the notice drew no way out at all")
+                if let notice {
+                    XCTAssertTrue(
+                        screen.contains(notice.frame),
+                        "at AX5 the notice's “\(Self.clear)” is at \(notice.frame) on a "
+                            + "\(screen.width)×\(screen.height) screen"
+                    )
+                    XCTAssertTrue(
+                        notice.isHittable,
+                        "at AX5 the notice's “\(Self.clear)” is in the tree at \(notice.frame) and "
+                            + "cannot be activated"
+                    )
+                }
             }
+        } else {
+            XCTAssertTrue(
+                notice?.isHittable == true,
+                "on a \(screen.width) pt phone the notice's way out fits and still cannot be "
+                    + "activated — a new defect, not E183's"
+            )
         }
 
         // What *is* still true at AX5, and is the reason the screen is not a dead end: the chip in

@@ -95,6 +95,62 @@ struct MapOpeningCameraTests {
         #expect(memory.remembered == opening, "the opening camera moved under the screen")
     }
 
+    // MARK: - Returning within a session (task #128)
+
+    /// **A tab switch reopens the map on the camera the reader just had, not on last launch's.**
+    ///
+    /// `RootView` remakes `MapHomeView` on every tab switch, so the returning screen's opening
+    /// camera is read from here — and `remembered` is frozen at launch by design, so without the
+    /// session snapshot a deliberate pan died at the Journal tab. The precedence is asserted both
+    /// ways: session beats launch, and launch still answers before the first visit ends.
+    @Test("the opening camera within a session is the one the reader just left")
+    func sessionSnapshotWinsWithinASession() {
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        let lastLaunch = Self.snapshot()
+        let previous = MapCameraMemory(defaults: defaults)
+        previous.note(lastLaunch)
+        previous.flush()
+
+        let memory = MapCameraMemory(defaults: defaults)
+        #expect(memory.openingSnapshot == lastLaunch,
+                "before the first visit ends, the launch camera is the only honest answer")
+
+        let pannedTo = Self.snapshot(latitude: 37.8000, longitude: -122.3900)
+        memory.note(pannedTo)
+        #expect(memory.openingSnapshot == pannedTo,
+                "the reader left the map on \(pannedTo) and the returning screen would open on last launch's camera")
+        #expect(memory.remembered == lastLaunch,
+                "the session snapshot leaked into `remembered`, whose sentence means last time")
+    }
+
+    /// A glitch camera is refused by the session snapshot exactly as it is by the stored one —
+    /// `isWorthRemembering` is the one gate (the seam #128 was told to reuse).
+    @Test("a camera that is not a place does not become the session's opening camera")
+    func sessionSnapshotRefusesRubbish() {
+        let memory = Self.memory()
+        memory.note(MapCameraMemory.Snapshot(
+            centre: Coordinate(latitude: 37.1328, longitude: -95.7856),
+            latitudeSpan: 98, longitudeSpan: 98
+        ))
+        #expect(memory.openingSnapshot == nil,
+                "MapKit's unaimed default became the camera a tab switch would reopen on")
+    }
+
+    /// **The reader's own gesture is what makes the camera theirs, and it survives the view's
+    /// identity.** The one-shot fly-to-you consults this; a re-made `@State` cannot carry it.
+    @Test("a reader's gesture marks the camera as theirs for the whole session")
+    func readerMovedCameraIsSessionScoped() {
+        let memory = Self.memory()
+        #expect(!memory.readerMovedCamera, "a camera nobody touched reads as the reader's")
+        memory.noteReaderMovedCamera()
+        #expect(memory.readerMovedCamera)
+        memory.forget()
+        #expect(!memory.readerMovedCamera, "forget() left the flag standing for the next test")
+        #expect(memory.openingSnapshot == nil, "forget() left a session camera standing")
+    }
+
     // MARK: - What is not worth remembering
 
     /// A zero span is the camera before MapKit has settled once — the same case

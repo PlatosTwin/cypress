@@ -138,4 +138,53 @@ struct MapMarkerRenderingTests {
         // And well outside it.
         #expect(!view.point(inside: CGPoint(x: 9, y: -40), with: nil))
     }
+
+    /// **The reader's dot is topmost — above every tree pin and above the selected pin's emphasis**
+    /// (task #150). `zPriority` is the layer's whole z-order and MapKit exposes it structurally, so
+    /// the ordering is asserted as the three numbers rather than screenshotted: dot > selected >
+    /// unselected, and a recycled view falls back to the unselected tier.
+    @Test("the reader's dot outranks every pin, selected included")
+    func userDotIsTopmost() {
+        let pin = TreePin(
+            id: UUID(),
+            coordinate: Coordinate(latitude: 37.77, longitude: -122.42),
+            status: .alive,
+            source: .cityImport,
+            verificationState: .cityRecord,
+            speciesID: nil
+        )
+
+        let dotView = MapMarkerView(
+            annotation: UserDotAnnotation(coordinate: pin.coordinate.clLocationCoordinate),
+            reuseIdentifier: MapMarkerView.reuseIdentifier
+        )
+        dotView.apply(annotation: dotView.annotation!, isDark: false)
+
+        let pinView = MapMarkerView(
+            annotation: TreePinAnnotation(pin: pin),
+            reuseIdentifier: MapMarkerView.reuseIdentifier
+        )
+        pinView.apply(annotation: pinView.annotation!, isDark: false)
+        #expect(
+            dotView.zPriority.rawValue > pinView.zPriority.rawValue,
+            "the reader's dot (\(dotView.zPriority.rawValue)) sits under an ordinary pin "
+                + "(\(pinView.zPriority.rawValue)) — the one mark every other mark is relative to, hidden by them"
+        )
+
+        pinView.setSelectedAppearance(true)
+        #expect(
+            dotView.zPriority.rawValue > pinView.zPriority.rawValue,
+            "the selected pin (\(pinView.zPriority.rawValue)) covers the reader's dot "
+                + "(\(dotView.zPriority.rawValue))"
+        )
+        #expect(
+            pinView.zPriority.rawValue > MapLayout.pinZPriority.rawValue,
+            "the selected pin does not outrank its unselected neighbours, so the reticle can be half-covered by the pin it is distinguishing (task #89)"
+        )
+
+        pinView.prepareForReuse()
+        #expect(pinView.zPriority == MapLayout.pinZPriority,
+                "a recycled marker keeps its old tier")
+        MapPinImage.flush()
+    }
 }

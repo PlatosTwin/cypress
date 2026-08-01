@@ -106,6 +106,9 @@ struct MapKitBasemap: View {
     var onCameraChange: (BoundingBox, Int) -> Void
     var onSelectPin: (TreePin) -> Void
     var onSelectCluster: (TreeCluster) -> Void
+    /// A pan or pinch began on the glass (task #128). Nil on the two one-tree screens, which have
+    /// no auto-centring to gate. See `MapAnnotationLayer.onReaderGesture`.
+    var onReaderGesture: (() -> Void)?
 
     var body: some View {
         // Every pass through here used to rebuild the whole annotation layer. It no longer does —
@@ -126,7 +129,8 @@ struct MapKitBasemap: View {
             selectedPinID: selectedPinID,
             onCameraChange: onCameraChange,
             onSelectPin: onSelectPin,
-            onSelectCluster: onSelectCluster
+            onSelectCluster: onSelectCluster,
+            onReaderGesture: onReaderGesture
         )
     }
 }
@@ -203,6 +207,54 @@ enum MapLayout {
     /// in SCREENS.md — 01 draws no selected pin — so it is deliberately the smallest change that
     /// still answers the tap, and it moves nothing else.
     static let selectedPinScale: CGFloat = 1.25
+
+    // MARK: The z-order of the marker layer (task #150)
+    //
+    // `MKAnnotation` has no z-order of its own; `zPriority` is what MapKit reads, and these three
+    // values are the whole ordering — declared together so no two call sites can disagree.
+    //
+    // **The reader's dot is topmost, above every tree pin and above the selected pin's reticle.**
+    // It was `.min` — under every tree — on the reasoning that trees are what the map is for, and
+    // the running screen said otherwise: on any street dense enough to matter the dot vanished
+    // under the pins, and a map that cannot show you where you are has lost the fact every other
+    // fact on it is relative to. The dot is small, `isEnabled == false` (it takes no taps away
+    // from the pins beneath it), and there is exactly one of it — the cheapest possible thing to
+    // put on top and the most expensive to lose.
+    //
+    // The selected pin sits *under* the dot for the same reason stated from the other side: #89's
+    // reticle exists to make one pin findable among neighbours, and the reader's own position
+    // outranks even that — a selection half-covered by the dot is still findable (the rings are
+    // outside the dot's footprint at any overlap), where a dot behind a scaled selected pin is
+    // simply gone.
+    /// The reader's dot. `MKAnnotationViewZPriority.max` — nothing may be given a higher one.
+    static let userDotZPriority = MKAnnotationViewZPriority.max
+    /// The selected pin: above every unselected neighbour (two pins 20 pt apart overlap inside
+    /// 36 pt of reticle), below the dot.
+    static let selectedPinZPriority = MKAnnotationViewZPriority(
+        rawValue: (MKAnnotationViewZPriority.max.rawValue + MKAnnotationViewZPriority.defaultUnselected.rawValue) / 2
+    )
+    /// Everything else.
+    static let pinZPriority = MKAnnotationViewZPriority.defaultUnselected
+
+    // MARK: The dot's movement (task #149)
+
+    /// How long the dot takes to glide from one fix to the next, in seconds.
+    ///
+    /// CoreLocation delivers roughly one fix per second while moving, so a one-second linear glide
+    /// arrives just as the next fix does and the dot reads as *walking* rather than teleporting.
+    /// The glide runs as a `UIView` animation around the annotation's KVO'd coordinate write — the
+    /// native layer's own mechanism, on the render server — so it costs no SwiftUI pass at all;
+    /// reintroducing per-update view rebuilds is E139's ~50-sessions-a-second class and is exactly
+    /// what this must never do.
+    static let userDotGlideSeconds: TimeInterval = 1.0
+
+    /// A jump longer than this snaps instead of gliding, in degrees of latitude/longitude.
+    ///
+    /// ~0.01° is about a kilometre: no pedestrian, cyclist or bus covers it between two fixes, so
+    /// a delta past it is a teleport — a simulator's `simctl location set`, a cold fix correcting
+    /// a cached one — and a dot seen sliding across the city at 1 km/s would be the animation
+    /// claiming a journey that never happened.
+    static let userDotSnapDegrees: Double = 0.01
 
     // MARK: The selection reticle (task #89)
     //
