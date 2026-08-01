@@ -1978,3 +1978,51 @@ owns (`TreeProfileModel.swift` and the new `FavoriteRoundTripTests.swift`) and i
 user-facing sentence, and touches nothing else: the codebase-wide sweep is task #140 and must run
 alone. `MapMembership.favourites` is deliberately left as it is — a concurrent branch is renaming
 it, and two branches renaming one case is how a merge eats a fix.
+
+### R31 — the two chips that cannot match yet stay visible, stay honest, and name two different waits (task #136)
+
+The owner fixed the map's visible filter set: yours, in bloom, needs care, year. That settles half
+of #136 — `In bloom` and `Needs care` stay on the row, undemoted — and leaves the half this ruling
+decides: what a chip does during the time it cannot possibly match, which for both chips is right
+now. Every `seasonal` value in the seed is `{}`, and the seed's only statuses are `alive` and
+`vacant_site` (R23.1's findings). A chip whose only possible outcome is E126's apology card is
+#59's defect wearing filter clothes: a control that promises and cannot deliver.
+
+**Decision: the chips render enabled-looking never; they render disabled with the reason on the
+chip's own surface, and the two reasons are different sentences, because the two waits are
+different in kind.** `In bloom` waits on us — the curated species pipeline (#6) owes the calendars,
+and D5's schema is ready for them. `Needs care` waits on the neighborhood — `declining` is a
+status no city publishes, so it arrives through community observation or not at all. The first
+sentence is the app being honest about its debt; the second is an invitation. The implementer
+drafts the final words in the register of R23 §6's notices, and tests them under R30's rule:
+assert that the copy states the fact, never that it contains a phrase.
+
+A disabled chip does not spend the reader's tap on a card that says what the chip already said —
+the reason lives on the chip (visually, and as the chip's accessibility value), and the E126
+notice path is never entered because the filter never activates. Each chip enables itself the
+moment its data exists: `Needs care` on the first community observation that stands a declining
+tree in the current scope, `In bloom` when a species calendar lands and a scoped tree is in its
+bloom months. No flag, no release — the data's arrival is the switch.
+
+### R32 — a hazard on private land is not the city's to fix, and the app stops saying it is (task #88)
+
+`ReportPresentation.showsHazardBranch` is `selection.hazard != nil` and nothing else, so a tree the
+record marks private-property gets the identical "Call 311 now" handoff as a street tree. Since
+#69 shipped the land-context picker, that is live, not latent. 311 is the city's line for city
+trees; sending someone there about a tree in a private front yard is the app being confidently
+wrong — the class of sentence E175 exists to hunt.
+
+**Decision: the 311 handoff branches on the tree's land context, and the private branch tells the
+truth.** For a community-added tree whose `land_context` is private, the hazard flow says plainly
+that this tree is not the city's to fix, still records the observation — under D16 the record is
+the product, and a private tree's decline is still a fact about the neighborhood — and names the
+caretaker when the record holds one. No 311 copy, no 311 button.
+
+**What does not change: a city row keeps 311 regardless of its `caretaker` column.** 163,955 city
+rows say `Private`, and most are street trees a neighbor waters. Membership in the city's
+inventory is what makes 311 the right line, not who waters the tree. The branch key is the
+community row's `land_context`, which required the reader to say it; it is never inferred.
+
+Implementation note: `ReportModel` holds a `treeID` and never reads the tree — the gate needs the
+read, and the read belongs in the model rather than the presentation guessing from what it was
+handed. Task #88 is the orchestrator's own.
