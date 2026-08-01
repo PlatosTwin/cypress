@@ -251,7 +251,7 @@ extension Species {
     /// The phenology states an observer may report against this species.
     ///
     /// **A tag here is the observer's report of what is in front of them, not the app's claim
-    /// about the species** (see docs/rulings-pending/observed-states-not-gated.md, #151). The
+    /// about the species** (see R35, #151). The
     /// species record — its calendar, its curation, its habit — may order or hint, but it never
     /// gates what a person standing at the tree is allowed to say they see. The one exclusion is
     /// D5's, and it stands because it is a *sourced fact*: a species known to be evergreen is

@@ -392,7 +392,7 @@ public enum VisitGates {
         }
 
         // --- No species record at all: the one gate the #151 ruling left standing
-        // (docs/rulings-pending/observed-states-not-gated.md).
+        // (R35).
         expect(VisitPhenologyVocabulary.tags(for: nil).isEmpty, "no species, no chips", into: &failures)
 
         // --- Uncurated: the whole of today's seed — and the whole of #151. An observer at an

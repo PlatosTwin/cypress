@@ -96,7 +96,7 @@ struct SeedContractTests {
 
         // The APP still asserts nothing for an unknown habit — no habit chip, no season strip
         // (checked in `VisitGates` and `SpeciesPresentationTests`). But the OBSERVER's vocabulary
-        // is no longer emptied by the gap (#151, docs/rulings-pending/observed-states-not-gated.md):
+        // is no longer emptied by the gap (#151, R35):
         // excluding fall colour would itself claim "evergreen", which nobody sourced.
         #expect(unknown.availablePhenologyTags == Set(PhenologyTag.allCases))
         #expect(PhenologyTag.validated(PhenologyTag.allCases, for: unknown) == PhenologyTag.allCases)

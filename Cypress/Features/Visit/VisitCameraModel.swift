@@ -42,7 +42,7 @@ final class VisitCameraModel {
 
     /// The species record, once loaded. `nil` for an unmapped row, a non-taxon row, or a profile
     /// read that has not landed — and a `nil` species still means **no phenology chips**, the one
-    /// gate the #151 ruling left standing (docs/rulings-pending/observed-states-not-gated.md).
+    /// gate the #151 ruling left standing (R35).
     private(set) var species: Species?
 
     /// The last full-tree photo of this tree, at 30 % opacity behind the viewfinder. `nil` on a

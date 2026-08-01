@@ -10,7 +10,7 @@
 //  (is_stub = 0), carries a sourced habit (semi_deciduous), and is `curated = 0` like 529 of the
 //  seed's 569 species — so the chip row was offered "for the curated 40 and nobody else".
 //
-//  The ruling this file pins (docs/rulings-pending/observed-states-not-gated.md): a phenology tag
+//  The ruling this file pins (R35): a phenology tag
 //  is the OBSERVER's report of what is in front of them, not the app's claim about the species.
 //  DECISIONS constraint 15 forbids the app asserting botany it does not have; a contributor's own
 //  observation is the opposite of that — it is the community data D16 says the product exists to
@@ -148,7 +148,7 @@ struct PhenologyObservedStatesTests {
 
     /// The gate the ruling leaves standing, deliberately: a tree with no species record at all
     /// still draws no chip row. Whether that gate should also fall is proposed, not done, in
-    /// docs/rulings-pending/observed-states-not-gated.md.
+    /// R35.
     @Test("no species record still means no chip row — the one gate left untouched")
     func nilSpeciesStillOffersNothing() {
         #expect(VisitPhenologyVocabulary.tags(for: nil).isEmpty)

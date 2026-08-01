@@ -183,7 +183,7 @@ enum VisitPhenologyVocabulary {
     /// The chips to offer, in order.
     ///
     /// One gate left, and a ruling behind the two that fell (#151,
-    /// docs/rulings-pending/observed-states-not-gated.md — an observer's tag is their report of
+    /// R35 — an observer's tag is their report of
     /// what is in front of them, not the app's claim about the species, so what the record does
     /// not know cannot empty this row):
     ///

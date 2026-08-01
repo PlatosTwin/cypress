@@ -102,7 +102,7 @@ struct SpeciesPresentationTests {
         let species = try Self.unsourcedHabit()
         // E9's surviving half: screen 07 asserts nothing about a habit nobody sourced. The other
         // half — the observer's check-in vocabulary — is no longer emptied by the gap (#151,
-        // docs/rulings-pending/observed-states-not-gated.md), which is a statement about the
+        // R35), which is a statement about the
         // visit flow, not about this page: `showsPhenology` below stays false in every month.
         #expect(species.availablePhenologyTags == Set(PhenologyTag.allCases))
         #expect(species.leafOnMonths == nil)
