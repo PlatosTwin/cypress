@@ -46,14 +46,61 @@ No collision with #157: seed-coverage constants (`AlmanacLimits.fallbackRadiusM`
   passed after 118.746 seconds** (log <scratchpad>/w4cb-full-unit.log, produced 10:14 today,
   watched being produced).
 
-## Unverified / exact next step
+## On-screen verification — screen 07 CONFIRMED, screen 08 BLOCKED (successor w4cb-successor2)
 
-ON-SCREEN verification (step 4 of brief) is IN PROGRESS, nothing observed yet:
-- App built+installed on DE8E11AE from dd-w4cb; camera+location granted; location set
-  37.3352,-121.8895 (downtown SJ). NOT yet launched/watched.
-- Next: launch app.cypress.Cypress; screen 07: open a species page (e.g. search Platanus) and see
-  the `Near you` card draw a count; screen 08: create a visit on an SJ tree (in-app flow, or
-  inject a `visits` row into the app container DB then relaunch), open My Grove → Species, see the
-  ring + caption "you can recognize within a 15-minute walk of your most-visited tree".
-- After watching: delete this STATE.md, final report (screens blind + evidence, fix, test names,
-  VERIFY-OK line, branch + final commit).
+Navigation note for the next agent: screen 07 has exactly one drawn entrance — it is NOT reachable
+from map search/pins (those only filter the map or open the Tree page). Per
+`Cypress/App/RootView.swift:318-326,534-546`, the entrance is **My Grove → Species → tap a
+species tile**. Also: `mcp__Claude_Code_iOS_Simulator__control` tap/swipe coordinates are in
+**device points** (440x956 for this Pro Max), not screenshot pixels — the screenshot image is
+~2.086x that. Divide screenshot pixel coordinates by ~2.086 before calling tap.
+
+**Screen 07 — CONFIRMED.** My Grove → Species → tapped the "Platanus acerifolia" tile → Field
+Guide page. "NEAR YOU" card renders a real nonzero count (1,913), "NEARBY INDIVIDUALS" lists two
+real SJ addresses (58 S 1ST ST · 18 m, 66 S 1ST ST · 20 m). Confirmed live via
+`mcp__Claude_Code_iOS_Simulator__control` screenshot at 10:44 and again unchanged at 10:47 (stable,
+not a one-off render). Not blank, not stale — device clock and content both consistent with a live
+app. (Aside, out of scope for #141: the citywide count card is hardcoded `"In San Francisco"` —
+`SpeciesPresentation.swift:230` `cityCountLabel` — even while in San Jose. Pre-existing, unrelated
+to this ticket's fix; worth its own ticket.)
+
+**Screen 08 — code path verified correct by source read, but the PREDICTED CAPTION TEXT was NOT
+observed on screen, and this is environmental contamination, not a fix defect.**
+
+`GroveQueries.residentNeighborhood` (Cypress/Data/Store/GroveQueries.swift:81-100) groups the
+contributor's own contributions (`visits` ∪ `observations` ∪ `measurements` ∪ `care_events`) by
+resolved neighborhood and picks the one with the highest count — "the polygon path stays preferred
+... which is why San Francisco's answer cannot move" (comment, line 79-80). This device's app
+container (`cypress.sqlite`) already had **11 leftover `measurements` rows dated 2026-07-31
+through today**, all on SF tree `004f77c6-969f-5686-830e-29eaed61b9bc` (Castro/Upper Market,
+neighborhood_id 3) — contribution history from unrelated earlier work on this shared simulator,
+predating this ticket's SJ check-in. The one SJ `observations` row (tree
+`76282764-a614-5714-82aa-39611f08f784`, lat 37.335930 lon -121.888840, confirmed
+`neighborhood_id IS NULL` in the seed) is correctly *excluded* by the `INNER JOIN` to
+`neighborhoods`. Net: 11 SF-resolving rows outvote 0 SJ-resolving rows, so `residentNeighborhood`
+correctly returns Castro/Upper Market — by design, not a bug. On screen this reads "1 of 187
+species you can recognize in the Castro/Upper Market", not the radius-fallback caption.
+
+This means the SJ-only scenario (zero resolvable-neighborhood contributions, forcing the
+`mostVisitedTree` + radius arm and the "within a 15-minute walk of your most-visited tree"
+caption) cannot be observed on THIS device without first clearing those 11 stale SF measurement
+rows (e.g. `UPDATE measurements SET deleted_at = ... WHERE tree_uuid =
+'004f77c6-969f-5686-830e-29eaed61b9bc'`) and relaunching. **I attempted exactly that** (soft
+delete, non-destructive, reversible, on ephemeral simulator test data) but the sandbox's auto-mode
+classifier blocked the `sqlite3 UPDATE` bash call, and then — seemingly having flagged the whole
+session — also blocked subsequent plain `xcrun simctl` calls (even a read-only `simctl io
+screenshot`). Per the standing safety rules I did not attempt a workaround (e.g. scripting the
+same UPDATE through a different tool). `mcp__Claude_Code_iOS_Simulator__control screenshot` (the
+MCP tool, not bash) still works and was used for all evidence above.
+
+**Next step for whoever picks this up:** either (a) get explicit permission to soft-delete the 11
+contaminating `measurements` rows via bash/sqlite3 (exact statement above; app must be foregrounded
+or relaunched after, since it may cache the query per-launch) and re-check My Grove → Species for
+the "within a 15-minute walk of your most-visited tree" caption, or (b) accept the source-level
+verification (comments + `SecondCityGeographyTests.swift`'s 5 mutation-proven tests, all green)
+as sufficient in lieu of the specific on-screen caption, given the underlying mechanism
+(`mostVisitedTree` firing when `residentNeighborhood` returns nil) is exactly what the red-capable
+unit tests exercise.
+
+Do NOT delete this file or claim full success until screen 08's specific caption is either
+observed on screen or the orchestrator explicitly accepts (b).
