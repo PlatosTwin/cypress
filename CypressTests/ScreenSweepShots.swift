@@ -114,56 +114,25 @@ struct ScreenSweepShots {
         window.isHidden = true
         window.rootViewController = nil
 
-        guard isNotBlank(image) else {
-            print("BLANK CAPTURE \(name) — \(Int(width))×\(Int(viewportHeight)) produced one flat colour")
+        if case .blank(let reason) = ShotBlankGuard.verdict(for: image) {
+            print("BLANK CAPTURE \(name) — \(Int(width))×\(Int(viewportHeight)) — \(reason)")
             return nil
         }
-        guard let data = image.pngData() else { return nil }
-        try? data.write(to: outputDirectory.appendingPathComponent("\(name).png"))
+        guard let data = image.pngData() else {
+            print("BLANK CAPTURE \(name) — pngData() returned nil")
+            return nil
+        }
+        guard ShotBlankGuard.write(data, to: outputDirectory.appendingPathComponent("\(name).png")) else {
+            return nil
+        }
         return image
     }
 
-    /// Whether a capture drew anything at all.
-    ///
-    /// **This harness's one assertion was that a capture *happened*, and that is not the same claim
-    /// as a capture having a screen in it** (ERRATA E145). `drawHierarchy` into an off-screen window
-    /// stops producing pixels past **8,192 px of backing store** and returns a fully transparent
-    /// image instead of failing — so raising `viewportHeight` to photograph a long screen wrote five
-    /// 1,179 × 10,800 PNGs of nothing, and every `#expect` around them passed. A suite whose output
-    /// is images has to be able to tell an image from an empty file.
-    ///
-    /// **The limit is in pixels, so the height it allows depends on the scale factor.** 8,192 px is
-    /// 2,730 pt at 3× and 4,096 pt at 2×, which is why the AX5 shot sits at 2,700 pt — under the
-    /// limit on a 3× device and nowhere near it on a 2× one. A window height that is safe on one
-    /// simulator is therefore not automatically safe on another, and only the pixel figure travels.
-    /// (An earlier version of this comment said "somewhere above 1,500 pt", which was the last
-    /// known-good window rather than the limit, and made a derived ceiling sound like a guess.)
-    ///
-    /// Sixteen-by-sixteen rather than the full bitmap: a 1,179 × 10,800 buffer is 50 MB and this runs
-    /// on every capture. No real screen in this app is one flat colour edge to edge — even the
-    /// darkest has a back circle on it — so a downscale that comes back uniform means nothing drew.
-    ///
-    /// **This guard fails open, and that is not yet justified.** All three of its early exits return
-    /// `true` — "not blank" — when the 16 × 16 thumbnail cannot be read back. But that thumbnail is
-    /// itself produced by a renderer, which is the mechanism this function exists to distrust: a
-    /// render that silently yields nothing is answered here with "fine". Nothing currently proves
-    /// the guard rejects a known-blank image either, so it has the shape of the bug it fixed. Task
-    /// #93 holds both — a test that feeds it a deliberately blank capture, and a decision on whether
-    /// an unreadable thumbnail should fail the capture instead of passing it.
-    private static func isNotBlank(_ image: UIImage) -> Bool {
-        let side = 16
-        let size = CGSize(width: side, height: side)
-        let thumbnail = UIGraphicsImageRenderer(size: size).image { _ in
-            image.draw(in: CGRect(origin: .zero, size: size))
-        }
-        guard let cgImage = thumbnail.cgImage,
-              let data = cgImage.dataProvider?.data,
-              let bytes = CFDataGetBytePtr(data) else { return true }
-        let count = CFDataGetLength(data)
-        guard count > 4 else { return true }
-        for index in 4..<count where bytes[index] != bytes[index % 4] { return true }
-        return false
-    }
+    // The blank guard lives in `ShotBlankGuard` (task #93), shared with
+    // `DynamicTypeScreenshotTests.render`, and it fails CLOSED: a capture it cannot positively
+    // read is rejected. The E145 background — `drawHierarchy` past ~8,192 px of backing store
+    // (2,730 pt at 3×, 4,096 pt at 2×) returns a fully transparent image instead of failing —
+    // is documented there and in ERRATA E145.
 
     /// Lays four captures out 2×2 under their labels and writes one PNG.
     static func contactSheet(_ name: String, _ shots: [(label: String, image: UIImage)]) {
@@ -199,9 +168,12 @@ struct ScreenSweepShots {
             }
         }
 
-        guard let data = sheet.pngData() else { return }
+        guard let data = sheet.pngData() else {
+            print("SHEET FAILED \(name) — pngData() returned nil")
+            return
+        }
         let url = outputDirectory.appendingPathComponent("\(name)-SHEET.png")
-        try? data.write(to: url)
+        guard ShotBlankGuard.write(data, to: url) else { return }
         print("SHEET \(url.path)")
     }
 

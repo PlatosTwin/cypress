@@ -17,8 +17,10 @@ import UIKit
 ///
 /// **This asserts almost nothing and that is deliberate.** ARCHITECTURE §7: "Snapshot-testing the
 /// screens against the mocks is explicitly *not* set up yet." A snapshot suite with no baselines is
-/// a suite that passes on a blank image, which is worse than no suite. What it does assert is the
-/// one thing a renderer can know without a baseline: that the view produced an image at all. The
+/// a suite that passes on a blank image, which is worse than no suite. What it does assert is
+/// what a renderer can know without a baseline: that the view produced an image, and — via
+/// `ShotBlankGuard` (task #93) — that the image is not a blank: a flat, transparent, or
+/// unreadable capture makes `render` return nil, which fails the caller's `#expect`. The
 /// rendered heights are printed beside it, because that is the number a reviewer wants before
 /// opening anything.
 ///
@@ -100,9 +102,19 @@ struct DynamicTypeScreenshotTests {
         window.isHidden = true
         window.rootViewController = nil
 
-        guard let data = image.pngData() else { return nil }
+        // The blank guard (task #93, shared with `ScreenSweepShots`): this harness previously
+        // asserted only that a `UIImage` existed, and a `UIImage` of nothing exists happily —
+        // E145's transparent over-tall captures would have sailed through here. Fail CLOSED.
+        if case .blank(let reason) = ShotBlankGuard.verdict(for: image) {
+            print("BLANK CAPTURE \(name) — \(reason)")
+            return nil
+        }
+        guard let data = image.pngData() else {
+            print("BLANK CAPTURE \(name) — pngData() returned nil")
+            return nil
+        }
         let url = outputDirectory.appendingPathComponent("\(name).png")
-        try? data.write(to: url)
+        guard ShotBlankGuard.write(data, to: url) else { return nil }
         print("SHOT \(url.path) \(Int(image.size.width))x\(Int(image.size.height))")
         return image.size
     }
