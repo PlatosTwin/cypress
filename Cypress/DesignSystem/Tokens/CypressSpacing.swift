@@ -300,6 +300,13 @@ extension CypressSpacing {
         static let grabberHeight: CGFloat = 5
         static let grabberTop: CGFloat = 4
         static let grabberBottom: CGFloat = 14
+        /// The full-width band at the top of a `.standard` sheet that drags the sheet down
+        /// (ticket #175, docs/rulings-pending/sheet-exits.md). **NOT SPECIFIED** by the mocks —
+        /// they draw the grabber, and a grabber promises a drag; this is the size of the promise
+        /// kept. Deep enough to cover the card's top padding plus the grabber row
+        /// (10+4+5+14 = 33pt) and the title line under it, so the "bar at the top" the owner
+        /// tried to pull is all handle; comfortably past the 44pt minimum touch target.
+        static let sheetDragZone: CGFloat = 62
 
         // C18 · MapCanvas
         /// Street grid — `transparent 0 58px, grid 58px 64px` vertical;

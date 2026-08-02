@@ -20,6 +20,17 @@
 //  `.account` (15) keeps its content-sized card: it is a short ask with no text input, and its
 //  mock is a card, not a page.
 //
+//  ── Exits (ticket #175) ────────────────────────────────────────────────────────────────────
+//  09 and 10 draw no close button, so this shell owns every way out. A full-height card leaves
+//  only the 62pt status-bar strip of scrim exposed, and on a Dynamic Island device the system's
+//  own status-bar hit region consumes roughly the top 54pt of it — measured on an iPhone 16 Pro
+//  simulator: taps at y=30/45 never reach the app, taps at y=58 do — which left the wired,
+//  working scrim tap an ~8pt sliver nobody hits on purpose. The primary exit is therefore the
+//  drag the grabber was always promising: a full-width handle band across the top of the card
+//  (`sheetDragZone`) drags it down, `SheetDismissRule` decides commit-or-spring-back, and the
+//  scrim tap stays for the sliver and for VoiceOver's named "Dismiss" element. See
+//  docs/rulings-pending/sheet-exits.md.
+//
 
 import SwiftUI
 
@@ -60,12 +71,18 @@ struct BottomSheet<Content: View>: View {
     }
 
     var style: Style = .standard
+    /// The dismissal, owned by the host. The name records its first wiring; since ticket #175 it
+    /// is also where the drag handle's dismiss lands — one closure, however the sheet is left.
     var onScrimTap: (() -> Void)?
     @ViewBuilder var content: Content
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// False for exactly one frame — the first — so `czSheet` has a keyframe at 0 % to move from.
     @State private var hasRisen = false
+    /// How far the drag handle currently holds the card below its resting place (ticket #175).
+    @State private var dragOffset: CGFloat = 0
+    /// The card's measured height — what `SheetDismissRule` judges a released drag against.
+    @State private var cardHeight: CGFloat = 0
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -125,12 +142,32 @@ struct BottomSheet<Content: View>: View {
                     .ignoresSafeArea(edges: .bottom)
             }
             .cypressShadow(CypressShadow.sheet)
+            // The grabber's promise, kept (ticket #175): a full-width band across the top of the
+            // card — grabber row and title line — drags the sheet down and out. The band is an
+            // overlay rather than a gesture on the card so the interior `ScrollView` keeps every
+            // drag below it: scrolling, and the keyboard mechanism the file header describes,
+            // are untouched. It exists only where the grabber that promises it exists, and only
+            // when there is a dismissal to deliver.
+            .overlay(alignment: .top) {
+                if style.showsGrabber, onScrimTap != nil {
+                    Color.clear
+                        .frame(maxWidth: .infinity)
+                        .frame(height: CypressSpacing.Component.sheetDragZone)
+                        .contentShape(Rectangle())
+                        .gesture(dragToDismiss)
+                        // The band is a hand-hold, not an element: VoiceOver leaves by the scrim's
+                        // named "Dismiss" control, which activation reaches without hit-testing.
+                        .accessibilityHidden(true)
+                }
+            }
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { cardHeight = $0 }
             // A full-height card is still a *sheet*: a strip of scrim stays visible above it, the
             // same 62pt the skeleton reserves for the status bar, so the grabber never sits under
             // the clock and the card reads as presented rather than as a screen swap.
             .padding(.top, style.fillsHeight ? CypressSpacing.Device.statusBarInset : 0)
             // czSheet — the sheet rises 90 pt on the overshoot curve. `CypressMotion.sheet`.
-            .offset(y: settled ? 0 : CypressMotionOffset.sheetRise)
+            // Once risen, the offset is the drag handle's: the card follows the finger down.
+            .offset(y: settled ? dragOffset : CypressMotionOffset.sheetRise)
             .opacity(settled ? 1 : 0)
         }
         .onAppear {
@@ -145,6 +182,32 @@ struct BottomSheet<Content: View>: View {
     }
 
     private var settled: Bool { hasRisen || reduceMotion }
+
+    /// The handle's gesture. Following the finger is direct manipulation — the state *is* the
+    /// finger's position — so Reduce Motion does not switch it off; what it switches off is the
+    /// decorative spring back to rest, exactly as `CypressMotion.resolved` always has.
+    /// The decision at release is `SheetDismissRule`'s, where it is arithmetic and tested.
+    private var dragToDismiss: some Gesture {
+        DragGesture(coordinateSpace: .global)
+            .onChanged { value in
+                dragOffset = SheetDismissRule.cardOffset(forTranslation: value.translation.height)
+            }
+            .onEnded { value in
+                if SheetDismissRule.shouldDismiss(
+                    translation: value.translation.height,
+                    predictedTranslation: value.predictedEndTranslation.height,
+                    cardHeight: cardHeight
+                ) {
+                    onScrimTap?()
+                } else {
+                    withAnimation(
+                        CypressMotion.resolved(CypressMotion.sheet, reduceMotion: reduceMotion)
+                    ) {
+                        dragOffset = 0
+                    }
+                }
+            }
+    }
 
     /// The mock's own margins — `18px` sides, `44px` bottom — applied to the content rather than
     /// the card, so that inside a `ScrollView` they scroll with it and the scroll indicator hugs
