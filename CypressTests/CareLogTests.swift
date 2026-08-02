@@ -139,14 +139,13 @@ struct CareLogTests {
         #expect(event.note == nil)
     }
 
-    // MARK: - The opened well (task #147)
+    // MARK: - The photo and note fields (task #147, redesigned under task #168)
     //
-    // Owner report, 2026-07-31: "the care log has a space for photo/note but neither can be
-    // added." Diagnosis: the drawn-but-inert class — E25 recorded the well with no editor behind
-    // it while `CareLogDraft`, the writer and the schema (`care_events.note`, the photo path)
-    // could all carry both the whole time. These tests prove the two fields now reach the record.
+    // #147 wired the drawn-but-inert well (E25/E185) behind a reveal tap; the owner's next walk
+    // (task #168) flattened the reveal and made photos plural, with the in-app camera as a
+    // second source. These tests prove the fields reach the record — several photographs now.
 
-    @Test("the note typed behind the well reaches the care event, trimmed")
+    @Test("the note reaches the care event, trimmed")
     @MainActor
     func theNoteRoundTrips() async throws {
         let store = try await CypressStore.inMemory()
@@ -164,7 +163,6 @@ struct CareLogTests {
             attribution: .anonymous(deviceID: Self.deviceID)
         )
         model.toggle(.watered)
-        model.isEditingExtras = true
         model.note = "  Basin was bone dry  "
         await model.save()
 
@@ -175,9 +173,9 @@ struct CareLogTests {
         #expect(events.first?.actions == [.watered])
     }
 
-    @Test("the photo picked behind the well rides the outbox and lands on the tree")
+    @Test("two attached photos ride the outbox and land on the tree as two rows")
     @MainActor
-    func thePhotoRoundTrips() async throws {
+    func thePhotosRoundTrip() async throws {
         let store = try await CypressStore.inMemory()
         let photoDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("cypress-t147-\(UUID().uuidString)", isDirectory: true)
@@ -194,27 +192,33 @@ struct CareLogTests {
         )
         model.toggle(.mulched)
         model.attachPhoto(try VisitCameraSessionTests.jpeg(width: 220, height: 160))
+        model.attachPhoto(try VisitCameraSessionTests.jpeg(width: 120, height: 80))
         #expect(model.hasPhoto)
         await model.save()
 
-        // The photograph is a row on the tree, uploaded — a storage key, a real file — and it is
-        // `.other` with no visit id, which is what distinguishes it from the community-add's own
-        // full-tree photo on this same tree.
+        // Each photograph is its own row on the tree, uploaded — a storage key, a real file —
+        // and `.other` with no visit id, which is what distinguishes them from the
+        // community-add's own full-tree photo on this same tree.
         let photos = try await api.treeProfile(id: tree.id).photos.items
             .filter { $0.shotType == .other }
-        #expect(photos.count == 1, "the care photo did not land: \(photos.count) rows")
-        let photo = try #require(photos.first)
-        #expect(photo.visitID == nil)
-        let key = try #require(photo.storageKey, "the care photo was never uploaded")
-        let url = photoDirectory.appendingPathComponent((key as NSString).lastPathComponent)
-        #expect(FileManager.default.fileExists(atPath: url.path), "the stored file is missing")
-        let size = try #require(PhotoBinary.pixelSize(atPath: url.path))
-        #expect(size.width == 220 && size.height == 160)
+        #expect(photos.count == 2, "the care photos did not land: \(photos.count) rows")
+        var widths: Set<Int> = []
+        for photo in photos {
+            #expect(photo.visitID == nil)
+            let key = try #require(photo.storageKey, "a care photo was never uploaded")
+            let url = photoDirectory.appendingPathComponent((key as NSString).lastPathComponent)
+            #expect(FileManager.default.fileExists(atPath: url.path), "the stored file is missing")
+            let size = try #require(PhotoBinary.pixelSize(atPath: url.path))
+            widths.insert(size.width)
+        }
+        // Two distinct binaries, not the second overwriting the first (the pre-#168 staging bug
+        // a shared path would reintroduce silently).
+        #expect(widths == [220, 120])
     }
 
-    @Test("a re-pick replaces the photo, and removing it is a real removal")
+    @Test("photos accumulate, and removing one removes only that one")
     @MainActor
-    func thePhotoIsReplaceableAndRemovable() async throws {
+    func photosAccumulateAndRemoveIndividually() async throws {
         let store = try await CypressStore.inMemory()
         let queue = OutboxQueue(queue: store.queue, transport: OutboxTestSupport.ScriptedTransport())
         let model = CareLogModel(
@@ -225,29 +229,38 @@ struct CareLogTests {
         )
 
         model.attachPhoto(try VisitCameraSessionTests.jpeg(width: 60, height: 60))
-        let firstPath = try #require(model.draft.photos.first?.path)
         model.attachPhoto(try VisitCameraSessionTests.jpeg(width: 90, height: 90))
-        defer { try? FileManager.default.removeItem(atPath: firstPath) }
+        defer {
+            for path in [model.draft.photos.first?.path, model.draft.photos.last?.path] {
+                if let path { try? FileManager.default.removeItem(atPath: path) }
+            }
+        }
 
-        // One photograph, one staged file: the sheet's id names the path, so a second pick
-        // overwrites rather than accumulating staged bytes nobody references.
+        // "Take one (or multiple)" — two attachments are two staged files on two paths. A shared
+        // path would let the drain take siblings out of the outbox row.
+        #expect(model.draft.photos.count == 2)
+        let paths = model.draft.photos.map(\.path)
+        #expect(Set(paths).count == 2, "two photos share a staged path")
+        let firstSize = try #require(PhotoBinary.pixelSize(atPath: paths[0]))
+        #expect(firstSize.width == 60, "the second attachment overwrote the first")
+
+        // Removal is per photograph and reversible in the only direction that matters: the other
+        // attachment stays.
+        model.removePhoto(at: 0)
         #expect(model.draft.photos.count == 1)
-        #expect(model.draft.photos.first?.path == firstPath)
-        let size = try #require(PhotoBinary.pixelSize(atPath: firstPath))
-        #expect(size.width == 90 && size.height == 90, "the re-pick did not replace the file")
-
-        model.removePhoto()
+        #expect(model.draft.photos.first?.path == paths[1])
+        model.removePhoto(at: 0)
         #expect(!model.hasPhoto)
-        #expect(model.draft.photos.isEmpty)
     }
 
-    @Test("the strings behind the well keep the sheet's own rules")
+    @Test("the strings behind the extras keep the sheet's own rules")
     func openedWellCopy() {
         // The same sweeps the closed sheet's copy passes (ARCHITECTURE §5.4, D1), over the strings
-        // the opened well adds — the failure mode R30 records is a word no test was watching.
+        // the extras block adds — the failure mode R30 records is a word no test was watching.
         let everything = [
-            CareLogCopy.optionalWellHint, CareLogCopy.notePrompt,
-            CareLogCopy.addPhoto, CareLogCopy.photoAttached, CareLogCopy.removePhoto,
+            CareLogCopy.notePrompt, ContributionExtrasCopy.takePhoto,
+            ContributionExtrasCopy.addFromLibrary, ContributionCameraCopy.doneCTA,
+            ContributionCameraCopy.captureFailed,
         ].joined(separator: " ").lowercased()
         for forbidden in ["sent to the city", "routed to", "reported to", "notified"] {
             #expect(everything.contains(forbidden) == false)
