@@ -283,6 +283,43 @@ struct AlmanacPresentationTests {
         #expect(bare == "in the city record since 1956")
     }
 
+    /// #176: a season row draws that tree's own photograph instead of the accent tile when the
+    /// payload carries one. The presentation's whole job here is passthrough — `LocalAPI` chooses
+    /// the id (`PhotoHeroTests` and `HeroPhotoIDsTests` cover the choosing) — so what this asserts
+    /// is that the id survives the trip from `ElderTree`/`BloomFirst` to `SeasonRow` and that the
+    /// group-only `newestNeighbors` row, which names no tree, never carries one.
+    @Test("a season row carries the tree's own hero photo id through, and only when it names a tree")
+    func seasonRowsCarryTheHeroPhotoID() {
+        let photoID = UUID(uuidString: "12000000-0000-4000-8000-00000000F001")!
+        let elderWithPhoto = ElderTree(
+            treeID: Self.elder.treeID,
+            activeName: Self.elder.activeName,
+            speciesCommonName: Self.elder.speciesCommonName,
+            address: Self.elder.address,
+            plantedYear: Self.elder.plantedYear,
+            heroPhotoID: photoID
+        )
+        let presentation = Self.present(
+            AlmanacNeighborhood(
+                area: .named("Sunset/Parkside"),
+                firstBloom: Self.bloom(observers: 1),
+                elder: elderWithPhoto,
+                newestNeighbors: RecentPlanting(treeCount: 4, leadingSpecies: ["Ginkgo"])
+            )
+        )
+
+        let elderRow = presentation.seasonRows.first { $0.kind == .elder }
+        #expect(elderRow?.heroPhotoID == photoID, "the elder's own photo id did not survive the derivation")
+
+        // `bloom(observers:)` above never sets one — this is the "no live photograph" arm.
+        let bloomRow = presentation.seasonRows.first { $0.kind == .bloom }
+        #expect(bloomRow?.heroPhotoID == nil)
+
+        // A group, not a tree: it must never inherit a photo id from either row beside it.
+        let plantedRow = presentation.seasonRows.first { $0.kind == .newestNeighbors }
+        #expect(plantedRow?.heroPhotoID == nil, "a row that names a group drew a specific tree's photo")
+    }
+
     @Test("nothing planted this spring means no row, not a row saying none")
     func noRecentPlantingRendersNoRow() {
         for planting in [nil, RecentPlanting(treeCount: 0, leadingSpecies: ["Ginkgo"])] {

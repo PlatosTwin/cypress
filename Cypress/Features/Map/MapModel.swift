@@ -837,6 +837,18 @@ struct MapCardSubject: Identifiable, Equatable {
         profile?.visits.items.map(\.capturedAt).max()
     }
 
+    /// This tree's own photograph, chosen by `PhotoHero` — the same rule the profile hero draws by
+    /// (ERRATA E125) — over the same `photos`/`photoTallies` pair the profile already carries once
+    /// `profile` has loaded (#176). No second read: the card and the profile it opens into would
+    /// otherwise be free to disagree about which photograph is this tree's.
+    ///
+    /// `nil` before the profile read lands and for a vacant site, both of which draw `thumbnail`'s
+    /// placeholder exactly as before.
+    var heroPhoto: Photo? {
+        guard let profile else { return nil }
+        return PhotoHero.choose(from: profile.photos.items, tallies: profile.photoTallies)
+    }
+
     /// The four canonical C22 thumbnails cover four species; the rest of the catalogue has no
     /// authored artwork and no photograph yet. Genus decides where it can, and a stable hash of the
     /// name decides the rest — the same tree always gets the same placeholder, and none of it

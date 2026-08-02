@@ -29,7 +29,13 @@ struct MapTreeCard: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: MapLayout.cardSpacing) {
-                ThumbnailGradient(subject.thumbnail, size: .mapCard)
+                // #176: the species-hashed gradient (`subject.thumbnail`) stays the placeholder —
+                // passed to `PhotoImage` rather than drawn directly — so a tree with no photograph
+                // of its own, or whose profile has not landed yet, draws exactly what this card
+                // always drew.
+                ThumbnailGradient(size: .mapCard) {
+                    PhotoImage(photoID: subject.heroPhoto?.id, placeholder: subject.thumbnail.recipe)
+                }
 
                 VStack(alignment: .leading, spacing: MapLayout.cardMetaTop) {
                     HStack(spacing: MapLayout.cardTitleBadgeGap) {

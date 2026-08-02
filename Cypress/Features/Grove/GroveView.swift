@@ -132,6 +132,7 @@ struct GroveView: View {
                             accent: .elder,
                             title: row.title,
                             subtitle: row.subtitle,
+                            photoID: row.heroPhotoID,
                             action: onOpenTree.map { open in { open(row.treeID) } }
                         )
                     }

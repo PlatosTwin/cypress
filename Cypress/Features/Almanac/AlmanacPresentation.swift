@@ -50,6 +50,11 @@ struct AlmanacPresentation: Equatable {
         /// going nowhere it was the only counted row on the whole screen with no destination at all.
         let group: PinSet?
 
+        /// The photograph this row draws instead of the accent tile, when the tree it names has
+        /// one on this device (#176). Always `nil` for `newestNeighbors`, which names a group
+        /// rather than a tree.
+        let heroPhotoID: UUID?
+
         var id: String { kind.rawValue }
     }
 
@@ -215,7 +220,8 @@ struct AlmanacPresentation: Equatable {
                         locale: locale
                     ),
                     treeID: bloom.treeID,
-                    group: nil
+                    group: nil,
+                    heroPhotoID: bloom.heroPhotoID
                 )
             )
         }
@@ -233,7 +239,8 @@ struct AlmanacPresentation: Equatable {
                         plantedYear: elder.plantedYear
                     ),
                     treeID: elder.treeID,
-                    group: nil
+                    group: nil,
+                    heroPhotoID: elder.heroPhotoID
                 )
             )
         }
@@ -260,7 +267,8 @@ struct AlmanacPresentation: Equatable {
                         pins: planted.nearest,
                         count: planted.treeCount,
                         neighborhoodName: areaName
-                    )
+                    ),
+                    heroPhotoID: nil
                 )
             )
         }

@@ -378,6 +378,50 @@ public struct ContributionStore {
         return Self.series(try statement.fetchAll(Self.decodePhoto), limit: limit)
     }
 
+    // MARK: - Hero photographs, batched (#176)
+
+    /// One photograph id per tree, chosen by `PhotoHero.choose` — the same rule the profile hero
+    /// draws by (ERRATA E125) — for every tree that has at least one live photograph on this
+    /// device. This is the rule for "which photograph a thumbnail shows" everywhere but the
+    /// profile hero itself, and it is this one function rather than logic repeated at each call
+    /// site, so `PhotoHeroIDsTests` can assert it once.
+    ///
+    /// **One statement, not one per tree and not one per row.** `groveRecords` above answers "what
+    /// did this person do, by tree" with a single query scoped to the contributor rather than one
+    /// query per tree in the grove; this answers "which photograph, by tree" the same way. It can
+    /// be scoped to the contributor alone rather than to a caller-supplied set of tree ids because
+    /// `main.photos` holds only what this device wrote (`TreeProfile.ownPhotoIDs`'s comment says
+    /// so, and constructs its own set the identical way — every live row) — there is no per-tree
+    /// visibility check to make the way the profile makes one for a mixed own/public set, because
+    /// every row here already passes it. A personal photo library is small; this is the same order
+    /// of magnitude `groveRecords` already reads unscoped.
+    ///
+    /// What is expensive is decoding a photograph's **bytes**, and this statement never touches
+    /// them: it reads the same columns `photos(treeID:)` reads, and hands the chosen id to
+    /// `PhotoImage`, which loads and caches pixels through `PhotoImageStore` exactly as the hero
+    /// already does (#46). A tree absent from the returned dictionary has no live photograph; the
+    /// caller passes that absence straight to `PhotoImage(photoID:)`, which draws its placeholder.
+    public func heroPhotoIDs(connection: SQLiteConnection) throws -> [UUID: UUID] {
+        let photoStatement = try connection.cachedStatement("""
+            SELECT * FROM photos WHERE deleted_at IS NULL
+            """)
+        let photos = try photoStatement.fetchAll(Self.decodePhoto)
+        guard !photos.isEmpty else { return [:] }
+
+        let talliesStatement = try connection.cachedStatement("""
+            SELECT photo_id, SUM(vote) AS score FROM photo_votes GROUP BY photo_id
+            """)
+        let tallyPairs = try talliesStatement.fetchAll { row -> (UUID, Int)? in
+            guard let id = try row.uuidIfPresent("photo_id") else { return nil }
+            return (id, try row.int("score"))
+        }
+        let tallies = Dictionary(uniqueKeysWithValues: tallyPairs.compactMap { $0 })
+            .mapValues { PhotoTally(score: $0) }
+
+        let byTree = Dictionary(grouping: photos, by: \.treeID)
+        return byTree.compactMapValues { PhotoHero.choose(from: $0, tallies: tallies) }.mapValues(\.id)
+    }
+
     /// Where a photo's bytes are on this device, if they are anywhere yet.
     ///
     /// Two columns, because a photograph is in one of two places for a while: `local_path` from the

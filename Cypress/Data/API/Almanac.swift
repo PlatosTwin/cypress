@@ -180,19 +180,26 @@ public struct BloomFirst: Hashable, Sendable {
     public let firstSeenAt: Date
     /// Distinct contributors who recorded a flowering visit on this tree this year.
     public let observerCount: Int
+    /// This tree's own photograph, chosen by `PhotoHero` — the same rule the profile hero and the
+    /// personal lists use (#176). `nil` on `RemoteAPI`, where nothing computes it yet, and for any
+    /// tree this device has never itself photographed: the almanac is neighbourhood-wide, and a
+    /// tree nobody on this device photographed truthfully has no photograph to show here.
+    public let heroPhotoID: UUID?
 
     public init(
         treeID: UUID,
         speciesCommonName: String?,
         address: String?,
         firstSeenAt: Date,
-        observerCount: Int
+        observerCount: Int,
+        heroPhotoID: UUID? = nil
     ) {
         self.treeID = treeID
         self.speciesCommonName = speciesCommonName
         self.address = address
         self.firstSeenAt = firstSeenAt
         self.observerCount = observerCount
+        self.heroPhotoID = heroPhotoID
     }
 }
 
@@ -212,19 +219,24 @@ public struct ElderTree: Hashable, Sendable {
     public let speciesCommonName: String?
     public let address: String?
     public let plantedYear: Int
+    /// This tree's own photograph, chosen by `PhotoHero` (#176). See `BloomFirst.heroPhotoID` for
+    /// why it is `nil` far more often here than on a personal surface.
+    public let heroPhotoID: UUID?
 
     public init(
         treeID: UUID,
         activeName: String?,
         speciesCommonName: String?,
         address: String?,
-        plantedYear: Int
+        plantedYear: Int,
+        heroPhotoID: UUID? = nil
     ) {
         self.treeID = treeID
         self.activeName = activeName
         self.speciesCommonName = speciesCommonName
         self.address = address
         self.plantedYear = plantedYear
+        self.heroPhotoID = heroPhotoID
     }
 }
 

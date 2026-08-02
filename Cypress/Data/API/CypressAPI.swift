@@ -863,13 +863,19 @@ public struct GroveEntry: Hashable, Sendable, Identifiable {
     /// is nil, exactly as screen 08's ring vanishes when `Series.totalCount` is.
     public let record: GroveRecord?
 
+    /// The photograph this tree's row draws instead of the accent tile, chosen by `PhotoHero` —
+    /// the same rule the profile hero uses (#176). `nil` when the tree has no live photograph, in
+    /// which case the row draws the placeholder exactly as it always has.
+    public let heroPhotoID: UUID?
+
     public init(
         treeID: UUID,
         displayName: String,
         coordinate: Coordinate,
         lastVisitedAt: Date?,
         isFavorite: Bool,
-        record: GroveRecord? = nil
+        record: GroveRecord? = nil,
+        heroPhotoID: UUID? = nil
     ) {
         self.treeID = treeID
         self.displayName = displayName
@@ -877,6 +883,7 @@ public struct GroveEntry: Hashable, Sendable, Identifiable {
         self.lastVisitedAt = lastVisitedAt
         self.isFavorite = isFavorite
         self.record = record
+        self.heroPhotoID = heroPhotoID
     }
 }
 
@@ -896,13 +903,26 @@ public struct JournalEntry: Hashable, Sendable, Identifiable {
     public let capturedAt: Date
     public let summary: String
 
-    public init(id: UUID, kind: Kind, treeID: UUID, treeDisplayName: String, capturedAt: Date, summary: String) {
+    /// The photograph this row draws instead of the accent tile, chosen by `PhotoHero` — the same
+    /// rule the profile hero uses (#176). `nil` when the tree has no live photograph.
+    public let heroPhotoID: UUID?
+
+    public init(
+        id: UUID,
+        kind: Kind,
+        treeID: UUID,
+        treeDisplayName: String,
+        capturedAt: Date,
+        summary: String,
+        heroPhotoID: UUID? = nil
+    ) {
         self.id = id
         self.kind = kind
         self.treeID = treeID
         self.treeDisplayName = treeDisplayName
         self.capturedAt = capturedAt
         self.summary = summary
+        self.heroPhotoID = heroPhotoID
     }
 }
 

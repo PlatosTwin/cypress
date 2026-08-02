@@ -123,6 +123,9 @@ struct JournalPresentation: Equatable {
         let accent: CypressColor.TileAccent
         /// Where the row goes. Every row has one, which is the point of `everyRowHasADestination`.
         let treeID: UUID
+        /// The photograph this row draws instead of the accent tile, when this tree has one
+        /// (#176). See `JournalEntry.heroPhotoID` for the rule.
+        let heroPhotoID: UUID?
     }
 
     /// One day's worth of rows, under the day.
@@ -188,7 +191,8 @@ struct JournalPresentation: Equatable {
                 ),
                 subtitle: entry.summary.trimmingCharacters(in: .whitespacesAndNewlines),
                 accent: JournalCopy.accent(for: entry.kind),
-                treeID: entry.treeID
+                treeID: entry.treeID,
+                heroPhotoID: entry.heroPhotoID
             )
         }
         self.hasOlder = nextCursor != nil
