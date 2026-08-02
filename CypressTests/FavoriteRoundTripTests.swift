@@ -58,13 +58,16 @@ struct FavoriteRoundTripTests {
         return (api, outbox, tree)
     }
 
-    /// A model wired exactly as `RootView.destination(for:)` wires it.
+    /// A model wired exactly as `RootView.destination(for:)` wires it — the write **and** the
+    /// re-read both through `ProfileFavoriteWriter`, because the re-read that only saw applied
+    /// rows is the whole of #167.
     private static func model(api: LocalAPI, outbox: OutboxQueue, treeID: UUID) -> TreeProfileModel {
         let write = ProfileFavoriteWriter(api: api, outbox: outbox)
         return TreeProfileModel(
             treeID: treeID,
             api: api,
-            setFavorite: { id, isFavorite in await write(treeID: id, isFavorite: isFavorite) }
+            setFavorite: { id, isFavorite in await write(treeID: id, isFavorite: isFavorite) },
+            readFavorite: { id in await write.storedState(treeID: id) }
         )
     }
 
@@ -107,6 +110,82 @@ struct FavoriteRoundTripTests {
         // off state, or the un-favorite is not an event anything could sync.
         let rows = try await api.deviceContributions().favorites
         #expect(rows == 0, "an un-favorited tree is still counted as this device's favorite")
+    }
+
+    // MARK: - 2b. The tap whose drain could not carry it (#167)
+
+    /// **The owner's third report: dark green for two seconds, then back to white.**
+    ///
+    /// The write path is durable at *enqueue* and applied at *drain*, and the drain that follows a
+    /// save is best-effort: `OutboxQueue.drain` attempts one batch of `batchSize` items and
+    /// returns, and it returns immediately when another drain holds `isDraining`. Either way the
+    /// toggle can be safely queued and **not yet applied** when `write()` re-reads — and a re-read
+    /// over applied rows alone then answers "no" for a favorite that was saved. The heart goes
+    /// back; the row lands on the next drain; the person is told their action was undone when it
+    /// was not.
+    ///
+    /// Reproduced here the deterministic way: a batch's worth of older due work is queued first,
+    /// so the drain inside `FavoriteOutboxWriter.save` spends its whole batch on it and leaves the
+    /// tapped tree's toggle `pending`. The assertion is the owner's sentence: if it is a favorite,
+    /// it stays dark green.
+    @Test("a favorite still queued behind a full drain batch survives the re-read")
+    func aQueuedFavoriteIsNotReportedUndone() async throws {
+        let (api, outbox, treeID) = try await Self.openSeeded()
+
+        // Older work, filling the writer's one drain batch: toggles for other standing trees,
+        // enqueued without draining — exactly what a stall or a death mid-drain leaves behind.
+        let others = try await api.treesNear(
+            Coordinate(latitude: 37.7694, longitude: -122.4862), radiusM: 900, limit: 200
+        )
+        .map(\.tree.id)
+        .filter { $0 != treeID }
+        try #require(others.count >= OutboxQueue.batchSize, "seed too thin to fill a drain batch")
+        for other in others.prefix(OutboxQueue.batchSize) {
+            _ = try await outbox.enqueue(.favoriteToggle(FavoriteToggle(
+                owner: .device(Self.deviceID), treeID: other, isFavorite: true
+            )))
+        }
+
+        let model = Self.model(api: api, outbox: outbox, treeID: treeID)
+        await model.load()
+        await model.toggleFavorite().value
+
+        // The tap's own toggle is verifiably still in flight — otherwise this test quietly decays
+        // into `theHeartSticksOnASeedTree` and stops guarding the seam it exists for.
+        let queued = try await outbox.pendingFavoriteState(treeID: treeID)
+        #expect(queued == true, "the drain batch was not full; the toggle applied immediately")
+
+        // The owner's sentence: it is a favorite, so it stays dark green.
+        #expect(
+            model.isFavorite,
+            "the heart went back to white over a favorite that is durably queued (#167)"
+        )
+
+        // And the queue keeps its promise: the next drain lands the row in the applied store.
+        _ = try await outbox.drain()
+        let held = try await api.mapMembership(.favorites)
+        #expect(held.contains(treeID), "the queued favorite never reached the store")
+        await model.reload()
+        #expect(model.isFavorite, "the heart changed its answer once the row applied")
+    }
+
+    /// The counterpart R2 requires: once the queue has terminally given up on a toggle, the
+    /// re-read must stop counting it, so the heart honestly goes back. A toggle for a tree that
+    /// does not exist fails `requireTree` with `.notFound` — not retryable, so the drain marks it
+    /// `failed` — and `storedState` must answer from the applied rows again.
+    @Test("a terminally failed toggle stops answering for the heart")
+    func aFailedToggleDoesNotHoldTheHeartOn() async throws {
+        let (api, outbox, _) = try await Self.openSeeded()
+        let ghost = UUID()
+        let writer = ProfileFavoriteWriter(api: api, outbox: outbox)
+
+        await writer(treeID: ghost, isFavorite: true)
+
+        let word = try await outbox.pendingFavoriteState(treeID: ghost)
+        #expect(word == nil, "a failed toggle is still being counted as the queue's word")
+
+        let shown = await writer.storedState(treeID: ghost)
+        #expect(!shown, "the re-read claims a favorite the store refused (R2's one required revert)")
     }
 
     // MARK: - 3. The failure that has to be visible

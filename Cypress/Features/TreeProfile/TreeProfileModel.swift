@@ -56,6 +56,14 @@ final class TreeProfileModel {
     /// the store's; it is `storedFavorite()`, read afterwards.
     private let setFavorite: (UUID, Bool) async -> Void
 
+    /// Answers `storedFavorite()` when the composition root supplies it (#167).
+    ///
+    /// The root's answer (`ProfileFavoriteWriter.storedState`) is the outbox's in-flight word when
+    /// there is one, and the applied row otherwise — which is what "what is stored" means in an app
+    /// whose writes are durable at enqueue and applied at drain. Without it the model falls back to
+    /// the applied-rows-only read below, which is all a bare `CypressAPI` can see.
+    private let readFavorite: ((UUID) async -> Bool)?
+
     /// Initials for the regulars row (C26).
     ///
     /// `TreeProfile` carries caretakers as bare `UUID`s — there is no name, handle or initial in
@@ -69,12 +77,14 @@ final class TreeProfileModel {
         treeID: UUID,
         api: any CypressAPI,
         caretakerInitials: [String] = [],
-        setFavorite: @escaping (UUID, Bool) async -> Void = { _, _ in }
+        setFavorite: @escaping (UUID, Bool) async -> Void = { _, _ in },
+        readFavorite: ((UUID) async -> Bool)? = nil
     ) {
         self.treeID = treeID
         self.api = api
         self.caretakerInitials = caretakerInitials
         self.setFavorite = setFavorite
+        self.readFavorite = readFavorite
     }
 
     var presentation: TreeProfilePresentation? {
@@ -207,17 +217,19 @@ final class TreeProfileModel {
 
     /// Whether the store holds this tree for whoever is contributing right now.
     ///
-    /// Through `grove()`, which is `GET /me/grove` — "favorited and visited trees" — and which E89
-    /// left correct and callerless. It reads both ownership arms (the device's rows and the
-    /// account's), which is exactly the question the heart asks, and it is a read the protocol
-    /// already has: growing `CypressAPI` a per-tree favorite read would be the tidier call and it
-    /// is a change to the backend boundary, not to a screen. If this screen ever needs it to be
-    /// cheaper than "the trees you have contributed to", that is the method to add.
+    /// Through `readFavorite` when the composition root supplied one — see its declaration, and
+    /// #167 for why "the store" has to include the outbox's in-flight word: the write path is
+    /// durable at enqueue and applied at drain, and a re-read that only saw applied rows put the
+    /// heart back off over a favorite that was saved and simply had not been carried across yet
+    /// (a busy drain, or a batch already full of older work).
+    ///
+    /// Without one, `isFavorite(treeID:)` — the per-tree arm of `GET /me/grove`, which reads both
+    /// ownership arms (the device's rows and the account's, E89), the exact question the heart asks.
     ///
     /// A failed read is `false`: the cell draws its idle state when nothing is known, rather than
     /// claiming a favorite it could not confirm.
     private func storedFavorite() async -> Bool {
-        guard let grove = try? await api.grove() else { return false }
-        return grove.first { $0.treeID == treeID }?.isFavorite ?? false
+        if let readFavorite { return await readFavorite(treeID) }
+        return (try? await api.isFavorite(treeID: treeID)) ?? false
     }
 }
