@@ -534,9 +534,15 @@ final class MapFilterAccessibilityTests: XCTestCase {
     }
 
     /// Every control's label right now — the set of things that are a *chip's own voice*.
+    ///
+    /// **Buttons only, and that exclusion was measured rather than assumed.** This started as
+    /// buttons ∪ `otherElements`, and the red-proof caught it: with a companion sentence deliberately
+    /// restored to the map, the named caveat check failed and this diff did **not**, because a
+    /// SwiftUI container is an `otherElement` that carries its child text's label — so every message
+    /// exempted itself as its own wrapper. A container is not a control, and R41's sanctioned
+    /// channels are chips. Narrowing this to `buttons` is what makes the diff able to fail.
     private func controlLabels(_ app: XCUIApplication) -> Set<String> {
         Set(app.buttons.allElementsBoundByIndex.compactMap { $0.exists ? $0.label : nil })
-            .union(app.otherElements.allElementsBoundByIndex.compactMap { $0.exists ? $0.label : nil })
     }
 
     /// **The structural test RULINGS R41 asks for: no message ever accompanies a filter.**
@@ -629,18 +635,12 @@ final class MapFilterAccessibilityTests: XCTestCase {
         after baseline: Set<String>,
         narrowing: String
     ) {
-        XCTAssertEqual(
-            countLines(app).map(\.label), [],
-            "narrowing by \(narrowing) put a result count over the map. RULINGS R41: a filter's "
-                + "entire voice is its chip, and a count belongs on the chip or nowhere."
-        )
-        XCTAssertEqual(
-            caveatLines(app).map(\.label), [],
-            "narrowing by \(narrowing) put a sentence about planting dates over the map. That is "
-                + "the message task #180 removed by name; R41 forbids it returning in any wording."
-        )
-
-        // The general form. Anything the un-narrowed map did not say, that no control answers to.
+        // **The general form goes first, and the order is load-bearing** — this class sets
+        // `continueAfterFailure = false`, so whichever assertion fires first is the only one that
+        // reports. The two named checks below are specimens; this is the rule. Putting them first
+        // cost a red-proof cycle that proved only the specimen and left the rule unexercised.
+        //
+        // Anything the un-narrowed map did not say, that no control on screen answers to.
         let controls = controlLabels(app)
         let appeared = texts(app).subtracting(baseline).subtracting(controls)
         XCTAssertEqual(
@@ -651,6 +651,21 @@ final class MapFilterAccessibilityTests: XCTestCase {
                 + "sanctioned channels are the chip's fill, a count on the chip, and its spoken "
                 + "value (R23.1). If this is a new legitimate *chip*, it should be reachable as a "
                 + "control and this test will pass once it is."
+        )
+
+        // The two specimens, redundant with the diff by construction and kept anyway: they name
+        // the exact surfaces task #180 removed, so a regression reports in the words of the ticket
+        // rather than as an anonymous set difference. They would also survive a refactor that
+        // weakened the diff — which is not hypothetical, see `controlLabels`.
+        XCTAssertEqual(
+            countLines(app).map(\.label), [],
+            "narrowing by \(narrowing) put a result count over the map. RULINGS R41: a filter's "
+                + "entire voice is its chip, and a count belongs on the chip or nowhere."
+        )
+        XCTAssertEqual(
+            caveatLines(app).map(\.label), [],
+            "narrowing by \(narrowing) put a sentence about planting dates over the map. That is "
+                + "the message task #180 removed by name; R41 forbids it returning in any wording."
         )
     }
 
