@@ -156,14 +156,31 @@ struct StatCard: View {
     }
 }
 
-/// C11's `grid-template-columns:1fr 1fr; gap:8px`.
+/// C11's `grid-template-columns:1fr 1fr; gap:8px` — one column at the accessibility sizes.
+///
+/// Half a phone is where the city's own strings came apart at AX5: `#22127 / 7` reading as two
+/// numbers, `DPW Mainta / ined`, `A privat / e party` (ERRATA E196 §8). The values are the city's
+/// verbatim record and this section exists to show them, so past the point where half a row cannot
+/// hold a word, every card takes the whole row. The drawn sizes keep the mock's two columns
+/// exactly.
 struct StatGrid<Content: View>: View {
     @ViewBuilder var content: Content
 
-    private let columns = [
-        GridItem(.flexible(), spacing: CypressSpacing.Component.statGridGap),
-        GridItem(.flexible(), spacing: CypressSpacing.Component.statGridGap),
-    ]
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    /// The one decision this grid makes, exposed as a value for the reason
+    /// `QuadActionRow.appearance` is: SwiftUI builds no in-process render tree a test can walk,
+    /// so the honest way to pin the AX reflow is to make it a function a test can call.
+    static func columnCount(isAccessibilitySize: Bool) -> Int {
+        isAccessibilitySize ? 1 : 2
+    }
+
+    private var columns: [GridItem] {
+        Array(
+            repeating: GridItem(.flexible(), spacing: CypressSpacing.Component.statGridGap),
+            count: Self.columnCount(isAccessibilitySize: dynamicTypeSize.isAccessibilitySize)
+        )
+    }
 
     var body: some View {
         LazyVGrid(columns: columns, spacing: CypressSpacing.Component.statGridGap) {

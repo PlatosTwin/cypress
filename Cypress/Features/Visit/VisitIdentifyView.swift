@@ -299,6 +299,8 @@ struct VisitCandidateCard: View {
 struct VisitAmberStatusChip: View {
     let label: String
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     init(_ label: String) { self.label = label }
 
     var body: some View {
@@ -307,9 +309,28 @@ struct VisitAmberStatusChip: View {
             .foregroundStyle(CypressColor.amberPillText)
             .padding(.vertical, CypressSpacing.Component.chipPaddingVMeta)
             .padding(.horizontal, CypressSpacing.Component.chipPaddingHMeta)
-            .background { Capsule().fill(CypressColor.amberPillFill) }
-            .cypressPillBorder(CypressColor.amberPillBorder)
-            .fixedSize()
+            .background { chipShape.fill(CypressColor.amberPillFill) }
+            .overlay {
+                chipShape.strokeBorder(
+                    CypressColor.amberPillBorder,
+                    lineWidth: CypressSpacing.Component.hairline
+                )
+            }
+            // Horizontal only, never bare: the `.fixedSize()` this carried made the pill the
+            // widest thing on screen 02 at AX5, and one fixed child wider than the phone forces
+            // the whole screen wide and centered — which is how the title, the callout and the
+            // footer all read clipped at both edges (ERRATA E196 §1).
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// A capsule while the label is one line, a rounded panel once it is not — C4's reasoning,
+    /// applied at C4's amber cousin: `Capsule` rounds by half the *shorter* side, so a label that
+    /// has wrapped is drawn as a circle with text spilling out both ends. See `Chip.chipShape`.
+    private var chipShape: some InsettableShape {
+        RoundedRectangle(
+            cornerRadius: dynamicTypeSize.isAccessibilitySize ? CypressRadius.cardSm : CypressRadius.pill,
+            style: .continuous
+        )
     }
 }
 
@@ -366,21 +387,42 @@ struct VisitLowAccuracyPanel: View {
 }
 
 /// The full-screen notices: no fix, and nothing nearby.
+///
+/// Centered where it fits, scrollable where it does not. At AX5 the denied notice is taller than
+/// the space between the header and the footer, and the compressed `Text` used to give up the end
+/// of its own sentence — "…or add the tree you are standing…", where the way out it names is the
+/// part that was cut (ERRATA E196 §2). `ViewThatFits` keeps the drawn, vertically-centered layout
+/// at every size where the whole sentence fits, and hands the tall ramp a scroll instead of an
+/// ellipsis.
 struct VisitIdentifyNotice: View {
     let title: String
     let message: String
 
     var body: some View {
+        ViewThatFits(in: .vertical) {
+            copy
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            ScrollView {
+                copy
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, CypressSpacing.gapRows)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+        }
+    }
+
+    private var copy: some View {
         VStack(spacing: CypressSpacing.gapRows) {
             Text(title)
                 .font(CypressFont.cardTitleSerif)
                 .foregroundStyle(CypressColor.textInk)
                 .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
             Text(message)
                 .cypressBody135(color: CypressColor.textMuted)
                 .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.horizontal, CypressSpacing.gutterSheet)
     }
 }

@@ -173,16 +173,35 @@ struct ShareView: View {
 
     // MARK: - 4 · Destination row
 
+    /// Three columns at the drawn sizes; one destination per row at the accessibility sizes.
+    ///
+    /// At AX5 three side-by-side columns leave each caption about a third of the sheet, and a
+    /// one-word caption with nowhere to wrap breaks anywhere — `Mes sa…` in the four-button row
+    /// the sweep photographed (ERRATA E196 §5), `Message / s` in this three-button one. A row per
+    /// destination gives the caption the sheet's whole width beside its circle, so it reads as
+    /// one word again.
+    @ViewBuilder
     private func destinationRow(_ presentation: SharePresentation) -> some View {
-        HStack(spacing: ShareMetrics.destinationSpacing) {
-            ForEach(ShareDestination.allCases) { destination in
-                target(destination, url: presentation.publicURL)
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: ShareMetrics.destinationSpacing) {
+                ForEach(ShareDestination.allCases) { destination in
+                    target(destination, url: presentation.publicURL)
+                }
             }
-            Spacer(minLength: 0)
+            .padding(.leading, ShareMetrics.destinationRowPaddingH)
+            .padding(.trailing, ShareMetrics.destinationRowPaddingH)
+            .padding(.bottom, ShareMetrics.destinationRowPaddingBottom)
+        } else {
+            HStack(spacing: ShareMetrics.destinationSpacing) {
+                ForEach(ShareDestination.allCases) { destination in
+                    target(destination, url: presentation.publicURL)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.leading, ShareMetrics.destinationRowPaddingH)
+            .padding(.trailing, ShareMetrics.destinationRowPaddingH)
+            .padding(.bottom, ShareMetrics.destinationRowPaddingBottom)
         }
-        .padding(.leading, ShareMetrics.destinationRowPaddingH)
-        .padding(.trailing, ShareMetrics.destinationRowPaddingH)
-        .padding(.bottom, ShareMetrics.destinationRowPaddingBottom)
     }
 
     @ViewBuilder
@@ -227,32 +246,53 @@ struct ShareView: View {
         }
     }
 
+    @ViewBuilder
     private func targetLabel(_ destination: ShareDestination) -> some View {
-        VStack(spacing: 0) {
-            ZStack {
-                Circle().fill(CypressColor.shareTargetWellFill)
-                Circle().strokeBorder(
-                    CypressColor.shareTargetWellBorder,
-                    lineWidth: CypressSpacing.Component.hairline
-                )
-                ShareDestinationGlyph(destination: destination)
+        // The caption under its circle at the drawn sizes, beside it at the accessibility sizes —
+        // the geometry `destinationRow` chose, finished at the cell: a full-width row reads
+        // circle-then-word, and the word wraps at word boundaries only because it finally has the
+        // width to (ERRATA E196 §5).
+        if dynamicTypeSize.isAccessibilitySize {
+            HStack(spacing: ShareMetrics.destinationSpacing) {
+                well(destination)
+                Text(destination.label)
+                    .font(CypressFont.body105)
+                    .foregroundStyle(CypressColor.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .multilineTextAlignment(.leading)
+                Spacer(minLength: 0)
             }
-            .frame(width: ShareMetrics.wellSize, height: ShareMetrics.wellSize)
-            .padding(.bottom, ShareMetrics.wellLabelGap)
+            .contentShape(Rectangle())
+            .accessibilityLabel(destination.label)
+        } else {
+            VStack(spacing: 0) {
+                well(destination)
+                    .padding(.bottom, ShareMetrics.wellLabelGap)
 
-            Text(destination.label)
-                .font(CypressFont.body105)
-                .foregroundStyle(CypressColor.textMuted)
-                // "Copy link" already fills the mock's 58 pt column at the drawn size. Past the
-                // point where one line will not hold it, the row stops being three fixed columns
-                // and each label takes the width it needs: the destination *is* the content here,
-                // and a truncated one is a destination you cannot read.
-                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
-                .multilineTextAlignment(.center)
+                Text(destination.label)
+                    .font(CypressFont.body105)
+                    .foregroundStyle(CypressColor.textMuted)
+                    // "Copy link" already fills the mock's 58 pt column at the drawn size.
+                    .lineLimit(1)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(width: ShareMetrics.targetWidth)
+            .contentShape(Rectangle())
+            .accessibilityLabel(destination.label)
         }
-        .frame(width: dynamicTypeSize.isAccessibilitySize ? nil : ShareMetrics.targetWidth)
-        .contentShape(Rectangle())
-        .accessibilityLabel(destination.label)
+    }
+
+    /// The 52 pt circle and its glyph, shared by both arrangements of the cell.
+    private func well(_ destination: ShareDestination) -> some View {
+        ZStack {
+            Circle().fill(CypressColor.shareTargetWellFill)
+            Circle().strokeBorder(
+                CypressColor.shareTargetWellBorder,
+                lineWidth: CypressSpacing.Component.hairline
+            )
+            ShareDestinationGlyph(destination: destination)
+        }
+        .frame(width: ShareMetrics.wellSize, height: ShareMetrics.wellSize)
     }
 
     // MARK: - Failure

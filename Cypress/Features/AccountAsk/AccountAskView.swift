@@ -299,6 +299,12 @@ struct AccountProviderButton: View {
             Text(title)
                 .font(CypressFont.body15Bold)
                 .foregroundStyle(isPrimary ? CypressColor.accountPrimaryLabel : CypressColor.textInk)
+                // A control label never gives up its own words. The `.account` sheet is a
+                // content-sized card with no scroll, so at AX5 the compressed column squeezed
+                // this `Text` to one line and it read `Continue with Goo…` — an ellipsis inside
+                // a control (ERRATA E196 §6). Every paragraph on this sheet already carries the
+                // same modifier; the button labels were the only text that could still be folded.
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity)
                 .padding(
                     .vertical,
