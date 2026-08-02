@@ -51,3 +51,7 @@ Cypress/Resources/cypress-seed.sqlite
 # regenerable by walking the app; not source.
 shots/
 .ddland/
+
+# Publisher output (Tools/publish_cities.py): per-city seed files + manifest,
+# regenerable from Fixtures/seed/cypress-seed.sqlite; never source.
+/dist/
