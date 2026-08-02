@@ -79,6 +79,9 @@ struct ContributionExtras: View {
         )
         .font(CypressFont.body145)
         .foregroundStyle(CypressColor.textInk)
+        // An empty-titled TextField has no accessibility label — VoiceOver announces "text
+        // field" and nothing else. The prompt is not the label (DeepLinkVoiceOverTests).
+        .accessibilityLabel(ContributionExtrasCopy.noteAccessibilityLabel)
         .lineLimit(1...3)
         .padding(.vertical, VisitMetrics.Camera.notePaddingV)
         .padding(.horizontal, VisitMetrics.Camera.notePaddingH)
@@ -189,6 +192,9 @@ struct ContributionExtras: View {
 enum ContributionExtrasCopy {
     /// Screen 04's own prompt, verbatim — one vocabulary on every contribution surface.
     static let notePrompt = "Anything worth remembering?"
+    /// What VoiceOver calls the note field. A prompt disappears the moment text arrives; the
+    /// label is the field's name and stays.
+    static let noteAccessibilityLabel = "Note"
     /// Opens the in-app camera. Not "Camera": the label is the promise, and the promise is a
     /// photograph (R39's rule for destination buttons).
     static let takePhoto = "Take a photo"
