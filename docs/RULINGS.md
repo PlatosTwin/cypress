@@ -2480,3 +2480,39 @@ note; two `photos` rows, `.other`, `visitID == nil`, real files behind their sto
 `Add from library`, the camera tray's `Done`, `That frame could not be captured. Try again.`,
 and the tray receipt `N photo(s) added`. Each states a fact and stops; all swept by the same
 ARCHITECTURE §5.4 / D1 word tests the sheets' other copy passes.
+
+### R41 — No message ever accompanies a filter (task #180; hardens the R31 correction)
+
+**Owner directive, verbatim, task #180 (2026-08-02):**
+
+> No messages should appear alongside filters ever. for any reason. ever again. Right now the
+> year filter has a message about 4 of 5 trees. That's stupid. Never ever show something like
+> that. add it as a rule. At most a message like this can be a single-dismiss pop up but never
+> ever again clutter the map with bullshit like this.
+
+## The decision
+
+**A filter's entire voice is its chip.** No filter — active, empty, narrowed, partial, or in
+any state yet to be invented — may render companion text, a count, a notice, a card, or any
+other surface on the map or beside the filter row. This is the third time a filter-adjacent
+message has been ruled out (#142 killed the growing notice, the R31 correction killed the
+empty-filter box); each time, a message survived under a different mechanism. The rule is now
+categorical so no mechanism can shelter one: the test is "does text appear because a filter
+did something?" — if yes, it does not ship.
+
+If information is ever judged genuinely essential (a legal notice, a data-loss warning — not a
+count), the only permitted form is a **single-dismiss popup**: shown once, dismissed with one
+tap, never recurring for the same cause, never persistent on the glass. Nothing in the current
+product qualifies. Counts and narrowing facts already have their three sanctioned channels
+(R23.1: chip fill, count *on the chip*, spoken names) — on the chip is the chip's voice, not a
+companion message.
+
+E126's carve-out (location notices and search status) survives for *location* and *search* —
+those are not filters. Any reading of E126 that shelters filter-triggered text is wrong from
+today.
+
+## What holds it
+
+Task #180 removes the year filter's "4 of 5 trees" message, audits every filter state for
+remaining companion text, and adds a structural test that fails when any filter state renders
+text on the map outside the chips themselves.
