@@ -188,6 +188,60 @@ struct FavoriteRoundTripTests {
         #expect(!shown, "the re-read claims a favorite the store refused (R2's one required revert)")
     }
 
+    // MARK: - 2c. The tap made on a device that was once claimed (#174)
+
+    /// **The owner's fifth report: dark green for half a second, then back to white — on the
+    /// physical phone only.**
+    ///
+    /// The device history a fresh simulator never has is one row: `device.user_id`. E124's
+    /// account ask signs the owner in at the third visit save (`claimDevice` writes the claim
+    /// row), and the You tab's Sign out — "Keeps everything you have saved" — clears
+    /// `app_state.current_user_id` and `LocalAPI.userID` but leaves the claim row standing.
+    ///
+    /// After that, every tap favorites as the device (D9), the drain applies a device-owned row —
+    /// and then `LocalAPI.sync` runs `adoptRowsWrittenAfterTheClaim`, which re-runs `claimDevice`
+    /// for whatever account the *claim row* names. The freshly applied favorite is adopted on the
+    /// spot: `user_id` set to the signed-out account, `device_id` cleared. The re-read asks
+    /// `holdsFavorite(userID: nil, deviceID:)` — the row matches neither arm — and the heart goes
+    /// back to white in exactly the time one awaited drain takes.
+    ///
+    /// `pendingFavoriteState` (#167) cannot save it: the row is `done`, and `done` is skipped by
+    /// design. The four previous fixes each patched a read; the write was being moved out from
+    /// under every read there is.
+    @Test("a favorite saved after sign-out is not adopted away by the stale device claim")
+    func aFavoriteSavedAfterSignOutSurvivesTheStaleClaim() async throws {
+        let (api, outbox, treeID) = try await Self.openSeeded()
+
+        // The owner's device history, replayed: signed in once, signed out from the You tab.
+        let account = UUID(uuidString: "AC174000-0000-4000-8000-000000000174")!
+        try await api.claimDevice(deviceUUID: Self.deviceID, userID: account)
+        try await api.signOut()
+
+        let model = Self.model(api: api, outbox: outbox, treeID: treeID)
+        await model.load()
+        await model.toggleFavorite().value
+
+        // The queue must have carried it across — this test is about the *applied* row being
+        // moved, not about a toggle still in flight (that is 2b's seam, already guarded).
+        let queued = try await outbox.pendingFavoriteState(treeID: treeID)
+        #expect(queued == nil, "the toggle never applied; this test is aimed at the applied row")
+
+        // The owner's sentence: it is a favorite, so it stays dark green.
+        #expect(
+            model.isFavorite,
+            "the heart went back to white: the applied row was adopted by the signed-out account"
+        )
+
+        // The store, asked as the signed-out device asks: the row must still answer the device.
+        let held = try await api.mapMembership(.favorites)
+        #expect(held.contains(treeID), "the favorite row no longer answers the device that made it")
+
+        // And sign-out's own promise holds in the other direction too: signing back in must not
+        // find the favorite already the account's, because the account never made it.
+        let word = await ProfileFavoriteWriter(api: api, outbox: outbox).storedState(treeID: treeID)
+        #expect(word, "storedState — the composition root's read — lost the favorite")
+    }
+
     // MARK: - 3. The failure that has to be visible
 
     @Test("a write that never lands leaves the cell where it was")
