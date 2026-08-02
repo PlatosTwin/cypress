@@ -224,13 +224,17 @@ public struct SpeciesQueries {
         return try statement.fetchOne { try $0.int("species_tree_count") } ?? 0
     }
 
-    /// The same count restricted to one neighbourhood — 07 §5's `Near you` card.
+    /// The same count restricted to one area — 07 §5's `Near you` card.
     ///
-    /// Takes the neighbourhood `resolveNeighborhood(near:)` found rather than a coordinate, so the
-    /// two decisions stay separable: which area you are in, and how many of these grow in it.
-    public func neighborhoodTreeCount(
+    /// Takes the `AlmanacScope` the caller resolved rather than a coordinate, so the two decisions
+    /// stay separable: which area you are in, and how many of these grow in it. Until R29 reached
+    /// this screen it took a `neighborhoodID: Int` and wrote `t.neighborhood_id = :neighborhood` —
+    /// San Francisco's 41 polygons and nothing else, so a San Jose reader's `Near you` card
+    /// silently did not draw: the defect family E182 closed for screen 12. For a `.neighborhood`
+    /// scope the rendered predicate is the identical string, so San Francisco's count cannot move.
+    public func treeCount(
         speciesID: UUID,
-        neighborhoodID: Int,
+        scope: AlmanacScope,
         connection: SQLiteConnection
     ) throws -> Int {
         let sql = """
@@ -238,11 +242,13 @@ public struct SpeciesQueries {
           FROM \(seed).trees t
           JOIN \(seed).species s ON s.id = t.species_current
          WHERE s.\(schema.speciesIdentityColumn) = :uuid COLLATE NOCASE
-           AND t.neighborhood_id = :neighborhood
+           AND \(scope.predicate("t"))
            AND t.deleted_at IS NULL
         """
         let statement = try connection.cachedStatement(sql)
-        _ = try statement.bind([":uuid": speciesID.uuidString, ":neighborhood": neighborhoodID])
+        _ = try statement.bind(scope.bindings.merging(
+            [":uuid": speciesID.uuidString] as [String: SQLiteBindable?]
+        ) { a, _ in a })
         return try statement.fetchOne { try $0.int("species_tree_count") } ?? 0
     }
 
