@@ -266,6 +266,35 @@ public actor OutboxQueue {
         try await queue.read { connection in try store.allItems(connection: connection) }
     }
 
+    /// The queue's word on one tree's favorite, if it is still holding one (#167).
+    ///
+    /// A favorite is durable the moment it is enqueued (ARCHITECTURE §4: "written to the outbox
+    /// *first*, and only then attempted") — but it is not *applied* until a drain carries it
+    /// across, and the drain that follows a save is best-effort: it can be skipped because another
+    /// drain holds `isDraining`, or leave the toggle behind because a batch is `batchSize` items
+    /// and older work fills it. In that window the store's `favorites` table and the contributor's
+    /// last word disagree, and the last word is here.
+    ///
+    /// Returns the resulting state of the **newest** in-flight (`pending` or `uploading`) favorite
+    /// toggle for this tree, or nil when the queue holds none — `done` items are already in the
+    /// table's answer, and a terminally `failed` toggle is deliberately not counted: a write the
+    /// queue has given up on is the one case where the heart going back is the truth (RULINGS R2;
+    /// screen 17 is where that failure says why).
+    public func pendingFavoriteState(treeID: UUID) async throws -> Bool? {
+        let records = try await records()
+        // `records()` is `ORDER BY seq`, so the last match is the newest statement.
+        for record in records.reversed() {
+            guard record.item.kind == .favoriteToggle,
+                  record.item.state == .pending || record.item.state == .uploading,
+                  case let .favoriteToggle(toggle)? =
+                    try? OutboxPayload.decode(kind: record.item.kind, from: record.item.payload),
+                  toggle.treeID == treeID
+            else { continue }
+            return toggle.isFavorite
+        }
+        return nil
+    }
+
     public func counts() async throws -> [OutboxItem.State: Int] {
         try await queue.read { connection in try store.counts(connection: connection) }
     }

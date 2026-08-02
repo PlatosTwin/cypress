@@ -148,6 +148,20 @@ public protocol CypressAPI: Sendable {
     /// `GET /me/grove`.
     func grove() async throws -> [GroveEntry]
 
+    /// `GET /me/grove` narrowed to one tree: whether this contributor currently holds it (#167).
+    ///
+    /// Screen 03's heart re-reads its state after every write (RULINGS R2), and it used to do that
+    /// through `grove()` — the whole list, resolved tree by tree, to answer one membership bit. This
+    /// is the same question asked at the width it is asked at. `LocalAPI` answers it with one
+    /// indexed SELECT over both ownership arms (the device's rows and the account's), the same two
+    /// arms `grove()` reads and for the same E89 reason.
+    ///
+    /// Defaulted below to the grove-derived answer, which keeps every test double truthful without
+    /// teaching it a second favorites vocabulary. **Declared here and not only in the extension** —
+    /// see `photoData` above, and ERRATA E125, for the day a requirement that lived only in an
+    /// extension dispatched statically past the implementation that had the real answer.
+    func isFavorite(treeID: UUID) async throws -> Bool
+
     /// `GET /me/grove`, the Species tab (screen 08).
     ///
     /// A second read rather than a wider `GroveEntry` because the two tabs of My Grove are keyed on
@@ -215,6 +229,15 @@ public protocol CypressAPI: Sendable {
     /// `GET /export/latest.csv` / `.geojson` — the nightly export, carrying `verification_state`
     /// (D12, BUILD-PLAN §5).
     func exportLatest(_ format: ExportFormat) async throws -> Data
+}
+
+public extension CypressAPI {
+    /// The grove-derived default for `isFavorite(treeID:)` — one membership bit out of the same
+    /// read the heart used before the per-tree read existed (#167). Correct for any conformance
+    /// whose `grove()` tells the truth; `LocalAPI` overrides it with the narrow query.
+    func isFavorite(treeID: UUID) async throws -> Bool {
+        try await grove().first { $0.treeID == treeID }?.isFavorite ?? false
+    }
 }
 
 // MARK: - Two methods that were requirements and are not any more

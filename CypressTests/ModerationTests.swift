@@ -324,6 +324,40 @@ struct ModerationTests {
         #expect(flag.status == .dismissed)
     }
 
+    /// **The dismissed report's journal row speaks English, not raw values** (#170).
+    ///
+    /// The owner's flow verbatim: check in, flag the tree, a lead dismisses the flag — and the
+    /// check-in, which stays in the contributor's journal regardless of what moderation decided,
+    /// subtitled itself `appears_removed`. The subtitle is `entry.summary`, humanized at
+    /// `LocalAPI.humanize`, which handled care events and handed every observation back raw.
+    /// Both flagging kinds are asserted (the fix must cover `appears_dead` too), against the exact
+    /// sentence rather than "no underscore", because the sentence is the deliverable.
+    @Test(
+        "a dismissed report's journal subtitle is humanized",
+        arguments: ModerationTests.flaggingStatuses
+    )
+    func dismissedReportJournalRowIsHumanized(_ status: ObservationStatus) async throws {
+        let (api, outbox) = try await Self.harness(role: .coordinator)
+        let tree = try await Self.makeTree(api: api)
+        try await Self.report(status, outbox: outbox, treeID: tree.id)
+        try await api.dismissReview(flagID: Self.onlyReview(api).flagID)
+
+        let page = try await api.journal(cursor: nil, limit: 20)
+        let row = try #require(
+            page.items.first { $0.kind == .observation && $0.treeID == tree.id },
+            "the dismissed check-in left the journal — dismissal closes the flag, not the record"
+        )
+        let expected: String
+        switch status {
+        case .appearsRemoved: expected = "appears removed"
+        case .appearsDead: expected = "appears dead"
+        case .alive, .declining:
+            Issue.record("a non-flagging status reached the dismissal flow")
+            return
+        }
+        #expect(row.summary == expected)
+    }
+
     @Test("a dismissal after a confirm is a conflict")
     func dismissAfterConfirmIsConflict() async throws {
         let (api, outbox) = try await Self.harness(role: .coordinator)

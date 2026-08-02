@@ -475,6 +475,12 @@ struct RootView: View {
                 // has been sitting in the store and the payload since E89 has a caller (E112).
                 onFavorite: { treeID, isFavorite in
                     await favoriteWriter(treeID: treeID, isFavorite: isFavorite)
+                },
+                // The re-read half of R2, from the same place as the write: the store's answer
+                // counting the toggle that may still be in the queue (#167). See
+                // `ProfileFavoriteWriter.storedState`.
+                readFavorite: { [favoriteWriter] treeID in
+                    await favoriteWriter.storedState(treeID: treeID)
                 }
             )
 
@@ -764,6 +770,27 @@ struct ProfileFavoriteWriter: Sendable {
             attribution: await api.attribution,
             outbox: outbox
         )
+    }
+
+    /// What the store holds for this tree, counting the write that may still be in the queue
+    /// (#167).
+    ///
+    /// The heart re-reads after every write (RULINGS R2), and the write is durable at *enqueue* —
+    /// the drain that follows is best-effort, and can return without applying the toggle (another
+    /// drain holds the lock, or a batch already full of older work). A re-read of applied rows
+    /// alone then answers "no" for a favorite that was saved, and the heart goes back off over a
+    /// row that lands seconds later — the owner's "it makes the user think their favoriting action
+    /// got undone", three tickets running (#139, #153, #167).
+    ///
+    /// So the queue is asked first and the table second. An in-flight toggle is the contributor's
+    /// last word; a toggle the queue has terminally failed is nil from `pendingFavoriteState`, so
+    /// the table's old state answers and the heart honestly goes back (R2's one required revert).
+    /// This lives beside the write because the outbox is the composition root's, not a view's.
+    func storedState(treeID: UUID) async -> Bool {
+        if let pending = try? await outbox.pendingFavoriteState(treeID: treeID), let pending {
+            return pending
+        }
+        return (try? await api.isFavorite(treeID: treeID)) ?? false
     }
 }
 

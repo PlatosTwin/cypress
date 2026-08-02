@@ -55,19 +55,24 @@ struct TreeProfileView: View {
     ///   than a navigation, and its owner is the composition root's to resolve (D9), so it is handed
     ///   in for the same reason the visit is. The screen does not read its result: what the cell
     ///   shows next is re-read from the store by `TreeProfileModel`.
+    /// - Parameter readFavorite: the store's answer for the heart, supplied by the composition
+    ///   root because "the store" includes the outbox and the outbox is not a view's to reach
+    ///   (#167, and `TreeProfileModel.readFavorite`). Nil falls back to the API's applied-rows read.
     init(
         treeID: UUID,
         api: any CypressAPI,
         caretakerInitials: [String] = [],
         onVisit: @escaping (UUID) -> Void = { _ in },
-        onFavorite: @escaping (UUID, Bool) async -> Void = { _, _ in }
+        onFavorite: @escaping (UUID, Bool) async -> Void = { _, _ in },
+        readFavorite: ((UUID) async -> Bool)? = nil
     ) {
         _model = State(
             wrappedValue: TreeProfileModel(
                 treeID: treeID,
                 api: api,
                 caretakerInitials: caretakerInitials,
-                setFavorite: onFavorite
+                setFavorite: onFavorite,
+                readFavorite: readFavorite
             )
         )
         self.api = api

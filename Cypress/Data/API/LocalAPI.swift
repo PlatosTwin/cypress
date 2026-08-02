@@ -1156,6 +1156,20 @@ public actor LocalAPI: CypressAPI {
     ///
     /// Both are complete reads with no limit on either, which is what entitles the screen to print
     /// the tally at all (ERRATA E38, and `GroveRecord`).
+    /// `GET /me/grove` narrowed to one tree (#167) — the read screen 03's heart re-checks after a
+    /// write. One indexed SELECT over both ownership arms instead of the whole grove: the wide read
+    /// resolves every held tree through `treeIfPresent` before it can answer one membership bit,
+    /// and skips any row whose tree it cannot resolve — two costs this question never asked for.
+    public func isFavorite(treeID: UUID) async throws -> Bool {
+        let userID = userID
+        let deviceID = deviceID
+        return try await store.queue.read { connection in
+            try contributions.holdsFavorite(
+                userID: userID, deviceID: deviceID, treeID: treeID, connection: connection
+            )
+        }
+    }
+
     public func grove() async throws -> [GroveEntry] {
         let userID = userID
         let deviceID = deviceID
@@ -1268,12 +1282,22 @@ public actor LocalAPI: CypressAPI {
         return Page(items: entries, nextCursor: nextCursor)
     }
 
-    /// `care_events.actions` is stored as a JSON array; the journal query hands it back raw rather
-    /// than teaching SQL to write English.
+    /// `care_events.actions` is stored as a JSON array, and `observations.status` is stored as its
+    /// raw value; the journal query hands both back raw rather than teaching SQL to write English.
     static func humanize(kind: JournalEntry.Kind, storedSummary: String) -> String {
-        guard kind == .careEvent else { return storedSummary }
-        let actions = JSONColumn.decodeRawValues(CareAction.self, storedSummary)
-        return actions.map(\.rawValue.replacingUnderscores).joined(separator: ", ")
+        switch kind {
+        case .careEvent:
+            let actions = JSONColumn.decodeRawValues(CareAction.self, storedSummary)
+            return actions.map(\.rawValue.replacingUnderscores).joined(separator: ", ")
+        case .observation:
+            // The stored shape is `<status>` with an optional ` · vitality N` suffix. The status
+            // is an `ObservationStatus` raw value — `appears_removed`, `appears_dead` — which is
+            // what the owner read under a check-in in the Yours tab (#170). Underscores appear in
+            // no other part of the string, so one pass humanizes every kind on this path.
+            return storedSummary.replacingUnderscores
+        default:
+            return storedSummary
+        }
     }
 
     public func claimDevice(deviceUUID: UUID, userID: UUID) async throws {

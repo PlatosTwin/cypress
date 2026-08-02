@@ -967,6 +967,32 @@ public struct ContributionStore {
         return Set(try statement.fetchAll { try $0.uuid("tree_uuid") })
     }
 
+    /// `favoriteTreeIDs` narrowed to one tree — screen 03's heart, re-read after a write (#167).
+    ///
+    /// The same predicate as `favoriteTreeIDs` above, on purpose: both ownership arms, because a
+    /// favourite saved before sign-in is the device's until a claim moves it (E89), and
+    /// `deleted_at IS NULL` because an un-favourite is a tombstone, not an absence.
+    public func holdsFavorite(
+        userID: UUID?,
+        deviceID: UUID,
+        treeID: UUID,
+        connection: SQLiteConnection
+    ) throws -> Bool {
+        let statement = try connection.cachedStatement("""
+            SELECT 1 AS held FROM favorites
+             WHERE deleted_at IS NULL
+               AND tree_uuid = :tree COLLATE NOCASE
+               AND (device_id = :device COLLATE NOCASE
+                    OR (:user IS NOT NULL AND user_id = :user COLLATE NOCASE))
+             LIMIT 1
+            """)
+        let bindings: [String: SQLiteBindable?] = [
+            ":tree": treeID.uuidString, ":device": deviceID, ":user": userID
+        ]
+        _ = try statement.bind(bindings)
+        return try statement.fetchOne { _ in true } ?? false
+    }
+
     /// First namer wins (D15). The partial unique index on `(tree_uuid) WHERE status = 'active'`
     /// makes a second active name a constraint violation rather than a race.
     @discardableResult
