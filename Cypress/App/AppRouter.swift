@@ -40,6 +40,9 @@ enum Route: Hashable {
     /// for the entrance that genuinely names no measure, which is screen 11's.
     case measure(UUID, MeasurementKind)     // 16
     case outbox                 // 17
+    /// The Cities screen — city inventory downloads (#157). No mock; its surface is ruled
+    /// (docs/rulings-pending/city-downloads.md), and its door is on the You tab like the outbox's.
+    case cityDownloads
     /// The vacant planting site. **No mocked screen** — decided in ERRATA E107, which closes E11.
     ///
     /// Separate from `treeProfile` for the reason `.memorial` is, and more strongly: 14 is a *cold*

@@ -67,6 +67,10 @@ struct YouTabView: View {
     /// block at all, which is what a surface with nothing behind it should do.
     var export: JournalExportBytes?
 
+    /// Opens the Cities screen (#157) — a door, resolved by the composition root like every
+    /// other navigation this tab hands out.
+    var onOpenCities: () -> Void = {}
+
     @Environment(AppRouter.self) private var router: AppRouter?
 
     var body: some View {
@@ -82,6 +86,7 @@ struct YouTabView: View {
                         remindersSection
                         contributionsSection
                         exportSection
+                        citiesSection
                         settingsSection
                         privacySection
                         #if DEBUG
@@ -214,6 +219,27 @@ struct YouTabView: View {
         if let export {
             JournalExportRows(export: export)
         }
+    }
+
+    // MARK: - City data (#157, city-downloads ruling §2)
+
+    /// One C10 row to the Cities screen — the same door shape as the outbox's, because the two
+    /// are the same kind of thing: a place where app-managed data is inspected and moved.
+    private var citiesSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(CityDownloadsCopy.youSectionLabel)
+                .cypressMicroLabel()
+                .padding(.bottom, CypressSpacing.gapVitality)
+
+            IconTextRow(
+                accent: .water,
+                title: CityDownloadsCopy.youRowTitle,
+                subtitle: CityDownloadsCopy.youRowSubtitle,
+                action: onOpenCities
+            )
+        }
+        .padding(.top, CypressSpacing.labelSectionTop)
+        .padding(.horizontal, CypressSpacing.gutter)
     }
 
     // MARK: - Settings
