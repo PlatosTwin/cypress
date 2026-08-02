@@ -165,6 +165,10 @@ struct ScreenEntranceTests {
             return "03 · a measurement stat card with no reading in it (invented, E98)"
         case .outbox:
             return "the You tab · the outbox row (specified, BUILD-PLAN §9)"
+        case .cityDownloads:
+            // #157 — the app side of R36's base layer. The surface has no mock; its ruling
+            // (docs/rulings-pending/city-downloads.md §2) places the door on the You tab.
+            return "the You tab · the Cities row (ruled, city-downloads ruling §2)"
         case .photos:
             // **The entrance moved within the hero** (ERRATA E142). It was the whole header; the
             // header now has two controls, because it had two jobs and could do neither. The
