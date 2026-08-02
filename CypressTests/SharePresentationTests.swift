@@ -234,11 +234,33 @@ struct SharePresentationTests {
 
     @Test("no destination promises something the app does not do")
     func destinationsAreHonest() {
-        #expect(ShareDestination.allCases.map(\.label) == ["Messages", "Instagram", "AirDrop", "Copy link"])
+        // Three, not the mock's four (ticket #146): Instagram had no API to be a button with, and
+        // AirDrop could only ever open a general sheet, which is what `Share…` now says it does.
+        // The exact ledger, in row order — a fourth button, a relabel, or a resurrected Instagram
+        // all fail here by name.
+        #expect(ShareDestination.allCases.map(\.label) == ["Messages", "Copy link", "Share…"])
         #expect(ShareDestination.copyLink.isPasteboard)
         #expect(ShareDestination.allCases.filter(\.isPasteboard).count == 1)
         // The title carries no tree name: SCREENS.md 10 §2 replaced the prototype's
         // `Share {{ treeName }}` with a fixed title and put the name on the card.
         #expect(ShareCopy.title == "Share this tree")
+    }
+
+    /// Ticket #146's owner requirement: the Messages button goes to Messages composition, not to
+    /// the sheet AirDrop opens. The composer only exists where `canSendText()` is true — false on
+    /// every simulator — so the decision is a pure function the suite can hold on both sides,
+    /// which is what keeps the device behavior asserted from a machine that cannot exhibit it.
+    @Test("the Messages button composes where it can and falls back where it cannot")
+    func messagesRoute() {
+        #expect(MessagesRoute(canSendText: true) == .composer)
+        #expect(MessagesRoute(canSendText: false) == .systemShareSheet)
+    }
+
+    @Test("each destination's hint says what tapping it does, and no two claim the same thing")
+    func destinationHints() {
+        #expect(ShareDestination.messages.accessibilityHint == "Opens a new message with the link")
+        #expect(ShareDestination.copyLink.accessibilityHint == "Copies the public link")
+        #expect(ShareDestination.system.accessibilityHint == "Opens the system share sheet")
+        #expect(Set(ShareDestination.allCases.map(\.accessibilityHint)).count == ShareDestination.allCases.count)
     }
 }

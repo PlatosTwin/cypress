@@ -83,7 +83,12 @@ struct CareLogView: View {
         // The skeleton and the scrim are the whole display, status bar included — SCREENS.md 09's
         // frame is the device, and a strip of unscrimmed screen at the top would read as the live
         // profile showing through. `ProfileSkeleton` carries its own 62pt status-bar inset.
-        .ignoresSafeArea()
+        //
+        // `.container` and never bare `.ignoresSafeArea()`: the bare form includes `.keyboard`,
+        // which is exactly how the note field's keyboard covered the note field on device
+        // (ticket #146). With the keyboard region respected, `BottomSheet`'s scroll view keeps
+        // the focused field visible above it.
+        .ignoresSafeArea(.container)
         .task { await model.loadName() }
         .onChange(of: libraryItem) { _, item in
             guard let item else { return }

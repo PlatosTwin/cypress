@@ -48,38 +48,59 @@ import Foundation
 
 // MARK: - Destinations
 
-/// One target in 10 §4's row. Four, in the order SCREENS.md draws them.
+/// One target in 10 §4's row. Three, not the mock's four — the owner overrode the mock's row on
+/// device (ticket #146): a row of named apps that all opened the same system sheet made the names
+/// lies. What remains is the rule that **every button does exactly what its label says**:
+/// `Messages` opens a Messages composition, `Copy link` copies, `Share…` opens the system sheet.
+/// `Instagram` is gone — Instagram publishes no link-sharing API and its Stories scheme requires a
+/// Meta app registration this zero-dependency app does not have, so the button could never do
+/// anything a `Share…` row does not. `AirDrop` folded into `Share…` for the same honesty:
+/// `excludedActivityTypes` cannot remove third-party share extensions, so an "AirDrop" button
+/// still opens a general sheet. Recorded in docs/rulings-pending/share-destinations.md.
 ///
 /// The label is the enum's, not the caller's, so no screen can relabel a target it does not
 /// implement.
 enum ShareDestination: String, CaseIterable, Identifiable {
     case messages
-    case instagram
-    case airDrop
     case copyLink
+    case system
 
     var id: String { rawValue }
 
-    /// Verbatim from 10 §4.
     var label: String {
         switch self {
         case .messages: return "Messages"
-        case .instagram: return "Instagram"
-        case .airDrop: return "AirDrop"
         case .copyLink: return "Copy link"
+        case .system: return "Share…"
         }
     }
 
     /// Whether the target is the pasteboard rather than a hand-off to another app.
-    ///
-    /// `Copy link` is the one of the four iOS can perform exactly as labelled. The other three name
-    /// destinations that have no direct API — Instagram publishes none for links, and Messages and
-    /// AirDrop are reached through the system share sheet, which *is* what those words mean on this
-    /// platform. See `ShareView` for what each one does.
     var isPasteboard: Bool { self == .copyLink }
 
     var accessibilityHint: String {
-        isPasteboard ? "Copies the public link" : "Opens the system share sheet"
+        switch self {
+        case .messages: return "Opens a new message with the link"
+        case .copyLink: return "Copies the public link"
+        case .system: return "Opens the system share sheet"
+        }
+    }
+}
+
+/// Where the `Messages` button actually goes, decided by one question the platform answers at
+/// runtime: `MFMessageComposeViewController.canSendText()`.
+///
+/// On a device with Messages set up it is the in-app composer — the owner's requirement verbatim
+/// ("clicking it SHOULD INSTANTLY BRING YOU TO MESSAGES SHARING"). Where the composer cannot be
+/// presented — simulators always, devices with no messaging account — the button falls back to
+/// the system share sheet rather than going dead: a button that does nothing on tap reads as a
+/// broken screen, and the sheet still contains Messages when the platform can offer it.
+enum MessagesRoute: Equatable {
+    case composer
+    case systemShareSheet
+
+    init(canSendText: Bool) {
+        self = canSendText ? .composer : .systemShareSheet
     }
 }
 
