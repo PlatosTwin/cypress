@@ -119,12 +119,18 @@ public actor LocalAPI: CypressAPI {
                 connection: connection
             )
             //
-            // **All three narrowings, not just the species one (#116).** Each is the same leak in a
+            // **Every narrowing, not just the species one (#116).** Each is the same leak in a
             // different colour: a `Favourites` map that drew every community tree in the box would
             // be claiming the reader had hearted them, and a `2010s` map that drew a community tree
             // with no planting year would be claiming the city planted it in a decade nobody
             // recorded. The year clause is deliberately `false` for a nil year, matching the SQL's
             // `planted_year IS NOT NULL` on the seed side exactly — see ERRATA E175.
+            //
+            // **The two `siteKind` clauses mirror `TreeQueries.Narrowing.predicate` term for term**
+            // (tasks #178, #179), and they have to: a narrowing that reached the seed's SQL but not
+            // this filter would draw community vacant sites under a year while the city's own were
+            // correctly excluded — one filter telling two stories depending on who added the row.
+            // `MapSiteKind.of` is the single definition both sides call.
             let added = allAdded.filter { tree in
                 if let wanted = viewport.speciesIDs {
                     guard let id = tree.speciesCurrentID, wanted.contains(id) else { return false }
@@ -132,6 +138,12 @@ public actor LocalAPI: CypressAPI {
                 if let wanted = viewport.treeIDs, !wanted.contains(tree.id) { return false }
                 if let years = viewport.plantedYears {
                     guard let planted = tree.plantedYear, years.contains(planted) else { return false }
+                    // Task #178: a planting date on a site with no tree is the date of a tree that
+                    // is gone, so it never answers "planted in the 2010s".
+                    guard MapSiteKind.of(tree.status) == .hasTree else { return false }
+                }
+                if let wanted = viewport.siteKind, MapSiteKind.of(tree.status) != wanted {
+                    return false
                 }
                 return true
             }

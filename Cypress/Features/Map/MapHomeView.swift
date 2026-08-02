@@ -108,18 +108,14 @@ struct MapHomeView: View {
         case refused(MapLocationProvider.Availability)
     }
 
-    /// The year-filter caveat for the attached inventory, resolved by the composition root from
-    /// the store's measured share — this view only carries it to `MapFilterStatus`.
-    private let yearCaveat: String
-
-    init(
-        api: any CypressAPI,
-        location: MapLocationProvider,
-        yearCaveat: String = MapYearFilterCopy.setAside
-    ) {
+    // This view used to take a `yearCaveat` string, threaded from the composition root out of the
+    // store's measured undated share, and hand it to `MapFilterStatus`. R41 removed the sentence
+    // and the view that drew it (task #180), so the parameter, the property and the whole
+    // measurement behind them are gone — an unread property carried "just in case" is the #62/E126
+    // shape. See `docs/errata-pending/filter-messages.md`.
+    init(api: any CypressAPI, location: MapLocationProvider) {
         self.api = api
         self.location = location
-        self.yearCaveat = yearCaveat
         _model = State(initialValue: MapModel(api: api))
     }
 
@@ -341,15 +337,13 @@ struct MapHomeView: View {
                     // exactly as it was. Draws nothing unless the search has something to say.
                     MapSearchStatus(search: model.search)
                         .accessibilitySortPriority(3)
-                    // What the filter found, and the year control's caveat about the 74 % of rows
-                    // that carry no planting date (#116, ERRATA E175). Draws nothing when no filter
-                    // is on, so an un-narrowed screen 01 is exactly as it was.
-                    MapFilterStatus(
-                        result: model.filterResult,
-                        showsYearCaveat: model.filter.decade != nil,
-                        yearCaveat: yearCaveat
-                    )
-                    .accessibilitySortPriority(2)
+                    // **Nothing is drawn here any more** (RULINGS R41, task #180). `MapFilterStatus`
+                    // sat between the search status and the legend and drew the filter's result
+                    // count and the year caveat over the map. A filter's entire voice is its chip;
+                    // the chips are above and the legend is below, and between them the map is the
+                    // map. The sort priorities either side are unchanged, so the reading order a
+                    // listener walks — field → suggestions → chips → search status → legend — is
+                    // the same order with one stop removed.
                     // And below that, for the same reason. The key to the species colouring — which
                     // names the four species the map has coloured, and draws nothing when it has
                     // coloured none. **It is also the species filter** (#116) — see

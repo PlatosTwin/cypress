@@ -352,29 +352,17 @@ final class MapModel {
         }
     }
 
-    // MARK: - What the filter row reports
+    // MARK: - What the filter row reports, which is nothing (RULINGS R41, task #180)
 
-    /// The result line over the map — `31 trees` — or nil when there is nothing to report.
-    ///
-    /// **Nil unless a filter is on**, which is the whole of D1's safety here: an un-narrowed map
-    /// draws no number at all, so there is no surface on which a count of anything could sit by
-    /// default. When it does draw, the number is of *trees under this viewport matching this
-    /// filter*, it moves when the reader pans, and `MapFilterCopy.result` is where the argument that
-    /// this is not the count D1 forbids is written out.
-    ///
-    /// **E38 is honoured by asking `content`, not `pins`.** `pins` is what survived the grid;
-    /// `PinAnswer.matchesInView` is how many actually matched. The copy renders those two cases
-    /// differently rather than presenting a page as a total.
-    var filterResult: String? {
-        guard filter.isActive, case let .pins(answer) = content else { return nil }
-        // **An emptied map reports nothing at all** — no count, no card (task #165). A `0 trees`
-        // pill would be a message where the owner asked for none: the empty map is the whole
-        // answer, and the way out is the `Clear filters` chip the row already draws.
-        guard !pins.isEmpty else { return nil }
-        // The drawn count is `pins`, not `answer.items`: a condition chip filters after the fetch,
-        // so the number on screen has to be the number on the glass.
-        return MapFilterCopy.result(drawn: pins.count, matched: answer.matchesInView)
-    }
+    // `filterResult` stood here and produced the result line — `31 trees`, or
+    // `1458 trees—showing 151` when the 44 pt grid had thinned the answer. R41 forbids text that
+    // appears because a filter did something and names a count among the surfaces it forbids, and
+    // this property existed for no other purpose: it was nil unless `filter.isActive`. So it is
+    // gone rather than left computing a string nobody renders.
+    //
+    // The thinning it reported is still real and still happens (`pinLimit`,
+    // `MapViewport.markerCellPoints`). What is gone is the sentence about it, which E38 permits:
+    // E38 forbids presenting a page as a total, and no number is presented at all now.
 
     // MARK: - Camera
 
@@ -421,7 +409,8 @@ final class MapModel {
                 : Self.markerCellPoints,
             speciesIDs: speciesIDs,
             plantedYears: filter.decade?.years,
-            treeIDs: members
+            treeIDs: members,
+            siteKind: filter.siteKind
         )
     }
 

@@ -176,6 +176,8 @@ public struct TreeQueries {
         var plantedYears: ClosedRange<Int>?
         /// Lower-cased tree uuids, sorted, or nil for every tree (`MapViewport.treeIDs`).
         var treeUUIDs: [String]?
+        /// Tree or empty planting site, or nil for both (`MapViewport.siteKind`, task #179).
+        var siteKind: MapSiteKind?
         /// Whether some part of the narrowing resolved to the empty set, so no row can match.
         var matchesNothing: Bool = false
 
@@ -196,13 +198,41 @@ public struct TreeQueries {
                 // SQLite's three-valued logic already excludes NULL here, so this clause changes no
                 // row. It is in the text so that a reader of the query plan, or of this file, sees
                 // the decision that ERRATA E175 is about rather than having to infer it from the
-                // absence of a clause: 107,875 of the seed's 145,837 rows have no planting date and
-                // every one of them is being set aside here. The surface says so out loud
-                // (`MapYearFilterCopy`); this is the same sentence in SQL.
+                // absence of a clause: **160,440 of the seed's 198,625 rows** have no planting date
+                // and every one of them is being set aside here. (The 107,875 / 145,837 previously
+                // written here was the San-Francisco-only seed's and had been stale since E176.)
+                // No surface says so any more — R41 removed the sentence that did (task #180) — so
+                // this comment is now the only place the decision is written down.
+                //
+                // **`status <> 'vacant_site'` is the whole of task #178 and is NOT redundant.**
+                // 9,237 of the seed's 24,200 vacant planting sites carry a `planted_year`: the date
+                // of a tree that stood here and is gone. Without this clause `2010s` returns empty
+                // basins as trees planted in the 2010s — in a typical San Francisco viewport,
+                // 1,137 of 5,075 matches, 22 %. E107 refused exactly this claim one layer up when
+                // it kept the `PLANTED <year>` badge off the site screen, on the grounds that it
+                // "would assert a planting on an empty basin"; the filter was asserting it anyway.
+                //
+                // **It is free.** `planted_year` is in no index, so a year-narrowed query already
+                // probes the table for every candidate row and `status` is read from a page already
+                // fetched. Measured on the shipped seed over an SF-wide box: identical plan
+                // (`SEARCH t USING INDEX idx_trees_lat_lon` — *not* covering, with or without this
+                // clause) and identical time. The covering-index rule stated on `clusters` is about
+                // the *un-narrowed* query, which never sees this clause.
                 clauses.append(
                     "AND t.planted_year IS NOT NULL "
-                        + "AND t.planted_year BETWEEN \(plantedYears.lowerBound) AND \(plantedYears.upperBound)"
+                        + "AND t.planted_year BETWEEN \(plantedYears.lowerBound) AND \(plantedYears.upperBound) "
+                        + "AND t.status <> \(TreeQueries.quote(TreeStatus.vacantSite.rawValue))"
                 )
+            }
+            if let siteKind {
+                // Task #179. Written as an `IN` over `MapSiteKind.statuses` rather than as
+                // `= 'vacant_site'` / `<> 'vacant_site'` so that the arm a new `TreeStatus` lands in
+                // is decided once, in `MapSiteKind.of`, and reaches the SQL from there — the two
+                // could not drift even if someone added a status and forgot this file.
+                let list = siteKind.statuses
+                    .map { TreeQueries.quote($0.rawValue) }
+                    .joined(separator: ",")
+                clauses.append("AND t.status IN (\(list))")
             }
             if let treeUUIDs, !treeUUIDs.isEmpty {
                 // **Interpolated, and quoted by `quote(_:)` rather than bound**, for the reason
@@ -222,7 +252,8 @@ public struct TreeQueries {
 
         /// Whether anything at all narrows this. Used only for assertions and tests.
         var isNone: Bool {
-            speciesRowIDs == nil && plantedYears == nil && treeUUIDs == nil && !matchesNothing
+            speciesRowIDs == nil && plantedYears == nil && treeUUIDs == nil && siteKind == nil
+                && !matchesNothing
         }
     }
 
@@ -254,6 +285,7 @@ public struct TreeQueries {
         }
 
         narrowing.plantedYears = viewport.plantedYears
+        narrowing.siteKind = viewport.siteKind
         return narrowing
     }
 

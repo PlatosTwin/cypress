@@ -159,6 +159,8 @@ struct MapFilterChips: View {
                     }
                 case .year:
                     yearChip
+                case .siteKind:
+                    siteKindChip
                 }
             }
         }
@@ -207,6 +209,36 @@ struct MapFilterChips: View {
         .accessibilityValue(filter.decade?.label ?? MapYearFilterCopy.anyLabel)
     }
 
+    /// **Tree or empty planting site** (task #179). A `Menu`, built exactly like `yearChip` above,
+    /// for exactly its reasons: this is a *value* chosen from a short list, not a toggle, so the
+    /// system's own platter gives it a ≥44 pt target list, Dynamic Type and the expected dismiss
+    /// gesture for free, and it draws no SF Symbol because the label carries the chosen value in
+    /// words (#130 gains no sixth call site).
+    ///
+    /// Two options and an `Any`, rather than a pair of toggle chips: the two arms are exclusive by
+    /// construction — every row is one or the other (`MapSiteKind.of`) — so two toggles would offer
+    /// a both-on state meaning "every tree" and a both-off state meaning the same thing, which is
+    /// the un-narrowed map wearing two controls. `MapFilter.membership` had this exact shape and
+    /// R23 §1 settled it the same way.
+    private var siteKindChip: some View {
+        Menu {
+            Button(MapSiteKindFilterCopy.anyLabel) { filter.siteKind = nil }
+            ForEach(MapSiteKind.allCases) { kind in
+                Button(MapSiteKindFilterCopy.optionLabel(kind)) { filter.siteKind = kind }
+            }
+        } label: {
+            Chip(
+                MapSiteKindFilterCopy.label(filter.siteKind),
+                style: filter.siteKind == nil ? .filterIdle : .filterSelected
+            )
+        }
+        .cypressHitArea()
+        .accessibilityLabel(MapSiteKindFilterCopy.label)
+        .accessibilityValue(
+            filter.siteKind.map(MapSiteKindFilterCopy.optionLabel) ?? MapSiteKindFilterCopy.anyLabel
+        )
+    }
+
     private func chip(_ title: String, isOn: Bool, action: @escaping () -> Void) -> some View {
         Chip(title, style: isOn ? .filterSelected : .filterIdle, action: action)
             // The fill and the weight say "on" and neither reaches a listener, so the state travels
@@ -215,50 +247,32 @@ struct MapFilterChips: View {
     }
 }
 
-// MARK: - The filter's result and its empty state
+// MARK: - The filter's status line, which no longer exists (RULINGS R41, task #180)
 
-/// What the filter says about what it found — the count, the year caveat, or nothing.
-///
-/// It borrows `MapSearchStatus`'s capsule exactly, because it is the same kind of object in the same
-/// strip of chrome: a sentence about how the map has been narrowed. Two lines at most, and it draws
-/// nothing at all when no filter is on, so an un-narrowed screen 01 is untouched.
-struct MapFilterStatus: View {
-    let result: String?
-    let showsYearCaveat: Bool
-    /// The caveat sentence for the inventory the map is actually drawn from — derived from the
-    /// measured undated share (RULINGS R43 §5). Defaults to the fused bundle's
-    /// recorded sentence so previews and older call sites stay exact.
-    var yearCaveat: String = MapYearFilterCopy.setAside
-
-    var body: some View {
-        if result != nil || showsYearCaveat {
-            VStack(alignment: .leading, spacing: MapLayout.chipGap) {
-                if let result {
-                    line(result)
-                }
-                // The sentence that keeps the year control honest about the 74 % of rows it cannot
-                // judge (ERRATA E175). It sits *below* the count deliberately: the count is the
-                // answer, this is the qualification on it.
-                if showsYearCaveat {
-                    line(yearCaveat)
-                }
-            }
-        }
-    }
-
-    private func line(_ message: String) -> some View {
-        Text(message)
-            .font(CypressFont.body13)
-            .foregroundStyle(CypressColor.textMuted)
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.vertical, CypressSpacing.Component.chipPaddingVFilter)
-            .padding(.horizontal, CypressSpacing.Component.chipPaddingHFilter)
-            .background { Capsule().fill(CypressColor.searchFill) }
-            .cypressPillBorder(CypressColor.searchBorder)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(message)
-    }
-}
+// `MapFilterStatus` stood here. It drew two lines in a capsule over the map whenever a filter was
+// on: the result count (`31 trees` / `1,458 trees—showing 151`) and, under a chosen decade, the
+// year control's caveat (`About 4 in 5 trees have no recorded planting date—…`). **Both are gone,
+// and the view with them.**
+//
+// R41 is categorical and it is the owner's own instruction: "No messages should appear alongside
+// filters ever. for any reason. ever again." Its test is "does text appear because a filter did
+// something?" — and both lines did, exactly. The ruling names *a count* in the same breath as a
+// notice and a card, and it answers the obvious objection in advance: counts have three sanctioned
+// channels (R23.1 — chip fill, count **on the chip**, spoken names), and "on the chip is the chip's
+// voice, not a companion message". A capsule on the glass is not one of the three.
+//
+// **Why the count went too, when the owner only named the caveat.** R41 exists because this is the
+// third filter-adjacent message to be ruled out and the first two came back "under a different
+// mechanism"; the ruling says in terms that it is categorical so no mechanism can shelter one. The
+// count sat in the same view, in the same capsule, in the same position, appearing for the same
+// cause. Removing the sentence and keeping its neighbour would be exactly the survival R41 was
+// written to stop. See `docs/errata-pending/filter-messages.md` for the whole argument and for the
+// one thing this costs.
+//
+// E38 is not weakened by this. E38 forbids *presenting a page as a total*; it is a constraint on a
+// number that is shown, and there is now no number. `MapModel.pinLimit` and the 44 pt grid still
+// thin the drawn pins, and the map still draws a sample — it simply no longer says a wrong thing
+// about it, because it says nothing.
 
 // MARK: - Search suggestions
 

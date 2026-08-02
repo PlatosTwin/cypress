@@ -1,9 +1,12 @@
 import XCTest
 
-/// **Screen 01's filter row, its expandable control and its result line, driven the way an
-/// assistive technology reaches them** (task #135; the design is RULINGS **R23** as amended by
-/// **R23.1**, restructured by task #145, and re-cut by the owner's directives in tasks #165 and
-/// #166; the dropdown beside it is **R25**).
+/// **Screen 01's filter row and its expandable control, driven the way an assistive technology
+/// reaches them** (task #135; the design is RULINGS **R23** as amended by **R23.1**, restructured
+/// by task #145, and re-cut by the owner's directives in tasks #165, #166 and #180; the dropdown
+/// beside it is **R25**).
+///
+/// The result line this file used to drive is gone — **RULINGS R41**, task #180: no message ever
+/// accompanies a filter. Section 4 is now the structural test that keeps it gone.
 ///
 /// ── Why this file exists ─────────────────────────────────────────────────────────────────────────
 /// #116 shipped the row and its own report says plainly: "No UI tests written — `CypressUITests` was
@@ -503,14 +506,15 @@ final class MapFilterAccessibilityTests: XCTestCase {
         )
     }
 
-    // MARK: - 4 · The line over the map
+    // MARK: - 4 · The line over the map, which must never exist again (RULINGS R41, task #180)
 
-    /// `MapFilterCopy.result`'s two forms and nothing else: `31 trees`, `1 tree`, or
-    /// `1458 trees—showing 151`. An em dash with no spaces around it (ARCHITECTURE §5.7).
+    /// `MapFilterCopy.result`'s two forms, kept as a *forbidden* shape: `31 trees`, `1 tree`, or
+    /// `1458 trees—showing 151`. Nothing may match this any more.
     private static let countGrammar = "^[0-9]+ tree(s)?(—showing [0-9]+)?$"
 
-    /// Any element that is only *part* of a count — a bare number, or the tail of the thinned form.
-    private static let fragmentGrammar = "^([0-9]+|trees?|showing [0-9]+|—showing [0-9]+)$"
+    /// The year caveat R41 removed, matched on its content rather than its wording — a rewritten
+    /// sentence that still said this would be the same defect (assert facts, not phrasing).
+    private static let caveatGrammar = ".*planting date.*"
 
     private func countLines(_ app: XCUIApplication) -> [XCUIElement] {
         app.staticTexts
@@ -518,31 +522,62 @@ final class MapFilterAccessibilityTests: XCTestCase {
             .allElementsBoundByIndex
     }
 
-    private func countFragments(_ app: XCUIApplication) -> [XCUIElement] {
+    private func caveatLines(_ app: XCUIApplication) -> [XCUIElement] {
         app.staticTexts
-            .matching(NSPredicate(format: "label MATCHES %@", Self.fragmentGrammar))
+            .matching(NSPredicate(format: "label MATCHES[c] %@", Self.caveatGrammar))
             .allElementsBoundByIndex
     }
 
-    // ── The year control's caveat, and why there is no UI test for it ───────────────────────────
-    //
-    // A SwiftUI `Menu`'s platter is in no element tree XCUITest hands back (E183 §4): tapping
-    // `Year` draws `Any year · Before 1990 · …` on the glass and `app.buttons["2010s"]` finds
-    // nothing, here or on springboard. So no test drives a decade on, and the caveat sentence's
-    // rendering path is covered the way E183 records — its text and the 80.78 % by the unit suite,
-    // the one-element mechanism by `testTheResultLineIsOneCountingPhrase` below. #145 moves the
-    // menu inside the drawer and changes none of that.
+    /// Every static text on the glass right now.
+    private func texts(_ app: XCUIApplication) -> Set<String> {
+        Set(app.staticTexts.allElementsBoundByIndex.compactMap { $0.exists ? $0.label : nil })
+    }
 
-    /// **The result line is one counting phrase, not a number and some words beside it** (E38).
+    /// Every control's label right now — the set of things that are a *chip's own voice*.
     ///
-    /// The one precondition in this file that depends on the viewport, stated and announced: the
-    /// legend needs a species coloured on the glass.
-    func testTheResultLineIsOneCountingPhrase() throws {
+    /// **Buttons only, and that exclusion was measured rather than assumed.** This started as
+    /// buttons ∪ `otherElements`, and the red-proof caught it: with a companion sentence deliberately
+    /// restored to the map, the named caveat check failed and this diff did **not**, because a
+    /// SwiftUI container is an `otherElement` that carries its child text's label — so every message
+    /// exempted itself as its own wrapper. A container is not a control, and R41's sanctioned
+    /// channels are chips. Narrowing this to `buttons` is what makes the diff able to fail.
+    private func controlLabels(_ app: XCUIApplication) -> Set<String> {
+        Set(app.buttons.allElementsBoundByIndex.compactMap { $0.exists ? $0.label : nil })
+    }
+
+    /// **The structural test RULINGS R41 asks for: no message ever accompanies a filter.**
+    ///
+    /// This file used to hold `testTheResultLineIsOneCountingPhrase`, which asserted that turning a
+    /// filter on put *exactly one* counting phrase over the map. R41 reversed the requirement, so
+    /// the test is inverted rather than deleted — the same treatment R38 gave the AX5 wrap test it
+    /// replaced, and for the same reason: the file should still testify about this surface, and a
+    /// deleted test testifies to nothing.
+    ///
+    /// ── Why it is a diff and not a list of forbidden strings ──────────────────────────────────
+    /// R41's own test is "**does text appear because a filter did something?**", and that is
+    /// literally a difference of two sets. A test that banned today's two sentences by name would
+    /// be the thing R41 was written against: this is the third filter-adjacent message to be ruled
+    /// out and the first two "survived under a different mechanism", so a guard that only knows the
+    /// current mechanism is a guard that will be walked around. Anything new that appears when a
+    /// narrowing goes on fails here, whatever it says and whichever view drew it.
+    ///
+    /// **The one thing that may appear is a control's own label.** R23.1's three channels are the
+    /// sanctioned way for a narrowing to speak — the chip's fill, a count *on the chip*
+    /// (`More filters (1)`), and its spoken value — and R41 keeps them explicitly: "on the chip is
+    /// the chip's voice, not a companion message". So new text is a violation exactly when nothing
+    /// on screen answers to it as a control. `Clear filters` appearing is fine; a capsule saying
+    /// `31 trees` is not.
+    ///
+    /// The two named checks below are redundant with the diff by construction and are kept anyway,
+    /// because they name the two specimens and would survive a refactor of the diff.
+    func testNoTextAccompaniesAFilter() throws {
         let app = launch()
         _ = requireField(app)
 
         // Read off the glass, never assumed: `MapSpeciesLegendCopy.chipLabel` is
-        // "<name>, <colour> pins marked <mark>".
+        // "<name>, <colour> pins marked <mark>". The legend is R23's species filter, and it is the
+        // one narrowing this file can drive that leaves the map holding something to count — the
+        // state the removed line used to appear in.
         let legend = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", " pins marked "))
         _ = wait(timeout: 25) { legend.count > 0 }
         guard legend.count > 0 else {
@@ -551,36 +586,86 @@ final class MapFilterAccessibilityTests: XCTestCase {
                 + "the species filter — has no entry to tap, and there is no filter available that "
                 + "leaves the map holding anything to count. The map colours a species only where it "
                 + "drew at least two of its pins. Put the map over some streets: xcrun simctl "
-                + "location DE8E11AE-4375-4C3B-A296-9B60A7DF1DB3 set 37.78485,-122.4215 (and note "
+                + "location EA0AD796-3052-4EE5-A7A8-A1DE807A3653 set 37.78485,-122.4215 (and note "
                 + "that `simctl location clear` does not unfix a device — revoke the app's location "
-                + "grant to do that)."
-            announceSkip(message, test: "testTheResultLineIsOneCountingPhrase")
+                + "grant to do that). ERRATA E202 is worth reading before believing a red here."
+            announceSkip(message, test: "testNoTextAccompaniesAFilter")
             throw XCTSkip(message)
         }
+
+        // The un-narrowed map, which is the baseline R41 measures against.
+        let before = texts(app)
+
         let entry = legend.element(boundBy: 0)
         let name = entry.label
         entry.tap()
-
         XCTAssertTrue(
             wait { (entry.value as? String) == Self.on },
             "tapping the legend entry “\(name)” did not turn the species filter on; it announces "
-                + "“\(entry.value as? String ?? "nothing")”"
+                + "“\(entry.value as? String ?? "nothing")”, so nothing below is a statement about "
+                + "a narrowed map"
         )
+
+        // Let the fetch land, so this is not a race that passes because the map is still working.
         XCTAssertTrue(
-            wait { self.countLines(app).count == 1 },
-            "narrowing the map to “\(name)” — a species this very viewport is drawing at least two "
-                + "pins of — put \(countLines(app).count) result lines over the map. The tree holds "
-                + "\(countLines(app).map(\.label))"
+            wait { !self.clearControls(app).isEmpty },
+            "no “\(Self.clear)” chip appeared, so the filter never took"
         )
-        // And nothing beside it is a piece of the same sentence.
+
+        assertNoCompanionText(app, after: before, narrowing: "the species “\(name)”")
+
+        // A second narrowing on top, because R41 is about *any* filter state and a conjunction is
+        // the state most likely to grow a summarising sentence.
+        chip(Self.conditionChips[1], app).tap()
+        XCTAssertTrue(
+            wait { (self.chip(Self.conditionChips[1], app).value as? String) == Self.on },
+            "“\(Self.conditionChips[1])” did not turn on"
+        )
+        assertNoCompanionText(app, after: before, narrowing: "a species and “\(Self.conditionChips[1])”")
+
+        // And a narrowing set from *inside* the drawer, which is the surface #179 adds a control to
+        // and the one R23.1 warns can narrow the map with nothing visible saying so.
+        turnFavoritesOn(app)
+        assertNoCompanionText(app, after: before, narrowing: "a filter set inside “\(Self.moreChip)”")
+    }
+
+    /// The assertion itself, so the three states above make the identical claim.
+    private func assertNoCompanionText(
+        _ app: XCUIApplication,
+        after baseline: Set<String>,
+        narrowing: String
+    ) {
+        // **The general form goes first, and the order is load-bearing** — this class sets
+        // `continueAfterFailure = false`, so whichever assertion fires first is the only one that
+        // reports. The two named checks below are specimens; this is the rule. Putting them first
+        // cost a red-proof cycle that proved only the specimen and left the rule unexercised.
+        //
+        // Anything the un-narrowed map did not say, that no control on screen answers to.
+        let controls = controlLabels(app)
+        let appeared = texts(app).subtracting(baseline).subtracting(controls)
         XCTAssertEqual(
-            countFragments(app).map(\.label), [],
-            "the result line has been split: the tree also holds "
-                + "\(countFragments(app).map(\.label)), which a reader meets as separate facts"
+            appeared.sorted(), [],
+            "narrowing by \(narrowing) made text appear that was not on the un-narrowed map and "
+                + "that no control on screen answers to: \(appeared.sorted()). RULINGS R41 is "
+                + "categorical — “does text appear because a filter did something?” — and the only "
+                + "sanctioned channels are the chip's fill, a count on the chip, and its spoken "
+                + "value (R23.1). If this is a new legitimate *chip*, it should be reachable as a "
+                + "control and this test will pass once it is."
         )
-        XCTAssertGreaterThan(
-            countLines(app)[0].frame.height, 0,
-            "the result line has no frame, so it is in the tree and on nobody's screen"
+
+        // The two specimens, redundant with the diff by construction and kept anyway: they name
+        // the exact surfaces task #180 removed, so a regression reports in the words of the ticket
+        // rather than as an anonymous set difference. They would also survive a refactor that
+        // weakened the diff — which is not hypothetical, see `controlLabels`.
+        XCTAssertEqual(
+            countLines(app).map(\.label), [],
+            "narrowing by \(narrowing) put a result count over the map. RULINGS R41: a filter's "
+                + "entire voice is its chip, and a count belongs on the chip or nowhere."
+        )
+        XCTAssertEqual(
+            caveatLines(app).map(\.label), [],
+            "narrowing by \(narrowing) put a sentence about planting dates over the map. That is "
+                + "the message task #180 removed by name; R41 forbids it returning in any wording."
         )
     }
 
