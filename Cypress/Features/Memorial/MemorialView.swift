@@ -172,13 +172,23 @@ struct MemorialScreen: View {
 
     private var identity: some View {
         VStack(alignment: .leading, spacing: MemorialMetrics.latinTop) {
-            HStack(alignment: .firstTextBaseline, spacing: CypressSpacing.gapCandidates) {
-                Text(presentation.title)
-                    .font(CypressFont.treeNameHero)
-                    .foregroundStyle(CypressColor.textInk)
-                    .fixedSize(horizontal: false, vertical: true)
-                StatusBadge(presentation.badge)
-                Spacer(minLength: 0)
+            // Name beside the badge where both fit whole; name above the badge where they do not.
+            // `StatusBadge` is `.fixedSize()` by design and never yields, so at AX5 the drawn row
+            // handed the name whatever width was left — a few characters, "Juda" beside REMOVED,
+            // one fragment per line on the bare fixture (ERRATA E196 §4, the E106/E183 family).
+            // The measured first form is the name *unwrapped*, so the row is kept only when the
+            // whole name fits beside the whole badge — same shape as `StatCard.cityRecordValue`.
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline, spacing: CypressSpacing.gapCandidates) {
+                    nameText
+                    StatusBadge(presentation.badge)
+                    Spacer(minLength: 0)
+                }
+                VStack(alignment: .leading, spacing: MemorialMetrics.latinTop) {
+                    nameText.fixedSize(horizontal: false, vertical: true)
+                    StatusBadge(presentation.badge)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             // Absent when the record knows neither a species nor a span — an empty italic line is
             // still a line, and a memorial with nothing to say under the name says nothing.
@@ -199,6 +209,13 @@ struct MemorialScreen: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, CypressSpacing.gutter)
         .padding(.top, MemorialMetrics.identityTop)
+    }
+
+    /// The serif name, once — both arms of the identity `ViewThatFits` draw exactly this.
+    private var nameText: some View {
+        Text(presentation.title)
+            .font(CypressFont.treeNameHero)
+            .foregroundStyle(CypressColor.textInk)
     }
 
     // MARK: §4 · Timeline (C9 ×4)

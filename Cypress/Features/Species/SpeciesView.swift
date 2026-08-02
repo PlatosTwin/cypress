@@ -160,9 +160,20 @@ struct SpeciesView: View {
     @ViewBuilder
     private func taxonomyChips(_ presentation: SpeciesPresentation) -> some View {
         if !presentation.taxonomyChips.isEmpty {
-            HStack(spacing: SpeciesMetrics.chipsGap) {
-                ForEach(presentation.taxonomyChips) { chip in
-                    Chip(chip.label, style: .meta)
+            // One row while both chips fit whole; stacked once they cannot. A taxonomy chip's
+            // label is one word — `Cupressaceae`, `Evergreen` — and a single word given half a
+            // row at AX5 breaks mid-word (`Cupressac / eae`, ERRATA E196 §7). The measured row is
+            // the chips unwrapped, so sharing only happens at widths where sharing is honest.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: SpeciesMetrics.chipsGap) {
+                    ForEach(presentation.taxonomyChips) { chip in
+                        Chip(chip.label, style: .meta)
+                    }
+                }
+                VStack(alignment: .leading, spacing: SpeciesMetrics.chipsGap) {
+                    ForEach(presentation.taxonomyChips) { chip in
+                        Chip(chip.label, style: .meta)
+                    }
                 }
             }
             .padding(.top, SpeciesMetrics.chipsTop)

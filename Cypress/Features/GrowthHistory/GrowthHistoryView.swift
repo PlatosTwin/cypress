@@ -179,19 +179,34 @@ struct GrowthHistoryView: View {
     }
 
     private func logRow(_ row: GrowthLogRow) -> some View {
-        HStack(spacing: GrowthHistoryMetrics.logRowSpacing) {
-            // The value and its method badge, inseparable (D7). The `role` column SCREENS.md draws
-            // between them is absent — see `GrowthLogRow`.
-            MeasuredValue(
-                quantity: row.quantity,
-                size: .growthLog,
-                font: CypressFont.mono135SemiBold
-            )
-            Spacer(minLength: 0)
-            Text(row.dateText)
-                .font(CypressFont.mono11)
-                .foregroundStyle(CypressColor.textFaint)
-                .fixedSize()
+        // The value and its method badge, inseparable (D7). The `role` column SCREENS.md draws
+        // between them is absent — see `GrowthLogRow`.
+        let value = MeasuredValue(
+            quantity: row.quantity,
+            size: .growthLog,
+            font: CypressFont.mono135SemiBold
+        )
+        let date = Text(row.dateText)
+            .font(CypressFont.mono11)
+            .foregroundStyle(CypressColor.textFaint)
+            .fixedSize()
+
+        // One row where the value, its badge and the date fit across; the date drops under the
+        // value where they do not. At AX5 the single-row form is wider than the phone — the badge
+        // and the date are both intrinsic-width by design — and these rows are what pushed the
+        // whole of screen 11 off both edges of the glass (ERRATA E196 §3). Same shape as
+        // `StatCard.cityRecordValue`, for the same reason.
+        return ViewThatFits(in: .horizontal) {
+            HStack(spacing: GrowthHistoryMetrics.logRowSpacing) {
+                value
+                Spacer(minLength: 0)
+                date
+            }
+            VStack(alignment: .leading, spacing: CypressSpacing.gapDense) {
+                value
+                date
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.vertical, GrowthHistoryMetrics.logRowPaddingV)
         .padding(.horizontal, GrowthHistoryMetrics.logRowPaddingH)

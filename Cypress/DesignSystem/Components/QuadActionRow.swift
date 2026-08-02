@@ -70,10 +70,33 @@ struct QuadActionRow: View {
     var selected: Set<Action> = []
     var onTap: (Action) -> Void
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    /// How the cells share the width: one row of four at the drawn sizes, two rows of two at the
+    /// accessibility sizes.
+    ///
+    /// Four across at AX5 leaves each label about 80 pt, and `lineLimit(1)` with a 0.8 floor met
+    /// the ramp as `Favo…` / `Rep…` (ERRATA E196 §8) — an ellipsis inside a control. Exposed as a
+    /// value for the reason `appearance(isSelected:)` is: SwiftUI builds no in-process render tree
+    /// a test can walk, so the reflow decision has to be a function a test can call.
+    static func rows(of actions: [Action], isAccessibilitySize: Bool) -> [[Action]] {
+        guard isAccessibilitySize else { return [actions] }
+        return stride(from: 0, to: actions.count, by: 2).map {
+            Array(actions[$0..<min($0 + 2, actions.count)])
+        }
+    }
+
     var body: some View {
-        HStack(spacing: CypressSpacing.Component.quadSpacing) {
-            ForEach(actions) { action in
-                cell(action)
+        VStack(spacing: CypressSpacing.Component.quadSpacing) {
+            ForEach(
+                Self.rows(of: actions, isAccessibilitySize: dynamicTypeSize.isAccessibilitySize),
+                id: \.first?.id
+            ) { row in
+                HStack(spacing: CypressSpacing.Component.quadSpacing) {
+                    ForEach(row) { action in
+                        cell(action)
+                    }
+                }
             }
         }
         .padding(.vertical, CypressSpacing.Component.quadRowPaddingV)
@@ -90,8 +113,12 @@ struct QuadActionRow: View {
             Text(action.label)
                 .font(appearance.font)
                 .foregroundStyle(appearance.label)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+                // One line and a 0.8 floor at the drawn sizes, where the four labels are short and
+                // the row is the mock's. At the accessibility sizes the cell is half a row (see
+                // `rows(of:isAccessibilitySize:)`) and the label keeps its whole word instead of
+                // an ellipsis — the control is its word here (ERRATA E196 §8).
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.8)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, CypressSpacing.Component.quadCellPaddingV)
                 .padding(.horizontal, CypressSpacing.Component.quadCellPaddingH)

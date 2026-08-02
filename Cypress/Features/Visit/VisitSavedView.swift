@@ -179,6 +179,10 @@ struct VisitSavedView: View {
             }
         }
         .multilineTextAlignment(.center)
+        .fixedSize(horizontal: false, vertical: true)
+        // The same gutter the storage line below already keeps. Without one the mono run set
+        // flush against the right glass edge at AX5 (ERRATA E196 §9).
+        .padding(.horizontal, CypressSpacing.gutterSheet)
     }
 
     // MARK: - Route map
