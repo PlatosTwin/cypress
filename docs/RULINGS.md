@@ -2044,6 +2044,21 @@ moment its data exists: `Needs care` on the first community observation that sta
 tree in the current scope, `In bloom` when a species calendar lands and a scoped tree is in its
 bloom months. No flag, no release — the data's arrival is the switch.
 
+
+> **Corrected 2026-08-01 (task #165, owner directive; the presentation clause is struck).** The
+> owner: "We should NEVER display a message box in place of an empty filter. … Just have the
+> Needs Care pill and if nothing matches, fine." The chips render as ordinary tappable pills on
+> every machine in every month; a filter that matches nothing empties the map and draws nothing
+> else — no card, no zero-count line, no sentence. E126's empty-notice card no longer applies to
+> a filter the reader just set themselves (E126 itself stands for location notices and search
+> status). The way out is the row's `Clear filters` chip (R23.1 §3 survives; it is now the only
+> control wearing that label). The whole availability chain was removed with the presentation —
+> `MapConditionAvailability`, its API requirement, `LocalAPI`'s read, the query helpers, and
+> `MapConditionAvailabilityTests`; the bloom-calendar seed facts that test happened to pin (11
+> species with calendars, no Oct–Dec bloom) lost their pin with it and must be re-pinned by any
+> later surface that quotes them. What survives of R31: the chips stay on the row, undemoted, in
+> the owner's order.
+
 ### R32 — a hazard on private land is not the city's to fix, and the app stops saying it is (task #88)
 
 `ReportPresentation.showsHazardBranch` is `selection.hazard != nil` and nothing else, so a tree the
@@ -2301,3 +2316,41 @@ Also binding on the next ingest round: manifest `coverage` currently maps the ad
 `seed_meta.sj_ship_extent` key by hand; when a third city lands, `build_seed.py`
 should write `coverage_<id_space>` keys and the publisher's `COVERAGE_KEYS` shim
 retires.
+
+### R38 — The filter row is one horizontally scrolling line (task #166)
+
+**A correction to the row presentation R23 recorded ("two wrapped chip rows") and #145
+inherited. Owner directive, verbatim, task #166 (2026-08-01):**
+
+> More filters should be on the same line as Yours and In bloom and Needs care; one row for
+> filters, that's it.
+
+## The decision
+
+Screen 01's filter row — `Yours · In bloom · Needs care · More filters`, plus `Clear filters`
+when anything is on — is **one horizontally scrolling line**. It never wraps to a second line
+and never forms a separate cluster, at any Dynamic Type size. Chips past the trailing edge are
+reached by dragging the row.
+
+The wrap it replaces was chosen against a real hazard — "a horizontal scroller on top of a map
+is a gesture competing with the pan underneath it" (R23's words, borrowed from the legend) —
+and that hazard is real but narrow: the scroller only owns drags that *start on the row*, one
+line of chips at the top of the chrome, and the owner judged the second line of chips the worse
+cost. The directive wins; the trade is recorded rather than relitigated.
+
+## What is unchanged
+
+- **The expandable control keeps its box** (#145): `Favorites` and `Year` stay behind
+  `More filters`, and the opened drawer is still a block *under* the row that wraps internally —
+  the owner's "one row" is about the chips, not about the box a chip opens.
+- R23.1's three channels for a narrowing set behind the shut control (fill, count, spoken
+  names).
+- The legend still wraps (`FlowRow` survives there and in the drawer); its constraint was never
+  part of this directive.
+
+## What holds it (verified red-then-green on the assigned simulator)
+
+`CypressUITests/MapFilterAccessibilityTests` pins the contract at the default size and at AX5:
+every row chip reports the same line, nothing clips on the vertical axis, and every chip —
+including the ones past the edge at AX5 — can be scrolled onto the glass and pressed. The AX5
+wrap test this file used to carry asserted the opposite fact and was inverted, not deleted.
