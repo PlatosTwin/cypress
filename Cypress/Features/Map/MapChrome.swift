@@ -94,6 +94,14 @@ struct MapFilterChips: View {
                     }
                 }
             }
+            // The named container is the scroller itself, not the stack around it. It was the
+            // outer VStack's, and moving the chips into a `ScrollView` silently removed the
+            // labelled group from the accessibility tree XCUITest reads — `otherElements["Filter
+            // trees"]` matched nothing, measured on the assigned simulator, not reasoned about.
+            // On the scroller, the group survives, and it is also the truer boundary: the row is
+            // the group; the drawer below is its own named group (`moreLabel`).
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(MapFilterCopy.rowLabel)
 
             // Open, the drawer's chips are real elements after the row. Shut, they are **not in the
             // tree at all** — the `if` is the point. A drawer built as a hidden overlay, or as chips
@@ -102,8 +110,6 @@ struct MapFilterChips: View {
             // `DeepLinkVoiceOverTests.testAModalIsolatesTheScreenBehindIt` exists for.
             if isExpanded { drawer }
         }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(MapFilterCopy.rowLabel)
     }
 
     /// The expandable control itself (R23.1).

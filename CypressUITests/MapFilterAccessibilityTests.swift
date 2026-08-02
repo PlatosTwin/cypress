@@ -134,6 +134,23 @@ final class MapFilterAccessibilityTests: XCTestCase {
         return element
     }
 
+    /// The row's named container. It rides on the `ScrollView` since the row became one (#166),
+    /// and which element type XCUITest files a labelled SwiftUI scroller under is its business,
+    /// not a contract worth pinning — both spellings are accepted.
+    private func rowContainer(_ app: XCUIApplication) -> XCUIElement {
+        let other = app.otherElements[Self.rowLabel]
+        return other.exists ? other : app.scrollViews[Self.rowLabel]
+    }
+
+    /// Drags the row one screen's worth, anchored on whichever chip is currently on the glass —
+    /// a drag that starts on a chip scrolls the row, which is #166's own interaction.
+    private func swipeRow(_ app: XCUIApplication, left: Bool) {
+        let anchors = [Self.alwaysOnToggle] + Self.conditionChips + [Self.moreChip, Self.clear]
+        guard let anchor = anchors.map({ app.buttons[$0] })
+            .first(where: { $0.exists && $0.isHittable }) else { return }
+        left ? anchor.swipeLeft() : anchor.swipeRight()
+    }
+
     /// **Scrolls the one-line row until the chip is on the glass** (#166), and returns it.
     ///
     /// The row scrolls where it used to wrap, so a chip past the trailing edge *exists* in the
@@ -143,9 +160,8 @@ final class MapFilterAccessibilityTests: XCTestCase {
     @discardableResult
     private func revealedChip(_ label: String, _ app: XCUIApplication) -> XCUIElement {
         let element = chip(label, app)
-        let row = app.otherElements[Self.rowLabel]
-        for _ in 0..<6 where !element.isHittable { row.swipeLeft() }
-        for _ in 0..<6 where !element.isHittable { row.swipeRight() }
+        for _ in 0..<6 where !element.isHittable { swipeRow(app, left: true) }
+        for _ in 0..<6 where !element.isHittable { swipeRow(app, left: false) }
         return element
     }
 
@@ -195,7 +211,7 @@ final class MapFilterAccessibilityTests: XCTestCase {
         _ = requireField(app)
 
         XCTAssertTrue(
-            app.otherElements[Self.rowLabel].waitForExistence(timeout: 25),
+            wait(timeout: 25) { self.rowContainer(app).exists },
             "the filter row is not a named container in the accessibility tree, so its chips arrive "
                 + "unannounced between the search field and the map"
         )
@@ -228,7 +244,7 @@ final class MapFilterAccessibilityTests: XCTestCase {
         // #145: the row is the owner's three and the control. `Year` and `Favorites` are behind it.
         XCTAssertTrue(chip(Self.moreChip, app).exists, "the expandable control is not in the row")
         XCTAssertFalse(
-            app.otherElements[Self.rowLabel].buttons[Self.yearChip].exists,
+            app.buttons[Self.yearChip].exists,
             "“\(Self.yearChip)” is still a chip in the row; #145 moved it behind “\(Self.moreChip)”"
         )
         XCTAssertFalse(
@@ -775,20 +791,34 @@ final class MapFilterAccessibilityTests: XCTestCase {
                 + "activated"
         )
 
-        // **The row's own order in the element tree** — the owner's three, the control, the way
-        // out (#145; #166's scroll does not reorder what the tree holds). Scoped to the row's
-        // container, whose `Clear filters` shares its label with nothing else since #165.
-        let rowButtons = app.otherElements[Self.rowLabel].buttons.allElementsBoundByIndex
-        let rowOrder = rowButtons.map(\.label).filter { !$0.isEmpty }
+        // **The row's own order** — the owner's three, the control, the way out (#145). Since
+        // #166 made the row one line, geometry *is* the reading order: five chips on one minY,
+        // minX ascending in the owner's order. Asserted from frames rather than from a
+        // container-scoped tree walk, because the labelled scroller's descendant enumeration is
+        // XCUITest's business and has already returned nothing here once (the flattening the
+        // MapChrome comment records).
+        let rowLabels = [Self.alwaysOnToggle] + Self.conditionChips + [Self.moreChip, Self.clear]
+        let frames = rowLabels.map { chip($0, app).frame }
         XCTAssertEqual(
-            rowOrder,
-            [Self.alwaysOnToggle] + Self.conditionChips + [Self.moreChip, Self.clear],
-            "with the suggestion list open the filter row is reached in this order: \(rowOrder)"
+            Set(frames.map { Int(($0.minY / 4).rounded()) }).count, 1,
+            "with the suggestion list open the row is not one line: "
+                + "\(zip(rowLabels, frames).map { "\($0) \($1)" })"
+        )
+        XCTAssertEqual(
+            zip(rowLabels, frames).sorted { $0.1.minX < $1.1.minX }.map(\.0),
+            rowLabels,
+            "with the suggestion list open the filter row reads in this order: "
+                + "\(zip(rowLabels, frames).sorted { $0.1.minX < $1.1.minX }.map(\.0))"
         )
         // **The row holds no reachable unlabelled control** (E103, structurally). The `Menu`'s
-        // unlabelled leftover element moved into the drawer with the year chip (#145), so at rest
-        // there should be none at all — and any that appears must stay unreachable.
-        for blank in rowButtons where blank.label.isEmpty {
+        // unlabelled leftover element moved into the drawer with the year chip (#145), so on the
+        // row's own line there should be none at all — and any that appears must stay
+        // unreachable. The line is identified by its band of the screen, for the same reason the
+        // order is: frames are the one channel the scroller cannot hide.
+        let band = chip(Self.alwaysOnToggle, app).frame
+        let blanks = app.buttons.matching(NSPredicate(format: "label == ''"))
+            .allElementsBoundByIndex
+        for blank in blanks where blank.frame.intersects(band) {
             XCTAssertFalse(
                 blank.isHittable,
                 "an unlabelled control at \(blank.frame) is reachable inside the filter row"
