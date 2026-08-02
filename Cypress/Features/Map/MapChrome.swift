@@ -266,7 +266,7 @@ struct MapFilterChips: View {
 // mechanism"; the ruling says in terms that it is categorical so no mechanism can shelter one. The
 // count sat in the same view, in the same capsule, in the same position, appearing for the same
 // cause. Removing the sentence and keeping its neighbour would be exactly the survival R41 was
-// written to stop. See `docs/errata-pending/filter-messages.md` for the whole argument and for the
+// written to stop. See `ERRATA E205` for the whole argument and for the
 // one thing this costs.
 //
 // E38 is not weakened by this. E38 forbids *presenting a page as a total*; it is a constraint on a

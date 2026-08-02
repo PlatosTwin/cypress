@@ -112,7 +112,7 @@ struct MapHomeView: View {
     // store's measured undated share, and hand it to `MapFilterStatus`. R41 removed the sentence
     // and the view that drew it (task #180), so the parameter, the property and the whole
     // measurement behind them are gone — an unread property carried "just in case" is the #62/E126
-    // shape. See `docs/errata-pending/filter-messages.md`.
+    // shape. See `ERRATA E205`.
     init(api: any CypressAPI, location: MapLocationProvider) {
         self.api = api
         self.location = location

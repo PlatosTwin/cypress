@@ -18,7 +18,7 @@ import Foundation
 /// **24,200 of the seed's 198,625 rows — 12.2 % of the map.** The widely-quoted 12,518 / 6.4 %
 /// (ROADMAP §1, RULINGS R7, `docs/investigations/`) is a San-Francisco-only figure from the
 /// 195,309-row seed and has been stale since San Jose landed; see
-/// `docs/errata-pending/vacant-site-count.md`.
+/// `ERRATA E206`.
 ///
 /// ── Why it lives in `Data/API` beside `MapMembership` ─────────────────────────────────────────
 /// `MapViewport` carries it into the query layer, and `Data` may not import `Features`

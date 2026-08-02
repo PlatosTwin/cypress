@@ -349,7 +349,7 @@ struct CityDownloadTests {
     // the wording of a caveat. Nothing about city downloads is untested by this removal: R43 §5 is
     // the only clause of R43 affected, and the rest of this suite is untouched.
     //
-    // Recorded for the orchestrator in `docs/errata-pending/filter-messages.md`; R43 §5 needs
+    // Recorded for the orchestrator in `ERRATA E205`; R43 §5 needs
     // striking in `docs/RULINGS.md` at merge.
 
     // MARK: - Row presentation (ruling §3, every branch)

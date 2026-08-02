@@ -146,7 +146,7 @@ app, which turns out to be short.
 
 | | Work | Where it landed |
 |---|---|---|
-| 1 | **The vacant planting-site state** — 12,518 pins, 6.4% of the map, had been rendering as a stripped-down cold profile | E11 → **E107** |
+| 1 | **The vacant planting-site state** — 12,518 pins, 6.4% of the map (SF alone, as measured then; 24,200 / 12.2% across both cities today — E206), had been rendering as a stripped-down cold profile | E11 → **E107** |
 | 2 | **The caption ramp** — `text.faint` failed AA in both appearances across 61 call sites | R1, R1a → **E108** |
 | 3 | **Account deletion** — §3.12 and the exclusive-ownership CHECK could not both hold | R3 → **E109** |
 | 4 | **Screen 01's navigation bar** — an opaque 91pt band on the one screen the spec calls full-bleed | **E110** |
@@ -185,7 +185,9 @@ be overturned on the merits rather than rediscovered.
 
 ### 1. Vacant sites (ERRATA E11)
 
-**12,518 pins — 6.4% of the map — are planting basins with no tree in them.** No mock covers this.
+**24,200 pins — 12.2% of the map — are planting basins with no tree in them.** No mock covers this.
+(The figure was 12,518 / 6.4% when this was written; that was San Francisco alone, and San Jose has
+since landed. Re-measured on the shipped two-city seed 2026-08-02 — ERRATA E206.)
 Screen 14 currently offers "be the first to photograph this tree," which asserts a tree that is not
 there.
 
@@ -195,7 +197,7 @@ what produced the wrong copy in the first place. It shows what the city recorded
 and its actions are *"report what's here"* and *"flag this as planted"* — both of which are claims
 about the site, not about a tree.
 
-**Why not just hide them:** 12,518 sites are the single best answer to "where could a tree go,"
+**Why not just hide them:** 24,200 sites are the single best answer to "where could a tree go,"
 which is close to the point of the app. Hiding them is a larger loss than an unmocked screen.
 
 **Flagged for design.** This is new surface, and the decision above is the honest minimum rather

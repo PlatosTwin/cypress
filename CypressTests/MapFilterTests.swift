@@ -288,7 +288,7 @@ struct MapFilterTests {
     ///
     /// Every number here was measured against the shipped seed, not carried in from a document.
     /// Several documents still quote the San-Francisco-only figures (145,837 rows, 12,518 vacant
-    /// sites, 6.4 %); see `docs/errata-pending/vacant-site-count.md`.
+    /// sites, 6.4 %); see `ERRATA E206`.
     @Test("the seed still looks like the inventory the year and site filters were designed against")
     func plantingDateCoverageIsWhatTheDecadeBucketsWereBuiltFor() async throws {
         let store = try await Self.store()
