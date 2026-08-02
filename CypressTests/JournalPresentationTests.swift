@@ -286,7 +286,11 @@ struct JournalPresentationTests {
         let deviceID = UUID(uuidString: "D0000000-0000-4000-8000-0000000000C7")!
         let attribution = Attribution.anonymous(deviceID: deviceID)
         let store = try await CypressStore.inMemory()
-        let api = LocalAPI(store: store, deviceID: deviceID)
+        // A real directory for the binaries `debugSeedPhotos` writes — an in-memory store's default
+        // `photoDirectory` resolves to the root of a read-only volume (`PhotoHeroTests.harness`).
+        let photos = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cypress-journal-hero-\(UUID().uuidString)", isDirectory: true)
+        let api = LocalAPI(store: store, deviceID: deviceID, photoDirectory: photos)
 
         let tree = try await api.addTree(
             TreeDraft(

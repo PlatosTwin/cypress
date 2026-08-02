@@ -302,7 +302,11 @@ struct GroveTreesTests {
         let deviceID = UUID(uuidString: "D0000000-0000-4000-8000-0000000000C6")!
         let attribution = Attribution.anonymous(deviceID: deviceID)
         let store = try await CypressStore.inMemory()
-        let api = LocalAPI(store: store, deviceID: deviceID)
+        // A real directory for the binaries `debugSeedPhotos` writes — an in-memory store's default
+        // `photoDirectory` resolves to the root of a read-only volume (`PhotoHeroTests.harness`).
+        let photos = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cypress-grove-hero-\(UUID().uuidString)", isDirectory: true)
+        let api = LocalAPI(store: store, deviceID: deviceID, photoDirectory: photos)
 
         let photographed = try await api.addTree(
             TreeDraft(
@@ -345,10 +349,18 @@ struct GroveTreesTests {
         }
 
         let grove = try await api.grove()
-        let byTree = Dictionary(uniqueKeysWithValues: grove.map { ($0.treeID, $0.heroPhotoID) })
+        // Not a `[UUID: UUID?]` dictionary keyed off `grove`: subscripting one is a *double*
+        // optional — absent-key and present-with-nil both print as `nil` and `== nil` only ever
+        // tests the outer layer, so a present `.some(nil)` (this tree's own hero photo id, itself
+        // nil) reads as a false failure indistinguishable from a true one. Both trees below are
+        // guaranteed present by the visits just written, so `#require` on `.first` states that once
+        // and the two claims that actually differ — "has an id" and "carries no id" — are asserted
+        // on the row itself.
+        let photographedEntry = try #require(grove.first { $0.treeID == photographed })
+        let bareEntry = try #require(grove.first { $0.treeID == bare })
 
-        #expect(byTree[photographed] == ids[0])
-        #expect(byTree[bare] == nil, "a tree whose one photograph was deleted still drew one")
+        #expect(photographedEntry.heroPhotoID == ids[0])
+        #expect(bareEntry.heroPhotoID == nil, "a tree whose one photograph was deleted still drew one")
 
         let rows = GroveTreesPresentation(entries: grove).rows
         let photographedRow = try #require(rows.first { $0.treeID == photographed })

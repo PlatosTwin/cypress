@@ -101,11 +101,14 @@ struct PhotoHeroTests {
     /// An in-memory database needs a real directory for the binaries: `photoDirectory` is derived
     /// from `store.databaseURL`, which for `:memory:` resolves to the root of a read-only volume.
     /// Each test gets its own, so nothing leaks between them.
+    private static func photoDirectory() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("cypress-photos-\(UUID().uuidString)", isDirectory: true)
+    }
+
     private static func harness() async throws -> (LocalAPI, OutboxQueue) {
         let store = try await CypressStore.inMemory()
-        let photos = FileManager.default.temporaryDirectory
-            .appendingPathComponent("cypress-photos-\(UUID().uuidString)", isDirectory: true)
-        let api = LocalAPI(store: store, deviceID: deviceID, photoDirectory: photos)
+        let api = LocalAPI(store: store, deviceID: deviceID, photoDirectory: Self.photoDirectory())
         return (api, OutboxQueue(queue: store.queue, transport: APIOutboxTransport(api: api)))
     }
 
@@ -307,7 +310,10 @@ struct PhotoHeroTests {
         let deviceID = UUID(uuidString: "D0000000-0000-4000-8000-0000000000C3")!
         let attribution = Attribution.anonymous(deviceID: deviceID)
         let store = try await CypressStore.inMemory()
-        let api = LocalAPI(store: store, deviceID: deviceID)
+        // A real directory for the binaries `debugSeedPhotos` writes — see `Self.harness()`'s own
+        // comment: an in-memory store's `photoDirectory` otherwise resolves to the root of a
+        // read-only volume.
+        let api = LocalAPI(store: store, deviceID: deviceID, photoDirectory: Self.photoDirectory())
 
         let tree = try await api.addTree(TreeDraft(
             coordinate: Coordinate(latitude: 37.77, longitude: -122.44),
@@ -333,7 +339,7 @@ struct PhotoHeroTests {
         let deviceID = UUID(uuidString: "D0000000-0000-4000-8000-0000000000C4")!
         let attribution = Attribution.anonymous(deviceID: deviceID)
         let store = try await CypressStore.inMemory()
-        let api = LocalAPI(store: store, deviceID: deviceID)
+        let api = LocalAPI(store: store, deviceID: deviceID, photoDirectory: Self.photoDirectory())
 
         let tree = try await api.addTree(TreeDraft(
             coordinate: Coordinate(latitude: 37.79, longitude: -122.44),
@@ -358,7 +364,7 @@ struct PhotoHeroTests {
         let deviceID = UUID(uuidString: "D0000000-0000-4000-8000-0000000000C5")!
         let attribution = Attribution.anonymous(deviceID: deviceID)
         let store = try await CypressStore.inMemory()
-        let api = LocalAPI(store: store, deviceID: deviceID)
+        let api = LocalAPI(store: store, deviceID: deviceID, photoDirectory: Self.photoDirectory())
 
         let first = try await api.addTree(TreeDraft(
             coordinate: Coordinate(latitude: 37.80, longitude: -122.44),
