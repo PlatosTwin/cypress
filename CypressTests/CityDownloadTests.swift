@@ -320,37 +320,37 @@ struct CityDownloadTests {
         #expect(library.installedCities().isEmpty)
     }
 
-    // MARK: - The measured coverage fact (ruling §5)
+    // MARK: - The measured coverage fact (R43 §5), withdrawn by RULINGS R41
 
-    @Test("the undated share is measured from the attached inventory, not remembered")
-    func undatedShareIsMeasured() async throws {
-        let dir = try Self.tempDir()
-        let seed = dir.appendingPathComponent("mini.sqlite")
-        // 4 of 5 rows undated — the fused bundle's own rounding, from a five-row file.
-        try Self.miniSeed(at: seed, publishSchemaVersion: 14, totalRows: 5, datedRows: 1)
-        let store = try await CypressStore.inMemory(seedURL: seed)
-        let share = try #require(store.seedUndatedShare)
-        #expect(abs(share - 0.8) < 0.0001)
-
-        let none = try await CypressStore.inMemory(seedURL: nil)
-        #expect(none.seedUndatedShare == nil)
-    }
-
-    @Test("the derived caveat reproduces the bundle's sentence verbatim, and moves per city")
-    func setAsideDerivesFromTheShare() {
-        // The fused bundle's measured share must yield today's sentence to the byte — this is a
-        // generalization, not a copy change (mock fidelity §5 against the ruling).
-        #expect(
-            MapYearFilterCopy.setAside(undatedShare: MapYearFilterCopy.undatedShareOfSeed)
-                == MapYearFilterCopy.setAside
-        )
-        // San Francisco alone — E175's original measurement.
-        #expect(MapYearFilterCopy.setAside(undatedShare: 0.7397).contains("3 in 4"))
-        // San Jose alone: 222 dated of 52,788 (E176).
-        #expect(MapYearFilterCopy.setAside(undatedShare: 0.9958).contains("99 in 100"))
-        // No measurement falls back to the recorded bundle constant, never to a guess.
-        #expect(MapYearFilterCopy.setAside(undatedShare: nil) == MapYearFilterCopy.setAside)
-    }
+    // Two tests stood here, both added by task #157 under R43 §5:
+    //
+    //   `undatedShareIsMeasured`      — `CypressStore.seedUndatedShare` is measured from whichever
+    //                                   inventory is attached, not remembered as 0.8078.
+    //   `setAsideDerivesFromTheShare` — the derived caveat reproduces the fused bundle's sentence
+    //                                   verbatim, and moves to "3 in 4" / "99 in 100" per city.
+    //
+    // **R43 §5 and R41 collide, and R41 wins** (task #180). R43 §5 generalized the year filter's
+    // caveat sentence from a bundle constant to a per-inventory measurement; it never decided
+    // whether the sentence should exist, because that was not its question. R41 decides exactly
+    // that — "No messages should appear alongside filters ever. for any reason. ever again." — it
+    // is later, and it is the owner's direct instruction rather than delegated authority.
+    //
+    // So the sentence is gone, and `seedUndatedShare`, `measureUndatedShare` and
+    // `MapYearFilterCopy.setAside(undatedShare:)` are gone with it: a measurement whose only
+    // consumer is a forbidden sentence is dead code, and keeping the property unread is the
+    // #62/E126 shape. These two tests are deleted rather than adapted because their subject no
+    // longer exists — there is nothing left to assert that would not be an assertion about a
+    // string nobody builds.
+    //
+    // **What was genuinely worth keeping was kept.** The seed fact these tests pinned — that most
+    // rows carry no planting date, and that the share moves per city — is still asserted, in
+    // `MapFilterTests.plantingDateCoverageIsWhatTheDecadeBucketsWereBuiltFor`, where it now guards
+    // the year control's *design* (decade buckets, and #178's vacant-site exclusion) rather than
+    // the wording of a caveat. Nothing about city downloads is untested by this removal: R43 §5 is
+    // the only clause of R43 affected, and the rest of this suite is untouched.
+    //
+    // Recorded for the orchestrator in `docs/errata-pending/filter-messages.md`; R43 §5 needs
+    // striking in `docs/RULINGS.md` at merge.
 
     // MARK: - Row presentation (ruling §3, every branch)
 

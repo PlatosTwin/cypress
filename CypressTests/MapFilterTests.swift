@@ -7,20 +7,25 @@ import Testing
 /// ── What these tests are actually guarding ───────────────────────────────────────────────────
 /// The narrowing itself is the easy half and `MapSearchTests` already proves the hard part of it —
 /// that a predicate reaching the pin query but not the marker grid breaks "all and only". What is
-/// new here is that three of the four filters can produce a *wrong number* or a *silent omission*,
-/// and both are the kind of defect this project has shipped before:
+/// left here is a filter's ability to make a *silent wrong claim*, which is the kind of defect this
+/// project has shipped before:
 ///
-/// - **E38** — `31 trees` must not be the size of a page. The grid thins; the count must be of what
-///   matched, not of what survived.
-/// - **E175** — 80.78 % of the seed carries no planting date, so a year filter that says nothing
-///   about them is asserting they were planted outside every decade the reader can pick. The figure
-///   was 73.97 % when this was written and San Jose moved it the same day (E176); the number lives in
-///   `MapYearFilterCopy` and is asserted against the seed for exactly that reason.
-/// - **D1** — none of the above may become a count of the reader's own actions.
+/// - **E175** — most of the seed carries no planting date, so a year filter is judging a small
+///   minority of rows and silently setting the rest aside. The share is asserted against the seed
+///   by `plantingDateCoverageIsWhatTheDecadeBucketsWereBuiltFor`, because it moved once already
+///   when San Jose landed (E176) and the control's whole shape is built on it.
+/// - **Task #178** — a vacant planting site's `planted_year` belongs to a tree that is gone, so a
+///   year narrowing that returns one asserts a planting on an empty basin. E107 refused the same
+///   claim on the site screen.
+/// - **Task #179** — the two arms of the site filter must partition the map, or one of them is
+///   quietly answering for the other.
 ///
-/// E126 used to be the fourth entry — an emptied map said why, on a card. Task #165 struck that
-/// presentation on the owner's instruction: no message box stands in for an empty filter, and the
-/// `Clear filters` chip in the row is the way out.
+/// **Three former entries are gone, and all three for the same reason.** E38 (`31 trees` must not
+/// be the size of a page) and D1 (no count of the reader's own actions) both constrained the result
+/// line; E126 constrained an empty-state card. Task #165 struck the card, and **RULINGS R41 struck
+/// every remaining message beside a filter** (task #180) — the caveat sentence and the result count
+/// with it. A filter's entire voice is its chip. What survives of those entries is
+/// `membershipLabelCarriesNoNumber`, which guards the chips themselves.
 ///
 /// Every assertion that could be satisfied by a stub is checked against a second, independent read
 /// of the store rather than against the code under test.
@@ -67,6 +72,32 @@ struct MapFilterTests {
             return PinAnswer([])
         }
         return answer
+    }
+
+    /// A box around the whole of San Francisco, which is where the seed's rows are dense enough for
+    /// a narrowing to have something to return at pin zoom.
+    private static let cityBounds = BoundingBox(
+        minLatitude: 37.69, maxLatitude: 37.85,
+        minLongitude: -122.54, maxLongitude: -122.33
+    )
+
+    /// The `trees.status` of each drawn pin, read straight out of the seed.
+    ///
+    /// **Deliberately a second, independent read.** The tests for tasks #178 and #179 are about
+    /// whether the filter returned the right *rows*, and asking the same query layer to confirm its
+    /// own answer would pass for a predicate that was consistently wrong. This joins the drawn ids
+    /// back to the seed by uuid instead.
+    private static func statuses(of drawn: [UUID], in store: CypressStore) async throws -> [String] {
+        guard !drawn.isEmpty else { return [] }
+        let json = "[\(drawn.map { "\"\($0.uuidString.lowercased())\"" }.joined(separator: ","))]"
+        return try await store.queue.read { connection in
+            let statement = try connection.cachedStatement("""
+            SELECT status FROM \(SeedDatabase.schemaName).trees
+             WHERE uuid COLLATE NOCASE IN (SELECT value FROM json_each(:uuids))
+            """)
+            _ = try statement.bind([":uuids": json])
+            return try statement.fetchAll { try $0.string("status") }
+        }
     }
 
     // MARK: - 1. Yours
@@ -242,52 +273,73 @@ struct MapFilterTests {
 
     // MARK: - 3. Year (ERRATA E175)
 
-    /// **The measurement the year control is designed around, pinned so it cannot rot.**
+    /// **The seed measurements the year control is designed around, pinned so they cannot rot.**
     ///
-    /// `MapYearFilterCopy.setAside` says "about 4 in 5". That sentence is only honest while the seed
-    /// actually looks like this, and the seed is rebuilt by `Tools/build_seed.py` from a live city
-    /// export — so a re-ingest could move coverage without anybody touching this feature. This test
-    /// is what makes that a failing build rather than a lie on screen.
-    @Test("the seed's planting-date coverage still matches what the year filter's copy claims")
-    func plantingDateCoverageMatchesTheCopy() async throws {
+    /// This test used to be `plantingDateCoverageMatchesTheCopy`, and it asserted that the seed's
+    /// undated share still rounded to the "4 in 5" in `MapYearFilterCopy.setAside`. **RULINGS R41
+    /// removed that sentence** (task #180), so the copy it checked against no longer exists.
+    ///
+    /// It is repurposed rather than deleted because the *number* was never really about the
+    /// sentence: it is why this control buckets by decade instead of by year, why R23 recorded the
+    /// per-viewport count as a trade rather than an oversight, and — since task #178 — why a year
+    /// narrowing has to exclude vacant sites. A re-ingest that moved any of these should make
+    /// somebody re-read that design, which is what a failing build is for. `Tools/build_seed.py`
+    /// rebuilds this file from a live city export, so none of it is under this repo's control.
+    ///
+    /// Every number here was measured against the shipped seed, not carried in from a document.
+    /// Several documents still quote the San-Francisco-only figures (145,837 rows, 12,518 vacant
+    /// sites, 6.4 %); see `docs/errata-pending/vacant-site-count.md`.
+    @Test("the seed still looks like the inventory the year and site filters were designed against")
+    func plantingDateCoverageIsWhatTheDecadeBucketsWereBuiltFor() async throws {
         let store = try await Self.store()
-        let (total, dated) = try await store.queue.read { connection -> (Int, Int) in
+        let counts = try await store.queue.read { connection -> (Int, Int, Int, Int) in
             let statement = try connection.cachedStatement("""
-            SELECT COUNT(*) AS total, SUM(planted_year IS NOT NULL) AS dated
+            SELECT COUNT(*) AS total,
+                   SUM(planted_year IS NOT NULL) AS dated,
+                   SUM(status = 'vacant_site') AS vacant,
+                   SUM(status = 'vacant_site' AND planted_year IS NOT NULL) AS datedVacant
               FROM \(SeedDatabase.schemaName).trees
              WHERE deleted_at IS NULL
             """)
             return try statement.fetchOne {
-                (try $0.int("total"), try $0.int("dated"))
+                (try $0.int("total"), try $0.int("dated"),
+                 try $0.int("vacant"), try $0.int("datedVacant"))
             }!
         }
-
+        let (total, dated, vacant, datedVacant) = counts
         try #require(total > 0, "the seed holds no trees at all")
-        let undatedShare = Double(total - dated) / Double(total)
 
-        // The constant the copy is derived from, and the rounding the copy performs. Both are
-        // asserted: the first catches a drift the sentence would hide, the second catches a drift
-        // large enough to make "4 in 5" the wrong words.
-        //
-        // This pair has already caught a real one. Written against a San-Francisco-only seed it read
-        // 0.7397 and "3 in 4"; San Jose landed hours later and turned the merge red, because San Jose
-        // publishes a planting date for 222 of 52,788 rows. See E175 and E176 — the point of pinning
-        // the number to the seed rather than to the day it was measured.
-        #expect(
-            abs(undatedShare - MapYearFilterCopy.undatedShareOfSeed) < 0.01,
-            "planting-date coverage moved: \(undatedShare) undated, copy is written for \(MapYearFilterCopy.undatedShareOfSeed)"
-        )
+        // 1 · Most rows carry no planting date, which is why the control is bucketed by decade and
+        // why its blind spot was worth a sentence until R41 ruled the sentence out.
+        let undatedShare = Double(total - dated) / Double(total)
         #expect(
             undatedShare > 0.75 && undatedShare < 0.85,
-            "\"about 4 in 5\" is no longer true of the seed: \(undatedShare) of rows are undated"
+            "planting-date coverage moved: \(undatedShare) of \(total) rows are undated. The year filter's decade buckets were sized against roughly four in five being unjudgeable (E175, E176); re-read MapFilter.swift's header before repinning this."
+        )
+
+        // 2 · Vacant sites are a large enough share of the map to be worth their own filter (#179),
+        // which is the premise ROADMAP §1 and RULINGS R7 argue from.
+        let vacantShare = Double(vacant) / Double(total)
+        #expect(
+            vacantShare > 0.08 && vacantShare < 0.18,
+            "vacant planting sites are now \(vacantShare) of \(total) rows. #179 exists because they are a large minority of the map; if this moved a lot, that argument moved."
+        )
+
+        // 3 · **The premise of task #178**: a lot of vacant sites carry a planting date, so the
+        // year filter had a large wrong answer to give and the exclusion is not theoretical. If
+        // this ever reaches zero the #178 predicate is untested by the seed, and
+        // `aYearNarrowingReturnsNoEmptyPlantingSites` below would pass without proving anything.
+        #expect(
+            datedVacant > 1_000,
+            "only \(datedVacant) vacant sites carry a planting year. Task #178's exclusion is measured against there being many; below this the test that guards it stops being evidence."
         )
     }
 
     /// **A year narrowing never returns a tree with no planting date.**
     ///
-    /// This is the honest half of E175 — the predicate does what it says. The dishonest half is a
-    /// surface that lets the silence read as an answer, which `yearFilterAlwaysSaysWhatItSetAside`
-    /// below is about.
+    /// This is the honest half of E175 — the predicate does what it says. The dishonest half was a
+    /// surface that let the silence read as an answer; that surface is gone entirely (RULINGS R41,
+    /// task #180) rather than corrected, so this predicate is now the whole of the guarantee.
     @Test("a year-narrowed viewport returns no tree without a planting date")
     func yearNarrowingExcludesUndatedTrees() async throws {
         let store = try await Self.store()
@@ -327,17 +379,120 @@ struct MapFilterTests {
         #expect(outside.isEmpty, "\(outside.count) trees outside the 2010s were drawn: \(outside.prefix(5))")
     }
 
-    /// **The year control never runs silently.** The screen renders `MapYearFilterCopy.setAside`
-    /// whenever a decade is chosen, and the sentence has to name the thing the filter cannot judge.
-    /// A caveat that did not mention planting dates would satisfy a `!isEmpty` check and tell the
-    /// reader nothing.
-    @Test("the year filter's caveat names the rows it cannot judge")
-    func yearFilterAlwaysSaysWhatItSetAside() {
-        let sentence = MapYearFilterCopy.setAside
-        #expect(sentence.lowercased().contains("planting date"), "the caveat does not mention planting dates: \(sentence)")
-        #expect(sentence.lowercased().contains("no recorded"), "the caveat does not say the date is missing: \(sentence)")
-        // ARCHITECTURE §5.7 — no spaces around em dashes.
-        #expect(!sentence.contains(" — "), "spaced em dash in \(sentence)")
+    /// **A year narrowing never returns an empty planting site** (task #178).
+    ///
+    /// `yearFilterAlwaysSaysWhatItSetAside` stood here and asserted the wording of the caveat
+    /// sentence R41 has since removed. What replaces it is the defect that sentence was papering
+    /// over: 9,237 of the seed's 24,200 vacant sites carry a `planted_year` — the date of a tree
+    /// that stood here and is gone — so `2010s` used to draw empty basins as trees planted in the
+    /// 2010s. E107 refused exactly this claim one layer up, keeping `PLANTED <year>` off the site
+    /// screen because it "would assert a planting on an empty basin".
+    ///
+    /// Read back from the seed by status rather than by asking the filter what it thinks it did.
+    @Test("a year-narrowed viewport returns no empty planting sites")
+    func aYearNarrowingReturnsNoEmptyPlantingSites() async throws {
+        let store = try await Self.store()
+        let api = LocalAPI(store: store, deviceID: Self.deviceID)
+        let decade = MapFilter.Decade.twentyTens
+        let viewport = MapViewport(
+            bounds: Self.cityBounds,
+            zoom: 16,
+            pinLimit: MapModel.pinLimit,
+            markerCellPoints: MapModel.markerCellPoints,
+            plantedYears: decade.years
+        )
+        let answer = try Self.pins(try await api.mapContent(in: viewport))
+        try #require(!answer.items.isEmpty, "the 2010s narrowing drew nothing at all over the city")
+
+        let statuses = try await Self.statuses(of: answer.items.map(\.id), in: store)
+        #expect(
+            statuses.count == answer.items.count,
+            "the read-back found \(statuses.count) of \(answer.items.count) drawn pins"
+        )
+        let vacant = statuses.filter { $0 == TreeStatus.vacantSite.rawValue }
+        #expect(
+            vacant.isEmpty,
+            "\(vacant.count) empty planting sites were drawn under a year filter. A vacant site's planted_year is the date of a tree that is gone; returning it asserts a planting on an empty basin (task #178, E107)."
+        )
+    }
+
+    // MARK: - 3b. Tree or empty planting site (task #179)
+
+    /// **Each arm of the site filter returns only its own rows, and the two partition the map.**
+    ///
+    /// Asserted as facts about `trees.status` read back from the seed, never against a count this
+    /// branch happened to measure: the seed is rebuilt from a live export and a pinned total would
+    /// be a re-ingest away from a false red.
+    @Test("the site filter's two arms return only their own rows", arguments: MapSiteKind.allCases)
+    func siteKindNarrowingReturnsOnlyThatKind(_ kind: MapSiteKind) async throws {
+        let store = try await Self.store()
+        let api = LocalAPI(store: store, deviceID: Self.deviceID)
+        let viewport = MapViewport(
+            bounds: Self.cityBounds,
+            zoom: 16,
+            pinLimit: MapModel.pinLimit,
+            markerCellPoints: MapModel.markerCellPoints,
+            siteKind: kind
+        )
+        let answer = try Self.pins(try await api.mapContent(in: viewport))
+        try #require(!answer.items.isEmpty, "\(kind) drew nothing at all over the city")
+
+        let statuses = try await Self.statuses(of: answer.items.map(\.id), in: store)
+        let wrong = statuses.compactMap(TreeStatus.init(rawValue:)).filter { MapSiteKind.of($0) != kind }
+        #expect(
+            wrong.isEmpty,
+            "\(wrong.count) rows of the wrong kind were drawn under \(kind): \(Set(wrong.map(\.rawValue)))"
+        )
+    }
+
+    /// **The empty-site arm actually finds the thing the app exists to point at.**
+    ///
+    /// Separate from the partition test above because it asserts something that test cannot: that
+    /// the arm is non-empty *and* that it is finding vacant sites specifically. A predicate
+    /// inverted by a typo would still partition correctly.
+    @Test("the empty-site arm draws vacant sites and nothing else")
+    func emptySiteArmDrawsVacantSites() async throws {
+        let store = try await Self.store()
+        let api = LocalAPI(store: store, deviceID: Self.deviceID)
+        let viewport = MapViewport(
+            bounds: Self.cityBounds,
+            zoom: 16,
+            pinLimit: MapModel.pinLimit,
+            markerCellPoints: MapModel.markerCellPoints,
+            siteKind: .emptySite
+        )
+        let answer = try Self.pins(try await api.mapContent(in: viewport))
+        let statuses = try await Self.statuses(of: answer.items.map(\.id), in: store)
+        try #require(!statuses.isEmpty, "the empty-site filter drew nothing over the whole city")
+        #expect(
+            statuses.allSatisfy { $0 == TreeStatus.vacantSite.rawValue },
+            "the empty-site arm drew something other than a vacant site: \(Set(statuses))"
+        )
+    }
+
+    /// **Year and site are ANDed, like every other pair of dimensions** (RULINGS R23 §1).
+    ///
+    /// `Empty planting site` + a decade is a contradiction after #178 — the year arm excludes
+    /// vacant sites — and the honest answer is an empty map, not a silently dropped term. This
+    /// pins that the conjunction is real rather than one dimension quietly winning. An empty map
+    /// with no explanation is exactly what R41 and the task #165 correction to R31 call for.
+    @Test("an empty-site narrowing and a decade together return nothing, rather than one winning")
+    func emptySiteAndADecadeContradict() async throws {
+        let store = try await Self.store()
+        let api = LocalAPI(store: store, deviceID: Self.deviceID)
+        let viewport = MapViewport(
+            bounds: Self.cityBounds,
+            zoom: 16,
+            pinLimit: MapModel.pinLimit,
+            markerCellPoints: MapModel.markerCellPoints,
+            plantedYears: MapFilter.Decade.twentyTens.years,
+            siteKind: .emptySite
+        )
+        let answer = try Self.pins(try await api.mapContent(in: viewport))
+        #expect(
+            answer.items.isEmpty,
+            "\(answer.items.count) pins were drawn for “empty planting site, planted in the 2010s”, which after #178 is a contradiction — so one of the two terms was dropped."
+        )
     }
 
     /// Every decade is reachable and none of them overlap, so a tree cannot be in two buckets and no
@@ -351,39 +506,24 @@ struct MapFilterTests {
         }
     }
 
-    // MARK: - 4. The result line (D1 and ERRATA E38)
+    // MARK: - 4. The result line, which no longer exists (RULINGS R41, task #180)
 
-    /// **E38: a page is not a total.** When the grid thinned the answer, the line must report how
-    /// many matched *and* say that fewer are drawn. Reporting the drawn count alone is the defect.
-    @Test("the result line reports matches, not the size of the thinned page")
-    func resultLineReportsMatchesNotThePage() {
-        let thinned = MapFilterCopy.result(drawn: 151, matched: 1_458)
-        #expect(thinned.contains("1458") || thinned.contains("1,458"), "the match count is missing from \(thinned)")
-        #expect(thinned.contains("151"), "the drawn count is missing from \(thinned)")
-        #expect(thinned != "151 trees", "a thinned answer was reported as a total")
-
-        // A complete answer says one number, because there is only one.
-        #expect(MapFilterCopy.result(drawn: 31, matched: nil) == "31 trees")
-        #expect(MapFilterCopy.result(drawn: 1, matched: nil) == "1 tree")
-    }
-
-    /// **D1: the number is about the map, never about the person.**
-    ///
-    /// The owner's brief draws the line precisely — "a neutral count as a *filter result* ('31
-    /// trees') is fine — a count that reads as a personal total is not". So the sentence may not
-    /// address the reader or claim possession, in any of the shapes that would turn it into a score.
-    @Test("the result line never states a count as the reader's own total")
-    func resultLineIsNotAPersonalTotal() {
-        let forbidden = ["your", "you have", "you've", "yours", "visited", "contributed", "total"]
-        for drawn in [0, 1, 31, 1_458] {
-            for matched in [nil, 9_999] as [Int?] {
-                let line = MapFilterCopy.result(drawn: drawn, matched: matched).lowercased()
-                for word in forbidden {
-                    #expect(!line.contains(word), "\"\(word)\" appeared in the result line: \(line)")
-                }
-            }
-        }
-    }
+    // Two tests stood here: `resultLineReportsMatchesNotThePage` (E38 — a thinned answer must
+    // report how many matched, not how many were drawn) and `resultLineIsNotAPersonalTotal` (D1 —
+    // the number is about the map, never about the reader). Both asserted over
+    // `MapFilterCopy.result`, and R41 removed the line, the formatter and the view that drew them.
+    //
+    // They are gone rather than rewritten because neither has a subject any more, and there is no
+    // honest way to keep a test whose only remaining claim is "the string nobody builds would have
+    // been fine". What they were protecting is not lost: E38's hazard is a constraint on a number
+    // that is *shown*, and the map now shows none. `membershipLabelCarriesNoNumber` below survives
+    // untouched, because the chip labels it guards are still on screen — and under R41 the chip is
+    // the only voice a filter has, so that guard matters more than it did.
+    //
+    // The structural replacement is in `CypressUITests/MapFilterAccessibilityTests`:
+    // `testNoTextAccompaniesAFilter` turns each narrowing on against the running app and fails if
+    // any text appears beside the chips. That is the test R41 asks for by name, and it is a UI test
+    // because "nothing is drawn on the map" is not a claim a unit test can make.
 
     /// The chip that names the set is allowed to say `Yours`; the *count* beside it is not allowed
     /// to attach itself to that word. This pins the separation the previous test relies on — the
@@ -539,6 +679,7 @@ struct MapFilterTests {
             switch extra {
             case .favorites: MapExtraFilter.toggleFavorites(in: &filter)
             case .year: filter.decade = .twentyTens
+            case .siteKind: filter.siteKind = .emptySite
             }
             #expect(extra.isOn(filter), "\(extra) did not come on")
             #expect(filter.isActive,
