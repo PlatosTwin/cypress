@@ -28,6 +28,43 @@ final class CheckInModel {
     /// skip, wrongly suppressing removes the section with no way for anyone in the field to argue.
     private(set) var species: Species?
 
+    // MARK: - The photo and note fields (task #169)
+    //
+    // The one slot on this card that never worked: C15's well was drawn and inert, E25 recorded
+    // that state deliberately, and `CheckInDraft` has carried `note` and `photos` since M1 —
+    // `CheckInOutboxWriter.enqueue` has always put both on the outbox row. Only the entrance was
+    // missing. It is wired with the care log's own pattern (`ContributionExtras`, task #168), so
+    // the two contribution surfaces are one design. No migration: `observations.note` and the
+    // photo path exist in the schema as shipped.
+
+    /// The note, bound by the view and written into the draft at save — the same shape screens
+    /// 04 and 09 give theirs. The writer trims it and stores blank as NULL.
+    var note: String
+
+    /// Why the last photo did not attach, or nil.
+    private(set) var photoError: String?
+
+    /// Stages a captured or picked photo through the one funnel every capture uses
+    /// (`VisitPhotoStaging`, E148's metadata strip). `.other`, like the care log's: nothing on
+    /// this card frames a subject. A fresh UUID per file — attachments accumulate, so no two may
+    /// share a path (see `CareLogModel.attachPhoto`).
+    func attachPhoto(_ data: Data) {
+        do {
+            let path = try VisitPhotoStaging.write(data, for: UUID(), shotType: .other)
+            draft.photos.append(OutboxPhoto(path: path, shotType: .other))
+            photoError = nil
+        } catch {
+            photoError = "That photo could not be added: \(error.localizedDescription)"
+        }
+    }
+
+    /// Every field on this card is optional and reversible — each photo on its own. The staged
+    /// file stays where it is, the condition an abandoned draft has always left behind.
+    func removePhoto(at index: Int) {
+        guard draft.photos.indices.contains(index) else { return }
+        draft.photos.remove(at: index)
+    }
+
     private(set) var isSaving = false
     /// Set when the *enqueue* failed, which is the only failure a contributor can act on. A drain
     /// failure is not one — the row is already durable (see `CheckInOutboxWriter`).
@@ -64,6 +101,7 @@ final class CheckInModel {
         onSaved: @escaping (CheckInSaveReceipt) -> Void = { _ in }
     ) {
         self.draft = initialDraft
+        self.note = initialDraft.note ?? ""
         self.treeID = treeID
         self.api = api
         self.outbox = outbox
@@ -157,6 +195,10 @@ final class CheckInModel {
         isSaving = true
         saveFailed = false
         defer { isSaving = false }
+
+        // The note joins the draft here, beside the save that makes the record exist — the same
+        // moment screens 04 and 09 read theirs. The writer trims it and stores blank as NULL.
+        draft.note = note
 
         do {
             let receipt = try await CheckInOutboxWriter.save(

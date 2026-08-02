@@ -35,9 +35,10 @@ struct CareLogDraft: Hashable {
     var actions: Set<CareAction> = []
 
     /// 09 §5's optional well covers "Photo or note". E25 recorded the well drawn with no editor
-    /// behind it; these two were carried here anyway because `CareEvent` already takes both. Since
-    /// task #147 (owner report, 2026-07-31) the well opens into the two fields and the view sets
-    /// both — the writer's shape needed no change, which is what carrying them bought.
+    /// behind it; these two were carried here anyway because `CareEvent` already takes both.
+    /// Task #147 wired them behind a reveal tap; task #168 made the fields directly visible and
+    /// `photos` genuinely plural — the writer's shape needed no change either time, which is what
+    /// carrying them bought.
     var note: String?
     var photos: [OutboxPhoto] = []
 
@@ -103,25 +104,14 @@ enum CareLogCopy {
     /// 09 §3, verbatim.
     static let subtitle = "Toggle what you did. Thirty seconds, then back to your walk."
 
-    /// 09 §5's well copy, verbatim. A control since task #147 — one tap opens the two fields.
+    /// 09 §5's well copy, verbatim. Since task #168 it is the caption over the always-visible
+    /// fields rather than a control — the reveal step was the owner-reported awkwardness. The
+    /// fields themselves (and their strings) are `ContributionExtras`, shared with screen 05.
     static let optionalWell = "Photo or note (optional)"
 
-    // ── The opened well (task #147). **NOT SPECIFIED** — 09 draws the well closed, so these
-    // strings are designed here, each stating a fact and stopping (ARCHITECTURE §5.7).
-
-    /// What tapping the well does. A hint, not a relabel: the well is named by its own sentence,
-    /// and R2's rule holds — a control is named for what it is, not for the next tap.
-    static let optionalWellHint = "Opens a note field and a photo picker"
-
-    /// Screen 04's own prompt, verbatim, so "a sentence you may leave" asks the same way on both
-    /// contribution surfaces.
-    static let notePrompt = "Anything worth remembering?"
-
-    static let addPhoto = "Add a photo"
-    /// The fact of the attachment, and nothing about where it will go — the footnote already says
-    /// what this record joins.
-    static let photoAttached = "Photo attached"
-    static let removePhoto = "Remove"
+    /// Screen 04's own prompt, verbatim, so "a sentence you may leave" asks the same way on every
+    /// contribution surface. Read off the shared block so the agreement cannot drift.
+    static let notePrompt = ContributionExtrasCopy.notePrompt
 
     /// 09 §6.
     static let doneCTA = "Done"

@@ -319,15 +319,23 @@ struct CheckInView: View {
         }
     }
 
-    // MARK: - 5 · The optional well
+    // MARK: - 5 · Photos and notes (task #169; was C15's inert well)
 
-    /// C15. SCREENS.md 05 §6 draws the well and specifies nothing behind it — no picker, no editor,
-    /// no sheet — so it is drawn and nothing is invented to sit under it (DECISIONS constraint 21).
-    /// `CheckInDraft` already carries the note and the photos it would fill in. See ERRATA (E25).
+    /// The gap the owner reported: "the add photos/notes does nothing." E25 recorded C15 drawn
+    /// with no editor behind it while `CheckInDraft` carried both fields since M1; the entrance
+    /// is now the care log's own pattern (`ContributionExtras`, task #168), in this card's own
+    /// section chrome — the well's copy becomes the slot's micro-label, and nothing else on the
+    /// screen moves (DECISIONS constraint 21).
     private var optionalWell: some View {
-        OptionalWell(CheckInCopy.optionalWell)
-            .padding(.top, CypressSpacing.labelSectionTop)
-            .padding(.horizontal, CypressSpacing.gutterLabel)
+        section(label: CheckInCopy.optionalWell) {
+            ContributionExtras(
+                note: $model.note,
+                photos: model.draft.photos,
+                photoError: model.photoError,
+                attach: { model.attachPhoto($0) },
+                removePhoto: { model.removePhoto(at: $0) }
+            )
+        }
     }
 
     // MARK: - 6 · Sticky CTA and footnote

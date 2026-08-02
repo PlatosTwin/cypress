@@ -15,13 +15,11 @@
 //  bug"). The numbers that remain are SCREENS.md 09's own margins, named in `CareLogMetrics`.
 //
 
-import PhotosUI
 import SwiftUI
 
 struct CareLogView: View {
 
     @State private var model: CareLogModel
-    @State private var libraryItem: PhotosPickerItem?
 
     /// Dismissal is the composition root's, not the sheet's: 09 is presented over whatever pushed
     /// it, and the scrim tap and the CTA both end at the same place (PROTOTYPE-FLOW §1.3,
@@ -90,15 +88,6 @@ struct CareLogView: View {
         // the focused field visible above it.
         .ignoresSafeArea(.container)
         .task { await model.loadName() }
-        .onChange(of: libraryItem) { _, item in
-            guard let item else { return }
-            Task {
-                if let data = try? await item.loadTransferable(type: Data.self) {
-                    model.attachPhoto(data)
-                }
-                libraryItem = nil
-            }
-        }
     }
 
     // MARK: - 2 · Title
@@ -135,90 +124,28 @@ struct CareLogView: View {
         .padding(.bottom, CareLogMetrics.blockBottom)
     }
 
-    // MARK: - 5 · Optional well (C15), opened (task #147)
+    // MARK: - 5 · Photo or note (task #168; was C15's well, opened by #147)
 
-    /// Drawn-but-inert until the owner reported it (2026-07-31): ERRATA E25 recorded the well with
-    /// no editor behind it, and `CareLogDraft` has carried `note` and `photos` since it was
-    /// written — this view was always the only file that had to change. The well is now the
-    /// entrance: one tap opens it into the two fields its own copy has promised all along, in
-    /// place, on the sheet that is already up. No new screen (DECISIONS constraint 21) — the note
-    /// field is screen 04's, in this sheet's light register, and the photo control is the system
-    /// picker.
-    @ViewBuilder
+    /// **The extras are the fields.** #147 opened the drawn-but-inert well behind a reveal tap;
+    /// the owner's next walk called the reveal itself awkward (task #168), so the note field and
+    /// the photo affordances are simply here now. The well's own sentence survives as the block's
+    /// caption — it is where "optional" keeps being said. The fields are `ContributionExtras`,
+    /// the block screen 05 renders too, so the two contribution surfaces are one design.
     private var optionalWell: some View {
-        if model.isEditingExtras {
-            extras
-        } else {
-            OptionalWell(CareLogCopy.optionalWell, size: .large) { model.isEditingExtras = true }
-                .padding(.bottom, CareLogMetrics.blockBottom)
-                .accessibilityAddTraits(.isButton)
-                .accessibilityHint(CareLogCopy.optionalWellHint)
-        }
-    }
-
-    private var extras: some View {
         VStack(alignment: .leading, spacing: CareLogMetrics.extrasGap) {
-            noteField
-            photoRow
-            if let message = model.photoError {
-                Text(message)
-                    .font(CypressFont.body125)
-                    .foregroundStyle(CypressColor.amberChipSelectedText)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            Text(CareLogCopy.optionalWell)
+                .font(CypressFont.body125)
+                .foregroundStyle(CypressColor.textFaint)
+            ContributionExtras(
+                note: $model.note,
+                notePrompt: CareLogCopy.notePrompt,
+                photos: model.draft.photos,
+                photoError: model.photoError,
+                attach: { model.attachPhoto($0) },
+                removePhoto: { model.removePhoto(at: $0) }
+            )
         }
         .padding(.bottom, CareLogMetrics.blockBottom)
-    }
-
-    /// Screen 04's note field, in this sheet's light register: same prompt, same 1–3 line growth,
-    /// so the app has one vocabulary for "a sentence you may leave".
-    private var noteField: some View {
-        TextField(
-            "",
-            text: $model.note,
-            prompt: Text(CareLogCopy.notePrompt).foregroundColor(CypressColor.textFaint),
-            axis: .vertical
-        )
-        .font(CypressFont.body145)
-        .foregroundStyle(CypressColor.textInk)
-        .lineLimit(1...3)
-        .padding(.vertical, CareLogMetrics.notePaddingV)
-        .padding(.horizontal, CareLogMetrics.notePaddingH)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .background {
-            RoundedRectangle(cornerRadius: CypressRadius.control, style: .continuous)
-                .fill(CypressColor.surfaceCard)
-        }
-        .cypressBorder(
-            CypressColor.borderCool,
-            radius: CypressRadius.control,
-            width: CypressSpacing.Component.hairline
-        )
-    }
-
-    /// The photo half. A picker, then the fact of an attachment with its way back — every field on
-    /// this sheet is reversible, the photo included.
-    @ViewBuilder
-    private var photoRow: some View {
-        if model.hasPhoto {
-            HStack(spacing: CypressSpacing.gapRows) {
-                Text(CareLogCopy.photoAttached)
-                    .font(CypressFont.body125)
-                    .foregroundStyle(CypressColor.textBody)
-                Spacer(minLength: 0)
-                Button(CareLogCopy.removePhoto) { model.removePhoto() }
-                    .buttonStyle(.plain)
-                    .font(CypressFont.body125)
-                    .foregroundStyle(CypressColor.amberChipSelectedText)
-            }
-        } else {
-            PhotosPicker(selection: $libraryItem, matching: .images, photoLibrary: .shared()) {
-                Text(CareLogCopy.addPhoto)
-                    .font(CypressFont.body125)
-                    .foregroundStyle(CypressColor.ctaFill)
-            }
-            .buttonStyle(.plain)
-        }
     }
 
     // MARK: - 6 · CTA (C6)
@@ -268,10 +195,7 @@ enum CareLogMetrics {
     /// C17: three 52pt blocks behind 09 (two behind 10).
     static let skeletonBlocks = 3
 
-    // The opened well (task #147). **Not spec values** — 09 draws the well closed. The note
-    // field's padding is screen 04's (`VisitMetrics.Camera.notePaddingV/H`), so the one field
-    // reads the same in both registers; the gap is the sheet's own row gap scale.
+    // The photo/note block (task #168; #147's gap kept). **Not a spec value** — 09 draws the
+    // well closed. The fields themselves are `ContributionExtras`, which carries its own metrics.
     static let extrasGap: CGFloat = 10
-    static let notePaddingV: CGFloat = 12
-    static let notePaddingH: CGFloat = 14
 }
