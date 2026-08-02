@@ -16,7 +16,7 @@ Provisioned 2026-08-01 on the owner's existing Fly.io personal org.
 | Fly app | `cypress-sync` |
 | Machine | `d8de496b372048`, `shared-cpu-1x:256MB`, region `sjc` |
 | URL | https://cypress-sync.fly.dev |
-| Tigris bucket | `cypress-cities` (private), endpoint `https://fly.storage.tigris.dev` |
+| Tigris bucket | `cypress-cities` (public read), S3 API endpoint `https://fly.storage.tigris.dev` (authenticated writes), anonymous reads only via `https://cypress-cities.t3.tigrisbucket.io` |
 | Volume | none |
 | Custom domain / certificate | none |
 | IPs | shared IPv4 + the dedicated IPv6 Fly allocates by default (free) |
@@ -25,9 +25,12 @@ Bucket credentials (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_ENDPOINT_
 `AWS_REGION`, `BUCKET_NAME`) were set as app secrets automatically by `flyctl storage create`.
 They are not in this repo and must never be.
 
-The bucket is **private**. R36's base-layer design has the app fetching city files over plain
-HTTPS, which will need public read (or signed URLs) — that switch is deliberately left for
-whoever builds the publish step, since nothing is published yet.
+The bucket is **public read** (flipped 2026-08-01 for the R36 publish). Two gotchas, both
+measured on 2026-08-01: Tigris serves anonymous reads only on the dedicated public domain
+`https://cypress-cities.t3.tigrisbucket.io` — anonymous GET against the S3 API endpoints
+(`fly.storage.tigris.dev`, `t3.storage.dev`) returns 403 AccessDenied even with the bucket
+public. And on those API endpoints anonymous HEAD returned 200 while GET returned 403, so a
+HEAD-based smoke check is a false green; verify publishes with a GET (dist/upload.sh does).
 
 ## Behavior
 

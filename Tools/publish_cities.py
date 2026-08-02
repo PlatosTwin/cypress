@@ -289,7 +289,10 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     ap.add_argument("--db", default=os.path.join(repo_root, "Fixtures/seed/cypress-seed.sqlite"))
     ap.add_argument("--out", default=os.path.join(repo_root, "dist"))
-    ap.add_argument("--base-url", default="https://fly.storage.tigris.dev/cypress-cities")
+    # Anonymous reads are served only on the bucket's dedicated public domain.
+    # Tigris denies anonymous GET on the S3 API endpoints (fly.storage.tigris.dev,
+    # t3.storage.dev) even when the bucket is public -- verified 2026-08-01.
+    ap.add_argument("--base-url", default="https://cypress-cities.t3.tigrisbucket.io")
     args = ap.parse_args()
 
     if not os.path.exists(args.db):
@@ -395,11 +398,19 @@ def main() -> None:
         f.write('cd "$(dirname "$0")"\n')
         f.write("ENDPOINT=https://fly.storage.tigris.dev\n")
         f.write("BUCKET=s3://cypress-cities\n")
+        f.write("PUBLIC=https://cypress-cities.t3.tigrisbucket.io\n")
         for entry in entries:
             f.write(f'aws s3 cp "{entry["path"]}" "$BUCKET/{entry["path"]}" '
                     f'--endpoint-url "$ENDPOINT"\n')
         f.write('aws s3 cp manifest.json "$BUCKET/manifest.json" '
                 '--endpoint-url "$ENDPOINT" --content-type application/json\n')
+        f.write("# Verify anonymous READ (GET, not HEAD: Tigris has returned\n")
+        f.write("# HEAD 200 alongside GET 403). One-byte range GETs on the\n")
+        f.write("# public domain; -f fails the script on any non-2xx.\n")
+        for entry in entries:
+            f.write(f'curl -fsS -r 0-0 -o /dev/null "$PUBLIC/{entry["path"]}"\n')
+        f.write('curl -fsS "$PUBLIC/manifest.json" | cmp - manifest.json\n')
+        f.write('echo "anonymous GET verified on $PUBLIC"\n')
     os.chmod(upload_sh, 0o755)
 
     print(f"\nmanifest: {manifest_path}")
