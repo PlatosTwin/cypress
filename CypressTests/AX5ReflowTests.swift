@@ -133,8 +133,7 @@ struct AX5ReflowTests {
         let squeezed = host.sizeThatFits(in: CGSize(width: width, height: 10))
         #expect(
             squeezed.height >= unbounded.height,
-            "squeezed to 10 pt the label reported \(squeezed.height) pt against an unbounded "
-                + "\(unbounded.height) pt — it gave up lines, which is where the ellipsis comes from"
+            "squeezed to 10 pt the label reported \(squeezed.height) pt against an unbounded \(unbounded.height) pt — it gave up lines, which is where the ellipsis comes from"
         )
     }
 
