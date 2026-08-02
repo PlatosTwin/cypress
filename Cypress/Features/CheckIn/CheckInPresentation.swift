@@ -45,10 +45,11 @@ struct CheckInDraft: Hashable {
     /// Multi-select, per SCREENS.md 05 §5.
     var structureFlags: Set<StructureFlag> = []
 
-    /// 05 §6's optional well covers "photos · notes". The well is drawn; no editor behind it is
-    /// specified, so nothing in the view sets these two yet. They are carried here rather than
-    /// bolted on later because the writer's shape is what a picker would have to satisfy, and the
-    /// outbox already takes both. See ERRATA (E25).
+    /// 05 §6's optional well covers "photos · notes". E25 recorded the well drawn with no editor
+    /// behind it; these two were carried here anyway because the writer's shape is what an editor
+    /// would have to satisfy, and the outbox already took both. Task #169 wired the entrance —
+    /// the view sets both now, through the pattern task #168 built for screen 09 — and the
+    /// writer's shape needed no change, which is what carrying them bought.
     var note: String?
     var photos: [OutboxPhoto] = []
 
@@ -156,7 +157,8 @@ enum CheckInCopy {
     static let foliageLabel = "Foliage"
     static let structureLabel = "Structure · flag anything you see"
 
-    /// C15's placeholder copy.
+    /// C15's copy, verbatim. Since task #169 it heads the always-visible photo/note fields as
+    /// the slot's micro-label rather than sitting on an inert well.
     static let optionalWell = "Add photos · notes (optional)"
 
     static let saveCTA = "Save check-in"

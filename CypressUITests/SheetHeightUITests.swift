@@ -39,8 +39,8 @@ final class SheetHeightUITests: XCTestCase {
     }
 
     /// The keyboard must never cover the field being typed into (09's note field, owner's
-    /// screenshot). The route to the field is the care log's own: open the optional well, focus
-    /// the note field, then pin where the field sits.
+    /// screenshot). The route to the field is the care log's own: focus the note field — directly
+    /// visible since #168 — then pin where the field sits.
     ///
     /// **Why this asserts the field's position, not the keyboard's frame.** This machine's test
     /// runner cannot raise a software keyboard: with a hardware keyboard attached, `app.keyboards`
@@ -59,10 +59,7 @@ final class SheetHeightUITests: XCTestCase {
             .firstMatch
         XCTAssertTrue(anchor.waitForExistence(timeout: 30), "the care log never arrived")
 
-        let well = app.buttons["Photo or note (optional)"].firstMatch
-        XCTAssertTrue(well.waitForExistence(timeout: 5), "the optional well is not in the tree")
-        well.tap()
-
+        // Since #168 there is no reveal step: the note field is directly on the sheet.
         // A vertical-axis TextField can surface as either element type depending on OS version.
         let field = app.textFields.firstMatch.waitForExistence(timeout: 5)
             ? app.textFields.firstMatch
