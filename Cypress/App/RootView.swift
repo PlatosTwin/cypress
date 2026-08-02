@@ -9,6 +9,11 @@ struct RootView: View {
 
     let data: DataLayer
 
+    /// The composition root's inventory switch (pending city-downloads ruling §1): `CypressApp`
+    /// re-boots the `DataLayer` so the reader's chosen city attaches. Optional so previews and
+    /// tests that never open the Cities screen need not supply one.
+    let onInventoryChange: () -> Void
+
     @State private var router = AppRouter()
 
     /// Screen 17's model, owned here because **two screens now show the same preference**.
@@ -39,8 +44,9 @@ struct RootView: View {
     /// `@MainActor` because `makeOutboxViewState()` is: the model is a `@MainActor @Observable`, and
     /// building it in `init` is what lets both screens receive the same one.
     @MainActor
-    init(data: DataLayer) {
+    init(data: DataLayer, onInventoryChange: @escaping () -> Void = {}) {
         self.data = data
+        self.onInventoryChange = onInventoryChange
         _outbox = State(wrappedValue: data.makeOutboxViewState())
         _moderation = State(wrappedValue: ModerationModel(api: data.api))
         _account = State(wrappedValue: AccountModel(api: data.api))
@@ -313,7 +319,11 @@ struct RootView: View {
             // The provider is handed over rather than made there. Screen 01 used to declare its own
             // `@State` one, which SwiftUI re-initialises on every pass through this body — see
             // `MapHomeView.location`.
-            MapHomeView(api: data.api, location: location)
+            MapHomeView(
+                api: data.api,
+                location: location,
+                yearCaveat: MapYearFilterCopy.setAside(undatedShare: data.store.seedUndatedShare)
+            )
         case .grove:
             // Screen 08. The species tile's destination is 07, which is the one entrance
             // SCREENS.md draws for it: "Tapping a tile opens the species page."
@@ -346,7 +356,8 @@ struct RootView: View {
                 outbox: outbox,
                 moderation: moderation,
                 account: account,
-                export: JournalExportBytes { [api = data.api] format in try await api.exportLatest(format) }
+                export: JournalExportBytes { [api = data.api] format in try await api.exportLatest(format) },
+                onOpenCities: { router.push(.cityDownloads) }
             )
         }
     }
@@ -713,6 +724,23 @@ struct RootView: View {
             // The state comes from this view rather than from a fresh `makeOutboxViewState()`
             // because the You tab shows the same wi-fi preference; see the `outbox` property.
             OutboxView(state: outbox)
+
+        case .cityDownloads:
+            // The Cities screen (#157). The library and downloader are constructed here — the
+            // feature gets the operations it needs, never the app's storage layout — and the
+            // model is rebuilt per push, because its catalogue is deliberately never persisted
+            // (city-downloads ruling §3). A library that cannot construct (Application Support
+            // missing) has no screen to show; the row stays a door to a screen that says so via
+            // the offline line, so the fallback is an empty-library screen, not a crash.
+            CityDownloadsView(
+                model: CityDownloadsModel(
+                    library: (try? CityLibrary.default())
+                        ?? CityLibrary(rootURL: URL(fileURLWithPath: NSTemporaryDirectory())
+                            .appendingPathComponent("cypress-cities", isDirectory: true)),
+                    onInventoryChange: onInventoryChange
+                ),
+                onBack: { router.pop() }
+            )
 
         // 09, 10 and 15 are presented as sheets rather than pushed (see `fullScreenCover` above), so
         // a *pushed* care-log, share or account-ask route is a programming error rather than a

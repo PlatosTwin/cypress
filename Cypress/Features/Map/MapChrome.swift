@@ -225,6 +225,10 @@ struct MapFilterChips: View {
 struct MapFilterStatus: View {
     let result: String?
     let showsYearCaveat: Bool
+    /// The caveat sentence for the inventory the map is actually drawn from — derived from the
+    /// measured undated share (pending city-downloads ruling §5). Defaults to the fused bundle's
+    /// recorded sentence so previews and older call sites stay exact.
+    var yearCaveat: String = MapYearFilterCopy.setAside
 
     var body: some View {
         if result != nil || showsYearCaveat {
@@ -236,7 +240,7 @@ struct MapFilterStatus: View {
                 // judge (ERRATA E175). It sits *below* the count deliberately: the count is the
                 // answer, this is the qualification on it.
                 if showsYearCaveat {
-                    line(MapYearFilterCopy.setAside)
+                    line(yearCaveat)
                 }
             }
         }

@@ -108,9 +108,18 @@ struct MapHomeView: View {
         case refused(MapLocationProvider.Availability)
     }
 
-    init(api: any CypressAPI, location: MapLocationProvider) {
+    /// The year-filter caveat for the attached inventory, resolved by the composition root from
+    /// the store's measured share — this view only carries it to `MapFilterStatus`.
+    private let yearCaveat: String
+
+    init(
+        api: any CypressAPI,
+        location: MapLocationProvider,
+        yearCaveat: String = MapYearFilterCopy.setAside
+    ) {
         self.api = api
         self.location = location
+        self.yearCaveat = yearCaveat
         _model = State(initialValue: MapModel(api: api))
     }
 
@@ -337,7 +346,8 @@ struct MapHomeView: View {
                     // is on, so an un-narrowed screen 01 is exactly as it was.
                     MapFilterStatus(
                         result: model.filterResult,
-                        showsYearCaveat: model.filter.decade != nil
+                        showsYearCaveat: model.filter.decade != nil,
+                        yearCaveat: yearCaveat
                     )
                     .accessibilitySortPriority(2)
                     // And below that, for the same reason. The key to the species colouring — which

@@ -51,6 +51,15 @@ public enum SeedDatabase {
     public static let resourceName = "cypress-seed"
     public static let resourceExtension = "sqlite"
 
+    /// The newest seed schema generation this build was written against — R37.1's numbering
+    /// (E176's "v14 pass" introduced `id_space`), the same integer `Tools/publish_cities.py`
+    /// stamps as `SEED_SCHEMA_VERSION` and the manifest carries as `schema_version`. Bump it in
+    /// the same change that teaches this layer a new generation's shape.
+    ///
+    /// A published city file with a newer generation is refused — never downloaded
+    /// (`CityInstallState.needsNewerApp`) and never attached (`CityLibrary`'s validation).
+    public static let newestKnownSchemaVersion = 14
+
     // MARK: - Locating
 
     public enum LocationError: Error, CustomStringConvertible {

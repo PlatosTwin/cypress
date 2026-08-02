@@ -18,7 +18,11 @@ struct CypressApp: App {
                 case .booting:
                     ProgressView().task { await model.boot() }
                 case .ready(let data):
-                    RootView(data: data)
+                    // Identity-keyed to the store instance: after `AppModel.reboot()` (an
+                    // inventory switch) every `@State` model built from the old layer must be
+                    // rebuilt, and `@State` survives a plain re-init of an identical view.
+                    RootView(data: data, onInventoryChange: { model.reboot() })
+                        .id(ObjectIdentifier(data.store))
                 case .failed(let reason):
                     ScrollView {
                         Text(reason)

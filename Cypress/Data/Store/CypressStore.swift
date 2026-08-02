@@ -35,6 +35,15 @@ public final class CypressStore: Sendable {
     /// `inventory_<id>_*` keys existed, in which case `seedProvenance` is the only answer there is
     /// and it is the right one, because such a seed came from one inventory.
     public let seedInventories: [String: InventorySource]
+    /// The share of `seed.trees` rows carrying no `planted_year`, measured at open — or nil when
+    /// no seed is attached or the attached file predates the column.
+    ///
+    /// Measured rather than remembered because it stopped being a constant the day the attached
+    /// inventory became the reader's choice (R36 consequence c, the pending city-downloads
+    /// ruling §5): the fused bundle is 0.8078, San Francisco alone is 0.7397, San Jose alone is
+    /// 0.9958 — E175/E176 caught exactly this drift once already. The map's year-filter caveat
+    /// derives its words from this number (`MapYearFilterCopy.setAside(undatedShare:)`).
+    public let seedUndatedShare: Double?
     /// Where `main` lives, for diagnostics and for the "delete my data" path.
     public let databaseURL: URL
 
@@ -43,6 +52,7 @@ public final class CypressStore: Sendable {
         seed: SeedSchema?,
         seedHasSoftDeletedTrees: Bool,
         seedMeta: [String: String],
+        seedUndatedShare: Double?,
         databaseURL: URL
     ) {
         self.queue = queue
@@ -50,6 +60,7 @@ public final class CypressStore: Sendable {
         self.seedHasSoftDeletedTrees = seedHasSoftDeletedTrees
         self.seedProvenance = InventorySource(seedMeta: seedMeta)
         self.seedInventories = Self.inventories(in: seedMeta)
+        self.seedUndatedShare = seedUndatedShare
         self.databaseURL = databaseURL
     }
 
@@ -63,6 +74,22 @@ public final class CypressStore: Sendable {
         guard let rows = try? statement.fetchAll({ (try $0.string("key"), try $0.string("value")) })
         else { return [:] }
         return Dictionary(rows, uniquingKeysWith: { first, _ in first })
+    }
+
+    /// The measurement behind `seedUndatedShare`. `try?` throughout: a seed shaped before
+    /// `planted_year` existed answers nil (unknown), not an open failure — the map then falls
+    /// back to the fused bundle's recorded constant rather than refusing to launch.
+    static func measureUndatedShare(connection: SQLiteConnection) -> Double? {
+        guard let statement = try? connection.prepare("""
+            SELECT COUNT(*) AS total, SUM(planted_year IS NOT NULL) AS dated
+              FROM \(SeedDatabase.schemaName).trees
+             WHERE deleted_at IS NULL
+            """) else { return nil }
+        defer { statement.finalize() }
+        guard let (total, dated) = try? statement.fetchOne({ (try $0.int("total"), try $0.int("dated")) }),
+              total > 0
+        else { return nil }
+        return Double(total - dated) / Double(total)
     }
 
     /// Every `inventory_<id>_name` key in the receipt, resolved. Plus the file's primary inventory,
@@ -116,11 +143,11 @@ public final class CypressStore: Sendable {
         let url = try databaseURL ?? defaultDatabaseURL()
         let queue = try DatabaseQueue(url: url)
 
-        let (schema, hasSoftDeletes, seedMeta) = try await queue.withConnection {
-            connection -> (SeedSchema?, Bool, [String: String]) in
+        let (schema, hasSoftDeletes, seedMeta, undatedShare) = try await queue.withConnection {
+            connection -> (SeedSchema?, Bool, [String: String], Double?) in
             try SchemaMigrator.migrate(migrations, on: connection)
 
-            guard let seedURL else { return (nil, false, [:]) }
+            guard let seedURL else { return (nil, false, [:], nil) }
             let schema = try SeedDatabase.attach(seedURL, to: connection)
 
             let statement = try connection.prepare(
@@ -128,7 +155,8 @@ public final class CypressStore: Sendable {
             )
             defer { statement.finalize() }
             let present = try statement.fetchOne { try $0.bool("present") } ?? false
-            return (schema, present, readSeedMeta(connection: connection))
+            return (schema, present, readSeedMeta(connection: connection),
+                    measureUndatedShare(connection: connection))
         }
 
         return CypressStore(
@@ -136,6 +164,7 @@ public final class CypressStore: Sendable {
             seed: schema,
             seedHasSoftDeletedTrees: hasSoftDeletes,
             seedMeta: seedMeta,
+            seedUndatedShare: undatedShare,
             databaseURL: url
         )
     }
@@ -147,23 +176,25 @@ public final class CypressStore: Sendable {
         migrations: [Migration] = AppSchema.migrations
     ) async throws -> CypressStore {
         let queue = try DatabaseQueue.inMemory()
-        let (schema, hasSoftDeletes, seedMeta) = try await queue.withConnection {
-            connection -> (SeedSchema?, Bool, [String: String]) in
+        let (schema, hasSoftDeletes, seedMeta, undatedShare) = try await queue.withConnection {
+            connection -> (SeedSchema?, Bool, [String: String], Double?) in
             try SchemaMigrator.migrate(migrations, on: connection)
-            guard let seedURL else { return (nil, false, [:]) }
+            guard let seedURL else { return (nil, false, [:], nil) }
             let schema = try SeedDatabase.attach(seedURL, to: connection)
             let statement = try connection.prepare(
                 "SELECT EXISTS(SELECT 1 FROM \(SeedDatabase.schemaName).trees WHERE deleted_at IS NOT NULL) AS present"
             )
             defer { statement.finalize() }
             let present = try statement.fetchOne { try $0.bool("present") } ?? false
-            return (schema, present, readSeedMeta(connection: connection))
+            return (schema, present, readSeedMeta(connection: connection),
+                    measureUndatedShare(connection: connection))
         }
         return CypressStore(
             queue: queue,
             seed: schema,
             seedHasSoftDeletedTrees: hasSoftDeletes,
             seedMeta: seedMeta,
+            seedUndatedShare: undatedShare,
             databaseURL: URL(fileURLWithPath: ":memory:")
         )
     }
