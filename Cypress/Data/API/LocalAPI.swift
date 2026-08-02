@@ -1263,21 +1263,35 @@ public actor LocalAPI: CypressAPI {
                 deviceID: deviceID,
                 connection: connection
             )
+            // --- Which area the ring is about (RULINGS R29, the same order `almanac` resolves in).
+            //
             // A4's inference reads the same contributions, so a contributor with none has no
-            // neighbourhood and the ring has nothing to be a fraction of.
-            guard let resident = try groveQueries.residentNeighborhood(
+            // area at all and the ring has nothing to be a fraction of. The polygon first — the
+            // most-visited neighbourhood, the exact query this screen has always run, so San
+            // Francisco cannot move. Where no touched tree carries a polygon (every contribution
+            // in San Jose, whose 52,788 rows hold `neighborhood_id IS NULL`), the same inference
+            // still names a most-visited *tree*, and R29's stated radius around it is the area.
+            // No coverage guard is needed the way `almanac` and `speciesGuide` need one: the
+            // centre is itself an inventoried tree, so the circle covers record by construction.
+            let scope: AlmanacScope
+            if let resident = try groveQueries.residentNeighborhood(
                 userID: userID,
                 deviceID: deviceID,
                 connection: connection
-            ) else {
+            ) {
+                scope = .neighborhood(id: resident.id, name: resident.name)
+            } else if let centre = try groveQueries.mostVisitedTree(
+                userID: userID,
+                deviceID: deviceID,
+                connection: connection
+            ) {
+                scope = .radius(centre: centre, metres: AlmanacLimits.fallbackRadiusM)
+            } else {
                 return GroveSpecies(neighborhood: nil, known: known)
             }
-            let species = try groveQueries.neighborhoodSpeciesIDs(
-                neighborhoodID: resident.id,
-                connection: connection
-            )
+            let species = try groveQueries.speciesIDs(scope: scope, connection: connection)
             return GroveSpecies(
-                neighborhood: GroveNeighborhood(name: resident.name, species: species),
+                neighborhood: GroveNeighborhood(area: scope.area, species: species),
                 known: known
             )
         }

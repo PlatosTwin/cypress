@@ -115,7 +115,7 @@ struct SpeciesPresentationTests {
     func unknownHabitKeepsEverythingThatIsSourced() throws {
         let page = Self.presentation(
             try Self.unsourcedHabit(),
-            nearYou: SpeciesNeighborhoodCount(neighborhoodName: "Sunset/Parkside", count: 61)
+            nearYou: SpeciesNeighborhoodCount(area: .named("Sunset/Parkside"), count: 61)
         )
         // Absence of a habit suppresses the phenology surface, not the page.
         #expect(page.commonName == "Maple")

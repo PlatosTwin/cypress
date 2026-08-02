@@ -743,7 +743,7 @@ enum SweepFixtures {
         let neighbourhoodIDs = (0..<215).map { id($0) }
         return GroveSpecies(
             neighborhood: GroveNeighborhood(
-                name: "Outer Sunset",
+                area: .named("Outer Sunset"),
                 species: Series(complete: neighbourhoodIDs)
             ),
             known: Series(complete: known)

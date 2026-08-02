@@ -122,7 +122,7 @@ private enum GroveFixtures {
 
     static func neighborhood(complete: Bool = true) -> GroveNeighborhood {
         GroveNeighborhood(
-            name: "Sunset/Parkside",
+            area: .named("Sunset/Parkside"),
             species: Series(items: neighborhoodSpeciesIDs, isComplete: complete)
         )
     }
