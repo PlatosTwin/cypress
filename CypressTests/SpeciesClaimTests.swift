@@ -487,10 +487,10 @@ struct SpeciesClaimTests {
         )
         print("SHOT DIR \(ScreenSweepShots.outputDirectory.path)")
 
-        #expect(await ScreenSweepShots.pair("e141-species-claimed") {
+        #expect(await ScreenSweepShots.sweep("e141-species-claimed") {
             NavigationStack { TreeProfileView(treeID: claimed, api: api) }.environment(AppRouter())
         })
-        #expect(await ScreenSweepShots.pair("e141-species-unclaimed") {
+        #expect(await ScreenSweepShots.sweep("e141-species-unclaimed") {
             NavigationStack { TreeProfileView(treeID: unclaimed, api: api) }.environment(AppRouter())
         })
 
