@@ -786,12 +786,26 @@ public actor LocalAPI: CypressAPI {
     /// statement set, whose WHERE clauses stop matching once they have run: nothing inserts, nothing
     /// deletes, and rows belonging to a different account are not touched. When the device has never
     /// been claimed this is one indexed SELECT and no writes.
+    ///
+    /// **Only while that account is the one signed in** (#174). The claim row outlives the sign-in —
+    /// `signOut()` clears `app_state.current_user_id` and leaves `device.user_id` standing, which is
+    /// what lets the account be resumed — so the row alone is history, not authority. Re-claiming
+    /// against it while nobody is signed in adopted every device-owned row a drain had just applied:
+    /// the favorite the owner tapped landed as the device's, was moved to the signed-out account
+    /// (`user_id` set, `device_id` cleared) in the same `sync` call, and the re-read over
+    /// `(userID: nil, deviceID:)` found nothing — the heart flashed dark green for one awaited drain
+    /// and went back to white, on any device that had ever signed in and out, and on no fresh
+    /// simulator. The straddle this method exists for ("queued Tuesday, signed in Wednesday, drained
+    /// Thursday") has the person signed in at drain time, so the guard costs that case nothing; a
+    /// tail drained while signed out is adopted by the next re-claim after they resume.
     private func adoptRowsWrittenAfterTheClaim(hadItems: Bool) async throws {
         guard hadItems else { return }
+        guard let current = userID else { return }
         let moment = now()
         let device = deviceID
         try await store.queue.write { connection in
-            guard let user = try contributions.claimedUser(forDevice: device, connection: connection)
+            guard let user = try contributions.claimedUser(forDevice: device, connection: connection),
+                  user == current
             else { return }
             try contributions.claimDevice(deviceUUID: device, userID: user, at: moment, connection: connection)
         }
