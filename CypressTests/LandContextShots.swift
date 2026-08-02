@@ -57,27 +57,29 @@ struct LandContextShots {
         cityRecord: CityRecord(legalStatus: "DPW Maintained", caretaker: "Private")
     )
 
-    @Test("the three hazard handoffs and the two profile arms, light and dark")
+    @Test("the three hazard handoffs and the two profile arms, light and dark, default and AX5")
     func photograph() async {
         print("SHOT DIR \(ScreenSweepShots.outputDirectory.path)")
 
-        #expect(await ScreenSweepShots.pair("e146-1-report-stated-private") { Self.report(Self.statedPrivate) })
-        #expect(await ScreenSweepShots.pair("e146-2-report-inferred-private") { Self.report(Self.inferredPrivate) })
-        #expect(await ScreenSweepShots.pair("e146-3-report-street") { Self.report(Self.street) })
+        #expect(await ScreenSweepShots.sweep("e146-1-report-stated-private") { Self.report(Self.statedPrivate) })
+        #expect(await ScreenSweepShots.sweep("e146-2-report-inferred-private") { Self.report(Self.inferredPrivate) })
+        #expect(await ScreenSweepShots.sweep("e146-3-report-street") { Self.report(Self.street) })
         // A 1,500 pt window for the two profiles, `cityRecordStates`' own reason: the ground under the
         // tree is a sentence in §9b, the last block on screen 03, and an off-screen `ScrollView`
         // cannot be scrolled. At phone height these two photographed the stat grid and stopped above
         // the sentence — which is what they were for when the fact was a card up in that grid.
         #expect(
-            await ScreenSweepShots.pair(
+            await ScreenSweepShots.sweep(
                 "e146-4-profile-stated-private",
-                viewportHeight: ScreenSweepShots.tallViewport
+                viewportHeight: ScreenSweepShots.tallViewport,
+                ax5ViewportHeight: ScreenSweepShots.tallestViewport
             ) { Self.profile(Self.statedPrivate) }
         )
         #expect(
-            await ScreenSweepShots.pair(
+            await ScreenSweepShots.sweep(
                 "e146-5-profile-inferred-street",
-                viewportHeight: ScreenSweepShots.tallViewport
+                viewportHeight: ScreenSweepShots.tallViewport,
+                ax5ViewportHeight: ScreenSweepShots.tallestViewport
             ) { Self.profile(Self.street) }
         )
     }

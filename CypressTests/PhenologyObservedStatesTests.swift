@@ -197,7 +197,7 @@ struct PhenologyObservedStatesShots {
 
         // The report: an uncurated species, empty calendar. Before #151 this tray had no chip row.
         let cassia = try PhenologyObservedStatesTests.goldMedallion()
-        #expect(await ScreenSweepShots.pair("n151-1-camera-cassia-222615") {
+        #expect(await ScreenSweepShots.sweep("n151-1-camera-cassia-222615") {
             Self.camera(species: cassia, displayName: "Gold Medallion Tree")
         })
 
@@ -213,12 +213,12 @@ struct PhenologyObservedStatesShots {
             ),
             curated: true
         )
-        #expect(await ScreenSweepShots.pair("n151-2-camera-london-plane") {
+        #expect(await ScreenSweepShots.sweep("n151-2-camera-london-plane") {
             Self.camera(species: plane, displayName: "London Plane")
         })
 
         // The gate left standing: no species record, no row.
-        #expect(await ScreenSweepShots.pair("n151-3-camera-no-species") {
+        #expect(await ScreenSweepShots.sweep("n151-3-camera-no-species") {
             Self.camera(species: nil, displayName: "Tree")
         })
     }

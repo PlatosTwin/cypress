@@ -178,19 +178,34 @@ struct ScreenSweepShots {
     }
 
     /// One screen, four ways, plus its contact sheet.
+    ///
+    /// - Parameter ax5ViewportHeight: the window height for the two AX5 captures, when the AX5
+    ///   layout needs more room than the drawn-size one (an AX5 screen is several times its drawn
+    ///   height, and a capture that stops at 852 pt photographs only its header). Defaults to
+    ///   `viewportHeight`. Keep it at or under `tallestViewport` — past 2,730 pt at 3× the
+    ///   renderer hands back a transparent image (ERRATA E145) and the guard fails the sweep.
+    ///
+    /// A per-screen "the primary CTA exists in the AX5 accessibility tree" assertion was built
+    /// and then removed here (task #144): SwiftUI serves accessibility over its own bridge and
+    /// builds **no** in-process UIKit element tree — `accessibilityElements` is empty and
+    /// `accessibilityElementCount()` is 0 on a laid-out hosting view, even with VoiceOver
+    /// running. `AccessibilityTests`' header records the dead end at length; asserting against
+    /// that tree needs an out-of-process client (XCUITest), not this harness.
     @discardableResult
     static func sweep(
         _ name: String,
         viewportHeight: CGFloat = height,
+        ax5ViewportHeight: CGFloat? = nil,
         @ViewBuilder _ content: @escaping () -> some View
     ) async -> Bool {
         var shots: [(label: String, image: UIImage)] = []
         for variant in variants {
+            let isAX5 = variant.size.isAccessibilitySize
             guard let image = await capture(
                 "\(name)-\(variant.suffix)",
                 size: variant.size,
                 scheme: variant.scheme,
-                viewportHeight: viewportHeight,
+                viewportHeight: isAX5 ? (ax5ViewportHeight ?? viewportHeight) : viewportHeight,
                 content
             ) else { return false }
             shots.append((variant.suffix, image))
@@ -199,29 +214,10 @@ struct ScreenSweepShots {
         return true
     }
 
-    /// One screen, two ways — light and dark at the drawn size. Used for the cold and empty states,
-    /// where the question is "what does this say when there is nothing" rather than "does it hold
-    /// together at AX5".
-    @discardableResult
-    static func pair(
-        _ name: String,
-        viewportHeight: CGFloat = height,
-        @ViewBuilder _ content: @escaping () -> some View
-    ) async -> Bool {
-        var shots: [(label: String, image: UIImage)] = []
-        for variant in variants.prefix(2) {
-            guard let image = await capture(
-                "\(name)-\(variant.suffix)",
-                size: variant.size,
-                scheme: variant.scheme,
-                viewportHeight: viewportHeight,
-                content
-            ) else { return false }
-            shots.append((variant.suffix, image))
-        }
-        contactSheet(name, shots)
-        return true
-    }
+    // `pair` — light and dark at the drawn size only — is gone (task #144). The AX5 defect
+    // family (#98, #132, E187's cousins) kept recurring because whole classes of screen state
+    // were never rendered at an accessibility size; every swept state now goes through `sweep`
+    // and gets the two `-ax5` captures with it.
 
     // MARK: - The drawn states
 
@@ -231,6 +227,17 @@ struct ScreenSweepShots {
 
         // ── 02. Presented as a `fullScreenCover` (RootView `.identify`), so no NavigationStack. ──
         #expect(await Self.sweep("02-identify") { VisitPreviewFixtures.identify() })
+
+        // ── The community add composer — the visit flow's other door, previewed since E174 but
+        //    never swept, which is how #132 stayed a report from the owner's phone rather than a
+        //    picture anyone could pull up (task #144). Rendered bare like 02: the flow is a
+        //    `fullScreenCover`. Tall at AX5 so the form below the photo well is in the frame.
+        #expect(await Self.sweep(
+            "02b-add-tree",
+            ax5ViewportHeight: Self.tallestViewport
+        ) {
+            VisitPreviewFixtures.addTree()
+        })
 
         // ── 03. Pushed. ──────────────────────────────────────────────────────────────────────
         #expect(await Self.sweep("03-tree-profile") {
@@ -471,7 +478,7 @@ struct ScreenSweepShots {
 
     // MARK: - §9b · What the city has on file (ERRATA E145, E181)
 
-    /// The five states of the city-record section, light and dark.
+    /// The five states of the city-record section, light and dark, default and AX5 (#144).
     ///
     /// The section is the last block on screen 03, so these are captured in a 1,500 pt window: an
     /// off-screen `ScrollView` cannot be scrolled, and a phone-height capture of a cold profile stops
@@ -481,7 +488,7 @@ struct ScreenSweepShots {
     /// two-card floor, one of the 196 `Prune Opt Out` rows, one of the 318 rows the city does not
     /// call a tree, and a community tree with no city record at all — where the section must be
     /// absent and the land-context line must still be there, stated rather than inferred.
-    @Test("the city-record section, five states, light and dark")
+    @Test("the city-record section, five states, in four appearances each")
     func cityRecordStates() async throws {
         print("SWEEP DIR \(Self.outputDirectory.path)")
         let states: [(String, TreeProfile)] = [
@@ -492,7 +499,11 @@ struct ScreenSweepShots {
             ("c05-city-record-community-none", TreeProfileSeedFixtures.communityAdded),
         ]
         for (name, profile) in states {
-            #expect(await Self.pair(name, viewportHeight: Self.tallViewport) {
+            #expect(await Self.sweep(
+                name,
+                viewportHeight: Self.tallViewport,
+                ax5ViewportHeight: Self.tallestViewport
+            ) {
                 NavigationStack {
                     TreeProfileView(treeID: profile.tree.id, api: TreeProfilePreviewAPI(profile: profile))
                 }
@@ -525,16 +536,17 @@ struct ScreenSweepShots {
     // MARK: - The states a beta tester sees first
 
     /// Cold and empty. "A screen with no photographs, no check-ins, no measurements … is what a
-    /// beta tester sees first and it is the least-exercised path in the app."
-    @Test("the cold and empty states, light and dark")
+    /// beta tester sees first and it is the least-exercised path in the app." At AX5 as well,
+    /// since task #144: an empty state is mostly sentences, and sentences are what the ramp moves.
+    @Test("the cold and empty states, in four appearances each")
     func coldStates() async throws {
-        #expect(await Self.pair("e02-identify-denied") {
+        #expect(await Self.sweep("e02-identify-denied") {
             VisitPreviewFixtures.identify(fix: .denied)
         })
-        #expect(await Self.pair("e02-identify-no-tells") {
+        #expect(await Self.sweep("e02-identify-no-tells") {
             VisitPreviewFixtures.identify(rows: VisitPreviewFixtures.untelledRows)
         })
-        #expect(await Self.pair("e06-report-nothing-selected") {
+        #expect(await Self.sweep("e06-report-nothing-selected") {
             NavigationStack {
                 ReportView(
                     treeID: SweepFixtures.reportTreeID,
@@ -544,22 +556,22 @@ struct ScreenSweepShots {
             }
             .environment(AppRouter())
         })
-        #expect(await Self.pair("e07-species-uncurated") {
+        #expect(await Self.sweep("e07-species-uncurated") {
             NavigationStack {
                 SpeciesPreviewFixtures.view(species: SpeciesPreviewFixtures.brushCherry)
             }
             .environment(AppRouter())
         })
-        #expect(await Self.pair("e08-grove-empty") {
+        #expect(await Self.sweep("e08-grove-empty") {
             NavigationStack {
                 GroveView(api: GrovePreviewAPI(grove: .empty), now: { SweepFixtures.now })
             }
             .environment(AppRouter())
         })
-        #expect(await Self.pair("e09-care-log-untouched") {
+        #expect(await Self.sweep("e09-care-log-untouched") {
             CareLogPreviewFixtures.view()
         })
-        #expect(await Self.pair("e11-growth-empty") {
+        #expect(await Self.sweep("e11-growth-empty") {
             NavigationStack {
                 GrowthHistoryView(
                     treeID: GrowthHistoryPreviewFixtures.treeID,
@@ -570,7 +582,7 @@ struct ScreenSweepShots {
             }
             .environment(AppRouter())
         })
-        #expect(await Self.pair("e12-almanac-fresh") {
+        #expect(await Self.sweep("e12-almanac-fresh") {
             NavigationStack {
                 AlmanacView(
                     api: AlmanacPreviewAPI(payload: SweepFixtures.freshAlmanac),
@@ -581,7 +593,7 @@ struct ScreenSweepShots {
             }
             .environment(AppRouter())
         })
-        #expect(await Self.pair("e13-activity-empty") {
+        #expect(await Self.sweep("e13-activity-empty") {
             NavigationStack {
                 ActivityScreen(
                     presentation: ActivityPreviewFixtures.presentation(
@@ -591,7 +603,7 @@ struct ScreenSweepShots {
             }
             .environment(AppRouter())
         })
-        #expect(await Self.pair("e16-measure-first-reading") {
+        #expect(await Self.sweep("e16-measure-first-reading") {
             NavigationStack {
                 MeasureScreen(
                     presentation: MeasurePreviewFixtures.presentation(
@@ -601,7 +613,7 @@ struct ScreenSweepShots {
             }
             .environment(AppRouter())
         })
-        #expect(await Self.pair("e17-outbox-empty") {
+        #expect(await Self.sweep("e17-outbox-empty") {
             NavigationStack {
                 OutboxScreen(
                     presentation: OutboxPreviewFixtures.presentation([]),
@@ -610,7 +622,7 @@ struct ScreenSweepShots {
             }
             .environment(AppRouter())
         })
-        #expect(await Self.pair("e19-memorial-bare") {
+        #expect(await Self.sweep("e19-memorial-bare") {
             NavigationStack {
                 MemorialScreen(
                     presentation: MemorialPresentation(
@@ -626,13 +638,13 @@ struct ScreenSweepShots {
         // The two reads that can fail with nothing else on the screen to say so (ERRATA E126).
         // Photographed next to `e08-grove-empty` and `e12-almanac-fresh` above, because until E126
         // each of these pairs was one image drawn twice.
-        #expect(await Self.pair("e08-grove-read-failed") {
+        #expect(await Self.sweep("e08-grove-read-failed") {
             NavigationStack {
                 GroveView(api: GrovePreviewAPI(fails: true), now: { SweepFixtures.now })
             }
             .environment(AppRouter())
         })
-        #expect(await Self.pair("e12-almanac-read-failed") {
+        #expect(await Self.sweep("e12-almanac-read-failed") {
             NavigationStack {
                 AlmanacView(
                     api: AlmanacPreviewAPI(fails: true),
@@ -647,7 +659,7 @@ struct ScreenSweepShots {
         // They join the sweep beside the failed read for the same reason that one did: all four of
         // this screen's near-empty states used to be two pictures, and the only way they stay four
         // is by being photographed.
-        #expect(await Self.pair("e12-almanac-radius-area") {
+        #expect(await Self.sweep("e12-almanac-radius-area") {
             NavigationStack {
                 AlmanacView(
                     api: AlmanacPreviewAPI(payload: SweepFixtures.radiusAlmanac),
@@ -658,7 +670,7 @@ struct ScreenSweepShots {
             }
             .environment(AppRouter())
         })
-        #expect(await Self.pair("e12-almanac-out-of-range") {
+        #expect(await Self.sweep("e12-almanac-out-of-range") {
             NavigationStack {
                 AlmanacView(
                     api: AlmanacPreviewAPI(payload: .empty),
@@ -669,7 +681,7 @@ struct ScreenSweepShots {
             }
             .environment(AppRouter())
         })
-        #expect(await Self.pair("e14b-site-nothing-nearby") {
+        #expect(await Self.sweep("e14b-site-nothing-nearby") {
             NavigationStack {
                 SiteScreen(
                     presentation: SitePresentation(profile: SiteFixtures.profile),
