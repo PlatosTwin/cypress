@@ -7,15 +7,24 @@
 //  The same shell as 09 — C17's scrim and sheet over a *skeleton* of the profile — with two 52pt
 //  blocks instead of three, per §2.
 //
-//  ── What the four destinations do, and why ────────────────────────────────────────────────
-//  `Copy link` writes the public URL to the pasteboard. That is exactly what its label says, and it
-//  is the only one of the four iOS can perform as labelled.
+//  ── What the three destinations do, and why ───────────────────────────────────────────────
+//  E59's design — every named button routed to the system share sheet — was overridden by the
+//  owner on device (ticket #146): identical behavior behind different names made the names lies.
+//  Now every button does what its label says, and the row is exactly the set of labels that can
+//  keep that promise:
 //
-//  `Messages`, `Instagram` and `AirDrop` open the system share sheet. On this platform those three
-//  words *are* rows in that sheet: AirDrop and Messages have no direct API, and Instagram publishes
-//  none for links. Hand-rolling three destinations would be inventing three flows SCREENS.md does
-//  not draw (DECISIONS constraint 21); routing them to the sheet they live in is the platform
-//  meaning of the button that was drawn. Recorded in ERRATA (E59).
+//  `Messages` presents `MFMessageComposeViewController` with the link as the body — Messages
+//  composition directly, in-app. Where the composer cannot exist (`canSendText() == false`:
+//  simulators always, devices without a messaging account) it falls back to the system share
+//  sheet instead of going dead; `MessagesRoute` is that decision, made testable.
+//
+//  `Copy link` writes the public URL to the pasteboard, unchanged.
+//
+//  `Share…` is the system share sheet (`ShareLink`), which is where AirDrop lives — an "AirDrop"
+//  button cannot be built honestly, because `excludedActivityTypes` cannot exclude third-party
+//  share extensions and the trimmed sheet is still a general one. `Instagram` is gone entirely:
+//  no link API, and the Stories scheme needs a Meta app registration (zero external dependencies,
+//  and no API keys, bind). docs/rulings-pending/share-destinations.md records the row.
 //
 //  **No "Link copied" confirmation.** SCREENS.md 10 says it outright: the prototype's copied state
 //  is "**NOT SPECIFIED** in this spec file — no copied state is drawn". PROTOTYPE-FLOW does carry
@@ -26,6 +35,7 @@
 //  SCREENS.md 10's own margins, named in `ShareMetrics`.
 //
 
+import MessageUI
 import SwiftUI
 import UIKit
 
@@ -34,6 +44,10 @@ struct ShareView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @State private var model: ShareModel
+
+    /// The link the `Messages` button is currently presenting, `nil` when it is not.
+    /// `sheet(item:)` rather than a Bool so the URL travels with the presentation.
+    @State private var messagesLink: MessagesLink?
 
     /// Dismissal is the composition root's, not the sheet's (PROTOTYPE-FLOW §1.3 `closeShare`).
     private let onClose: () -> Void
@@ -62,7 +76,9 @@ struct ShareView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(CypressColor.surfaceScreen)
         // Same as 09: the skeleton and the scrim are the whole display. See `CareLogView`.
-        .ignoresSafeArea()
+        // `.container` and never bare `.ignoresSafeArea()`: the bare form includes `.keyboard`,
+        // which is how a keyboard once covered the field being typed into (BottomSheet's header).
+        .ignoresSafeArea(.container)
         .task { if model.presentation == nil { await model.load() } }
     }
 
@@ -171,7 +187,8 @@ struct ShareView: View {
 
     @ViewBuilder
     private func target(_ destination: ShareDestination, url: URL) -> some View {
-        if destination.isPasteboard {
+        switch destination {
+        case .copyLink:
             Button {
                 UIPasteboard.general.url = url
             } label: {
@@ -179,7 +196,29 @@ struct ShareView: View {
             }
             .buttonStyle(.plain)
             .accessibilityHint(destination.accessibilityHint)
-        } else {
+
+        case .messages:
+            Button {
+                messagesLink = MessagesLink(url: url)
+            } label: {
+                targetLabel(destination)
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint(destination.accessibilityHint)
+            .sheet(item: $messagesLink) { link in
+                // The route is asked at presentation time, not at build time: whether Messages can
+                // compose is a fact about the device's current accounts, not about this view.
+                switch MessagesRoute(canSendText: MFMessageComposeViewController.canSendText()) {
+                case .composer:
+                    MessageComposer(body: link.url.absoluteString) { messagesLink = nil }
+                        .ignoresSafeArea()
+                case .systemShareSheet:
+                    SystemShareSheet(url: link.url) { messagesLink = nil }
+                        .ignoresSafeArea()
+                }
+            }
+
+        case .system:
             ShareLink(item: url) {
                 targetLabel(destination)
             }
@@ -232,6 +271,60 @@ struct ShareView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.bottom, ShareMetrics.cardBottom)
     }
+}
+
+// MARK: - Messages
+
+/// The one value the `Messages` presentation carries. `Identifiable` for `sheet(item:)`.
+private struct MessagesLink: Identifiable {
+    let url: URL
+    var id: URL { url }
+}
+
+/// `MFMessageComposeViewController`, presented as-is — Apple requires the controller unmodified,
+/// so this wrapper adds nothing but the delegate that dismisses it.
+private struct MessageComposer: UIViewControllerRepresentable {
+    let body: String
+    let onFinish: () -> Void
+
+    func makeUIViewController(context: Context) -> MFMessageComposeViewController {
+        let controller = MFMessageComposeViewController()
+        controller.body = body
+        controller.messageComposeDelegate = context.coordinator
+        return controller
+    }
+
+    func updateUIViewController(_ controller: MFMessageComposeViewController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator { Coordinator(onFinish: onFinish) }
+
+    final class Coordinator: NSObject, MFMessageComposeViewControllerDelegate {
+        let onFinish: () -> Void
+        init(onFinish: @escaping () -> Void) { self.onFinish = onFinish }
+
+        func messageComposeViewController(
+            _ controller: MFMessageComposeViewController,
+            didFinishWith result: MessageComposeResult
+        ) {
+            onFinish()
+        }
+    }
+}
+
+/// The system share sheet as a presentable view — the `Messages` button's fallback where the
+/// composer cannot exist (`MessagesRoute`). `ShareLink` cannot be triggered from another button's
+/// action, so the fallback needs `UIActivityViewController` directly.
+private struct SystemShareSheet: UIViewControllerRepresentable {
+    let url: URL
+    let onFinish: () -> Void
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        let controller = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        controller.completionWithItemsHandler = { _, _, _, _ in onFinish() }
+        return controller
+    }
+
+    func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }
 
 // MARK: - Thumbnails

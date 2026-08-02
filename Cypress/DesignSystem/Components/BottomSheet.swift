@@ -8,6 +8,18 @@
 //  It is not `.sheet(isPresented:)` — 09/10 draw a skeleton of the profile behind the scrim rather
 //  than the live profile, which a system sheet cannot do. `ProfileSkeleton` reproduces it.
 //
+//  ── Height (ticket #146) ───────────────────────────────────────────────────────────────────
+//  `.standard` sheets are **full-height**: the card runs from just under the status bar to the
+//  bottom of the display, with the content top-aligned inside a `ScrollView`. The mocks drew 09/10
+//  as content-sized bottom cards; the owner overrode that on device ("half-screened") — see
+//  docs/rulings-pending/share-destinations.md. The `ScrollView` is also the keyboard mechanism:
+//  a focused text field inside it is scrolled clear of the keyboard by the system, provided the
+//  *presenting view does not opt out of the keyboard safe area* — so a screen hosting this shell
+//  must use `.ignoresSafeArea(.container)`, never bare `.ignoresSafeArea()`, which silently
+//  includes `.keyboard` and lets the keyboard cover the field being typed into.
+//  `.account` (15) keeps its content-sized card: it is a short ask with no text input, and its
+//  mock is a card, not a page.
+//
 
 import SwiftUI
 
@@ -34,6 +46,10 @@ struct BottomSheet<Content: View>: View {
         }
 
         var showsGrabber: Bool { self == .standard }
+
+        /// Whether the card fills the display height (see the file header). `.standard` does;
+        /// `.account` stays the content-sized card its mock draws.
+        var fillsHeight: Bool { self == .standard }
 
         var scrim: Color {
             switch self {
@@ -81,12 +97,24 @@ struct BottomSheet<Content: View>: View {
                         .padding(.bottom, CypressSpacing.Component.grabberBottom)
                         .accessibilityHidden(true)
                 }
-                content
+                if style.fillsHeight {
+                    // The scroll view is load-bearing twice over: it lets content shorter than the
+                    // card sit at the top of a full-height page, and it is what moves a focused
+                    // text field clear of the keyboard (see the file header).
+                    ScrollView {
+                        paddedContent
+                    }
+                    .scrollBounceBehavior(.basedOnSize)
+                } else {
+                    paddedContent
+                }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, style.paddingTop)
-            .padding(.horizontal, style.paddingHorizontal)
-            .padding(.bottom, CypressSpacing.bottomSheet)
+            .frame(
+                maxWidth: .infinity,
+                maxHeight: style.fillsHeight ? .infinity : nil,
+                alignment: .topLeading
+            )
             // The *fill* runs to the bottom of the display; the content does not move. §2 pins the
             // sheet to the bottom, and the mock's own 44pt bottom padding is what holds it clear of
             // the home indicator — so extending the whole view into the safe area would spend that
@@ -97,6 +125,10 @@ struct BottomSheet<Content: View>: View {
                     .ignoresSafeArea(edges: .bottom)
             }
             .cypressShadow(CypressShadow.sheet)
+            // A full-height card is still a *sheet*: a strip of scrim stays visible above it, the
+            // same 62pt the skeleton reserves for the status bar, so the grabber never sits under
+            // the clock and the card reads as presented rather than as a screen swap.
+            .padding(.top, style.fillsHeight ? CypressSpacing.Device.statusBarInset : 0)
             // czSheet — the sheet rises 90 pt on the overshoot curve. `CypressMotion.sheet`.
             .offset(y: settled ? 0 : CypressMotionOffset.sheetRise)
             .opacity(settled ? 1 : 0)
@@ -113,6 +145,16 @@ struct BottomSheet<Content: View>: View {
     }
 
     private var settled: Bool { hasRisen || reduceMotion }
+
+    /// The mock's own margins — `18px` sides, `44px` bottom — applied to the content rather than
+    /// the card, so that inside a `ScrollView` they scroll with it and the scroll indicator hugs
+    /// the card's edge.
+    private var paddedContent: some View {
+        content
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, style.paddingHorizontal)
+            .padding(.bottom, CypressSpacing.bottomSheet)
+    }
 }
 
 /// The skeleton the 09/10 sheets sit on: `padding:62px 16px 0`, `gap:10px`; a 150pt gradient hero,
