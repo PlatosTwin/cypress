@@ -29,7 +29,7 @@
 //  drag the grabber was always promising: a full-width handle band across the top of the card
 //  (`sheetDragZone`) drags it down, `SheetDismissRule` decides commit-or-spring-back, and the
 //  scrim tap stays for the sliver and for VoiceOver's named "Dismiss" element. See
-//  docs/rulings-pending/sheet-exits.md.
+//  RULINGS R42.
 //
 
 import SwiftUI

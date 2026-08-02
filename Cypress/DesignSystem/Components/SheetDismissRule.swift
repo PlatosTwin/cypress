@@ -3,7 +3,7 @@
 //  Cypress — DesignSystem/Components
 //
 //  When a downward drag on a `.standard` bottom sheet dismisses it, and when it springs back
-//  (ticket #175, docs/rulings-pending/sheet-exits.md).
+//  (ticket #175, RULINGS R42).
 //
 //  Pure math, separated from `BottomSheet` so the decision is testable without a gesture
 //  recognizer: `DragGesture` hands the view a translation and a predicted end translation, and

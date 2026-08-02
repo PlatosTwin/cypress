@@ -11699,3 +11699,253 @@ seed, real store: claim, sign out, tap, and assert the applied row still answers
 all three reads (`TreeProfileModel.isFavorite`, `mapMembership(.favorites)`,
 `ProfileFavoriteWriter.storedState`). Proven red on the unfixed tree (all three lost the row
 while `pendingFavoriteState` was `nil` — the toggle had applied) and green on the fix.
+
+### E199 — The AX5 reflow defects: 02/11 overflow, 19/10/15/07/grid fragmentation (tasks #171, #172)
+
+#### The defects (E196 inventory)
+
+At accessibility text size 5 (AX5), several screens either drew wider than the phone (clipped at
+both edges) or truncated their own copy with an ellipsis, mid-word split, or vertical collapse.
+Verified against the pre-fix tree (`main` @ 7634648) with 235 before-renders in
+`<scratchpad>/shots-before/`, and against the fixed tree (branch `p1/ax5-fixes` @ b4f92c3, the
+last fix commit before this verification pass) with 319 after-renders in
+`<scratchpad>/shots-after/`.
+
+| # | Screen | Cause | Fix | Verdict |
+|---|--------|-------|-----|---------|
+| 1 | 02 identify (populated shortlist) | `VisitAmberStatusChip` was `.fixedSize()` both axes, forcing the row (and the whole screen) wide | Chip wraps; AX corner shape follows `Chip.chipShape` | **FIXED** — before/after render diff confirms |
+| 2 | e02 identify, denied notice | Compressed `Text` truncated its own sentence with an ellipsis | `VisitIdentifyNotice`: `ViewThatFits(.vertical)` — centered layout where it fits, `ScrollView` where it does not | **FIXED** — before showed a permanent ellipsis; after shows the full sentence, reachable by scroll (the static top-of-scroll capture shows the tail clipped at the `ScrollView`'s own frame boundary, not overlapped by the footer button — confirmed by pixel-level crop and by `VStack(spacing: 0)` sibling layout in `VisitIdentifyView.body`, not a `ZStack`) |
+| 3 | 11 growth history | Log rows (intrinsic-width `MethodBadge` + date) forced the row, and the screen, wide | `GrowthHistoryView.logRow`: `ViewThatFits(.horizontal)` — one row where value+badge+date fit, a stacked `VStack` where they do not | **FIXED**, with a verification gap — see below |
+| 4 | 19 memorial name / e19 bare | Name collapsed beside the status badge (`Juda` for `Judah Street`) | `MemorialView.identity`: `ViewThatFits` — name beside badge only when the whole name fits, else stacked | **FIXED** — before/after render diff confirms |
+| 5 | 10 share captions | Destination captions fragmented (`Message` / `s`) — shape changed post-#146 (three destinations now, not two) | `ShareView`: one destination per row at AX, circle beside caption | **FIXED** — before/after render diff confirms. Share-card URL keeps its existing 2-line cap + ellipsis (`ShareMetrics.urlLineLimit`) — left as-is, a **judgment call flagged for the orchestrator**, not a defect: the full URL is always reachable via Copy Link/system share, and no mock shows an uncapped card. |
+| 6 | 15 account CTA | `AccountProviderButton`'s label vertically compressed inside the content-sized `.account` sheet, truncating `Continue with Google` to `Continue with Goo…` | `.fixedSize(horizontal: false, vertical: true)` on the label | **FIXED** — before/after render diff confirms. Whole-sheet overflow at AX5 remains out of scope — that is #173's CTA-reachability territory. |
+| 7 | 07 species chips / e07 | `SpeciesView.taxonomyChips` split chip text mid-word (`Cupressac` / `eae`) | `ViewThatFits`: row of chips falls back to a column | **FIXED** — before/after render diff confirms |
+| 8 | City-record grid + quad row (c01–c06, and shared by 03/14/14b) | `StatGrid` 2-column and `QuadActionRow` 1-row-of-4 both forced ellipsis/word-mangled wraps at AX | `StatGrid.columnCount` = 1 column at AX; `QuadActionRow.rows` = 2×2 at AX; both reflow decisions are values, per the `QuadActionRow.appearance` precedent | **FIXED** — before/after render diff confirms on c01, c02, c06; spot-checked clean on 03, 14, c03–c05, e146-4 |
+| 9a | 18 next-tree subtitle | Subtitle text drawn flush to the screen edges (no gutter) | `VisitSavedView.subtitle` now carries gutter padding | **FIXED** — before/after render diff confirms |
+| 9b | 09 care log placeholder ellipsis | Reported defect — screen 09 was rebuilt by #168/#147 before this ticket started; the well is now a wrapping caption over `ContributionExtras`, not the placeholder that used to ellipsize | **STALE — no code change made.** Before-render (`09-care-log-light-ax5.png`) already shows the caption wrapping cleanly, no ellipsis present pre-fix. |
+
+#### Verification gap: #3 (growth history log rows)
+
+The log-row fix (`GrowthHistoryView.logRow`, `ViewThatFits(.horizontal)`) is the one item in this
+table **not** independently confirmed by a scrolled AX5 screenshot. `ScreenSweepShots.capture`
+renders each screen at a fixed phone-height viewport and does not scroll — its own doc comment
+says so ("a screen whose subject is below the fold — a `ScrollView` rendered off-screen cannot be
+scrolled"). The `11-growth-history-*-ax5` renders show only the chart (the top of the scroll); the
+log rows this fix actually touches sit further down and are not captured by any named shot.
+
+What stands in place of a render:
+
+- Code review: `logRow`'s `ViewThatFits(in: .horizontal)` between a single `HStack` and a stacked
+  `VStack` is the same shape as `StatCard.cityRecordValue` (item 8 above), which *is*
+  render-verified on c01/c02/c06.
+- The original `AX5ReflowTests` guard for this ("screen 11 stays inside the phone's width") was
+  proven **unable to fail** against the pre-fix layout — a vertical `ScrollView` clamps the width
+  it reports to the width it is proposed, so `sizeThatFits` never saw the overflow. That test was
+  deleted in b4f92c3 rather than left as false assurance; see
+  `CypressTests/AX5ReflowTests.swift`'s comment block above `identifyFitsThePhoneWidthAtAX5` for
+  the full reasoning.
+
+Net: the fix is structurally sound and follows a proven pattern, but nobody has looked at the
+scrolled log rows on AX5 with their own eyes. A follow-up that either scrolls
+`ScreenSweepShots.capture` for screen 11 specifically, or adds a targeted `sizeThatFits` probe on
+`logRow` in isolation (the same technique `AX5ReflowTests.amberStatusPillWrapsAtAX5` uses for the
+amber pill), would close this.
+
+#### Tests
+
+`CypressTests/AX5ReflowTests.swift` — 6 guards after deleting the cannot-fail screen-11 width
+test (b4f92c3):
+
+- **Re-run, this session:** `VERIFY-OK: ✔ Test run with 6 tests in 1 suite passed after 1.011
+  seconds` (`<scratchpad>/dd-w4ax5/ax5-rerun.log`).
+- Green-before-deletion and red-under-mutant-revert logs from the predecessor session:
+  `<scratchpad>/dd-w4ax5/ax5-green.log`, `<scratchpad>/dd-w4ax5/ax5-red.log`.
+
+Full unit suite, this session, with after-renders produced in the same run
+(`TEST_RUNNER_CYPRESS_SHOT_DIR` exported before `Tools/run_tests.sh`, per the trap noted below):
+
+- **`VERIFY-OK: ✔ Test run with 1011 tests in 96 suites passed after 116.140 seconds`**
+  (`<scratchpad>/dd-w4ax5/full-unit.log`).
+- 319 PNGs landed in `<scratchpad>/shots-after/`, all at mtimes 10:24–10:26 (matching the log's
+  10:26 mtime) — checked for stale/fossil files before trusting them; none found.
+
+UI suites (`SheetHeightUITests`, `DeepLinkVoiceOverTests`, `AccessibilityTreeTests` — the ones
+touching Share/growth/memorial deep links and labels), this session:
+
+- **`VERIFY-OK: Executed 34 tests, with 0 failures (0 unexpected) in 298.701 (298.762) seconds`**
+  — `** TEST SUCCEEDED **` present, nonzero executed count (3 + 28 + 3 = 34 across the three
+  suites) confirmed directly against `<scratchpad>/dd-w4ax5/ui-suites.log`.
+
+#### Regeneration
+
+```
+export TEST_RUNNER_CYPRESS_SHOT_DIR=<scratchpad>/shots-after
+Tools/run_tests.sh 3A1F212D-8F3A-41F1-AF72-EC95E155A4C9 <scratchpad>/dd-w4ax5/full-unit.log \
+  -derivedDataPath <scratchpad>/dd-w4ax5 -only-testing:CypressTests
+```
+
+The env var must be `export`ed in the calling shell before `Tools/run_tests.sh` runs — passing it
+as an `xcodebuild` argument does not reach the test runner process (it lands in the app
+container's own tmp dir instead; the predecessor session hit this once and had to copy shots out
+by hand).
+
+#### Flagged for the orchestrator
+
+1. **ShareView overlap with `w4-sheet-exit`.** That branch is modifying `BottomSheet.swift` and
+   may touch `ShareView`. This branch's `ShareView` diff is confined to
+   `destinationRow`/`targetLabel`/`well` — worth a compile-and-fix pass at merge regardless.
+2. **The share-card URL 2-line cap** (`ShareMetrics.urlLineLimit`) is a deliberate judgment call,
+   not a defect — see item 5 in the table above. Flagging in case product wants a different
+   answer for very long URLs.
+3. **The #3 verification gap above** — log-row fix is code-review-verified only, not
+   render-verified, because of a real limitation in the sweep harness (not something this branch
+   introduced).
+
+### E200 — The two screens E182 left blind outside San Francisco now resolve R29's area (task #141)
+
+Task #141. The family is E182's (task #138, RULINGS R29): a read scoped to `seed.neighborhoods` is
+scoped to San Francisco's 41 Analysis Neighborhoods and to nothing else, so all 52,788 San Jose rows
+— every one carrying `neighborhood_id IS NULL` — are invisible to it. R29 fixed screen 12 and named
+the two surfaces it had no standing to redesign; E182 §5 recorded them, unfixed, in so many words.
+This entry closes both. No third was found: the sweep over every `neighborhood_id` predicate and
+`neighborhoods` join in the app leaves exactly `TreeQueries.tree` (a `LEFT JOIN` whose `nil` is an
+honest absence on the profile, not a dropped row) and the reads behind these two screens.
+
+#### What was actually blind, with the measurements
+
+Probed against the shipped seed (108,007,424 bytes, `sf|145837`, `us-ca-sj|52788`) before writing
+any fix:
+
+- **Screen 07, the `Near you` card.** `LocalAPI.speciesGuide` resolved an area through
+  `SpeciesQueries.resolveNeighborhood` — an inner join through `seed.neighborhoods` — or resolved
+  nothing. Downtown San Jose's 400 m resolution box holds 1,275 inventoried trees and the join
+  returns **zero** of them, so `nearYou` was nil and the card silently did not draw for every reader
+  in the city. The same box in the Outer Sunset resolves `Sunset/Parkside`.
+- **Screen 08, the recognition ring.** `GroveQueries.residentNeighborhood` joins the contributor's
+  own contributions through `seed.trees` to `seed.neighborhoods`, so every San Jose contribution was
+  dropped by the join and the resident area was nil *forever* in that city — a contributor could
+  visit a thousand San Jose trees and never get a ring, a denominator, or a locked tile.
+
+Neither rendered anything false. Both were honest absences that had stopped being honest the day a
+second city landed whose readers they would never serve.
+
+#### The fix, at the layer of the defect
+
+R29's resolution order, verbatim in both places: **the polygon first, the stated radius where none
+resolves, and nothing where the record does not cover the ground.**
+
+- `SpeciesQueries.neighborhoodTreeCount(speciesID:neighborhoodID:)` became
+  `treeCount(speciesID:scope: AlmanacScope)`; `GroveQueries.neighborhoodSpeciesIDs(neighborhoodID:)`
+  became `speciesIDs(scope: AlmanacScope)`. For a `.neighborhood` scope both render the identical
+  predicate string they always ran, which is the safety argument in the same words E182 used: San
+  Francisco cannot move, and the suite asserts its counts against direct SQL rather than trusting
+  the claim.
+- `LocalAPI.speciesGuide` resolves the polygon, then `AlmanacScope.radius` around the reader at
+  `AlmanacLimits.fallbackRadiusM`, guarded by `AlmanacQueries.holdsAnyRecord` — the guard is what
+  keeps a true `0` ("none of these grow in your covered area") distinct from a card counting ground
+  the inventory has never seen. In Sacramento the card still does not draw, now for the stated
+  reason. The card's label — `Near you` — required no change: it is exactly true of either area, and
+  the payload carries `AlmanacArea` so no surface can dress the distance as a place.
+- `LocalAPI.groveSpecies` prefers `residentNeighborhood` (the exact query it always ran), and where
+  that returns nil falls back to the new `GroveQueries.mostVisitedTree` — A4's own inference,
+  "resident neighborhood inferred from most-visited", still with **no location permission**: the
+  radius is centred on the tree the contributor's record says they go to, not on where they are
+  standing. No coverage guard is needed on this arm; the centre is itself an inventoried tree, so
+  the circle covers record by construction.
+
+#### Two copy decisions, both NOT SPECIFIED, recorded here for the owner
+
+1. **Screen 07 adds no copy.** The fallback card is the same `Near you` label over a count. Nothing
+   on screen 07 ever printed the polygon's name, so nothing new needed a name withheld from it.
+2. **Screen 08's fallback caption** reads `you can recognize within a 15-minute walk of your
+   most-visited tree`. The mock draws only the polygon case (`you can recognize in the Outer
+   Sunset`); R29's third rule decides the fallback's shape — never dressed as a place, the distance
+   stated in the words screen 12's pill already uses for the same 1,200 m, and what the distance is
+   measured *from* said out loud, because "within a 15-minute walk" alone would read as centred on
+   the reader and it is not. It never names the city. R29's screen-12 fallback also carries an
+   explanatory sentence under the header; this caption was judged to carry the same information in
+   its own line, and adding a second sentence to §3's ring would be inventing a surface the mock
+   does not draw. If the owner wants the sentence, it slots under the ring without moving the data.
+
+#### What a mixed-city contributor gets, decided and named
+
+A contributor with visits in both cities takes the polygon path if *any* touched tree carries a
+polygon — `residentNeighborhood` is preferred outright, not weighed against the fallback. So a
+contributor whose San Jose visits outnumber their one San Francisco visit still reads an SF
+polygon's ring. This is deliberate: R29 prefers the polygon wherever it exists, the alternative
+(most-visited *tree* deciding which path wins) would let one visit move a San Francisco reader's
+ring off the polygon path, and "San Francisco did not move" was the non-negotiable. The asymmetry
+costs exactly the contributor who has crossed cities and visits the second one more — their ring is
+about a place they go less — and it self-corrects the day San Jose's boundaries join the record.
+
+#### Verification
+
+- `SecondCityGeographyTests`, five tests: SF's card and ring asserted equal to direct SQL of the old
+  join (the did-not-move half); San Jose's card and ring asserted present with the radius area (the
+  fix half); Sacramento asserted cardless; each San Jose test checks the no-polygons precondition
+  first so a future San Jose boundary layer fails the suite loudly instead of letting it measure the
+  wrong path.
+- Mutation proof: with the fallback arm removed from `speciesGuide`, and separately with
+  `groveSpecies`'s fallback arm removed, the corresponding San Jose tests fail; restored, the suite
+  passes. (Run details in the task report.)
+- Watched on iPhone 16 Pro Max at a San Jose fix: screen 07 draws `Near you` beside the whole-city
+  count; screen 08 after a San Jose visit draws the ring with the walk-distance caption.
+
+#### Not done here
+
+- The seed-coverage constants for city downloads (#157's ground) are untouched: this change is
+  confined to the two screens' reads and the two payload types; `AlmanacScope`,
+  `AlmanacLimits.fallbackRadiusM` and `AlmanacMetrics.walkRadiusM` are referenced, not redefined.
+- `SpeciesNeighborhoodCount.neighborhoodName: String` became `area: AlmanacArea`, and
+  `GroveNeighborhood.name: String` likewise (the type names stay, A4's word). Both are shared
+  identifiers; any live branch constructing either will need the one-line change at merge.
+- E176's SF-hardcoded copy on the tree profile, and screen 12's own surfaces, are exactly where
+  E182 left them.
+
+### E201 — 09/10 were inescapable: a decorative grabber over an OS-swallowed scrim (task #175)
+
+**The defect.** The care log (09) and share (10) sheets could not be left by any means a
+person would try. Owner's report: "clicking outside of them does nothing, and while you think
+you'd be able to drag the top of the page down (it looks like the kind of page that does
+that, because of the bar at the top), in practice the page is stuck… your only option is to
+close the app entirely."
+
+**What was actually wrong — two defects wearing one symptom.**
+
+1. **The grabber promised a drag nobody built.** `BottomSheet .standard` drew the 40×5
+   grabber capsule (it is in the mocks) but no drag gesture existed anywhere in the shell.
+   R39 made these cards full-height *because a control should do what it looks like*; the
+   grabber then looked like drag-to-dismiss and did nothing. A drawing of a control is a
+   promise, and this one was false from the day the card went full-height (#146) — the
+   content-sized card the mocks drew left acres of tappable scrim, so the gap was invisible
+   until the card grew.
+
+2. **The scrim tap worked and could not be reached.** Both hosts wired `onScrimTap: onClose`
+   correctly. But a full-height card exposes only the 62pt `statusBarInset` strip of scrim,
+   and the system status bar's own hit region (clock, indicators, Dynamic Island) consumes
+   roughly the top 54pt of it. Measured by injecting taps on the iPhone 16 Pro simulator:
+   taps at (201, 30) and (60, 45) never reach the app — the OS eats them — while taps at
+   (60, 58) and (201, 58) reach the scrim and dismiss. The one wired exit was an ~8pt
+   invisible sliver under the clock. **This is the discrimination that mattered: not a broken
+   control but an unreachable one.** Every unit test passed; the wiring was fine; the failure
+   lived in who owns the pixels the wiring sat behind.
+
+**The trap pattern, named for next time.** A layout change that shrinks a control's exposed
+area can hand the remainder to the operating system without any code in the diff touching the
+control. The scrim tap's tests (had there been any) would have kept passing too, because a
+synthesized tap *below* the system's gate still works — only a person aiming at "outside the
+sheet" fails, because people aim at the middle of what they can see.
+
+**The fix** (docs/rulings-pending/sheet-exits.md): the shell now keeps the grabber's promise —
+a full-width 62pt handle band at the top of the card drags it down, `SheetDismissRule` decides
+commit-or-spring-back (quarter-height drag, half-height predicted flick), the scrim tap and
+its VoiceOver "Dismiss" element stay, and the interior `ScrollView` keeps every drag below the
+band so #146's keyboard mechanism is untouched. Pinned by `SheetDismissRuleTests` (Swift
+Testing, the arithmetic) and `SheetExitUITests` (XCTest: drag dismisses 09 and 10, the y=58
+strip tap dismisses, a drag on 09's note field does not — each watched red first).
+
+**A test lesson paid for en route.** The first dismissal assertion — "the map's FAB exists
+after the drag" — was born vacuous: a `fullScreenCover` leaves the presenting screen's
+elements in the accessibility tree, so `exists` was true while the sheet still stood. Its own
+red-proof caught it (gesture deleted, tests still green). Dismissal from outside the app is
+the covered element becoming **hittable**, not existing.
