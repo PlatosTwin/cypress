@@ -30,9 +30,13 @@ fi
 
 grep -q '\*\* TEST FAILED \*\*' "$LOG" && fail "** TEST FAILED ** present"
 
-# A real pass line: Swift Testing's count is the only meaningful unit-test line;
-# for XCTest (UI tests) require a NONZERO executed count.
-SWIFT_LINE=$(grep -E 'Test run with [0-9]+ tests?' "$LOG" | tail -1)
+# A real pass line: Swift Testing's count is the only meaningful unit-test line —
+# and it must be NONZERO: "Test run with 0 tests passed" is a missed -only-testing
+# filter wearing a green line (found by the #144 agent, 2026-08-02). Same rule as
+# XCTest's executed count.
+SWIFT_LINE=$(grep -E 'Test run with [1-9][0-9]* tests?' "$LOG" | tail -1)
+grep -qE 'Test run with 0 tests' "$LOG" && [ -z "$SWIFT_LINE" ] && \
+  fail "Swift Testing ran 0 tests — an -only-testing filter matched nothing; a zero-count green is not evidence"
 XCTEST_LINE=$(grep -E 'Executed [1-9][0-9]* tests?' "$LOG" | tail -1)
 
 if [ -z "$SWIFT_LINE" ] && [ -z "$XCTEST_LINE" ]; then
