@@ -128,14 +128,23 @@ final class SheetExitUITests: XCTestCase {
         start.press(forDuration: 0.05, thenDragTo: end)
     }
 
-    /// The sheets are deep-linked over the map tab, so the map's own chrome arriving is what a
-    /// real dismissal looks like from out here. The "What tree is this?" FAB (`MapChrome`) and
-    /// not a text field: 09 carries a text field of its own, so a field query would be satisfied
-    /// by the very sheet that failed to leave.
+    /// The sheets are deep-linked over the map tab, so the map's own chrome becoming *hittable*
+    /// is what a real dismissal looks like from out here. Hittable, not merely existing — the
+    /// cover leaves the presenting screen in the element tree beneath it, so `exists` on the
+    /// "What tree is this?" FAB is true while the sheet is still standing (this assertion was
+    /// born vacuous and caught by its own red-proof: with the drag gesture deleted, an
+    /// existence check still passed). And the FAB rather than a text field: 09 carries a text
+    /// field of its own, so a field query would be satisfied by the very sheet that failed to
+    /// leave.
     private func assertMapArrived(_ app: XCUIApplication, after action: String) {
-        XCTAssertTrue(
-            app.buttons["What tree is this?"].waitForExistence(timeout: 10),
-            "after \(action), the map underneath never arrived — the sheet did not dismiss"
+        let fab = app.buttons["What tree is this?"]
+        let uncovered = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND hittable == true"),
+            object: fab
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [uncovered], timeout: 10), .completed,
+            "after \(action), the map underneath never became reachable — the sheet did not dismiss"
         )
     }
 }
