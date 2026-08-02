@@ -11405,3 +11405,75 @@ first", relative to same-level elements). **Verification is owed on the physical
 VoiceOver on** — swipe forward from the search field with the list open and confirm field → ✕ →
 suggestions → chips → status → legend → bottom chrome → tabs. Flag for the owner's device pass
 alongside #149's glide.
+
+### E193 — The heart that called its own save undone (#167, after #139 and #153)
+
+Owner field report, 2026-08-01, physical phone, third report of the same behavior: tap Favorite,
+the cell goes dark green, and about two seconds later it goes back to white — "it makes the user
+think their favoriting action got undone." #139 fixed copy beside the heart and #153 fixed the
+selected appearance; neither touched the revert, so the defect survived both.
+
+## The seam
+
+The write path is local-first by design (ARCHITECTURE §4): a favorite is **durable at enqueue**
+— `FavoriteOutboxWriter.save` writes the toggle to the outbox and only then drains — and
+**applied at drain**, and the drain that follows a save is explicitly best-effort. Two of its
+designed exits return without applying the just-saved toggle:
+
+- `OutboxQueue.drain` returns an empty report immediately when another drain holds `isDraining`
+  (a visit's photo phase still running when the finger reaches the heart);
+- one drain pass attempts one batch of `OutboxQueue.batchSize` (25) due items, oldest first, so a
+  queue holding a batch's worth of older due work leaves item 26 — the tap — `pending`.
+
+`TreeProfileModel.write()` then re-reads "the store" (RULINGS R2: the cell shows what is stored,
+and a failed write must be visible as the heart going back) — but the re-read was
+`api.grove()`, which sees **applied rows only**. A toggle that was safely queued and not yet
+applied read back as "no favorite", the model assigned it, and the heart went off over a row
+that landed on the next drain. The revert R2 reserves for a failed write was being performed for
+a successful one. The ~2 s is the width of the save-plus-re-read, most of it `grove()` resolving
+every held tree through `treeIfPresent` to answer one membership bit.
+
+## The fix
+
+"What is stored" now includes the queue's in-flight word. The re-read the composition root hands
+the profile (`ProfileFavoriteWriter.storedState`) asks two questions in order:
+
+1. `OutboxQueue.pendingFavoriteState(treeID:)` — the newest `pending`/`uploading` favorite
+   toggle for the tree, which is the contributor's last durable word. A terminally `failed`
+   toggle deliberately answers nothing here, so a write the queue has given up on still shows as
+   the heart going back — R2's one required revert, kept.
+2. Failing that, `CypressAPI.isFavorite(treeID:)` — the new per-tree arm of `GET /me/grove`
+   (the pre-approved backend-boundary change), which `LocalAPI` answers with one indexed SELECT
+   over both ownership arms instead of resolving the whole grove.
+
+Pinned by `CypressTests/FavoriteRoundTripTests.swift`:
+`aQueuedFavoriteIsNotReportedUndone` (a batch's worth of older work queued first; the tapped
+toggle is verifiably still `pending` at re-read time and the heart must hold) and
+`aFailedToggleDoesNotHoldTheHeartOn` (the terminal-failure counterpart).
+
+### E194 — The journal subtitle that spoke in raw values (#170)
+
+Owner report, 2026-08-01: check in, flag the tree as removed, a lead dismisses the flag — and in
+the Yours tab the check-in's row is subtitled `appears_removed`.
+
+## Where the words come from
+
+Journal subtitles are `entry.summary`. `ContributionStore.journal` builds the observation arm's
+summary in SQL — `COALESCE(status, '')` plus an optional `· vitality N` suffix — so the column
+carries `ObservationStatus` raw values verbatim. `LocalAPI.humanize` existed for exactly this
+step and handled exactly one kind: care events (decoding the stored JSON action array). Every
+observation went to the screen raw. The dismissal is not the writer — `dismissReview` tombstones
+the flag and touches no observation, and the check-in row stays in the contributor's journal
+regardless of what moderation decided — dismissal is just the flow in which the owner ends up
+reading the raw value under his own check-in.
+
+## The fix
+
+`LocalAPI.humanize` now covers `.observation`: underscores in the stored summary become spaces,
+which humanizes every status on this path (`appears_removed` → "appears removed",
+`appears_dead` → "appears dead") and leaves `alive`, `declining` and the vitality suffix as they
+were — underscores appear in no other part of the stored shape.
+
+Pinned by `CypressTests/ModerationTests.swift` `dismissedReportJournalRowIsHumanized`, which
+walks the owner's exact flow (check-in through the outbox → flag → lead dismisses → journal
+read) for both flagging kinds and asserts the exact sentence.
