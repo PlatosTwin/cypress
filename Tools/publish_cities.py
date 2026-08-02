@@ -53,8 +53,7 @@ the fused seed's schema by construction, never a re-statement of it:
                       (which the app shows as "city record as of") is
                       rewritten to the city's own content revision.
 
-VERSIONING (delegated decision -- recorded unnumbered in
-docs/rulings-pending/city-file-versioning.md until spliced):
+VERSIONING (delegated decision -- RULINGS R37):
 
   schema_version  integer, the seed schema generation. The record already
                   numbers these ("the v14 seed pass", E176/E169 -- id_space

@@ -3,8 +3,7 @@
 *2026-08-01, w1-publisher. The R36 base layer's publish step: what
 `Tools/publish_cities.py` produces, the manifest contract #157 consumes, and how the
 artifacts reach the `cypress-cities` Tigris bucket. Design decisions delegated to this
-ticket are recorded unnumbered in `docs/rulings-pending/city-file-versioning.md` until
-spliced.*
+ticket are recorded as RULINGS R37.*
 
 ## What the publisher does
 
