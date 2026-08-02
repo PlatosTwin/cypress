@@ -79,7 +79,6 @@ struct ScreenSweepShots {
         size: DynamicTypeSize,
         scheme: ColorScheme,
         viewportHeight: CGFloat = height,
-        requiredLabel: String? = nil,
         @ViewBuilder _ content: () -> some View
     ) async -> UIImage? {
         let host = UIHostingController(
@@ -109,23 +108,6 @@ struct ScreenSweepShots {
             host.view.layoutIfNeeded()
         }
 
-        // The structural check (#144): a screen's primary CTA must still exist in the
-        // accessibility tree of this render. It runs on the laid-out hierarchy, not the pixels,
-        // so a control pushed off-glass by the type ramp still counts as present — what it
-        // catches is a CTA that *vanished* (a `ViewThatFits` with no fitting arm, a conditional
-        // that keys off the ramp, a crash swallowed into an empty body).
-        if let requiredLabel {
-            var labels = Set<String>()
-            Self.collectAccessibilityLabels(of: host.view, into: &labels)
-            if !labels.contains(where: { $0.localizedCaseInsensitiveContains(requiredLabel) }) {
-                print("CTA MISSING \(name) — no accessibility element contains \"\(requiredLabel)\"; "
-                    + "labels found: \(labels.sorted().joined(separator: " | "))")
-                window.isHidden = true
-                window.rootViewController = nil
-                return nil
-            }
-        }
-
         let image = UIGraphicsImageRenderer(bounds: frame).image { _ in
             host.view.drawHierarchy(in: frame, afterScreenUpdates: true)
         }
@@ -144,25 +126,6 @@ struct ScreenSweepShots {
             return nil
         }
         return image
-    }
-
-    /// Every `accessibilityLabel` reachable from `root`, walking both the view hierarchy and the
-    /// `accessibilityElements` arrays SwiftUI hangs its tree on. Visibility is not consulted:
-    /// the question is existence, not geometry.
-    static func collectAccessibilityLabels(of object: NSObject, into labels: inout Set<String>) {
-        if let label = object.accessibilityLabel, !label.isEmpty {
-            labels.insert(label)
-        }
-        if let elements = object.accessibilityElements {
-            for case let element as NSObject in elements {
-                collectAccessibilityLabels(of: element, into: &labels)
-            }
-        }
-        if let view = object as? UIView {
-            for subview in view.subviews {
-                collectAccessibilityLabels(of: subview, into: &labels)
-            }
-        }
     }
 
     // The blank guard lives in `ShotBlankGuard` (task #93), shared with
@@ -221,15 +184,18 @@ struct ScreenSweepShots {
     ///   height, and a capture that stops at 852 pt photographs only its header). Defaults to
     ///   `viewportHeight`. Keep it at or under `tallestViewport` — past 2,730 pt at 3× the
     ///   renderer hands back a transparent image (ERRATA E145) and the guard fails the sweep.
-    /// - Parameter primaryCTA: when set, the AX5 captures also assert this string appears in an
-    ///   `accessibilityLabel` somewhere in the rendered tree — the cheap structural fact of
-    ///   task #144: whatever the ramp does to the layout, the screen's one action must still exist.
+    ///
+    /// A per-screen "the primary CTA exists in the AX5 accessibility tree" assertion was built
+    /// and then removed here (task #144): SwiftUI serves accessibility over its own bridge and
+    /// builds **no** in-process UIKit element tree — `accessibilityElements` is empty and
+    /// `accessibilityElementCount()` is 0 on a laid-out hosting view, even with VoiceOver
+    /// running. `AccessibilityTests`' header records the dead end at length; asserting against
+    /// that tree needs an out-of-process client (XCUITest), not this harness.
     @discardableResult
     static func sweep(
         _ name: String,
         viewportHeight: CGFloat = height,
         ax5ViewportHeight: CGFloat? = nil,
-        primaryCTA: String? = nil,
         @ViewBuilder _ content: @escaping () -> some View
     ) async -> Bool {
         var shots: [(label: String, image: UIImage)] = []
@@ -240,7 +206,6 @@ struct ScreenSweepShots {
                 size: variant.size,
                 scheme: variant.scheme,
                 viewportHeight: isAX5 ? (ax5ViewportHeight ?? viewportHeight) : viewportHeight,
-                requiredLabel: isAX5 ? primaryCTA : nil,
                 content
             ) else { return false }
             shots.append((variant.suffix, image))
@@ -261,9 +226,7 @@ struct ScreenSweepShots {
         print("SWEEP DIR \(Self.outputDirectory.path)")
 
         // ── 02. Presented as a `fullScreenCover` (RootView `.identify`), so no NavigationStack. ──
-        #expect(await Self.sweep("02-identify", primaryCTA: "Yes—this is") {
-            VisitPreviewFixtures.identify()
-        })
+        #expect(await Self.sweep("02-identify") { VisitPreviewFixtures.identify() })
 
         // ── The community add composer — the visit flow's other door, previewed since E174 but
         //    never swept, which is how #132 stayed a report from the owner's phone rather than a
@@ -271,14 +234,13 @@ struct ScreenSweepShots {
         //    `fullScreenCover`. Tall at AX5 so the form below the photo well is in the frame.
         #expect(await Self.sweep(
             "02b-add-tree",
-            ax5ViewportHeight: Self.tallestViewport,
-            primaryCTA: VisitAddTreeCopy.cta
+            ax5ViewportHeight: Self.tallestViewport
         ) {
             VisitPreviewFixtures.addTree()
         })
 
         // ── 03. Pushed. ──────────────────────────────────────────────────────────────────────
-        #expect(await Self.sweep("03-tree-profile", primaryCTA: "Visit · say hello with a photo") {
+        #expect(await Self.sweep("03-tree-profile") {
             NavigationStack {
                 TreeProfileView(
                     treeID: TreeProfileSeedFixtures.populated.tree.id,
@@ -293,7 +255,7 @@ struct ScreenSweepShots {
         //       two light ones, which is itself the check.
         #expect(await Self.sweep("04-visit-camera") { VisitPreviewFixtures.camera() })
 
-        #expect(await Self.sweep("05-check-in", primaryCTA: CheckInCopy.saveCTA) {
+        #expect(await Self.sweep("05-check-in") {
             NavigationStack { CheckInPreviewFixtures.view(draft: CheckInPreviewFixtures.drawnState) }
                 .environment(AppRouter())
         })
@@ -329,7 +291,7 @@ struct ScreenSweepShots {
         })
 
         // ── 09 and 10 are `fullScreenCover`s and draw their own scrim. ───────────────────────
-        #expect(await Self.sweep("09-care-log", primaryCTA: CareLogCopy.doneCTA) {
+        #expect(await Self.sweep("09-care-log") {
             CareLogPreviewFixtures.view(draft: CareLogPreviewFixtures.drawnState)
         })
 
@@ -400,7 +362,7 @@ struct ScreenSweepShots {
             .environment(AppRouter())
         })
 
-        #expect(await Self.sweep("14-cold-profile", primaryCTA: "Be the first to photograph this tree") {
+        #expect(await Self.sweep("14-cold-profile") {
             NavigationStack {
                 TreeProfileView(
                     treeID: TreeProfileSeedFixtures.coldStart.tree.id,
@@ -435,7 +397,7 @@ struct ScreenSweepShots {
             )
         })
 
-        #expect(await Self.sweep("16-measure", primaryCTA: MeasureCopy.saveCTA) {
+        #expect(await Self.sweep("16-measure") {
             NavigationStack {
                 MeasureScreen(
                     presentation: MeasurePreviewFixtures.presentation(
