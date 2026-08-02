@@ -478,7 +478,7 @@ struct ScreenSweepShots {
 
     // MARK: - §9b · What the city has on file (ERRATA E145, E181)
 
-    /// The five states of the city-record section, light and dark.
+    /// The five states of the city-record section, light and dark, default and AX5 (#144).
     ///
     /// The section is the last block on screen 03, so these are captured in a 1,500 pt window: an
     /// off-screen `ScrollView` cannot be scrolled, and a phone-height capture of a cold profile stops
@@ -488,7 +488,7 @@ struct ScreenSweepShots {
     /// two-card floor, one of the 196 `Prune Opt Out` rows, one of the 318 rows the city does not
     /// call a tree, and a community tree with no city record at all — where the section must be
     /// absent and the land-context line must still be there, stated rather than inferred.
-    @Test("the city-record section, five states, light and dark")
+    @Test("the city-record section, five states, in four appearances each")
     func cityRecordStates() async throws {
         print("SWEEP DIR \(Self.outputDirectory.path)")
         let states: [(String, TreeProfile)] = [
@@ -536,8 +536,9 @@ struct ScreenSweepShots {
     // MARK: - The states a beta tester sees first
 
     /// Cold and empty. "A screen with no photographs, no check-ins, no measurements … is what a
-    /// beta tester sees first and it is the least-exercised path in the app."
-    @Test("the cold and empty states, light and dark")
+    /// beta tester sees first and it is the least-exercised path in the app." At AX5 as well,
+    /// since task #144: an empty state is mostly sentences, and sentences are what the ramp moves.
+    @Test("the cold and empty states, in four appearances each")
     func coldStates() async throws {
         #expect(await Self.sweep("e02-identify-denied") {
             VisitPreviewFixtures.identify(fix: .denied)
