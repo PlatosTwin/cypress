@@ -1924,49 +1924,6 @@ public actor LocalAPI: CypressAPI {
         }
     }
 
-    /// Whether screen 01's two condition chips could match anything at all (task #136, RULINGS
-    /// R31).
-    ///
-    /// One read per appearance of the screen, three cheap questions inside one acquisition of the
-    /// connection:
-    ///
-    /// - **`needsCare`** is true if any tree anywhere carries `declining` — in the seed
-    ///   (`idx_trees_status`, one probe), in `tree_status_overrides` (a community observation
-    ///   standing a declining tree through the moderation route, E124-B), or in a community-added
-    ///   row. The community check rides on the overrides read: an added tree is born `alive` and
-    ///   the only door to `declining` on device is an override, so the overrides table is the one
-    ///   place a local decline can be standing.
-    /// - **`inBloom`** is true if some species' curated calendar names `month` as a bloom month
-    ///   *and* a tree of that species exists. Both halves are real questions against the shipped
-    ///   seed: 11 species carry bloom months and no tree blooms in October through December.
-    /// - **`hasAnyBloomCalendar`** is what tells the chip's two waits apart — see
-    ///   `MapConditionAvailability`.
-    public func mapConditionAvailability(month: Int) async throws -> MapConditionAvailability {
-        let cachedOverrides = self.overrideCache
-        return try await store.queue.read { [treeQueries, speciesQueries, contributions] connection in
-            let overrides = try cachedOverrides ?? contributions.statusOverrides(connection: connection)
-            var needsCare = overrides.values.contains(.declining)
-            if !needsCare, let treeQueries {
-                needsCare = try treeQueries.anyTree(withStatus: .declining, connection: connection)
-            }
-
-            var inBloom = false
-            var anyCalendar = false
-            if let speciesQueries, let treeQueries {
-                let bloom = try speciesQueries.bloomSpecies(month: month, connection: connection)
-                anyCalendar = bloom.anyCalendar
-                if !bloom.rowIDs.isEmpty {
-                    inBloom = try treeQueries.anyTree(
-                        withSpeciesRowIDs: bloom.rowIDs, connection: connection
-                    )
-                }
-            }
-            return MapConditionAvailability(
-                needsCare: needsCare, inBloom: inBloom, hasAnyBloomCalendar: anyCalendar
-            )
-        }
-    }
-
     // MARK: - Reports and export
 
     public func logHazardRedirect(_ event: HazardRedirectEvent) async throws {

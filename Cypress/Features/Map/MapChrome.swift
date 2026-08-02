@@ -12,7 +12,8 @@ import SwiftUI
 
 // MARK: - Filter chips
 
-/// Screen 01's filter row (#116, RULINGS R23, restructured by **R23.1**, and again by task #145).
+/// Screen 01's filter row (#116, RULINGS R23, restructured by **R23.1**, by task #145, and again
+/// by the owner's directives in tasks #165 and #166).
 ///
 /// `Yours · In bloom · Needs care · More filters`, plus a `Clear filters` chip that appears only
 /// when something is on. SCREENS.md 01 §12 drew `All / In bloom / Needs care`, single-select; the
@@ -23,29 +24,28 @@ import SwiftUI
 /// **What R23.1 changed, and what #145 changed after it.** R23.1 moved `Favorites` behind the
 /// expandable control; #145 is the owner's follow-up directive cutting the visible row to `Yours ·
 /// In bloom · Needs care` and sending `Year` behind the same control, beside `Favorites`. The
-/// conjunction, the absent `All`, the single `Clear filters`, the legend-as-species-filter, the
-/// result line and the empty notice are all untouched — see `MapExtraFilter` for the drawer's
-/// contents and `docs/RULINGS.md` R23.1 for the hazard a hidden narrowing carries, which `Year`
-/// now shares: R23.1's three channels (fill, count, spoken names) cover it through the same
+/// conjunction, the absent `All`, the single `Clear filters`, the legend-as-species-filter and the
+/// result line are all untouched — see `MapExtraFilter` for the drawer's contents and
+/// `docs/RULINGS.md` R23.1 for the hazard a hidden narrowing carries, which `Year` now shares:
+/// R23.1's three channels (fill, count, spoken names) cover it through the same
 /// `MapFilter.activeExtras` expression, so a decade set behind a shut control is still announced.
 ///
-/// **The two condition chips can render disabled, with the reason on the chip** (task #136,
-/// RULINGS R31). A chip that cannot match any tree anywhere is a control that promises and cannot
-/// deliver, so while `MapConditionAvailability` says no match exists the chip spends no tap and
-/// says why itself — see `unavailableConditionChip`.
+/// **Every chip is an ordinary tappable pill, always** (task #165, overriding R31's presentation
+/// clause). R31 drew a condition chip that could not match as a disabled control carrying its
+/// reason as a sentence on its own surface; the owner saw the box standing where the `Needs care`
+/// pill should be and struck the presentation — no message box ever stands in for a filter. A
+/// chip whose filter matches zero trees narrows the map to an empty map, and the empty map is the
+/// whole answer; the way out is the `Clear filters` chip, which is on screen whenever anything is
+/// set.
 ///
-/// **It wraps rather than scrolls**, borrowing `FlowRow` from the legend, and for the reason stated
-/// there: "a horizontal scroller on top of a map is a gesture competing with the pan underneath it —
-/// the one interaction screen 01 cannot afford to make ambiguous". Five chips do not fit one 361 pt
-/// line at default size once one of them carries a sentence, let alone at AX5.
+/// **The row is one horizontally scrolling line, never a second one** (task #166, overriding the
+/// wrap this row shipped with). It borrowed `FlowRow` from the legend on the argument that a
+/// horizontal scroller over a map competes with the pan underneath it; the owner's directive is
+/// "one row for filters, that's it", and the directive wins. The scroll gesture is only ambiguous
+/// where the row draws, which is one line of chips at the top of the chrome — a drag that starts
+/// on a chip scrolls the row, a pan that starts on the map still pans the map.
 struct MapFilterChips: View {
     @Binding var filter: MapModel.Filter
-
-    /// Whether the two condition chips could match anything at all (R31). Defaults to `.none` —
-    /// both disabled — which is the honest resting state: the chips promise nothing until the
-    /// model's read says the data exists, and `.none` is also what the two preview-double screens
-    /// that never read availability truthfully have.
-    var availability: MapConditionAvailability = .none
 
     /// Whether the expandable control is open.
     ///
@@ -62,37 +62,46 @@ struct MapFilterChips: View {
         // overlay would leave whatever it covered reachable by an assistive technology and invisible
         // to everyone else.
         VStack(alignment: .leading, spacing: MapLayout.chipGap) {
-            FlowRow(spacing: MapLayout.chipGap, lineSpacing: MapLayout.chipGap) {
-                // The owner's visible three, in the owner's order (#145). `Yours` is the membership
-                // half that stayed; `Favorites` and `Year` are behind `moreChip`.
-                chip(
-                    MapFilterCopy.membershipLabel(.yours),
-                    isOn: filter.membership == .yours
-                ) {
-                    // Tapping the chip that is on turns it off. Every chip in this row is a toggle,
-                    // because a conjunction with no way to remove one term is a conjunction that
-                    // can only be escaped through `Clear`.
-                    filter.membership = filter.membership == .yours ? nil : .yours
-                }
+            // One line, scrolled, never wrapped (#166). The indicator is off because a scroll bar
+            // under a row of pills reads as a second piece of chrome; the cut-off chip at the
+            // trailing edge is what says there is more.
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: MapLayout.chipGap) {
+                    // The owner's visible three, in the owner's order (#145). `Yours` is the
+                    // membership half that stayed; `Favorites` and `Year` are behind `moreChip`.
+                    chip(
+                        MapFilterCopy.membershipLabel(.yours),
+                        isOn: filter.membership == .yours
+                    ) {
+                        // Tapping the chip that is on turns it off. Every chip in this row is a
+                        // toggle, because a conjunction with no way to remove one term is a
+                        // conjunction that can only be escaped through `Clear`.
+                        filter.membership = filter.membership == .yours ? nil : .yours
+                    }
 
-                ForEach(MapFilter.Condition.allCases) { condition in
-                    if availability.isEnabled(condition) {
+                    // Always live pills (#165). A condition that matches nothing draws the empty
+                    // map, which is the whole answer.
+                    ForEach(MapFilter.Condition.allCases) { condition in
                         chip(condition.label, isOn: filter.condition == condition) {
                             filter.condition = filter.condition == condition ? nil : condition
                         }
-                    } else {
-                        // R31: no match exists anywhere, so the chip spends no tap and carries
-                        // the reason itself.
-                        unavailableConditionChip(condition)
+                    }
+
+                    moreChip
+
+                    if filter.isActive {
+                        chip(MapFilterCopy.clearLabel, isOn: false) { filter = .all }
                     }
                 }
-
-                moreChip
-
-                if filter.isActive {
-                    chip(MapFilterCopy.clearLabel, isOn: false) { filter = .all }
-                }
             }
+            // The named container is the scroller itself, not the stack around it. It was the
+            // outer VStack's, and moving the chips into a `ScrollView` silently removed the
+            // labelled group from the accessibility tree XCUITest reads — `otherElements["Filter
+            // trees"]` matched nothing, measured on the assigned simulator, not reasoned about.
+            // On the scroller, the group survives, and it is also the truer boundary: the row is
+            // the group; the drawer below is its own named group (`moreLabel`).
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(MapFilterCopy.rowLabel)
 
             // Open, the drawer's chips are real elements after the row. Shut, they are **not in the
             // tree at all** — the `if` is the point. A drawer built as a hidden overlay, or as chips
@@ -101,8 +110,6 @@ struct MapFilterChips: View {
             // `DeepLinkVoiceOverTests.testAModalIsolatesTheScreenBehindIt` exists for.
             if isExpanded { drawer }
         }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(MapFilterCopy.rowLabel)
     }
 
     /// The expandable control itself (R23.1).
@@ -139,7 +146,8 @@ struct MapFilterChips: View {
     ///
     /// It takes the search bar's own capsule fill rather than a new surface, for `MapFilterStatus`'s
     /// reason — it is another block of chrome in the same strip, and screen 01 has enough kinds of
-    /// object floating on it. It wraps for the row's reason, which matters more here than there: at
+    /// object floating on it. It wraps (`FlowRow`) where the row above it no longer does (#166):
+    /// the owner's one-line directive was about the *row*, this is the opened box under it, and at
     /// AX5 a single chip is most of the width of the phone.
     private var drawer: some View {
         FlowRow(spacing: MapLayout.chipGap, lineSpacing: MapLayout.chipGap) {
@@ -204,50 +212,6 @@ struct MapFilterChips: View {
             // The fill and the weight say "on" and neither reaches a listener, so the state travels
             // as a value the way `MapRecentreButton`'s engagement does.
             .accessibilityValue(MapFilterCopy.chipValue(isOn: isOn))
-    }
-
-    /// **A condition chip that cannot match any tree anywhere** (task #136, RULINGS R31).
-    ///
-    /// Still visible, still in the row, never enabled-looking: the label stays so the vocabulary of
-    /// the row does not shift under the reader, and the reason lives **on the chip's own surface** —
-    /// drawn under the label, and spoken as the chip's `accessibilityValue`, so both channels get
-    /// the same sentence. The tap is never spent: a disabled control cannot reach the E126 card,
-    /// which would only repeat what the chip already says.
-    ///
-    /// It is a disabled `Button` rather than a static label so the element keeps its button-ness
-    /// and gains the system's dimmed state, which is how an assistive technology says "a control,
-    /// currently not one" — the same two facts the muted ink says to a sighted reader.
-    ///
-    /// **The width is fixed, and that is `FlowRow`'s doing.** `FlowRow` measures every child
-    /// unconstrained, so a chip holding a sentence would take the sentence's one-line width and
-    /// hang off the phone — E183's M10, the exact defect `testTheFilterRowWrapsAndStaysOnThePhoneAtAX5`
-    /// exists to catch. A fixed width makes the measured size the drawn size, and the sentence
-    /// wraps inside it at every type size.
-    private func unavailableConditionChip(_ condition: MapFilter.Condition) -> some View {
-        let reason = MapFilterCopy.conditionUnavailableReason(condition, availability: availability)
-        return Button {} label: {
-            VStack(alignment: .leading, spacing: MapLayout.cardMetaTop) {
-                Text(condition.label)
-                    .font(CypressFont.body13)
-                    .foregroundStyle(CypressColor.textMuted)
-                Text(reason)
-                    .font(CypressFont.body12)
-                    .foregroundStyle(CypressColor.textMuted)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(width: MapLayout.unavailableChipWidth, alignment: .leading)
-            .padding(.vertical, CypressSpacing.Component.chipPaddingVFilter)
-            .padding(.horizontal, CypressSpacing.Component.chipPaddingHFilter)
-            .background {
-                RoundedRectangle(cornerRadius: CypressRadius.cardSm, style: .continuous)
-                    .fill(CypressColor.searchFill)
-            }
-            .cypressBorder(CypressColor.searchBorder, radius: CypressRadius.cardSm)
-        }
-        .buttonStyle(.plain)
-        .disabled(true)
-        .accessibilityLabel(condition.label)
-        .accessibilityValue(reason)
     }
 }
 

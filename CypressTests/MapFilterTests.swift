@@ -16,8 +16,11 @@ import Testing
 ///   about them is asserting they were planted outside every decade the reader can pick. The figure
 ///   was 73.97 % when this was written and San Jose moved it the same day (E176); the number lives in
 ///   `MapYearFilterCopy` and is asserted against the seed for exactly that reason.
-/// - **E126** — an emptied map must say why, and offer the way out.
 /// - **D1** — none of the above may become a count of the reader's own actions.
+///
+/// E126 used to be the fourth entry — an emptied map said why, on a card. Task #165 struck that
+/// presentation on the owner's instruction: no message box stands in for an empty filter, and the
+/// `Clear filters` chip in the row is the way out.
 ///
 /// Every assertion that could be satisfied by a stub is checked against a second, independent read
 /// of the store rather than against the code under test.
@@ -394,88 +397,17 @@ struct MapFilterTests {
         }
     }
 
-    // MARK: - 5. The empty state (ERRATA E126)
+    // MARK: - 5. The empty state there deliberately is none of (task #165)
 
-    /// **E126: an emptied map must say why it is empty and how to get out of it.**
-    ///
-    /// Both halves are asserted, and the second is the one that is easy to skip: naming the reason
-    /// without offering the exit is the dead end D16 (b) warns about. The exit is a labelled control,
-    /// so the label has to exist and the message has to point at it.
-    @Test("every filtered empty state says why it is empty and how to leave")
-    func emptyStateSaysWhyAndHow() {
-        let cases: [(MapFilter, Bool)] = [
-            (MapFilter(membership: .yours), false),
-            (MapFilter(membership: .yours), true),
-            (MapFilter(membership: .favorites), false),
-            (MapFilter(membership: .favorites), true),
-            (MapFilter(decade: .twentyTens), false),
-            (MapFilter(speciesID: UUID()), false),
-            (MapFilter.needsCare, false)
-        ]
-        for (filter, hasMembers) in cases {
-            let title = MapFilterCopy.emptyTitle(filter)
-            let message = MapFilterCopy.emptyMessage(filter, hasAnyMembers: hasMembers)
-            #expect(!title.isEmpty, "no title for \(filter)")
-            #expect(message.count > 20, "the message for \(filter) says nothing useful: \(message)")
-            // The way out, named. Either the message points at the clear control or it points at the
-            // action that would populate the set — both are exits; silence is not.
-            let pointsOut = message.lowercased().contains("clear the filter")
-                || message.lowercased().contains("will appear here")
-            #expect(pointsOut, "no way out offered for \(filter): \(message)")
-        }
+    // Section 5 used to pin E126's empty-notice copy — `emptyTitle`, `emptyMessage`, the E184
+    // heart-word hunt. The owner struck the presentation those sentences existed for ("we should
+    // NEVER display a message box in place of an empty filter … if nothing matches, fine"), the
+    // copy is deleted, and a filter that matches nothing renders the empty map itself. What
+    // survives of the section is the one fact that is still load-bearing: the way out exists and
+    // is labelled, because the `Clear filters` chip is the only exit left.
+    @Test("the way out of any filter is a labelled control")
+    func clearFiltersIsStillLabelled() {
         #expect(!MapFilterCopy.clearLabel.isEmpty)
-    }
-
-    /// A reader with no favourites at all is told something different from a reader who has some,
-    /// just not here. Telling the first to "pan or zoom out to look further" is advice to go hunting
-    /// for trees they have never marked.
-    ///
-    /// **This test used to require the word "hearted"** and therefore held the defect in place
-    /// (task #139, ERRATA E184). The sentence it was pinning read "Tap the heart on any tree's
-    /// page", and there is no heart anywhere in this app — C8's four cells are text, marked NOT
-    /// SPECIFIED in SCREENS.md §2 and again in §5 gap 3. What the test meant to assert is that the
-    /// never-favourited state says what to do; what it actually asserted is that it says it in a
-    /// word describing a control nobody drew. It now asks for the label the screen really carries.
-    @Test("an empty set and an empty viewport give different reasons")
-    func emptySetAndEmptyViewportDiffer() {
-        let noneAnywhere = MapFilterCopy.emptyMessage(MapFilter(membership: .favorites), hasAnyMembers: false)
-        let noneHere = MapFilterCopy.emptyMessage(MapFilter(membership: .favorites), hasAnyMembers: true)
-        #expect(noneAnywhere != noneHere, "the same sentence is used for both empty states")
-        #expect(
-            noneAnywhere.contains(QuadActionRow.Action.favorite.label),
-            "the never-favourited state does not name the control that makes a favourite: \(noneAnywhere)"
-        )
-        #expect(noneHere.lowercased().contains("pan"), "the nothing-here state does not offer the viewport: \(noneHere)")
-    }
-
-    /// **No screen in this app may tell the reader to tap a heart.**
-    ///
-    /// The owner's second report on #139 was that the Favorites note "says there is a heart icon to
-    /// heart a tree, but that's false". It was: SCREENS.md §5 gap 3 lists the C8 icons as NOT
-    /// SPECIFIED, `mocks/cypress-mocks.html` contains no heart, and RULINGS R2 retracts its own
-    /// "the heart glyph fills" clause for that reason. The word survived in the one place a reader
-    /// could act on it — an empty state whose entire job is to send them to the control.
-    ///
-    /// Every sentence this type can produce is checked, not only the one that was wrong, because
-    /// the next author to write this copy will be writing a different case.
-    @Test("no map-filter sentence sends the reader to an affordance the app does not draw")
-    func noSentenceNamesAHeart() {
-        let filters: [MapFilter] = [
-            MapFilter(membership: .favorites),
-            MapFilter(membership: .yours),
-            MapFilter(membership: nil, decade: .twentyTens),
-            MapFilter()
-        ]
-        for filter in filters {
-            for hasAnyMembers in [true, false] {
-                let sentence = MapFilterCopy.emptyMessage(filter, hasAnyMembers: hasAnyMembers)
-                #expect(
-                    !sentence.lowercased().contains("heart"),
-                    "a filter notice still promises a heart: \(sentence)"
-                )
-            }
-            #expect(!MapFilterCopy.emptyTitle(filter).lowercased().contains("heart"))
-        }
     }
 
     // MARK: - 6. The filter value itself
@@ -649,11 +581,5 @@ struct MapFilterTests {
     func membershipIsSpelledAmerican() {
         let label = MapFilterCopy.membershipLabel(.favorites)
         #expect(label == "Favorites", "the chip says \(label)")
-        let title = MapFilterCopy.emptyTitle(MapFilter(membership: .favorites))
-        #expect(!title.lowercased().contains("favourite"), "the empty title says \(title)")
-        let message = MapFilterCopy.emptyMessage(
-            MapFilter(membership: .favorites), hasAnyMembers: false
-        )
-        #expect(!message.lowercased().contains("favourite"), "the empty message says \(message)")
     }
 }
