@@ -92,25 +92,13 @@ struct AX5ReflowTests {
         )
     }
 
-    /// E196 §3: screen 11's log rows carry two intrinsic-width pieces — the method badge and the
-    /// date — and at AX5 the drawn single-row form was wider than the phone, pushing the header
-    /// pill and both charts off the glass. The loaded screen must report the width it is offered.
-    @Test("screen 11 (growth history) stays inside the phone's width at AX5")
-    func growthHistoryFitsThePhoneWidthAtAX5() async {
-        let measured = await Self.ax5Size(
-            of: NavigationStack {
-                GrowthHistoryView(
-                    treeID: GrowthHistoryPreviewFixtures.treeID,
-                    api: GrowthHistoryPreviewAPI()
-                )
-            }
-            .environment(AppRouter())
-        )
-        #expect(
-            measured.width <= Self.phoneWidth,
-            "screen 11 measured \(measured.width) pt wide on a \(Self.phoneWidth) pt phone"
-        )
-    }
+    // E196 §3 — screen 11's overflow — deliberately has NO width guard here. The overflow lived
+    // in the log rows *inside the screen's `ScrollView`*, and a vertical `ScrollView` clamps the
+    // width it reports to the width it is proposed, so a `sizeThatFits` probe on the screen
+    // measured 393 pt with the defect present — a guard that was watched NOT fail against the
+    // broken layout, and a test that cannot fail is not evidence (the #144 lesson, again). The
+    // fix is `GrowthHistoryView.logRow`'s `ViewThatFits`; the sweep's
+    // `11-growth-history-*-ax5` renders are what verify it, per ARCHITECTURE §7.
 
     // MARK: - #172 · Labels that fold
 
