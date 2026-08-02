@@ -428,5 +428,32 @@ enum MapYearFilterCopy {
     /// coverage figure is therefore always provisional, and the only thing keeping it honest is that
     /// this constant is asserted against the seed rather than remembered from the day it was true.
     static let undatedShareOfSeed = 0.8078
+
+    /// The same sentence, derived for whatever inventory is actually attached (R36 consequence c,
+    /// the pending city-downloads ruling §5). The day the attached inventory became the reader's
+    /// choice, `setAside`'s hard-coded "4 in 5" became a fact about one possible choice — the
+    /// fused bundle — and a lie about the others (San Francisco alone is "3 in 4"; San Jose alone
+    /// publishes dates for 0.42 % of rows). So the fraction is now chosen from the measured share
+    /// (`CypressStore.seedUndatedShare`), and the fused bundle's share must reproduce `setAside`
+    /// **verbatim** — pinned by test — which keeps this a generalization, not a copy change.
+    ///
+    /// A nil share (no seed attached, or a pre-`planted_year` file) falls back to the recorded
+    /// bundle constant rather than guessing.
+    static func setAside(undatedShare: Double?) -> String {
+        guard let undatedShare else { return setAside }
+        // Nearest simple fraction, smallest honest vocabulary. The table is deliberately fixed:
+        // a formatter inventing "17 in 21" would be more precise and less legible, and every
+        // entry below can be said out loud.
+        let fractions: [(share: Double, words: String)] = [
+            (0.01, "1 in 100"), (0.05, "1 in 20"), (0.10, "1 in 10"), (0.20, "1 in 5"),
+            (0.25, "1 in 4"), (1.0 / 3.0, "1 in 3"), (0.50, "1 in 2"), (2.0 / 3.0, "2 in 3"),
+            (0.75, "3 in 4"), (0.80, "4 in 5"), (0.90, "9 in 10"), (0.95, "19 in 20"),
+            (0.99, "99 in 100"),
+        ]
+        let nearest = fractions.min {
+            abs($0.share - undatedShare) < abs($1.share - undatedShare)
+        }!
+        return "About \(nearest.words) trees have no recorded planting date\u{2014}none of them can appear under a year."
+    }
 }
 

@@ -313,7 +313,11 @@ struct RootView: View {
             // The provider is handed over rather than made there. Screen 01 used to declare its own
             // `@State` one, which SwiftUI re-initialises on every pass through this body — see
             // `MapHomeView.location`.
-            MapHomeView(api: data.api, location: location)
+            MapHomeView(
+                api: data.api,
+                location: location,
+                yearCaveat: MapYearFilterCopy.setAside(undatedShare: data.store.seedUndatedShare)
+            )
         case .grove:
             // Screen 08. The species tile's destination is 07, which is the one entrance
             // SCREENS.md draws for it: "Tapping a tile opens the species page."

@@ -57,6 +57,27 @@ public struct DataLayer: Sendable {
         return DataLayer(store: store, api: api, outbox: outbox, deviceID: deviceID)
     }
 
+    /// Boots preferring the reader's chosen downloaded city over the bundle (the pending
+    /// city-downloads ruling §1: one inventory attaches, and which one is the reader's choice).
+    ///
+    /// `CityLibrary.validatedActiveSeedURL()` has already introspected the file and refused a
+    /// schema generation from the future; what remains is the open itself, and a failure there
+    /// deactivates the choice and boots the bundle — launching without the chosen city beats not
+    /// launching, and the Cities screen then shows the truth (installed, not in use).
+    public static func bootPreferringActiveCity(
+        databaseURL: URL? = nil,
+        library: CityLibrary
+    ) async throws -> DataLayer {
+        if let cityURL = library.validatedActiveSeedURL() {
+            do {
+                return try await boot(databaseURL: databaseURL, seedURL: cityURL)
+            } catch {
+                try? library.deactivate()
+            }
+        }
+        return try await boot(databaseURL: databaseURL)
+    }
+
     /// Screen 17's model, wired to this layer's outbox and name resolution.
     ///
     /// Synchronous, because `OutboxView` owns it through `@State` and a view cannot `await` its own
