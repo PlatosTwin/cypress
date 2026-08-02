@@ -787,7 +787,9 @@ struct ProfileFavoriteWriter: Sendable {
     /// the table's old state answers and the heart honestly goes back (R2's one required revert).
     /// This lives beside the write because the outbox is the composition root's, not a view's.
     func storedState(treeID: UUID) async -> Bool {
-        if let pending = try? await outbox.pendingFavoriteState(treeID: treeID), let pending {
+        // `try?` flattens the read's `Bool?` — a thrown read and "no in-flight toggle" both land
+        // here as nil, and both mean the same thing: the applied row is the answer.
+        if let pending = try? await outbox.pendingFavoriteState(treeID: treeID) {
             return pending
         }
         return (try? await api.isFavorite(treeID: treeID)) ?? false
