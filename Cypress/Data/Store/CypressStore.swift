@@ -86,8 +86,8 @@ public final class CypressStore: Sendable {
              WHERE deleted_at IS NULL
             """) else { return nil }
         defer { statement.finalize() }
-        guard let row = try? statement.fetchOne({ (try $0.int("total"), try $0.int("dated")) }),
-              let (total, dated) = row, total > 0
+        guard let (total, dated) = try? statement.fetchOne({ (try $0.int("total"), try $0.int("dated")) }),
+              total > 0
         else { return nil }
         return Double(total - dated) / Double(total)
     }

@@ -12,7 +12,7 @@ struct RootView: View {
     /// The composition root's inventory switch (pending city-downloads ruling §1): `CypressApp`
     /// re-boots the `DataLayer` so the reader's chosen city attaches. Optional so previews and
     /// tests that never open the Cities screen need not supply one.
-    var onInventoryChange: () -> Void = {}
+    let onInventoryChange: () -> Void
 
     @State private var router = AppRouter()
 
@@ -44,8 +44,9 @@ struct RootView: View {
     /// `@MainActor` because `makeOutboxViewState()` is: the model is a `@MainActor @Observable`, and
     /// building it in `init` is what lets both screens receive the same one.
     @MainActor
-    init(data: DataLayer) {
+    init(data: DataLayer, onInventoryChange: @escaping () -> Void = {}) {
         self.data = data
+        self.onInventoryChange = onInventoryChange
         _outbox = State(wrappedValue: data.makeOutboxViewState())
         _moderation = State(wrappedValue: ModerationModel(api: data.api))
         _account = State(wrappedValue: AccountModel(api: data.api))
