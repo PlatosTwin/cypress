@@ -1,11 +1,10 @@
 import Foundation
 
-/// The Cities screen's copy and row states, computed as pure values so every branch the pending
-/// city-downloads ruling names is unit-testable without a network, a disk, or a view.
+/// The Cities screen's copy and row states, computed as pure values so every branch
+/// RULINGS R43 names is unit-testable without a network, a disk, or a view.
 ///
-/// **Every string here is written by this feature's ruling** (docs/rulings-pending/
-/// city-downloads.md §3 — the surface has no mock, and the ruling is the mock, per the delegated
-/// authority it records). Civic strings — display names, coverage words — are never written here
+/// **Every string here is written by this feature's ruling** (RULINGS R43 §3 — the surface has
+/// no mock, and the ruling is the mock, per the delegated authority it records). Civic strings — display names, coverage words — are never written here
 /// at all: they arrive from the manifest, which got them from `publish_cities.py`'s hand-entered
 /// table (DECISIONS constraint 15).
 enum CityDownloadsCopy {

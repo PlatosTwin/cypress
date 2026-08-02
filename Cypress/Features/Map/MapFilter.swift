@@ -430,7 +430,7 @@ enum MapYearFilterCopy {
     static let undatedShareOfSeed = 0.8078
 
     /// The same sentence, derived for whatever inventory is actually attached (R36 consequence c,
-    /// the pending city-downloads ruling §5). The day the attached inventory became the reader's
+    /// RULINGS R43 §5). The day the attached inventory became the reader's
     /// choice, `setAside`'s hard-coded "4 in 5" became a fact about one possible choice — the
     /// fused bundle — and a lie about the others (San Francisco alone is "3 in 4"; San Jose alone
     /// publishes dates for 0.42 % of rows). So the fraction is now chosen from the measured share

@@ -41,7 +41,7 @@ enum Route: Hashable {
     case measure(UUID, MeasurementKind)     // 16
     case outbox                 // 17
     /// The Cities screen — city inventory downloads (#157). No mock; its surface is ruled
-    /// (docs/rulings-pending/city-downloads.md), and its door is on the You tab like the outbox's.
+    /// (RULINGS R43), and its door is on the You tab like the outbox's.
     case cityDownloads
     /// The vacant planting site. **No mocked screen** — decided in ERRATA E107, which closes E11.
     ///

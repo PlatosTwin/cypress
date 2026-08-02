@@ -2,7 +2,7 @@ import Foundation
 import Observation
 
 /// The Cities screen's state: the fetched catalogue, the disk facts, one download at a time, and
-/// the switch that re-boots the data layer (pending city-downloads ruling §§1–4).
+/// the switch that re-boots the data layer (RULINGS R43 §§1–4).
 ///
 /// Owned by the screen (`@State`), constructed by the composition root — it needs the library,
 /// the downloader, and the root's own re-boot hook, none of which a feature may conjure.

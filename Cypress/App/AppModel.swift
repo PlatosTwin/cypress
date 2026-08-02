@@ -38,7 +38,7 @@ final class AppModel {
     }
 
     /// Tears the layer down and boots again — the Cities screen calls this after changing which
-    /// inventory is active (pending city-downloads ruling §1: "switching rebuilds the data
+    /// inventory is active (RULINGS R43 §1: "switching rebuilds the data
     /// layer"). Setting the phase back is enough: `CypressApp` renders the booting branch, whose
     /// `.task` calls `boot()` exactly as it did at launch, and the fresh `DataLayer` gets a fresh
     /// `RootView` because the root is identity-keyed to the store instance.

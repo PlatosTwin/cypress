@@ -2,7 +2,7 @@ import Foundation
 
 /// The published city catalogue — `manifest.json` at the bucket root, decoded.
 ///
-/// The contract is R37's (see the pending city-downloads ruling for the app side): versioned
+/// The contract is R37's (see RULINGS R43 for the app side): versioned
 /// per-city SQLite files at immutable paths `cities/<id>/<version>/<id>.sqlite`, described by one
 /// manifest that is the only object ever rewritten in place. `Tools/publish_cities.py` writes it;
 /// this type is the reader.

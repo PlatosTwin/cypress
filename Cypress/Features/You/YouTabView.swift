@@ -221,7 +221,7 @@ struct YouTabView: View {
         }
     }
 
-    // MARK: - City data (#157, city-downloads ruling §2)
+    // MARK: - City data (#157, RULINGS R43 §2)
 
     /// One C10 row to the Cities screen — the same door shape as the outbox's, because the two
     /// are the same kind of thing: a place where app-managed data is inspected and moved.

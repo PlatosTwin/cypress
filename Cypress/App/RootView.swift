@@ -9,7 +9,7 @@ struct RootView: View {
 
     let data: DataLayer
 
-    /// The composition root's inventory switch (pending city-downloads ruling §1): `CypressApp`
+    /// The composition root's inventory switch (RULINGS R43 §1): `CypressApp`
     /// re-boots the `DataLayer` so the reader's chosen city attaches. Optional so previews and
     /// tests that never open the Cities screen need not supply one.
     let onInventoryChange: () -> Void
@@ -729,7 +729,7 @@ struct RootView: View {
             // The Cities screen (#157). The library and downloader are constructed here — the
             // feature gets the operations it needs, never the app's storage layout — and the
             // model is rebuilt per push, because its catalogue is deliberately never persisted
-            // (city-downloads ruling §3). A library that cannot construct (Application Support
+            // (RULINGS R43 §3). A library that cannot construct (Application Support
             // missing) has no screen to show; the row stays a door to a screen that says so via
             // the offline line, so the fallback is an empty-library screen, not a crash.
             CityDownloadsView(

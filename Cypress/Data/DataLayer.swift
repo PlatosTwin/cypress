@@ -58,7 +58,7 @@ public struct DataLayer: Sendable {
     }
 
     /// Boots preferring the reader's chosen downloaded city over the bundle (the pending
-    /// city-downloads ruling §1: one inventory attaches, and which one is the reader's choice).
+    /// RULINGS R43 §1: one inventory attaches, and which one is the reader's choice).
     ///
     /// `CityLibrary.validatedActiveSeedURL()` has already introspected the file and refused a
     /// schema generation from the future; what remains is the open itself, and a failure there

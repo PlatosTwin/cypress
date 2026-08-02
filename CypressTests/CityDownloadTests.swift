@@ -3,7 +3,7 @@ import Foundation
 import Testing
 @testable import Cypress
 
-/// The app side of R36's base layer (#157, pending city-downloads ruling): manifest decode,
+/// The app side of R36's base layer (#157, RULINGS R43): manifest decode,
 /// install-state comparison, byte verification before install, atomic replace, pre-attach
 /// validation, and the per-inventory coverage sentence.
 ///

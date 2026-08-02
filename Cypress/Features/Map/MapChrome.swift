@@ -226,7 +226,7 @@ struct MapFilterStatus: View {
     let result: String?
     let showsYearCaveat: Bool
     /// The caveat sentence for the inventory the map is actually drawn from — derived from the
-    /// measured undated share (pending city-downloads ruling §5). Defaults to the fused bundle's
+    /// measured undated share (RULINGS R43 §5). Defaults to the fused bundle's
     /// recorded sentence so previews and older call sites stay exact.
     var yearCaveat: String = MapYearFilterCopy.setAside
 
