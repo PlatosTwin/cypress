@@ -40,12 +40,19 @@ final class SheetHeightUITests: XCTestCase {
 
     /// The keyboard must never cover the field being typed into (09's note field, owner's
     /// screenshot). The route to the field is the care log's own: open the optional well, focus
-    /// the note field, let the system raise the keyboard, then compare frames.
+    /// the note field, then pin where the field sits.
     ///
-    /// If no keyboard element ever appears this fails rather than skipping: a simulator with a
-    /// hardware keyboard attached cannot exhibit the defect, and a green that never saw a keyboard
-    /// would be this project's signature false green.
-    func testCareLogNoteFieldStaysAboveTheKeyboard() {
+    /// **Why this asserts the field's position, not the keyboard's frame.** This machine's test
+    /// runner cannot raise a software keyboard: with a hardware keyboard attached, `app.keyboards`
+    /// exists but sits *below the screen* — measured at y=946 on an 874pt device — so
+    /// `field.maxY <= keyboard.minY` is true of every layout including the broken one. That
+    /// assertion passed against the pre-#146 build; it was a vacuous test, and it was deleted for
+    /// it. What is falsifiable on every machine is the geometric fact that makes coverage
+    /// impossible: on the full-height sheet the focused field sits in the top half of the display,
+    /// above the top edge of any iOS keyboard (the tallest reach ~55% of the shortest supported
+    /// screen). On the half-height layout this measured 0.81 of the screen — red.
+    /// The frame comparison remains for machines whose keyboard does come up on screen.
+    func testCareLogNoteFieldSitsAboveAnyKeyboardsReach() {
         let app = launch("careLog")
         let anchor = app.staticTexts
             .matching(NSPredicate(format: "label BEGINSWITH %@", "Care log"))
@@ -63,20 +70,27 @@ final class SheetHeightUITests: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 5), "the note field never appeared")
         field.tap()
 
-        let keyboard = app.keyboards.firstMatch
-        XCTAssertTrue(
-            keyboard.waitForExistence(timeout: 10),
-            "no software keyboard rose — this test proved nothing; detach the hardware keyboard"
-        )
-        // Give the scroll-into-view animation its beat before freezing frames.
-        _ = field.waitForExistence(timeout: 2)
-
-        XCTAssertLessThanOrEqual(
+        let screenHeight = app.frame.height
+        XCTAssertGreaterThan(screenHeight, 0, "the app window has no height")
+        XCTAssertLessThan(
             field.frame.maxY,
-            keyboard.frame.minY + 1,
-            "the keyboard covers the note field: field bottom \(field.frame.maxY) is below the "
-                + "keyboard top \(keyboard.frame.minY) — the #146 defect, back"
+            screenHeight * 0.55,
+            "the note field's bottom is at \(field.frame.maxY) of \(screenHeight) — low enough "
+                + "for a keyboard to cover it, which is the #146 defect"
         )
+
+        // Where a software keyboard actually rises on screen, hold the direct fact too. Offscreen
+        // (y >= screen height) means this runner never presented one; the geometric assertion
+        // above already carried the test.
+        let keyboard = app.keyboards.firstMatch
+        if keyboard.waitForExistence(timeout: 5), keyboard.frame.minY < screenHeight {
+            XCTAssertLessThanOrEqual(
+                field.frame.maxY,
+                keyboard.frame.minY + 1,
+                "the keyboard covers the note field: field bottom \(field.frame.maxY) is below "
+                    + "the keyboard top \(keyboard.frame.minY)"
+            )
+        }
         app.terminate()
     }
 
