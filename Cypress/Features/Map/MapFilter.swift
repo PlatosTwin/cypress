@@ -38,8 +38,19 @@
 //  city made the control's caveat *stronger* rather than weaker (E176). A year filter therefore
 //  cannot be a plain predicate with a silent complement; four out of five trees are unjudgeable, and
 //  a control that quietly dropped them would be answering "when was this planted?" with "never" for
-//  most of the map. `MapYearFilterCopy.setAside` is the sentence that keeps it honest, and it is
-//  rendered whenever the narrowing is on.
+//  most of the map. A sentence on the map used to say so (`MapYearFilterCopy.setAside`); **RULINGS
+//  R41 removed it and every other message beside a filter** (task #180), so the fact survives as the
+//  reason this control is shaped the way it is, pinned by test, and not as words on the glass.
+//
+//  ── What a year narrowing means, since task #178 ──────────────────────────────────────────────
+//  **Only a site with a tree on it.** 9,237 of the seed's 24,200 vacant planting sites carry a
+//  `planted_year` — the date of a tree that is no longer there — and a year narrowing used to
+//  return them, so `2010s` drew empty basins as trees planted in the 2010s. E107 had already
+//  refused the same claim one layer up, keeping the `PLANTED <year>` badge off the site screen
+//  because it "would assert a planting on an empty basin"; the filter was asserting it anyway.
+//  `TreeQueries.Narrowing` now excludes vacant sites whenever a decade is set. Task #179 gives
+//  those sites their own way to be found (`MapSiteKind`), which is what keeps this a correction
+//  rather than a disappearance.
 //
 //  Decades rather than years because the seed spans 1955–2026: 72 options holding a mean of 530 dated
 //  trees each, which is invisible in a viewport. Five buckets, sized off the real distribution —
@@ -82,6 +93,10 @@ struct MapFilter: Equatable, Sendable {
     /// The two chips SCREENS.md 01 §12 draws, kept.
     var condition: Condition?
 
+    /// Whether the map is narrowed to sites with a tree, to empty planting sites, or neither
+    /// (task #179). Behind `More filters`, beside `Year` — see `MapExtraFilter.siteKind`.
+    var siteKind: MapSiteKind?
+
     /// The un-narrowed map — the mock's `All`, as the absence of everything rather than a chip.
     static let all = MapFilter()
 
@@ -94,6 +109,7 @@ struct MapFilter: Equatable, Sendable {
     /// Whether anything is narrowing the map.
     var isActive: Bool {
         membership != nil || decade != nil || speciesID != nil || condition != nil
+            || siteKind != nil
     }
 
     /// Whether the *fetch* is narrowed, as opposed to the drawn pins being filtered afterwards.
@@ -102,8 +118,11 @@ struct MapFilter: Equatable, Sendable {
     /// `membership`, `decade` and `speciesID` go into the query, so the answer that comes back holds
     /// only matches; `condition` is applied to the pins already fetched, because neither "needs
     /// care" nor "in bloom" is a column the seed's map queries select on.
+    /// `siteKind` is in the query for the same reason the other three are: it is `trees.status`, a
+    /// column, and answering it after the fetch would spend the pin budget on rows that cannot
+    /// match — the E36/E38 shape `TreeQueries.Narrowing` exists to prevent.
     var narrowsTheQuery: Bool {
-        membership != nil || decade != nil || speciesID != nil
+        membership != nil || decade != nil || speciesID != nil || siteKind != nil
     }
 
     /// The narrowings currently set **inside the row's expandable control** — the ones a reader
@@ -219,6 +238,13 @@ enum MapExtraFilter: String, CaseIterable, Identifiable, Sendable {
     /// visible chips to `Yours · In bloom · Needs care` and sent `Year` here beside `Favorites`.
     case year
 
+    /// Tree or empty planting site (task #179). **Born in the drawer** — R38 fixed the visible row
+    /// at one horizontally scrolling line and this was never a candidate for it. It is the second
+    /// value-carrying narrowing, which is the case R23.1 predicted when it called this an extension
+    /// point rather than a drawer with one thing in it: it arrives as one case here and one arm in
+    /// `MapFilterChips.drawer`, and no other view changes.
+    case siteKind
+
     var id: String { rawValue }
 
     /// What this narrowing is called, **carrying its value when it has one**.
@@ -231,6 +257,7 @@ enum MapExtraFilter: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .favorites: return MapFilterCopy.membershipLabel(.favorites)
         case .year: return MapYearFilterCopy.label(filter.decade)
+        case .siteKind: return MapSiteKindFilterCopy.label(filter.siteKind)
         }
     }
 
@@ -238,6 +265,7 @@ enum MapExtraFilter: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .favorites: return filter.membership == .favorites
         case .year: return filter.decade != nil
+        case .siteKind: return filter.siteKind != nil
         }
     }
 
@@ -330,39 +358,15 @@ enum MapFilterCopy {
     /// does, because "expands" is already the value's job.
     static let moreHint = "Holds the narrowings that are not chips in the row."
 
-    // MARK: The result line
+    // MARK: The result line there is no longer any of (RULINGS R41, task #180)
 
-    /// **What the map has narrowed to, as a number — and the one place D1 and E38 both bite.**
-    ///
-    /// ── Why a number is allowed here at all ───────────────────────────────────────────────────
-    /// D1 kills "counts of user actions", and the owner's brief restates it: "a neutral count as a
-    /// *filter result* ('31 trees') is fine — a count that reads as a personal total is not". The
-    /// difference is what the number is *of*. `31 trees` is a fact about the map — how many pins are
-    /// under this viewport satisfying this filter — and it changes when the reader pans, which is
-    /// exactly what makes it not a score. `You have visited 31 trees` would be a total: stable,
-    /// about the person, and the sentence D1 exists to forbid.
-    ///
-    /// So the noun is always **trees**, never "yours", never "your visits", and the sentence never
-    /// takes a second person. `Yours · 31 trees` reads as a filter and its result, which is what it
-    /// is. There is deliberately no phrasing available here that could say otherwise.
-    ///
-    /// ── Why it is not simply `pins.count` (ERRATA E38) ────────────────────────────────────────
-    /// "A page is not a total." The map draws at most `MapModel.pinLimit` individually tappable pins
-    /// and thins with a 44 pt grid above that (`MapViewport.markerCellPoints`), so the drawn array
-    /// can be a *spatial sample* of the matches. `PinAnswer.matchesInView` is non-nil exactly when
-    /// that happened, and this renders the two cases in different words: a complete answer gets a
-    /// plain count, a thinned one says how many matched and that not all are drawn. Reporting `151`
-    /// when 1,458 matched is precisely the defect E38 names.
-    ///
-    /// - Parameters:
-    ///   - drawn: how many pins are on the glass.
-    ///   - matched: how many trees satisfied the filter in view, when that is more than `drawn`.
-    static func result(drawn: Int, matched: Int?) -> String {
-        guard let matched, matched > drawn else {
-            return drawn == 1 ? "1 tree" : "\(drawn) trees"
-        }
-        return "\(matched) trees—showing \(drawn)"
-    }
+    // `result(drawn:matched:)` stood here and produced `31 trees` / `1458 trees—showing 151`.
+    // R41 forbids any text that appears because a filter did something and lists *a count* among
+    // the forbidden surfaces, so the line is gone and this formatter with it. The argument it used
+    // to carry — that a filter result is not the personal total D1 forbids — was sound and is not
+    // being reversed; the count is not forbidden for being a score, it is forbidden for being a
+    // message beside a filter. The distinction matters to anyone tempted to reinstate it: D1 is not
+    // what is in the way now.
 
     // MARK: The empty state there deliberately is none of (task #165)
 
@@ -375,7 +379,40 @@ enum MapFilterCopy {
     // whenever any dimension is set (R23.1 §3 — the way out never hides).
 }
 
-/// The words the year control says, including the one that keeps it honest.
+/// The words the site-kind control says (task #179).
+///
+/// **Every word here is one the app already uses.** DECISIONS constraint 15 forbids inventing
+/// civic or botanical content, and none is invented: `Site` is E107's own screen title, and
+/// `Vacant site` is already the word `SegmentedControl` uses for this status. The two option labels
+/// are written as answers to "what is here" so the menu reads as a sentence with the chip —
+/// `Site: Has a tree`, `Site: Empty planting site` — which is exactly `MapYearFilterCopy`'s
+/// `Year: 2010s` shape, so the drawer's two value-carrying controls speak the same grammar.
+///
+/// There is deliberately no sentence in this type beyond a label. R41 forbids one, and a control
+/// that had to explain itself in prose beside the map would be the thing #180 removed arriving
+/// through a new door.
+enum MapSiteKindFilterCopy {
+
+    static let label = "Site"
+
+    /// The chip's label, carrying its value when it has one.
+    static func label(_ kind: MapSiteKind?) -> String {
+        guard let kind else { return label }
+        return "\(label): \(optionLabel(kind))"
+    }
+
+    /// The menu's "no narrowing" row, in `MapYearFilterCopy.anyLabel`'s register.
+    static let anyLabel = "Tree or site"
+
+    static func optionLabel(_ kind: MapSiteKind) -> String {
+        switch kind {
+        case .hasTree: return "Has a tree"
+        case .emptySite: return "Empty planting site"
+        }
+    }
+}
+
+/// The words the year control says.
 enum MapYearFilterCopy {
 
     static let label = "Year"
@@ -388,72 +425,29 @@ enum MapYearFilterCopy {
 
     static let anyLabel = "Any year"
 
-    /// **The sentence the owner asked for by name: what the control says about rows it cannot
-    /// judge** (#116, ERRATA E175).
-    ///
-    /// Counted before it was designed, which was the instruction: **160,440 of the shipped seed's
-    /// 198,625 rows carry no `planted_year` at all — 80.78 %.** So a year narrowing sets aside
-    /// roughly four trees in five *before* it judges
-    /// anything, and saying nothing would make their absence read as an answer: "there are no trees
-    /// here from the 2010s", when the truth is "the city did not record when most of these were
-    /// planted". Those are very different claims about the same empty patch of map, and the second
-    /// one is the only one this app is entitled to make.
-    ///
-    /// ── Why the proportion and not a count in view ────────────────────────────────────────────
-    /// A per-viewport number ("214 more trees here have no date") would be the better sentence and
-    /// it is deliberately not built, because getting it honestly costs a **second full fetch of the
-    /// same box with the year predicate removed** — the map's hot path, doubled, on every pan while
-    /// the chip is on, to produce a caveat that does not change in kind as the reader moves. The
-    /// proportion is a fact about the inventory the map is drawn from, it is true on every screenful,
-    /// and it is pinned by `MapYearCoverageTests` against the shipped seed so it cannot quietly rot
-    /// when the seed is rebuilt. R23 records this as the trade it is rather than an oversight.
-    ///
-    /// No spaces around em dashes (ARCHITECTURE §5.7).
-    static let setAside =
-        "About 4 in 5 trees have no recorded planting date—none of them can appear under a year."
-
-    /// The share of the shipped seed carrying no planting year, as `MapYearCoverageTests` measures
-    /// it. The copy above rounds this to "4 in 5"; the test asserts the rounding is still true, so a
-    /// re-ingest that moved coverage would fail rather than leave the sentence lying.
-    ///
-    /// **It has already fired once, on the day it was written.** This constant was `0.7397` and the
-    /// sentence read "3 in 4", both measured against a seed holding San Francisco alone. San Jose
-    /// landed the same afternoon (E176) and the test went red on the merge: San Jose publishes a
-    /// planting date for **222 of its 52,788 rows — 0.42 %** — against San Francisco's 26.03 %, so
-    /// two cities in one seed is 80.78 % undated where one was 73.97 %.
-    ///
-    /// The lesson is worth more than the number. Under D16 the seed is a *merged* inventory, so the
-    /// coverage of any field is not a property of this app at all — it is a weighted average over
-    /// whichever cities happen to be in, and it moves every time one is added. A sentence quoting a
-    /// coverage figure is therefore always provisional, and the only thing keeping it honest is that
-    /// this constant is asserted against the seed rather than remembered from the day it was true.
-    static let undatedShareOfSeed = 0.8078
-
-    /// The same sentence, derived for whatever inventory is actually attached (R36 consequence c,
-    /// RULINGS R43 §5). The day the attached inventory became the reader's
-    /// choice, `setAside`'s hard-coded "4 in 5" became a fact about one possible choice — the
-    /// fused bundle — and a lie about the others (San Francisco alone is "3 in 4"; San Jose alone
-    /// publishes dates for 0.42 % of rows). So the fraction is now chosen from the measured share
-    /// (`CypressStore.seedUndatedShare`), and the fused bundle's share must reproduce `setAside`
-    /// **verbatim** — pinned by test — which keeps this a generalization, not a copy change.
-    ///
-    /// A nil share (no seed attached, or a pre-`planted_year` file) falls back to the recorded
-    /// bundle constant rather than guessing.
-    static func setAside(undatedShare: Double?) -> String {
-        guard let undatedShare else { return setAside }
-        // Nearest simple fraction, smallest honest vocabulary. The table is deliberately fixed:
-        // a formatter inventing "17 in 21" would be more precise and less legible, and every
-        // entry below can be said out loud.
-        let fractions: [(share: Double, words: String)] = [
-            (0.01, "1 in 100"), (0.05, "1 in 20"), (0.10, "1 in 10"), (0.20, "1 in 5"),
-            (0.25, "1 in 4"), (1.0 / 3.0, "1 in 3"), (0.50, "1 in 2"), (2.0 / 3.0, "2 in 3"),
-            (0.75, "3 in 4"), (0.80, "4 in 5"), (0.90, "9 in 10"), (0.95, "19 in 20"),
-            (0.99, "99 in 100"),
-        ]
-        let nearest = fractions.min {
-            abs($0.share - undatedShare) < abs($1.share - undatedShare)
-        }!
-        return "About \(nearest.words) trees have no recorded planting date\u{2014}none of them can appear under a year."
-    }
+    // ── The caveat sentence, and why there is none (RULINGS R41, task #180) ──────────────────────
+    //
+    // `setAside` stood here — "About 4 in 5 trees have no recorded planting date—none of them can
+    // appear under a year." — beside the constant it rounded (`undatedShareOfSeed`, 0.8078) and,
+    // since R43 §5, a `setAside(undatedShare:)` that re-derived the fraction from whatever
+    // inventory was attached. **All three are gone.** The owner named this sentence: "Right now the
+    // year filter has a message about 4 of 5 trees. That's stupid."
+    //
+    // **R41 and R43 §5 collide, and R41 wins.** R43 §5 generalized this sentence from a bundle
+    // constant into a per-inventory measurement; it did not decide *whether* the sentence should
+    // exist, because that was not its question. R41 decides exactly that, it is later, and it is
+    // the owner's direct instruction rather than delegated authority. A measurement whose only
+    // consumer is a forbidden sentence is dead code, so `CypressStore.seedUndatedShare` and its
+    // `measureUndatedShare` went with it rather than being left unread (#62/E126).
+    //
+    // **What was lost, honestly stated.** The sentence existed for a real reason and the reason has
+    // not gone away: 160,440 of the seed's 198,625 rows carry no `planted_year`, so a year
+    // narrowing sets aside four rows in five before it judges anything, and their absence can read
+    // as "there are no trees here from the 2010s" when the truth is "the city did not record when
+    // most of these were planted". R41 weighed that and ruled the clutter worse, permitting a
+    // single-dismiss popup for anything genuinely essential and judging that nothing in the product
+    // qualifies. The seed fact itself is still pinned by
+    // `MapFilterTests.plantingDateCoverageIsWhatTheDecadeBucketsWereBuiltFor`, because the
+    // *control's design* still rests on it even though no sentence quotes it.
 }
 

@@ -341,23 +341,35 @@ public struct MapViewport: Hashable, Sendable {
 
     /// The planting years the map has been narrowed to, or `nil` for every year (#116, RULINGS R23).
     ///
-    /// **A tree with no recorded planting date is never in this range, and that is the whole design
-    /// problem this field carries.** Measured against the shipped seed: 145,837 rows, of which
-    /// **37,962 (26.03 %) carry `planted_year` at all** — and among the 133,424 *living* trees it is
-    /// 28,725, or 21.5 %. So a year narrowing does not thin the map, it empties it: roughly four out
-    /// of five living street trees can never satisfy any range a reader picks, not because they were
-    /// planted outside it but because the city never wrote the date down.
+    /// **A row with no recorded planting date is never in this range, and that is the whole design
+    /// problem this field carries.** Re-measured against the shipped two-city seed rather than
+    /// inherited: **198,625 rows, of which 38,185 (19.22 %) carry `planted_year` at all.** So a year
+    /// narrowing does not thin the map, it empties it: roughly four rows in five can never satisfy
+    /// any range a reader picks, not because they were planted outside it but because the city never
+    /// wrote the date down. (The figures previously stated here — 145,837 rows, 26.03 % — were the
+    /// San-Francisco-only seed's and had been stale since E176.)
     ///
-    /// Silently dropping those rows is the defect ERRATA E175 records. The predicate is honest —
-    /// `planted_year BETWEEN a AND b` is exactly what was asked — and the *surface* is what has to
-    /// carry the rest: `MapYearFilterCopy` says how many trees in view were set aside for having no
-    /// date, every time the narrowing is on. A filter that cannot judge a row must say so rather
-    /// than let its absence read as an answer.
+    /// Silently dropping those rows is the defect ERRATA E175 records, and a sentence on the map
+    /// used to carry the rest. **RULINGS R41 removed it** (task #180): no message accompanies a
+    /// filter, so the year control's blind spot is now a fact about the control's *design* — pinned
+    /// by `MapFilterTests`, argued in `MapFilter.swift`'s header — and not words on the glass.
+    ///
+    /// **Since task #178 this range also implies a tree.** A vacant planting site's `planted_year`
+    /// is the date of a tree that is no longer there, so returning one under `2010s` asserts a
+    /// planting on an empty basin — the claim E107 already refused on the site screen.
+    /// `TreeQueries.Narrowing` excludes `vacant_site` whenever this is set; `siteKind` is how a
+    /// reader asks for those rows deliberately.
     ///
     /// A `ClosedRange` rather than a single year because the seed spans 1955–2026 and a per-year
-    /// control would offer 72 options holding a citywide mean of 527 trees each — invisible in a
-    /// viewport. `MapFilter.Decade` is what picks the range.
+    /// control would offer 72 options holding a citywide mean of 530 dated trees each — invisible in
+    /// a viewport. `MapFilter.Decade` is what picks the range.
     public let plantedYears: ClosedRange<Int>?
+
+    /// Tree or empty planting site, or `nil` for both (task #179).
+    ///
+    /// A column narrowing like `plantedYears`, not an id set like `treeIDs`: `trees.status` is in
+    /// the seed, so this is a `WHERE` clause and never a post-filter. See `MapSiteKind`.
+    public let siteKind: MapSiteKind?
 
     /// The trees this reader has a relationship with, when the map has been narrowed to them — the
     /// `Yours` and `Favourites` chips (#116, RULINGS R23). `nil` for every tree.
@@ -389,7 +401,8 @@ public struct MapViewport: Hashable, Sendable {
         markerCellPoints: Double? = nil,
         speciesIDs: Set<UUID>? = nil,
         plantedYears: ClosedRange<Int>? = nil,
-        treeIDs: Set<UUID>? = nil
+        treeIDs: Set<UUID>? = nil,
+        siteKind: MapSiteKind? = nil
     ) {
         self.bounds = bounds
         self.zoom = zoom
@@ -398,14 +411,16 @@ public struct MapViewport: Hashable, Sendable {
         self.speciesIDs = speciesIDs
         self.plantedYears = plantedYears
         self.treeIDs = treeIDs
+        self.siteKind = siteKind
     }
 
     /// Whether this viewport has been narrowed to a species at all.
     public var isNarrowed: Bool { speciesIDs != nil }
 
-    /// Whether anything at all narrows this viewport — species, planting year, or membership.
+    /// Whether anything at all narrows this viewport — species, planting year, membership, or
+    /// whether there is a tree on the site.
     public var isFiltered: Bool {
-        speciesIDs != nil || plantedYears != nil || treeIDs != nil
+        speciesIDs != nil || plantedYears != nil || treeIDs != nil || siteKind != nil
     }
 
     /// **A1's clustering rule, and the one narrowing that suspends it.**
