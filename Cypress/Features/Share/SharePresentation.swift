@@ -56,7 +56,7 @@ import Foundation
 /// Meta app registration this zero-dependency app does not have, so the button could never do
 /// anything a `Share…` row does not. `AirDrop` folded into `Share…` for the same honesty:
 /// `excludedActivityTypes` cannot remove third-party share extensions, so an "AirDrop" button
-/// still opens a general sheet. Recorded in docs/rulings-pending/share-destinations.md.
+/// still opens a general sheet. Recorded in RULINGS R39.
 ///
 /// The label is the enum's, not the caller's, so no screen can relabel a target it does not
 /// implement.

@@ -7,7 +7,7 @@
 //  SCREENS.md drew four by description — "`Messages` (speech bubble), `Instagram` (rounded square
 //  + circle + dot), `AirDrop` (arcs + dot), `Copy link` (chain link)" — and fixed only what they
 //  are drawn with: `24×24 SVG stroke/fill #3C4A3E width 1.8`. The row is now three (ticket #146,
-//  docs/rulings-pending/share-destinations.md): Instagram and AirDrop are gone, and `Share…`
+//  RULINGS R39): Instagram and AirDrop are gone, and `Share…`
 //  (tray + up arrow, the platform's own idiom for "hand this off") is new, drawn to the same
 //  stroke. Everything else about the geometry is **NOT SPECIFIED**, so nothing further is claimed
 //  for it.

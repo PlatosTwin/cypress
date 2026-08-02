@@ -24,7 +24,7 @@
 //  button cannot be built honestly, because `excludedActivityTypes` cannot exclude third-party
 //  share extensions and the trimmed sheet is still a general one. `Instagram` is gone entirely:
 //  no link API, and the Stories scheme needs a Meta app registration (zero external dependencies,
-//  and no API keys, bind). docs/rulings-pending/share-destinations.md records the row.
+//  and no API keys, bind). RULINGS R39 records the row.
 //
 //  **No "Link copied" confirmation.** SCREENS.md 10 says it outright: the prototype's copied state
 //  is "**NOT SPECIFIED** in this spec file — no copied state is drawn". PROTOTYPE-FLOW does carry

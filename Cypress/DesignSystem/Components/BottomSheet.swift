@@ -12,7 +12,7 @@
 //  `.standard` sheets are **full-height**: the card runs from just under the status bar to the
 //  bottom of the display, with the content top-aligned inside a `ScrollView`. The mocks drew 09/10
 //  as content-sized bottom cards; the owner overrode that on device ("half-screened") — see
-//  docs/rulings-pending/share-destinations.md. The `ScrollView` is also the keyboard mechanism:
+//  RULINGS R39. The `ScrollView` is also the keyboard mechanism:
 //  a focused text field inside it is scrolled clear of the keyboard by the system, provided the
 //  *presenting view does not opt out of the keyboard safe area* — so a screen hosting this shell
 //  must use `.ignoresSafeArea(.container)`, never bare `.ignoresSafeArea()`, which silently
