@@ -12,6 +12,14 @@ struct IconTextRow: View {
     let accent: CypressColor.TileAccent
     let title: String
     let subtitle: String
+    /// The tree this row is about, when it should draw that tree's own photograph rather than the
+    /// accent tile (#176). `nil` — every call site that does not pass one — draws exactly the
+    /// accent gradient this component has always drawn; a row with a real tree's id but no live
+    /// photograph draws the same gradient too, because `PhotoImage` falls back to its placeholder.
+    /// The rule for which photograph a row with several may choose is `PhotoHero`, applied once in
+    /// `ContributionStore.heroPhotoIDs` rather than here — this component only draws the id it is
+    /// given.
+    var photoID: UUID?
     var action: (() -> Void)?
 
     var body: some View {
@@ -54,23 +62,34 @@ struct IconTextRow: View {
         .contentShape(Rectangle())
     }
 
-    /// `radial-gradient(circle at 45% 42%, <accent> 0%, transparent 55%)` over a pale base.
+    /// `radial-gradient(circle at 45% 42%, <accent> 0%, transparent 55%)` over a pale base — drawn
+    /// on its own when there is no photograph, and reused as `PhotoImage`'s placeholder when there
+    /// is one so a tree whose bytes have not loaded yet, or have none, still draws this row's own
+    /// accent rather than a photograph-shaped hole.
     private var tile: some View {
-        CypressGradientField(
-            CypressGradientRecipe(
-                base: LinearGradient(
-                    colors: [accent.base, accent.base],
-                    startPoint: .top,
-                    endPoint: .bottom
-                ),
-                radials: [CypressRadialStop(0.45, 0.42, accent.accent, 0.55)]
-            )
-        )
+        Group {
+            if let photoID {
+                PhotoImage(photoID: photoID, placeholder: Self.placeholderRecipe(accent))
+            } else {
+                CypressGradientField(Self.placeholderRecipe(accent))
+            }
+        }
         .frame(
             width: CypressSpacing.Component.iconRowTile,
             height: CypressSpacing.Component.iconRowTile
         )
         .cypressCornerRadius(CypressRadius.thumbSmAlt)
         .accessibilityHidden(true)
+    }
+
+    private static func placeholderRecipe(_ accent: CypressColor.TileAccent) -> CypressGradientRecipe {
+        CypressGradientRecipe(
+            base: LinearGradient(
+                colors: [accent.base, accent.base],
+                startPoint: .top,
+                endPoint: .bottom
+            ),
+            radials: [CypressRadialStop(0.45, 0.42, accent.accent, 0.55)]
+        )
     }
 }

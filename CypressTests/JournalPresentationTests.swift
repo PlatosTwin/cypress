@@ -55,7 +55,8 @@ struct JournalPresentationTests {
         kind: JournalEntry.Kind = .visit,
         tree: String = "Grandmother Cypress",
         at date: Date = JournalPresentationTests.date(2026, 7, 12),
-        summary: String = "Fog on the crown"
+        summary: String = "Fog on the crown",
+        heroPhotoID: UUID? = nil
     ) -> JournalEntry {
         JournalEntry(
             id: UUID(uuidString: String(format: "13000000-0000-4000-8000-%012d", index))!,
@@ -63,7 +64,8 @@ struct JournalPresentationTests {
             treeID: UUID(uuidString: String(format: "13000000-0000-4000-8000-%012d", 900 + index))!,
             treeDisplayName: tree,
             capturedAt: date,
-            summary: summary
+            summary: summary,
+            heroPhotoID: heroPhotoID
         )
     }
 
@@ -258,6 +260,56 @@ struct JournalPresentationTests {
     func unnamedTreeUsesTheProfileFallback() {
         let rows = Self.presentation([Self.entry(1, tree: "")], nextCursor: nil).rows
         #expect(rows[0].title == "Visited \(TreeProfilePresentation.fallbackTitle)")
+    }
+
+    /// #176: a row draws its own tree's photograph instead of the accent tile when one is chosen.
+    /// The derivation's job here is passthrough — `theHeroPhotoComesFromTheStore` below covers
+    /// where the id actually comes from — so this only asserts it survives the trip from
+    /// `JournalEntry` to `Row`.
+    @Test("a row carries its tree's hero photo id through, and a tree with none carries none")
+    func rowsCarryTheHeroPhotoID() {
+        let photoID = UUID(uuidString: "13000000-0000-4000-8000-0000000000F1")!
+        let rows = Self.presentation(
+            [Self.entry(1, heroPhotoID: photoID), Self.entry(2, heroPhotoID: nil)],
+            nextCursor: nil
+        ).rows
+
+        #expect(rows[0].heroPhotoID == photoID, "the tree's own photo id did not survive the derivation")
+        #expect(rows[1].heroPhotoID == nil, "a tree with no live photograph was handed one anyway")
+    }
+
+    /// **The id as the store actually chooses it**, over a real database — the way
+    /// `exportPayloadIsReal` and `GroveTreesTests.theHeroPhotoComesFromTheStore` prove their own
+    /// numbers rather than a fixture's.
+    @Test("the hero photo id on a journal row is what the store's own rule chose")
+    func theHeroPhotoComesFromTheStore() async throws {
+        let deviceID = UUID(uuidString: "D0000000-0000-4000-8000-0000000000C7")!
+        let attribution = Attribution.anonymous(deviceID: deviceID)
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: deviceID)
+
+        let tree = try await api.addTree(
+            TreeDraft(
+                coordinate: Coordinate(latitude: 37.7821, longitude: -122.4464),
+                photoLocalPath: "/tmp/cypress-journal-hero.jpg",
+                attribution: attribution
+            )
+        ).id
+        let ids = try await api.debugSeedPhotos(treeID: tree, count: 3)
+        try await store.queue.write { connection in
+            try ContributionStore().insert(
+                Visit(treeID: tree, attribution: attribution, capturedAt: Self.date(2026, 7, 15)),
+                connection: connection
+            )
+        }
+
+        let page = try await api.journal(cursor: nil, limit: JournalLimits.pageSize)
+        let row = try #require(page.items.first { $0.treeID == tree })
+        #expect(row.heroPhotoID == ids[0])
+
+        let presented = JournalPresentation(entries: page.items, nextCursor: page.nextCursor)
+        let presentedRow = try #require(presented.rows.first { $0.treeID == tree })
+        #expect(presentedRow.heroPhotoID == ids[0])
     }
 
     @Test("every row carries the tree it is about, so every row has somewhere to go")

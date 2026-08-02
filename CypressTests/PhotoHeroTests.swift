@@ -294,4 +294,160 @@ struct PhotoHeroTests {
         let tally = try await api.treeProfile(id: tree.id).photoTallies[id]
         #expect(tally == PhotoTally(score: 1, ownVote: .up), "one vote, now the account's")
     }
+
+    // MARK: - 4 · Batched, for a list of rows (#176)
+    //
+    // My Grove's `Trees` pill, the journal and the almanac's season rows each draw several trees at
+    // once and must not read the database once per row (ARCHITECTURE, the performance campaigns
+    // E130/E139). `ContributionStore.heroPhotoIDs` is the one statement behind all three; these
+    // assert it agrees with `PhotoHero` itself rather than duplicating the rule.
+
+    @Test("the batched read agrees with A3's own ordering, per tree")
+    func heroPhotoIDsAgreesWithA3() async throws {
+        let deviceID = UUID(uuidString: "D0000000-0000-4000-8000-0000000000C3")!
+        let attribution = Attribution.anonymous(deviceID: deviceID)
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: deviceID)
+
+        let tree = try await api.addTree(TreeDraft(
+            coordinate: Coordinate(latitude: 37.77, longitude: -122.44),
+            photoLocalPath: "/tmp/cypress-hero-ids.jpg",
+            attribution: attribution
+        )).id
+        // `debugSeedPhotos` clears the one photo `addTree` requires and writes three of its own —
+        // [0] a full-tree shot taken today, which A3 picks with nobody voting.
+        let ids = try await api.debugSeedPhotos(treeID: tree, count: 3)
+
+        let heroPhotoIDs = try await store.queue.read { connection in
+            try ContributionStore().heroPhotoIDs(connection: connection)
+        }
+        #expect(heroPhotoIDs[tree] == ids[0], "the batched read did not agree with A3's own ordering")
+
+        // A tree nothing here has touched is simply absent from the map — a missing key, not a
+        // present one holding nil, which `[UUID: UUID]` cannot even express.
+        #expect(heroPhotoIDs[UUID()] == nil)
+    }
+
+    @Test("a vote changes the batched read's answer exactly as it changes the hero's")
+    func heroPhotoIDsRespectsVotes() async throws {
+        let deviceID = UUID(uuidString: "D0000000-0000-4000-8000-0000000000C4")!
+        let attribution = Attribution.anonymous(deviceID: deviceID)
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: deviceID)
+
+        let tree = try await api.addTree(TreeDraft(
+            coordinate: Coordinate(latitude: 37.79, longitude: -122.44),
+            photoLocalPath: "/tmp/cypress-hero-ids-vote.jpg",
+            attribution: attribution
+        )).id
+        let ids = try await api.debugSeedPhotos(treeID: tree, count: 3)
+
+        try await api.setPhotoVote(photoID: ids[2], vote: .up)
+
+        let heroPhotoIDs = try await store.queue.read { connection in
+            try ContributionStore().heroPhotoIDs(connection: connection)
+        }
+        #expect(
+            heroPhotoIDs[tree] == ids[2],
+            "the pin overrode the heuristic for the profile hero but not for a list row"
+        )
+    }
+
+    @Test("two trees do not bleed into each other's answer")
+    func heroPhotoIDsIsKeyedPerTree() async throws {
+        let deviceID = UUID(uuidString: "D0000000-0000-4000-8000-0000000000C5")!
+        let attribution = Attribution.anonymous(deviceID: deviceID)
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: deviceID)
+
+        let first = try await api.addTree(TreeDraft(
+            coordinate: Coordinate(latitude: 37.80, longitude: -122.44),
+            photoLocalPath: "/tmp/cypress-hero-ids-first.jpg",
+            attribution: attribution
+        )).id
+        let second = try await api.addTree(TreeDraft(
+            coordinate: Coordinate(latitude: 37.81, longitude: -122.44),
+            photoLocalPath: "/tmp/cypress-hero-ids-second.jpg",
+            attribution: attribution
+        )).id
+        let firstIDs = try await api.debugSeedPhotos(treeID: first, count: 2)
+        let secondIDs = try await api.debugSeedPhotos(treeID: second, count: 2)
+
+        let heroPhotoIDs = try await store.queue.read { connection in
+            try ContributionStore().heroPhotoIDs(connection: connection)
+        }
+        #expect(heroPhotoIDs[first] == firstIDs[0])
+        #expect(heroPhotoIDs[second] == secondIDs[0])
+        #expect(heroPhotoIDs[first] != heroPhotoIDs[second])
+    }
+
+    // MARK: - 5 · The map card (#176)
+    //
+    // `MapCardSubject` already carries `profile: TreeProfile?` — the same full read the tree
+    // profile draws from, `photos` and `photoTallies` included — so the card needs no read of its
+    // own. It needs only to ask `PhotoHero` the same question the profile hero asks.
+
+    @Test("the map card draws no photo before its profile has loaded, whatever the pin says")
+    func mapCardHasNoHeroBeforeTheProfileLoads() {
+        let pin = TreePin(
+            id: UUID(),
+            coordinate: Coordinate(latitude: 37.77, longitude: -122.44),
+            status: .alive,
+            source: .cityImport,
+            verificationState: .cityRecord,
+            speciesID: nil
+        )
+        let subject = MapCardSubject(pin: pin)
+        #expect(subject.profile == nil)
+        #expect(subject.heroPhoto == nil, "a card drew a photo before its profile read had landed")
+    }
+
+    @Test("once the profile lands, the map card leads with the same photo the tree's own page would")
+    func mapCardSharesTheProfileHero() {
+        let pin = TreePin(
+            id: UUID(),
+            coordinate: Coordinate(latitude: 37.77, longitude: -122.44),
+            status: .alive,
+            source: .cityImport,
+            verificationState: .cityRecord,
+            speciesID: nil
+        )
+        let tree = Tree(
+            id: pin.id,
+            source: .cityImport,
+            coordinate: pin.coordinate,
+            status: .alive,
+            createdAt: Self.moment,
+            updatedAt: Self.moment
+        )
+        let newest = Self.photo(.fullTree, daysAgo: 0)
+        let older = Self.photo(.fullTree, daysAgo: 10)
+        let profile = TreeProfile(tree: tree, photos: Series(complete: [older, newest]))
+
+        let subject = MapCardSubject(pin: pin, profile: profile)
+        #expect(subject.heroPhoto?.id == newest.id, "disagreed with the same rule the profile hero uses")
+    }
+
+    @Test("a vacant site's card has no hero, because a site has no tree to have photographed")
+    func mapCardVacantSiteHasNoHero() {
+        let pin = TreePin(
+            id: UUID(),
+            coordinate: Coordinate(latitude: 37.77, longitude: -122.44),
+            status: .vacantSite,
+            source: .cityImport,
+            verificationState: .cityRecord,
+            speciesID: nil
+        )
+        let tree = Tree(
+            id: pin.id,
+            source: .cityImport,
+            coordinate: pin.coordinate,
+            status: .vacantSite,
+            createdAt: Self.moment,
+            updatedAt: Self.moment
+        )
+        let subject = MapCardSubject(pin: pin, profile: TreeProfile(tree: tree))
+        #expect(subject.isVacantSite)
+        #expect(subject.heroPhoto == nil)
+    }
 }

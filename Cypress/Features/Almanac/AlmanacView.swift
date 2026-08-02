@@ -229,6 +229,7 @@ struct AlmanacScreen: View {
                             accent: row.accent,
                             title: row.title,
                             subtitle: row.subtitle,
+                            photoID: row.heroPhotoID,
                             action: action(for: row)
                         )
                     }

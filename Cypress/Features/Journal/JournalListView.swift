@@ -86,6 +86,7 @@ struct JournalListView: View {
                             accent: row.accent,
                             title: row.title,
                             subtitle: row.subtitle,
+                            photoID: row.heroPhotoID,
                             // Every row is about a tree, so every row has somewhere to go. Nil only
                             // when the host supplies no destination, in which case C10 draws a card
                             // rather than a button.

@@ -61,7 +61,8 @@ struct GroveTreesTests {
         name: String = "Grandmother Cypress",
         lastVisitedAt: Date? = GroveTreesTests.date(2026, 7, 12),
         isFavorite: Bool = false,
-        record: GroveRecord? = GroveRecord(visits: 1)
+        record: GroveRecord? = GroveRecord(visits: 1),
+        heroPhotoID: UUID? = nil
     ) -> GroveEntry {
         GroveEntry(
             treeID: UUID(uuidString: String(format: "08100000-0000-4000-8000-%012d", index))!,
@@ -69,7 +70,8 @@ struct GroveTreesTests {
             coordinate: Coordinate(latitude: 37.7601, longitude: -122.5089),
             lastVisitedAt: lastVisitedAt,
             isFavorite: isFavorite,
-            record: record
+            record: record,
+            heroPhotoID: heroPhotoID
         )
     }
 
@@ -273,6 +275,84 @@ struct GroveTreesTests {
         let drawn = Self.presentation(entries).rows.map(\.treeID)
         let read = entries.map(\.treeID)
         #expect(drawn == read)
+    }
+
+    /// #176: a row draws its own tree's photograph instead of the accent tile when one is chosen.
+    /// The derivation's whole job here is passthrough — `LocalAPI.grove()` is where the id is
+    /// actually chosen, and `theHeroPhotoComesFromTheStore` below covers that — so this only
+    /// asserts the id makes the trip from `GroveEntry` to `Row` without being dropped or invented.
+    @Test("a row carries its tree's hero photo id through, and a tree with none carries none")
+    func rowsCarryTheHeroPhotoID() {
+        let photoID = UUID(uuidString: "08100000-0000-4000-8000-0000000000F1")!
+        let rows = Self.presentation([
+            Self.entry(1, heroPhotoID: photoID),
+            Self.entry(2, heroPhotoID: nil)
+        ]).rows
+
+        #expect(rows[0].heroPhotoID == photoID, "the tree's own photo id did not survive the derivation")
+        #expect(rows[1].heroPhotoID == nil, "a tree with no live photograph was handed one anyway")
+    }
+
+    /// **Everything above this point is a double**, in the same sense `theTallyComesFromTheStore`
+    /// says it about the tally: it proves the derivation and says nothing about where the id comes
+    /// from. This goes through `LocalAPI` against a real store, the way that test does.
+    @Test("the hero photo id is what the store's own rule chose, not a fixture's")
+    @MainActor
+    func theHeroPhotoComesFromTheStore() async throws {
+        let deviceID = UUID(uuidString: "D0000000-0000-4000-8000-0000000000C6")!
+        let attribution = Attribution.anonymous(deviceID: deviceID)
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: deviceID)
+
+        let photographed = try await api.addTree(
+            TreeDraft(
+                coordinate: Coordinate(latitude: 37.7901, longitude: -122.4464),
+                photoLocalPath: "/tmp/cypress-grove-hero-photographed.jpg",
+                attribution: attribution
+            )
+        ).id
+        // A second tree, visited so it lands in the grove too, and stripped of the one photograph
+        // `addTree`'s community-add requirement seeds it with — a tree whose only photograph was
+        // deleted must read exactly like a tree that never had one.
+        let bare = try await api.addTree(
+            TreeDraft(
+                coordinate: Coordinate(latitude: 37.7941, longitude: -122.4464),
+                photoLocalPath: "/tmp/cypress-grove-hero-bare.jpg",
+                attribution: attribution
+            )
+        ).id
+
+        let ids = try await api.debugSeedPhotos(treeID: photographed, count: 3)
+
+        try await store.queue.write { connection in
+            let contributions = ContributionStore()
+            try contributions.insert(
+                Visit(treeID: photographed, attribution: attribution, capturedAt: Self.date(2026, 7, 15)),
+                connection: connection
+            )
+            try contributions.insert(
+                Visit(treeID: bare, attribution: attribution, capturedAt: Self.date(2026, 7, 16)),
+                connection: connection
+            )
+            let baresPhoto = try contributions.photos(treeID: bare, connection: connection).items.first
+            guard let baresPhoto else {
+                Issue.record("addTree did not seed the community-add photo it requires")
+                return
+            }
+            _ = try contributions.deletePhoto(
+                id: baresPhoto.id, attribution: attribution, at: Self.date(2026, 7, 1), connection: connection
+            )
+        }
+
+        let grove = try await api.grove()
+        let byTree = Dictionary(uniqueKeysWithValues: grove.map { ($0.treeID, $0.heroPhotoID) })
+
+        #expect(byTree[photographed] == ids[0])
+        #expect(byTree[bare] == nil, "a tree whose one photograph was deleted still drew one")
+
+        let rows = GroveTreesPresentation(entries: grove).rows
+        let photographedRow = try #require(rows.first { $0.treeID == photographed })
+        #expect(photographedRow.heroPhotoID == ids[0])
     }
 
     @Test("a tree the city named neither way is called what its own page calls it")

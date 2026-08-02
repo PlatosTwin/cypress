@@ -17,7 +17,11 @@ import SwiftUI
 /// A photograph identified by its row, filling the box it is given.
 struct PhotoImage: View {
 
-    let photoID: UUID
+    /// `nil` is a legitimate state, not an edge case worked around at the call site: a list row
+    /// whose tree has no chosen photograph (#176) has exactly as much to draw as a store-less
+    /// preview does, and it is the same drawing — the placeholder. Callers with a real hero id
+    /// pass it straight through; callers that computed "no photo" need not invent a sentinel.
+    let photoID: UUID?
     /// The gradient drawn while the bytes are loading, or in place of a photograph whose bytes are
     /// gone. Defaults to the profile hero's, which is the recipe these screens have always drawn.
     var placeholder: CypressGradientRecipe = CypressGradient.heroProfile
@@ -28,7 +32,7 @@ struct PhotoImage: View {
 
     var body: some View {
         Group {
-            if let image = store?.image(photoID) {
+            if let photoID, let image = store?.image(photoID) {
                 PhotoFill(image: image, label: label)
             } else {
                 CypressGradientField(placeholder)
@@ -36,7 +40,12 @@ struct PhotoImage: View {
             }
         }
         // Keyed on the id, so a recycled row in a scroll view loads its own photograph rather than
-        // keeping the one the cell had before.
-        .task(id: photoID) { await store?.load(photoID) }
+        // keeping the one the cell had before, and so a row that gains or loses its hero id (a
+        // scrolled-past tree's photo finishing an upload) asks again rather than keeping a stale
+        // answer.
+        .task(id: photoID) {
+            guard let photoID else { return }
+            await store?.load(photoID)
+        }
     }
 }

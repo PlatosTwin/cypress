@@ -650,6 +650,11 @@ public actor LocalAPI: CypressAPI {
                 leading: mix
             )
 
+            // --- Which photograph each season row leads with, if either subject has one on this
+            // device (#176). One statement, reused for both rows below — `heroPhotoIDs` is already
+            // built for "the whole grove in one read" and two lookups cost nothing extra.
+            let heroPhotoIDs = try contributions.heroPhotoIDs(connection: connection)
+
             // --- The elder. The active name is a `main` row and the tree is a `seed` row, so the
             // two are read separately and joined here rather than across the attach boundary.
             let elder = try almanacQueries.elder(scope: scope, connection: connection)
@@ -659,7 +664,8 @@ public actor LocalAPI: CypressAPI {
                         activeName: try contributions.activeName(treeID: found.treeID, connection: connection)?.name,
                         speciesCommonName: found.speciesCommonName,
                         address: found.address,
-                        plantedYear: found.plantedYear
+                        plantedYear: found.plantedYear,
+                        heroPhotoID: heroPhotoIDs[found.treeID]
                     )
                 }
 
@@ -705,7 +711,8 @@ public actor LocalAPI: CypressAPI {
                     speciesCommonName: found.speciesCommonName,
                     address: found.address,
                     firstSeenAt: found.firstSeenAt,
-                    observerCount: found.observerCount
+                    observerCount: found.observerCount,
+                    heroPhotoID: heroPhotoIDs[found.treeID]
                 )
             }
 
@@ -1209,10 +1216,13 @@ public actor LocalAPI: CypressAPI {
     public func grove() async throws -> [GroveEntry] {
         let userID = userID
         let deviceID = deviceID
-        let (rows, records) = try await store.queue.read { connection in
+        let (rows, records, heroPhotoIDs) = try await store.queue.read { connection in
             (
                 try contributions.groveTreeIDs(userID: userID, deviceID: deviceID, connection: connection),
-                try contributions.groveRecords(userID: userID, deviceID: deviceID, connection: connection)
+                try contributions.groveRecords(userID: userID, deviceID: deviceID, connection: connection),
+                // One statement for every row on the pill, not one per tree (#176). See
+                // `ContributionStore.heroPhotoIDs`.
+                try contributions.heroPhotoIDs(connection: connection)
             )
         }
         var entries: [GroveEntry] = []
@@ -1237,7 +1247,8 @@ public actor LocalAPI: CypressAPI {
                     // picture as an unproven read, which is the one distinction this field exists to
                     // keep. It compiled, and `aFavouriteWithNoContributionsIsEmptyNotUnknown` is what
                     // caught it.
-                    record: records[row.treeID] ?? GroveRecord.none
+                    record: records[row.treeID] ?? GroveRecord.none,
+                    heroPhotoID: heroPhotoIDs[row.treeID]
                 )
             )
         }
@@ -1300,13 +1311,18 @@ public actor LocalAPI: CypressAPI {
     public func journal(cursor: String?, limit: Int) async throws -> Page<JournalEntry> {
         let cursorDate = cursor.flatMap(SQLiteTimestamp.date(from:))
         let capped = min(limit, Page<JournalEntry>.maximumLimit)
-        let rows = try await store.queue.read { connection in
-            try contributions.journal(
-                userID: userID,
-                deviceID: deviceID,
-                before: cursorDate,
-                limit: capped,
-                connection: connection
+        let (rows, heroPhotoIDs) = try await store.queue.read { connection in
+            (
+                try contributions.journal(
+                    userID: userID,
+                    deviceID: deviceID,
+                    before: cursorDate,
+                    limit: capped,
+                    connection: connection
+                ),
+                // One statement for every row on the page, not one per row (#176). See
+                // `ContributionStore.heroPhotoIDs`.
+                try contributions.heroPhotoIDs(connection: connection)
             )
         }
 
@@ -1321,7 +1337,8 @@ public actor LocalAPI: CypressAPI {
                 treeID: row.treeID,
                 treeDisplayName: names[row.treeID] ?? "",
                 capturedAt: row.capturedAt,
-                summary: Self.humanize(kind: row.kind, storedSummary: row.summary)
+                summary: Self.humanize(kind: row.kind, storedSummary: row.summary),
+                heroPhotoID: heroPhotoIDs[row.treeID]
             )
         }
         // The cursor is the last row's capture time. Contributions are append-only and never

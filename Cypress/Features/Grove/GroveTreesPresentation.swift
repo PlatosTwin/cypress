@@ -47,6 +47,9 @@ struct GroveTreesPresentation: Equatable {
         let treeID: UUID
         let title: String
         let subtitle: String
+        /// The photograph this row draws instead of the accent tile, when this tree has one
+        /// (#176). See `GroveEntry.heroPhotoID` for the rule.
+        let heroPhotoID: UUID?
     }
 
     let rows: [Row]
@@ -79,7 +82,8 @@ struct GroveTreesPresentation: Equatable {
                 subtitle: GroveCopy.treeSubtitle(
                     isFavorite: entry.isFavorite,
                     record: entry.record
-                )
+                ),
+                heroPhotoID: entry.heroPhotoID
             )
         }
     }
