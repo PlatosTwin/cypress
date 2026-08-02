@@ -24,6 +24,10 @@ conflicts with convenience, the rule wins.
   its content. Stale DerivedData, stale logs at a reused path, an uncommitted asset, an empty
   console capture, blank screenshots, and a location-declined simulator have each produced a
   false conclusion here.
+- **A warning count only counts if the build compiled something.** A green test line survives an
+  incremental build; a warning line does not. Before claiming "clean" or "zero warnings", confirm
+  the log holds `SwiftCompile` tasks for the files claimed about — a reused DerivedData recompiles
+  nothing and reports nothing (E203). Build into a fresh directory to measure warnings.
 - Never write a conclusion before reading the output that supports it.
 - Prove every new test can fail: break the code, watch red, restore. Assert presence, not
   absence; assert facts, not phrasing.

@@ -12028,3 +12028,29 @@ to us-ca-sj"* instead of thirty-three variations of *"0 records"*. Deliberately 
 #157: the ticket's tree is green on a clean device, and a change to every UI test's setup is a
 change every other live branch inherits at merge (CLAUDE.md, shared files). `AlmanacGroupTapTests`'s
 comment should be corrected in the same change.
+
+### E203 — A warning count from an incremental build is not a warning count (task #157)
+
+*Measured 2026-08-02 while verifying the #157 merge on iPhone 16 Pro
+`EA0AD796-3052-4EE5-A7A8-A1DE807A3653`.*
+
+The #157 agent reported **"0 source warnings"** for its final full-suite run, citing its own log.
+The log says so. The log is also worthless on that question: it contains **zero `SwiftCompile`
+lines**. The run reused a DerivedData directory the agent had already built into, nothing needed
+recompiling, and a file the compiler does not recompile emits no diagnostic — so the build could
+not have reported a warning whether or not one existed. The absence was read as a measurement.
+
+The same target, same commit, built into a fresh DerivedData (391 compile tasks) emits **51
+unique source warnings**: `CypressTests/MapQueryPlanTests.swift` (8),
+`CypressTests/FailedReadTests.swift` (8), `CypressTests/AlmanacLateFixTests.swift` (5),
+`MapSearchTests` (4), `MapFilterTests` (3), `JournalPresentationTests` (3), and eight more files
+at 1–2 each, plus the expanded `#expect`/`#require` macro buffers. **Zero are in the app target**
+— the zero-warning line holds for `Cypress`, and the test target is #83's known debt, not a
+regression from this merge.
+
+**The rule this earns.** A green *test* line survives an incremental build; a *warning* line does
+not. Any claim about warnings — "clean", "zero", "no new ones" — is only as good as the build that
+produced it, so it must come from a log that shows compile tasks for the files being claimed
+about. This is the CLAUDE.md provenance rule ("never trust an artifact you did not watch being
+produced") in a form nobody had written down: the artifact here was produced, honestly, by a build
+that did nothing.
