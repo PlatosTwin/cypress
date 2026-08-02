@@ -237,8 +237,10 @@ struct CareLogTests {
         }
 
         // "Take one (or multiple)" — two attachments are two staged files on two paths. A shared
-        // path would let the drain take siblings out of the outbox row.
-        #expect(model.draft.photos.count == 2)
+        // path would let the drain take siblings out of the outbox row. `#require`, not
+        // `#expect`: the indexing below must not crash the suite when this regresses — the
+        // forced-red run of 2026-08-01 aborted the process on exactly that.
+        try #require(model.draft.photos.count == 2)
         let paths = model.draft.photos.map(\.path)
         #expect(Set(paths).count == 2, "two photos share a staged path")
         let firstSize = try #require(PhotoBinary.pixelSize(atPath: paths[0]))

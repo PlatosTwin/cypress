@@ -132,7 +132,9 @@ struct CheckInExtrasTests {
         let paths = model.draft.photos.map(\.path)
         defer { for path in paths { try? FileManager.default.removeItem(atPath: path) } }
 
-        #expect(paths.count == 2)
+        // `#require`, so a regression fails this test rather than crashing the suite on the
+        // indexing below.
+        try #require(paths.count == 2)
         #expect(Set(paths).count == 2, "two photos share a staged path")
 
         model.removePhoto(at: 0)
