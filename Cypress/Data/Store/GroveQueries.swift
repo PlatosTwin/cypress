@@ -73,7 +73,11 @@ public struct GroveQueries {
     ///
     /// Returns `nil` when the contributor has contributed nothing, or has only contributed to trees
     /// the city has not placed in a neighbourhood. Both are "there is no answer", which is a
-    /// different thing from zero.
+    /// different thing from zero — and since R29 reached this screen the second case is no longer
+    /// terminal: the caller falls back to `mostVisitedTree(userID:deviceID:)` and a stated radius,
+    /// so a contributor whose whole record is in a city without polygons still has an area. The
+    /// polygon path stays preferred and stays this exact query, which is why San Francisco's answer
+    /// cannot move.
     public func residentNeighborhood(
         userID: UUID?,
         deviceID: UUID,
@@ -95,15 +99,58 @@ public struct GroveQueries {
         }
     }
 
+    /// The single city-inventory tree this contributor has been at most — R29's fallback centre
+    /// for screen 08.
+    ///
+    /// A4's inference is "resident neighborhood inferred from most-visited", and where every
+    /// contribution lands on a tree the city placed in no polygon (all 52,788 San Jose rows), the
+    /// same inference still has a most-visited *tree* even though it has no most-visited
+    /// *neighbourhood*. The radius the caller draws around this coordinate is the same inference
+    /// with R29's geometry, and it still needs no location permission — the centre is where the
+    /// contributor's own record says they go, not where they are standing.
+    ///
+    /// Called only after `residentNeighborhood` returned `nil`, so the polygon path is preferred
+    /// exactly as R29 orders the two. Ties break on the tree's uuid for the same reason that query
+    /// ties break on name: the answer must not flicker between two trees a contributor splits
+    /// their visits between.
+    ///
+    /// Returns `nil` when the contributor has contributed nothing the seed knows about, which is
+    /// the cold start and renders nothing (E48).
+    public func mostVisitedTree(
+        userID: UUID?,
+        deviceID: UUID,
+        connection: SQLiteConnection
+    ) throws -> Coordinate? {
+        let statement = try connection.cachedStatement("""
+            SELECT t.lat AS lat, t.lon AS lon
+              FROM (\(Self.ownContributions)) c
+              JOIN \(seed).trees t ON t.uuid = c.tree_uuid COLLATE NOCASE
+             WHERE t.deleted_at IS NULL
+             GROUP BY t.uuid
+             ORDER BY COUNT(*) DESC, t.uuid
+             LIMIT 1
+            """)
+        _ = try statement.bind([":device": deviceID.uuidString, ":user": userID?.uuidString])
+        return try statement.fetchOne { row in
+            Coordinate(latitude: try row.double("lat"), longitude: try row.double("lon"))
+        }
+    }
+
     // MARK: - The ring's denominator
 
-    /// Every distinct species the city inventory records standing in one neighbourhood.
+    /// Every distinct species the city inventory records standing in one area.
     ///
     /// `limit: nil` reads it whole, which is the only way the caller gets a `totalCount` to divide
     /// by. A page here would make the denominator too small and therefore the ring too full — the
     /// error would flatter the contributor, which is the direction nobody notices (ERRATA E38).
-    public func neighborhoodSpeciesIDs(
-        neighborhoodID: Int,
+    ///
+    /// Takes an `AlmanacScope` rather than a `neighborhoodID` since R29 reached this screen: for a
+    /// `.neighborhood` scope the rendered predicate is the identical
+    /// `t.neighborhood_id = :areaNeighborhood` string, and for the `.radius` fallback it is the
+    /// same bounding-box-plus-squared-distance test every almanac read uses, so the two screens
+    /// cannot disagree about what "within a 15-minute walk" holds.
+    public func speciesIDs(
+        scope: AlmanacScope,
         limit: Int? = nil,
         connection: SQLiteConnection
     ) throws -> Series<UUID> {
@@ -111,13 +158,12 @@ public struct GroveQueries {
             SELECT DISTINCT s.\(schema.speciesIdentityColumn) AS species_uuid
               FROM \(seed).trees t
               JOIN \(seed).species s ON s.id = t.species_current
-             WHERE t.neighborhood_id = :neighborhood AND t.deleted_at IS NULL
+             WHERE \(scope.predicate("t")) AND t.deleted_at IS NULL
              LIMIT :limit
             """)
-        _ = try statement.bind([
-            ":neighborhood": neighborhoodID,
-            ":limit": ContributionStore.rowsToRead(for: limit)
-        ])
+        _ = try statement.bind(scope.bindings.merging(
+            [":limit": ContributionStore.rowsToRead(for: limit)] as [String: SQLiteBindable?]
+        ) { a, _ in a })
         let rows = try statement.fetchAll { try $0.uuid("species_uuid") }
         return ContributionStore.series(rows, limit: limit)
     }
@@ -131,7 +177,7 @@ public struct GroveQueries {
     /// So the address is the address of the tree the contributor was actually standing at the first
     /// time they met the species, which is what the celebration callout says out loud.
     ///
-    /// City-inventory trees only, matching `neighborhoodSpeciesIDs` — see `GroveNeighborhood.species`
+    /// City-inventory trees only, matching `speciesIDs(scope:)` — see `GroveNeighborhood.species`
     /// for why a self-asserted species on a community-added tree does not count as one you know.
     public func knownSpecies(
         userID: UUID?,

@@ -57,7 +57,7 @@ struct GrovePresentationTests {
         name: String = "Sunset/Parkside"
     ) -> GroveNeighborhood {
         GroveNeighborhood(
-            name: name,
+            area: .named(name),
             species: Series(items: (1...count).map(speciesID), isComplete: complete)
         )
     }
@@ -158,7 +158,7 @@ struct GrovePresentationTests {
     func emptyNeighborhoodRendersNothing() {
         let subject = Self.presentation(
             known: [Self.known(1)],
-            neighborhood: GroveNeighborhood(name: "Treasure Island", species: .empty)
+            neighborhood: GroveNeighborhood(area: .named("Treasure Island"), species: .empty)
         )
         #expect(subject.progress == nil)
     }

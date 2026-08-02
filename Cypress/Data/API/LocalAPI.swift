@@ -513,13 +513,35 @@ public actor LocalAPI: CypressAPI {
                 return SpeciesGuide(species: species, cityTreeCount: cityCount)
             }
 
-            let neighborhood = try speciesQueries.resolveNeighborhood(near: coordinate, connection: connection)
-            let nearYou = try neighborhood.map { area in
+            // --- Which area `Near you` is about (RULINGS R29, the same resolution `almanac` makes).
+            //
+            // The polygon first, because a named place is a better subject than a distance; then
+            // the stated radius, so a city whose inventory is merged but whose boundaries are not
+            // still has a `Near you` card the day its trees land — the card silently not drawing
+            // for every San Jose reader was this screen's share of the defect family E182 closed.
+            // Then nothing: a circle around a reader the record does not cover is not an area, and
+            // `holdsAnyRecord` is what keeps a true `0` (none of these grow in your covered area)
+            // distinct from a card counting ground the inventory has never seen.
+            let scope: AlmanacScope?
+            if let polygon = try speciesQueries.resolveNeighborhood(near: coordinate, connection: connection) {
+                scope = .neighborhood(id: polygon.id, name: polygon.name)
+            } else if let almanacQueries {
+                let fallback = AlmanacScope.radius(
+                    centre: coordinate,
+                    metres: AlmanacLimits.fallbackRadiusM
+                )
+                scope = try almanacQueries.holdsAnyRecord(scope: fallback, connection: connection)
+                    ? fallback : nil
+            } else {
+                scope = nil
+            }
+
+            let nearYou = try scope.map { scope in
                 SpeciesNeighborhoodCount(
-                    neighborhoodName: area.name,
-                    count: try speciesQueries.neighborhoodTreeCount(
+                    area: scope.area,
+                    count: try speciesQueries.treeCount(
                         speciesID: id,
-                        neighborhoodID: area.id,
+                        scope: scope,
                         connection: connection
                     )
                 )
@@ -1241,21 +1263,35 @@ public actor LocalAPI: CypressAPI {
                 deviceID: deviceID,
                 connection: connection
             )
+            // --- Which area the ring is about (RULINGS R29, the same order `almanac` resolves in).
+            //
             // A4's inference reads the same contributions, so a contributor with none has no
-            // neighbourhood and the ring has nothing to be a fraction of.
-            guard let resident = try groveQueries.residentNeighborhood(
+            // area at all and the ring has nothing to be a fraction of. The polygon first — the
+            // most-visited neighbourhood, the exact query this screen has always run, so San
+            // Francisco cannot move. Where no touched tree carries a polygon (every contribution
+            // in San Jose, whose 52,788 rows hold `neighborhood_id IS NULL`), the same inference
+            // still names a most-visited *tree*, and R29's stated radius around it is the area.
+            // No coverage guard is needed the way `almanac` and `speciesGuide` need one: the
+            // centre is itself an inventoried tree, so the circle covers record by construction.
+            let scope: AlmanacScope
+            if let resident = try groveQueries.residentNeighborhood(
                 userID: userID,
                 deviceID: deviceID,
                 connection: connection
-            ) else {
+            ) {
+                scope = .neighborhood(id: resident.id, name: resident.name)
+            } else if let centre = try groveQueries.mostVisitedTree(
+                userID: userID,
+                deviceID: deviceID,
+                connection: connection
+            ) {
+                scope = .radius(centre: centre, metres: AlmanacLimits.fallbackRadiusM)
+            } else {
                 return GroveSpecies(neighborhood: nil, known: known)
             }
-            let species = try groveQueries.neighborhoodSpeciesIDs(
-                neighborhoodID: resident.id,
-                connection: connection
-            )
+            let species = try groveQueries.speciesIDs(scope: scope, connection: connection)
             return GroveSpecies(
-                neighborhood: GroveNeighborhood(name: resident.name, species: species),
+                neighborhood: GroveNeighborhood(area: scope.area, species: species),
                 known: known
             )
         }

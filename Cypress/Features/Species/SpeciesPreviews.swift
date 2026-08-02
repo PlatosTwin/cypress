@@ -161,7 +161,7 @@ enum SpeciesPreviewFixtures {
     static func view(
         species: Species,
         cityTreeCount: Int? = 1_923,
-        nearYou: SpeciesNeighborhoodCount? = SpeciesNeighborhoodCount(neighborhoodName: "Sunset/Parkside", count: 61),
+        nearYou: SpeciesNeighborhoodCount? = SpeciesNeighborhoodCount(area: .named("Sunset/Parkside"), count: 61),
         nearby: Series<NearbySpeciesTree> = sunsetTrees,
         now: Date = july,
         fails: Bool = false

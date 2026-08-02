@@ -39,12 +39,19 @@ public struct GroveSpecies: Hashable, Sendable {
     public static var empty: GroveSpecies { GroveSpecies(neighborhood: nil, known: .empty) }
 }
 
-/// The contributor's resident neighbourhood and the species the city records growing in it.
+/// The contributor's resident area and the species the city records growing in it.
+///
+/// "Neighbourhood" in the type name is A4's word and stays; since R29 reached this screen the
+/// area itself may be either of R29's two shapes, and the two are different promises the caption
+/// keeps apart: a polygon is a *place*, the fallback is a stated *distance* around the
+/// contributor's own most-visited tree, taken only when no tree they have touched carries a
+/// polygon — which before this pass left every San Jose contributor's ring unrendered forever.
 public struct GroveNeighborhood: Hashable, Sendable {
 
-    /// The SF Analysis Neighborhood's name, verbatim from the seed (A4, ERRATA E2). Never
-    /// abbreviated or prettified here — see ERRATA E47 for what that costs screen 08's caption.
-    public let name: String
+    /// The area: a polygon's name verbatim from the seed (A4, ERRATA E2 — never abbreviated or
+    /// prettified, see ERRATA E47 for what that costs screen 08's caption), or R29's stated
+    /// distance where no polygon covers anything the contributor has touched.
+    public let area: AlmanacArea
 
     /// The distinct species of every city-inventory tree standing in this neighbourhood — the
     /// ring's denominator.
@@ -60,8 +67,8 @@ public struct GroveNeighborhood: Hashable, Sendable {
     /// same reason.
     public let species: Series<UUID>
 
-    public init(name: String, species: Series<UUID>) {
-        self.name = name
+    public init(area: AlmanacArea, species: Series<UUID>) {
+        self.area = area
         self.species = species
     }
 }

@@ -26,8 +26,9 @@ public struct SpeciesGuide: Sendable {
     /// implementation did not count, which is not the same fact as `0`, and the card does not draw.
     public let cityTreeCount: Int?
 
-    /// 07 §5's `Near you` card. `nil` when there is no location fix, because then there is no
-    /// "your area" for a count to be about (A4).
+    /// 07 §5's `Near you` card. `nil` when there is no location fix — no "your area" for a count
+    /// to be about (A4) — and `nil` where the merged record does not cover the ground the caller is
+    /// standing on (R29), which is a different absence with the same honest rendering: no card.
     public let nearYou: SpeciesNeighborhoodCount?
 
     /// 07 §6's `Nearby individuals`. Empty without a fix — a distance needs somewhere to be from.
@@ -46,25 +47,27 @@ public struct SpeciesGuide: Sendable {
     }
 }
 
-/// How many of this species stand in the neighbourhood the caller is standing in.
+/// How many of this species stand in the area the caller is standing in.
 ///
-/// A4 fixes "your area" as an SF Analysis Neighborhood, and the seed carries those polygons and
-/// the city's own assignment of every tree to one. It does **not** fix how the app decides which
-/// polygon a person is in: A4's mechanism is "resident neighborhood inferred from most-visited,
-/// overridable in settings", and neither a visit history nor a settings screen exists yet.
+/// A4 fixed "your area" as an SF Analysis Neighborhood; RULINGS R29 widened it for the merged
+/// record: **a named polygon where the record holds one, a stated radius where it does not.** The
+/// polygon is resolved through the nearest inventoried tree's `neighborhood_id` — the city's
+/// assignment, not a second point-in-polygon implementation that could disagree with it (E44). A
+/// coordinate no polygon covers falls back to `AlmanacLimits.fallbackRadiusM` around the caller,
+/// and only where the inventory actually covers that ground — a circle in a city the record has
+/// never heard of is no area at all, and then this whole value is `nil` and the card does not draw.
 ///
-/// So the neighbourhood is resolved through the nearest inventoried tree's `neighborhood_id` — the
-/// city's assignment, not a second point-in-polygon implementation of mine that could disagree with
-/// it. In a city with 195,309 inventoried trees the nearest one is metres away. This is a
-/// derivation and is named as one; see ERRATA (E44).
+/// The two cases are different promises and the payload says which one it is making: the card's
+/// label — `Near you` — happens to be exactly true of either, but a surface that wants the area's
+/// name must go through `area`, where a distance can never be mistaken for a place (R29).
 public struct SpeciesNeighborhoodCount: Hashable, Sendable {
-    /// The SF Analysis Neighborhood name, as the seed spells it.
-    public let neighborhoodName: String
+    /// The area the count is scoped to: the polygon's seed-verbatim name, or the fallback distance.
+    public let area: AlmanacArea
     /// Inventoried trees of this species inside it. A total.
     public let count: Int
 
-    public init(neighborhoodName: String, count: Int) {
-        self.neighborhoodName = neighborhoodName
+    public init(area: AlmanacArea, count: Int) {
+        self.area = area
         self.count = count
     }
 }

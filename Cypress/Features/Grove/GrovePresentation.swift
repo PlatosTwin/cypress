@@ -208,7 +208,7 @@ struct GrovePresentation: Equatable {
             fraction: fraction,
             ringLabel: GroveCopy.ringLabel(fraction: fraction),
             headline: GroveCopy.headline(recognised: numerator, total: denominator),
-            caption: GroveCopy.caption(neighborhood: neighborhood.name)
+            caption: GroveCopy.caption(area: neighborhood.area)
         )
     }
 
@@ -322,8 +322,21 @@ enum GroveCopy {
     /// The definite article is the mock's and it is kept, which is what makes the neighbourhood name
     /// read as a place. The name itself is the seed's, verbatim — SF's own polygon set (A4) has no
     /// "Outer Sunset"; the Sunset is one neighbourhood named `Sunset/Parkside`. See ERRATA E47.
-    static func caption(neighborhood: String) -> String {
-        "you can recognize in the \(neighborhood)"
+    ///
+    /// **The fallback arm is NOT SPECIFIED** — the mock draws only the polygon case. R29's third
+    /// rule decides its shape: the fallback never dresses itself as a place, so it states the
+    /// distance in the words screen 12's pill already uses for the same 1,200 m ("a 15-minute
+    /// walk") and says what the distance is measured *from* — the contributor's own most-visited
+    /// tree, which is A4's inference said out loud rather than a place name invented for a circle.
+    /// It never names the city; the app does not know one, only that no boundary in the record
+    /// covers anything this contributor has touched.
+    static func caption(area: AlmanacArea) -> String {
+        switch area {
+        case let .named(name):
+            return "you can recognize in the \(name)"
+        case .radius:
+            return "you can recognize within a 15-minute walk of your most-visited tree"
+        }
     }
 
     /// C27's inner label, `30%`. Rounded down, so a ring that is not yet full never says it is.
