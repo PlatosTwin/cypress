@@ -182,11 +182,9 @@ final class MapSuggestionUITests: XCTestCase {
         let app = launch()
         let field = field(app)
 
-        // `Yours`, not `In bloom`: since task #136 (R31) a condition chip renders *disabled* while
-        // no tree anywhere could match it, and whether `In bloom` is disabled depends on the month
-        // the suite runs in — the seed's calendars name no bloom from October to December. `Yours`
-        // is a live toggle on every machine in every month, and this test only needs a chip with a
-        // frame to watch move.
+        // `Yours`: the first chip in the row, on the glass without scrolling on every phone —
+        // since #166 the row is one horizontally scrolling line, and this test only needs a chip
+        // with a frame to watch move.
         let chip = app.buttons["Yours"]
         XCTAssertTrue(chip.waitForExistence(timeout: 20), "screen 01 drew no filter chips")
         let before = chip.frame.minY

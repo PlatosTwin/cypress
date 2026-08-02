@@ -194,42 +194,6 @@ public struct SpeciesQueries {
         return try statement.fetchAll { try Self.decodeIfPresent($0) }.compactMap { $0 }
     }
 
-    // MARK: - Bloom calendars (task #136, RULINGS R31)
-
-    /// The species whose curated calendars name `month` as a bloom month, as seed row ids — plus
-    /// whether any species carries a bloom calendar at all, which is the fact that tells "the
-    /// calendars are a debt" apart from "nothing blooms this month" on the disabled chip.
-    ///
-    /// The `seasonal != '{}'` predicate is a scan of the species table's non-empty calendars —
-    /// 511 rows in the shipped seed against a 569-row table — and the JSON is decoded in Swift by
-    /// the same `decodeSeasonal` every other reader uses, so a calendar this cannot see is a
-    /// calendar the bloom filter cannot see either. Called once per appearance of screen 01, never
-    /// on the pan path.
-    public func bloomSpecies(
-        month: Int,
-        connection: SQLiteConnection
-    ) throws -> (rowIDs: [Int64], anyCalendar: Bool) {
-        let sql = """
-        SELECT s.id AS species_id, s.seasonal AS species_seasonal
-          FROM \(seed).species s
-         WHERE s.deleted_at IS NULL
-           AND s.seasonal IS NOT NULL AND s.seasonal != '{}'
-        """
-        let statement = try connection.cachedStatement(sql)
-        let rows = try statement.fetchAll {
-            (id: try $0.int64("species_id"), seasonal: try $0.stringIfPresent("species_seasonal"))
-        }
-        var anyCalendar = false
-        var rowIDs: [Int64] = []
-        for row in rows {
-            let bloomMonths = Self.decodeSeasonal(row.seasonal).bloomMonths
-            guard !bloomMonths.isEmpty else { continue }
-            anyCalendar = true
-            if bloomMonths.contains(month) { rowIDs.append(row.id) }
-        }
-        return (rowIDs, anyCalendar)
-    }
-
     // MARK: - How common it is nearby (screen 07 §5)
 
     /// How many trees of this species the city inventory holds — screen 07 §5's `In San Francisco`

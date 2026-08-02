@@ -258,7 +258,7 @@ enum MapExtraFilter: String, CaseIterable, Identifiable, Sendable {
 ///
 /// The words live here rather than inside the views for the reason `MapRecentreCopy` and
 /// `MapLocationCopy` do: they are the part that has to be asserted without rendering anything, and
-/// three of these sentences are the *only* thing keeping this feature inside D1, E38 and E126.
+/// the result line's two forms are the *only* thing keeping this feature inside D1 and E38.
 enum MapFilterCopy {
 
     static let rowLabel = "Filter trees"
@@ -330,52 +330,6 @@ enum MapFilterCopy {
     /// does, because "expands" is already the value's job.
     static let moreHint = "Holds the narrowings that are not chips in the row."
 
-    // MARK: The two chips that cannot match yet (task #136, RULINGS R31)
-
-    /// **Why a condition chip is disabled, said on the chip's own surface.**
-    ///
-    /// R31: a chip whose only possible outcome is E126's apology card is #59's defect wearing
-    /// filter clothes — a control that promises and cannot deliver. So while no tree anywhere in
-    /// the data could match, the chip renders disabled with the reason on it, visually and as its
-    /// accessibility value, and the tap is never spent on a card that says what the chip already
-    /// said.
-    ///
-    /// **Two different sentences, because the two waits are different in kind** (R31). `In bloom`
-    /// waits on us — the curated species pipeline (#6) owes the calendars, and D5's schema is ready
-    /// for them — so its sentence is the app being honest about its own debt. `Needs care` waits on
-    /// the neighborhood: `declining` is a status no city publishes, so it arrives through community
-    /// observation or not at all, and its sentence is an invitation.
-    ///
-    /// Each chip re-enables itself the moment matching data exists — no flag, no release; the
-    /// data's arrival is the switch (`MapConditionAvailability`, read per appearance by
-    /// `MapModel.refreshConditionAvailability`).
-    ///
-    /// **`In bloom` has a third state R31 did not draft for, found by measuring the seed rather
-    /// than believing the record.** R31 (and R23, and E183 §5) say every `seasonal` in the shipped
-    /// seed is `{}`; the seed this build ships carries bloom calendars for 11 species, and no month
-    /// from October to December names a blooming tree anywhere in it. A chip disabled in November
-    /// under the "calendars are still being written" sentence would be the app claiming a debt it
-    /// has partly paid — E175's class of sentence, confidently wrong — so out-of-season gets its
-    /// own words, and `MapConditionAvailability.hasAnyBloomCalendar` is what picks between them.
-    ///
-    /// No spaces around em dashes (ARCHITECTURE §5.7). Tested under R30's rule: the tests assert
-    /// the sentences exist, differ per fact, and travel on the chip — never that they contain a
-    /// phrase.
-    static func conditionUnavailableReason(
-        _ condition: MapFilter.Condition,
-        availability: MapConditionAvailability
-    ) -> String {
-        switch condition {
-        case .inBloom:
-            return availability.hasAnyBloomCalendar
-                ? "Nothing on the map is in its bloom months right now—this comes back when "
-                    + "something is."
-                : "Our bloom calendars are still being written—no tree can match this yet."
-        case .needsCare:
-            return "No one has reported a struggling tree yet—yours could be the first."
-        }
-    }
-
     // MARK: The result line
 
     /// **What the map has narrowed to, as a number — and the one place D1 and E38 both bite.**
@@ -410,57 +364,15 @@ enum MapFilterCopy {
         return "\(matched) trees—showing \(drawn)"
     }
 
-    /// The empty state (ERRATA E126): why the map is empty, and how to leave.
-    ///
-    /// E126's rule is that "a filtered map with no matches must say why it is empty, and how to get
-    /// out of it", and the second half is the one that is easy to skip. The sentence names the
-    /// filter that emptied it — so the reader knows which chip to reach for — and the notice this
-    /// goes into carries a `Clear` button, so the way out is a control rather than a hint.
-    ///
-    /// `Yours` and `Favorites` get their own reasons, because on a fresh install the honest answer
-    /// is not "no matches here" but "you have not made any yet", and telling somebody to pan around
-    /// looking for trees they have never visited is the dead end D16 (b) warns about.
-    ///
-    /// **This survives R23.1 unchanged in substance and is the reason the restructure is safe.**
-    /// `Favorites` is now set from behind a control that may be shut by the time the map is empty, so
-    /// the notice naming the filter is no longer a convenience — on that path it is the only sentence
-    /// on screen that says which narrowing did this.
-    static func emptyTitle(_ filter: MapFilter) -> String {
-        if filter.membership == .yours { return "No trees of yours here" }
-        if filter.membership == .favorites { return "No favorites here" }
-        return "Nothing matches here"
-    }
+    // MARK: The empty state there deliberately is none of (task #165)
 
-    static func emptyMessage(_ filter: MapFilter, hasAnyMembers: Bool) -> String {
-        switch filter.membership {
-        case .yours where !hasAnyMembers:
-            return "You have not added a photo, a check-in or a measurement to any tree yet. "
-                + "Visit one and it will appear here."
-        // **Names the control the app actually draws, which is not a heart** (task #139, E184).
-        //
-        // This sentence used to read "Tap the heart on any tree's page". There is no heart anywhere
-        // in this app and there never has been: SCREENS.md §2 C8 marks the four cells' icons NOT
-        // SPECIFIED, §5 gap 3 repeats it, `mocks/cypress-mocks.html` contains no heart, and RULINGS
-        // R2 corrects its own first draft on exactly this point — "C8 has no glyph … there was
-        // nothing to fill". The row is four text cells reading `Favorite · Care · Share · Report`.
-        //
-        // So the reader was sent to look for an affordance that does not exist, on the one screen
-        // this notice's whole job is to route them to. `QuadActionRow.Action.favorite.label` is the
-        // string on the cell, quoted rather than paraphrased so the two cannot drift.
-        // Written out rather than interpolated from `QuadActionRow.Action.favorite.label`, so this
-        // file keeps its `Foundation`-only import; `MapFilterCopyNamesTheDrawnControlTests` asserts
-        // the two strings agree, which is the drift protection the interpolation would have bought.
-        case .favorites where !hasAnyMembers:
-            return "You have not favorited a tree yet. Tap Favorite on any tree's page and it will "
-                + "appear here."
-        case .some:
-            return "Nothing in this part of the map. Pan or zoom out to look further, or clear the "
-                + "filter to see every tree again."
-        case nil:
-            return "No tree in view matches this filter. Pan or zoom out to look further, or clear "
-                + "the filter to see every tree again."
-        }
-    }
+    // A filtered map with no matches used to draw an E126-shaped card here — a title naming the
+    // filter, a reason, and its own `Clear filters` button — and before that, R31 stood a disabled
+    // chip carrying a sentence where a pill should be. The owner struck both presentations in one
+    // instruction: "We should NEVER display a message box in place of an empty filter … if
+    // nothing matches, fine." So there is no empty-state copy in this type any more. The empty
+    // map is the answer, and the way out is the `Clear filters` chip, which is in the row
+    // whenever any dimension is set (R23.1 §3 — the way out never hides).
 }
 
 /// The words the year control says, including the one that keeps it honest.
@@ -518,17 +430,3 @@ enum MapYearFilterCopy {
     static let undatedShareOfSeed = 0.8078
 }
 
-// MARK: - What the availability answers, per chip (task #136, RULINGS R31)
-
-extension MapConditionAvailability {
-    /// Whether this condition chip is a live control or R31's disabled one.
-    ///
-    /// Lives here rather than on the `Data` type because `MapFilter.Condition` is this feature's
-    /// vocabulary; the availability itself is the store's answer and knows nothing about chips.
-    func isEnabled(_ condition: MapFilter.Condition) -> Bool {
-        switch condition {
-        case .inBloom: return inBloom
-        case .needsCare: return needsCare
-        }
-    }
-}

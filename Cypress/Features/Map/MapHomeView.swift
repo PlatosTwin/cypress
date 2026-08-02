@@ -171,10 +171,6 @@ struct MapHomeView: View {
             // Off unless `CYPRESS_MAP_PROBE=1` is in the environment. See `MapFrameProbe`.
             MapFrameProbe.shared.start()
             #endif
-            // Once per appearance, before the fetch: whether the condition chips could match
-            // anything at all (R31). Returning to this screen is exactly when the answer can have
-            // moved — the writes that change it happen elsewhere.
-            await model.refreshConditionAvailability()
             await model.fetch()
         }
         // The wait, timed. Restarted whenever *what* is being waited for changes, and cancelled
@@ -330,7 +326,7 @@ struct MapHomeView: View {
                         // tree did not, E183 §3).
                         .accessibilitySortPriority(5)
                     }
-                    MapFilterChips(filter: $model.filter, availability: model.conditionAvailability)
+                    MapFilterChips(filter: $model.filter)
                         .accessibilitySortPriority(4)
                     // Below the chips, so the C20 → chips order the accessibility tests walk is
                     // exactly as it was. Draws nothing unless the search has something to say.
@@ -433,25 +429,13 @@ struct MapHomeView: View {
                 MapTreeCard(subject: subject, userCoordinate: location.availability.coordinate) {
                     router.push(MapHomeView.route(for: subject.pin))
                 }
-            } else if model.isEmptiedByFilter {
-                // **ERRATA E126, applied to the filter** (#116): a filtered map with no matches must
-                // say why it is empty and how to get out of it. It outranks the standing location
-                // notice because the reader just pressed something and this is the answer to that
-                // press — the same argument that puts `recentreAnswer` above the card.
-                //
-                // The way out is a control, not a hint. `MapLocationNotice` already carries a
-                // trailing button and a title/message pair, which is exactly this shape, so the
-                // empty state reuses it rather than drawing a fourth kind of card on this screen.
-                MapLocationNotice(
-                    title: MapFilterCopy.emptyTitle(model.filter),
-                    message: MapFilterCopy.emptyMessage(
-                        model.filter,
-                        hasAnyMembers: model.membershipHasAnyMembers
-                    ),
-                    actionLabel: MapFilterCopy.clearLabel,
-                    onAction: { model.filter = .all }
-                )
             } else {
+                // A filter that matches nothing draws **nothing extra** here, on the owner's
+                // direct instruction (task #165): "if nothing matches, fine." The E126-shaped
+                // card this slot used to draw for an emptied filter — title, reason, its own
+                // `Clear filters` button — is exactly the message box the owner struck. The empty
+                // map is the answer, and the way out stays in the row: the `Clear filters` chip
+                // is on screen whenever any dimension is set.
                 standingNotice
             }
         }

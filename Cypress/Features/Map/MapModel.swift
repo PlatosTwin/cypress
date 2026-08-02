@@ -106,12 +106,9 @@ final class MapModel {
     ///
     /// Read once per press of the chip rather than once per pan — `membershipDidChange` fills it and
     /// the map refetches through it. `[]` is a real answer here (a reader with no favourites) and it
-    /// narrows the map to nothing, which screen 01 renders as an empty map with a reason on it.
+    /// narrows the map to nothing, which screen 01 renders as an empty map — the empty map is the
+    /// whole answer, on the owner's instruction (task #165).
     private(set) var membershipIDs: Set<UUID>?
-
-    /// Whether the membership chip that is on has *any* members at all, which is what tells "none
-    /// here" apart from "none anywhere" in the empty state (ERRATA E126).
-    var membershipHasAnyMembers: Bool { !(membershipIDs?.isEmpty ?? true) }
 
     private var membershipTask: Task<Void, Never>?
 
@@ -124,26 +121,6 @@ final class MapModel {
 
     var filter: Filter = .all {
         didSet { if filter != oldValue { filterDidChange(from: oldValue) } }
-    }
-
-    /// Whether the two condition chips could match anything at all (task #136, RULINGS R31).
-    ///
-    /// `.none` — both disabled — until the read lands, which is the honest resting state: a chip
-    /// may not look alive on the strength of data nobody has checked for. The read is once per
-    /// appearance of the screen (`MapHomeView`'s `.task`), not per pan: what it answers is a fact
-    /// about the whole store, and the store changes it only through writes that happen on other
-    /// screens — so returning to the map is exactly the moment the answer can have moved. That is
-    /// also what makes R31's "each chip self-enables the moment its data exists" true without a
-    /// flag: the first community observation standing a declining tree flips `needsCare` on the
-    /// next arrival here.
-    private(set) var conditionAvailability: MapConditionAvailability = .none
-
-    /// Re-asks the store. The month is this model's own injected clock, so the bloom half is a
-    /// deterministic function in tests rather than a read of the wall.
-    func refreshConditionAvailability() async {
-        let month = calendar.component(.month, from: now())
-        let next = (try? await api.mapConditionAvailability(month: month)) ?? .none
-        if next != conditionAvailability { conditionAvailability = next }
     }
 
     private(set) var viewport: MapViewport?
@@ -390,24 +367,13 @@ final class MapModel {
     /// differently rather than presenting a page as a total.
     var filterResult: String? {
         guard filter.isActive, case let .pins(answer) = content else { return nil }
-        // **Nothing to report when the empty notice is already reporting it.** Seen on the running
-        // screen: a `0 trees` pill sat in the chrome while `No trees of yours here` sat in the card
-        // below, which is the same fact twice and the weaker phrasing on top. The notice says why
-        // the map is empty and offers the way out (ERRATA E126); a bare zero says neither.
+        // **An emptied map reports nothing at all** — no count, no card (task #165). A `0 trees`
+        // pill would be a message where the owner asked for none: the empty map is the whole
+        // answer, and the way out is the `Clear filters` chip the row already draws.
         guard !pins.isEmpty else { return nil }
         // The drawn count is `pins`, not `answer.items`: a condition chip filters after the fetch,
         // so the number on screen has to be the number on the glass.
         return MapFilterCopy.result(drawn: pins.count, matched: answer.matchesInView)
-    }
-
-    /// Whether the filter has emptied the map, which is the state ERRATA E126 governs.
-    ///
-    /// A clustered viewport is deliberately excluded: badges are not pins, an empty `pins` array at
-    /// zoom 12 means the map is drawing clusters rather than that nothing matched, and a notice
-    /// saying "nothing here" over a screen full of badges would be the wrong sentence entirely.
-    var isEmptiedByFilter: Bool {
-        guard filter.isActive, case .pins = content else { return false }
-        return pins.isEmpty
     }
 
     // MARK: - Camera

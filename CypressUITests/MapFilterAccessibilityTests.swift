@@ -1,9 +1,9 @@
 import XCTest
 
-/// **Screen 01's filter row, its expandable control, its result line and its empty notice, driven the
-/// way an assistive technology reaches them** (task #135; the design is RULINGS **R23** as amended by
-/// **R23.1**, restructured again by task #145, with R31's disabled chips from task #136, and the
-/// dropdown beside it is **R25**).
+/// **Screen 01's filter row, its expandable control and its result line, driven the way an
+/// assistive technology reaches them** (task #135; the design is RULINGS **R23** as amended by
+/// **R23.1**, restructured by task #145, and re-cut by the owner's directives in tasks #165 and
+/// #166; the dropdown beside it is **R25**).
 ///
 /// ── Why this file exists ─────────────────────────────────────────────────────────────────────────
 /// #116 shipped the row and its own report says plainly: "No UI tests written — `CypressUITests` was
@@ -12,18 +12,20 @@ import XCTest
 /// finger or a VoiceOver reader, because SwiftUI builds no in-process accessibility tree
 /// (ARCHITECTURE §7, E116).
 ///
-/// ── What #145 and #136 changed about this file's subject ────────────────────────────────────────
-/// The row is now `Yours · In bloom · Needs care · More filters`; `Favorites` **and `Year`** live
-/// behind that last control. And the two condition chips are R31 controls: while no tree anywhere
-/// could match one it renders disabled with the reason on the chip, so this file can no longer use
-/// `In bloom` as its reliable map-emptier — in the shipped seed `In bloom` has *seasons* (11 species
-/// carry bloom calendars; October–December name no blooming tree), so its enabled state depends on
-/// the month the suite runs in. What is stable on every machine and in every month:
+/// ── What #165 and #166 changed about this file's subject ────────────────────────────────────────
+/// The row is `Yours · In bloom · Needs care · More filters`, with `Favorites` and `Year` behind
+/// that last control (#145). Two owner directives then re-cut the presentation, and this file pins
+/// both:
 ///
-///   · `Needs care` is **always disabled** — the seed's only statuses are `alive` and `vacant_site`,
-///     and no UI test can stand a declining tree.
-///   · `Favorites` empties the map on any device that has never favorited a tree, and the one test
-///     that needs that states it as a precondition and announces the skip when it does not hold.
+///   · **#165 — every chip is an ordinary tappable pill, always.** R31's disabled-with-reason
+///     chips and E126's empty-notice card are both gone; a filter that matches nothing renders
+///     the empty map, and the `Clear filters` chip in the row is the one way out. `Needs care` —
+///     which R31 kept disabled on every machine, the seed carrying only `alive` and `vacant_site`
+///     — is therefore this file's reliable live-pill-that-matches-nothing.
+///   · **#166 — the row is one horizontally scrolling line, never a second one.** The wrap this
+///     row shipped with (`FlowRow`) is gone; chips past the trailing edge are reached by
+///     scrolling the row, not by a second line. The one-line fact and the reachability of the
+///     off-edge chips are both asserted, at the default size and at AX5.
 ///
 /// ── The rules this file inherits, and obeys ──────────────────────────────────────────────────────
 /// **A test states its own preconditions or it does not have any** (`MapSearchUITests`, tasks #101
@@ -39,18 +41,16 @@ final class MapFilterAccessibilityTests: XCTestCase {
 
     // MARK: - The row, as words
 
-    /// The one toggle drawn in the row that is live on every machine in every month. `In bloom` and
-    /// `Needs care` are checked on R31's terms instead; `More filters` is a disclosure carrying a
-    /// state and is checked on its own.
+    /// The first chip in the row, always on-screen without scrolling.
     private static let alwaysOnToggle = "Yours"
 
     /// `MapFilter.Condition.allCases.map(\.label)`, the owner's order.
     private static let conditionChips = ["In bloom", "Needs care"]
 
-    /// The chip R31 keeps disabled against the shipped seed in *every* month: `Needs care` is
-    /// `status == .declining`, the seed carries `alive` (174,425) and `vacant_site` (24,200), and
-    /// no black-box test can inject a community observation.
-    private static let alwaysDisabledChip = "Needs care"
+    /// The pill that matches nothing on every machine (#165): the seed's only statuses are `alive`
+    /// (174,425) and `vacant_site` (24,200), and no black-box test can inject a community
+    /// observation — so tapping it is this file's reliable way to a live filter over an empty map.
+    private static let matchlessChip = "Needs care"
 
     /// `MapYearFilterCopy.label`, and the value it carries when no decade is chosen. Behind the
     /// expandable control since #145.
@@ -73,17 +73,19 @@ final class MapFilterAccessibilityTests: XCTestCase {
     private static let on = "On"
     private static let off = "Off"
 
-    /// `MapFilterCopy.clearLabel`. It is the chip **and** the empty notice's button — R23's "two ways
-    /// out, both labelled" — so every lookup of it below has to say which one it means.
+    /// `MapFilterCopy.clearLabel`. Since #165 removed the empty notice, the chip in the row is the
+    /// **only** control that carries this label — `testNoMessageBoxStandsInForAnEmptyFilter` pins
+    /// that.
     private static let clear = "Clear filters"
 
     /// `MapFilterCopy.rowLabel`, the container's own name.
     private static let rowLabel = "Filter trees"
 
-    /// `MapFilterCopy.emptyTitle` for an empty `Favorites` map — the state this file uses whenever
-    /// it wants an emptied map on purpose, and the precondition it guards: a device that has
-    /// favorited a tree cannot run those tests, and they say so out loud rather than failing.
-    private static let favoritesEmptyTitle = "No favorites here"
+    /// The three titles the deleted empty-notice card used to draw (#165). Any of them on screen
+    /// is the message box the owner struck, back from the dead.
+    private static let struckNoticeTitles = [
+        "No trees of yours here", "No favorites here", "Nothing matches here"
+    ]
 
     // MARK: - Launching
 
@@ -132,10 +134,25 @@ final class MapFilterAccessibilityTests: XCTestCase {
         return element
     }
 
+    /// **Scrolls the one-line row until the chip is on the glass** (#166), and returns it.
+    ///
+    /// The row scrolls where it used to wrap, so a chip past the trailing edge *exists* in the
+    /// tree with a frame beyond the display and cannot be pressed until the row is dragged. The
+    /// loops are bounded (a stalled scroll must fail the caller's assertion, not hang the suite),
+    /// and the second loop drags back for callers that need a chip near the leading edge.
+    @discardableResult
+    private func revealedChip(_ label: String, _ app: XCUIApplication) -> XCUIElement {
+        let element = chip(label, app)
+        let row = app.otherElements[Self.rowLabel]
+        for _ in 0..<6 where !element.isHittable { row.swipeLeft() }
+        for _ in 0..<6 where !element.isHittable { row.swipeRight() }
+        return element
+    }
+
     /// Opens the expandable control and returns the chip inside it.
     @discardableResult
     private func openDrawer(_ app: XCUIApplication) -> XCUIElement {
-        chip(Self.moreChip, app).tap()
+        revealedChip(Self.moreChip, app).tap()
         let hidden = app.buttons[Self.hiddenChip]
         XCTAssertTrue(
             hidden.waitForExistence(timeout: 15),
@@ -146,15 +163,14 @@ final class MapFilterAccessibilityTests: XCTestCase {
 
     /// Shuts the drawer and waits for its contents to leave the tree.
     private func shutDrawer(_ app: XCUIApplication) {
-        chip(Self.moreChip, app).tap()
+        revealedChip(Self.moreChip, app).tap()
         XCTAssertTrue(
             wait(timeout: 10) { !app.buttons[Self.hiddenChip].exists },
             "the control did not close"
         )
     }
 
-    /// Turns `Favorites` on through the drawer and shuts the drawer again — the row's most reliable
-    /// way to have a filter on, because both condition chips can be R31-disabled.
+    /// Turns `Favorites` on through the drawer and shuts the drawer again.
     private func turnFavoritesOn(_ app: XCUIApplication) {
         let hidden = openDrawer(app)
         hidden.tap()
@@ -162,48 +178,19 @@ final class MapFilterAccessibilityTests: XCTestCase {
         shutDrawer(app)
     }
 
-    /// Turns `Favorites` on and requires it to have emptied the map. On a device that has favorited
-    /// a tree the state under test does not exist, so the caller skips — announced, per #121.
-    private func requireAnEmptyFavoritesMap(_ app: XCUIApplication, caller: String) throws {
-        turnFavoritesOn(app)
-        let title = app.staticTexts[Self.favoritesEmptyTitle]
-        guard title.waitForExistence(timeout: 25) else {
-            let message =
-                "turning “\(Self.hiddenChip)” on did not empty the map, so this device has "
-                + "favorited trees and the empty state under test does not exist here. Erase the "
-                + "app's data (or use a fresh simulator) to run it."
-            announceSkip(message, test: caller)
-            throw XCTSkip(message)
-        }
-    }
-
-    /// Every control labelled `Clear filters`, whichever surface it is on.
+    /// Every control labelled `Clear filters`. Since #165 there is at most one — the row's chip —
+    /// and a second is the deleted notice's button resurrected.
     private func clearControls(_ app: XCUIApplication) -> [XCUIElement] {
         app.buttons.matching(NSPredicate(format: "label == %@", Self.clear)).allElementsBoundByIndex
     }
 
-    /// The `Clear filters` **chip**, found by scoping the query to the filter row's own accessibility
-    /// container.
-    ///
-    /// **It was sorted by `frame.minY` and that was wrong at AX5** (E183 §2): the notice's own button
-    /// can sit above the top of the display with a negative `minY`, so "topmost" resolved to the
-    /// wrong control. Scoping to the container asks the question that was meant.
-    private func clearChip(_ app: XCUIApplication) -> XCUIElement {
-        app.otherElements[Self.rowLabel].buttons[Self.clear]
-    }
+    // MARK: - 1 · Every chip is in the tree, labelled, live, and says its state
 
-    /// The `Clear filters` **button on the empty notice** — the one that is not the row's chip.
-    private func clearOnTheNotice(_ app: XCUIApplication) -> XCUIElement? {
-        let chipFrame = clearChip(app).exists ? clearChip(app).frame : .null
-        return clearControls(app).first { $0.frame != chipFrame }
-    }
-
-    // MARK: - 1 · Every chip is in the tree, labelled, and says its state
-
-    /// The row at rest: the toggle announces `Off`, each condition chip is either a live toggle
-    /// announcing `Off` or R31's disabled control announcing its reason, the expandable control is
-    /// reachable, and neither `Favorites` nor `Year` is in the row (R23.1, #145).
-    func testTheFilterRowIsReachableAndEveryChipSaysItsState() {
+    /// The row at rest: every chip — the toggle, **both** condition chips (#165: never disabled,
+    /// never a box), the expandable control — is an enabled button announcing its state, neither
+    /// `Favorites` nor `Year` is in the row (R23.1, #145), and the chips sit on **one line**
+    /// (#166).
+    func testTheFilterRowIsReachableAndEveryChipIsALivePill() {
         let app = launch()
         _ = requireField(app)
 
@@ -222,28 +209,24 @@ final class MapFilterAccessibilityTests: XCTestCase {
         )
         XCTAssertFalse(yours.isSelected, "the chip carries the selected trait while nothing is on")
 
-        // The two condition chips are R31 controls: enabled is a toggle like any other, disabled
-        // must still be in the tree, dimmed, with the *reason* as its value — a disabled chip that
-        // announced `Off` would tell a listener it can be turned on.
+        // #165: both condition chips are ordinary toggles on every machine in every month. A
+        // disabled one, or one whose value is a sentence instead of a state, is R31's presentation
+        // back from the dead.
         for label in Self.conditionChips {
             let element = chip(label, app)
-            let value = element.value as? String ?? ""
-            if element.isEnabled {
-                XCTAssertEqual(
-                    value, Self.off,
-                    "the enabled “\(label)” chip announces “\(value)” at rest"
-                )
-            } else {
-                XCTAssertFalse(
-                    value.isEmpty || value == Self.off || value == Self.on,
-                    "the disabled “\(label)” chip announces “\(value)”, so a listener is not told "
-                        + "why the control cannot be used (R31)"
-                )
-            }
+            XCTAssertTrue(
+                element.isEnabled,
+                "the “\(label)” chip renders disabled; #165 says every filter is a live pill "
+                    + "whatever the data holds"
+            )
+            XCTAssertEqual(
+                element.value as? String, Self.off,
+                "the “\(label)” chip announces “\(element.value as? String ?? "nothing")” at rest"
+            )
         }
 
         // #145: the row is the owner's three and the control. `Year` and `Favorites` are behind it.
-        XCTAssertTrue(chip(Self.moreChip, app).isHittable, "the expandable control cannot be opened")
+        XCTAssertTrue(chip(Self.moreChip, app).exists, "the expandable control is not in the row")
         XCTAssertFalse(
             app.otherElements[Self.rowLabel].buttons[Self.yearChip].exists,
             "“\(Self.yearChip)” is still a chip in the row; #145 moved it behind “\(Self.moreChip)”"
@@ -254,6 +237,18 @@ final class MapFilterAccessibilityTests: XCTestCase {
                 + "“\(Self.moreChip)”"
         )
 
+        // #166: one line. Whatever the phone's width, every chip in the row reports the same
+        // vertical position — a second value is a second line.
+        let lines = Set(
+            ([Self.alwaysOnToggle] + Self.conditionChips + [Self.moreChip])
+                .map { Int((chip($0, app).frame.minY / 4).rounded()) }
+        )
+        XCTAssertEqual(
+            lines.count, 1,
+            "at the default size the row's chips sit on \(lines.count) lines; the owner asked for "
+                + "one row of filters, and the width past the edge belongs to the scroll (#166)"
+        )
+
         // And nothing is offering a way out of a filter nobody has set.
         XCTAssertTrue(
             clearControls(app).isEmpty,
@@ -262,8 +257,6 @@ final class MapFilterAccessibilityTests: XCTestCase {
     }
 
     /// Turning a chip on changes what it announces, in both channels a listener has.
-    ///
-    /// `Yours`, because it is the one row toggle that is live on every machine in every month.
     func testTurningAChipOnIsAnnouncedInBothChannels() {
         let app = launch()
         _ = requireField(app)
@@ -280,7 +273,7 @@ final class MapFilterAccessibilityTests: XCTestCase {
             "the “\(Self.alwaysOnToggle)” chip is on and does not carry the selected trait"
         )
 
-        // Off again: every live chip in this row is a toggle (R23 §1).
+        // Off again: every chip in this row is a toggle (R23 §1).
         yours.tap()
         XCTAssertTrue(
             wait { (yours.value as? String) == Self.off },
@@ -289,39 +282,54 @@ final class MapFilterAccessibilityTests: XCTestCase {
         )
     }
 
-    /// **A chip that cannot match spends no tap** (task #136, RULINGS R31).
+    /// **A filter that matches nothing is still a pill, spends its tap, and no message box stands
+    /// in for it or answers it** (task #165, overriding R31's presentation and E126's card).
     ///
-    /// `Needs care` is the chip this holds for on every machine: no data anywhere could satisfy it,
-    /// so it is dimmed, its value is the reason rather than a state, and pressing where it draws
-    /// activates nothing — no filter, no `Clear filters`, and never E126's card, which would only
-    /// repeat what the chip already said.
-    func testADisabledConditionChipSaysWhyAndSpendsNoTap() {
+    /// `Needs care` matches nothing on every machine — the seed's only statuses are `alive` and
+    /// `vacant_site` — which under R31 kept it disabled and under #165 makes it exactly the state
+    /// the owner ruled on: the pill toggles on, the map is allowed to be empty, the row's
+    /// `Clear filters` chip is the one way out, and none of the deleted card's titles is on screen.
+    func testNoMessageBoxStandsInForAnEmptyFilter() {
         let app = launch()
         _ = requireField(app)
 
-        let needsCare = chip(Self.alwaysDisabledChip, app)
-        XCTAssertFalse(
+        let needsCare = revealedChip(Self.matchlessChip, app)
+        XCTAssertTrue(
             needsCare.isEnabled,
-            "no tree in the shipped seed or this device's store is declining, and the "
-                + "“\(Self.alwaysDisabledChip)” chip is enabled — a control that promises and "
-                + "cannot deliver (R31)"
+            "“\(Self.matchlessChip)” renders disabled; #165 struck that presentation — the pill is "
+                + "always live, and a filter that matches nothing just empties the map"
         )
-        let reason = needsCare.value as? String ?? ""
-        XCTAssertFalse(
-            reason.isEmpty || reason == Self.off || reason == Self.on,
-            "the disabled chip announces “\(reason)” instead of the reason it is disabled"
+        needsCare.tap()
+        XCTAssertTrue(
+            wait { (needsCare.value as? String) == Self.on },
+            "tapping “\(Self.matchlessChip)” did not turn it on — it announces "
+                + "“\(needsCare.value as? String ?? "nothing")” (#165: the tap is spent, always)"
         )
 
-        // A press lands where the chip draws, and nothing happens.
-        needsCare.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        _ = wait(timeout: 3) { false }
+        // The way out arrives with the filter, and it is the *only* control wearing the label:
+        // the notice used to add a second one, and a second one is the notice back.
         XCTAssertTrue(
-            clearControls(app).isEmpty,
-            "pressing a disabled chip activated a filter: “\(Self.clear)” is on screen"
+            wait { self.clearControls(app).count == 1 },
+            "a filter is on and \(clearControls(app).count) controls are labelled “\(Self.clear)”; "
+                + "#165 leaves exactly one — the chip in the row"
         )
-        XCTAssertFalse(
-            app.staticTexts["Nothing matches here"].exists,
-            "pressing a disabled chip reached E126's card — the tap R31 says must never be spent"
+
+        // Settled, then read: the titles the deleted card drew. The map behind them may or may not
+        // be empty on this device — the claim #165 makes is that no such card exists on *any*
+        // path, which is why the titles are checked rather than the emptiness.
+        _ = wait(timeout: 3) { false }
+        for title in Self.struckNoticeTitles {
+            XCTAssertFalse(
+                app.staticTexts[title].exists,
+                "“\(title)” is on screen — the message box #165 deleted is back"
+            )
+        }
+
+        // Off again, and the way out leaves with the filter.
+        needsCare.tap()
+        XCTAssertTrue(
+            wait { self.clearControls(app).isEmpty },
+            "clearing the condition left “\(Self.clear)” on screen"
         )
     }
 
@@ -431,7 +439,7 @@ final class MapFilterAccessibilityTests: XCTestCase {
         // …and the way out is still on screen, in the row, where it can be found without knowing the
         // filter exists (R23.1 §3).
         XCTAssertEqual(
-            clearChip(app).isHittable, true,
+            revealedChip(Self.clear, app).isHittable, true,
             "with a filter set behind a shut control there is no reachable “\(Self.clear)”"
         )
     }
@@ -440,7 +448,8 @@ final class MapFilterAccessibilityTests: XCTestCase {
 
     /// `Clear filters` appears only when something is on, is a real labelled control, and works —
     /// **including on a filter that is set behind the shut control**, which is R23.1 §3's whole
-    /// argument for there being one of these rather than two.
+    /// argument for there being one of these rather than two. Since #165 it is also the *only*
+    /// way out the screen draws, which raises the price of it not working.
     func testClearFiltersAppearsWithTheFilterAndTakesAwayEvenTheHiddenOne() {
         let app = launch()
         _ = requireField(app)
@@ -454,7 +463,7 @@ final class MapFilterAccessibilityTests: XCTestCase {
             "a filter is on behind a shut control and no “\(Self.clear)” is drawn, so the only way "
                 + "out is to remember that it is there"
         )
-        let chipOut = clearChip(app)
+        let chipOut = revealedChip(Self.clear, app)
         XCTAssertTrue(
             chipOut.isHittable,
             "the “\(Self.clear)” chip is in the tree but nothing can activate it"
@@ -478,47 +487,6 @@ final class MapFilterAccessibilityTests: XCTestCase {
         )
     }
 
-    /// The empty notice says why the map is empty **and** offers a reachable control that fixes it.
-    ///
-    /// The precondition is stated and guarded rather than assumed: `Favorites` empties the map on
-    /// any device that has never favorited a tree, and the guard announces the skip when that does
-    /// not hold (#121).
-    func testTheEmptyNoticeOffersASecondWayOutAndItWorks() throws {
-        let app = launch()
-        _ = requireField(app)
-
-        try requireAnEmptyFavoritesMap(app, caller: "testTheEmptyNoticeOffersASecondWayOutAndItWorks")
-        let title = app.staticTexts[Self.favoritesEmptyTitle]
-
-        // Two ways out, both labelled — the chip in the row and the button on the card (R23 §1).
-        XCTAssertTrue(
-            wait { self.clearControls(app).count == 2 },
-            "an emptied map offers \(clearControls(app).count) controls labelled “\(Self.clear)”, "
-                + "and R23 requires two: the chip in the row and the button on the notice"
-        )
-        let noticeButton = try XCTUnwrap(clearOnTheNotice(app), "the notice drew no way out")
-        XCTAssertTrue(
-            noticeButton.isHittable,
-            "the notice's way out is in the accessibility tree and nothing can touch it — which is "
-                + "the covered-but-reachable failure this screen has shipped before"
-        )
-        XCTAssertGreaterThan(
-            noticeButton.frame.minY, chip(Self.moreChip, app).frame.maxY,
-            "the “\(Self.clear)” this test took for the notice's is up in the filter row"
-        )
-
-        noticeButton.tap()
-        XCTAssertTrue(
-            wait { !title.exists },
-            "pressing the notice's way out left the notice on screen"
-        )
-        XCTAssertEqual(
-            chip(Self.moreChip, app).value as? String, "Collapsed",
-            "the notice's way out did not clear the hidden filter: the control still announces "
-                + "“\(chip(Self.moreChip, app).value as? String ?? "nothing")”"
-        )
-    }
-
     // MARK: - 4 · The line over the map
 
     /// `MapFilterCopy.result`'s two forms and nothing else: `31 trees`, `1 tree`, or
@@ -538,23 +506,6 @@ final class MapFilterAccessibilityTests: XCTestCase {
         app.staticTexts
             .matching(NSPredicate(format: "label MATCHES %@", Self.fragmentGrammar))
             .allElementsBoundByIndex
-    }
-
-    /// **The count yields when the notice is already speaking** (R23 §5).
-    func testTheCountYieldsToTheNotice() throws {
-        let app = launch()
-        _ = requireField(app)
-
-        try requireAnEmptyFavoritesMap(app, caller: "testTheCountYieldsToTheNotice")
-
-        // Settled: the notice and the count are published from the same model pass, so a read taken
-        // the instant the notice appears can catch a count on its way out.
-        _ = wait(timeout: 3) { false }
-        XCTAssertEqual(
-            countLines(app).map(\.label), [],
-            "the map is empty and the notice is explaining why, and a count is sitting in the "
-                + "chrome above it saying the same thing in weaker words (R23 §5)"
-        )
     }
 
     // ── The year control's caveat, and why there is no UI test for it ───────────────────────────
@@ -625,42 +576,39 @@ final class MapFilterAccessibilityTests: XCTestCase {
         fflush(stdout)
     }
 
-    // MARK: - 5 · AX5 on a 390 pt phone
+    // MARK: - 5 · One line, at AX5, on a phone
 
-    /// **The row wraps rather than running off the edge of the phone, and every control stays on
-    /// it — including R31's disabled chips, which carry a whole sentence, and the drawer's two.**
+    /// **The row is one horizontally scrolling line at the top of the ramp, and every chip on it
+    /// can still be reached and pressed** (task #166; #98's off-the-phone hazard, restated for a
+    /// scroller).
     ///
-    /// This is #98 restated, and the disabled chips are its likeliest new instance: `FlowRow`
-    /// measures children unconstrained, so a chip holding a sentence takes the width it asks for —
-    /// which is why `MapLayout.unavailableChipWidth` is fixed, and why this test measures rather
-    /// than trusts.
-    func testTheFilterRowWrapsAndStaysOnThePhoneAtAX5() {
+    /// The wrap this test used to pin is the thing #166 deleted, so the assertions inverted: chips
+    /// now share a single line however wide they grow, nothing hangs off the *vertical* edges, and
+    /// a chip past the trailing edge is not a defect — it is the scroll — provided dragging the
+    /// row brings it onto the glass and it works there.
+    func testTheFilterRowIsOneLineAndScrollsAtAX5() {
         let app = launchAtAX5()
         _ = requireField(app)
 
-        // The `Clear filters` chip only exists once something is on — so the widest state of this
-        // row is only reachable by turning a filter on first, through the drawer.
+        // The `Clear filters` chip only exists once something is on — so the row's fullest state
+        // is only reachable by turning a filter on first, through the drawer.
         turnFavoritesOn(app)
         XCTAssertTrue(
             wait { !self.clearControls(app).isEmpty },
-            "no “\(Self.clear)” chip at AX5, so the row's widest state cannot be measured"
+            "no “\(Self.clear)” chip at AX5, so the row's fullest state cannot be measured"
         )
 
-        // The claims below are about *this* phone's edges, whatever its width — E183 measured on a
-        // 390 pt 16e; this branch's assigned simulator is a 440 pt Pro Max, and a hard-coded 390
-        // would fail the test for owning the wrong hardware rather than for any defect. The wrap
-        // and the edges are the assertions; the width is wherever the suite runs.
         let screen = app.windows.firstMatch.frame
         XCTAssertLessThan(
             screen.width, 500,
-            "this looks like an iPad (\(screen.width) pt); the wrap claim is about phones"
+            "this looks like an iPad (\(screen.width) pt); the one-line claim is about phones"
         )
 
+        let labels = [Self.alwaysOnToggle] + Self.conditionChips + [Self.moreChip, Self.clear]
         var boxes: [(String, CGRect)] = []
-        for label in [Self.alwaysOnToggle] + Self.conditionChips + [Self.moreChip] {
+        for label in labels {
             boxes.append((label, chip(label, app).frame))
         }
-        boxes.append((Self.clear, clearChip(app).frame))
 
         // **AX5 actually arrived.** A filter chip is ~30 pt tall as drawn and cannot be at the top
         // of the ramp; an argument that stopped working would make everything below a statement
@@ -673,40 +621,56 @@ final class MapFilterAccessibilityTests: XCTestCase {
                 + "statement about AX5"
         )
 
-        assertOnThePhone(boxes, screen: screen, where: "the row")
-
-        // It wrapped. Five controls at AX5 — two of them carrying sentences — cannot be one line
-        // on this phone, so a row reporting one line is a row that stopped wrapping.
+        // **One line** (#166). Five controls at AX5 are far wider than any phone, which is exactly
+        // what makes this the assertion: a row that wraps reports a second minY here.
         let lines = Set(boxes.map { Int(($0.1.minY / 4).rounded()) })
-        XCTAssertGreaterThan(
+        XCTAssertEqual(
             lines.count, 1,
-            "at AX5 all the row's chips report the same line: \(boxes.map { "\($0.0) \($0.1)" })"
+            "at AX5 the row's chips sit on \(lines.count) lines: "
+                + "\(boxes.map { "\($0.0) \($0.1)" }) — the owner asked for one row, and the width "
+                + "past the edge belongs to the scroll"
         )
 
-        // And every live control can still be pressed there.
-        for label in [Self.alwaysOnToggle, Self.moreChip] {
-            XCTAssertTrue(
-                chip(label, app).isHittable,
-                "at AX5 the “\(label)” chip is in the accessibility tree and cannot be activated. "
-                    + "Its frame is \(chip(label, app).frame) on a \(screen.width)×\(screen.height) "
-                    + "screen"
+        // Nothing clipped on the row's own axis: every chip's top and bottom are on the phone.
+        for (label, box) in boxes {
+            XCTAssertGreaterThanOrEqual(
+                box.minY, screen.minY - 0.5,
+                "at AX5 the “\(label)” chip starts above the display (\(box))"
+            )
+            XCTAssertLessThanOrEqual(
+                box.maxY, screen.maxY + 0.5,
+                "at AX5 the “\(label)” chip runs off the bottom of the display (\(box)), so the "
+                    + "one-line row is clipping its own contents"
             )
         }
-        XCTAssertTrue(
-            clearChip(app).isHittable,
-            "at AX5 the “\(Self.clear)” chip cannot be activated"
-        )
 
-        // The drawer is the surface nobody looks at above the drawn size. It opens *below* an
-        // already-wrapped row, holding a toggle and a menu, on the tallest text size the ramp has.
+        // **Every chip is reachable through the scroll, and works there.** The trailing chips are
+        // off the glass at this size on every phone; `revealedChip` drags the row, which is the
+        // interaction #166 traded the wrap for.
+        for label in labels {
+            let element = revealedChip(label, app)
+            XCTAssertTrue(
+                element.isHittable,
+                "at AX5 the “\(label)” chip cannot be scrolled onto the glass and pressed. Its "
+                    + "frame is \(element.frame) on a \(screen.width)×\(screen.height) screen"
+            )
+        }
+
+        // The drawer still opens *below* the one-line row at the tallest size, holding its toggle
+        // and its menu, both on the phone and both pressable.
         let hidden = openDrawer(app)
         let year = app.buttons[Self.yearChip]
         XCTAssertTrue(year.waitForExistence(timeout: 10), "the open drawer holds no year control")
-        assertOnThePhone(
-            [(Self.hiddenChip, hidden.frame), (Self.yearChip, year.frame)],
-            screen: screen,
-            where: "the open control"
-        )
+        for (label, box) in [(Self.hiddenChip, hidden.frame), (Self.yearChip, year.frame)] {
+            XCTAssertGreaterThanOrEqual(
+                box.minX, screen.minX - 0.5,
+                "at AX5 the “\(label)” chip in the open control starts off the phone (\(box))"
+            )
+            XCTAssertLessThanOrEqual(
+                box.maxX, screen.maxX + 0.5,
+                "at AX5 the “\(label)” chip in the open control runs off the phone (\(box))"
+            )
+        }
         XCTAssertTrue(
             hidden.isHittable,
             "at AX5 the chip inside the expandable control is in the tree and cannot be activated. "
@@ -718,101 +682,46 @@ final class MapFilterAccessibilityTests: XCTestCase {
         )
     }
 
-    /// **The empty notice at AX5 — E183 §2's pinned defect, unchanged in substance by the
-    /// restructure.** Strict `XCTExpectFailure`: the test passes today *because* the defect is
-    /// there, and turns red the day somebody fixes the layout, at which point they delete the
-    /// wrapper.
-    func testTheEmptyNoticesWayOutIsUnreachableAtAX5() throws {
+    /// **#165 at AX5: the matchless pill is live at the top of the ramp too**, where R31's box
+    /// was at its widest and the temptation to bring it back will be strongest.
+    func testTheMatchlessPillIsLiveAtAX5() {
         let app = launchAtAX5()
         _ = requireField(app)
-        try requireAnEmptyFavoritesMap(app, caller: "testTheEmptyNoticesWayOutIsUnreachableAtAX5")
 
+        let needsCare = revealedChip(Self.matchlessChip, app)
         XCTAssertTrue(
-            wait { self.clearControls(app).count == 2 },
-            "at AX5 an emptied map drew \(clearControls(app).count) controls labelled "
-                + "“\(Self.clear)”; this test is about the second one"
+            needsCare.isEnabled,
+            "at AX5 “\(Self.matchlessChip)” renders disabled — R31's presentation, struck by #165"
         )
-        let screen = app.windows.firstMatch.frame
-        let notice = clearOnTheNotice(app)
-
-        // **The defect is a function of the phone's size, measured rather than assumed.** E183
-        // pinned it on a 390 pt 16e; on this branch's assigned 440 pt Pro Max the same notice fits
-        // and its button works, so a strict expected-failure here would fail for owning the wrong
-        // hardware. The two arms are the two honest sentences: where the defect reproduces it is
-        // pinned (strict — red the day it is fixed, delete the wrapper), and where it does not,
-        // E126's contract must simply hold.
-        let defectReproduces: Bool = {
-            guard let notice else { return true }
-            return !screen.contains(notice.frame) || !notice.isHittable
-        }()
-        if defectReproduces {
-            XCTExpectFailure(
-                "E183: at AX5 the empty notice is taller than the phone and grows off the top of "
-                    + "it, taking E126's way out with it. Not fixed here — the fix is a layout "
-                    + "ruling R23 left open. Delete this wrapper when it is."
-            ) {
-                XCTAssertNotNil(notice, "at AX5 the notice drew no way out at all")
-                if let notice {
-                    XCTAssertTrue(
-                        screen.contains(notice.frame),
-                        "at AX5 the notice's “\(Self.clear)” is at \(notice.frame) on a "
-                            + "\(screen.width)×\(screen.height) screen"
-                    )
-                    XCTAssertTrue(
-                        notice.isHittable,
-                        "at AX5 the notice's “\(Self.clear)” is in the tree at \(notice.frame) and "
-                            + "cannot be activated"
-                    )
-                }
-            }
-        } else {
-            XCTAssertTrue(
-                notice?.isHittable == true,
-                "on a \(screen.width) pt phone the notice's way out fits and still cannot be "
-                    + "activated — a new defect, not E183's"
+        XCTAssertTrue(
+            needsCare.isHittable,
+            "at AX5 “\(Self.matchlessChip)” cannot be scrolled onto the glass and pressed"
+        )
+        needsCare.tap()
+        XCTAssertTrue(
+            wait { (needsCare.value as? String) == Self.on },
+            "at AX5 tapping “\(Self.matchlessChip)” did not turn it on — it announces "
+                + "“\(needsCare.value as? String ?? "nothing")”"
+        )
+        _ = wait(timeout: 3) { false }
+        for title in Self.struckNoticeTitles {
+            XCTAssertFalse(
+                app.staticTexts[title].exists,
+                "at AX5 “\(title)” is on screen — the message box #165 deleted is back"
             )
         }
-
-        // What *is* still true at AX5, and is the reason the screen is not a dead end: the chip in
-        // the row is the other way out, it is on the phone, and it works (R23.1 §3).
         XCTAssertTrue(
-            clearChip(app).isHittable,
-            "at AX5 neither way out of an emptied map can be activated: the notice's button is off "
-                + "the top of the screen and the row's chip is at \(clearChip(app).frame)"
+            wait { self.clearControls(app).count == 1 },
+            "at AX5 a filter is on and \(clearControls(app).count) controls are labelled "
+                + "“\(Self.clear)”; #165 leaves exactly one — the chip in the row"
         )
-        clearChip(app).tap()
-        XCTAssertTrue(
-            wait { self.clearControls(app).isEmpty },
-            "at AX5 the row's chip did not clear the filter"
-        )
-    }
-
-    /// Every frame inside the display, left edge and right edge (#98).
-    private func assertOnThePhone(
-        _ boxes: [(String, CGRect)],
-        screen: CGRect,
-        where place: String
-    ) {
-        for (label, box) in boxes {
-            XCTAssertGreaterThanOrEqual(
-                box.minX, screen.minX - 0.5,
-                "at AX5 the “\(label)” chip in \(place) starts \(box.minX) pt from the left edge of "
-                    + "a \(screen.width) pt screen — it is off the phone"
-            )
-            XCTAssertLessThanOrEqual(
-                box.maxX, screen.maxX + 0.5,
-                "at AX5 the “\(label)” chip in \(place) runs to \(box.maxX) pt on a "
-                    + "\(screen.width) pt screen, so the end of its label is off the edge. Its "
-                    + "frame is \(box)"
-            )
-        }
     }
 
     // MARK: - 6 · The two features, together
 
     /// **The suggestion list and the filter row, with a filter already on** (R25 §1's other half).
     ///
-    /// The claim: the chips move rather than being covered, they stay hittable, and the row's own
+    /// The claim: the chips move rather than being covered, they stay reachable, and the row's own
     /// order is unchanged — the owner's three, the control, the way out.
     func testAnOpenSuggestionListLeavesTheWholeFilterRowOrderedAndHittable() {
         let app = launch()
@@ -826,7 +735,7 @@ final class MapFilterAccessibilityTests: XCTestCase {
         )
 
         let yours = chip(Self.alwaysOnToggle, app)
-        let before = (yours: yours.frame.minY, clear: clearChip(app).frame.minY)
+        let before = (yours: yours.frame.minY, clear: chip(Self.clear, app).frame.minY)
 
         field.tap()
         field.typeText(Self.query)
@@ -844,16 +753,16 @@ final class MapFilterAccessibilityTests: XCTestCase {
             "the suggestion row announces “\(row.label)” and nothing behind the comma"
         )
 
-        // Moved down, not covered — for the ordinary chips and for the one that is new.
+        // Moved down, not covered — for the first chip and for the last one.
         XCTAssertTrue(
             wait { yours.frame.minY > before.yours },
             "the suggestion list did not push the “\(Self.alwaysOnToggle)” chip down "
                 + "(\(before.yours) → \(yours.frame.minY)), so it is drawn over it"
         )
         XCTAssertTrue(
-            wait { self.clearChip(app).frame.minY > before.clear },
+            wait { self.chip(Self.clear, app).frame.minY > before.clear },
             "the suggestion list did not push the “\(Self.clear)” chip down "
-                + "(\(before.clear) → \(clearChip(app).frame.minY))"
+                + "(\(before.clear) → \(chip(Self.clear, app).frame.minY))"
         )
         XCTAssertTrue(
             yours.isHittable,
@@ -861,13 +770,14 @@ final class MapFilterAccessibilityTests: XCTestCase {
                 + "activated"
         )
         XCTAssertTrue(
-            clearChip(app).isHittable,
-            "with the list open the “\(Self.clear)” chip is in the tree and cannot be activated"
+            revealedChip(Self.clear, app).isHittable,
+            "with the list open the “\(Self.clear)” chip cannot be scrolled onto the glass and "
+                + "activated"
         )
 
         // **The row's own order in the element tree** — the owner's three, the control, the way
-        // out (#145). Scoped to the row's container because the notice's `Clear filters` shares a
-        // label with the chip.
+        // out (#145; #166's scroll does not reorder what the tree holds). Scoped to the row's
+        // container, whose `Clear filters` shares its label with nothing else since #165.
         let rowButtons = app.otherElements[Self.rowLabel].buttons.allElementsBoundByIndex
         let rowOrder = rowButtons.map(\.label).filter { !$0.isEmpty }
         XCTAssertEqual(

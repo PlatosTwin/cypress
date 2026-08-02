@@ -149,13 +149,6 @@ enum MapLayout {
     static let chipRowTop: CGFloat = 12
     /// `gap:8px` between the three filter chips.
     static let chipGap: CGFloat = CypressSpacing.gapRows
-    /// The fixed width of a disabled condition chip carrying its reason (task #136, RULINGS R31).
-    ///
-    /// Fixed rather than capped because `FlowRow` measures children unconstrained: a `maxWidth`
-    /// would be measured at one-line height and then placed narrower, wrapping the sentence into
-    /// space the row never reserved. 240 pt holds the reason in two lines at the drawn size, fits
-    /// beside `Yours` on a 358 pt row, and stays inside a 390 pt phone at AX5.
-    static let unavailableChipWidth: CGFloat = 240
     /// `right:16px` / `left:16px` on the search bar and the FAB.
     static let sideInset: CGFloat = CypressSpacing.gutter
     /// `left:14px; right:14px` on the bottom tree card.

@@ -14,7 +14,7 @@ import Testing
 /// No longer latent: the current seed carries seasonal data on 511 of 569 species (E189), so these
 /// windows run against real calendars. The sentence that used to stand here — "every `seasonal` in
 /// the shipped seed is empty" — was true of an earlier seed and aged into a false comment (E189
-/// records the correction; `MapConditionAvailabilityTests` pins the live facts).
+/// records the correction).
 @Suite("Seasonal windows")
 struct SeasonalWindowTests {
 
