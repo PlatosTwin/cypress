@@ -80,7 +80,7 @@ public struct ReviewFlag: CoreEntity, SoftDeletable {
         case removedButActive = "removed_but_active"
         /// "There is no tree here and there never was" — a defect in the **record**, not an event in
         /// a tree's life (task #125, ruled in `RULINGS R46`; the surface and the resolution are
-        /// `RULINGS docs/rulings-pending/never-existed-record-defect.md`).
+        /// `RULINGS R50`).
         ///
         /// Reserved in the `review_flags` CHECK by AppSchema v14 and unreachable until this case
         /// existed. It is deliberately **not** `appearsRemoved`: confirming that writes

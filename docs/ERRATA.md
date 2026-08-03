@@ -12739,3 +12739,136 @@ confirming before anyone spends another afternoon on it.
 that compiled nothing (E203), and provenance notes. Location state is deliberately not checked — a
 fixless or location-denied device is a legitimate configuration and two tests skip on it by design
 (#121).
+
+### E211 — #120's schema blocker was retracted from the wrong column, and the real one is still there
+
+Task **#120** — make screen 06's neighborly note actually submit — was dispatched as unblocked. It is
+not. **No code was written for it**, which is the finding rather than a shortfall.
+
+#### What the ticket retracted, correctly
+
+Older #120 text said `community_notes.kind` is a closed CHECK at `AppSchema.swift:305` needing a
+migration. That was checked before dispatch and refuted: there is no `community_notes.kind` column.
+The table's constrained column is `category TEXT NOT NULL CHECK (category IN
+('needs_water','pest','vandalism'))` (`AppSchema.swift:287`), those three values are exactly the
+three chips SCREENS.md 06 §3 draws, and `ReportPresentation.noteCategories` is
+`CommunityNote.Category.allCases`. Line 305 is `review_flags.kind`, a different table. **That
+retraction is right and this errata does not disturb it.** A neighborly note needs no migration to
+hold its category.
+
+#### What is still in the way, on the column nobody re-read
+
+**`community_notes.user_id` is `NOT NULL` (AppSchema v1) and no migration has made it nullable.**
+`CommunityNote.userID` is a non-optional `UUID` to match. Two independent consequences follow, and
+either alone blocks the write.
+
+**1 · There is no user id on any device the app runs on.** `LocalAPI.userID` is set only by
+`setUserID`, whose sole caller in the repository is `FavoriteTests.swift:323`. Nothing in shipping
+code calls it; D9 keeps first saves anonymous under a device id and the account ask arrives at screen
+15, which is not built. So `attribution.userID` is nil on every install, and a `CommunityNote` cannot
+be constructed at all. This is E23's situation for the private reminder, verbatim, one table over —
+and E23 was closed by **AppSchema v3**, which made `private_reminders.user_id` nullable, added
+`device_id` beside it, and put `CHECK ((user_id IS NULL) <> (device_id IS NULL))` across the pair.
+v5 did it for `favorites`, v12 for `photos`. `community_notes` is the table that never got the
+treatment.
+
+**2 · The anonymizing door cannot honour a note.** DECISIONS §3.12 anonymizes attributed rows;
+`RULINGS R3` refined it to *anonymize what the forest keeps, delete what only one person could ever
+see*. A community note is public — the forest keeps it — so it must be anonymizable, and
+`user_id NOT NULL` means it cannot be. `AccountDeletion.Outcome.communityNotesLeftAttributed` exists
+for exactly this, and says so in its own words: it is "zero on every database the app can produce"
+today "so that the day something does write one, the hole is a number somebody can see rather than a
+silence" (E109). Writing notes is that day.
+
+`ReportView.notePicker`'s own comment block (E131) states both halves and names the price: closing it
+"needs a schema migration and a second pass over R3 — a decision-owner's call, not this errata's".
+
+#### Why the work stopped rather than routing around it
+
+Three routes were considered and each is worse than not shipping.
+
+- **Write the device UUID into `user_id`.** It is a lie in a column two identity spaces already meet
+  at, and it breaks `AccountDeletion` in the direction that matters: every predicate there is
+  `user_id = :user`, so a device-owned note would be invisible to both doors — neither anonymized nor
+  deleted — which is the E109 hole widened rather than closed.
+- **Queue the note without storing it.** Every other mutation is durable locally first
+  (ARCHITECTURE §4), and the payload still needs a `CommunityNote` with a `userID`.
+- **Draw the CTA and let the write fail.** That is the control E131 removed, with a button on top.
+
+**#120 needs a migration, and this round may not write one.** The shape is settled by three
+precedents rather than open: v3's, applied to `community_notes` — `user_id` nullable, `device_id`
+beside it, exclusive-ownership CHECK — plus one line in `claimDevice` for adoption, plus the
+`OutboxPayload` case, and `AccountDeletion.anonymizeContributions` gains the `UPDATE` that turns
+`communityNotesLeftAttributed` from a hole into a zero. It is one migration author's afternoon in a
+round that has one.
+
+#### And the copy #120 was dispatched to write is not writable either
+
+Recorded here because it survives the migration and will be the next thing to go wrong.
+
+The ticket's destination sentence was *"seen by the community, which can confirm it"*. **There is no
+contribution sync.** #158 is unbuilt and unscheduled; the outbox drains through `APIOutboxTransport`
+into `LocalAPI`, which writes this phone's own tables. Nothing uploads, nothing downloads, and beta
+is about five people with no accounts. A note reaches no other reader.
+
+So that sentence names a destination the note does not arrive at, which is structurally the claim
+§3 constraint 3 forbids — permanent under D16(a) — with a different noun. The honest version is about
+the note being kept, not about who sees it; #125's notice
+(`TreeProfileCopy.neverExistedNotice`) is the worked example, and E126 is why the limit is stated
+rather than left silent.
+
+### E212 — Two shipped sentences promise a community reviewer, and beta has no way to reach one
+
+Found while writing #125's copy, on the same test #125's notice had to pass. **Flagged, not changed**
+— both sentences are the operative words of a ruling and an errata that are not this ticket's to
+edit, and rewriting shipped copy on somebody else's decision from a branch is how two live branches
+end up disagreeing about what a screen says.
+
+#### The sentences
+
+- `CheckInCopy.reviewNotice` — screen 05, under both flagging segments:
+  *"This goes to a community reviewer to confirm. The city is not notified."* (E170.)
+- `TreeProfileCopy.reportSpeciesNotice` — the species report control on the tree profile:
+  *"This goes to a community reviewer. The city is not notified."* (R45.)
+
+`ReviewFlagNoticeTests` asserts the first as a property of the words, so it is pinned as well as
+shipped.
+
+#### Why they are the same defect class as the claim they were written to avoid
+
+Each sentence was written to replace *"sent to the city"*, and the replacement is right about the
+city. The second half of each is the problem: **there is no contribution sync.** #158 is unbuilt and
+unscheduled. The outbox drains through `APIOutboxTransport` into `LocalAPI`, which writes this
+phone's own tables; nothing uploads and nothing downloads anybody's rows, and beta is about five
+people with no accounts. A flag raised on one phone is visible to that phone and to no other.
+
+DECISIONS §3 constraint 3 forbids "sent to the city" because it promises a destination the report
+does not reach; D16(a) made that permanent. "Goes to a community reviewer" promises a destination the
+report does not reach either. The noun differs; the defect does not.
+
+It is not *entirely* untrue — a lead on this same phone can resolve the flag, and in the beta the
+role is granted through the You tab's DEBUG affordance. But "a community reviewer" is read by a
+person as *somebody else, elsewhere*, and that person does not exist.
+
+#### The register that is available
+
+#125 built and shipped one, on a control two hundred points below the species sentence:
+
+> This is kept on this phone and shows on this record. The city is not notified, and Cypress cannot
+> yet carry a report to anybody else's phone.
+
+Says where the report stays, says what it does there, then states both limits. E126's rule is why the
+second half is spoken rather than left silent.
+
+**The cost of leaving this open is a screen that contradicts itself.** The tree profile now carries
+both registers in one column: the species control says a community reviewer, and the record control
+three lines down says nothing can reach anybody else's phone. Whoever owns R45's and E170's words
+should decide which is true, and it is not both.
+
+#### What a fix is
+
+Three strings and their two tests. `CheckInCopy.reviewNotice`, `CheckInCopy.reviewConfirmMessage` and
+`TreeProfileCopy.reportSpeciesNotice`, plus the `contains("community reviewer")` assertions in
+`ReviewFlagNoticeTests` — which should invert rather than relax, since the claim is now the thing
+being guarded against. `ModerationCopy`'s messages were checked and are clean: they say the city is
+not notified and claim no other reader.

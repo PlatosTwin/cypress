@@ -427,10 +427,9 @@ struct TreeProfilePresentation {
     /// all"*.
     ///
     /// **NOT SPECIFIED.** SCREENS.md has no control here; `RULINGS R46` decided the kind and
-    /// `RULINGS docs/rulings-pending/never-existed-record-defect.md` is the mock for what this
-    /// draws. Read straight off the payload for `speciesCorrection`'s reason — the answer needs the
-    /// viewer's role and an open-flag read, and a presentation holding either would be holding
-    /// something it cannot see.
+    /// `RULINGS R50` is the mock for what this draws. Read straight off the payload for
+    /// `speciesCorrection`'s reason — the answer needs the viewer's role and an open-flag read, and
+    /// a presentation holding either would be holding something it cannot see.
     ///
     /// No `acceptsContributions` gate, and the reason is the sharper version of the species one: a
     /// claim that the record was never true is *most* worth making about a record the app has

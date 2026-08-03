@@ -129,7 +129,7 @@ public struct CommunityTreeStore {
     }
 
     /// Withdraws the record: the row is soft-deleted and stops being a tree anywhere in the app
-    /// (task **#125**, `RULINGS docs/rulings-pending/never-existed-record-defect.md`).
+    /// (task **#125**, `RULINGS R50`).
     ///
     /// **A soft delete, not a `DELETE`, and the difference is the whole claim being made.** Every
     /// read in this file already filters `deleted_at IS NULL` — `inBounds`, `near`, `claimSpecies`,
