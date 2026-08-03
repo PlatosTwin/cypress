@@ -402,6 +402,26 @@ struct TreeProfilePresentation {
         tree.source == .community && species == nil && acceptsContributions
     }
 
+    /// What this screen offers about a species that has **already** been claimed — tickets #86 and
+    /// #124, the correction half of the same block.
+    ///
+    /// **NOT SPECIFIED**, for `offersSpeciesClaim`'s reason and one more: SCREENS.md has no control
+    /// here because until AppSchema v14 there was no chain for a correction to go into. The ruling
+    /// `docs/rulings-pending/species-supersession.md` is the mock for what this draws.
+    ///
+    /// Read straight off the payload rather than re-derived. Which of the three things a viewer may
+    /// do turns on whether the claim in force is theirs and whether a report is already open — an
+    /// `Attribution` question and a `review_flags` question, neither of which a presentation has any
+    /// business answering. `SpeciesCorrectionOffer` carries that argument.
+    ///
+    /// No `acceptsContributions` gate, unlike the claim above, and the difference is real rather
+    /// than an oversight: naming a removed tree's species is a claim about a thing that is not
+    /// there, and correcting a misidentification is a claim about the **record**, which stays true
+    /// after the tree is gone. A confirmed removal routes this screen to the memorial anyway
+    /// (`status.isMemorial`), so the case barely arises; where it does, the honest answer is that
+    /// the record can still be put right.
+    var speciesCorrection: SpeciesCorrectionOffer { profile.speciesCorrection }
+
     /// How this record's coordinate was arrived at — the fourth element of the subtitle, and the last
     /// one, because it is the finest-grained provenance fact the row carries.
     ///
@@ -1279,14 +1299,74 @@ enum TreeProfileCopy {
     static func speciesClaimFailure(_ error: APIError) -> String {
         switch error {
         case .conflict:
-            return "Somebody has already said what this tree is. Changing that needs a correction, "
-                + "which this app cannot record yet."
+            // Was "…which this app cannot record yet", which stopped being true at AppSchema v14.
+            // A correction is recordable now; what a second claimant still may not do is make one
+            // over somebody else's statement without asking.
+            return "Somebody has already said what this tree is. Their name for it stands until it "
+                + "is corrected."
         case .forbidden:
             return "This tree comes from the city inventory, and its species is the city's record."
         case .notFound:
             return "This tree could not be found. Nothing was recorded."
         default:
             return "That species could not be recorded. Nothing was changed."
+        }
+    }
+
+    // MARK: - Correcting a claim (#86, #124)
+
+    /// The control on a claim that is this contributor's own.
+    ///
+    /// It says *correct*, not *change*: what the act does is append a correction to a chain that
+    /// keeps the first claim, and a label promising a change would describe an overwrite that does
+    /// not happen.
+    static let correctSpeciesAction = "Correct the species"
+
+    /// The control on somebody else's claim — or on one whose author the record never kept.
+    static let reportSpeciesAction = "Report the species as wrong"
+
+    /// Where a report goes, in `CheckInCopy.reviewNotice`'s register and for its reason: the person
+    /// tapping this is reasonably hoping somebody official will fix the record, and DECISIONS §3.3
+    /// forbids implying it (D16 made that permanent).
+    static let reportSpeciesNotice = "This goes to a community reviewer. The city is not notified."
+
+    /// Drawn while a report is open, to everybody: the disagreement is on the record and the screen
+    /// says so rather than showing the species as if nobody had objected.
+    static let speciesReported = "Somebody has reported this species as wrong."
+
+    /// The second verb, for whoever may answer the report. "Keep" rather than "dismiss" because it
+    /// names what the tree ends up with, and because nothing is thrown away — the report keeps its
+    /// row, marked answered.
+    static let keepSpeciesAction = "Keep the species"
+
+    static func speciesCorrectionFailure(_ error: APIError) -> String {
+        switch error {
+        case .forbidden:
+            return "This species was named by somebody else, so it is not yours to change. "
+                + "You can report it as wrong instead."
+        case .conflict:
+            return "This species has already been corrected. Nothing was changed."
+        case .validationFailed:
+            return "There is no species on this tree to correct."
+        case .notFound:
+            return "This tree could not be found. Nothing was changed."
+        default:
+            return "That correction could not be recorded. Nothing was changed."
+        }
+    }
+
+    static func speciesReportFailure(_ error: APIError) -> String {
+        switch error {
+        case .conflict:
+            return "This species has already been reported. Nothing was added."
+        case .validationFailed:
+            return "There is nothing here to report."
+        case .forbidden:
+            return "This tree comes from the city inventory, and its species is the city's record."
+        case .notFound:
+            return "This tree could not be found. Nothing was recorded."
+        default:
+            return "That report could not be recorded. Nothing was changed."
         }
     }
 }

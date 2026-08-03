@@ -131,8 +131,8 @@ struct TreeProfileView: View {
                     // Declining here is simply leaving. Unlike the add screen there is no draft to
                     // retract from — nothing has been claimed, so there is nothing to un-claim, and
                     // both exits do the same thing for once.
-                    onSkip: { model.isNamingSpecies = false },
-                    onBack: { model.isNamingSpecies = false }
+                    onSkip: { model.cancelNamingSpecies() },
+                    onBack: { model.cancelNamingSpecies() }
                 )
             }
     }
@@ -511,11 +511,60 @@ struct TreeProfileView: View {
             }
             .cypressHitArea()
         }
+        speciesCorrection(presentation)
         if let failure = model.speciesClaimFailure {
             Text(failure)
                 .cypressBody135(color: CypressColor.textMuted)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    /// The correction half of the same block (#86, #124) — one control, in the same place as the
+    /// claim, saying whichever of three things is true of this record and this viewer.
+    ///
+    /// It sits under the species line for `speciesClaim`'s reason and shares its refusal sentence:
+    /// naming, correcting and reporting are three moves on one fact, and splitting them across the
+    /// screen would make them read as three features. Which one is offered is not decided here —
+    /// `SpeciesCorrectionOffer` arrives on the payload already decided, because the answer needs the
+    /// viewer's identity and role.
+    @ViewBuilder
+    private func speciesCorrection(_ presentation: TreeProfilePresentation) -> some View {
+        switch presentation.speciesCorrection {
+        case .none:
+            EmptyView()
+        case .correctable:
+            speciesAction(TreeProfileCopy.correctSpeciesAction) { model.beginCorrectingSpecies() }
+        case .reportable:
+            speciesAction(TreeProfileCopy.reportSpeciesAction) {
+                Task { await model.reportSpeciesAsWrong() }
+            }
+            Text(TreeProfileCopy.reportSpeciesNotice)
+                .cypressBody135(color: CypressColor.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
+        case let .underReview(flagID, canResolve):
+            // Drawn to everybody, including the person who raised it: a species under dispute must
+            // not render as though nobody had objected.
+            Text(TreeProfileCopy.speciesReported)
+                .cypressBody135(color: CypressColor.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
+            if canResolve {
+                speciesAction(TreeProfileCopy.correctSpeciesAction) { model.beginCorrectingSpecies() }
+                speciesAction(TreeProfileCopy.keepSpeciesAction) {
+                    Task { await model.keepSpecies(flagID: flagID) }
+                }
+            }
+        }
+    }
+
+    private func speciesAction(_ label: String, _ act: @escaping () -> Void) -> some View {
+        Button(action: act) {
+            Text(label)
+                .font(CypressFont.body13Bold)
+                .foregroundStyle(CypressColor.ctaFill)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .cypressHitArea()
     }
 
     // MARK: - 7 · Regulars row (C26, A8, D1)

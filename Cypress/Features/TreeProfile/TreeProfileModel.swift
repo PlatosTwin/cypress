@@ -142,12 +142,73 @@ final class TreeProfileModel {
     func claimSpecies(_ species: Species) async {
         speciesClaimFailure = nil
         isNamingSpecies = false
+        let correcting = isCorrectingSpecies
+        isCorrectingSpecies = false
         do {
-            _ = try await api.claimSpecies(treeID: treeID, speciesID: species.id)
+            if correcting {
+                _ = try await api.correctSpecies(treeID: treeID, speciesID: species.id)
+            } else {
+                _ = try await api.claimSpecies(treeID: treeID, speciesID: species.id)
+            }
         } catch let error as APIError {
-            speciesClaimFailure = TreeProfileCopy.speciesClaimFailure(error)
+            speciesClaimFailure = correcting
+                ? TreeProfileCopy.speciesCorrectionFailure(error)
+                : TreeProfileCopy.speciesClaimFailure(error)
         } catch {
-            speciesClaimFailure = TreeProfileCopy.speciesClaimFailure(.serverError)
+            speciesClaimFailure = correcting
+                ? TreeProfileCopy.speciesCorrectionFailure(.serverError)
+                : TreeProfileCopy.speciesClaimFailure(.serverError)
+        }
+        await reload()
+    }
+
+    // MARK: - Correcting a claim (#86, #124)
+
+    /// Whether the picker that is up is correcting an existing claim rather than making a first one.
+    ///
+    /// One picker, two acts. The sheet is identical and the *write* is not: a first claim is
+    /// `claimSpecies`, guarded in SQL on there being nothing to supersede, and a correction is
+    /// `correctSpecies`, guarded on who is asking. A flag set when the sheet opens decides which
+    /// call the pick makes, rather than the model inferring it from the presentation — inferring
+    /// would decide at pick time from a payload read before the sheet went up, and the two verbs
+    /// throw different refusals that need different sentences.
+    private(set) var isCorrectingSpecies = false
+
+    func beginCorrectingSpecies() {
+        speciesClaimFailure = nil
+        isCorrectingSpecies = true
+        isNamingSpecies = true
+    }
+
+    /// Cancelling the picker leaves neither flag set, so the next open starts from whatever the
+    /// screen offers then.
+    func cancelNamingSpecies() {
+        isNamingSpecies = false
+        isCorrectingSpecies = false
+    }
+
+    /// Reports the species as wrong (#124). A refusal becomes a sentence, exactly as a claim's does.
+    func reportSpeciesAsWrong() async {
+        speciesClaimFailure = nil
+        do {
+            try await api.flagWrongSpecies(treeID: treeID)
+        } catch let error as APIError {
+            speciesClaimFailure = TreeProfileCopy.speciesReportFailure(error)
+        } catch {
+            speciesClaimFailure = TreeProfileCopy.speciesReportFailure(.serverError)
+        }
+        await reload()
+    }
+
+    /// Answers an open report by leaving the species where it is.
+    func keepSpecies(flagID: UUID) async {
+        speciesClaimFailure = nil
+        do {
+            try await api.dismissSpeciesReview(flagID: flagID)
+        } catch let error as APIError {
+            speciesClaimFailure = TreeProfileCopy.speciesReportFailure(error)
+        } catch {
+            speciesClaimFailure = TreeProfileCopy.speciesReportFailure(.serverError)
         }
         await reload()
     }
