@@ -43,7 +43,7 @@
 //  is never owed this sentence, however empty it is, and R41's carve-out is not being read down:
 //  what draws here is text about the *inventory*, on a map nobody has narrowed.
 //
-//  The reasoning is `docs/rulings-pending/empty-inventory-notice.md`, written under this ticket's
+//  The reasoning is `RULINGS R53`, written under this ticket's
 //  delegated design authority (SCREENS.md 01 lists `empty/no-GPS state` among its NOT SPECIFIED
 //  states, which is the same door `MapOpening.Standing` was built through).
 //

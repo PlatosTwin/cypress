@@ -13093,6 +13093,20 @@ Two sources were refused deliberately rather than left to be rediscovered:
   garden accession list rather than a municipal inventory, it asserts copyright with no stated
   licence, and it offers no export. Under #106's own data-fetching rules that is a stop-and-ask.
 
+#### Addendum, 2026-08-03 (#190): the 65 is not reproducible from anything the app ships
+
+The 65 above is a count against **Rec & Park's own Golden Gate Park polygon** (1,031.65 acres,
+`complex = All Sections`), fetched during the survey. The seed carries no Rec & Park geometry at
+all — its one polygon table is the 41 SF analysis neighborhoods (`j2bu-swwd`). Counted against the
+polygon the seed *does* carry, the Golden Gate Park analysis neighborhood, the answer is **90 rows**
+(79 `DPW Maintained`, 53 with caretaker `Rec/Park`).
+
+Both numbers are right; they are different polygons. Recorded because the next reader to measure
+this from the shipped seed will get 90 and conclude this entry is wrong. Neither number changes the
+finding: there is no park-tree source, and every tree inside either boundary is a street tree on a
+boulevard clipping the outline.
+
+
 ### E215 — The hero pill and the photo browser filter the same series by two different rules
 
 **Unnumbered.** Found while building #131 (`p1/round9-a`). **Filed, not fixed** — #131 was told to
