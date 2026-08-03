@@ -85,8 +85,18 @@ enum DebugDeepLink {
         /// 03 over a **community** tree carrying a contributor's species (ERRATA E141) — the state
         /// this project has no seed record for, because every one of them is added on the device.
         case speciesClaim
-        /// The same, with no species: the state that offers to be named.
+        /// The same, with no species: the state that offers to be named. It is also where #125's
+        /// report control draws in its `.reportable` arm, because a community add is the only
+        /// record this app may report as never having held a tree.
         case speciesUnclaimed
+        /// 03 over a community add with an **open `never_existed` report**, seen as a lead — the
+        /// state where #125's two resolving verbs draw (task #125).
+        ///
+        /// Its own slot rather than a flag on `.speciesUnclaimed`, under this file's standing rule:
+        /// a case that writes persistent state must not write it onto a record another case reads,
+        /// and this one both raises a flag and promotes the account. It is also the only way to look
+        /// at the withdrawal copy before the tap, which is the whole reason the notice exists.
+        case recordDefect
         /// Screen 20 over a **community add** — one tree, one photograph, the photograph that
         /// BUILD-PLAN §6 required in order to add it (ERRATA E147). The one state where deleting a
         /// photograph leaves a record its own creation rule forbids, and the only way to look at
@@ -269,6 +279,30 @@ enum DebugDeepLink {
                     speciesQuery: screen == .speciesClaim ? "Platanus" : nil
                 )
                 router.push(.treeProfile(id))
+            case .recordDefect:
+                // Resolved-then-added, like `.communityPhotos` and unlike `.speciesClaim`, because
+                // this case is meant to be *run twice*: the second run is how the withdrawal is
+                // looked at after it has happened. A blind `debugAddCommunityTree` would trip the
+                // 10 m proximity dedupe against the tree the first run left standing and the harness
+                // would draw its own failure instead of the screen.
+                let existing = try await api.treesNear(
+                    recordDefectSpot, radiusM: TreeDraft.proximityDedupeRadiusM, limit: 1
+                ).first?.tree.id
+                let id: UUID
+                if let existing {
+                    id = existing
+                } else {
+                    id = try await api.debugAddCommunityTree(near: recordDefectSpot, speciesQuery: nil)
+                }
+                // Through the shipping raise, not around it: the point of looking at this screen is
+                // that the report made the whole trip, so a seam that inserted the flag directly
+                // would photograph a state the app cannot actually produce. A re-run finds the
+                // report already open and `.conflict` is the correct answer to it, not a failure.
+                do {
+                    try await api.flagNeverExisted(treeID: id)
+                } catch APIError.conflict {}
+                try await api.setRole(.coordinator)
+                router.push(.treeProfile(id))
             case .communityPhotos:
                 // A community add with the one photograph that made it addable, opened on screen 20
                 // — the surface where it can be deleted, and the only place in the app where a
@@ -359,6 +393,8 @@ enum DebugDeepLink {
     private static let communityPhotoSpot = Coordinate(latitude: 37.7636, longitude: -122.5300)
     private static let claimedSpot = Coordinate(latitude: 37.7600, longitude: -122.5300)
     private static let unclaimedSpot = Coordinate(latitude: 37.7618, longitude: -122.5300)
+    /// The fourth, ~200 m off the third, under the same rule (task #125).
+    private static let recordDefectSpot = Coordinate(latitude: 37.7654, longitude: -122.5300)
 
     /// The nearest tree to the map's opening centre that is actually standing.
     ///
