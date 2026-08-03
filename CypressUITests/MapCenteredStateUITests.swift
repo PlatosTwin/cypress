@@ -19,9 +19,17 @@ import XCTest
 ///     xcrun simctl privacy <udid> grant location app.cypress.Cypress
 ///     xcrun simctl location <udid> set 37.7599,-122.4148
 ///
-/// Without a fix there is nothing to be centered on, so the test **skips** rather than fails —
-/// `MapSearchUITests.requireAMapWithPins`' judgment, in its own words: a skip says "not checked
-/// here", which is true, where a failure would say "broken", which is not.
+/// **The fix is pinned rather than inherited, and no fix is a failure (task #121).** These tests
+/// used to `XCTSkip` when the simulator had given Cypress no location — `MapSearchUITests
+/// .requireAMapWithPins`' judgment, in its own words: a skip says "not checked here", which is true,
+/// where a failure would say "broken", which is not. That reasoning was correct and it was never the
+/// problem. The problem is that a skipped test is invisible in `Test run with N tests passed`, so on
+/// the ordinary fixless simulator #115's whole claim went unwatched inside a green number. The launch
+/// environment now states the fix (`DebugLocationOverride`; ruling
+/// `docs/rulings-pending/location-state-launch-seam.md`) and `MissingPinnedFix` is what a screen 01
+/// that still reports itself fixless earns. The two `simctl` lines above are no longer required to
+/// make these tests run; they remain the way to put a device in the *real* state, which is the thing
+/// a pinned provider deliberately does not prove.
 final class MapCenteredStateUITests: XCTestCase {
 
     override func setUp() {
@@ -31,12 +39,21 @@ final class MapCenteredStateUITests: XCTestCase {
 
     /// `MapRecenterCopy.label`, the one string this file and the app have to agree on.
     private static let controlLabel = "Center the map on you"
+
+    /// `DebugLocationOverride.environmentKey` and `DebugLocationFixtures.missionDolores`' neighbor —
+    /// the coordinate this file's own skip message already named (task #121). Literals, because this
+    /// target imports nothing from `Cypress`. The seed holds 501 trees within 250 m of it, measured
+    /// over the same box `Tools/run_tests.sh` counts, so a run that leaves the camera here leaves a
+    /// device the next run's E216 preflight accepts.
+    private static let locationKey = "CYPRESS_LOCATION"
+    private static let pinnedFix = "37.7599,-122.4148"
+
     /// `MapRecenterCopy.value(.centered)`.
     private static let centered = "Centered on you"
 
-    /// The states that mean "this simulator has no fix for the app to center on", spoken by
-    /// `MapRecenterCopy.value`. Any one of them makes the assertion below meaningless rather than
-    /// false, so it skips.
+    /// The states that mean "screen 01 has no fix to center on", spoken by `MapRecenterCopy.value`.
+    /// Any one of them, on a launch that pinned a fix, means the pin did not arrive — which is a
+    /// defect and not an environment fact. See `MissingPinnedFix`.
     ///
     /// **Copied from `MapRecenterCopy.value` exactly, and it used to not be.** The list carried
     /// `"Not centered yet"`, which that function has never returned — a string one word away from
@@ -76,10 +93,13 @@ final class MapCenteredStateUITests: XCTestCase {
     ///   the ticket — so there is nothing for a test to see. Recorded so nobody spends an afternoon
     ///   hunting for the test that guards it: there is none, and there is nothing to guard.
     ///
-    /// The skip below is honest and it is also a hole: on a machine with no fix this regression goes
-    /// unwatched, silently, in a green run. Grant location and set one before trusting a green here.
+    /// **This used to be guarded by a skip, and the skip was a hole**: on a machine with no fix the
+    /// regression went unwatched, silently, inside a green run, and every ordinary simulator is such
+    /// a machine. The launch pins the fix now, so the guard below can only fire when the pin failed
+    /// to arrive, and it fires as a failure.
     func testTheMapOpensOnTheReaderWithoutBeingAsked() throws {
         let app = XCUIApplication()
+        app.launchEnvironment[Self.locationKey] = Self.pinnedFix
         app.launch()
 
         let control = app.buttons[Self.controlLabel]
@@ -99,12 +119,7 @@ final class MapCenteredStateUITests: XCTestCase {
         }
 
         if Self.fixless.contains(seen) {
-            throw XCTSkip(
-                "this simulator never gave Cypress a fix (the control reads “\(seen)”), so there is "
-                    + "nothing the map could have opened on: xcrun simctl privacy <udid> grant "
-                    + "location app.cypress.Cypress && xcrun simctl location <udid> set "
-                    + "37.7599,-122.4148"
-            )
+            throw MissingPinnedFix(seen: seen, pinned: Self.pinnedFix)
         }
 
         XCTAssertEqual(
@@ -120,6 +135,7 @@ final class MapCenteredStateUITests: XCTestCase {
 
     func testTheControlSaysCenteredOnceTheMapIsOnYou() throws {
         let app = XCUIApplication()
+        app.launchEnvironment[Self.locationKey] = Self.pinnedFix
         app.launch()
 
         let control = app.buttons[Self.controlLabel]
@@ -130,12 +146,7 @@ final class MapCenteredStateUITests: XCTestCase {
 
         let before = control.value as? String ?? ""
         if Self.fixless.contains(before) {
-            throw XCTSkip(
-                "this simulator has no location fix for Cypress (the control reads “\(before)”), so "
-                    + "there is nothing for the map to be centered on: xcrun simctl privacy <udid> "
-                    + "grant location app.cypress.Cypress && xcrun simctl location <udid> set "
-                    + "37.7599,-122.4148"
-            )
+            throw MissingPinnedFix(seen: before, pinned: Self.pinnedFix)
         }
 
         // The press is the app's own promise that the camera is now on the reader —
