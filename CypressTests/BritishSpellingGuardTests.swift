@@ -5,7 +5,7 @@
 //  #140: "Use English spellings (eg not favourites)" — the owner meant American, and
 //  they said it while looking at the app, so what a reader can see is what this guards.
 //
-//  Design and scope are recorded in `docs/rulings-pending/american-spelling-guard.md`.
+//  Design and scope are recorded in `RULINGS R56`.
 //  Read that before widening or narrowing anything here; the short version is below.
 //
 //  ── What this checks, exactly ────────────────────────────────────────────────────────────────────
