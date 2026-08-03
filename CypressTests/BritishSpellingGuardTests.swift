@@ -234,6 +234,40 @@ enum AppSourceLiterals {
         }
     }
 
+    // MARK: - The one measured floor, shared by both source-sweeping gates
+
+    /// **#194: re-measured, not remembered.** `BritishSpellingGuardTests` carried "180 at #140"
+    /// and `DrawnGlyphGuardTests` carried "256 at #130" — the second was at least checked once
+    /// (#130's own agent caught its first guess of 181 against the real 256); the first was
+    /// never checked at all. Both are gone. There is exactly one number now, and both gates
+    /// assert against it, so a re-measurement is one edit instead of two.
+    ///
+    /// **Method**, so the next re-measurement is reproducible: `find Cypress -name '*.swift' |
+    /// wc -l` from the worktree root — the same walk `sourceFiles(root:)` does above, just run
+    /// from a shell. Measured **257** on 2026-08-03.
+    ///
+    /// **"Files under `Cypress/`" is "files in the app target" here, and that is a fact about
+    /// this project file, not a general truth — re-check it if this ever changes.** The `Cypress`
+    /// app target's `fileSystemSynchronizedGroups` is exactly the `Cypress/` root group
+    /// (`Cypress.xcodeproj/project.pbxproj`), and its only membership exception is
+    /// `Resources/Info.plist` — not a `.swift` file. So nothing under `Cypress/` is excluded from
+    /// the target, and nothing outside `Cypress/` is included in it, for `.swift` files
+    /// specifically. A target-membership exception added later would break that equivalence
+    /// silently; that is exactly the kind of drift a floor test cannot see and a human has to
+    /// notice when editing the project file.
+    ///
+    /// **A floor, not the count.** It stays well under 257 on purpose: ordinary file growth
+    /// should never require touching this, only a scan that starts seeing (near-)nothing should
+    /// trip it. `DrawnGlyphGuardTests` and `BritishSpellingGuardTests` both assert
+    /// `sourceFiles(root:).count >= swiftFileCountFloor` against this same constant — since both
+    /// call this same `sourceFiles(root:)` function on the same root, the two gates cannot
+    /// disagree about the file set by construction; if a future refactor gives one of them its
+    /// own walk, add a test asserting the two counts are equal, because that disagreement would
+    /// itself be the defect.
+    static let swiftFileCountFloor = 220
+    static let swiftFileCountMeasured = 257
+    static let swiftFileCountMeasuredAsOf = "2026-08-03"
+
     /// The string literals in one file, with comments and interpolation interiors skipped.
     ///
     /// A deliberately small scanner rather than a regex: `"` inside a `//` comment, an escaped `\"`
@@ -393,10 +427,12 @@ struct BritishSpellingGuardTests {
 
         let files = AppSourceLiterals.sourceFiles(root: root)
         #expect(
-            files.count >= 150,
+            files.count >= AppSourceLiterals.swiftFileCountFloor,
             """
-            the guard swept \(files.count) files; the app target had 180 at #140, so this is not \
-            the app target
+            the guard swept \(files.count) files; \(AppSourceLiterals.swiftFileCountMeasured) \
+            were measured directly under Cypress/ as of \
+            \(AppSourceLiterals.swiftFileCountMeasuredAsOf) (`find Cypress -name '*.swift' | \
+            wc -l`), so this is not the app target
             """
         )
 
