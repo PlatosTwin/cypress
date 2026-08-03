@@ -206,8 +206,8 @@ struct DrawnGlyphGuardTests {
         )
         let files = AppSourceLiterals.sourceFiles(root: root)
         #expect(
-            files.count >= 150,
-            "the guard swept \(files.count) files; the app target had 181 at #130, so this is not it"
+            files.count >= 200,
+            "the guard swept \(files.count) files; the app target had 256 at #130, so this is not it"
         )
     }
 
