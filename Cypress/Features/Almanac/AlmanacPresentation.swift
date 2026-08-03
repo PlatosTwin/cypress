@@ -196,7 +196,7 @@ struct AlmanacPresentation: Equatable {
         self.areaNote = AlmanacCopy.areaNote(area.area, locale: locale)
         let rows = Self.seasonRows(area, in: pill, now: now, calendar: calendar, locale: locale)
         self.seasonRows = rows
-        self.seasonNote = AlmanacCopy.seasonNote(kinds: rows.map(\.kind), calendar: calendar)
+        self.seasonNote = AlmanacCopy.seasonNote(kinds: rows.map(\.kind), calendar: calendar, locale: locale)
         self.composition = Self.composition(area.composition, locale: locale)
         self.coverage = Self.coverage(area.coverage, in: pill, locale: locale)
         self.vacantSites = Self.vacantSites(area.vacantSites, in: pill, locale: locale)
@@ -484,7 +484,8 @@ enum AlmanacCopy {
     /// about a row that is not on screen is never written.
     static func seasonNote(
         kinds: [AlmanacPresentation.SeasonRow.Kind],
-        calendar: Calendar
+        calendar: Calendar,
+        locale: Locale
     ) -> String? {
         guard !kinds.isEmpty else { return nil }
 
@@ -495,7 +496,7 @@ enum AlmanacCopy {
             case .elder:
                 return "the elder is the oldest on file in any season"
             case .newestNeighbors:
-                return "the newest neighbors were planted \(springSpan(calendar: calendar))"
+                return "the newest neighbors were planted \(springSpan(calendar: calendar, locale: locale))"
             }
         }
 
@@ -507,7 +508,15 @@ enum AlmanacCopy {
     }
 
     /// `March to May`, from the constant the read is actually scoped to.
-    private static func springSpan(calendar: Calendar) -> String {
+    ///
+    /// **The locale is applied to the calendar rather than taken from it**, which the red-proof for
+    /// this note caught: `Calendar.standaloneMonthSymbols` reads the *calendar's* own locale, and a
+    /// calendar constructed as `Calendar(identifier: .gregorian)` carries none, so the months came
+    /// out as `M03 to M05`. Every other sentence in this enum already takes the reader's locale as
+    /// its own parameter; this one now does too, instead of hoping the two agree.
+    private static func springSpan(calendar: Calendar, locale: Locale) -> String {
+        var calendar = calendar
+        calendar.locale = locale
         let names = calendar.standaloneMonthSymbols
         let first = AlmanacWindow.springMonths.lowerBound
         let last = AlmanacWindow.springMonths.upperBound

@@ -640,8 +640,15 @@ struct AlmanacPresentationTests {
     }
 
     /// The first and last month of the window the planting read is bounded by, in the suite's
-    /// pinned calendar.
+    /// pinned calendar **and its pinned locale**.
+    ///
+    /// The locale is applied here for the reason the note applies it: month symbols come from the
+    /// calendar's locale, and this suite's calendar is built by identifier and carries none. Read
+    /// off the bare calendar these were `M03` and `M05`, and the assertions below would have been
+    /// pinning the fallback rather than the month names a reader sees.
     private static func springMonthNames() -> [String] {
+        var calendar = calendar
+        calendar.locale = locale
         let names = calendar.standaloneMonthSymbols
         return [names[AlmanacWindow.springMonths.lowerBound - 1], names[AlmanacWindow.springMonths.upperBound - 1]]
     }
