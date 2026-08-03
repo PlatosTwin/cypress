@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Cypress's privacy manifest (task #188, split out of #187).
+
+	  ── NSPrivacyCollectedDataTypes is empty, and that is a measured claim ─────────────────────────
+	  Apple's "collect" means transmit off the device. Nothing this app holds is transmitted
+	  anywhere. `RemoteAPI` implements `CypressAPI` but is a stub and is never instantiated in
+	  shipping code — `grep -rn "RemoteAPI(" Cypress` returns nothing, and the outbox drains through
+	  `APIOutboxTransport` into `LocalAPI`, which writes this phone's own SQLite. The only
+	  `URLSession` traffic in the app is `CityDownloader`, which GETs published city files from a
+	  static bucket and uploads nothing at all: no request body, no identifiers, no query built from
+	  anything the reader did.
+
+	  So photographs, precise location, check-ins, measurements, notes and the whole contribution
+	  history stay on the phone. The app *uses* location and the camera — that is what the three
+	  usage strings in Info.plist are for — but using is not collecting, and this array must stay
+	  empty only for as long as that remains true.
+
+	  **This entry has a shelf life.** #158 is the contribution sync endpoint and it is unbuilt. The
+	  day anything uploads a contribution, this file is wrong, and it is wrong silently: nothing in
+	  the build fails, and the first symptom is an App Review rejection or, worse, a shipped app
+	  whose label misdescribes it. Whoever builds #158 owns this file in the same commit.
+
+	  ── NSPrivacyTracking ─────────────────────────────────────────────────────────────────────────
+	  False, with no tracking domains. There is no analytics SDK, no advertising identifier, and no
+	  third-party dependency of any kind — the project has zero external dependencies by policy
+	  (ARCHITECTURE), so there is no vendor manifest to merge with this one.
+	-->
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+	<!--
+	  ── Required-reason APIs: User Defaults only ──────────────────────────────────────────────────
+	  Two shipping call sites read and write `UserDefaults.standard`, both storing a fact about this
+	  installation's own UI state and nothing else:
+
+	    · `VisitSaveLedger`   — how many times the account ask has been shown (a funnel fact, which is
+	                            why it is UserDefaults and not `app_state`; see its header).
+	    · `MapOpeningCamera`  — the camera the map last rested at, so a cold launch opens where the
+	                            reader left off rather than on a hardcoded city.
+
+	  Reason `CA92.1`: information accessible only to this app, not written by or readable to any
+	  other app or the system. Cypress has no app group and no extension, so `1C8F.1` does not
+	  apply.
+
+	  The other three required-reason families are absent, checked rather than assumed: no file
+	  timestamp API (`creationDate`, `modificationDate`, `contentModificationDate`), no disk space
+	  API (`systemFreeSize`, `volumeAvailableCapacity`), and no system boot time API
+	  (`systemUptime`, `mach_absolute_time`) appears anywhere under `Cypress/`. Re-run those greps
+	  before adding a category here rather than adding one defensively — a declared reason the app
+	  cannot justify is its own rejection.
+	-->
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>CA92.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>
