@@ -36,7 +36,8 @@ import XCTest
 ///    catches the E196 family directly: at AX5 the ramp pushes content wider and taller than the
 ///    layout budgeted for it, and screens 02 and 11 were found with their chrome clipped off both
 ///    edges.
-/// 5. **big enough to press** — at least `CypressSpacing.minTapTarget` (44 pt) tall.
+/// 5. **drawn** — the frame has a width and a height. Deliberately *not* a 44 pt tap-target
+///    assertion; see `assertDrawn` for the false red that would have been.
 /// 6. **no ellipsis inside the label** — see the honesty note below.
 ///
 /// **The honesty note, because a probe that claims more than it checks is worse than one that states
@@ -281,26 +282,28 @@ final class PrimaryCTAReachabilityTests: XCTestCase {
 
         for label in target.arm {
             let control = app.buttons[label]
+            let spent = reach(control, in: app)
             XCTAssertTrue(
-                control.waitForExistence(timeout: 15),
-                "\(screen): the arming control '\(label)' is not on this screen at AX5, so the CTA "
-                    + "was never brought into the state this probe judges it in"
+                control.exists && control.isHittable,
+                "\(screen): the arming control '\(label)' never became reachable at AX5 after "
+                    + "\(spent) swipes, so the CTA was never brought into the state this probe "
+                    + "judges it in"
             )
-            guard control.exists else { return }
-            scrollIntoReach(control, in: app, screen: screen, what: "the arming control '\(label)'")
+            guard control.exists, control.isHittable else { return }
             control.tap()
         }
 
         let predicate = NSPredicate(format: "label IN %@", target.ctaLabels)
         let cta = app.buttons.matching(predicate).firstMatch
+        let swipes = reach(cta, in: app)
         XCTAssertTrue(
-            cta.waitForExistence(timeout: 20),
+            cta.exists,
             "\(screen): no button labeled \(target.ctaLabels.map { "“\($0)”" }.joined(separator: " or ")) "
-                + "is in the accessibility tree at AX5 — \(target.note)"
+                + "is in the accessibility tree at AX5, after \(swipes) swipes down the screen. "
+                + "What is there instead: \(buttonLabels(app)). — " + target.note
         )
         guard cta.exists else { return }
 
-        let swipes = scrollIntoReach(cta, in: app, screen: screen, what: "the primary CTA")
         XCTAssertTrue(
             cta.isHittable,
             "\(screen): the primary CTA “\(cta.label)” is in the tree but never became hittable "
@@ -313,7 +316,7 @@ final class PrimaryCTAReachabilityTests: XCTestCase {
         )
 
         assertOnTheGlass(cta, in: app, screen: screen)
-        assertPressable(cta, screen: screen)
+        assertDrawn(cta, screen: screen)
         assertNotElided(cta, screen: screen)
 
         print(
@@ -325,20 +328,35 @@ final class PrimaryCTAReachabilityTests: XCTestCase {
 
     /// Swipes up until `element` is hittable, or the budget runs out. Returns the swipes spent.
     ///
+    /// **It swipes on absence as well as on presence, and the first draft did not — that is the
+    /// whole reason this is a function rather than two lines.** The first version waited for the
+    /// element to *exist* and only then scrolled it into view, on the reasonable-sounding premise
+    /// that an off-screen element is still in the accessibility tree. On this app at AX5 that premise
+    /// is false: screens 03 and 11 held their CTA in a scroll whose content the ramp made several
+    /// screens long, and the control was not in the tree at all until the scroll had been dragged
+    /// near it. Both screens failed with "no button labeled … is in the accessibility tree", which is
+    /// a true sentence about the query and a false one about the app — the reader has that button,
+    /// they just have to scroll. A probe that reported those as missing CTAs would have filed two
+    /// defects that do not exist.
+    ///
+    /// So existence is polled inside the loop, and "reachable" means *reachable*: on screen where it
+    /// is, or on screen within `scrollBudget` swipes. The caller asserts on `exists` and `isHittable`
+    /// afterwards, and the swipe count it is handed goes into the failure message, so a screen that
+    /// has crept from two swipes to seven says so before it crosses.
+    ///
     /// Swipes on the app rather than on a named scroll view, because the screens on this list use
     /// several different containers and naming one per screen would be a second table to keep in
     /// step with the first.
     @discardableResult
-    private func scrollIntoReach(
-        _ element: XCUIElement,
-        in app: XCUIApplication,
-        screen: String,
-        what: String
-    ) -> Int {
+    private func reach(_ element: XCUIElement, in app: XCUIApplication) -> Int {
+        // One short wait first: a screen that has just been deep-linked is still settling, and every
+        // CTA on the list that needs no scrolling at all is on the glass within this window.
+        if element.waitForExistence(timeout: 6), element.isHittable { return 0 }
         var swipes = 0
-        while !element.isHittable && swipes < Self.scrollBudget {
+        while swipes < Self.scrollBudget {
             app.swipeUp()
             swipes += 1
+            if element.exists, element.isHittable { return swipes }
         }
         return swipes
     }
@@ -370,22 +388,41 @@ final class PrimaryCTAReachabilityTests: XCTestCase {
         )
     }
 
-    /// 44 pt, which is `CypressSpacing.minTapTarget` — the number `MapRecenterButton` is drawn at
-    /// exactly and the one #183's hit-area assertions compare against with a tolerance.
+    /// Every button label on screen, for a failure message.
     ///
-    /// A CTA can only get *taller* as the ramp grows, so this is not the assertion most likely to
-    /// fail; it is here because a control squeezed by a `.frame(maxHeight:)` somebody added to make
-    /// a layout fit at AX5 would fail nothing else on this list.
-    private func assertPressable(_ element: XCUIElement, screen: String) {
+    /// **A missing CTA has two very different causes and the message has to tell them apart**: the
+    /// control is genuinely absent, or the screen that arrived is not the screen the probe thinks it
+    /// is. Without this list both read as "no button labeled X", which is a riddle — and this project
+    /// has an errata entry for exactly that shape of report (E153: blaming the almanac for something
+    /// else). Bounded, because a screen with sixty controls would drown the message it is in.
+    private func buttonLabels(_ app: XCUIApplication) -> String {
+        let labels = app.buttons.allElementsBoundByIndex
+            .prefix(30)
+            .map { "“\($0.label)”\($0.isHittable ? "" : " (not hittable)")" }
+        return labels.isEmpty ? "no buttons at all" : labels.joined(separator: ", ")
+    }
+
+    /// The control has a rectangle at all.
+    ///
+    /// **Deliberately not a 44 pt minimum-tap-target assertion, and the reason is a false red this
+    /// probe would otherwise have filed.** `CypressSpacing.minTapTarget` is 44 and several controls
+    /// on this list reach it through `cypressHitArea(_:)`, which puts a `Color.clear` of at least
+    /// 44 × 44 in the *background* with its own `contentShape`. A SwiftUI background does not enlarge
+    /// the view it sits behind, so the element's accessibility frame stays the size of the drawn
+    /// label while the region that actually receives the tap is the larger one. Asserting 44 pt on
+    /// the frame XCUITest reports would therefore measure the wrong rectangle and report a defect
+    /// that does not exist — screen 11's `Add a reading` is a 13 pt bold link with exactly that
+    /// arrangement. Tap targets are #183's question and are answered at the value level, with a
+    /// tolerance, where the real geometry is in scope.
+    private func assertDrawn(_ element: XCUIElement, screen: String) {
         let frame = element.frame
-        XCTAssertGreaterThanOrEqual(
-            frame.height, 44 - 0.5,
-            "\(screen): the primary CTA “\(element.label)” is \(frame.height) pt tall at AX5, under "
-                + "the 44 pt minimum tap target"
-        )
         XCTAssertGreaterThan(
             frame.width, 0,
             "\(screen): the primary CTA “\(element.label)” has no width at AX5"
+        )
+        XCTAssertGreaterThan(
+            frame.height, 0,
+            "\(screen): the primary CTA “\(element.label)” has no height at AX5"
         )
     }
 

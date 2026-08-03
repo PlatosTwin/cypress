@@ -2094,6 +2094,26 @@ public actor LocalAPI: CypressAPI {
         overrideCache = nil
     }
 
+    /// Test seam (task #173): the local status overrides this device holds, by tree id.
+    ///
+    /// **It exists because `treesNear` does not apply them and `treeProfile` does**, which made the
+    /// deep-link harness's own resolution disagree with the screen it opened. `debugMarkStatus` above
+    /// writes an override; `treesNear` reads the inventory row and returns the *seed's* status; so a
+    /// harness case that picked "the nearest tree that accepts contributions" kept picking the same
+    /// record after `.memorial` had marked it removed, and `CYPRESS_SCREEN=treeProfile` opened a
+    /// removed tree — no primary CTA, no check-in — on every device that had ever opened screen 19.
+    /// Found by `CypressUITests/PrimaryCTAReachabilityTests` on its first run.
+    ///
+    /// **Not a change to `treesNear`.** The map runs that query on every camera change and layers
+    /// overrides itself through `overrideCache`, precisely so the join is paid once rather than per
+    /// viewport; folding it in would spend #130's pin budget to serve a `#if DEBUG` harness. What the
+    /// harness needs is the table, and this hands it over.
+    public func debugStatusOverrides() async throws -> [UUID: TreeStatus] {
+        try await store.queue.read { connection in
+            try contributions.statusOverrides(connection: connection)
+        }
+    }
+
     /// Test seam (ERRATA E125): give a real seed tree some photographs, so the deep-link harness can
     /// open screen 20 and the profile hero against records that exist.
     ///
