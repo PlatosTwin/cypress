@@ -24,7 +24,7 @@ import XCTest
 /// every ordinary run, under a green number.
 ///
 /// `CYPRESS_LOCATION=denied` in the launch environment now *drives* the state instead of detecting
-/// it (`DebugLocationOverride`, ruling `docs/rulings-pending/location-state-launch-seam.md`), so the
+/// it (`DebugLocationOverride`, ruling `RULINGS R58`), so the
 /// test is unconditional. What it proves is narrower than what the skip pretended to be waiting for,
 /// and the ruling says so: this is the app's behavior in the denied state, not CoreLocation's
 /// behavior in producing that state.

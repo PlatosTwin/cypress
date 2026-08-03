@@ -4,7 +4,7 @@ import Foundation
 /// simulator had given Cypress no location — an honest report of an environment fact, and invisible
 /// in `Test run with N tests passed`, which counts a test that declined to run exactly the same as
 /// one that ran and passed. The launch now *pins* the fix (`DebugLocationOverride`, ruling
-/// `docs/rulings-pending/location-state-launch-seam.md`), so a screen 01 that still reports itself
+/// `RULINGS R58`), so a screen 01 that still reports itself
 /// fixless is a defect in the seam or in the wiring rather than a fact about this machine.
 struct MissingPinnedFix: Error, CustomStringConvertible {
     let seen: String

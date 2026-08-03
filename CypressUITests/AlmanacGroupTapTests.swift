@@ -151,7 +151,7 @@ final class AlmanacGroupTapTests: XCTestCase {
     /// environment fact, and invisible in the only line this project judges a run by, so both
     /// counted rows could go unexercised under a green number. `CYPRESS_LOCATION` now hands the app
     /// a coordinate directly (`DebugLocationOverride`; ruling
-    /// `docs/rulings-pending/location-state-launch-seam.md`), which makes these two tests
+    /// `RULINGS R58`), which makes these two tests
     /// unconditional on every simulator, fix or no fix.
     ///
     /// The coordinate is the one this file's own comments have named since E153 — Western Addition,

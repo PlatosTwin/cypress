@@ -58,7 +58,7 @@ final class MapPanTabSwitchUITests: XCTestCase {
     /// Launches with a **pinned** fix, and waits for the opening camera to settle on the reader.
     ///
     /// It used to skip when the simulator had no fix to settle on — see `MissingPinnedFix` for why
-    /// that is now a failure, and `docs/rulings-pending/location-state-launch-seam.md` for the seam
+    /// that is now a failure, and `RULINGS R58` for the seam
     /// that made it possible to state the fix rather than discover it.
     private func launchCentered() throws -> (XCUIApplication, XCUIElement) {
         let app = XCUIApplication()

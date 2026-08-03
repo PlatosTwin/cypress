@@ -3,7 +3,7 @@
 //  Cypress — App
 //
 //  A launch-time way to say where the phone is, for the UI test target and nothing else
-//  (task #121; the ruling is `docs/rulings-pending/location-state-launch-seam.md`).
+//  (task #121; the ruling is `RULINGS R58`).
 //
 //  ── Why this exists ───────────────────────────────────────────────────────────────────────
 //  Two UI tests used to decide at runtime whether they were going to run at all, by *detecting*

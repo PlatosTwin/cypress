@@ -577,7 +577,7 @@ final class DeepLinkVoiceOverTests: XCTestCase {
         // `treesNear`, which returns the seed's status and not this device's overrides, so after
         // `.memorial` ran once it kept returning the same record forever — a Southern Magnolia, whose
         // species does carry an August note. With that repaired (see
-        // `docs/errata-pending/deep-link-harness-status-overrides.md`) resolution moves on to the
+        // `ERRATA E217`) resolution moves on to the
         // next standing tree, a Blackwood Acacia, whose `care_notes` in the seed are `[]`. Measured
         // against the shipped seed rather than guessed: the four nearest records to the harness's
         // center are Magnolias carrying 115 bytes of care notes, and the fifth is the Acacia with 2.

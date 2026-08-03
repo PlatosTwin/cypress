@@ -1,7 +1,7 @@
 import XCTest
 
 /// **Every deep-linkable screen's primary CTA, at AX5, asserted rather than photographed** (task
-/// #173; ruling `docs/rulings-pending/ax5-primary-cta-probe.md`).
+/// #173; ruling `RULINGS R59`).
 ///
 /// ── Why this is a UI test and not a unit test ─────────────────────────────────────────────────
 /// It was tried in-process first and it cannot work. ERRATA E196 records the dead end and

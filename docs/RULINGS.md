@@ -4611,3 +4611,345 @@ app-wide claim C16 does not make (`ShareDestinationGlyph`, `ComponentSupport`).
 `SCREENS.md` is **not** amended. C16's bullet is correct about C16; the error was in citing it, not
 in what it says. R16's citation of it is left as written — the ruling record is not rewritten after
 the fact — and the correction is recorded here and in the two code comments that carried it forward.
+
+### R58 — A UI test drives the app's location state; it does not detect it (task #121, delegated)
+
+*Pending. Cite this file as `RULINGS R58` until the
+orchestrator splices a number; #121 delegated the shape of the state-driving mechanism.*
+
+#### The ruling
+
+**`CYPRESS_LOCATION` in the launch environment replaces the composition root's one shared
+`MapLocationProvider` with a pinned double reporting exactly the availability it names.** The
+grammar is `DebugLocationOverride.parse`:
+
+    CYPRESS_LOCATION=denied                   the reader said no
+    CYPRESS_LOCATION=servicesOff              Location Services off device-wide
+    CYPRESS_LOCATION=notAsked                 the sheet has not been shown
+    CYPRESS_LOCATION=waitingForFix            allowed, no fix yet
+    CYPRESS_LOCATION=37.78485,-122.4215       a fix, at DebugLocationOverride.defaultAccuracyM
+    CYPRESS_LOCATION=37.78485,-122.4215,25    a fix, at a stated accuracy
+
+All five of `MapLocationProvider.Availability` are reachable. The named values are spelled exactly
+as the enum's own cases, so there is one vocabulary rather than two.
+
+Every test that used to skip on ambient simulator state is now unconditional:
+
+| test | launches with |
+|---|---|
+| `MapRecenterUITests.testPressingItWithLocationDeniedExplainsRatherThanDoingNothing` | `denied` |
+| `AlmanacGroupTapTests` (2 cases) | `37.78485,-122.4215` |
+| `MapCenteredStateUITests` (2 cases) | `37.7599,-122.4148` |
+| `MapPanTabSwitchUITests` (2 cases) | `37.7599,-122.4148` |
+
+**`CypressUITests` now reports `0 tests skipped`, where a healthy device previously reported 4.**
+
+#### A refuted premise, and it is the reason the count is 4 and not 2
+
+**The ticket names two `XCTSkip` guards. There are six**, and the four it does not name are the same
+class and the same words:
+
+    MapCenteredStateUITests.testTheMapOpensOnTheReaderWithoutBeingAsked
+    MapCenteredStateUITests.testTheControlSaysCenteredOnceTheMapIsOnYou
+    MapPanTabSwitchUITests.testADeliberatePanSurvivesLeavingForJournalAndBack
+    MapPanTabSwitchUITests.testAnUntouchedCameraStillCentersOnTheReaderAfterTheRoundTrip
+
+    Test skipped - this simulator never gave Cypress a fix (the control reads "Finding you"),
+    so there is nothing the map could have opened on
+
+They were the *only* skips left after the two named ones were fixed, and they are load-bearing:
+`testTheMapOpensOnTheReaderWithoutBeingAsked` is the whole of #115's claim — "opening the app should
+open on where you're located, 100% of the time" — and on every ordinary fixless simulator it had been
+declining to check it, inside a green number, since it was written. Its own doc comment says so:
+"The skip below is honest and it is also a hole." Fixing the two named tests and leaving these would
+have left the ticket's actual subject — a green run that does not say what it did not check — exactly
+where it was.
+
+All four pass with a pinned fix. Their guards are now failures rather than skips: `MissingPinnedFix`,
+which is thrown only when a launch that *stated* a fix reports itself fixless — a defect in the seam
+or the wiring, never a fact about the machine.
+
+#### The problem this fixes, stated narrowly
+
+The two skips were **honest** and **correctly reasoned**. Both were documented at their site with
+`MapSearchUITests`' argument — *a skip says "not checked here", which is true, where a failure would
+say "broken", which is not* — and both could genuinely fire, which distinguishes them from #101's
+guard that never could. Nothing here contradicts that reasoning.
+
+The residual problem is about **reporting**. A skipped test is invisible in the line this project
+judges a run by: `Test run with N tests passed` counts a test that declined to run exactly the same
+as one that ran and passed. `MapRecenterUITests`' refusal test skipped whenever location was *not*
+denied — which is the state of every simulator anybody has ever handed this suite — so the permission
+refusal path, the sentence naming the limit and the Settings button, was unexercised in every
+ordinary run, under a green number, and nobody reading that number would know.
+
+The cure for a test that detects state is to let it drive the state. Both candidate fixes in the
+ticket were available; this is the first and preferred one, and it turns two conditional tests into
+two unconditional ones rather than making a skip louder.
+
+#### What the seam proves, and what it does not
+
+**It proves the app's behavior in each location state. It does not prove CoreLocation's behavior in
+producing that state.** A pinned provider never talks to `CLLocationManager`: no delegate is
+attached, `start()` and `stop()` are no-ops, and `authorization` is derived from the availability
+rather than read. So `CYPRESS_LOCATION=denied` exercises everything downstream of "the app believes
+location is denied" — the standing notice, the recenter refusal, the Settings affordance — and
+nothing upstream of it.
+
+What is therefore *not* covered, and was not covered by the skipping version either: that iOS
+actually reports `.denied` after a revoke, that `MapLocationProvider.apply(authorization:)` maps the
+status correctly, and that the Springboard permission sheet appears and can be answered. The first
+two are `CypressTests/MapLocationChurnTests`' subject, driving `manager.delegate` directly. The
+third is not tested anywhere and this ruling does not claim it is.
+
+`xcrun simctl privacy <udid> revoke location app.cypress.Cypress` remains the way to put a device in
+the real state, and remains worth doing by hand before believing anything about the permission
+boundary itself.
+
+#### Why the composition root and not the view
+
+`RootView` owns the one shared provider (ARCHITECTURE §3), and every screen that reads a fix —
+01, 05, 07, 12, 16, and the visit flow — reads that one. Pinning it there means one substitution
+reaches all of them, and `MapHomeView`'s own comment about why it must not construct a provider
+stays true. Substituting per screen would have been six seams and six chances for them to disagree.
+
+#### Why `authorization` is derived rather than named separately
+
+`.denied` with an `authorizedWhenInUse` status is not a state iOS can be in. A seam that let a test
+construct one would be a seam for testing states the app will never see, and a failure found in such
+a state is not a defect. The mapping is `notAsked → notDetermined`, `denied → denied`,
+`servicesOff → restricted`, `waitingForFix`/`located → authorizedWhenInUse`.
+
+#### Why a coordinate is a first-class value, and why the default accuracy is 8 m
+
+`AlmanacGroupTapTests` needs the *presence* of a fix, not its absence, so "denied or fixless" would
+not have made it unconditional. The default accuracy is 8 m because D6 excludes a reading worse than
+15 m from growth charting: a pinned fix reporting a pessimistic accuracy would silently empty every
+chart built on it, putting the app in a state no reader is ever in. A caller who wants the other side
+of that gate says so with a third field.
+
+#### The one cost, and how it is contained
+
+**A pinned coordinate moves screen 01's camera, and that camera outlives the run.** `MapCameraMemory`
+writes it out on the way to the background and the next run's E216 preflight reads it back — so a
+test that pinned a fix over the ocean would leave the device refusing the following run. Both named
+fixtures are inside the inventory's coverage and the counts were measured over the same ±250 m box
+`Tools/run_tests.sh count_camera_trees` uses:
+
+    37.78485, -122.4215   Western Addition                   780 trees
+    37.7596,  -122.4269   Mission Dolores, the map's default  553 trees
+    37.7599,  -122.4148   the map tests' own coordinate       501 trees
+
+`DebugLocationFixtures` carries the first two, with the measurement; the third is the coordinate
+`MapCenteredStateUITests`' skip message already named and stays a literal in that file. A new
+coordinate must be measured the same way before it is pinned.
+
+#### One fallout, worth reading before the next agent changes a pinned coordinate
+
+Pinning moved the camera this suite leaves behind, and one existing test failed on the new one:
+
+    AccessibilityTreeTests.testNoUnlabeledButtonsOnLaunch
+      Failed to determine hittability of "City tree, Southern Magnolia" Button:
+      Activation point invalid and no suggested hit points based on element frame
+
+**`XCUIElement.isHittable` does not return `false` for an element XCUITest cannot compute an
+activation point for — it raises.** Screen 01 is a full-bleed `Map` whose pins are SwiftUI
+annotations MapKit hosts and places itself, and one at the edge of the basemap can be in the tree
+with a frame that has no interior. Whether any pin is in that state is a function of where the
+camera is, which is device state — so the test failed on a device left pointed at one block and not
+on one left pointed at another. E202's shape, wearing an accessibility failure's clothes.
+
+Repaired where it belongs: the loop asks the *frame* first and skips an element with no interior,
+which is the same judgment `isHittable` was being asked for, expressed in a way that cannot raise.
+Red-proofed by blanking `MapRecenterButton`'s `accessibilityLabel` — the assertion still fires:
+`an interactive control at (330.0, 608.7, 44.0, 44.0) has no accessibility label`.
+
+The general lesson for this seam: **a pinned coordinate is a change to the whole suite's device
+state, not a local decision inside one test file.**
+
+#### An invalid value is a banner, never a fallback
+
+`CYPRESS_LOCATION=Denied` does not quietly become the real provider. It draws
+`LOCATION OVERRIDE FAILED · Denied · expected denied | servicesOff | …` over the app, which is
+`DebugDeepLink.Failure`'s rule applied to the same class of mistake: a seam that fell back would let
+a test assert the denied refusal path against a simulator with a perfectly good fix, and it would
+then fail somewhere else entirely — or pass.
+
+#### On `Tools/verify_test_log.sh` and the skip count (E216)
+
+**Surfaced, deliberately not refused against a recorded expectation.** The script now prints
+`VERIFY-NOTE: XCTest skipped=N` and, in a run of both targets, appends the XCTest summary to the
+`VERIFY-OK` line — which it previously dropped entirely, because Swift Testing's line wins and
+XCTest's `with M tests skipped` clause went with it.
+
+Refusing on movement was considered and rejected. The expectation would have to live somewhere, and
+there is nowhere honest to put it: the legitimate count changes whenever a test is added, removed, or
+— as in this very ticket — stops skipping, so the number would be edited on most branches and would
+spend its life either wrong or stale. A wrong expectation refuses runs that are fine, and a guard
+that refuses good runs is a guard somebody switches off. E216's insight is real and worth keeping —
+*a UI log whose skip count changed between two runs of the same tree is reporting a device change,
+not a code change* — but it is an insight a reader applies, not a threshold a script enforces. What
+the reader needs is the number in front of them, beside the device that produced it. That is now
+what they get.
+
+#### The proof
+
+- `CypressTests/DebugLocationOverrideTests` — the grammar, every refusal, and that a pinned provider
+  cannot be moved by `start()`.
+- Red-proofed on the device, iPhone 16e `3A1F212D-…`, by breaking each half in turn:
+  - the app's refusal path made inert (`case .explainRefusal: recenterAnswer = nil`) →
+    `XCTAssertTrue failed - pressing the recenter control with location denied changed nothing on
+    screen`
+  - the state the tests used to skip on, driven deliberately (`CYPRESS_LOCATION=waitingForFix` for
+    the refusal test, `notAsked` for the almanac) → both go **red** where they used to go
+    **skipped**: `launched with location denied and screen 01 drew no standing notice about it` and
+    `screen 12 drew "See your neighborhood" on a launch that pinned a fix … so the almanac never
+    received a coordinate`.
+- The four unnamed tests, red-proofed the same way (`pinnedFix` set to `notAsked`): all four failed
+  with `caught error: "screen 01's recenter control reads "Cypress has not been given your location"
+  on a launch that pinned a fix at notAsked … this is not a machine without a fix, it is a fix that
+  did not arrive"`, where they had previously skipped.
+- Before: `Executed 82 tests, with 4 tests skipped and 0 failures`. After: **0 skipped**.
+
+### R59 — The AX5 primary-CTA probe: what it asserts, and the two things it cannot see (task #173, delegated)
+
+*Pending. Cite this file as `RULINGS R59` until the orchestrator
+splices a number; #173 delegated the shape of the probe.*
+
+#### The ruling
+
+**`CypressUITests/PrimaryCTAReachabilityTests` launches each deep-linkable screen that has a primary
+CTA at `UICTContentSizeCategoryAccessibilityXXXL`, and asserts of that control:**
+
+1. it **exists** in the accessibility tree;
+2. it is **reachable** — hittable where it is, or hittable within eight swipes;
+3. it is **enabled**, after the screen's own arming step where it has one;
+4. it can be brought **wholly onto the glass** — the frame inside the app's frame;
+5. it is **drawn** — the frame has a width and a height;
+6. its label carries **no ellipsis except as a final character**.
+
+One `test…` method per screen, so a failure names the screen and one broken screen does not hide the
+ten behind it. `testEveryTargetInTheTableIsProbed` guards the table against a target being added with
+no method to call it — a row this suite would report on and never visit, which is
+`Test run with 0 tests passed` in another costume.
+
+This is the structural closure E196 asked for and could not build in-process: **SwiftUI populates no
+UIKit accessibility tree under `UIHostingController`**, so a "the CTA is in the AX5 tree" assertion
+was built for #144, watched fail on every screen, and removed. `CypressTests/AccessibilityTests`'
+header records the dead end. **The sweep photographs; this asserts.**
+
+#### The scope, stated as a list rather than left as a gap
+
+Eleven screens, each with the CTA literal it is judged on:
+
+| deep link | CTA | armed by |
+|---|---|---|
+| `treeProfile` | `Be the first to photograph this tree` / `Visit · say hello with a photo` | — |
+| `photoHero` | the same pair, warm | — |
+| `checkIn` | `Save check-in` | — |
+| `measure` | `Save measurement` | tap `3` |
+| `careLog` | `Done` | tap `Watered` |
+| `report` | `Save a private reminder for yourself` | tap `Hanging limb` |
+| `site` | `Show me where this is` | — |
+| `memorial` | `Show me where this is` | — |
+| `growthHistory` | `Add a reading` | — |
+| `share` | `Copy link` | — |
+| `pinAdjust` | `Use this spot` | — |
+
+Two CTA labels because `TreeProfilePresentation.ctaTitle` is genuinely two-valued on whether the
+tree is cold, and which one a device sees depends on what previous runs wrote onto it.
+
+**The deep-linkable screens deliberately absent, and why** — because a table with a hole in it and no
+note beside the hole is how a probe comes to be believed about screens it never visited:
+
+- `outbox`, `activity`, `journalList`, `grove` — no primary CTA exists. These are readers and lists
+  whose only controls are navigation chrome, a wifi toggle, and empty states.
+- `species` — its content forks on whether there is a fix, between a list of nearby trees with
+  runtime names and a `LocationPrompt`. Neither is a CTA.
+- `journal` — its CTA (`Walk the …`) is real but conditional on a coverage gap existing in the
+  resolved neighborhood, which is a property of the seed and the fix rather than of the screen. It is
+  asserted by `AlmanacGroupTapTests`, which since #121 pins its own fix and no longer skips.
+- `deadProfile`, `speciesClaim`, `speciesUnclaimed`, `recordDefect`, `anonymizedPhotos`,
+  `communityPhotos`, `photos`, `you`, `moderationReview` — either the same `TreeProfileView` CTA the
+  two profile rows already judge, or a screen whose loudest control is a per-row action with a
+  runtime-composed label. Adding them would grow the run without adding a distinct geometry.
+
+The arming steps are not workarounds. Screen 16's save is disabled until a reading is entered and
+screen 09's `Done` until a care chip is on — specified states (PROTOTYPE-FLOW §1.3/§1.4) — and screen
+06 draws no CTA at all until a hazard is chosen. A probe that read the disabled control and called it
+reachable would assert the opposite of its own name.
+
+#### The honesty note: what "not ellipsized" can and cannot mean here
+
+**`XCUIElement.label` is the accessibility label — the string SwiftUI was handed — and not the glyphs
+that were drawn.** A `Text` rendering `Continue with Goo…` on the glass reports its whole string to
+XCUITest. Measured on this run: `treeProfile`'s CTA reports
+`Be the first to photograph this tree` in full at AX5, in a frame 192 pt tall — the ramp wrapped it
+across five lines and the label is unchanged either way, which is exactly the property that makes
+truncation invisible to this API.
+
+So check 6 catches **only truncation that happened before rendering**: a presentation layer that
+shortened its own copy, or a label built from an already-elided string. **It does not catch visual
+mid-word clipping inside a button whose frame is on screen**, which is precisely what E196 items 5
+(screen 10's `Mes sa…`), 6 (screen 15's `Continue with Goo…`) and 7 (screen 07's `Cupressac eae`)
+are. No XCUITest API on this platform exposes the rendered text. **Those defects remain the sweep's
+job and a person's eye**, and this probe does not close them.
+
+The trailing-position exemption is not a loophole. `Share…` is a real CTA on screen 10 and its
+ellipsis is copy, not damage; an ellipsis anywhere else in a label is a string that was cut. That is
+the only distinction the API leaves room for.
+
+What check 4 *does* catch, and a picture makes easy to miss, is a CTA pushed off the edge of the
+glass — E196 items 1 and 3, content wider than the phone, centered and clipped rather than wrapped.
+No amount of vertical scrolling repairs that, so it spends the budget and fails.
+
+#### Two design corrections, both made after watching the probe report defects that did not exist
+
+Recorded because each one *looked* like a finding, and filing either would have been worse than not
+looking.
+
+1. **Existence is polled inside the scroll loop, not before it.** The first version waited for the
+   CTA to exist and only then scrolled it into view, on the reasonable premise that an off-screen
+   element is still in the accessibility tree. At AX5 that premise is false here: screens 03 and 11
+   hold their CTA in a scroll the ramp makes several screens long, and the control is not in the tree
+   until the scroll is dragged near it. Both reported `no button labeled … is in the accessibility
+   tree` — a true sentence about the query and a false one about the app.
+2. **"On the glass" means *can be brought* on, not *is* on.** Screen 16's CTA is inside a
+   `ScrollView`; `isHittable` asks only whether the centre point receives the tap, so the loop
+   stopped with the button's bottom 56 pt below the glass and check 4 failed on a state one more
+   swipe would have fixed. Where a CTA in a scroll happens to sit is not a fact about the layout.
+
+And one assertion deliberately **not** made: a 44 pt minimum tap target. Several controls here reach
+44 through `cypressHitArea(_:)`, which puts a `Color.clear` of at least 44 × 44 in the *background*
+with its own `contentShape`. A SwiftUI background does not enlarge the view it sits behind, so the
+element's accessibility frame stays the size of the drawn label while the region that receives the
+tap is larger — screen 11's `Add a reading` is a 13 pt bold link with exactly that arrangement.
+Asserting 44 pt on the reported frame would measure the wrong rectangle. Tap targets are #183's
+question, answered at the value level with a tolerance, where the real geometry is in scope.
+
+#### What the probe found on its first run
+
+A defect in the deep-link harness itself, not in any screen: `DebugDeepLink` resolved records from
+`LocalAPI.treesNear`, which returns the **seed's** status, while every screen it opens reads
+`LocalAPI.treeProfile`, which lays the device's **local status overrides** on top. See the pending
+errata `ERRATA E217`. `CYPRESS_SCREEN=treeProfile` had
+been opening a *removed* tree — no primary CTA, no check-in — on any device that had ever opened
+screen 19, and `DeepLinkVoiceOverTests` passed throughout because it checks that the controls which
+*are* there carry labels.
+
+That is the case for this probe in one paragraph: the property it asserts is the one the AX5 pictures
+were being read for, and nothing else in the repository asks a deep-linked screen whether the control
+it exists to have pressed is on it.
+
+#### The proof
+
+- Green on the final tree: `Executed 12 tests, with 0 failures`, iPhone 16e `3A1F212D-…`, 390 pt.
+- Red-proofed twice on the device, both messages read rather than the colour:
+  - **a renamed CTA** (`CheckInCopy.saveCTA` → `REDPROOF save check-in`) →
+    `checkIn: no button labeled "Save check-in" is in the accessibility tree at AX5, after 8 swipes
+    down the screen. What is there instead: "REDPROOF save check-in", "Back", "Alive", …` — the
+    diagnostic list naming the renamed control is what turns this failure from a riddle into a report.
+  - **a CTA pushed off the glass** (`.offset(x: 60)` on screen 16's `ctaBlock`) →
+    `measure: the primary CTA "Save measurement" could not be brought entirely onto the glass at AX5
+    in 8 swipes — its frame is (78.0, 377.7, 354.0, 138.0) and the screen is (0.0, 0.0, 390.0,
+    844.0)`.

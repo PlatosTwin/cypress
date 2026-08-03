@@ -26,7 +26,7 @@ import XCTest
 /// problem. The problem is that a skipped test is invisible in `Test run with N tests passed`, so on
 /// the ordinary fixless simulator #115's whole claim went unwatched inside a green number. The launch
 /// environment now states the fix (`DebugLocationOverride`; ruling
-/// `docs/rulings-pending/location-state-launch-seam.md`) and `MissingPinnedFix` is what a screen 01
+/// `RULINGS R58`) and `MissingPinnedFix` is what a screen 01
 /// that still reports itself fixless earns. The two `simctl` lines above are no longer required to
 /// make these tests run; they remain the way to put a device in the *real* state, which is the thing
 /// a pinned provider deliberately does not prove.

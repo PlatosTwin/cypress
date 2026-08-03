@@ -3,7 +3,7 @@ import Testing
 @testable import Cypress
 
 /// The launch seam that lets a UI test **drive** the app's location state instead of detecting it
-/// (task #121; ruling `docs/rulings-pending/location-state-launch-seam.md`).
+/// (task #121; ruling `RULINGS R58`).
 ///
 /// The grammar is what these assert. The wiring — that a pinned provider actually reaches screen 01
 /// and screen 12 — cannot be asserted in-process and is not attempted here: it is
