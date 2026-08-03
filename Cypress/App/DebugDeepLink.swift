@@ -82,6 +82,11 @@ enum DebugDeepLink {
         case deadProfile
         case photos             // 20 — the photo browser (ERRATA E125)
         case photoHero          // 03 with photographs on it, which the seed alone cannot produce
+        /// Screen 20 over a tree carrying one photograph **nobody owns** — the row the leaving door
+        /// leaves behind (task #131). It is the only way to look at what the browser and the viewer
+        /// say about a photograph that is shown and cannot be deleted, and the state is otherwise
+        /// three flows deep: sign in, contribute, delete the account keeping the work.
+        case anonymizedPhotos
         /// 03 over a **community** tree carrying a contributor's species (ERRATA E141) — the state
         /// this project has no seed record for, because every one of them is added on the device.
         case speciesClaim
@@ -263,6 +268,22 @@ enum DebugDeepLink {
                 let id = try await photographedTree(api)
                 try await api.debugSeedPhotos(treeID: id)
                 router.push(screen == .photos ? .photos(id) : .treeProfile(id))
+            case .anonymizedPhotos:
+                // Three photographs, one of them nobody's — so the browser draws the two states
+                // side by side and the difference between them is the thing on screen. The first
+                // is left alone rather than anonymized because a list where *every* row says the
+                // same thing does not show whether the sentence is attached to the right row.
+                //
+                // `anonymizedPhotoTree`, not `photographedTree`: this case writes both photographs
+                // and an ownership change, and the rule this file keeps is that a case which writes
+                // persistent state must not write it onto a tree another case reads.
+                let id = try await anonymizedPhotoTree(api)
+                let seeded = try await api.debugSeedPhotos(treeID: id)
+                guard let ownerless = seeded.last else {
+                    throw Failure(screen: "anonymizedPhotos", reason: "the seam seeded no photographs")
+                }
+                try await api.debugAnonymizePhoto(id: ownerless)
+                router.push(.photos(id))
             case .speciesClaim, .speciesUnclaimed:
                 // The data changes here, like `.memorial` and `.photos`, and for the strongest form
                 // of the same reason: the seed contains no community trees at all, so there is no
@@ -431,6 +452,31 @@ enum DebugDeepLink {
             )
         }
         return match.tree.id
+    }
+
+    /// The standing tree a **quarter** of the way out — the one the anonymized-photo case writes
+    /// onto (task #131).
+    ///
+    /// A fifth slot, under this file's standing rule: a case that writes persistent state must not
+    /// write it onto a tree another case reads, and this case writes photographs, files *and* an
+    /// ownership change. The four taken slots are the near end (`.memorial`, marching outward), the
+    /// middle (`.measure`), three quarters (`.deadProfile`) and the far end (the photo cases), so a
+    /// quarter is the one gap left with hundreds of records either side of it.
+    ///
+    /// It marches nowhere: the same tree every run, re-seeded and re-anonymized, which is right for
+    /// a case whose whole subject is the state of one row. The one collision it can eventually have
+    /// is `.memorial`'s outward march reaching a quarter of the way out, which takes as many runs as
+    /// there are records in between — the same exposure `.measure` has carried since E133.
+    private static func anonymizedPhotoTree(_ api: LocalAPI) async throws -> UUID {
+        let candidates = try await api.treesNear(centre, radiusM: radiusM, limit: candidateLimit)
+        let standing = candidates.filter { $0.tree.status.acceptsNewContributions }
+        guard !standing.isEmpty else {
+            throw Failure(
+                screen: "a standing tree to photograph anonymously",
+                reason: "none among the \(candidates.count) records nearest \(centre.latitude), \(centre.longitude)"
+            )
+        }
+        return standing[standing.count / 4].tree.id
     }
 
     /// The *middle* standing tree among the candidates — the one screen 16 measures.

@@ -728,6 +728,26 @@ public struct TreeProfile: Hashable, Sendable {
     /// answer hides a control rather than offering one that would fail.
     public let deletablePhotoIDs: Set<UUID>
 
+    /// Which of `photos` have **no owner at all** — the rows the leaving door left behind
+    /// (`AccountDeletion.anonymizeContributions`, task #131).
+    ///
+    /// A third question, and the one that says *why* a photograph is in `ownPhotoIDs` and not in
+    /// `deletablePhotoIDs`. Those two sets differing is a fact about permission; this is the fact
+    /// about the record that causes it, and a surface explaining an absent control needs the cause
+    /// rather than the permission.
+    ///
+    /// **Asked of the columns rather than inferred from the other two sets**, deliberately. Today
+    /// `ownPhotoIDs` is every row this device holds, so "shown and not deletable" happens to
+    /// coincide with "ownerless" — but only for as long as nothing brings anybody else's rows down,
+    /// and a stranger's photograph would be shown-and-not-deletable without being nobody's. A
+    /// screen that tells somebody a photograph belongs to no one should be reading the column that
+    /// says so.
+    ///
+    /// Empty on any implementation that cannot answer, which is the safe direction here as
+    /// everywhere else on this payload: an unanswered question says nothing rather than saying the
+    /// wrong thing about whose a photograph is.
+    public let anonymizedPhotoIDs: Set<UUID>
+
     /// What has been voted on `photos`, keyed by photo (`AppSchema` v8, ERRATA E125).
     ///
     /// It travels with the series rather than being fetched beside it because the hero and the
@@ -783,6 +803,7 @@ public struct TreeProfile: Hashable, Sendable {
         siteLineageTreeID: UUID? = nil,
         ownPhotoIDs: Set<UUID> = [],
         deletablePhotoIDs: Set<UUID> = [],
+        anonymizedPhotoIDs: Set<UUID> = [],
         photoTallies: [UUID: PhotoTally] = [:],
         inventorySource: InventorySource? = nil,
         speciesCorrection: SpeciesCorrectionOffer = .unavailable,
@@ -802,6 +823,7 @@ public struct TreeProfile: Hashable, Sendable {
         self.siteLineageTreeID = siteLineageTreeID
         self.ownPhotoIDs = ownPhotoIDs
         self.deletablePhotoIDs = deletablePhotoIDs
+        self.anonymizedPhotoIDs = anonymizedPhotoIDs
         self.photoTallies = photoTallies
         self.inventorySource = inventorySource
         self.speciesCorrection = speciesCorrection
@@ -815,6 +837,9 @@ public struct TreeProfile: Hashable, Sendable {
     /// Whether this person may delete the photo — see `deletablePhotoIDs` for why this is not the
     /// same question as `isOwnPhoto`.
     public func isDeletablePhoto(_ photo: Photo) -> Bool { deletablePhotoIDs.contains(photo.id) }
+
+    /// Whether the photo has no owner left — see `anonymizedPhotoIDs`.
+    public func isAnonymizedPhoto(_ photo: Photo) -> Bool { anonymizedPhotoIDs.contains(photo.id) }
 }
 
 /// The body of `POST /trees`.

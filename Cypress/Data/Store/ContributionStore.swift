@@ -521,6 +521,34 @@ public struct ContributionStore {
         return Set(try statement.fetchAll { try $0.uuidIfPresent("id") }.compactMap { $0 })
     }
 
+    /// Which of this tree's photographs have no owner left (task #131).
+    ///
+    /// **Both columns null**, which is the row `AccountDeletion.anonymizeContributions` leaves: the
+    /// leaving door nulls `user_id`, and `photos` carries at most one owner, so a photograph
+    /// contributed while signed in has no `device_id` to fall back to. A row still holding a
+    /// `device_id` is this phone's unclaimed work and is deletable; a row still holding a `user_id`
+    /// is somebody's. Neither is nobody's.
+    ///
+    /// **Not the complement of `deletablePhotoIDs`.** That set is asked with an attribution and
+    /// answers a question about the person holding the phone; this one takes none and answers a
+    /// question about the record. They coincide on this device today and would stop coinciding the
+    /// moment a row arrived that belonged to somebody else — see `TreeProfile.anonymizedPhotoIDs`
+    /// for why a screen that speaks about ownership must read the columns rather than subtract the
+    /// permissions.
+    public func anonymizedPhotoIDs(
+        treeID: UUID,
+        connection: SQLiteConnection
+    ) throws -> Set<UUID> {
+        let statement = try connection.cachedStatement("""
+            SELECT id FROM photos
+             WHERE tree_uuid = :tree COLLATE NOCASE AND deleted_at IS NULL
+               AND user_id IS NULL AND device_id IS NULL
+            """)
+        _ = try statement.bind([":tree": treeID.uuidString])
+        defer { _ = try? statement.reset() }
+        return Set(try statement.fetchAll { try $0.uuidIfPresent("id") }.compactMap { $0 })
+    }
+
     /// What one photograph's deletion changed, in rows.
     public struct PhotoDeletionCounts: Sendable, Equatable {
         /// 1 when the row was tombstoned, 0 when the owner predicate matched nothing.
