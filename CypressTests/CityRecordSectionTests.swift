@@ -680,8 +680,8 @@ struct CityRecordSectionTests {
     /// Assertion 1 fires on `plantType`/`N/A` (25,032 rows), `site`/`N/A` (25,032),
     /// `site`/`Unassigned` (805) and `site`/`:` (4,608 — San Francisco's own, which E209 did not
     /// find). Assertion 2 fires on all 51,689 San Jose rows that drew both cards off `GROWSPACE`.
-    /// Red-proofed by restoring the old `listedAsText` and the old `Site` conditions; see the
-    /// pending errata for the messages each one produced.
+    /// Red-proofed by restoring the old `listedAsText` and the old `Site` conditions; see
+    /// `ERRATA E213` for the messages each one produced.
     ///
     /// ── The control, because a sweep that visits nothing passes ───────────────────────────────
     /// The tallies are asserted to account for every row in the file, and the `plantType` card is

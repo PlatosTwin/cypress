@@ -755,8 +755,8 @@ public actor LocalAPI: CypressAPI {
     /// device can withdraw one, and there is no suppression path parallel to `tree_status_overrides`
     /// for a row that should not be in the inventory. So a report against a city row is a report
     /// nothing can resolve, which is the E170 defect being shipped deliberately. `RULINGS R45`
-    /// refuses `wrong_species` on a city row in the same words, and the pending ruling names the
-    /// ticket that would lift this one.
+    /// refuses `wrong_species` on a city row in the same words, and `RULINGS R50` names the ticket
+    /// that would lift this one.
     ///
     /// Refused when a report is already open (`.conflict`), on `flagWrongSpecies`' reasoning:
     /// BUILD-PLAN §6's "two offline users flagging the same tree produce two flags on one thread"

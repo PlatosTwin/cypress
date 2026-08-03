@@ -36,8 +36,8 @@
 //  there is no suppression path parallel to `tree_status_overrides` for a row that should not be
 //  there. So a raise on a city row is a report nothing can resolve, which is precisely the E170
 //  defect, and it is refused with `.forbidden` — the same refusal `flagWrongSpecies` gives a city
-//  row, for the same stated reason. What that leaves undone is named in the pending ruling rather
-//  than left to be discovered.
+//  row, for the same stated reason. What that leaves undone is named in `RULINGS R50` rather than
+//  left to be discovered.
 //
 
 import Foundation
