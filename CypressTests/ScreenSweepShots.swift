@@ -44,7 +44,9 @@ struct ScreenSweepShots {
     // MARK: - Harness
 
     static let width: CGFloat = 393
-    static let height: CGFloat = 852
+    /// `nonisolated` because it is the default argument of `capture` and `sweep`, and a default
+    /// argument is evaluated at the call site rather than inside the isolated body.
+    nonisolated static let height: CGFloat = 852
 
     static var outputDirectory: URL {
         let base = ProcessInfo.processInfo.environment["CYPRESS_SHOT_DIR"]
@@ -701,7 +703,9 @@ struct ScreenSweepShots {
 @MainActor
 enum SweepFixtures {
 
-    static let now = Date(timeIntervalSince1970: 1_784_505_600) // 2026-07-20
+    /// `nonisolated` so the `@Sendable () -> Date` the models take, and the `#expect` autoclosures
+    /// that read it, can do so: an immutable `Date` carries no isolation of its own.
+    nonisolated static let now = Date(timeIntervalSince1970: 1_784_505_600) // 2026-07-20
     static let coordinate = Coordinate(latitude: 37.7533, longitude: -122.4934)
     static let reportTreeID = UUID(uuidString: "9F3A0000-0000-4000-8000-000000000001")!
 

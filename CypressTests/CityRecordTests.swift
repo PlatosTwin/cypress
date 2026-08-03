@@ -324,12 +324,21 @@ struct CityRecordTests {
     /// Nothing may show the second with the confidence of the first, which is why the answer carries
     /// its own provenance rather than leaving a screen to remember to ask.
     @Test("a contributor's own answer wins over the reading of the city's record, and names itself")
-    func statedWinsAndIsLabelled() {
+    func statedWinsAndIsLabelled() throws {
         let city = CityRecord(legalStatus: "DPW Maintained", caretaker: "Private")
 
-        let inferred = try? #require(Tree(source: .cityImport, coordinate: .init(latitude: 37.77, longitude: -122.42), cityRecord: city).landContext)
-        #expect(inferred?.context == .street)
-        #expect(inferred?.source == .inferredFromCityRecord)
+        // `try`, not `try?`: under `try?` the macro binds its generic parameter to
+        // `KnownLandContext?` itself, so the requirement could never fail and the two assertions
+        // below were left comparing `nil` against a case.
+        let inferred = try #require(
+            Tree(
+                source: .cityImport,
+                coordinate: .init(latitude: 37.77, longitude: -122.42),
+                cityRecord: city
+            ).landContext
+        )
+        #expect(inferred.context == .street)
+        #expect(inferred.source == .inferredFromCityRecord)
 
         let stated = Tree(
             source: .community,

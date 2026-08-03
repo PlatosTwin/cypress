@@ -120,13 +120,18 @@ struct JournalExportRows: View {
     /// The closure form, so a caller with a bare closure — every test here, and every preview — reads
     /// as it did before `JournalExportBytes` existed. The wrapper is there to survive an `Optional`,
     /// which is a problem only the You tab has.
-    static func payloads(
+    ///
+    /// Both overloads are `nonisolated`. They took `@MainActor` from `View` conformance and use none
+    /// of it: each builds two `Sendable`-closure value types from a `Sendable` input and touches no
+    /// view state. The isolation was what stopped the seam this comment describes from being reached
+    /// from a suite that is not itself on the main actor.
+    nonisolated static func payloads(
         _ export: @escaping @Sendable (ExportFormat) async throws -> Data
     ) -> (csv: JournalCSVExport, geoJSON: JournalGeoJSONExport) {
         payloads(JournalExportBytes(export))
     }
 
-    static func payloads(
+    nonisolated static func payloads(
         _ export: JournalExportBytes
     ) -> (csv: JournalCSVExport, geoJSON: JournalGeoJSONExport) {
         (

@@ -45,7 +45,11 @@ struct FailedReadTests {
     // MARK: - Fixtures
 
     /// Fixed, because both screens format dates off it and a clock reading is not the subject here.
-    static let now = Date(timeIntervalSince1970: 1_784_505_600) // 2026-07-20
+    ///
+    /// `nonisolated` so the `@Sendable () -> Date` the models take can read it: an immutable `Date`
+    /// carries no isolation of its own, and the suite's `@MainActor` is about the hosting controller
+    /// below, not about this constant.
+    nonisolated static let now = Date(timeIntervalSince1970: 1_784_505_600) // 2026-07-20
 
     /// A real fix, so the almanac is not showing E123's location prompt instead of its content. The
     /// prompt takes the same slot, and a screen showing it would be answering a different question.
