@@ -97,11 +97,16 @@ because it crosses into data this repo did not write:
 
 Not guarded and not corrected, all reported rather than forced:
 
-- `Fixtures/species/curated.yaml` (~20 lines) and `leaf_retention.yaml`, and the 18 seed rows they
-  produce. **The one piece of genuinely user-visible British text #140 did not fix.** Correcting it
-  is a seed rebuild plus a re-verification, and it belongs to whoever owns the next seed build.
-- `Tools/*.py` (~90 matches). They build and validate the published seed; a spelling change there is
-  a change to the toolchain behind a binary this ticket cannot regenerate.
+- `Fixtures/species/curated.yaml` — **20 British spellings in botanical prose** (18 `grey`, 2
+  `colour`), which reach the reader as the **18 `species.id_tips` rows in the shipped seed** that
+  carry 20 British spellings between them. **The one piece of genuinely user-visible British text
+  #140 did not fix.** Correcting it is an edit to a file whose header forbids hand-editing, plus a
+  seed rebuild and a re-verification; it belongs to whoever owns the next seed build.
+- `licence` in `curated.yaml` (404) and `leaf_retention.yaml` (1,688) is **not** prose and is not a
+  defect: it is the field name inside each `citations` block, naming the licence of a fetched
+  source. Counted here only so the next reader does not mistake ~2,000 matches for ~2,000 defects.
+- `Tools/*.py` (81 matches). They build and validate the published seed; a spelling change there is
+  a change to the toolchain behind a binary this ticket cannot regenerate and re-verify.
 - `Fixtures/raw/**` and `Fixtures/ca_survey/**` — fetched source documents.
 - `docs/ERRATA.md` and `docs/RULINGS.md`: prose corrected, **123 inline-code spans left as they
   were**. Some are quoted machine output — the `XCTAssertEqual` line comparing `"Not centred"`
