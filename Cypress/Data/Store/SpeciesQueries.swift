@@ -196,18 +196,25 @@ public struct SpeciesQueries {
 
     // MARK: - How common it is nearby (screen 07 §5)
 
-    /// How many trees of this species the city inventory holds — screen 07 §5's `In San Francisco`
-    /// card.
+    /// How many trees of this species the attached inventory holds — screen 07 §5's
+    /// `In this inventory` card.
     ///
     /// ```
     /// SEARCH s USING COVERING INDEX sqlite_autoindex_species_1 (uuid=?)
     /// SEARCH t USING COVERING INDEX idx_trees_species_current (species_current=?)
     /// ```
     ///
-    /// A `COUNT(*)` over the whole inventory, which is what makes the number printable at all: the
-    /// card says "in San Francisco", so anything short of the whole city is the wrong number
-    /// wearing the right label (ERRATA E38). It is not a count of user actions and D1 does not
-    /// reach it — it counts trees the city planted, most of them before the app existed.
+    /// A `COUNT(*)` over the whole inventory, which is what makes the number printable at all:
+    /// anything short of the whole attached file is the wrong number wearing the right label
+    /// (ERRATA E38). It is not a count of user actions and D1 does not reach it — it counts trees
+    /// the city planted, most of them before the app existed.
+    ///
+    /// **This predicate is not scoped to an id space, and the label no longer claims it is.** The
+    /// built-in bundle is fused across `sf` and `us-ca-sj`, so on it this count spans two cities —
+    /// Crape Myrtle is 97 + 3,649. The card said `In San Francisco` over that number until
+    /// `docs/rulings-pending/species-count-names-the-inventory.md`. Adding an id-space predicate
+    /// here would be the other candidate fix and the ruling declines it: screen 07 has no row to
+    /// take an id space from.
     ///
     /// Vacant planting sites fall out for free: 12,518 of them carry no `species_current` at all
     /// (ERRATA E11), so a species-scoped count never includes a basin with nothing in it.

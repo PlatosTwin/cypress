@@ -20,10 +20,15 @@ public struct SpeciesGuide: Sendable {
 
     public let species: Species
 
-    /// 07 §5's `In San Francisco` card: inventoried trees of this species in the seeded city.
+    /// 07 §5's `In this inventory` card: inventoried trees of this species across the whole
+    /// attached inventory.
     ///
     /// A **total**, never a page — `COUNT(*)` over the whole inventory. `nil` means this
     /// implementation did not count, which is not the same fact as `0`, and the card does not draw.
+    ///
+    /// **It counts the attached inventory, not a city, and the label now says so.** The built-in
+    /// bundle is fused across `sf` and `us-ca-sj`, so this number spans two cities; the card read
+    /// `In San Francisco` until `docs/rulings-pending/species-count-names-the-inventory.md`.
     public let cityTreeCount: Int?
 
     /// 07 §5's `Near you` card. `nil` when there is no location fix — no "your area" for a count

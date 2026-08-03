@@ -226,8 +226,28 @@ enum SpeciesCopy {
     static let recognizeLabel = "How to recognize it"
     static let nearbyLabel = "Nearby individuals"
 
-    /// 07 §5's two stat-card labels, verbatim.
-    static let cityCountLabel = "In San Francisco"
+    /// 07 §5's two stat-card labels. `nearYouLabel` is verbatim; the other one is not, and the
+    /// departure is `docs/rulings-pending/species-count-names-the-inventory.md`.
+    ///
+    /// ── It used to read `In San Francisco`, over a number that was never San Francisco's ──────
+    /// The card's number is `SpeciesQueries.cityTreeCount`, a `COUNT(*)` over **the whole attached
+    /// inventory**, and under R43 exactly one inventory is attached at a time: either the built-in
+    /// bundle or one downloaded city file. The built-in bundle is fused across two id spaces
+    /// (`sf`, 145,837 trees; `us-ca-sj`, 52,788), so the count has spanned two cities since San
+    /// Jose was merged. Crape Myrtle is the clearest instance: 97 in San Francisco, 3,649 in San
+    /// Jose, and the card read `In San Francisco · 3,746`.
+    ///
+    /// **So the reported defect — "it says San Francisco to a reader standing in San Jose" — is
+    /// the smaller half.** The number was wrong for a San Francisco reader too. That also rules
+    /// out the obvious fix: naming the *tree's* city would put one city's name over a two-city
+    /// number, and this screen has no tree to ask anyway (`SpeciesModel` is entered by species id
+    /// from a grove tile, the search list or the map legend — never with a row).
+    ///
+    /// The label therefore names the population that was actually counted. `inventory` is R43's
+    /// own word for the attached unit (`Built-in inventory`, "one inventory is attached at a
+    /// time"), and R28 §3's rule applies unchanged: a constant that is true of every municipal
+    /// inventory the merged table will ever hold is not the defect a constant naming one city is.
+    static let cityCountLabel = "In this inventory"
     static let nearYouLabel = "Near you"
 
     static let locationPromptTitle = "See it near you"
