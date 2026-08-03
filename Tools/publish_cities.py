@@ -64,10 +64,27 @@ VERSIONING (delegated decision -- RULINGS R37):
                   city's own inventories (seed_meta inventory_*_snapshot_on).
                   Derived from data, never from the wall clock, so re-running
                   the publisher over the same seed yields the same version.
-  version         "s<schema_version>-r<content_rev>", e.g. "s14-r2026-07-31".
+  build_id        the first 8 hex of the SOURCE SEED's sha256. Added by task
+                  #197 / RULINGS R60, which amends R37.2. Without it the two
+                  fields above name the CITY's data, never the build, so an
+                  ingest fix that changes the corpus while the city's snapshot
+                  date stands still produces different bytes under the SAME
+                  version -- and the only honest ways out are to rewrite an
+                  immutable path or to falsify content_rev. That is exactly
+                  what happened: the published files predated task #103's
+                  ingest fix by a day and nothing could say so.
+                  Still derived, never wall-clock, so determinism holds: the
+                  same seed yields the same build_id and therefore the same
+                  path.
+  version         "s<schema_version>-r<content_rev>-<build_id>", e.g.
+                  "s14-r2026-07-31-d3e3d229".
                   This is the immutable path segment on object storage:
                   cities/<id>/<version>/<id>.sqlite. A given version is
-                  write-once; only manifest.json ever changes in place.
+                  write-once; only manifest.json ever changes in place. The
+                  app treats it as an OPAQUE string compared by equality
+                  (RULINGS R43), so lengthening the grammar is safe on the
+                  reader's side -- but never shorten or reorder it without
+                  re-reading CityManifest.
 
 DETERMINISM. The per-city files contain no wall-clock value: every stamped
 fact is derived from the input seed, and the narrowing is DELETE + VACUUM,
@@ -310,6 +327,9 @@ def main() -> None:
         "SELECT id_space, COUNT(*) FROM trees GROUP BY id_space"))
     (fused_total,) = src_con.execute("SELECT COUNT(*) FROM trees").fetchone()
     fused_meta_src = meta(src_con)
+    # Hashed once, up front: it is both the manifest's source_seed receipt and (R60) the
+    # build_id inside every version string, and those two must never disagree.
+    source_seed_sha = sha256_of(args.db)
 
     missing = [s for s in spaces if s not in DISPLAY_NAMES]
     if missing:
@@ -321,10 +341,14 @@ def main() -> None:
         shutil.rmtree(cities_dir)
     os.makedirs(cities_dir, exist_ok=True)
 
+    # The build's own identity, derived from the source seed rather than the clock (R60).
+    # Computed once: it is a property of the input, shared by every city in this run.
+    build_id = source_seed_sha[:8]
+
     entries = []
     for space in spaces:
         rev_preview = content_rev_for(space, fused_meta_src)
-        version = f"s{SEED_SCHEMA_VERSION}-r{rev_preview}"
+        version = f"s{SEED_SCHEMA_VERSION}-r{rev_preview}-{build_id}"
         rel_path = f"cities/{space}/{version}/{space}.sqlite"
         dest = os.path.join(args.out, rel_path)
         os.makedirs(os.path.dirname(dest), exist_ok=True)
@@ -369,7 +393,8 @@ def main() -> None:
         "source_seed": {
             "generated_at": fused_meta_src.get("generated_at", ""),
             "tree_count": fused_total,
-            "sha256": sha256_of(args.db),
+            "sha256": source_seed_sha,
+            "build_id": build_id,
         },
         "cities": entries,
     }

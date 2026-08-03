@@ -31,7 +31,12 @@ public struct CityManifest: Equatable, Sendable {
         /// The seed schema generation (R37.1). Compared against
         /// `SeedDatabase.newestKnownSchemaVersion` — see `CityInstallState`.
         public let schemaVersion: Int
-        /// `s<schema_version>-r<content_rev>`. Update detection is string equality on this (R37.2).
+        /// `s<schema_version>-r<content_rev>-<build_id>` (R37.2 as amended by `RULINGS R60`;
+        /// `build_id` is the first 8 hex of the source seed's sha256).
+        ///
+        /// **Read as an opaque string — update detection is equality, and nothing here parses it.**
+        /// That is what made R60's grammar change safe on this side, and it is the property to
+        /// preserve: the day something splits this on `-`, a publisher change becomes a client bug.
         public let version: String
         /// Relative to the app's configured base URL, never to `base_url_hint`.
         public let path: String

@@ -2294,6 +2294,8 @@ so republishing the same seed yields the same version and byte-identical files. 
 is no third "build number" component: two publishes of the same data ARE the same
 version, which is what makes the object paths immutable.
 
+**Amended 2026-08-03 by `RULINGS R60`:** the version grammar gained a `build_id` segment. The immutability rule below is unchanged and is *why* the amendment was needed — see R60 before publishing anything.
+
 **2. Versioned paths are immutable; only `manifest.json` is ever rewritten.** Objects
 land at `cities/<id>/<version>/<id>.sqlite`, written once; the update check on device
 is string equality on `version`. Files upload before the manifest that names them.
@@ -4953,3 +4955,64 @@ it exists to have pressed is on it.
     `measure: the primary CTA "Save measurement" could not be brought entirely onto the glass at AX5
     in 8 swipes — its frame is (78.0, 377.7, 354.0, 138.0) and the screen is (0.0, 0.0, 390.0,
     844.0)`.
+
+### R60 — A published city file's version names the build that made it, not only the city it describes (task #197, amends R37.2)
+
+*Written 2026-08-03 under the delegated design authority, from the bucket and the publisher rather
+than from a ticket, after `ERRATA E219` found the published files a day older than the ingest fix
+that corrected them. Owner approved the grammar change before it was made, because the app reads
+this manifest (#157) and it is a published contract, not an internal decision.*
+
+#### The defect in R37.2's grammar
+
+R37.2 set `version = "s<schema_version>-r<content_rev>"` and made that the immutable path segment.
+**Both fields describe the city's data, and neither describes the build.**
+
+- `schema_version` moves when `Fixtures/seed/schema.sql` changes shape.
+- `content_rev` is the newest upstream snapshot date among the city's own inventories — a fact about
+  when *San Francisco* last updated its inventory.
+
+So an **ingest** change — a corrected adapter, a new species-name rule — produces different bytes
+while both fields stand still. The publisher is deterministic over a given seed, which is a virtue;
+it is precisely what makes two *different* seeds collide on one version string.
+
+That is not hypothetical. Task #103's BOTANICAL/COMMON fix landed a day after the publish, and the
+bucket kept serving 15 stub species where the seed had 5, and 738 species rows where it had 731.
+Both artifacts declared `generated_at 2026-07-20` and 198,625 trees. **Same claimed provenance,
+different data — which is the whole argument that `generated_at` is not a version.**
+
+Republishing under the old grammar offered only two moves, and both are wrong:
+
+1. **Overwrite the path** — breaks R37.2's own immutability guarantee, and clients comparing version
+   strings for equality would see no change and never re-download the correction.
+2. **Advance `content_rev`** — states that the city republished its inventory. It did not. The app
+   renders that date to readers as "city record as of", so this is a lie with a surface.
+
+#### The rule
+
+    version = "s<schema_version>-r<content_rev>-<build_id>"
+
+`build_id` is the **first 8 hex of the source seed's sha256**. Everything R37 relied on survives:
+
+- **Still derived, never wall-clock.** The same seed yields the same `build_id` and therefore the
+  same path, so the publisher's determinism check — run twice, compare sha256 — still passes. Verified
+  on this change: two independent runs produced byte-identical files.
+- **Still immutable.** A new build takes a new path. The old objects are never rewritten; only
+  `manifest.json` is, which R37.2 already permits.
+- **Now self-describing.** The path states which seed build it came from, which is exactly the fact
+  whose absence caused E219. `source_seed.build_id` is carried in the manifest beside the full hash
+  so the two can be checked against each other.
+
+#### Why the reader is safe
+
+`CityManifest` treats `version` as an **opaque string compared by equality** (R43), and
+`schema_version` is a separate integer. So lengthening the grammar cannot break parsing, and a
+changed value reads as "update available" — which is the behavior wanted. **Never shorten or reorder
+the grammar without re-reading `CityManifest` first**; the safety here is a property of that reader,
+not of the format.
+
+#### What this does not fix
+
+A reader who already installed `s14-r2026-07-31` keeps it until they refresh the manifest. There is
+no recall. That is inherent to immutable paths and is the cost R37 accepted knowingly; it is
+recorded here so the next reader does not mistake it for an oversight.

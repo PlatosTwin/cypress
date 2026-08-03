@@ -13468,3 +13468,54 @@ wrong the moment they were written. Both were prose. The constants beside them �
 `undatedShareOfSeed`, `SeedCorpus`' counts — have never been wrong, because a wrong one does not
 survive a build. That is the whole of #122's finding, and the ratio the ticket asked for is its
 measure: on this branch, one figure asserted for every prose figure removed rather than reworded.
+
+### E219 — The published city files were a day older than the ingest fix that corrected them, and nothing could say so (task #197)
+
+*Found 2026-08-03 while designing CI/CD for #187, by asking why the manifest's `source_seed.sha256`
+did not match the seed on disk. Measured against the downloaded file, not inferred.*
+
+#### What was true
+
+| | published `cities/sf/s14-r2026-07-31/sf.sqlite` | bundled `Cypress/Resources/cypress-seed.sqlite` |
+|---|---|---|
+| stub `':: '` species rows | **15** | **5** |
+| total `species` rows | **738** | **731** |
+| sha256 | `b63ad949…`, matching its own manifest entry | `d3e3d229…` |
+
+`Fixtures/seed/` and `Cypress/Resources/` were byte-identical, so nothing was locally inconsistent,
+and the downloaded file's hash matched the manifest exactly — **nothing was corrupt.** The bucket was
+simply older than the repo, and no field anywhere said so.
+
+The manifest declared `source_seed.generated_at 2026-07-20` and `tree_count 198625`. The bundled
+seed declared the **same** date and the **same** count, with different bytes. That is the finding in
+one line: **same claimed provenance, different data.** `generated_at` is a value copied from the
+seed's own receipt; it is not a version and never was.
+
+#### Why
+
+The manifest was written `2026-08-02T01:23:36+00:00`. Task #103's BOTANICAL/COMMON swap fix
+(`b3cdca0`, `Tools/inventory_adapters.py`) was committed `2026-08-02T18:33:38-07:00` — **a day
+later.** The publish predated the ingest fix.
+
+Independently corroborated the same day, from the opposite direction: the #122 agent, sweeping stale
+comments with no knowledge of this, refuted a brief that claimed the seed holds 738 species. It holds
+731. **738 is the pre-#103 figure** — exactly what the bucket was serving.
+
+#### The exposure, bounded
+
+The bundled seed ships inside the app, so a fresh install was never affected. The exposure is the
+#157 download path. Part of it is masked: R47's filter in `SpeciesQueries.searchSQL()` suppresses
+`':: '` rows from the suggestion list whichever seed is underneath. **What is not masked is a tree's
+own species page**, which cannot omit its own species (#185), and the swap-gate corrections, which
+are content changes no filter covers.
+
+#### What it cost, and the rule that came out
+
+Republishing was blocked by R37.2's own grammar: both fields in `s<schema_version>-r<content_rev>`
+describe the *city*, so the corrected build had nowhere to go but on top of an immutable path.
+`RULINGS R60` amends the grammar to carry a `build_id` derived from the source seed's hash.
+
+**The durable lesson is narrower than "republish more often":** a published artifact whose version
+is derived entirely from its *inputs' upstream dates* cannot express a change in the *pipeline*.
+Any versioning scheme that names only the data will eventually serve two different bytes under one
+name.
