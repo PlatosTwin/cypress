@@ -17,7 +17,7 @@
 //  ── Why `anonymizedPhotos` ───────────────────────────────────────────────────────────────
 //  `DebugDeepLink` keeps one rule: a case that writes persistent state must not write it onto a tree
 //  another case reads. This case has its own tree — a quarter of the way out from the map's opening
-//  centre, between `.measure`'s middle and `.memorial`'s marching near end — and it re-seeds and
+//  center, between `.measure`'s middle and `.memorial`'s marching near end — and it re-seeds and
 //  re-anonymizes on every launch, so running this file disturbs nothing the other photo cases
 //  anchor on.
 //
@@ -80,7 +80,7 @@ final class AnonymizedPhotoNoticeUITests: XCTestCase {
 
         // The ownerless photograph is the oldest of the three, so it is the last row. Found through
         // its own image element rather than by index: `PhotoFill` publishes each photograph as an
-        // image labelled with its subject and date, and the seam frames the third as a leaf.
+        // image labeled with its subject and date, and the seam frames the third as a leaf.
         let row = app.images
             .matching(NSPredicate(format: "label BEGINSWITH %@", Self.ownerlessRowPrefix))
             .firstMatch

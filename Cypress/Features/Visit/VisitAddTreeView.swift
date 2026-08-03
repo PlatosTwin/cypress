@@ -17,7 +17,7 @@
 //  - the two photo sources are screen 04's, in the order screen 04 puts them (live session first,
 //    photo library as BUILD-PLAN §9 M1's fallback and the only path a simulator can take);
 //  - the duplicate warning is C24, which is the component for "this needs something before it can
-//    go on", and 02's own `VisitLowAccuracyPanel` is the neighbouring use of it.
+//    go on", and 02's own `VisitLowAccuracyPanel` is the neighboring use of it.
 //
 //  Every decision about *whether* something draws is `VisitAddTreeModel`'s, and every string is
 //  `VisitAddTreeCopy`'s, so both halves are testable without a renderer.
@@ -208,7 +208,7 @@ struct VisitAddTreeView: View {
     /// it behind the CTA would have been a second screen nobody visits.
     ///
     /// It draws only with a fix, because `canAdjustPin` is gate 2: there is no map to open without a
-    /// centre, and the blocking reason above already explains the missing fix in words.
+    /// center, and the blocking reason above already explains the missing fix in words.
     @ViewBuilder
     private var placementRow: some View {
         if model.canAdjustPin {
@@ -260,7 +260,7 @@ struct VisitAddTreeView: View {
                     // C4's neutral selected/idle pair — screen 05's structure flags, not screen
                     // 06's hazard chips. The amber pair means "this tree needs something" (§1.1)
                     // and none of these three answers does: a tree in a garden is not a worse tree
-                    // than a tree on a kerb. Nothing new is added to C4 for one screen.
+                    // than a tree on a curb. Nothing new is added to C4 for one screen.
                     Chip(
                         LandContextCopy.noun(context),
                         style: model.landContext == context ? .structureFlagOn : .structureFlagIdle
@@ -346,7 +346,7 @@ struct VisitAddTreeView: View {
         VisitAddTreePhotoWell(widthCeiling: widthCeiling) { wellContents }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(model.hasPhoto ? VisitAddTreeCopy.wellFilled : VisitAddTreeCopy.wellEmpty)
-            // Centred rather than left-aligned once the ceiling narrows it: the column is
+            // Centered rather than left-aligned once the ceiling narrows it: the column is
             // `alignment: .leading`, and a photograph pinned to one edge of a column whose every
             // other row runs the full gutter reads as a layout accident. A no-op at the widths where
             // the ceiling does not bind. **Here and not inside the well**, so that the well still
@@ -396,10 +396,10 @@ struct VisitAddTreeView: View {
             // used to read as a deliberate feature — the live preview fills, the still fits, so the
             // frame "pulls back" at the moment of capture and shows what the well was never going to
             // show. With the well the same shape as the capture, fill and fit are the same drawing:
-            // what you aimed at is what you are shown. The old behaviour was a symptom being read as
+            // what you aimed at is what you are shown. The old behavior was a symptom being read as
             // a design, and what it really told a volunteer was that the viewfinder had been lying.
             // Screen 04 keeps `PhotoFill` for its own reason — it has a ghost overlay to line up
-            // against the preview, and `PhotoCropAnchor.centre` says why.
+            // against the preview, and `PhotoCropAnchor.center` says why.
             // ══════════════════════════════════════════════════════════════════════════════════
             PhotoFit(image: snapshot)
         } else if model.camera.isLive, let session = model.camera.session {
@@ -618,7 +618,7 @@ enum VisitAddTreeCopy {
     ///
     /// **The first form used to be the whole story and it was the limitation the owner named.** "The
     /// tree is recorded where you are standing" was true, unavoidable, and wrong about anybody who
-    /// photographed a tree from the far kerb. It is now a statement of the *default*, sitting next to
+    /// photographed a tree from the far curb. It is now a statement of the *default*, sitting next to
     /// the control that changes it, which is what turns a constraint into a choice.
     ///
     /// The moved form gives the distance and stops. No bearing here, unlike the pin screen's own
@@ -643,7 +643,7 @@ enum VisitAddTreeCopy {
     /// It also names the alternative it is *not* — a confirmed identification — because the reader
     /// has no other way to know the app is declining to make one.
     ///
-    /// The empty form does not apologise. An unnamed tree is the honest output of a contributor who
+    /// The empty form does not apologize. An unnamed tree is the honest output of a contributor who
     /// does not know, and a sentence that made it sound like a gap would be pressure to guess, which
     /// is the failure mode `VisitAddTreeModel.species` argues this whole row must avoid.
     static func species(_ species: Species?) -> String {
@@ -657,7 +657,7 @@ enum VisitAddTreeCopy {
 
     /// What the record will say about the ground, in one sentence, above the chips that change it.
     ///
-    /// **The empty form does not apologise, and here that matters more than it does for the
+    /// **The empty form does not apologize, and here that matters more than it does for the
     /// species.** A sentence that made an unanswered land context sound like a gap would be pressure
     /// to tap something, and the cheapest tap is the first chip — which is `Street or sidewalk`,
     /// which is the answer that makes a tree in somebody's front garden look like the city's to fix.
@@ -720,7 +720,7 @@ enum VisitAddTreeCopy {
         candidate.speciesCommonName ?? candidate.speciesScientificName ?? "Unidentified tree"
     }
 
-    /// `4 m` — the API's own measured distance, rounded to the metre. No bearing: `VisitBearing`
+    /// `4 m` — the API's own measured distance, rounded to the meter. No bearing: `VisitBearing`
     /// needs the origin the distance was measured from, and this list is the API's answer rather
     /// than a ranking this screen performed.
     static func candidateDistance(_ candidate: NearbyTree) -> String {

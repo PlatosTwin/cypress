@@ -9,7 +9,7 @@
 //
 //  The join this is about is the one `ScreenEntranceTests` was built for and could not see. That
 //  suite asserts every route has an affordance pointing at it; this asserts that an affordance
-//  which *names a measurement* hands that measurement on. A card labelled `Height` whose only
+//  which *names a measurement* hands that measurement on. A card labeled `Height` whose only
 //  meaning is that this tree has no height on it, opening a form pre-set to trunk diameter, is a
 //  route with a correct entrance and a wrong argument — and `Route.measure` had no argument to be
 //  wrong until now.
@@ -17,7 +17,7 @@
 //  **Why the wrong default was not cosmetic.** `MeasurePresentation`'s sanity pill compares a draft
 //  against previous readings *of the drafted kind*. Enter from the empty `Height` card on a tree
 //  with no readings, type the number off the tape and save without looking at a segmented control
-//  further up the screen, and the record gains a trunk diameter of 18 metres with nothing anywhere
+//  further up the screen, and the record gains a trunk diameter of 18 meters with nothing anywhere
 //  in the flow positioned to notice.
 //
 
@@ -116,7 +116,7 @@ struct MeasureEntranceKindTests {
 
     /// **This is the assertion that was red before the fix**, and it is deliberately the weakest one
     /// that could be: it needs to know nothing about `MeasurementKind` at all, only that two cards
-    /// labelled with two different measurements cannot be the same door.
+    /// labeled with two different measurements cannot be the same door.
     ///
     /// `StatDestination.measure` carried no payload, so both empty slots produced the identical
     /// value and this compared equal. Every stronger assertion in this file needs the enum to have
@@ -177,14 +177,14 @@ struct MeasureEntranceKindTests {
     /// more hop — the view turning a destination into a `Route` — and it was a private instance
     /// method, so nothing could call it. Rewriting that one line as
     /// `case .measure: return .measure(treeID, .dbh)` reinstates the owner's exact bug (tap
-    /// `HEIGHT · Add a reading`, get a trunk-diameter sheet in metres) **with the whole suite
+    /// `HEIGHT · Add a reading`, get a trunk-diameter sheet in meters) **with the whole suite
     /// green**, which is what happened.
     ///
     /// The remedy is the one `MapHomeView.route(for:)` already uses and
     /// `PinSetDestinationTests` already exercises: make the mapping `static`, hand it the id, and
     /// call it from here. A mapping only the renderer can reach is a mapping nothing checks — and
     /// "which layer owns this decision" being written down in a comment is not the same as the
-    /// other layer being made to honour it.
+    /// other layer being made to honor it.
     @Test("the profile's own card-to-route mapping carries the kind through")
     func theViewsMappingCarriesTheKind() {
         let id = Self.treeID
@@ -220,7 +220,7 @@ struct MeasureEntranceKindTests {
         #expect(
             GrowthHistoryView.route(forAddReading: id)
                 == .measure(id, GrowthHistoryPresentation.addReadingKind),
-            "the link stopped honouring the kind the presentation names"
+            "the link stopped honoring the kind the presentation names"
         )
     }
 
@@ -230,7 +230,7 @@ struct MeasureEntranceKindTests {
     /// is the other end of the same wire, one layer below `MeasureView`'s `init`.
     ///
     /// **The unit travels with the kind**, which is why `MeasureDraft(kind:)` exists: a height draft
-    /// opened in centimetres is the same silent error one step further along, and `switchUnit`'s own
+    /// opened in centimeters is the same silent error one step further along, and `switchUnit`'s own
     /// comment already records what a wrong unit costs on an append-only record.
     @Test("the model opens on the kind it was handed, in that kind's unit")
     @MainActor

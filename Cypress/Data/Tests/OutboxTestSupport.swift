@@ -108,7 +108,7 @@ public enum OutboxTestSupport {
             }
         }
 
-        /// The server's dedupe, modelled exactly: a `clientUUID` already applied comes back
+        /// The server's dedupe, modeled exactly: a `clientUUID` already applied comes back
         /// `duplicate`, which `SyncResult.isSuccess` treats as a success.
         private func accept(_ item: OutboxItem) -> SyncResult {
             if applied.contains(item.clientUUID) {

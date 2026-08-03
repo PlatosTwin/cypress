@@ -5,10 +5,10 @@
 //  What survives a crop, and what a viewer must not crop at all.
 //
 //  ── Why these assert on pixels ───────────────────────────────────────────────────────────
-//  Because nothing else can tell the two behaviours apart. A crop anchor changes no measurement:
+//  Because nothing else can tell the two behaviors apart. A crop anchor changes no measurement:
 //  `PhotoFill` reports the box it was proposed whichever part of the photograph it keeps — that is
-//  its whole documented promise — so a test on `sizeThatFits` passes identically against a centred
-//  crop and a crown-anchored one. Screenshot the thing and read the colours out, or assert on
+//  its whole documented promise — so a test on `sizeThatFits` passes identically against a centered
+//  crop and a crown-anchored one. Screenshot the thing and read the colors out, or assert on
 //  something that is 393×224 either way.
 //
 //  This project has been bitten by the second kind: the font-registration test written last week
@@ -37,7 +37,7 @@ struct PhotoCropTests {
     ///     rows 0.667 … 1.000   BLUE    the ground
     ///
     /// Flat bands rather than a drawn tree because a test has to say *which part* in one word, and
-    /// "there is blue on the screen" is that word. Fully saturated primaries so no amount of colour
+    /// "there is blue on the screen" is that word. Fully saturated primaries so no amount of color
     /// management, interpolation or JPEG can turn one into another.
     static func bandedPortrait() -> UIImage {
         let width = 300, height = 400
@@ -66,7 +66,7 @@ struct PhotoCropTests {
     /// question is asked in.
     static let heroBox = CGSize(width: 393, height: 224)
 
-    /// A colour no band uses, so "this pixel is backdrop" is decidable.
+    /// A color no band uses, so "this pixel is backdrop" is decidable.
     static let backdrop = CGColor(red: 0, green: 0, blue: 0, alpha: 1)
 
     // MARK: - The crop anchor
@@ -84,7 +84,7 @@ struct PhotoCropTests {
             """
             the bottom third of the photograph (the ground) is on screen, so the crop is not \
             crown-anchored: at 393×224 a 3:4 photograph has only 42.7% of its height to spend and \
-            spending any of it below row 0.667 means that much less canopy. Sampled bottom-centre \
+            spending any of it below row 0.667 means that much less canopy. Sampled bottom-center \
             pixel: \(sheet.describe(x: 0.5, y: 0.97)).
             """
         )
@@ -95,29 +95,29 @@ struct PhotoCropTests {
     }
 
     /// The other half of the same assertion, and the thing that makes the one above meaningful: the
-    /// two anchors have to actually differ. If this passed with the same colours as the test above,
+    /// two anchors have to actually differ. If this passed with the same colors as the test above,
     /// both would be measuring nothing.
-    @Test("A centred crop of the same photograph reaches the ground, which is what was reported")
+    @Test("A centered crop of the same photograph reaches the ground, which is what was reported")
     func centerAnchorReachesTheGround() async throws {
         let sheet = try #require(await Self.render(anchor: .center))
 
         #expect(
             sheet.contains(.blue),
             """
-            `.centre` is SwiftUI's own default and the behaviour that was reported; if the ground \
+            `.center` is SwiftUI's own default and the behavior that was reported; if the ground \
             no longer reaches the screen through it, the two anchors have stopped differing and \
             `crownAnchorKeepsTheCanopy` is asserting on nothing.
             """
         )
         #expect(
             sheet.band(x: 0.5, y: 0.97) == .blue,
-            "expected the foot of a centred crop to be ground; it is \(sheet.describe(x: 0.5, y: 0.97))"
+            "expected the foot of a centered crop to be ground; it is \(sheet.describe(x: 0.5, y: 0.97))"
         )
     }
 
-    @Test("Screen 04's centre anchor is not the default, so it cannot be changed by accident")
+    @Test("Screen 04's center anchor is not the default, so it cannot be changed by accident")
     func theCameraScreenMustAskForCenter() {
-        // `PhotoCropAnchor.centre` exists for the ghost overlay, which has to agree with an
+        // `PhotoCropAnchor.center` exists for the ghost overlay, which has to agree with an
         // `AVCaptureVideoPreviewLayer` this app does not get to reconfigure. Stated as a test so
         // that "the default is the crown" is a fact the suite holds rather than a comment.
         #expect(PhotoFill(image: Self.bandedPortrait()).anchor == .crown)
@@ -230,7 +230,7 @@ enum PhotoBand: Equatable {
     case red, green, blue, backdrop, other
 
     /// Classified by dominant channel with a wide margin, so antialiasing along a band edge lands in
-    /// `.other` rather than being miscalled as a neighbour.
+    /// `.other` rather than being miscalled as a neighbor.
     static func of(red r: Double, green g: Double, blue b: Double) -> PhotoBand {
         if r < 0.2, g < 0.2, b < 0.2 { return .backdrop }
         if r > 0.6, g < 0.4, b < 0.4 { return .red }
@@ -251,7 +251,7 @@ struct PixelSheet: CustomStringConvertible {
     /// a failed `#expect` with `String(describing:)`, and the default for a struct holding a frame
     /// buffer is every byte of it — the first run of this suite against a broken anchor produced a
     /// 12.3 MB log for three assertions. A diagnostic nobody can scroll through is a diagnostic that
-    /// does not get read, so the sheet describes itself as its size and the three colours the crop
+    /// does not get read, so the sheet describes itself as its size and the three colors the crop
     /// question actually turns on.
     var description: String {
         "PixelSheet(\(width)×\(height)px"
@@ -265,7 +265,7 @@ struct PixelSheet: CustomStringConvertible {
         width = source.width
         height = source.height
         // Locals, not `self.width`/`self.height`: the closure below would otherwise capture `self`
-        // while `bytes` is still uninitialised, which the compiler refuses.
+        // while `bytes` is still uninitialized, which the compiler refuses.
         let columns = source.width, rows = source.height
         var buffer = [UInt8](repeating: 0, count: columns * rows * 4)
         // `withUnsafeMutableBytes`, not `&buffer`: a `CGContext` keeps the pointer it is given for
@@ -286,7 +286,7 @@ struct PixelSheet: CustomStringConvertible {
         bytes = buffer
     }
 
-    /// The band at a point given as fractions of the frame — `(0.5, 0.97)` is bottom-centre.
+    /// The band at a point given as fractions of the frame — `(0.5, 0.97)` is bottom-center.
     func band(x: Double, y: Double) -> PhotoBand {
         let column = min(width - 1, max(0, Int(x * Double(width))))
         let row = min(height - 1, max(0, Int(y * Double(height))))

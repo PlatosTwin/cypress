@@ -12,7 +12,7 @@ import UIKit
 /// It does not work, and the reason is worth recording because the next person will try it too.
 /// **SwiftUI does not build a UIKit accessibility tree in-process.** A `UIHostingController` in a
 /// key window, laid out, drawn, and given a run-loop turn reports `accessibilityElements` as an
-/// empty array and `accessibilityElementCount()` as 0 for a plain labelled `Text`. Enabling
+/// empty array and `accessibilityElementCount()` as 0 for a plain labeled `Text`. Enabling
 /// VoiceOver on the simulator (`defaults write com.apple.Accessibility VoiceOverTouchEnabled 1`)
 /// does not change it: `UIAccessibility.isVoiceOverRunning` flips to `true` and the tree is *still*
 /// empty, because SwiftUI serves the accessibility server over its own bridge rather than through
@@ -22,7 +22,7 @@ import UIKit
 /// So these tests assert the **strings the accessibility modifiers are handed**, which is the part
 /// with logic in it: run-length collapsing in C3, the D5 clamp reaching the spoken form, the
 /// per-series D7 summary in C23, the method wording in C12, and the empty case in C26. That is a
-/// behavioural test of the thing that can be wrong, not a grep for a modifier.
+/// behavioral test of the thing that can be wrong, not a grep for a modifier.
 ///
 /// The half these cannot cover — that the label reaches a focusable element at all — is exactly
 /// what this pass found broken in three places, and the fix for all three was the same one line:
@@ -87,9 +87,9 @@ struct AccessibilityTests {
         #expect(FoliageStrip.accessibilityLabel(for: deciduous).contains("bare January to December"))
     }
 
-    /// The three ramp steps say what they stand for, not what colour they are. The strip's whole
+    /// The three ramp steps say what they stand for, not what color they are. The strip's whole
     /// visual vocabulary is three greens; "densest" is a token name, "full canopy" is the thing.
-    @Test("C3 · the ramp is spoken as leaf, not as colour")
+    @Test("C3 · the ramp is spoken as leaf, not as color")
     func foliageDensitiesSpeakLeafNotColor() {
         #expect(FoliageStrip.Density.full.spokenName == "full canopy")
         #expect(FoliageStrip.Density.partial.spokenName == "partial canopy")
@@ -201,7 +201,7 @@ struct AccessibilityTests {
         #expect(LineChart(points: []).accessibilityLabel == "Growth plot with no readings.")
     }
 
-    /// C23's bar row cannot summarise itself and the type stops it trying. `heights` are drawing
+    /// C23's bar row cannot summarize itself and the type stops it trying. `heights` are drawing
     /// units in the mock's 0…34 viewBox, already scaled against a maximum the *caller* chose — and
     /// on screen 13 that maximum is shared across three series so the rows can be compared (D2).
     /// Reading a height back out would announce a fraction of somebody else's maximum, which is a

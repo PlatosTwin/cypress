@@ -33,7 +33,7 @@
 //  outside this section. See `TreeProfilePresentation.landContextNote`.
 //
 //  Pure value code, no SwiftUI. It lives in `Features/` rather than in `Core` because every decision
-//  in it is a display decision: `CityRecord`'s own documentation says the storage layer normalises
+//  in it is a display decision: `CityRecord`'s own documentation says the storage layer normalizes
 //  nothing and parses nothing, and nothing below has changed that. The seed still holds `FUF` and
 //  `3X3`; this file is the reader.
 //
@@ -189,7 +189,7 @@ struct CityRecordPresentation {
     /// something, when what the city recorded was the absence.
     ///
     /// Nothing here corrects a spelling, merges two values, ranks one above another or fills a
-    /// blank. It recognises **the absence of a value** and renders it the way this screen renders
+    /// blank. It recognizes **the absence of a value** and renders it the way this screen renders
     /// every absence — by drawing nothing (E9, and `recognitionTip`/`watchForText`/`badge`). It is
     /// deliberately *not* a judgment about what any real value means: `Park Strip` and
     /// `Sidewalk: Curb side : Cutout` pass through untouched, because reading them would be the
@@ -246,7 +246,7 @@ struct CityRecordPresentation {
     /// the two notations do not even measure the same thing (one is a single dimension, the other is
     /// two).
     ///
-    /// **Done: the notation is recognised and re-spelled, with the city's own digits and the city's
+    /// **Done: the notation is recognized and re-spelled, with the city's own digits and the city's
     /// own units.** `Width 3ft` → `3 ft wide`, because the city named both the dimension and the
     /// unit. `3x3` and `3X3` → `3 × 3`, with **no unit appended**, because the city named none and
     /// feet is a guess that would be right most of the time and invisible when it was wrong.
@@ -263,7 +263,7 @@ struct CityRecordPresentation {
     ///    says it is one is the invention this section exists not to make.
     /// 3. **Everything else — 560 rows.** `M6` (96), `TR`, `POT`, `Plaza`, `3xe`, `2x`, `Width 4x5`.
     ///    These are plot *codes* and typing errors from inside a Public Works workflow. `M6` under a
-    ///    card labelled `Plot size` is the app asserting that `M6` is a plot size.
+    ///    card labeled `Plot size` is the app asserting that `M6` is a plot size.
     ///
     /// All three are absent rather than blank or `Unknown`, which is what this screen already does
     /// with every fact a record does not carry (`recognitionTip`, `watchForText`, `badge`). 126,411
@@ -324,7 +324,7 @@ struct CityRecordPresentation {
     ///
     /// ── Why a glossary and not verbatim ───────────────────────────────────────────────────────
     /// The brief this section answers singles out one value: `FUF` is `careAssistant` on 22,879 of its
-    /// 25,199 rows, and it is Friends of the Urban Forest — a volunteer organisation whose name is a
+    /// 25,199 rows, and it is Friends of the Urban Forest — a volunteer organization whose name is a
     /// nice thing to be able to tell somebody, and a three-letter code that tells them nothing. Once
     /// `FUF` is expanded there is no principled place to stop: `PUC` and `SFUSD` are the same kind of
     /// opacity in the same two columns.
@@ -341,7 +341,7 @@ struct CityRecordPresentation {
     /// as its new name rather than as a build failure. E143 refused a CHECK on these columns for
     /// exactly this reason and the reader has to hold the same shape.
     ///
-    /// `nil` for an empty string, so `""` cannot become a card labelled `Cared for by` with nothing
+    /// `nil` for an empty string, so `""` cannot become a card labeled `Cared for by` with nothing
     /// after it — and `nil` for the placeholders `statedValue` refuses, so `N/A` cannot become one
     /// either. Neither column holds one in the shipped seed; the gate is here so that the section's
     /// every card obeys one rule rather than four, which is the property the sweep asserts.
@@ -356,7 +356,7 @@ struct CityRecordPresentation {
     ///
     /// `Prune Opt Out` (196 rows) and `Street Tree Maintenance Opt Out` (58) are the only values in
     /// the whole dataset with anything to do with pruning, and they are **facts about these specific
-    /// trees** — somebody withdrew the site from a city programme — which is why they get a sentence
+    /// trees** — somebody withdrew the site from a city program — which is why they get a sentence
     /// rather than being folded into the general note below. They already render verbatim as the
     /// `Legal status` card; this says what the card means, because "Prune Opt Out" is exactly the
     /// string a reader looking for pruning history will read as pruning history.
@@ -444,7 +444,7 @@ struct CityRecordPresentation {
     /// were planted in 2010 by FUF. C.Buck` · `Resulted descion 9/7/16 -DE` · `privately planted on
     /// dpw street; unpermitted` · `Maintenance agreement ends 8/17/2010` · `witin landscaping plot`.
     /// These are staff working notes — a named clerk's guess, an internal decision reference, a
-    /// misspelling, an accusation about a neighbour's planting. Publishing them under a card that says
+    /// misspelling, an accusation about a neighbor's planting. Publishing them under a card that says
     /// `city record` would dress one person's marginal note as San Francisco's finding, and it puts an
     /// employee's initials and an unverified claim about a private property owner on a public screen.
     ///
@@ -497,10 +497,10 @@ enum CityRecordCopy {
     /// tree. **Owner of Tree**", and that second sentence is the single most expensive mistake
     /// available in this dataset: 163,955 rows say `Private`, of which 112,955 also carry
     /// `DPW Maintained`. They are sidewalk trees in the public right-of-way whose adjacent owner
-    /// waters them. E143 measured what leading on this column does — 152,240 street trees relabelled
+    /// waters them. E143 measured what leading on this column does — 152,240 street trees relabeled
     /// as private property — and `LandContext.inferred(from:)` exists to not do it.
     ///
-    /// A card labelled `Caretaker` invites the reader to make that same inference by hand. The label
+    /// A card labeled `Caretaker` invites the reader to make that same inference by hand. The label
     /// says what the column measures, which is care, and the `Stands on` sentence above the section
     /// answers the question the reader was actually asking.
     static let caretakerLabel = "Cared for by"
@@ -550,7 +550,7 @@ enum CityRecordCopy {
         "SFUSD": "SF Unified School District",
         "Rec/Park": "SF Recreation and Parks",
         // Not an agency, and the one entry here that is a rewording rather than an expansion: the
-        // bare adjective `Private` in a card labelled `Cared for by` reads as a category, and the
+        // bare adjective `Private` in a card labeled `Cared for by` reads as a category, and the
         // category a reader will reach for is the property line. A noun phrase says a person.
         "Private": "A private party",
     ]

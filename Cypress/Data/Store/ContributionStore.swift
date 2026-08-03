@@ -223,9 +223,9 @@ public struct ContributionStore {
 
     // MARK: - Favorites (tombstone toggles)
 
-    /// Applies a favourite toggle.
+    /// Applies a favorite toggle.
     ///
-    /// One row per (owner, tree) whose `deleted_at` carries the current state, so an un-favourite is
+    /// One row per (owner, tree) whose `deleted_at` carries the current state, so an un-favorite is
     /// a tombstone rather than a hard delete and syncs as an event (BUILD-PLAN §4). A `DELETE`
     /// against this table raises, by trigger, everywhere except the adoption case `claimDevice`
     /// documents.
@@ -283,8 +283,8 @@ public struct ContributionStore {
 
     /// Whether this owner currently holds this tree.
     ///
-    /// One owner, stated by the caller — there is no "is anybody's favourite" query and no way to
-    /// ask for another owner's, because a favourite is a private bookmark and D1 killed the version
+    /// One owner, stated by the caller — there is no "is anybody's favorite" query and no way to
+    /// ask for another owner's, because a favorite is a private bookmark and D1 killed the version
     /// of it that was a public vote. A signed-in contributor who has not claimed this device still
     /// wrote its device-owned rows, so a caller that wants both asks twice.
     public func isFavorite(owner: FavoriteOwner, treeID: UUID, connection: SQLiteConnection) throws -> Bool {
@@ -580,7 +580,7 @@ public struct ContributionStore {
     /// Swift and an UPDATE that would have matched anyway are one refactor apart from a delete that
     /// reaches somebody else's photograph.
     ///
-    /// **Votes are deleted outright** — every vote on it, not only the owner's. They were judgements
+    /// **Votes are deleted outright** — every vote on it, not only the owner's. They were judgments
     /// about a photograph that no longer exists, which is exactly `AccountDeletion`'s argument for
     /// the same deletion under the erasing door. Leaving them would also leave a tombstone holding a
     /// tally, and `PhotoHero` reads tallies.
@@ -672,7 +672,7 @@ public struct ContributionStore {
         return try run(statement, on: connection)
     }
 
-    /// Takes a vote back. No tombstone: an un-vote is the absence of a judgement, and a missing row
+    /// Takes a vote back. No tombstone: an un-vote is the absence of a judgment, and a missing row
     /// and a zero score are the same fact (`AppSchema` v8).
     public func clearPhotoVote(photoID: UUID, owner: FavoriteOwner, connection: SQLiteConnection) throws {
         let statement = try connection.cachedStatement("""
@@ -1017,11 +1017,11 @@ public struct ContributionStore {
         return Set(try statement.fetchAll { try $0.uuid("tree_uuid") })
     }
 
-    /// Every tree this reader is still holding a favourite on — screen 01's `Favourites` chip.
+    /// Every tree this reader is still holding a favorite on — screen 01's `Favorites` chip.
     ///
     /// `deleted_at IS NULL` is the whole of it and it matters more here than anywhere else on this
-    /// type: a favourite is a toggle with a tombstone (BUILD-PLAN §4), so an un-favourited tree
-    /// keeps its row and would come back as a favourite from any query that forgot the clause.
+    /// type: a favorite is a toggle with a tombstone (BUILD-PLAN §4), so an un-favorited tree
+    /// keeps its row and would come back as a favorite from any query that forgot the clause.
     /// `DeviceContributions.favorites` makes the same call in the same words.
     public func favoriteTreeIDs(
         userID: UUID?,
@@ -1042,8 +1042,8 @@ public struct ContributionStore {
     /// `favoriteTreeIDs` narrowed to one tree — screen 03's heart, re-read after a write (#167).
     ///
     /// The same predicate as `favoriteTreeIDs` above, on purpose: both ownership arms, because a
-    /// favourite saved before sign-in is the device's until a claim moves it (E89), and
-    /// `deleted_at IS NULL` because an un-favourite is a tombstone, not an absence.
+    /// favorite saved before sign-in is the device's until a claim moves it (E89), and
+    /// `deleted_at IS NULL` because an un-favorite is a tombstone, not an absence.
     public func holdsFavorite(
         userID: UUID?,
         deviceID: UUID,
@@ -1115,7 +1115,7 @@ public struct ContributionStore {
 
     // MARK: - Personal surfaces
 
-    /// `GET /me/grove` — favourited and visited trees. Carries no counts (D1).
+    /// `GET /me/grove` — favorited and visited trees. Carries no counts (D1).
     public func groveTreeIDs(userID: UUID?, deviceID: UUID, connection: SQLiteConnection) throws -> [(treeID: UUID, lastVisitedAt: Date?, isFavorite: Bool)] {
         let statement = try connection.cachedStatement("""
             SELECT tree_uuid,
@@ -1127,14 +1127,14 @@ public struct ContributionStore {
                      WHERE deleted_at IS NULL
                        AND (device_id = :device COLLATE NOCASE
                             OR (:user IS NOT NULL AND user_id = :user COLLATE NOCASE))
-                       -- A visit an account deletion anonymised is nobody's, including this
+                       -- A visit an account deletion anonymized is nobody's, including this
                        -- phone's, so it does not put a tree in the next person's grove
-                       -- (`AppSchema` v13). The favourites arm below needs no such clause: a
-                       -- favourite is deleted with its account under both doors.
+                       -- (`AppSchema` v13). The favorites arm below needs no such clause: a
+                       -- favorite is deleted with its account under both doors.
                        AND \(Self.notAnonymized("visits"))
                      GROUP BY tree_uuid
                     UNION ALL
-                    -- Both owners, for the reason the visits arm above reads both: a favourite saved
+                    -- Both owners, for the reason the visits arm above reads both: a favorite saved
                     -- before sign-in is the device's until a claim moves it, and nothing forces a
                     -- claim to have happened (E89, and the same argument as `privateReminders`).
                     -- Reading only the user's arm is what made the heart's absence invisible.
@@ -1177,7 +1177,7 @@ public struct ContributionStore {
     /// there is no form of this SQL that returns somebody else's rows (D11). Tombstones are excluded,
     /// because a deleted contribution is not something a person did that still stands.
     ///
-    /// Trees with no contributions at all — a favourite nobody has visited — are simply absent from
+    /// Trees with no contributions at all — a favorite nobody has visited — are simply absent from
     /// the result; the caller reads a missing key as `GroveRecord.none`, which is what it is.
     public func groveRecords(
         userID: UUID?,
@@ -1241,10 +1241,10 @@ public struct ContributionStore {
     /// contributions are append-only and are never back-dated past a page boundary.
     ///
     /// **The device arm reads "this phone's own unclaimed work", and a record an account deletion
-    /// anonymised is not that** (`AppSchema` v13). Without the tombstone clause, the person who signs
+    /// anonymized is not that** (`AppSchema` v13). Without the tombstone clause, the person who signs
     /// in on a handed-down phone opens their journal and reads a stranger's visits — the rows kept
     /// their `device_id`, which is the whole of what the device arm asks for. The user arm cannot
-    /// reach them either way, because an anonymised row has no `user_id`; the clause is written once
+    /// reach them either way, because an anonymized row has no `user_id`; the clause is written once
     /// at the top rather than inside the device arm for that reason.
     public func journal(
         userID: UUID?,
@@ -1306,7 +1306,7 @@ public struct ContributionStore {
     /// claim by a *different* user leaves already-attributed rows alone rather than stealing them —
     /// the `user_id IS NULL` guard is what makes both true.
     ///
-    /// **What it will not adopt, ever: a record a deletion anonymised** (`AppSchema` v13, ERRATA —
+    /// **What it will not adopt, ever: a record a deletion anonymized** (`AppSchema` v13, ERRATA —
     /// see E157). `user_id IS NULL AND device_id = :device`
     /// used to be the whole definition of *this device's unclaimed work*, and it was one state too
     /// broad. `leaveRecords` nulls `user_id` and — correctly — leaves `device_id`, so a record its
@@ -1314,7 +1314,7 @@ public struct ContributionStore {
     /// by the **next** account signed in on the phone. On a shared or handed-down device that is a
     /// re-identification of somebody who asked not to be identifiable.
     ///
-    /// `Self.notAnonymized` is the difference between *anonymised by a deletion* and *never had an
+    /// `Self.notAnonymized` is the difference between *anonymized by a deletion* and *never had an
     /// account*, which are two states this predicate could not previously tell apart. Both halves
     /// still matter: the second is D9's own case — an unsigned-in contributor keeping their own work
     /// on their own phone — and it is precisely why the fix is not "clear `device_id` as well".
@@ -1371,12 +1371,12 @@ public struct ContributionStore {
         _ = try device.reset()
     }
 
-    /// The favourites half of `POST /devices/claim`, which is the half with a collision in it
+    /// The favorites half of `POST /devices/claim`, which is the half with a collision in it
     /// (ERRATA E89).
     ///
     /// A reminder's adoption is one UPDATE because two reminders are never the same record. Two
-    /// favourites can be: the device favourited a tree that the account it is now claiming had
-    /// *already* favourited from somewhere else. Both rows then say one thing — "this tree is mine" —
+    /// favorites can be: the device favorited a tree that the account it is now claiming had
+    /// *already* favorited from somewhere else. Both rows then say one thing — "this tree is mine" —
     /// and after the claim only one owner exists, so one row has to carry both histories. Left
     /// alone, the plain UPDATE would hit `idx_favorites_user_tree` and abort the whole claim, which
     /// would mean sign-in fails for the contributor whose grove overlaps most.
@@ -1386,7 +1386,7 @@ public struct ContributionStore {
     ///
     /// 1. **The later statement wins.** Where both owners hold a tree and the device's row is the
     ///    more recent, its state, its `client_uuid` and its timestamp move onto the account's row.
-    ///    A favourite is a toggle event with a tombstone (BUILD-PLAN §4 and §6), and a toggle
+    ///    A favorite is a toggle event with a tombstone (BUILD-PLAN §4 and §6), and a toggle
     ///    resolves by time: whichever the person said last is what they meant. Timestamps compare as
     ///    strings because `SQLiteTimestamp` writes fixed-width UTC ISO-8601 — lexicographic order is
     ///    chronological order.
@@ -1455,7 +1455,7 @@ public struct ContributionStore {
 
     /// `claimFavorites`' shape, one table over and two statements shorter (`AppSchema` v8).
     ///
-    /// A vote can collide the same way a favourite can — the same photograph voted from the device
+    /// A vote can collide the same way a favorite can — the same photograph voted from the device
     /// before sign-in and from the account after — and it resolves the same way: whichever the
     /// person said last is what they meant. What it does not need is the tombstone dance. There is
     /// no trigger on `photo_votes`, so the superseded row is simply deleted rather than being
@@ -1542,7 +1542,7 @@ public struct ContributionStore {
     /// Tombstoned rows are excluded — `deleted_at IS NULL` — because the sentence this feeds is
     /// about what a person would keep, and a deleted row is not something they have.
     ///
-    /// So is a record an account deletion anonymised (`AppSchema` v13). This number is the promise
+    /// So is a record an account deletion anonymized (`AppSchema` v13). This number is the promise
     /// screen 15 makes and `claimDevice` keeps, and the two have to be counted by the same
     /// predicate: leave the tombstone out here and the screen offers to keep three visits that the
     /// claim then declines to move — a broken promise made *by the count*, on the one surface where
@@ -1577,8 +1577,8 @@ public struct ContributionStore {
             // Exclusive ownership (E23): a device-owned reminder has `user_id IS NULL` and a
             // `device_id`, so the same predicate reads it correctly.
             privateReminders: try count("private_reminders"),
-            // And a favourite, on the same terms, since v5 (E89). `deleted_at IS NULL` matters more
-            // here than anywhere else on this type: a favourite that was turned off is a tombstone,
+            // And a favorite, on the same terms, since v5 (E89). `deleted_at IS NULL` matters more
+            // here than anywhere else on this type: a favorite that was turned off is a tombstone,
             // and a tombstone is not something a person would say they have.
             favorites: try count("favorites")
         )
@@ -1588,11 +1588,11 @@ public struct ContributionStore {
 
     // MARK: - The tombstone (AppSchema v13)
 
-    /// "This record is still somebody's to claim" — the clause that keeps a contribution anonymised
+    /// "This record is still somebody's to claim" — the clause that keeps a contribution anonymized
     /// by an account deletion out of every device-scoped predicate in this file.
     ///
     /// **Why it is a constant and not five hand-written subqueries.** The guarantee is only worth
-    /// what its least careful reader honours. `user_id IS NULL AND device_id = :device` appears in
+    /// what its least careful reader honors. `user_id IS NULL AND device_id = :device` appears in
     /// `claimDevice`, in `deviceContributions`, in `journal`, in `groveTreeIDs` and in
     /// `groveRecords`, and it means the same thing in all five: *the work of the phone in your hand*.
     /// A tombstone applied to the claim alone would stop the rows being adopted and go on showing

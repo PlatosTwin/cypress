@@ -84,7 +84,7 @@ public struct SpeciesQueries {
     ///
     /// A species matching on both names takes its better rank (`min`). Ties fall through to the
     /// ordering this query always had — curated first, then scientific name — so `Monterey Cypress`,
-    /// the one curated Cypress, heads its band. Word starts are recognised after a space or a
+    /// the one curated Cypress, heads its band. Word starts are recognized after a space or a
     /// hyphen: DataSF's own double-name format is comma-separated (`Sycamore, London Plane`) and
     /// hyphenated common names are everywhere in the seed (`Drooping She-Oak`, `Purple-Leaf Plum`).
     ///
@@ -188,7 +188,7 @@ public struct SpeciesQueries {
     /// Escapes a user-typed query for use inside a `LIKE` pattern with `ESCAPE '\'`.
     ///
     /// Without this, typing `%` matches every species and typing `_` matches any character — a
-    /// person searching for a cultivar with an underscore in it would get the whole catalogue back
+    /// person searching for a cultivar with an underscore in it would get the whole catalog back
     /// and no way to tell why. The escape character escapes itself first, or `\%` typed literally
     /// would come out as an unescaped wildcard.
     static func escapedForLike(_ query: String) -> String {
@@ -296,7 +296,7 @@ public struct SpeciesQueries {
     /// **Resolved through the nearest inventoried tree, not through the polygon.** The seed carries
     /// `neighborhoods.geom_geojson`, so a point-in-polygon test is available in principle; what it
     /// would produce is a *second* answer to a question the seed has already answered 195,309 times
-    /// — the city assigned every tree to a neighbourhood at ingest, and `trees.neighborhood_id` is
+    /// — the city assigned every tree to a neighborhood at ingest, and `trees.neighborhood_id` is
     /// that assignment. A ray-cast of mine that disagreed with it on a boundary block would make
     /// the count card and the map disagree about where you are, for no gain. See ERRATA (E44).
     ///
@@ -391,10 +391,10 @@ public struct SpeciesQueries {
     /// no authoritative source states this species' habit (ERRATA E9, and the seed schema's own
     /// note beside the column). Nothing is resolved, substituted or inferred here: this read layer
     /// used to pick a value for the unauthored rows, and *any* pick is a botanical claim the record
-    /// does not carry — `.deciduous` lets a fall-colour chip onto an unclassified tree, `.evergreen`
+    /// does not carry — `.deciduous` lets a fall-color chip onto an unclassified tree, `.evergreen`
     /// asserts that 59 species keep their leaves through winter.
     ///
-    /// An unrecognised string is also `nil` rather than a throw: the vocabulary is pinned by a
+    /// An unrecognized string is also `nil` rather than a throw: the vocabulary is pinned by a
     /// database CHECK, so a value outside it means the seed and this enum have drifted, and losing
     /// a chip is the right failure for that. `Tools/verify_seed.py` check 17b is what catches it.
     static func leafRetention(stored: String?) -> LeafRetention? {

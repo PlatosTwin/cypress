@@ -13,7 +13,7 @@ import Testing
 /// than to the reader.
 ///
 /// These assert against the shipped seed on purpose, for the reason `SpeciesSearchTests` gives: a
-/// fixture written for the test cannot catch a disagreement between the query and the catalogue.
+/// fixture written for the test cannot catch a disagreement between the query and the catalog.
 @Suite("Seed stub naming")
 struct SeedStubNamingTests {
 
@@ -58,7 +58,7 @@ struct SeedStubNamingTests {
     ///
     /// Seven trees stand under these five names as of the #103 rebuild; `Tools/build_seed.py`'s swap
     /// removed the other fifty-eight by reading the name the city actually wrote.
-    @Test("the catalogue still carries species the ingest could not read")
+    @Test("the catalog still carries species the ingest could not read")
     func theCatalogStillCarriesUnreadableNames() async throws {
         let unreadable = try await Self.unreadableNames()
         #expect(!unreadable.isEmpty, "no species carries the ':: ' marker; this suite guards nothing")
@@ -126,7 +126,7 @@ struct SeedStubNamingTests {
         }
     }
 
-    /// **The builder half of #103, from the app's side.** `Arbutus 'Marina'` stood in the catalogue
+    /// **The builder half of #103, from the app's side.** `Arbutus 'Marina'` stood in the catalog
     /// twice: once properly, as `Hybrid Strawberry Tree`, and once as the stub `:: Arbutus 'Marina'`
     /// minted from a city row whose botanical field was empty. The swap in
     /// `Tools/inventory_adapters.py` merged the second into the first.
@@ -137,7 +137,7 @@ struct SeedStubNamingTests {
     /// which is the judgment `QSPECIES_NAME_CORRECTIONS` refuses to make; it is recorded in
     /// `ERRATA E208` rather than fixed here. What #103 removed is the
     /// row that was not a name at all, and that is what is asserted.
-    /// **This asks the catalogue, not the search, and the difference is the whole point.** Written
+    /// **This asks the catalog, not the search, and the difference is the whole point.** Written
     /// first against `search("Marina")`, it passed with the builder's swap reverted and the stub back
     /// in the seed — because the filter ruled on above hides the row from the search, so the
     /// assertion was guarded by the fix it was not testing. A test cannot red-proof the ingest
@@ -164,7 +164,7 @@ struct SeedStubNamingTests {
         #expect(shadows.isEmpty, "the ingest still mints a stub beside Arbutus 'Marina': \(shadows)")
         #expect(
             real == ["Hybrid Strawberry Tree"],
-            "the row the stub merged into is not the one the catalogue had: \(real)"
+            "the row the stub merged into is not the one the catalog had: \(real)"
         )
     }
 }

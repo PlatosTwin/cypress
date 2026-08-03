@@ -8,7 +8,7 @@
 //
 //  ── Why this is a sheet and no longer a confirmation dialog ────────────────────────────────
 //  The surface it replaces was a `confirmationDialog` with two buttons and a message, and it was the
-//  right shape for one behaviour: the destructive tap and the sentence about it in the same modal
+//  right shape for one behavior: the destructive tap and the sentence about it in the same modal
 //  moment. It cannot hold two. A dialog's message is a single blob and its buttons are bare labels,
 //  so a two-door dialog would have to put the difference between the doors *inside the button
 //  titles* — which is precisely the arrangement in which a person chooses before they have read
@@ -25,7 +25,7 @@
 //  2. Choosing is a tap on a card. Nothing happens on selection; the account is untouched until the
 //     CTA is pressed, and the CTA's label names the door it will take, so the last tap on the safe
 //     path reads `Delete account, leave my records` and the last tap on the other reads
-//     `Delete account and erase everything`. That is the whole defence against reaching the
+//     `Delete account and erase everything`. That is the whole defense against reaching the
 //     destructive door by momentum: it cannot be reached without the word "erase" being under the
 //     thumb.
 //  3. The destructive door alone raises a second confirmation. The asymmetry is the design: the safe
@@ -193,7 +193,7 @@ struct AccountDeletionSheet: View {
 ///
 /// The selection is drawn in the app's own two accent registers rather than in a new one: the
 /// default door in `selectionFill`, which is what "chosen" looks like everywhere else in Cypress,
-/// and the destructive door in the amber the 311 hazard panel uses, which is this app's only colour
+/// and the destructive door in the amber the 311 hazard panel uses, which is this app's only color
 /// for "stop and read". There is no red in the palette and this is not the place to introduce one.
 private struct DoorCard: View {
 
@@ -293,7 +293,7 @@ private struct DoorCard: View {
 /// The app's primary CTA shape, in one of two fills.
 ///
 /// Not `PrimaryButton` with a flag: C6's fill is `ctaFill` for every caller in the app, and adding a
-/// destructive case to the shared component would put a colour on it that only one screen ever uses
+/// destructive case to the shared component would put a color on it that only one screen ever uses
 /// — the argument `AccountProviderButton` makes for screen 15's three routes, applied here. The
 /// geometry is C6's own tokens so it still reads as the same control.
 private struct DeleteButton: View {

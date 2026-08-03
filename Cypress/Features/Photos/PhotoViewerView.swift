@@ -102,7 +102,7 @@ struct PhotoViewerView: View {
     private var photo: Photo? { model.photos.first { $0.id == photoID } }
 
     /// Whether to draw the control. The same gate screen 20 uses and for the same reason: an
-    /// anonymised photograph is still *shown* — that is what the leaving door promised — and is
+    /// anonymized photograph is still *shown* — that is what the leaving door promised — and is
     /// nobody's to take back.
     private var isDeletable: Bool { photo.map(model.isDeletable) ?? false }
 

@@ -3,7 +3,7 @@
 //  Cypress — DesignSystem/Components
 //
 //  A visual contact sheet for C1–C30 of docs/distilled/SCREENS.md §2 — every component in every
-//  documented state, labelled with its C-number. This is how the component layer is verified before
+//  documented state, labeled with its C-number. This is how the component layer is verified before
 //  a screen is built: run the two previews below side by side and compare against SCREENS.md §2.
 //
 //  Same house style as `TokenGallery.swift`. Not shipped in any screen; imports nothing outside

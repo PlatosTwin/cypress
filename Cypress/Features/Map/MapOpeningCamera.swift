@@ -20,14 +20,14 @@
 //  There is a gap between the app drawing its first frame and CoreLocation producing a fix, and no
 //  amount of camera correctness closes it: the fix does not exist yet. Something has to be on screen.
 //
-//  It used to be `MapLayout.defaultCentre` — Mission Dolores Park — every single time, for everyone,
+//  It used to be `MapLayout.defaultCenter` — Mission Dolores Park — every single time, for everyone,
 //  forever. A park, in a *street* tree inventory, whose own documentation admits "the nearest
 //  inventoried tree is on 18th or 20th St, outside a 120 × 261 m view". So the app's first frame was
 //  a stranger's park with no trees on it.
 //
 //  **A place the reader has actually been beats a stranger's park.** The last camera they left the
 //  map on is the best available guess at where they are, it is theirs, and on the overwhelmingly
-//  common case — the app reopened in the same neighbourhood as last time — it is very nearly right.
+//  common case — the app reopened in the same neighborhood as last time — it is very nearly right.
 //  Dolores Park survives as the answer to the one question nothing else can answer: the first launch,
 //  where there is no history and no fix.
 //
@@ -133,7 +133,7 @@ final class MapCameraMemory {
     /// the glass — and never from any comparison of camera values, which E140 established cannot
     /// distinguish a reader's move from a stale update pass. It gates exactly one thing:
     /// `MapHomeView`'s one-shot fly-to-you, which must not run on a reappearance of the screen
-    /// when the camera on it is one the reader chose. A camera they never touched may still centre
+    /// when the camera on it is one the reader chose. A camera they never touched may still center
     /// on them; a camera they moved is theirs (#85, #115, #128 — the three corners this flag sits
     /// between).
     ///
@@ -163,7 +163,7 @@ final class MapCameraMemory {
         defaults.set(Self.encode(current), forKey: Self.defaultsKey)
     }
 
-    /// Drops both the stored camera and everything this process has learnt. Only tests need it, but
+    /// Drops both the stored camera and everything this process has learned. Only tests need it, but
     /// they need it to be total — a `forget` that left `launchSnapshot` standing would make every
     /// test after it read the one before it.
     func forget() {
@@ -188,8 +188,8 @@ final class MapCameraMemory {
     /// Whether a camera is a place rather than a glitch.
     ///
     /// Every one of these has been seen from `MKMapView` at least once in this codebase's life: a
-    /// zero span is the camera before the map has settled (`MapRecentre.Camera.isCentred` guards the
-    /// same case), and a centre at MapKit's own default is what a map that was never aimed reads back
+    /// zero span is the camera before the map has settled (`MapRecenter.Camera.isCentered` guards the
+    /// same case), and a center at MapKit's own default is what a map that was never aimed reads back
     /// as — 37.3346, which E168 is the story of. A camera that fails this is not written and not
     /// restored; the reader gets the park, which is at least a real place.
     static func isWorthRemembering(_ snapshot: Snapshot) -> Bool {
@@ -228,7 +228,7 @@ final class MapCameraMemory {
 
 // MARK: - What the screen opens on, and what it owes the reader
 
-/// Screen 01's opening behaviour, as decisions rather than as branches inside a view.
+/// Screen 01's opening behavior, as decisions rather than as branches inside a view.
 ///
 /// Pure and free of SwiftUI, so the whole of it is assertable in
 /// `CypressTests/MapOpeningCameraTests` without a camera, a phone or a permission sheet.
@@ -239,7 +239,7 @@ enum MapOpening {
     enum Showing: Equatable {
         /// The camera this install was last left on.
         case whereYouLeftOff
-        /// `MapLayout.defaultCentre`. A first launch, or a stored camera that did not survive
+        /// `MapLayout.defaultCenter`. A first launch, or a stored camera that did not survive
         /// `MapCameraMemory.isWorthRemembering`.
         case theCityFallback
     }
@@ -364,8 +364,8 @@ enum MapOpeningCopy {
     /// Unanswered. Different from refused: nobody has said no, they have said nothing.
     ///
     /// No Settings button — `MapLocationNotice` takes one only for a state Settings can fix, and this
-    /// one is fixed by the recentre control, which asks. The hint on that control says so
-    /// (`MapRecentreCopy.hint(.askable)`).
+    /// one is fixed by the recenter control, which asks. The hint on that control says so
+    /// (`MapRecenterCopy.hint(.askable)`).
     static let notAskedTitle = "Cypress has not been given your location"
     static func notAskedMessage(_ place: MapOpening.Showing) -> String {
         "Nothing has answered the location request yet, so there is nowhere to center the map. "
@@ -377,7 +377,7 @@ enum MapOpeningCopy {
     /// **This is the sentence E158 is about**, written for the state E158 found being described as a
     /// fix "too weak": the phone has not answered. It says what is true, it says what the map is
     /// doing instead, and it promises the move — a promise `MapHomeView` keeps, because the same
-    /// first fix that ends this state is the one that centres the camera.
+    /// first fix that ends this state is the one that centers the camera.
     static let searchingTitle = "Finding you"
     static func searchingMessage(_ place: MapOpening.Showing) -> String {
         "Cypress has permission and is still waiting for a first fix. " + showing(place)

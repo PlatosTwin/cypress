@@ -10,7 +10,7 @@
 //  detail — it is the entire difference between the two surfaces, and the reason both exist.
 //
 //  They looked identical anyway, and the project owner said so. Both drew a tree's name in bold over
-//  a grey line ending in a date, which is one grammar for two meanings. Two things were changed to
+//  a gray line ending in a date, which is one grammar for two meanings. Two things were changed to
 //  fix it structurally rather than with words:
 //
 //  - **the date is gone from the row.** Recency lives in the ordering (`last_visited DESC NULLS
@@ -67,7 +67,7 @@ struct GroveTreesPresentation: Equatable {
     /// Jul 12`, and that clause is gone — see `GroveCopy.treeSubtitle`.
     init(entries: [GroveEntry]) {
         // **The store's order, unchanged.** `groveTreeIDs` orders by `last_visited DESC NULLS LAST`,
-        // which puts the tree you saw most recently at the top and the ones you have only favourited
+        // which puts the tree you saw most recently at the top and the ones you have only favorited
         // at the bottom. Re-sorting here would be a second ordering, and two orderings is two
         // chances to disagree — the one in SQL is the one the index is built for.
         //
@@ -126,7 +126,7 @@ extension GroveCopy {
     ///
     /// ── What this line is, and what it stopped being ──────────────────────────────────────
     /// It used to read `Favorite · last visit Jul 12`, and that sentence is why the project owner
-    /// could not tell this screen from the Journal: both lists drew a tree's name in bold over a grey
+    /// could not tell this screen from the Journal: both lists drew a tree's name in bold over a gray
     /// line ending in a date. Two lists with one grammar are one list as far as a reader is concerned.
     ///
     /// **There is no date here now, and that is the point.** A grove is a set of nouns — which trees
@@ -141,7 +141,7 @@ extension GroveCopy {
     /// to satisfy.
     ///
     /// ── The clauses, and their order ──────────────────────────────────────────────────────
-    /// The favourite clause leads, because it is a thing you *chose* rather than a thing you
+    /// The favorite clause leads, because it is a thing you *chose* rather than a thing you
     /// accumulated, and it uses `QuadActionRow.Action.favorite.label` rather than a second spelling
     /// of the word: this list describes what a button did, and a list that renamed the act would be
     /// describing a different one. RULINGS R2 fixed that label as "the same string in every state".

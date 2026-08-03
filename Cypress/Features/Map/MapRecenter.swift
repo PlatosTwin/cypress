@@ -1,5 +1,5 @@
 //
-//  MapRecentre.swift
+//  MapRecenter.swift
 //  Cypress — Features/Map
 //
 //  What screen 01's "take me back to me" control does, and the words it says.
@@ -37,26 +37,26 @@
 //     managers, two answers, and the button could aim at a fix the dot is not drawn at.
 //  4. **It has nothing to say when it cannot work, and that is the whole ask.** With permission
 //     denied the system control is simply inert: press it, and the map does not move and nothing
-//     appears. That is exactly the defect class being reported all week. Its behaviour is not
+//     appears. That is exactly the defect class being reported all week. Its behavior is not
 //     configurable, and there is no callback to hang an explanation off.
 //
 //  So the control is ours, it lives in the chrome overlay with the FAB where this screen's own
 //  arithmetic can place it, and every state it can be in answers the press.
 //
 //  ── What a press does about the zoom ─────────────────────────────────────────────────────────────
-//  **First press centres and keeps the zoom. A press that is already centred zooms in to the
+//  **First press centers and keeps the zoom. A press that is already centered zooms in to the
 //  screen's own opening scale.**
 //
 //  The alternative — always snapping to the opening 120 m — is the obnoxious one, and it is obnoxious
 //  for a specific reason rather than an aesthetic one. Somebody looking at the Mission at
-//  neighbourhood scale who presses this button is asking *where am I in what I am looking at*; an
-//  answer that throws the neighbourhood away and replaces it with one intersection has not answered
+//  neighborhood scale who presses this button is asking *where am I in what I am looking at*; an
+//  answer that throws the neighborhood away and replaces it with one intersection has not answered
 //  that question, it has asked a different one. Keeping the span answers the question actually asked
-//  and is the same rule `VisitPinAdjustView.move(to:)` already follows when it recentres its pin: the
+//  and is the same rule `VisitPinAdjustView.move(to:)` already follows when it recenters its pin: the
 //  span is whatever the reader last zoomed to.
 //
 //  But "closer" is the only question left once the dot is under the crosshair, so the second press
-//  asks it, and the scale it goes to is `MapLayout.defaultSpanMetres` — 120 m, the scale ERRATA E12
+//  asks it, and the scale it goes to is `MapLayout.defaultSpanMeters` — 120 m, the scale ERRATA E12
 //  measured as the one where San Francisco's street trees stop fusing into a mat. There is no third
 //  step: past 120 m the pins are individually tappable and the reader has a pinch.
 //
@@ -66,15 +66,15 @@
 
 import Foundation
 
-/// The decision behind screen 01's recentre control: given what the app knows about the user and
+/// The decision behind screen 01's recenter control: given what the app knows about the user and
 /// where the camera is, what should a press do?
 ///
 /// Pure, and deliberately free of MapKit and SwiftUI, so the whole of it can be asserted in
-/// `CypressTests/MapRecentreTests` without a camera or a view.
+/// `CypressTests/MapRecenterTests` without a camera or a view.
 enum MapRecenter {
 
     /// Where the camera is, in the terms this decision needs. Degrees, because that is what
-    /// `MKCoordinateRegion` carries and converting to metres to compare a fraction of a span to
+    /// `MKCoordinateRegion` carries and converting to meters to compare a fraction of a span to
     /// itself would only add a rounding.
     struct Camera: Equatable {
         var center: Coordinate
@@ -87,16 +87,16 @@ enum MapRecenter {
             self.longitudeSpan = longitudeSpan
         }
 
-        /// Whether the dot is close enough to the middle that "centre me" has nothing left to do.
+        /// Whether the dot is close enough to the middle that "center me" has nothing left to do.
         ///
-        /// A fraction of the visible span rather than a distance in metres, because the question is
-        /// about the picture and not about the ground: 20 m off centre is dead centre on a city-wide
-        /// camera and half a screen away at 120 m. `centredFraction` is 5 % of the span on each axis,
+        /// A fraction of the visible span rather than a distance in meters, because the question is
+        /// about the picture and not about the ground: 20 m off center is dead center on a city-wide
+        /// camera and half a screen away at 120 m. `centeredFraction` is 5 % of the span on each axis,
         /// which on this phone is about 20 pt across and 44 pt down — less than a fingertip of drift,
-        /// so a reader who nudged the map by accident still counts as centred and gets the zoom step
+        /// so a reader who nudged the map by accident still counts as centered and gets the zoom step
         /// they were reaching for.
         ///
-        /// A zero span is the camera before MapKit has settled once. It is not centred on anything.
+        /// A zero span is the camera before MapKit has settled once. It is not centered on anything.
         func isCentered(on coordinate: Coordinate) -> Bool {
             guard latitudeSpan > 0, longitudeSpan > 0 else { return false }
             return abs(center.latitude - coordinate.latitude) <= latitudeSpan * MapRecenter.centeredFraction
@@ -122,7 +122,7 @@ enum MapRecenter {
         case waitForFix
         /// Move the camera to the user, keeping whatever span the reader is looking at.
         case center(Coordinate)
-        /// Already centred and looking at more than one intersection: go to the opening scale.
+        /// Already centered and looking at more than one intersection: go to the opening scale.
         case centerAndZoomIn(Coordinate)
     }
 
@@ -130,10 +130,10 @@ enum MapRecenter {
     ///
     /// **Five cases, and it used to be three (#100).** `away` carried all of "I know where you are
     /// and the map is not there", "nobody has answered the permission ask" and "I am still looking",
-    /// and `MapRecentreCopy.value` spoke one word — `Not centred` — over all three. For a sighted
+    /// and `MapRecenterCopy.value` spoke one word — `Not centered` — over all three. For a sighted
     /// reader that word is a caption on a picture they can also see. For a VoiceOver reader it is the
     /// *entire* report on where the map is, and in two of the three states it is not merely thin, it
-    /// is wrong: there is no "centred" to be short of, because the app does not know where the reader
+    /// is wrong: there is no "centered" to be short of, because the app does not know where the reader
     /// is and pressing the control will not move the camera at all.
     ///
     /// That is ERRATA E126's rule — a screen showing something other than what you asked for must say
@@ -153,10 +153,10 @@ enum MapRecenter {
         case unavailable
     }
 
-    /// 5 % of the visible span on each axis. See `Camera.isCentred(on:)`.
+    /// 5 % of the visible span on each axis. See `Camera.isCentered(on:)`.
     static let centeredFraction: Double = 0.05
 
-    /// One degree of latitude, in metres. WGS-84's mean; the meridian is 20,003.93 km / 180°.
+    /// One degree of latitude, in meters. WGS-84's mean; the meridian is 20,003.93 km / 180°.
     static let metersPerDegreeLatitude: Double = 111_320
 
     /// How much wider than the opening scale the camera has to be before a second press is allowed to
@@ -176,7 +176,7 @@ enum MapRecenter {
         case let .located(coordinate, _):
             guard camera.isCentered(on: coordinate) else { return .center(coordinate) }
             guard camera.metersAcross > MapLayout.defaultSpanMeters * zoomInThreshold else {
-                // Centred and already close. The press is honoured — the camera is driven to the
+                // Centered and already close. The press is honored — the camera is driven to the
                 // fix, which is where it very nearly is — rather than being swallowed.
                 return .center(coordinate)
             }
@@ -211,7 +211,7 @@ enum MapRecenter {
 
 // MARK: - The words
 
-/// Screen 01's recentre control, spoken and written.
+/// Screen 01's recenter control, spoken and written.
 ///
 /// Out of the view for the reason every other `*Copy` in this app is: the sentence a state produces
 /// is a decision worth a test, and a test should not have to render a `View` to read it.
@@ -229,8 +229,8 @@ enum MapRecenterCopy {
     ///
     /// **Five sentences for five states (#100).** `Not centered` is kept for the one state it was ever
     /// true of — there is a fix, and the map is not on it — and the two states it used to be borrowed
-    /// for now say what is actually the case. Neither of them is a degree of "centred": in both, the
-    /// app does not know where the reader is, so there is nothing to be off-centre from.
+    /// for now say what is actually the case. Neither of them is a degree of "centered": in both, the
+    /// app does not know where the reader is, so there is nothing to be off-center from.
     static func value(_ engagement: MapRecenter.Engagement) -> String {
         switch engagement {
         case .centered: return "Centered on you"
@@ -243,8 +243,8 @@ enum MapRecenterCopy {
 
     /// What the next press will do, when that is not obvious from the value.
     ///
-    /// `away` is the one state with nothing to add: the label already says the control centres the
-    /// map on you and the value says it is not centred, so a hint would be the same sentence a third
+    /// `away` is the one state with nothing to add: the label already says the control centers the
+    /// map on you and the value says it is not centered, so a hint would be the same sentence a third
     /// time. The other four each promise something the label does not — a zoom, a permission sheet, a
     /// held press, an explanation.
     static func hint(_ engagement: MapRecenter.Engagement) -> String? {
@@ -270,7 +270,7 @@ enum MapRecenterCopy {
     /// Granted, but CoreLocation has not produced a fix yet.
     ///
     /// It states the promise as well as the state, because the promise is kept: the press is
-    /// remembered and the first fix to arrive centres the map.
+    /// remembered and the first fix to arrive centers the map.
     static let waitingTitle = "Finding you"
     static let waitingMessage =
         "Cypress has permission and is waiting for the first fix. The map will move to you as soon "

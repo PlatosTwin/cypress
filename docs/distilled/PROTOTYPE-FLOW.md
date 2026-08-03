@@ -165,7 +165,7 @@ Mono `'Spline Sans Mono'` 11.5px `#77836F`. `grove` highlights nothing. `restart
 ## 1.6 Gating / conditional rules (complete)
 
 1. **Log visit is disabled until `snapped`.** Both visually (`logBtnStyle`) and functionally (`if (!this.state.snapped) return;`).
-2. **Care "Done" is disabled until ≥1 care chip is on.** `logCare` early-returns; `careBtnStyle` greys out.
+2. **Care "Done" is disabled until ≥1 care chip is on.** `logCare` early-returns; `careBtnStyle` grays out.
 3. **3rd save triggers the account sheet.** Inside `logVisit`: `account = (saves + 1 === 3 && account === 'none') ? 'ask' : account`. It never re-triggers after `linked` or `dismissed`, and never triggers if the user linked/dismissed earlier (impossible in this flow, since `ask` is the only path in).
 4. **Account sheet only renders on the saved screen.** `askAccount = account === 'ask' && screen === 'saved'`.
 5. **After tree 3 the next-tree CTA goes to the grove.** `treeIdx >= 2` → label `Route done · see your grove`, action `go('grove')`.

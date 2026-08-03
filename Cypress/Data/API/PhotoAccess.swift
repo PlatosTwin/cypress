@@ -84,7 +84,7 @@ public struct PhotoDeletion: Sendable, Equatable {
     /// Files actually removed from disk: the confirmed binary, the staged one, or neither when the
     /// bytes had never arrived.
     public let removedFiles: Int
-    /// Votes deleted with it — everybody's, not only this person's. They were judgements about a
+    /// Votes deleted with it — everybody's, not only this person's. They were judgments about a
     /// photograph that no longer exists.
     public let deletedVotes: Int
     /// Queued mutations that were still carrying this photograph's staged binary and no longer are.

@@ -715,7 +715,7 @@ enum SweepFixtures {
 
     // ── Screen 08 ────────────────────────────────────────────────────────────────────────────
 
-    /// Twelve species met, in a neighbourhood the city records 215 species in — R5's denominator,
+    /// Twelve species met, in a neighborhood the city records 215 species in — R5's denominator,
     /// not the mock's 40, because R5 ruled the true number stays.
     static var grove: GroveSpecies {
         let names: [(String, String)] = [
@@ -742,7 +742,7 @@ enum SweepFixtures {
                 firstMetAddress: index == names.count - 1 ? "Noriega St" : nil
             )
         }
-        // The neighbourhood's own species list has to contain the ones met, or the intersection
+        // The neighborhood's own species list has to contain the ones met, or the intersection
         // that produces the numerator is empty and the ring reads zero.
         let neighborhoodIDs = (0..<215).map { id($0) }
         return GroveSpecies(

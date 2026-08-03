@@ -21,7 +21,7 @@ flag (`qLegalStatus = 'Landmark tree'` in the DataSF Street Tree List) and it is
 on 217 rows, but **the flag is not the register**: it misses four of the twenty-six designations,
 flags two trees that are not designated, and cannot tell a permanent designation from a temporary
 one. The editorial content a "great trees" screen needs — why the tree matters — exists in exactly
-one place, an unlabelled ArcGIS table uploaded by a City staff account, and **fourteen of its
+one place, an unlabeled ArcGIS table uploaded by a City staff account, and **fourteen of its
 twenty-five rows name a private individual, trust, or LLC as the property owner**, which we may not
 ship.
 
@@ -73,7 +73,7 @@ due to tree death"). No coordinates, no dates, no ordinance numbers. HTML, no AP
 This is the closest thing to the authoritative roster that is actually published; the *legally*
 authoritative record is a book (§4).
 
-**Terms:** none stated on the page. The site carries no data licence. This is a City of San
+**Terms:** none stated on the page. The site carries no data license. This is a City of San
 Francisco public web page describing an act of the Board of Supervisors.
 
 ### 1.2 The map — SF Environment, "Landmark Tree Program"
@@ -114,8 +114,8 @@ Council working file behind a nomination round. **It must not be read as designa
 15 says a designation comes from the city; a candidate list is the city saying *not yet*.
 
 **Terms:** `serviceDescription`, `description`, `copyrightText`, `licenseInfo`, `accessInformation`
-and `tags` are all **empty**. There is no stated licence, no attribution string, and no description
-of what the table is. It is publicly shared and unauthenticated, which is what our authorisation
+and `tags` are all **empty**. There is no stated license, no attribution string, and no description
+of what the table is. It is publicly shared and unauthenticated, which is what our authorization
 covers, but "publicly shared by a staff account with no metadata" is weaker provenance than
 `BUF_Street_Trees` (which at least carries `source: "City and County of San Francisco"` on its
 parent item). Recorded as **public, unlicensed, provenance thin**.
@@ -255,7 +255,7 @@ matched row share an address and a species, and the matched row is itself flagge
 ### 3.4 What a spatial match actually does here, with the tolerance stated
 
 Because the join is a key join, no spatial match is needed for the 217. It was run anyway on the
-27 misses, to answer what a fallback would cost. Distance is haversine, in metres, against
+27 misses, to answer what a fallback would cost. Distance is haversine, in meters, against
 `trees.lat/lon`.
 
 | tolerance | misses with ≥1 seed row inside it |
@@ -375,7 +375,7 @@ The `Confirmed_Landmark_tree_data_table` layer, all 25 rows read. Populated coun
 | `Landmark_order` | string | 1–25, designation order. Not a TreeID and not the roster's numbering. |
 | `Common_Name`, `Scientific_Name` | string | Populated 25/25. Casing inconsistent (`phoenix canariensis`). **Row 19 has the address and the scientific name swapped.** |
 | `Quantity` | integer | Trees covered by the designation. Sums to 53 — but says `1` for the Dolores median palms, which DataSF flags 184 of. Not trustworthy. |
-| `Latitude`, `Longitude` | double | Populated 25/25, and they are good — every one landed within metres of the expected block. |
+| `Latitude`, `Longitude` | double | Populated 25/25, and they are good — every one landed within meters of the expected block. |
 | `Address` | string | Populated, informal ("3rd Street and Yosemite"). **Row 5 reads `"Private"`** where the roster says Quesada Street median. |
 | `Zipcode` | integer | Populated. |
 | `Local_Native__Native__or_Non_native_to_CA` | string | Populated. Genuinely useful and not in any other source. |
@@ -459,7 +459,7 @@ alongside **E179** (the `Landmark tree` flag is not the register, in either dire
 §810A says in terms that a landmark tree is not one of them.
 
 **Why it is an afternoon and not a project:** the deciding number came out high (73% by pure key
-join, 85% with one hand step), the licence on the source we already use is a public-domain
+join, 85% with one hand step), the license on the source we already use is a public-domain
 dedication, the whole corpus is 26 items, and 217 rows in the shipped seed are already flagged. The
 part that is *not* an afternoon is the part nobody asked for: chasing the 26 ordinance file numbers,
 and getting photographs, which are not published anywhere found here.

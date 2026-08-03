@@ -9,9 +9,9 @@ import Testing
 ///
 /// What this suite pins is the *seam*, not the product decision. D9 — the ask comes at the third save,
 /// gets one second chance, then stops — is `VisitSaveLedger`'s and is pinned by `AccountAskTests`
-/// unchanged. The `mayAsk:` parameter it exposes is the capability's half: a build that cannot honour
+/// unchanged. The `mayAsk:` parameter it exposes is the capability's half: a build that cannot honor
 /// an ask (`onLink` nil, or this flag flipped off) must still *count* the save and must not *spend* a
-/// presentation, so that the day it can honour one, the person is asked from the right zero rather
+/// presentation, so that the day it can honor one, the person is asked from the right zero rather
 /// than never. That contract outlives the flag's current value, which is why it is still tested here.
 @MainActor
 @Suite("Beta capability")
@@ -35,9 +35,9 @@ struct BetaCapabilityTests {
         #expect(ledger.recordSave(mayAsk: BetaCapability.accountsAvailable) == true)
     }
 
-    /// The capability's other half, still reachable: a build that *cannot* honour an ask (`onLink`
+    /// The capability's other half, still reachable: a build that *cannot* honor an ask (`onLink`
     /// nil, or the flag off) earns none, however many saves it records.
-    @Test("no number of saves earns an ask when the build cannot honour one")
+    @Test("no number of saves earns an ask when the build cannot honor one")
     func theAskIsNeverEarnedWithoutCapability() {
         let ledger = VisitSaveLedger(defaults: Self.emptyDefaults())
         for _ in 1...10 {
@@ -62,7 +62,7 @@ struct BetaCapabilityTests {
         #expect(defaults.integer(forKey: "visit.accountAskPresentations") == 0)
         #expect(defaults.bool(forKey: "visit.accountAskResolved") == false)
 
-        // And the goes are still there: the same ledger, asked by a build that can honour it, still
+        // And the goes are still there: the same ledger, asked by a build that can honor it, still
         // owes this person the ask D9 promises them.
         #expect(ledger.recordSave(mayAsk: true) == true)
     }

@@ -26,7 +26,7 @@
 //
 //  ── Two `Transferable`s rather than one with a parameter ──────────────────────────────────────
 //  `ShareLink` resolves its payload from the *type*, so a single type carrying a format field would
-//  need one content type for both formats and would hand the share sheet a `.csv` labelled as map
+//  need one content type for both formats and would hand the share sheet a `.csv` labeled as map
 //  data or the reverse. The failure mode of that arrangement is one control quietly exporting the
 //  other one's bytes, which looks identical to working until somebody opens the file. Two types make
 //  the format part of what the compiler checks, and the suite asserts each carries its own.
@@ -70,7 +70,7 @@ struct JournalGeoJSONExport: Transferable {
 
 // MARK: - The rows
 
-/// One labelled block of two C10 rows, each a `ShareLink`.
+/// One labeled block of two C10 rows, each a `ShareLink`.
 ///
 /// C10 is the row this tab already uses for the outbox, and screen 10 is where `ShareLink` is
 /// already the app's way of handing something to the system — so neither half of this is a new

@@ -46,10 +46,10 @@ import Foundation
 /// independent of who made it, which is §3.12's own definition and the entire argument for a door
 /// that keeps them.
 ///
-/// It does **not** govern private reminders or favourites. Those are deleted under both doors, and
+/// It does **not** govern private reminders or favorites. Those are deleted under both doors, and
 /// that is a ruling rather than an oversight. R3 made the argument and it survives the second door
 /// intact: nobody but their owner can read them, and after anonymization nobody at all can — an
-/// ownerless favourite is a row no query returns and no person can remove. Offering to "keep" one
+/// ownerless favorite is a row no query returns and no person can remove. Offering to "keep" one
 /// would be offering to keep a thing that nothing can display, which is not a choice, it is a
 /// decorative control. The engine says the same thing in its own words: both tables carry
 /// `CHECK ((user_id IS NULL) <> (device_id IS NULL))`, so an ownerless row is unstorable.
@@ -73,6 +73,6 @@ public enum AccountDeletionChoice: String, Sendable, CaseIterable, Codable {
     /// What a surface starts on when nobody has chosen yet.
     ///
     /// Stated once, here, so that no view or model can drift into defaulting to the destructive door
-    /// by initialising a variable carelessly. `AccountDeletionCopy` is written to match.
+    /// by initializing a variable carelessly. `AccountDeletionCopy` is written to match.
     public static let `default` = AccountDeletionChoice.leaveRecords
 }

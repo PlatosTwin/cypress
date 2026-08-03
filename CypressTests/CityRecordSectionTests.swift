@@ -95,7 +95,7 @@ struct CityRecordSectionTests {
     /// **`--source city` publishes no `PlotSize` at all**, so all three numbers are zero there and
     /// the notation triage has nothing to run against. That is asserted rather than skipped, and it
     /// is checked against the source's own column list so an emptied column is still a failure —
-    /// but it does mean the *behaviour* here is exercised by the `--source datasf` corpus and by the
+    /// but it does mean the *behavior* here is exercised by the `--source datasf` corpus and by the
     /// unit cases above, not by the shipped seed.
     @Test("every plot size in the seed is either shown or refused on purpose")
     func everyPlotSizeInTheSeedIsShownOrRefusedOnPurpose() async throws {
@@ -203,7 +203,7 @@ struct CityRecordSectionTests {
     // MARK: - `permitNotes` is refused, and stays refused
 
     /// 52,114 permit references into a system this app cannot query, and 466 staff working notes
-    /// carrying a clerk's initials, a misspelling and an accusation about a neighbour's planting.
+    /// carrying a clerk's initials, a misspelling and an accusation about a neighbor's planting.
     /// Neither is drawn, and this asserts it over the section that would have to draw it.
     @Test("a permit note never reaches the screen, whichever of its two shapes it is in", arguments: [
         "Permit Number 771729",
@@ -366,7 +366,7 @@ struct CityRecordSectionTests {
         #expect(presentation.showsCityDetails)
     }
 
-    /// The caretaker card is labelled for care, not for ownership. This is the 84% trap E143 exists
+    /// The caretaker card is labeled for care, not for ownership. This is the 84% trap E143 exists
     /// to avoid, and the label is the only thing standing between the reader and making the same
     /// inference by hand.
     @Test("the caretaker card never says owner, on the row where that would be most wrong")

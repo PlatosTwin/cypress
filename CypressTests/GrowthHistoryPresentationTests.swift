@@ -129,7 +129,7 @@ struct GrowthHistoryPresentationTests {
 
     @Test("an ineligible reading does not move the scale of the points that survive it")
     func excludedReadingsDoNotSetTheAxis() {
-        // The excluded reading is far outside the plotted range. If it reached the normalisation,
+        // The excluded reading is far outside the plotted range. If it reached the normalization,
         // the two real points would collapse toward one end of the band.
         let withOutlier = Self.presentation([
             Self.dbh(2024, 60, .tape),

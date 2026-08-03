@@ -1,10 +1,10 @@
 import Foundation
 
-/// A favourite toggle as it travels through the outbox.
+/// A favorite toggle as it travels through the outbox.
 ///
-/// Favourites are the one non-append-only contribution: they sync as toggle events with tombstones
+/// Favorites are the one non-append-only contribution: they sync as toggle events with tombstones
 /// (BUILD-PLAN §4 and §6). The event therefore carries the resulting *state*, not a verb, so
-/// replaying it is idempotent — applying "favourited" twice leaves one favourite.
+/// replaying it is idempotent — applying "favorited" twice leaves one favorite.
 ///
 /// It carries a `FavoriteOwner` rather than a `userID` because the heart is tapped on a device that
 /// D9 keeps anonymous until the third save, so requiring an account made the record unwritable on

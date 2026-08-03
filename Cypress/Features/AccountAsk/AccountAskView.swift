@@ -28,7 +28,7 @@ struct AccountAskView: View {
     /// leaving the sheet can leave the ask owed (ERRATA E34).
     private let onFinish: () -> Void
 
-    /// §6's `Read the short version`. Nil today: the licence text has no screen in SCREENS.md and
+    /// §6's `Read the short version`. Nil today: the license text has no screen in SCREENS.md and
     /// no entry in BUILD-PLAN §9, and inventing one is what DECISIONS constraint 21 forbids. The run
     /// still draws bold exactly as the mock draws it; it is simply not a button until somebody has
     /// somewhere for it to go.

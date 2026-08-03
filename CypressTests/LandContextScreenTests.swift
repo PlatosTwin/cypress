@@ -41,7 +41,7 @@ struct LandContextScreenTests {
         )
     }
 
-    /// The whole optionality decision, as behaviour: the screen opens with no answer, the CTA does
+    /// The whole optionality decision, as behavior: the screen opens with no answer, the CTA does
     /// not wait for one, and the sentence above the chips says so without asking for anything.
     ///
     /// This is the assertion that would fail first if somebody later decided the field should be
@@ -388,7 +388,7 @@ struct LandContextScreenTests {
         let id = try #require(await composer.add())
 
         let report = ReportModel(treeID: id, api: api)
-        #expect(report.presentation.hazardHandoff == .city, "before the read, today's behaviour")
+        #expect(report.presentation.hazardHandoff == .city, "before the read, today's behavior")
         await report.load()
         await report.select(hazard: .hangingOrBrokenLimb)
 

@@ -27,7 +27,7 @@ public enum MeasurementSeries: String, Codable, Sendable, Hashable, CaseIterable
     case estimated = "estimated"
 }
 
-/// A length unit a value can be *entered* in. Canonical storage is SI (metres) regardless
+/// A length unit a value can be *entered* in. Canonical storage is SI (meters) regardless
 /// (DECISIONS §3.6: "Canonical SI internally, entered unit captured").
 public enum LengthUnit: String, Codable, Sendable, Hashable, CaseIterable {
     case millimeters = "mm"
@@ -36,7 +36,7 @@ public enum LengthUnit: String, Codable, Sendable, Hashable, CaseIterable {
     case inches = "in"
     case feet = "ft"
 
-    /// Metres per one unit.
+    /// Meters per one unit.
     public var metersPerUnit: Double {
         switch self {
         case .millimeters: return 0.001
@@ -69,7 +69,7 @@ public struct Quantity: Hashable, Codable, Sendable {
     public let value: Double
     /// The unit that was on the keypad when the value was entered (BUILD-PLAN §4 `unit_entered`).
     public let unitEntered: LengthUnit
-    /// Canonical SI value, always metres (BUILD-PLAN §4 `si_value`, DECISIONS §3.6).
+    /// Canonical SI value, always meters (BUILD-PLAN §4 `si_value`, DECISIONS §3.6).
     public let siValue: Double
     /// How the number was obtained. Required (D7).
     public let method: MeasurementMethod

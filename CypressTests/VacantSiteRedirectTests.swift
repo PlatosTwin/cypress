@@ -18,7 +18,7 @@ import Testing
 ///
 /// The second half of the suite is the case that must *not* redirect, and it is not a caveat: a
 /// removed tree keeps its profile, because screen 19 has nothing to press and RULINGS R2 needs the
-/// heart to stay reachable on a tree somebody favourited before it was felled.
+/// heart to stay reachable on a tree somebody favorited before it was felled.
 @MainActor
 @Suite("The vacant site never opens the tree profile (E113)")
 struct VacantSiteRedirectTests {
@@ -166,7 +166,7 @@ struct VacantSiteRedirectTests {
     /// A removed tree keeps the profile **on purpose**, and this test is the reason written down.
     ///
     /// Screen 19 is drawn with deliberately nothing to press. So a redirect from the profile to the
-    /// memorial would take the last surface in the app that can take a favourite off a felled tree —
+    /// memorial would take the last surface in the app that can take a favorite off a felled tree —
     /// which is E89's deciding argument for not gating the heart in the first place, arriving by a
     /// different road. R2 restates it: the gate that refuses the heart also refuses removing it.
     @Test("a removed tree keeps its profile, and keeps the heart on it")
@@ -174,7 +174,7 @@ struct VacantSiteRedirectTests {
         let model = Self.model(.removed)
         await model.load()
 
-        #expect(Self.phaseRoute(model) == nil, "the memorial redirect took away the only way to un-favourite")
+        #expect(Self.phaseRoute(model) == nil, "the memorial redirect took away the only way to un-favorite")
         let presentation = try #require(model.presentation)
         #expect(presentation.quadActions.contains(.favorite))
         // And it offers no write of any kind (E95, E112).
@@ -183,7 +183,7 @@ struct VacantSiteRedirectTests {
         #expect(!presentation.quadActions.contains(.report))
     }
 
-    /// A site cannot be favourited from anywhere, before or after this change, and that is worth
+    /// A site cannot be favorited from anywhere, before or after this change, and that is worth
     /// pinning so the redirect is not read as having taken something away.
     ///
     /// The quad row is drawn only on the warm variant and a vacant site is always cold — no photos,
@@ -191,7 +191,7 @@ struct VacantSiteRedirectTests {
     /// screen. E107 declined to put one on the site screen for its own reason: the only control it
     /// could hang on is C7, which has no selected appearance, which is the defect R2 just closed on
     /// C8.
-    @Test("no surface offered a favourite on a vacant site, so the redirect takes nothing away")
+    @Test("no surface offered a favorite on a vacant site, so the redirect takes nothing away")
     func aSiteNeverHadTheHeart() {
         let site = TreeProfilePresentation(
             profile: TreeProfile(tree: Self.tree(status: .vacantSite))

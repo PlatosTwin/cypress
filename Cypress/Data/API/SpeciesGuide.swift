@@ -3,7 +3,7 @@
 //  Cypress — Data/API
 //
 //  The payload behind screen 07. `GET /species/{id}` hands back a `Species`, and a `Species` is a
-//  field-guide entry: what the tree is and how to recognise it. SCREENS.md 07 also draws *how
+//  field-guide entry: what the tree is and how to recognize it. SCREENS.md 07 also draws *how
 //  common it is nearby* — two count cards and a list of individuals — and none of that is a
 //  property of the species record. So it travels here, beside it.
 //
@@ -90,7 +90,7 @@ public struct NearbySpeciesTree: Hashable, Sendable, Identifiable {
     /// trees have no address, and a row for one of them draws no title rather than a placeholder.
     public let title: String?
 
-    /// Great-circle metres from the caller. 07 §6 renders it as `220 m`.
+    /// Great-circle meters from the caller. 07 §6 renders it as `220 m`.
     public let distanceM: Double
 
     /// Photographs on this tree. `nil` unless the whole series was read, so a page's size can never

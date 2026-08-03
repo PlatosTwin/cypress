@@ -5,7 +5,7 @@
 //  Screen 17 · Outbox. SCREENS.md lines 1241–1280.
 //
 //  "Unsent field work gets a real screen, not a toast." Everything below turns one `OutboxSnapshot`
-//  into what that screen draws, and every judgement in it is about whether a sentence is true.
+//  into what that screen draws, and every judgment in it is about whether a sentence is true.
 //
 //  ── 1. The footnote is the contract ───────────────────────────────────────────────────────
 //  §6: "Nothing here disappears silently. An item that cannot sync says so, says why, and waits for

@@ -30,7 +30,7 @@ struct SpeciesPickView: View {
     /// A species was chosen.
     let onPick: (Species) -> Void
     /// The reader left without naming one. Deliberately distinct from `onPick` — see
-    /// `SpeciesPickCopy.skip`: declining to name a species is an answer, not a cancelled action.
+    /// `SpeciesPickCopy.skip`: declining to name a species is an answer, not a canceled action.
     let onSkip: () -> Void
     let onBack: () -> Void
 

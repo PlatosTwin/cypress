@@ -44,9 +44,9 @@ struct StatusBadge: View {
             switch self {
             case .thriving: return CypressColor.thrivingBadgeText
             case .planted: return CypressColor.plantedBadgeText
-            // The removed pair, deliberately: the catalogue has no fifth badge colour, and inventing
+            // The removed pair, deliberately: the catalog has no fifth badge color, and inventing
             // one is a design decision this errata has no standing to make (the argument E107 made
-            // about the vacant-site pin, which waited for RULINGS R7). Grey says "not a living tree
+            // about the vacant-site pin, which waited for RULINGS R7). Gray says "not a living tree
             // here", which is true of both — and the two badges never say the same word.
             case .removed, .deadReported: return CypressColor.removedBadgeText
             }

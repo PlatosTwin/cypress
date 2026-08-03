@@ -18,7 +18,7 @@
 //  is therefore C10, at C10's geometry, and the accent on each row is **screen 13's own assignment
 //  for that kind of contribution** (`newGrowth` for an observation, `record` for a measurement,
 //  `water` for care) rather than a second palette invented here. A person who has read screen 13
-//  has already learnt this vocabulary; a journal that recoloured it would be teaching a second one
+//  has already learned this vocabulary; a journal that recolored it would be teaching a second one
 //  for the same facts.
 //
 //  Three decisions are mine and are argued where they are made:
@@ -238,7 +238,7 @@ enum JournalCopy {
     /// C5's two labels. `Your journal` rather than `Journal` because the tab is already called
     /// Journal and a segment repeating its parent's name says nothing; the possessive is also the
     /// distinction that matters between the two halves — one is your record, the other is the
-    /// neighbourhood's.
+    /// neighborhood's.
     static let journalSegment = "Yours"
     static let almanacSegment = "Neighborhood"
 
@@ -333,7 +333,7 @@ enum JournalCopy {
 
     /// Screen 13's accent for each kind of contribution.
     ///
-    /// Three of the four are 13's own assignments, so the same contribution is the same colour on
+    /// Three of the four are 13's own assignments, so the same contribution is the same color on
     /// both screens. The fourth — a visit — takes `elder`, the family's plain green: it is the
     /// plainest of the four acts, and `bloom` is spoken for by "First bloom of the year" on screen
     /// 12, where it means a specific seasonal event rather than a person having been somewhere.
@@ -372,7 +372,7 @@ enum JournalCopy {
     /// something that happened, and putting the act at the front is what makes the column scan as a
     /// stream of acts rather than as a list of trees with details under them.
     ///
-    /// The old row put the verb in the *subtitle*, in grey, at 12.5 pt, after which came a date and
+    /// The old row put the verb in the *subtitle*, in gray, at 12.5 pt, after which came a date and
     /// then the note. Nothing about that ordering said the verb was the subject.
     ///
     /// The tree's name is still here, because a journal entry with no tree in it is not a journal

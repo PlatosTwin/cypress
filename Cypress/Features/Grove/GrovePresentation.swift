@@ -9,7 +9,7 @@
 //  this screen must NOT say:
 //
 //  - **D1 / ARCHITECTURE §5.1 — nothing counts a person's actions.** The ring's numerator is how
-//    many *species* the contributor can recognise, not how many visits, photographs or care events
+//    many *species* the contributor can recognize, not how many visits, photographs or care events
 //    they logged; the tiles carry a species name and no history; `KnownSpecies` has no count on it
 //    at all. The screen's own footnote — "Quiet collecting. There are no streaks and no
 //    leaderboards." — is not decoration, it is the specification of this file.
@@ -112,7 +112,7 @@ struct GrovePresentation: Equatable {
     /// One cell of the C29 grid.
     enum Tile: Equatable, Identifiable {
         case known(id: UUID, label: String, art: CypressGradient.SpeciesTileArt)
-        /// SCREENS.md 08 §5 rows 7 and 9 — `#E9ECDE` with a centred `?`.
+        /// SCREENS.md 08 §5 rows 7 and 9 — `#E9ECDE` with a centered `?`.
         case locked(index: Int)
 
         var id: String {
@@ -179,17 +179,17 @@ struct GrovePresentation: Equatable {
     /// Sunset`.
     ///
     /// **What the ring measures, precisely.** Numerator: species this contributor has met that also
-    /// grow in their own neighbourhood. Denominator: every species the *city's* inventory records in
-    /// that neighbourhood. So it is not a score — nothing the contributor does can raise the
+    /// grow in their own neighborhood. Denominator: every species the *city's* inventory records in
+    /// that neighborhood. So it is not a score — nothing the contributor does can raise the
     /// denominator, and no other person appears in either half. It is "how much of what grows around
     /// you do you now know", which is knowledge rather than activity, and is the replacement loop
     /// DECISIONS §2.6 adopted in place of the leaderboard ("recognition through knowing trees over
     /// time").
     ///
-    /// Renders only when **both** reads were complete and at least one species is recognised.
+    /// Renders only when **both** reads were complete and at least one species is recognized.
     /// - Incomplete either side → nothing, because a page counted as a total is E38 again, and here
     ///   it would flatter: a short denominator makes the ring too full.
-    /// - Zero recognised → nothing, per A9 and ARCHITECTURE §5.6 ("aggregate surfaces below their
+    /// - Zero recognized → nothing, per A9 and ARCHITECTURE §5.6 ("aggregate surfaces below their
     ///   cold-start threshold do not render at all"). A ring at 0% captioned "you can recognize in
     ///   the Sunset" is an aggregate with no data in it.
     private static func progress(
@@ -223,9 +223,9 @@ struct GrovePresentation: Equatable {
     /// it is a layout decision, and a locked tile means "a species you have not met", which stays
     /// true whether two or two hundred remain.
     ///
-    /// The cap is the honesty clause. A contributor who knows all but one of their neighbourhood's
+    /// The cap is the honesty clause. A contributor who knows all but one of their neighborhood's
     /// species sees one locked tile, not two — the padding can never claim there is more left to
-    /// meet than there is. Where the neighbourhood is unknown there is nothing to cap against and
+    /// meet than there is. Where the neighborhood is unknown there is nothing to cap against and
     /// no locked tile is drawn at all. See ERRATA E49.
     private static func tiles(
         known: Series<KnownSpecies>,
@@ -291,7 +291,7 @@ struct GrovePresentation: Equatable {
 
 /// The cold-start floors this screen holds (ARCHITECTURE §5.6, A9).
 enum GroveThresholds {
-    /// A9's shape, applied here: "bloom sightings need 1". One recognised species is the least a
+    /// A9's shape, applied here: "bloom sightings need 1". One recognized species is the least a
     /// ring captioned "you can recognize in ___" can be about. A8's 3 is not the analogue — that
     /// threshold protects *other people's* identities on a public surface, and this surface has
     /// neither.
@@ -305,7 +305,7 @@ enum GroveCopy {
 
     static let screenTitle = "My Grove"
 
-    /// §6, verbatim. Centred, 12px, `text.faintAlt`.
+    /// §6, verbatim. Centered, 12px, `text.faintAlt`.
     static let footnote = "Quiet collecting. There are no streaks and no leaderboards."
 
     /// §4's bold lead-in, verbatim.
@@ -319,9 +319,9 @@ enum GroveCopy {
 
     /// §3: `you can recognize in the Outer Sunset`.
     ///
-    /// The definite article is the mock's and it is kept, which is what makes the neighbourhood name
+    /// The definite article is the mock's and it is kept, which is what makes the neighborhood name
     /// read as a place. The name itself is the seed's, verbatim — SF's own polygon set (A4) has no
-    /// "Outer Sunset"; the Sunset is one neighbourhood named `Sunset/Parkside`. See ERRATA E47.
+    /// "Outer Sunset"; the Sunset is one neighborhood named `Sunset/Parkside`. See ERRATA E47.
     ///
     /// **The fallback arm is NOT SPECIFIED** — the mock draws only the polygon case. R29's third
     /// rule decides its shape: the fallback never dresses itself as a place, so it states the
@@ -399,7 +399,7 @@ enum GroveCopy {
     /// ordinary thing to have — it is what every device shows on day one — and a failed read must
     /// not borrow that sentence, because "you have not met a species yet" is news about the reader
     /// and this is news about the app. The wording is the one every other failed read in the app
-    /// already uses, so a reader who has met one of them recognises this one.
+    /// already uses, so a reader who has met one of them recognizes this one.
     static let loadFailed = "Your grove could not be loaded."
     static let loadRetry = "Try again"
 }
@@ -448,7 +448,7 @@ enum SpeciesTileArtwork {
 /// The margins SCREENS.md gives screen 08 that `CypressSpacing` does not already name.
 ///
 /// Same arrangement as `ReportMetrics` and `TreeProfileMetrics`: screen-specific geometry is named
-/// once here so the view body carries no loose numbers, while every colour and font stays a
+/// once here so the view body carries no loose numbers, while every color and font stays a
 /// `DesignSystem` token (ARCHITECTURE §6).
 enum GroveMetrics {
     /// §5: `grid-template-columns:repeat(3,1fr)`.

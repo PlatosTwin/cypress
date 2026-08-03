@@ -184,7 +184,7 @@ struct SpeciesView: View {
     ///
     /// A species whose habit nobody sourced draws one chip here instead of two, and that missing
     /// chip is the entire phenology surface of screen 07 (D5, ERRATA E9). There is no neutral chip
-    /// and no grey one.
+    /// and no gray one.
     @ViewBuilder
     private func taxonomyChips(_ presentation: SpeciesPresentation) -> some View {
         if !presentation.taxonomyChips.isEmpty {
@@ -266,7 +266,7 @@ struct SpeciesView: View {
     /// C11's large variant in a 2-up `HStack(spacing:8)`.
     ///
     /// Each card draws only if its number exists. `Near you` has no subject without a fix, and an
-    /// empty card labelled `Near you` reads as "none near you", which is a different claim.
+    /// empty card labeled `Near you` reads as "none near you", which is a different claim.
     private func countCards(_ presentation: SpeciesPresentation) -> some View {
         HStack(spacing: CypressSpacing.Component.statGridGap) {
             if let city = presentation.cityTreeCountText {
@@ -360,7 +360,7 @@ struct SpeciesView: View {
 
 /// The two opacities SCREENS.md 07 §1 states on the hero text block.
 ///
-/// They are transparency on a token colour rather than colours of their own, which is how the spec
+/// They are transparency on a token color rather than colors of their own, which is how the spec
 /// writes them (`opacity:.85`, `opacity:.9`) and why they are not in `CypressColor`.
 enum SpeciesOpacity {
     static let heroEyebrow: Double = 0.85
@@ -379,7 +379,7 @@ enum SpeciesThumbnail {
     static func placeholder(for species: Species) -> CypressGradient.Thumbnail {
         let options: [CypressGradient.Thumbnail] = [.cypress, .ginkgo, .londonPlane, .victorianBox]
         // The UUID's own bytes, not `hashValue`: Swift's String hashing is seeded per process, so a
-        // relaunch would repaint every thumbnail a different colour.
+        // relaunch would repaint every thumbnail a different color.
         return options[Int(species.id.uuid.15) % options.count]
     }
 }

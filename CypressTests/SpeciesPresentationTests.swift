@@ -82,7 +82,7 @@ struct SpeciesPresentationTests {
 
         #expect(page.showsPhenology == false)
         #expect(page.taxonomyChips.contains { $0.kind == .habit } == false)
-        // Not a neutral chip, not a grey one, nothing: the family is the only chip left.
+        // Not a neutral chip, not a gray one, nothing: the family is the only chip left.
         #expect(page.taxonomyChips.map(\.kind) == [.family])
         #expect(page.taxonomyChips.map(\.label) == ["Sapindaceae"])
     }
@@ -143,7 +143,7 @@ struct SpeciesPresentationTests {
         #expect(page.scientificName == "Cupressus macrocarpa")
     }
 
-    @Test("an evergreen carries no fall colour to render, at the type level")
+    @Test("an evergreen carries no fall color to render, at the type level")
     func evergreenCannotCarryFallColor() throws {
         let species = try Self.curated()
         #expect(species.leafRetention?.canShowFallColor == false)
@@ -212,7 +212,7 @@ struct SpeciesPresentationTests {
 
     @Test("a seasonal calendar alone never produces a sentence")
     func seasonalCalendarIsNotASourceForCopy() throws {
-        // Ginkgo colours in November per the seeded calendar, and nobody wrote what to look for.
+        // Ginkgo colors in November per the seeded calendar, and nobody wrote what to look for.
         let ginkgo = try Species(
             scientificName: "Ginkgo biloba",
             commonName: "Maidenhair Tree",

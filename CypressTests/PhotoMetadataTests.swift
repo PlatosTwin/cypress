@@ -12,7 +12,7 @@ import UniformTypeIdentifiers
 /// `PhotoBinary.writeStrippingMetadata` drops the sidecar and that a *visit's* photograph reaches the
 /// timeline without one. Both were true and both were beside the point for the community add, which
 /// stages a capture and hands the staged path to `addTree` — no upload, no strip. The E148 leak lived
-/// in the gap between "the strip works" and "the strip is on every path", and a suite organised around
+/// in the gap between "the strip works" and "the strip is on every path", and a suite organized around
 /// the function cannot see that gap.
 ///
 /// So every assertion here is on **a file, after a path**: the fixture goes through the API a capture
@@ -40,7 +40,7 @@ struct PhotoMetadataTests {
     private static let fix = Coordinate(latitude: 37.7599, longitude: -122.4148)
 
     /// The GPS a phone standing in somebody's front garden would write. Deliberately a real,
-    /// unrounded fix to five decimal places — about a metre — because the thing this suite is about is
+    /// unrounded fix to five decimal places — about a meter — because the thing this suite is about is
     /// that D11's 25 m fuzz on the *pin* is worth nothing while this number ships in the file.
     private static let leakedLatitude = 37.759913
     private static let leakedLongitude = 122.414872
@@ -254,7 +254,7 @@ struct PhotoMetadataTests {
             properties[kCGImagePropertyGPSDictionary] as? [CFString: Any],
             "fixture has no GPS dictionary; keys: \(keys.joined(separator: ", "))"
         )
-        // Within a metre of what was written, not equal to it: EXIF stores a coordinate as three
+        // Within a meter of what was written, not equal to it: EXIF stores a coordinate as three
         // rationals, so 37.759913 comes back 37.75991333… — which is the point. A tenth of a
         // thousandth of a degree is about 11 cm, and that is what the file is carrying.
         let latitude = try #require(gps[kCGImagePropertyGPSLatitude] as? Double)

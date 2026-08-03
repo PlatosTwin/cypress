@@ -146,7 +146,7 @@ struct MapSearchTests {
     ///
     /// Which is worth stating plainly, because it is the reverse of what everyone expects: **a search
     /// can put more pins on the map than there were before it.** It is the honest outcome — the map
-    /// was previously showing a sample of a crowded neighbourhood and is now showing all of one
+    /// was previously showing a sample of a crowded neighborhood and is now showing all of one
     /// species in it — but an assertion written on the intuition would have failed, and "fixing" the
     /// implementation until it passed would have meant thinning matches for no reason.
     @Test("narrowing narrows the trees answered for, whatever it does to the pins drawn")
@@ -233,14 +233,14 @@ struct MapSearchTests {
 
     // MARK: - The empty answers, which are two different answers
 
-    /// A query the catalogue has never heard of. The map narrows to nothing — correctly — and the
+    /// A query the catalog has never heard of. The map narrows to nothing — correctly — and the
     /// difference between that and a broken map is the sentence.
     @Test("a query matching no species empties the map and says why")
     func aQueryNothingMatches() async throws {
         let store = try await Self.store()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
 
-        // An empty species set is what `MapModel` sends for a query the catalogue did not match.
+        // An empty species set is what `MapModel` sends for a query the catalog did not match.
         let viewport = MapViewport(
             bounds: Self.bounds,
             zoom: 16,
@@ -400,7 +400,7 @@ struct MapSearchTests {
             "the map drew a tree the search did not match"
         )
 
-        // Clearing the field puts the whole neighbourhood back.
+        // Clearing the field puts the whole neighborhood back.
         model.searchText = ""
         try await Self.waitUntil { model.search == .off && model.pins.count == before }
         #expect(model.search == .off)
@@ -409,7 +409,7 @@ struct MapSearchTests {
 
     /// **The owner's own query, through the model he types into.**
     ///
-    /// `SpeciesSearchTests` proves the catalogue answers "cypress" with six species; this proves the
+    /// `SpeciesSearchTests` proves the catalog answers "cypress" with six species; this proves the
     /// map's search state carries all six, which is the claim the owner's report was actually about.
     /// It ran against the previous prefix scan and would have found one.
     @MainActor
@@ -435,7 +435,7 @@ struct MapSearchTests {
         #expect(!narrowed.isTruncated, "six species is not a page")
     }
 
-    /// A word the catalogue has never heard of narrows the map to nothing, and says so.
+    /// A word the catalog has never heard of narrows the map to nothing, and says so.
     @MainActor
     @Test("typing a word no species matches empties the map and reports it")
     func typingSomethingUnknown() async throws {
@@ -502,7 +502,7 @@ struct MapSearchTests {
     }
 
     /// **E38, one level up from the pins.** The counts above are about trees; this one is about
-    /// species, and it became reachable when task #108 stopped the catalogue matching prefixes only.
+    /// species, and it became reachable when task #108 stopped the catalog matching prefixes only.
     /// "a" prefix-matches 97 of the seed's 577 species and *contains* in 555, so a single keystroke
     /// on the way to a real word now overruns the 100 the map asks for. Every sentence the status
     /// line can produce has to say so, because in every one of them the map is complete with respect
@@ -540,7 +540,7 @@ struct MapSearchTests {
         )
     }
 
-    /// The flag is set from the one signal the catalogue gives — a full page — and only from it. A
+    /// The flag is set from the one signal the catalog gives — a full page — and only from it. A
     /// search that came back under the limit is complete, and must go on saying nothing when the map
     /// has drawn all of it.
     @Test("a search under the limit is not reported as a page")

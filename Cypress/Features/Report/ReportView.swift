@@ -115,7 +115,7 @@ struct ReportView: View {
     // `AccountDeletion.Outcome.communityNotesLeftAttributed` exists — in its own words — "so that
     // the day something does write one, the hole is a number somebody can see rather than a
     // silence". Writing notes is that day. It would put publicly visible rows on people's trees
-    // that a deletion cannot honour, against DECISIONS §3.12, and closing that needs a schema
+    // that a deletion cannot honor, against DECISIONS §3.12, and closing that needs a schema
     // migration and a second pass over R3 — a decision-owner's call, not this errata's. The note
     // would also need a submit CTA, and ERRATA **E22** settled that there is none because none is
     // mocked.
@@ -262,8 +262,8 @@ struct ReportView: View {
     /// 44 pt hit area, the shape `growthLink` and the species-claim control already use — and the
     /// word `anyway` says out loud what the change of weight means.
     ///
-    /// Centred rather than leading, because it sits inside a panel whose every other element is
-    /// centred; the leading alignment those other links use is a property of the column they live in.
+    /// Centered rather than leading, because it sits inside a panel whose every other element is
+    /// centered; the leading alignment those other links use is a property of the column they live in.
     private var demotedCallButton: some View {
         Button {
             Task { await model.callCity() }

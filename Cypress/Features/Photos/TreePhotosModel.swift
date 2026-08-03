@@ -54,7 +54,7 @@ final class TreePhotosModel {
         self.api = api
     }
 
-    /// Fixture initialiser — a finished state, for previews and the screen sweep.
+    /// Fixture initializer — a finished state, for previews and the screen sweep.
     init(
         treeID: UUID,
         photos: [Photo],

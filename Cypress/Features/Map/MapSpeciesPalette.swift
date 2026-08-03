@@ -3,9 +3,9 @@
 //  Cypress — Features/Map
 //
 //  ══════════════════════════════════════════════════════════════════════════════════════════
-//  WHO GETS A COLOUR, AND WHY IT DOES NOT CHANGE WHEN YOU PAN
+//  WHO GETS A COLOR, AND WHY IT DOES NOT CHANGE WHEN YOU PAN
 //  ══════════════════════════════════════════════════════════════════════════════════════════
-//  `MapSpeciesSlot` says what the four colours are and why there are four. This says who holds them.
+//  `MapSpeciesSlot` says what the four colors are and why there are four. This says who holds them.
 //
 //  ── The rule ──────────────────────────────────────────────────────────────────────────────────
 //  Rank the species of the pins **currently drawn** by how many pins each has, keep the ones with at
@@ -21,7 +21,7 @@
 //  2. **At least two.** A species with one pin in view cannot answer "which of these are the same
 //     tree?" — there is nothing for it to be the same as. Spending one of four slots on a singleton
 //     is spending it on a question nobody asked, and at zoom 19 in the Excelsior the tail is almost
-//     all singletons, so this is the difference between four useful colours and one.
+//     all singletons, so this is the difference between four useful colors and one.
 //
 //  3. **Only trees that draw as `.cityTree`.** A slot is a fill, and four pins already own their
 //     fill for a reason that outranks species:
@@ -29,21 +29,21 @@
 //       - `.needsCare` is Signal Amber, "reserved solely for 'this tree needs something'"
 //         (SCREENS.md §1.1). A declining London plane is a *care* problem before it is a *plane*.
 //       - `.community` is the dashed unverified layer, which "never renders as part of the official
-//         city inventory until verified" (DECISIONS §3.16) — colouring it in would do exactly that.
+//         city inventory until verified" (DECISIONS §3.16) — coloring it in would do exactly that.
 //       - `.removed` and `.vacantSite` have no living tree to have a species.
 //
-//     Those pins are also excluded from the *counting*, not just from the colouring: a species whose
+//     Those pins are also excluded from the *counting*, not just from the coloring: a species whose
 //     visible pins are nine memorials and two live trees is not two-thirds of this street's canopy.
 //
 //  ── Stickiness, which is the same lesson as E130's cluster ids ────────────────────────────────
-//  A palette recomputed from scratch on every fetch permutes its colours on every pan: nudge the
+//  A palette recomputed from scratch on every fetch permutes its colors on every pan: nudge the
 //  camera one block west, the third and fourth species swap counts, and every pin on screen changes
-//  colour while the reader is looking at it. That is E130's badge-rekeying defect wearing a different
+//  color while the reader is looking at it. That is E130's badge-rekeying defect wearing a different
 //  hat — the fix there was an absolute grid, and the fix here is the same shape.
 //
 //  **A species that already holds a slot keeps it for as long as it still qualifies.** New species
-//  fill whatever slots are free, in rank order. So a pan changes only the colours that had to change,
-//  and a reader who has learnt "the purple ones are the plums" keeps that for the length of a walk.
+//  fill whatever slots are free, in rank order. So a pan changes only the colors that had to change,
+//  and a reader who has learned "the purple ones are the plums" keeps that for the length of a walk.
 //
 //  ── What it costs the renderer, which is the reason any of this is shaped this way ────────────
 //  Four slots plus the residual is **five** distinct city-tree bitmaps where there was one. The
@@ -57,7 +57,7 @@
 
 import Foundation
 
-/// Which species hold which colour slots on the map right now.
+/// Which species hold which color slots on the map right now.
 ///
 /// A value type, recomputed from the drawn pins, carried into `MapAnnotationLayer` alongside them —
 /// so a pin's *kind* is a function of the pins on screen rather than of anything stored. That is what
@@ -65,7 +65,7 @@ import Foundation
 /// existing id-and-kind comparison notices without a second mechanism.
 struct MapSpeciesPalette: Equatable {
 
-    /// One coloured species, in rank order.
+    /// One colored species, in rank order.
     struct Entry: Equatable, Identifiable {
         let slot: MapSpeciesSlot
         let speciesID: UUID

@@ -25,13 +25,13 @@
 //
 //  Four decisions are mine and each is argued where it is made:
 //
-//  1. **The pin is the centre of the map, and the map moves under it.** See `VisitPinAdjustView`.
+//  1. **The pin is the center of the map, and the map moves under it.** See `VisitPinAdjustView`.
 //  2. **A pin may not go more than `radiusM` from the fix.** See `radiusM`.
 //  3. **The bound is stated continuously, not only when it is hit.** See `VisitPinAdjustPresentation`.
 //  4. **The keyboard-and-VoiceOver path is four nudge buttons, and a nudge that would leave the
 //     circle is refused out loud rather than clamped.** See `nudge(_:from:towards:)`.
 //
-//  No SwiftUI in this file, so every sentence the screen says and every metre it measures is testable
+//  No SwiftUI in this file, so every sentence the screen says and every meter it measures is testable
 //  without a renderer (`CypressTests/PinAdjustTests.swift`).
 //
 
@@ -58,7 +58,7 @@ enum VisitPinAdjust {
     /// premise: the tree is in front of you and the pin is not.
     ///
     /// - The two errors it must absorb are the ones the owner named, and they compose. A street-canyon
-    ///   fix is off by up to about 40 m; a tree photographed from the far kerb is another 21 m away,
+    ///   fix is off by up to about 40 m; a tree photographed from the far curb is another 21 m away,
     ///   which is San Francisco's standard 68'9" right-of-way, building face to building face. 61 m
     ///   of honest displacement, and 75 leaves a little over rather than exactly enough.
     /// - It is also about half a block face, so the third case works: standing mid-block and
@@ -75,26 +75,26 @@ enum VisitPinAdjust {
     /// what the row-of-trees case needed.
     static let radiusM: Double = 75
 
-    /// Half a metre of slack on the bound.
+    /// Half a meter of slack on the bound.
     ///
-    /// The screen states the pin's distance to the whole metre, so a bound that refused at 75.0004 m
+    /// The screen states the pin's distance to the whole meter, so a bound that refused at 75.0004 m
     /// would be refusing a spot the screen is calling `75 m` — which is a bug report about a limit
-    /// that lies. Fifteen 5 m nudges land within a millimetre of 75 m and must be accepted; nothing a
-    /// finger can do lands in the half-metre band this opens up and is meaningfully different from the
+    /// that lies. Fifteen 5 m nudges land within a millimeter of 75 m and must be accepted; nothing a
+    /// finger can do lands in the half-meter band this opens up and is meaningfully different from the
     /// limit itself.
     static let boundToleranceM: Double = 0.5
 
     /// One press of a nudge control: 5 m.
     ///
     /// The resolution the task actually has. D6 puts street trees 6–10 m apart, so a step of 5 m is
-    /// the coarsest one that can still separate a tree from its neighbour, and the finest one that
+    /// the coarsest one that can still separate a tree from its neighbor, and the finest one that
     /// reaches the 75 m limit in a countable number of presses (fifteen).
     static let nudgeStepM: Double = 5
 
     /// Below this, a pin is the fix.
     ///
     /// A reader who opens the map, looks, and leaves the pin where it was has not placed anything, and
-    /// recording that as a reader-placed coordinate would overstate what they did. One metre is under
+    /// recording that as a reader-placed coordinate would overstate what they did. One meter is under
     /// the width of the pin's own hit area at any zoom this screen opens at, so it is not a distance
     /// anybody can aim at on purpose.
     static let fixToleranceM: Double = 1
@@ -109,7 +109,7 @@ enum VisitPinAdjust {
     enum Direction: String, CaseIterable {
         case north, east, south, west
 
-        /// Metres north and east. South and west are the same step with the sign flipped rather than
+        /// Meters north and east. South and west are the same step with the sign flipped rather than
         /// separate arithmetic, so the four cannot come to disagree about the size of a step.
         var step: (northM: Double, eastM: Double) {
             switch self {
@@ -121,14 +121,14 @@ enum VisitPinAdjust {
         }
     }
 
-    /// Metres in one degree of latitude, **on the sphere `Coordinate.distance` measures with**.
+    /// Meters in one degree of latitude, **on the sphere `Coordinate.distance` measures with**.
     ///
     /// `π · 6,371,008.8 / 180`, where the radius is the mean Earth radius `Coordinate.distance` uses
     /// (`Core/Models/Geometry.swift`).
     ///
     /// Deliberately *not* the 111,320 that `BoundingBox(around:radiusM:)` and
     /// `snappedToPublicPhotoGrid` use. Those two are pre-filters and grids, where being a tenth of a
-    /// percent generous costs nothing; this one has to agree with the ruler, because the same metre
+    /// percent generous costs nothing; this one has to agree with the ruler, because the same meter
     /// appears on both sides of one comparison — the step that moves the pin and the distance that
     /// decides whether the pin is still inside the circle. With 111,320 a 5 m nudge measures 4.994 m,
     /// fifteen of them land 84 mm short of the limit, and the screen ends up printing `75 m` beside a
@@ -136,10 +136,10 @@ enum VisitPinAdjust {
     /// enough to matter to an assertion, which is how it was found.
     static let metersPerDegreeLatitude: Double = .pi * 6_371_008.8 / 180
 
-    /// A coordinate displaced by a number of metres north and east.
+    /// A coordinate displaced by a number of meters north and east.
     ///
     /// The flat approximation. Over the 75 m this screen works in the error against a proper geodesic
-    /// is under a millimetre, six orders of magnitude below the accuracy of the fix it is measured
+    /// is under a millimeter, six orders of magnitude below the accuracy of the fix it is measured
     /// from — and the pure-north and pure-east cases a nudge produces are exact.
     static func offset(_ origin: Coordinate, northM: Double, eastM: Double) -> Coordinate {
         // cos() collapses toward the poles; the floor keeps the step finite there, exactly as
@@ -168,7 +168,7 @@ enum VisitPinAdjust {
         return isWithinBound(moved, of: anchor) ? moved : nil
     }
 
-    /// The centre of a viewport, which is where the pin is.
+    /// The center of a viewport, which is where the pin is.
     ///
     /// The conversion lives here rather than on `BoundingBox` because this screen is its only caller,
     /// for the reason `PinSetPresentation` gives for keeping its own inverse local: adding it to a
@@ -189,7 +189,7 @@ enum VisitPinAdjust {
 /// there is no state here that can drift out of step with what is drawn.
 struct VisitPinAdjustPresentation: Equatable {
 
-    /// Metres from the fix to the pin.
+    /// Meters from the fix to the pin.
     let distanceM: Double
 
     /// The pin has not been moved anywhere the record would notice.
@@ -274,7 +274,7 @@ enum VisitPinAdjustCopy {
     /// `Right where you are standing.` / `23 m north-east of where you are standing.`
     ///
     /// The compass point is `VisitBearing`'s, which is screen 02's own bearing arithmetic, spelled
-    /// out. Metres are whole numbers for `VisitBearing.label`'s reason: a decimal on a number whose
+    /// out. Meters are whole numbers for `VisitBearing.label`'s reason: a decimal on a number whose
     /// error bar is the GPS accuracy chip at the top of this screen would be false precision.
     static func placement(distanceM: Double, from anchor: Coordinate, to pin: Coordinate) -> String {
         guard distanceM >= VisitPinAdjust.fixToleranceM else { return atFix }

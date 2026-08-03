@@ -13,7 +13,7 @@ public struct Coordinate: Hashable, Codable, Sendable {
         self.longitude = longitude
     }
 
-    /// Great-circle distance in metres. Used for the "what tree is this?" shortlist ordering and
+    /// Great-circle distance in meters. Used for the "what tree is this?" shortlist ordering and
     /// the 10 m add-a-tree proximity dedupe (BUILD-PLAN §6).
     public func distance(to other: Coordinate) -> Double {
         let earthRadiusM = 6_371_008.8

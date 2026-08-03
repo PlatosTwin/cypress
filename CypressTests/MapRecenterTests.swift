@@ -4,26 +4,26 @@ import Testing
 
 /// **The control that must never be silent.**
 ///
-/// Screen 01's recentre button is the one control on the map whose whole reason for existing is that
+/// Screen 01's recenter button is the one control on the map whose whole reason for existing is that
 /// every press produces something the reader can see — the owner's standing complaint all week has
-/// been controls that do nothing when tapped. `MapRecentre.press(availability:camera:)` is where that
+/// been controls that do nothing when tapped. `MapRecenter.press(availability:camera:)` is where that
 /// promise is kept or broken, so this suite asserts it exhaustively: there is a case here for every
 /// case of `MapLocationProvider.Availability`, and the enum being total is checked rather than
 /// assumed.
 ///
-/// The zoom rule is the other half. First press centres and keeps the reader's scale; a press that is
-/// already centred goes to the screen's own opening scale; a camera already inside that scale is not
-/// dragged back out by a control that says it zooms in. See `MapRecentre`'s header for the argument.
+/// The zoom rule is the other half. First press centers and keeps the reader's scale; a press that is
+/// already centered goes to the screen's own opening scale; a camera already inside that scale is not
+/// dragged back out by a control that says it zooms in. See `MapRecenter`'s header for the argument.
 @MainActor
-@Suite("Map recentre control")
+@Suite("Map recenter control")
 struct MapRecenterTests {
 
     /// Somewhere in the Mission, a coordinate this test suite does not otherwise care about.
     private static let user = Coordinate(latitude: 37.7601, longitude: -122.4270)
 
-    /// A camera `metres` across, centred `offsetDegrees` of latitude away from the user.
+    /// A camera `meters` across, centered `offsetDegrees` of latitude away from the user.
     ///
-    /// The span is built the way `MapLayout.region(around:metres:)` builds it — metres divided by the
+    /// The span is built the way `MapLayout.region(around:meters:)` builds it — meters divided by the
     /// degree — so the numbers here mean the same thing they mean on screen.
     private static func camera(
         meters: Double,
@@ -94,9 +94,9 @@ struct MapRecenterTests {
 
     // MARK: - The zoom rule
 
-    @Test("panned away: the press centres and keeps the reader's scale")
+    @Test("panned away: the press centers and keeps the reader's scale")
     func offCenterKeepsZoom() {
-        // 600 m across, and the camera is a third of that off centre — plainly not on the user.
+        // 600 m across, and the camera is a third of that off center — plainly not on the user.
         let press = MapRecenter.press(
             availability: .located(Self.user, accuracyM: 8),
             camera: Self.camera(meters: 600, offsetLatitude: 0.0018)
@@ -104,9 +104,9 @@ struct MapRecenterTests {
         #expect(press == .center(Self.user))
     }
 
-    /// The second step. Already on the dot, still looking at half a kilometre: the only question left
+    /// The second step. Already on the dot, still looking at half a kilometer: the only question left
     /// is "closer".
-    @Test("already centred and zoomed out: the press goes to the opening scale")
+    @Test("already centered and zoomed out: the press goes to the opening scale")
     func centeredZoomsIn() {
         let press = MapRecenter.press(
             availability: .located(Self.user, accuracyM: 8),
@@ -117,7 +117,7 @@ struct MapRecenterTests {
 
     /// The guard that keeps "zoom in" from being a zoom *out*. A reader pinched to 60 m is closer
     /// than the opening 120, and driving them to 120 would pull the camera back.
-    @Test("already centred and closer than the opening scale: the press does not pull back out")
+    @Test("already centered and closer than the opening scale: the press does not pull back out")
     func centeredAndCloseDoesNotZoomOut() {
         let press = MapRecenter.press(
             availability: .located(Self.user, accuracyM: 8),
@@ -142,22 +142,22 @@ struct MapRecenterTests {
         #expect(above == .centerAndZoomIn(Self.user))
     }
 
-    // MARK: - What counts as centred
+    // MARK: - What counts as centered
 
-    /// A fraction of the span, not a distance — the same offset in metres is dead centre on a
+    /// A fraction of the span, not a distance — the same offset in meters is dead center on a
     /// city-wide camera and off screen at 120 m, and the button is about the picture.
-    @Test("centred is a fraction of the visible span, not a distance on the ground")
+    @Test("centered is a fraction of the visible span, not a distance on the ground")
     func centeredScalesWithTheSpan() {
-        // 20 m north of the user. At 120 m across that is a sixth of the screen — not centred.
+        // 20 m north of the user. At 120 m across that is a sixth of the screen — not centered.
         let offset = 20 / MapRecenter.metersPerDegreeLatitude
         #expect(Self.camera(meters: 120, offsetLatitude: offset).isCentered(on: Self.user) == false)
         // The same 20 m on a 2 km camera is 1 % of the span.
         #expect(Self.camera(meters: 2_000, offsetLatitude: offset).isCentered(on: Self.user))
     }
 
-    /// Before MapKit settles once there is no span, and a camera with no span is not centred on
+    /// Before MapKit settles once there is no span, and a camera with no span is not centered on
     /// anything — otherwise the very first press would be read as the second one and would zoom.
-    @Test("a camera with no span is not centred")
+    @Test("a camera with no span is not centered")
     func zeroSpanIsNotCentered() {
         let camera = MapRecenter.Camera(center: Self.user, latitudeSpan: 0, longitudeSpan: 0)
         #expect(camera.isCentered(on: Self.user) == false)
@@ -195,24 +195,24 @@ struct MapRecenterTests {
 
     // MARK: - What the button says it is doing (#100)
 
-    /// **The two states that used to borrow the word "centred" from a state they are not in.**
+    /// **The two states that used to borrow the word "centered" from a state they are not in.**
     ///
     /// `notAsked` and `waitingForFix` were both drawn — and both *spoken* — as `away`, so VoiceOver
-    /// said `Not centred` over a map that had no reader to be centred on. A sighted reader gets that
+    /// said `Not centered` over a map that had no reader to be centered on. A sighted reader gets that
     /// word as a caption on a picture; a VoiceOver reader gets it as the entire report, and in these
     /// two states it describes a relationship that does not exist.
-    @Test("not-asked and still-looking are not reported as an off-centre map")
+    @Test("not-asked and still-looking are not reported as an off-center map")
     func theTwoUnknownStatesAreNotJustOffCenter() {
         let camera = Self.camera(meters: 400)
         #expect(MapRecenter.engagement(availability: .notAsked, camera: camera) == .askable)
         #expect(MapRecenter.engagement(availability: .waitingForFix, camera: camera) == .searching)
         #expect(
             MapRecenterCopy.value(.askable) != MapRecenterCopy.value(.away),
-            "an unanswered permission ask is still spoken as an off-centre map"
+            "an unanswered permission ask is still spoken as an off-center map"
         )
         #expect(
             MapRecenterCopy.value(.searching) != MapRecenterCopy.value(.away),
-            "a phone that has not answered yet is still spoken as an off-centre map"
+            "a phone that has not answered yet is still spoken as an off-center map"
         )
     }
 
@@ -226,7 +226,7 @@ struct MapRecenterTests {
         #expect(spoken.allSatisfy { !$0.isEmpty })
         #expect(
             Set(spoken).count == all.count,
-            "two states of the recentre control tell a VoiceOver reader the same thing: \(spoken)"
+            "two states of the recenter control tell a VoiceOver reader the same thing: \(spoken)"
         )
         // `away` is the one with nothing to add — the label and the value already say it all.
         for engagement in all where engagement != .away {
@@ -259,14 +259,14 @@ struct MapRecenterTests {
 
     // MARK: - The words
 
-    /// `AccessibilityTreeTests.testNoUnlabelledButtonsOnLaunch` fails on an unlabelled control on
+    /// `AccessibilityTreeTests.testNoUnlabeledButtonsOnLaunch` fails on an unlabeled control on
     /// screen 01, and it should. This is the cheaper half of the same check: the label exists, says
     /// what the control does rather than what it looks like, and every state has a value to go with
     /// it.
-    @Test("the control is labelled, and every state has something to say")
+    @Test("the control is labeled, and every state has something to say")
     func everyStateSpeaks() {
         #expect(!MapRecenterCopy.label.isEmpty)
-        #expect(MapRecenterCopy.label.lowercased().contains("centre"))
+        #expect(MapRecenterCopy.label.lowercased().contains("center"))
         for engagement in [MapRecenter.Engagement.centered, .away, .askable, .searching, .unavailable] {
             #expect(!MapRecenterCopy.value(engagement).isEmpty, "\(engagement) has no spoken state")
         }
@@ -294,7 +294,7 @@ struct MapRecenterTests {
     }
 
     /// The waiting notice promises the map will move when a fix arrives, and `MapHomeView` keeps that
-    /// promise with `recentreWhenFixArrives`. If the sentence ever stops making the promise, the
+    /// promise with `recenterWhenFixArrives`. If the sentence ever stops making the promise, the
     /// held press becomes a surprise instead of a kept word.
     @Test("the waiting notice promises the move the view actually makes")
     func waitingPromise() {
@@ -303,15 +303,15 @@ struct MapRecenterTests {
     }
 }
 
-/// **The narrowing must survive a recentre (ERRATA E134).**
+/// **The narrowing must survive a recenter (ERRATA E134).**
 ///
 /// The search bar narrows the map to a species by putting the species ids on `MapViewport`. Moving
-/// the camera builds a new viewport — that is the whole of what a recentre does — so if the rebuild
+/// the camera builds a new viewport — that is the whole of what a recenter does — so if the rebuild
 /// dropped the narrowing, pressing the control would silently widen the map back to every tree while
 /// leaving the query in the field. The reader would be looking at a map that no longer matched what
 /// they typed and nothing on screen would say so.
 @MainActor
-@Suite("Recentring through an active search")
+@Suite("Recentering through an active search")
 struct MapRecenterSearchTests {
 
     private static func viewport(_ model: MapModel) throws -> MapViewport {
@@ -330,7 +330,7 @@ struct MapRecenterSearchTests {
         }
     }
 
-    /// Drives the model exactly as a recentre does: the camera moves, `cameraDidChange` fires with a
+    /// Drives the model exactly as a recenter does: the camera moves, `cameraDidChange` fires with a
     /// new box, and the viewport is rebuilt.
     @Test("moving the camera keeps the species the search narrowed to")
     func cameraMoveKeepsTheNarrowing() async throws {
@@ -349,17 +349,17 @@ struct MapRecenterSearchTests {
         let narrowed = try #require(Self.viewport(model).speciesIDs)
         #expect(narrowed == [RecordingSearchAPI.londonPlane])
 
-        // Now recentre: the camera lands somewhere else, at the same zoom.
+        // Now recenter: the camera lands somewhere else, at the same zoom.
         model.cameraDidChange(bounds: Self.elsewhere, zoom: 18)
         let after = try Self.viewport(model)
-        #expect(after.speciesIDs == narrowed, "the recentre widened the map back to every species")
+        #expect(after.speciesIDs == narrowed, "the recenter widened the map back to every species")
         #expect(after.bounds.contains(Self.elsewhere), "the camera did not actually move")
         #expect(model.search.isActive, "the search stopped being active")
     }
 
-    /// And the zoom step, which changes the zoom as well as the centre — the path most likely to
+    /// And the zoom step, which changes the zoom as well as the center — the path most likely to
     /// rebuild the viewport from scratch and lose something.
-    @Test("zooming in on the recentre's second step keeps the narrowing too")
+    @Test("zooming in on the recenter's second step keeps the narrowing too")
     func zoomStepKeepsTheNarrowing() async throws {
         let api = RecordingSearchAPI()
         let model = MapModel(api: api)

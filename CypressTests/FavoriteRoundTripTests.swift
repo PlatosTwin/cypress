@@ -40,7 +40,7 @@ struct FavoriteRoundTripTests {
     private static let deviceID = UUID(uuidString: "D1390000-0000-4000-8000-000000000139")!
 
     /// The seed, opened once per test. `InventoryContractTests.seedURL` is the project's one
-    /// resolver for it and honours `CYPRESS_SEED_PATH`.
+    /// resolver for it and honors `CYPRESS_SEED_PATH`.
     private static func openSeeded() async throws -> (LocalAPI, OutboxQueue, UUID) {
         let url = try #require(InventoryContractTests.seedURL, "no seed database; set CYPRESS_SEED_PATH")
         let store = try await CypressStore.inMemory(seedURL: url)
@@ -53,7 +53,7 @@ struct FavoriteRoundTripTests {
         )
         let tree = try #require(
             candidates.first(where: { $0.tree.status.acceptsNewContributions })?.tree.id,
-            "no standing seed tree near the map's opening centre"
+            "no standing seed tree near the map's opening center"
         )
         return (api, outbox, tree)
     }

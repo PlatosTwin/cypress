@@ -12,7 +12,7 @@
 //  separate series and are never connected... one connecting line across estimated + taped values
 //  manufactures a trend that is not there." DECISIONS outranks SCREENS.md (ARCHITECTURE §1
 //  precedence), so `LineChart` strokes **one polyline per `MeasurementSeries`** and never joins a
-//  measured point to an estimated one. Dot styling, stroke width, radius and colour are unchanged.
+//  measured point to an estimated one. Dot styling, stroke width, radius and color are unchanged.
 //
 //  Every point is a `Quantity`, so a series cannot exist without its method.
 //
@@ -136,7 +136,7 @@ struct LineChart: View {
             // and the listener joins them or does not — the same choice the two polylines leave a
             // sighted reader.
             //
-            // The per-point dots are deliberately not elements. They were labelled before this
+            // The per-point dots are deliberately not elements. They were labeled before this
             // pass, on bare `Circle()` shapes with no `.accessibilityElement`, so they were silent
             // anyway; and screen 11 lists every reading underneath in its measurement log, where
             // each row is one stop carrying the value and its badge. Twenty dots would be the
@@ -283,7 +283,7 @@ struct BarChart: View {
     /// Twelve heights in the source's 0…34 scale, January first.
     let heights: [CGFloat]
     /// What the twelve bars say out loud. **Required**, and the only required label in the
-    /// catalogue besides C25's.
+    /// catalog besides C25's.
     ///
     /// The component cannot write this one for itself and must not try. `heights` are drawing
     /// units in the mock's 0…34 viewBox — the bars have already been scaled against whatever
@@ -345,7 +345,7 @@ struct BarChart: View {
     }
 }
 
-/// 13's shared month axis — mono 9pt letters centred at `x = 19 + 26*i`.
+/// 13's shared month axis — mono 9pt letters centered at `x = 19 + 26*i`.
 struct ChartMonthAxis: View {
     var body: some View {
         HStack(spacing: 0) {
@@ -376,7 +376,7 @@ struct ChartSeriesLegend: View {
                     width: CypressSpacing.Component.chipLegendDot,
                     height: CypressSpacing.Component.chipLegendDot
                 )
-                // The swatch is the colour key for the row directly beneath it, and the row names
+                // The swatch is the color key for the row directly beneath it, and the row names
                 // itself in the same breath. Spoken, it is a duplicate of the adjacent text.
                 .accessibilityHidden(true)
             Text(name)

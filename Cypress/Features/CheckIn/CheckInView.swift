@@ -28,7 +28,7 @@ struct CheckInView: View {
         api: any CypressAPI,
         outbox: OutboxQueue,
         attribution: Attribution,
-        // A closure, not a number: `@State` runs its initialiser once, so a value handed in here is
+        // A closure, not a number: `@State` runs its initializer once, so a value handed in here is
         // frozen at the screen's first frame (ERRATA E158).
         gpsAccuracyM: @escaping @MainActor () -> Double? = { nil },
         species: Species? = nil,
@@ -88,7 +88,7 @@ struct CheckInView: View {
         .toolbar(.hidden, for: .navigationBar)
         .task { await model.loadSpecies() }
         // The confirmation step `ObservationStatus.opensReviewFlag` was written for and never had
-        // (ERRATA E170). Cancelling leaves the card exactly as it was: the model holds the proposed
+        // (ERRATA E170). Canceling leaves the card exactly as it was: the model holds the proposed
         // status aside and never touches the draft until this returns.
         .confirmationDialog(
             CheckInCopy.reviewConfirmTitle(for: model.pendingStatus ?? .alive),
@@ -208,7 +208,7 @@ struct CheckInView: View {
         .accessibilityAddTraits(row.isSelected ? [.isButton, .isSelected] : .isButton)
     }
 
-    /// The 44×30 reference swatch. Colour is secondary coding only (D3) — the label and the anchor
+    /// The 44×30 reference swatch. Color is secondary coding only (D3) — the label and the anchor
     /// sentence beside it carry the meaning, and both are always visible.
     ///
     /// The five anchor *photographs* BUILD-PLAN §8 makes an M2 entry gate do not exist yet; this is

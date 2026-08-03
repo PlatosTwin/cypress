@@ -40,7 +40,7 @@ public struct TreeMeasurement: FieldCaptured {
     public var updatedAt: Date
     public var deletedAt: Date?
 
-    /// Default DBH measurement height in metres, ≈4.5 ft (BUILD-PLAN §4, C-M3).
+    /// Default DBH measurement height in meters, ≈4.5 ft (BUILD-PLAN §4, C-M3).
     public static let defaultDBHMeasurementHeightM: Double = 1.4
 
     private init(

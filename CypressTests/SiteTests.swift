@@ -229,7 +229,7 @@ struct SiteTests {
     /// A site is neither drawn nor announced as a memorial (RULINGS R7).
     ///
     /// E107 fixed the label and left the pin: C19 had no pin for a site, so 12,518 basins drew as the
-    /// memorial's grey dot while saying they were not one. R7 made the design decision E107 had no
+    /// memorial's gray dot while saying they were not one. R7 made the design decision E107 had no
     /// standing to make, so both halves now agree — which is what the `kind` expectations below pin,
     /// and what this test could not say before.
     @Test("a site pin is neither drawn nor announced as a memorial")

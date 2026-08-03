@@ -132,13 +132,13 @@ final class MapFilterAccessibilityTests: XCTestCase {
         let element = app.buttons[label]
         XCTAssertTrue(
             element.waitForExistence(timeout: 25),
-            "screen 01's filter row has no chip labelled “\(label)”"
+            "screen 01's filter row has no chip labeled “\(label)”"
         )
         return element
     }
 
     /// The row's named container. It rides on the `ScrollView` since the row became one (#166),
-    /// and which element type XCUITest files a labelled SwiftUI scroller under is its business,
+    /// and which element type XCUITest files a labeled SwiftUI scroller under is its business,
     /// not a contract worth pinning — both spellings are accepted.
     private func rowContainer(_ app: XCUIApplication) -> XCUIElement {
         let other = app.otherElements[Self.rowLabel]
@@ -197,13 +197,13 @@ final class MapFilterAccessibilityTests: XCTestCase {
         shutDrawer(app)
     }
 
-    /// Every control labelled `Clear filters`. Since #165 there is at most one — the row's chip —
+    /// Every control labeled `Clear filters`. Since #165 there is at most one — the row's chip —
     /// and a second is the deleted notice's button resurrected.
     private func clearControls(_ app: XCUIApplication) -> [XCUIElement] {
         app.buttons.matching(NSPredicate(format: "label == %@", Self.clear)).allElementsBoundByIndex
     }
 
-    // MARK: - 1 · Every chip is in the tree, labelled, live, and says its state
+    // MARK: - 1 · Every chip is in the tree, labeled, live, and says its state
 
     /// The row at rest: every chip — the toggle, **both** condition chips (#165: never disabled,
     /// never a box), the expandable control — is an enabled button announcing its state, neither
@@ -329,7 +329,7 @@ final class MapFilterAccessibilityTests: XCTestCase {
         // the notice used to add a second one, and a second one is the notice back.
         XCTAssertTrue(
             wait { self.clearControls(app).count == 1 },
-            "a filter is on and \(clearControls(app).count) controls are labelled “\(Self.clear)”; "
+            "a filter is on and \(clearControls(app).count) controls are labeled “\(Self.clear)”; "
                 + "#165 leaves exactly one — the chip in the row"
         )
 
@@ -465,7 +465,7 @@ final class MapFilterAccessibilityTests: XCTestCase {
 
     // MARK: - 3 · The way out appears with the thing it undoes
 
-    /// `Clear filters` appears only when something is on, is a real labelled control, and works —
+    /// `Clear filters` appears only when something is on, is a real labeled control, and works —
     /// **including on a filter that is set behind the shut control**, which is R23.1 §3's whole
     /// argument for there being one of these rather than two. Since #165 it is also the *only*
     /// way out the screen draws, which raises the price of it not working.
@@ -566,16 +566,16 @@ final class MapFilterAccessibilityTests: XCTestCase {
         _ = requireField(app)
 
         // Read off the glass, never assumed: `MapSpeciesLegendCopy.chipLabel` is
-        // "<name>, <colour> pins marked <mark>". The legend is R23's species filter, and it is the
+        // "<name>, <color> pins marked <mark>". The legend is R23's species filter, and it is the
         // one narrowing this file can drive that leaves the map holding something to count — the
         // state the removed line used to appear in.
         let legend = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", " pins marked "))
         _ = wait(timeout: 25) { legend.count > 0 }
         guard legend.count > 0 else {
             let message =
-                "screen 01 has coloured no species in this viewport, so its legend — which R23 made "
+                "screen 01 has colored no species in this viewport, so its legend — which R23 made "
                 + "the species filter — has no entry to tap, and there is no filter available that "
-                + "leaves the map holding anything to count. The map colours a species only where it "
+                + "leaves the map holding anything to count. The map colors a species only where it "
                 + "drew at least two of its pins. Put the map over some streets: xcrun simctl "
                 + "location EA0AD796-3052-4EE5-A7A8-A1DE807A3653 set 37.78485,-122.4215 (and note "
                 + "that `simctl location clear` does not unfix a device — revoke the app's location "
@@ -598,7 +598,7 @@ final class MapFilterAccessibilityTests: XCTestCase {
         }
 
         // Two at once, because R41 is about *any* filter state and a conjunction is the state most
-        // likely to grow a summarising sentence.
+        // likely to grow a summarizing sentence.
         assertNoCompanionText(
             app, narrowing: "the species “\(species)” and “\(Self.conditionChips[1])”"
         ) {
@@ -860,7 +860,7 @@ final class MapFilterAccessibilityTests: XCTestCase {
         }
         XCTAssertTrue(
             wait { self.clearControls(app).count == 1 },
-            "at AX5 a filter is on and \(clearControls(app).count) controls are labelled "
+            "at AX5 a filter is on and \(clearControls(app).count) controls are labeled "
                 + "“\(Self.clear)”; #165 leaves exactly one — the chip in the row"
         )
     }
@@ -926,7 +926,7 @@ final class MapFilterAccessibilityTests: XCTestCase {
         // **The row's own order** — the owner's three, the control, the way out (#145). Since
         // #166 made the row one line, geometry *is* the reading order: five chips on one minY,
         // minX ascending in the owner's order. Asserted from frames rather than from a
-        // container-scoped tree walk, because the labelled scroller's descendant enumeration is
+        // container-scoped tree walk, because the labeled scroller's descendant enumeration is
         // XCUITest's business and has already returned nothing here once (the flattening the
         // MapChrome comment records).
         let rowLabels = [Self.alwaysOnToggle] + Self.conditionChips + [Self.moreChip, Self.clear]
@@ -942,8 +942,8 @@ final class MapFilterAccessibilityTests: XCTestCase {
             "with the suggestion list open the filter row reads in this order: "
                 + "\(zip(rowLabels, frames).sorted { $0.1.minX < $1.1.minX }.map(\.0))"
         )
-        // **The row holds no reachable unlabelled control** (E103, structurally). The `Menu`'s
-        // unlabelled leftover element moved into the drawer with the year chip (#145), so on the
+        // **The row holds no reachable unlabeled control** (E103, structurally). The `Menu`'s
+        // unlabeled leftover element moved into the drawer with the year chip (#145), so on the
         // row's own line there should be none at all — and any that appears must stay
         // unreachable. The line is identified by its band of the screen, for the same reason the
         // order is: frames are the one channel the scroller cannot hide.
@@ -953,7 +953,7 @@ final class MapFilterAccessibilityTests: XCTestCase {
         for blank in blanks where blank.frame.intersects(band) {
             XCTAssertFalse(
                 blank.isHittable,
-                "an unlabelled control at \(blank.frame) is reachable inside the filter row"
+                "an unlabeled control at \(blank.frame) is reachable inside the filter row"
             )
         }
     }
@@ -989,7 +989,7 @@ final class MapFilterAccessibilityTests: XCTestCase {
 
     /// The query typed into C20, and the prefix a row for it must begin with.
     ///
-    /// Borrowed from `MapSuggestionUITests` and for its reasons: the *catalogue* is bundled with the
+    /// Borrowed from `MapSuggestionUITests` and for its reasons: the *catalog* is bundled with the
     /// app and is the same on every machine, so this resolves to the same suggestions wherever the
     /// map is pointed. The scientific name is deliberately not written down.
     private static let query = "cypress"

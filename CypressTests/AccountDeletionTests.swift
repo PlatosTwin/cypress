@@ -11,15 +11,15 @@ import Testing
 ///
 /// 1. **a contribution survives with its owner nulled** — every one of the four kinds, plus the two
 ///    nullable attributions (`tree_names.given_by`, `review_flags.raised_by`), and the tree keeps it;
-/// 2. **a private reminder and a favourite do not survive** — including a favourite *tombstone*,
+/// 2. **a private reminder and a favorite do not survive** — including a favorite *tombstone*,
 ///    which the v5 trigger would have refused to delete and which is exactly as unreadable as a live
 ///    row once its owner is gone;
 /// 3. **somebody else's rows are untouched** — the device's own, and a stranger account's;
 /// 4. **the two halves are one transaction** — a failure after the anonymization has already run
 ///    leaves the database exactly as it was, because a half-deleted person cannot tell and cannot
 ///    retry;
-/// 5. **the queue cannot resurrect what was deleted** — a favourite toggle queued before the
-///    deletion does not re-create the favourite when it drains afterwards, and a queued visit lands
+/// 5. **the queue cannot resurrect what was deleted** — a favorite toggle queued before the
+///    deletion does not re-create the favorite when it drains afterwards, and a queued visit lands
 ///    anonymous rather than re-attributed;
 /// 6. **the hole in the tombstone trigger is one account wide and closes behind itself.**
 @Suite("Account deletion")
@@ -173,7 +173,7 @@ struct AccountDeletionTests {
 
     // MARK: - 2. What only one person could ever see
 
-    @Test("a private reminder and a favourite do not survive their account")
+    @Test("a private reminder and a favorite do not survive their account")
     func exclusivelyOwnedRowsAreDeleted() async throws {
         let (store, api) = try await Self.signedIn()
         let tree = try await Self.makeTree(api: api)
@@ -223,7 +223,7 @@ struct AccountDeletionTests {
         #expect(try await Self.scalar(
             "SELECT COUNT(*) AS n FROM favorites WHERE device_id = '\(Self.deviceID.uuidString)' AND tree_uuid = '\(tree.id.uuidString)'",
             in: store
-        ) == 0, "the account's favourite was re-homed onto the device rather than deleted")
+        ) == 0, "the account's favorite was re-homed onto the device rather than deleted")
 
         // Everyone else's are exactly where they were.
         let deviceReminders = try await store.queue.read { connection in
@@ -239,13 +239,13 @@ struct AccountDeletionTests {
         })
     }
 
-    @Test("a favourite tombstone goes with the account too")
+    @Test("a favorite tombstone goes with the account too")
     func tombstonesAreDeleted() async throws {
         let (store, api) = try await Self.signedIn()
         let tree = try await Self.makeTree(api: api)
 
         // On, then off: one row whose `deleted_at` is set. E89 keeps this row rather than deleting
-        // it so that sync can carry the un-favourite event — and there is no such sync for an
+        // it so that sync can carry the un-favorite event — and there is no such sync for an
         // account that no longer exists.
         try await store.queue.write { connection in
             let contributions = ContributionStore()
@@ -260,7 +260,7 @@ struct AccountDeletionTests {
         }
         #expect(try await Self.scalar(
             "SELECT COUNT(*) AS n FROM favorites WHERE deleted_at IS NOT NULL", in: store
-        ) == 1, "fixture: the un-favourite should have tombstoned rather than deleted")
+        ) == 1, "fixture: the un-favorite should have tombstoned rather than deleted")
 
         let outcome = try await api.deleteAccount(.leaveRecords)
         #expect(outcome.deletedFavorites == 1)
@@ -334,7 +334,7 @@ struct AccountDeletionTests {
 
     // MARK: - 4. The queue
 
-    @Test("queued reminders and favourites are discarded, queued contributions are anonymized")
+    @Test("queued reminders and favorites are discarded, queued contributions are anonymized")
     func theOutboxIsTakenWithTheAccount() async throws {
         let (store, api) = try await Self.signedIn()
         let tree = try await Self.makeTree(api: api)
@@ -380,14 +380,14 @@ struct AccountDeletionTests {
         #expect(decoded.deviceID == Self.deviceID)
         #expect(decoded.clientUUID == queuedVisit.clientUUID, "the idempotency key must not move")
 
-        // Draining now must not resurrect the favourite the deletion removed.
+        // Draining now must not resurrect the favorite the deletion removed.
         let results = try await api.sync(records.map(\.item))
         #expect(results.allSatisfy { $0.status != .failed })
         #expect(try await Self.attributed("visits", to: Self.userID, in: store) == 0)
         #expect(try await Self.scalar("SELECT COUNT(*) AS n FROM visits", in: store) == 1)
         #expect(try await Self.scalar(
             "SELECT COUNT(*) AS n FROM favorites WHERE user_id = '\(Self.userID.uuidString)'", in: store
-        ) == 0, "a queued toggle re-created the deleted account's favourite")
+        ) == 0, "a queued toggle re-created the deleted account's favorite")
         // The device's own toggle applied, exactly as it would have without a deletion.
         #expect(try await store.queue.read { connection in
             try ContributionStore().isFavorite(owner: .device(Self.deviceID), treeID: tree.id, connection: connection)
@@ -396,7 +396,7 @@ struct AccountDeletionTests {
 
     // MARK: - 5. The hole in the trigger is one account wide
 
-    @Test("with no erasure in progress a user-owned favourite still cannot be hard-deleted")
+    @Test("with no erasure in progress a user-owned favorite still cannot be hard-deleted")
     func theTriggerStillRefusesEverythingElse() async throws {
         let (store, api) = try await Self.signedIn()
         let tree = try await Self.makeTree(api: api)
@@ -409,7 +409,7 @@ struct AccountDeletionTests {
 
         // The `WHEN` clause has to be written with EXISTS rather than a comparison against the
         // sentinel's value: with no sentinel row the comparison is NULL, `NOT (0 OR NULL)` is NULL,
-        // and a NULL `WHEN` does not fire — which would leave every user-owned favourite hard
+        // and a NULL `WHEN` does not fire — which would leave every user-owned favorite hard
         // deletable on every database where nobody is being deleted.
         await #expect(throws: (any Error).self) {
             try await store.queue.write { connection in
@@ -497,9 +497,9 @@ struct AccountDeletionTests {
 
     // MARK: - 7. The copy, which R3 makes load-bearing
 
-    @Test("each door states its own behaviour and the shared clause escapes neither")
+    @Test("each door states its own behavior and the shared clause escapes neither")
     func theCopyStatesBothDoors() {
-        // R3's rule was one sentence because there was one behaviour. There are now two, and the
+        // R3's rule was one sentence because there was one behavior. There are now two, and the
         // half that is true either way is hoisted out of both rather than printed inside each — see
         // `AccountDeletionCopy` for the argument. What R3 actually defends against is a person
         // reading the reassuring half and missing the rest, and that is what these pin.

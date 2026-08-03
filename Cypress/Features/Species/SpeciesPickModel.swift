@@ -36,8 +36,8 @@
 //  `SpeciesQueries.search` matches a word **anywhere** in either name and ranks head matches above
 //  interior ones (task #108), so "oak" does find "Coast Live Oak". What it still is not is the
 //  trigram matching BUILD-PLAN §6 specifies, which needs an FTS5 index the seed does not carry: a
-//  typo misses, and so does a name the catalogue spells another way. So `.noMatch` says the
-//  catalogue has nothing *matching* what was typed rather than claiming no such tree exists. A
+//  typo misses, and so does a name the catalog spells another way. So `.noMatch` says the
+//  catalog has nothing *matching* what was typed rather than claiming no such tree exists. A
 //  picker that said "no such species" over a spelling miss would be telling the contributor their
 //  tree is not real, which is the opposite of this screen's job.
 //
@@ -47,16 +47,16 @@
 import Foundation
 import Observation
 
-/// What the catalogue said about what has been typed.
+/// What the catalog said about what has been typed.
 enum SpeciesPickState: Equatable {
     /// Nothing typed yet, or the field was cleared. The list is empty and that is not a failure.
     case idle
     /// A query is in flight or waiting out the debounce. Distinct from `.noMatch` on purpose: the
     /// frame between a keystroke and an answer must not read as "there is no such tree".
     case searching
-    /// At least one match, in the catalogue's own ranking.
+    /// At least one match, in the catalog's own ranking.
     case matched([Species])
-    /// The catalogue has nothing matching this. Carries the query so the sentence can quote it.
+    /// The catalog has nothing matching this. Carries the query so the sentence can quote it.
     case noMatch(query: String)
 }
 
@@ -81,7 +81,7 @@ final class SpeciesPickModel {
     /// How many rows one query may offer. See the file header for why this is not the map's 100.
     static let resultLimit = 25
 
-    /// The same debounce the map's bar uses. A 577-row species catalogue answers in 0.1 ms, so this
+    /// The same debounce the map's bar uses. A 577-row species catalog answers in 0.1 ms, so this
     /// is not about the database — it is about not redrawing a list under somebody's thumb while they
     /// are still typing the word.
     static let searchDebounce = Duration.milliseconds(180)
@@ -151,7 +151,7 @@ enum SpeciesPickCopy {
     /// match a word anywhere in either name, and this sentence had to move with it: telling somebody
     /// to "try the first word of either name" when the search no longer cares which word it is sends
     /// them to retype a query that already worked. It still stops short of "no such species" — the
-    /// match is a substring one, not a trigram one, so a typo or a name the catalogue spells
+    /// match is a substring one, not a trigram one, so a typo or a name the catalog spells
     /// differently still misses, and a picker that called that miss non-existence would be telling a
     /// contributor their tree is not real.
     static func noMatch(query: String) -> String {

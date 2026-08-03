@@ -12,7 +12,7 @@ import Testing
 ///
 /// It began as one line. `MapAnnotationLayer.Coordinator.mapView(_:regionDidChangeAnimated:)`
 /// answered a real pan by clearing the record of what the app had last asked for. Upstream,
-/// `MapHomeView.position` still held the one-shot centring on the first GPS fix — a pan writes
+/// `MapHomeView.position` still held the one-shot centering on the first GPS fix — a pan writes
 /// `region`, never `position`, and nobody had pressed anything. So the next `updateUIView` compared
 /// a position that had not changed against a record that had been emptied, read that as a fresh
 /// request, and drove the camera back to the fix. Measured on screen 01 with 161 markers, the
@@ -31,7 +31,7 @@ import Testing
 /// was never the doubtful part; it fired 44 region changes in the reproduction.
 ///
 /// The second test is the other half of the promise. A fix that simply stopped the app writing the
-/// camera would pass the first test and destroy the recentre control (#66), which is the feature this
+/// camera would pass the first test and destroy the recenter control (#66), which is the feature this
 /// screen just gained, so the ability of a press to move the camera *after* a pan is asserted too.
 @MainActor
 @Suite("The reader owns the map camera")
@@ -40,11 +40,11 @@ struct MapCameraOwnershipTests {
     /// The Mission, at screen 01's opening scale — the coordinate the defect was reproduced at.
     private static let fix = CLLocationCoordinate2D(latitude: 37.7599, longitude: -122.4148)
 
-    /// Far enough to be unmistakably a pan rather than the few metres MapKit lands away from a
+    /// Far enough to be unmistakably a pan rather than the few meters MapKit lands away from a
     /// region it was handed. About 550 m north-east, or a couple of blocks.
     private static let pannedTo = CLLocationCoordinate2D(latitude: 37.7635, longitude: -122.4105)
 
-    /// Metres between two coordinates, so an assertion can be written in a unit the reader has.
+    /// Meters between two coordinates, so an assertion can be written in a unit the reader has.
     private static func meters(
         _ a: CLLocationCoordinate2D,
         _ b: CLLocationCoordinate2D
@@ -137,7 +137,7 @@ struct MapCameraOwnershipTests {
     /// **The regression.** Pan, then let the screen update — which on the real screen it does 240
     /// times a second — and the map must still be where it was put.
     ///
-    /// Before the fix this failed with the camera back at the fix, several hundred metres away.
+    /// Before the fix this failed with the camera back at the fix, several hundred meters away.
     @Test("a pan is not undone by the update passes that follow it")
     func panSurvivesTheNextUpdatePass() {
         let screen = Screen(opening: Self.opening())
@@ -164,7 +164,7 @@ struct MapCameraOwnershipTests {
         )
         #expect(
             Self.meters(center, Self.fix) > 200,
-            "the camera returned to the GPS fix the one-shot centred on"
+            "the camera returned to the GPS fix the one-shot centered on"
         )
     }
 
@@ -201,16 +201,16 @@ struct MapCameraOwnershipTests {
 
     // MARK: - The feature this must not destroy
 
-    /// A press of the recentre control after a pan still moves the camera. This is the case the
+    /// A press of the recenter control after a pan still moves the camera. This is the case the
     /// cleared record was protecting — #66's dead second press — and it has to survive the fix, or
     /// the map has been made movable by making the button useless.
-    @Test("the recentre control still moves the camera after a pan")
+    @Test("the recenter control still moves the camera after a pan")
     func recenterStillWorksAfterAPan() {
         let screen = Screen(opening: Self.opening())
         screen.readerPans(to: Self.pannedTo)
         for _ in 0..<10 { screen.updatePass() }
 
-        // What `MapHomeView.flyTo(_:metres:)` writes for a `.centre` press: the fix, at whatever span
+        // What `MapHomeView.flyTo(_:meters:)` writes for a `.center` press: the fix, at whatever span
         // the reader has since zoomed to.
         screen.position = .move(
             to: MKCoordinateRegion(center: Self.fix, span: screen.mapView.region.span)
@@ -219,13 +219,13 @@ struct MapCameraOwnershipTests {
 
         #expect(
             Self.meters(screen.mapView.region.center, Self.fix) < 50,
-            "a press of the recentre control did not move the camera to the fix"
+            "a press of the recenter control did not move the camera to the fix"
         )
     }
 
     /// And the second press, which is the one that zooms. Same mechanism, different span, and it has
-    /// to be applied even though the camera is already centred where it is being asked to go.
-    @Test("a second recentre press still zooms in")
+    /// to be applied even though the camera is already centered where it is being asked to go.
+    @Test("a second recenter press still zooms in")
     func secondRecenterPressStillZooms() {
         let screen = Screen(opening: Self.opening())
         screen.readerPans(to: Self.pannedTo)
@@ -237,7 +237,7 @@ struct MapCameraOwnershipTests {
         screen.updatePass()
         let wide = screen.mapView.region.span.latitudeDelta
 
-        // The `.centreAndZoomIn` press: the fix, at the screen's own opening scale.
+        // The `.centerAndZoomIn` press: the fix, at the screen's own opening scale.
         screen.position = .move(
             to: MKCoordinateRegion(
                 center: Self.fix,

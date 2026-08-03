@@ -269,7 +269,7 @@ enum VisitPreviewFixtures {
         )
     }
 
-    /// One dark-grey pixel, encoded as a JPEG. What a preview needs of a photograph is that it be one.
+    /// One dark-gray pixel, encoded as a JPEG. What a preview needs of a photograph is that it be one.
     static func onePixelJPEG() -> Data {
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1))
         let image = renderer.image { context in
@@ -328,7 +328,7 @@ enum VisitPreviewFixtures {
     VisitPreviewFixtures.addTree()
 }
 
-/// The same at AX5, which is where the well used to be a grey box clipped at the footer with the
+/// The same at AX5, which is where the well used to be a gray box clipped at the footer with the
 /// whole form below a fold nothing admitted to.
 #Preview("add · composer · AX5") {
     VisitPreviewFixtures.addTree().environment(\.dynamicTypeSize, .accessibility5)

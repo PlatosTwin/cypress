@@ -4,7 +4,7 @@
 //
 //  C27 · `ProgressRing` (08) and C28 · `ConfidenceBar` (02) — SCREENS.md §2.
 //
-//  D1 guard: the ring on 08 tracks *species you can recognise*, which is knowledge, not a count of
+//  D1 guard: the ring on 08 tracks *species you can recognize*, which is knowledge, not a count of
 //  actions — "There are no leaderboards" is printed on the same screen. `ProgressRing` therefore
 //  takes a fraction and a caption, never a running total of visits, photos or care events.
 //
@@ -30,7 +30,7 @@ struct ProgressRing: View {
             .fill(
                 AngularGradient(
                     // `selectionFill` and `ctaFill` rather than the raw `canopy` / `cypressDeep`
-                    // hues. The six brand colours are `lightOnly` by design — CypressColor's own
+                    // hues. The six brand colors are `lightOnly` by design — CypressColor's own
                     // header says their scheme-dependent roles are carried by the paired role
                     // tokens — and reaching past them left the ring drawing `#2F6B4F` on `#0E1712`
                     // in the dark, with its `#1D4634` label all but invisible inside it. Both pairs

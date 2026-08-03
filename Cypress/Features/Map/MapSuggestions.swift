@@ -3,10 +3,10 @@
 //  Cypress — Features/Map
 //
 //  The list of species that drops under C20 as you type, and the one sentence that stops it lying
-//  about how much of the catalogue it is showing you.
+//  about how much of the catalog it is showing you.
 //
 //  ── NOT SPECIFIED, and this is the third thing that has not been ────────────────────────────────
-//  SCREENS.md 01 lists the search bar (C20) at `top:68px` and says of its behaviour only that
+//  SCREENS.md 01 lists the search bar (C20) at `top:68px` and says of its behavior only that
 //  "search opens species/street/neighborhood search" (:664). Three lines later, under
 //  **States/variants**, it says "**NOT SPECIFIED:** search results" (:667). §2's C20 draws a pill
 //  with one leading magnifier and a placeholder and nothing else; §5's gap list carries the same
@@ -18,7 +18,7 @@
 //    · **R16** (task #110) gave C20 the ✕ and the `Done`. Nothing here touches either. The ✕ still
 //      clears and *keeps* focus, because clearing starts the next query; choosing a suggestion is
 //      the opposite act and ends one, which is why it does the opposite thing with the keyboard.
-//    · **E165** (task #108) made the catalogue match a word anywhere in either name with a rank.
+//    · **E165** (task #108) made the catalog match a word anywhere in either name with a rank.
 //      No matching is written here. This list is a *rendering* of `CypressAPI.searchSpecies`, the
 //      same call and the same page the map narrows itself with — one read, two surfaces, so the
 //      list can never offer a species the map is not narrowed to.
@@ -30,8 +30,8 @@
 //  matches, drawn with nothing saying so, is precisely the defect E38 exists to name: a truncated
 //  head presented as the whole answer.
 //
-//  So the remainder is modelled rather than described. `Remainder` has three cases and the third one
-//  is the whole point: the catalogue's own answer was itself a page, so the app **does not know** the
+//  So the remainder is modeled rather than described. `Remainder` has three cases and the third one
+//  is the whole point: the catalog's own answer was itself a page, so the app **does not know** the
 //  total and may not print one. It claims the weaker of the two available sentences — "at least" —
 //  for the same reason `MapSearch.Narrowed.isTruncated` does: saying "the first 100 of at least 100"
 //  is true when exactly 100 matched, and the reverse is not.
@@ -62,9 +62,9 @@ enum MapSuggestions: Equatable {
     /// Rows to offer, and what is behind them.
     case listing(Listing)
 
-    /// A page of the catalogue's ranking, and what the app knows about the rest of it.
+    /// A page of the catalog's ranking, and what the app knows about the rest of it.
     struct Listing: Equatable {
-        /// The rows drawn, in the catalogue's own ranking — head matches above word matches above
+        /// The rows drawn, in the catalog's own ranking — head matches above word matches above
         /// matches inside a word (E165). At most `MapSuggestions.rowLimit` of them.
         let rows: [Species]
         /// Everything the list is not showing.
@@ -83,12 +83,12 @@ enum MapSuggestions: Equatable {
     /// there were more. A caller that flattened `atLeast` into `exactly` would print a total the app
     /// has never counted.
     enum Remainder: Equatable {
-        /// Every match the catalogue returned is on screen, and the catalogue's answer was not
+        /// Every match the catalog returned is on screen, and the catalog's answer was not
         /// itself a page. This is the only state in which the list is the whole answer.
         case none
-        /// Exactly this many more matched, all of them counted by the catalogue.
+        /// Exactly this many more matched, all of them counted by the catalog.
         case exactly(Int)
-        /// At least this many more matched. The catalogue returned a full page
+        /// At least this many more matched. The catalog returned a full page
         /// (`MapSearch.speciesLimit`), so the true number is unknown and unknowable from here.
         case atLeast(Int)
     }
@@ -111,7 +111,7 @@ enum MapSuggestions: Equatable {
     /// how much of the map is hidden. See R25.
     static let rowLimit = 6
 
-    /// Resolves what the catalogue returned into what the list should draw.
+    /// Resolves what the catalog returned into what the list should draw.
     ///
     /// `matches` is expected to be the answer to `searchSpecies(query:limit:)` at
     /// `MapSearch.speciesLimit` — the same array `MapSearch.init(query:matches:)` is handed, so the
@@ -123,7 +123,7 @@ enum MapSuggestions: Equatable {
         }
         let rows = Array(matches.prefix(MapSuggestions.rowLimit))
         let hidden = matches.count - rows.count
-        // A full page from the catalogue means there may be more behind it, and there is no second
+        // A full page from the catalog means there may be more behind it, and there is no second
         // query in this app that could count them without reading the whole table on the typing
         // path. So the count stops being a total and starts being a floor. (E38.)
         let wasItselfAPage = matches.count >= MapSearch.speciesLimit
@@ -196,7 +196,7 @@ enum MapSuggestionCopy {
     ///
     /// The two counted forms are different sentences rather than one sentence with a different
     /// number, because "of 21" and "of at least 100" are different claims and the second one is the
-    /// only thing the app can say when the catalogue itself answered with a page. Both name the way
+    /// only thing the app can say when the catalog itself answered with a page. Both name the way
     /// out — a suggestion list that says "there are more" and not "here is how to see them" has told
     /// the reader they are stuck.
     static func remainder(_ remainder: MapSuggestions.Remainder, shown: Int) -> String? {

@@ -27,7 +27,7 @@
 //  the other series' points would each manufacture a trend nobody measured. There is no smoothing,
 //  no zero-baseline and no "no data" substitution anywhere below.
 //
-//  No SwiftUI in this file. The normalisation, the axis, the labels and the series split are all
+//  No SwiftUI in this file. The normalization, the axis, the labels and the series split are all
 //  decided here, so D6 and D7 can be tested without a renderer.
 //
 
@@ -147,7 +147,7 @@ struct GrowthHistoryPresentation {
 
     /// Maps capture dates onto 0…1 and values onto the plot band the mock draws its dots in.
     ///
-    /// Both axes are normalised over **the points that are actually plotted**. Scaling to an
+    /// Both axes are normalized over **the points that are actually plotted**. Scaling to an
     /// excluded reading would leave a visible gap at a value nothing explains, and scaling to zero
     /// would flatten every real street tree's growth into one line at the top of the card.
     private func position(_ measurements: [TreeMeasurement]) -> [GrowthPoint] {

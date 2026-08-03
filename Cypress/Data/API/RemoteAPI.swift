@@ -28,7 +28,7 @@ public struct RemoteAPI: CypressAPI {
 
     /// Every stub throws this. `server_error` is retryable, so an outbox item that reached the
     /// stub stays alive on the backoff rather than being discarded — which is the correct
-    /// behaviour for "the server is not built yet".
+    /// behavior for "the server is not built yet".
     private var unimplemented: APIError { .serverError }
 
     // MARK: - Map and discovery
@@ -71,11 +71,11 @@ public struct RemoteAPI: CypressAPI {
 
     // MARK: - Almanac
 
-    /// Will call the server's neighbourhood almanac read (screen 12).
+    /// Will call the server's neighborhood almanac read (screen 12).
     ///
     /// Overrides the protocol's `.empty` default deliberately, exactly as `groveSpecies()` does: an
     /// unbuilt server has no answer, and an empty almanac would draw "nothing is happening in your
-    /// neighbourhood" over "we could not ask".
+    /// neighborhood" over "we could not ask".
     public func almanac(near coordinate: Coordinate?) async throws -> Almanac {
         throw unimplemented
     }

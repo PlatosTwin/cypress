@@ -28,7 +28,7 @@ enum CityDownloadsCopy {
     static let cancel = "Cancel"
     static let inUse = "In use"
 
-    // Catalogue-level lines.
+    // Catalog-level lines.
     static let checking = "Checking what's available…"
     static let offline = "Couldn't check what's available. Downloaded cities still work."
 

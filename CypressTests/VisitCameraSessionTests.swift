@@ -15,7 +15,7 @@
 //  So every assertion here is on **state after all three captures**, and the round-trip test asserts on
 //  the `photos` rows and the files in the photo directory after a real drain. Nothing spies on a call.
 //
-//  The three fixtures are different *sizes* rather than different colours, because a size can be read
+//  The three fixtures are different *sizes* rather than different colors, because a size can be read
 //  back off a file with `PhotoBinary.pixelSize` without decoding it — so "the leaf shot overwrote the
 //  full tree" is a readable failure rather than three passes on three identical images.
 //
@@ -428,7 +428,7 @@ struct VisitCameraSessionTests {
     // The camera itself cannot be driven in a simulator (`useLibraryImage` is the only capture
     // path there, behind a system PhotosPicker no UI test can script reliably), so the decision is
     // covered here at the unit level, on the same model the view asks. The physical-phone pass is
-    // the owner's, as with every camera behaviour.
+    // the owner's, as with every camera behavior.
 
     @Test("the ✕ over a captured shot discards that shot and stays")
     func closeOverACapturedShotDiscardsAndStays() throws {
@@ -579,7 +579,7 @@ struct VisitCameraSessionTests {
         model.shotType = .fullTree
         model.useLibraryImage(try Self.jpeg(.fullTree))
         defer { Self.removeStaged(model.draft.photoPaths) }
-        // One photograph is the old behaviour and reads as it always did.
+        // One photograph is the old behavior and reads as it always did.
         #expect(model.logVisitLabel == "Log visit")
 
         model.shotType = .trunk
@@ -1025,7 +1025,7 @@ struct VisitCameraSessionTests {
         // 3 · and something is actually drawn down there.
         //
         // **The 6 pt offset is load-bearing.** The well's own dashed border is several hundred
-        // pixels of not-the-page-colour lying immediately under its last filled row, and counting
+        // pixels of not-the-page-color lying immediately under its last filled row, and counting
         // those made this claim pass on the very layout it was written to fail: at AX5 before the
         // fix the well was clipped by the footer with nothing at all beneath it, and its own bottom
         // edge answered for the form. The `if` is the other half — past the clip there is no band
@@ -1183,7 +1183,7 @@ struct VisitCameraSessionTests {
         return Bitmap(width: w, height: h, bytes: bytes)
     }
 
-    /// A design-system colour as the sRGB triple it draws as, in the light appearance.
+    /// A design-system color as the sRGB triple it draws as, in the light appearance.
     static func srgb(_ color: Color) -> (r: Int, g: Int, b: Int) {
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         UIColor(color)
@@ -1192,7 +1192,7 @@ struct VisitCameraSessionTests {
         return (Int((r * 255).rounded()), Int((g * 255).rounded()), Int((b * 255).rounded()))
     }
 
-    /// The rows of `band` on which at least `minimumRun` pixels are `colour`.
+    /// The rows of `band` on which at least `minimumRun` pixels are `color`.
     ///
     /// A count and not a contiguous run: the empty well has a sentence across its middle at the
     /// drawn size, which breaks any single run, and only the first and last rows are being asked

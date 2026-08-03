@@ -26,8 +26,8 @@
 //  - **§3.12 — deletion anonymizes rather than deletes**, and this screen says nothing about
 //    deletion, which is the only truthful thing it can say today: ERRATA E23 leaves an open
 //    contradiction between §3.12's "null the user_id and sever the device link" and the private
-//    reminder's one-owner CHECK. Copy that promised either behaviour would be promising a
-//    behaviour nobody has settled.
+//    reminder's one-owner CHECK. Copy that promised either behavior would be promising a
+//    behavior nobody has settled.
 //  - **D9 / ERRATA E34 — the ask arrives at the third save and gets exactly one second chance.**
 //    That is `VisitSaveLedger`'s, not this feature's; nothing here counts anything.
 //
@@ -72,7 +72,7 @@ enum AccountAskProvider: String, CaseIterable, Identifiable, Sendable {
 struct AccountLinkRequest: Hashable, Sendable {
     /// Which button was tapped.
     let provider: AccountAskProvider
-    /// Whether the open-database-licence consent row was checked when it was (§6).
+    /// Whether the open-database-license consent row was checked when it was (§6).
     let acceptsLicense: Bool
 }
 
@@ -176,7 +176,7 @@ enum AccountAskCopy {
     /// conclude their Apple ID is now attached to their visits. Redrawing a mocked screen down to
     /// one button is a design decision (DECISIONS constraint 21) rather than an engineer's, and it
     /// would also throw away the one field ERRATA E131 just made persistent: which route somebody
-    /// chose, ready for the exchange that will honour it. So the copy says what the buttons do not —
+    /// chose, ready for the exchange that will honor it. So the copy says what the buttons do not —
     /// that none of those services has been contacted — one paragraph above the first of them.
     static let bodyLocalAccount = """
         They live on this phone right now. An account gathers them under one name here—it is made \
@@ -271,7 +271,7 @@ enum AccountAskCopy {
 /// The geometry SCREENS.md 15 gives this sheet that `CypressSpacing` does not already name.
 ///
 /// Same arrangement as `AlmanacMetrics`: the numbers live here once so the view body carries no
-/// loose values, while every colour, font and radius stays a `DesignSystem` token
+/// loose values, while every color, font and radius stays a `DesignSystem` token
 /// (ARCHITECTURE §6).
 enum AccountAskMetrics {
     /// §1: `HStack(spacing:12)`, `margin-bottom:6px`, 40×40 mark.

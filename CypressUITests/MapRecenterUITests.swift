@@ -2,7 +2,7 @@ import XCTest
 
 /// **The control, pressed.**
 ///
-/// `CypressTests/MapRecentreTests` proves the *decision* is right — that every availability produces
+/// `CypressTests/MapRecenterTests` proves the *decision* is right — that every availability produces
 /// something visible, and that the zoom rule steps the way it is written. It cannot prove the button
 /// is wired to any of it, which is precisely the failure C20 had before ERRATA E134: a control drawn
 /// on screen 01 whose binding nothing read, with a green suite either side of it.
@@ -29,7 +29,7 @@ final class MapRecenterUITests: XCTestCase {
         return app
     }
 
-    /// The one string this file and the app have to agree on: `MapRecentreCopy.label`.
+    /// The one string this file and the app have to agree on: `MapRecenterCopy.label`.
     private static let controlLabel = "Center the map on you"
 
     private func recenterControl(_ app: XCUIApplication) -> XCUIElement {
@@ -42,9 +42,9 @@ final class MapRecenterUITests: XCTestCase {
         ).firstMatch
     }
 
-    /// The control exists, is labelled, is reachable, and says what state it is in.
+    /// The control exists, is labeled, is reachable, and says what state it is in.
     ///
-    /// `AccessibilityTreeTests.testNoUnlabelledButtonsOnLaunch` would catch a control with no label
+    /// `AccessibilityTreeTests.testNoUnlabeledButtonsOnLaunch` would catch a control with no label
     /// at all. It would not catch one that is drawn but not in the tree — an overlay behind the map,
     /// say, or one clipped out of its parent's bounds, both of which are live risks on a screen whose
     /// chrome is absolutely positioned over a full-bleed `Map` (ERRATA E110).
@@ -53,13 +53,13 @@ final class MapRecenterUITests: XCTestCase {
         let control = recenterControl(app)
         XCTAssertTrue(
             control.waitForExistence(timeout: 15),
-            "screen 01 has no control labelled “\(Self.controlLabel)”"
+            "screen 01 has no control labeled “\(Self.controlLabel)”"
         )
-        XCTAssertTrue(control.isHittable, "the recentre control is present but cannot be activated")
+        XCTAssertTrue(control.isHittable, "the recenter control is present but cannot be activated")
         XCTAssertFalse(
             control.value as? String ?? "" == "",
             "the control has no accessibility value, so a VoiceOver reader cannot tell whether the "
-                + "map is already centred"
+                + "map is already centered"
         )
     }
 
@@ -86,12 +86,12 @@ final class MapRecenterUITests: XCTestCase {
 
         control.tap()
 
-        // `MapRecentreCopy.refusalMessage`. The fragment is the clause that makes it an answer to
+        // `MapRecenterCopy.refusalMessage`. The fragment is the clause that makes it an answer to
         // *this* press rather than the standing notice repeated.
         let answer = text(containing: "nowhere to center the map", in: app)
         XCTAssertTrue(
             answer.waitForExistence(timeout: 5),
-            "pressing the recentre control with location denied changed nothing on screen"
+            "pressing the recenter control with location denied changed nothing on screen"
         )
         XCTAssertTrue(
             app.buttons["Settings"].exists,

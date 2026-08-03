@@ -72,7 +72,7 @@ public enum VerificationState: String, Codable, Sendable, Hashable, CaseIterable
 /// *more* accurate than the phone — they could see the tree and the phone could not, and a fix in an
 /// SF street canyon is routinely 20–40 m out, which is the argument the movable pin was built on. The
 /// column exists so that somebody correcting a coordinate later, or a moderator looking at one, can
-/// tell a judgement from a reading; it does not exist so that either can be doubted on sight.
+/// tell a judgment from a reading; it does not exist so that either can be doubted on sight.
 ///
 /// **Only community trees have one.** A city-import row's coordinate is the city's, arrived at by
 /// neither of these means, and `main.community_trees` is the only table this column lives on. A

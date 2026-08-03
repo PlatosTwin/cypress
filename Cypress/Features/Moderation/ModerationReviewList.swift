@@ -246,7 +246,7 @@ enum ModerationCopy {
     static let dismissTitle = "Dismiss this report?"
 
     /// Names the two things a lead needs to know and stops: nothing moves, and the report goes away.
-    /// It does not apologise for the reporter or editorialise about who was right — `review_flags`
+    /// It does not apologize for the reporter or editorialise about who was right — `review_flags`
     /// records who raised it and who closed it, and that is the whole of what the app knows.
     static func dismissMessage(treeName: String) -> String {
         "\(treeName) is left as it is and the report closes. Nothing about the tree changes."

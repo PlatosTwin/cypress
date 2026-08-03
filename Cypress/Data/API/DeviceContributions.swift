@@ -29,7 +29,7 @@ import Foundation
 /// ── The six kinds ─────────────────────────────────────────────────────────────────────────
 /// These are exactly the record kinds `claimDevice(deviceUUID:userID:)` moves onto the account —
 /// the four contribution tables, D4's private reminder (ERRATA E23) and, since `AppSchema` v5, the
-/// favourite (ERRATA E89). Photos are deliberately absent: a photo carries no owner of its own, it
+/// favorite (ERRATA E89). Photos are deliberately absent: a photo carries no owner of its own, it
 /// hangs off the visit that took it, so it survives sign-in because its visit does.
 public struct DeviceContributions: Hashable, Sendable {
 
@@ -44,7 +44,7 @@ public struct DeviceContributions: Hashable, Sendable {
     /// D4's private hazard reminders (screen 06, ERRATA E23).
     public let privateReminders: Int
     /// Trees hearted on screen 03's quad row and still held by this device (ERRATA E89). Tombstoned
-    /// toggles are excluded: an un-favourited tree is not something anybody would say they have.
+    /// toggles are excluded: an un-favorited tree is not something anybody would say they have.
     public let favorites: Int
 
     public init(

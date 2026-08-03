@@ -45,7 +45,7 @@ import Foundation
 
 // MARK: - The three series
 
-/// Which small multiple a row is. Named rather than coloured: a feature holds no colour of its own
+/// Which small multiple a row is. Named rather than colored: a feature holds no color of its own
 /// (ARCHITECTURE §6), so the view maps this to `CypressColor.chartSeries*`.
 enum ActivitySeriesKind: String, CaseIterable, Identifiable {
     case photos
@@ -105,7 +105,7 @@ struct ActivityPresentation {
         /// The zero-based month indices drawn in `chartGridline` because nothing happened in them.
         let emptyMonths: Set<Int>
         /// The raw monthly counts, January first. Not rendered as text; the accessibility label
-        /// reads them, because twelve unlabelled rectangles are nothing to a screen reader.
+        /// reads them, because twelve unlabeled rectangles are nothing to a screen reader.
         let counts: [Int]
 
         var id: String { kind.rawValue }
@@ -171,7 +171,7 @@ struct ActivityPresentation {
     ///   same amount everywhere" — becomes false without anything on screen saying so (ERRATA E38).
     /// - **Nothing happened.** Thirty-six empty bars under `This year at a glance` is an aggregate
     ///   surface with nothing behind it, which ARCHITECTURE §5.6 says does not render at all. E54
-    ///   settled the same argument at zero on screen 12 in §5.6's favour.
+    ///   settled the same argument at zero on screen 12 in §5.6's favor.
     var glance: Glance? {
         let series = monthlySeries
         guard let series else { return nil }
@@ -358,7 +358,7 @@ struct ActivityPresentation {
     ///
     /// **The heading is the constraint.** `Same week, other years` is false with no other year in it,
     /// so a strip that would hold only the current week's photograph does not render — a bordered
-    /// tile labelled `this week` beside nothing is a comparison with nothing to compare against.
+    /// tile labeled `this week` beside nothing is a comparison with nothing to compare against.
     ///
     /// The tiles are gradient placeholders because every image in this app is (SCREENS.md §2
     /// preamble, C22). A placeholder still stands for a photograph that exists: a tile is drawn only
@@ -472,7 +472,7 @@ enum ActivityCopy {
     /// The second clause is A8's, floored at three, and it is a count of *people who know the tree*
     /// rather than of anything anybody did (D1). Lower case mid-sentence, as the mock writes it;
     /// `TreeProfilePresentation.caretakerHeadline` is the same sentence standing alone on 03 and is
-    /// capitalised there for that reason.
+    /// capitalized there for that reason.
     static func onRecordSubtitle(
         firstPhotoAt: Date,
         caretakers: Int,
@@ -597,7 +597,7 @@ enum ActivityMetrics {
     /// One height rule for all three rows, which is the whole of D2 on this screen.
     ///
     /// A month with nothing in it keeps the stub and is told from a month with one thing in it by
-    /// colour, which is how the mock tells them apart — its Care row has bars of height 4 in both
+    /// color, which is how the mock tells them apart — its Care row has bars of height 4 in both
     /// treatments. A month with something in it is never shorter than the stub, so "nothing here"
     /// and "one thing here" cannot swap places at any peak.
     static func barHeight(count: Int, peak: Int) -> CGFloat {

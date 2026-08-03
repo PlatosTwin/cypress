@@ -1,6 +1,6 @@
 import Foundation
 
-/// The reads behind screen 12 — the neighbourhood almanac.
+/// The reads behind screen 12 — the neighborhood almanac.
 ///
 /// Like `GroveQueries` these straddle the two databases: what a tree *is* lives in the attached
 /// seed, what anybody did to it lives in `main`. That is why they are here rather than in
@@ -21,7 +21,7 @@ import Foundation
 ///
 /// **The scope is the only thing that changed.** Every predicate below it — `standing`,
 /// `deleted_at IS NULL`, the species joins, the `NOT EXISTS` over visits — is untouched, so a
-/// neighbourhood asked for by id returns exactly the rows it returned before this pass.
+/// neighborhood asked for by id returns exactly the rows it returned before this pass.
 public struct AlmanacQueries {
     private let schema: SeedSchema
     private let seed = SeedDatabase.schemaName
@@ -33,7 +33,7 @@ public struct AlmanacQueries {
     /// A tree the almanac is willing to talk about: one the city believes is standing.
     ///
     /// Vacant planting sites are 6.4% of the inventory (ERRATA E11) and a basin with nothing in it
-    /// is not an elder, not a newest neighbour and not a young tree anybody can go and look at. The
+    /// is not an elder, not a newest neighbor and not a young tree anybody can go and look at. The
     /// dead and removed are excluded for the same reason: this screen is about what is growing.
     ///
     /// **This predicate, and not the species `JOIN`, is what keeps a vacant site off screen 12.**
@@ -79,7 +79,7 @@ public struct AlmanacQueries {
 
     // MARK: - This season · the elder
 
-    /// The oldest recorded planting date in the neighbourhood (SCREENS.md 12 §2 row 2).
+    /// The oldest recorded planting date in the neighborhood (SCREENS.md 12 §2 row 2).
     ///
     /// ```
     /// SEARCH t USING INDEX idx_trees_neighborhood_planted (neighborhood_id=? AND planted_on>?)
@@ -87,7 +87,7 @@ public struct AlmanacQueries {
     /// ```
     ///
     /// The index exists for this read and for `recentPlanting`: without it the elder is a sort of
-    /// every tree in the neighbourhood, which is 16,176 rows in the Mission.
+    /// every tree in the neighborhood, which is 16,176 rows in the Mission.
     ///
     /// `nil` when no tree here carries a planting date at all. That is a real outcome — DataSF fills
     /// `PlantDate` on 36% of rows — and it means the row does not draw, rather than drawing a tree
@@ -121,9 +121,9 @@ public struct AlmanacQueries {
         }
     }
 
-    // MARK: - This season · newest neighbours
+    // MARK: - This season · newest neighbors
 
-    /// The trees planted in the neighbourhood inside a date window, grouped by species
+    /// The trees planted in the neighborhood inside a date window, grouped by species
     /// (SCREENS.md 12 §2 row 3).
     ///
     /// Bounds are `YYYY-MM-DD` strings compared against `trees.planted_on`, which is stored at that
@@ -212,7 +212,7 @@ public struct AlmanacQueries {
 
     // MARK: - Who lives here
 
-    /// Every species the city inventory records in the neighbourhood, most common first
+    /// Every species the city inventory records in the neighborhood, most common first
     /// (SCREENS.md 12 §3).
     ///
     /// ```
@@ -223,11 +223,11 @@ public struct AlmanacQueries {
     /// Read whole rather than `LIMIT 3`, because the card prints two numbers a page cannot support:
     /// the header's species count and the "Everyone else" remainder, which is one minus the shares
     /// above it. A limited read would make the remainder wrong in the flattering direction. The cost
-    /// is the size of a neighbourhood's species list — 215 rows in Sunset/Parkside, the largest in
+    /// is the size of a neighborhood's species list — 215 rows in Sunset/Parkside, the largest in
     /// the city — which is nothing next to being wrong.
     ///
     /// The `JOIN` (not `LEFT JOIN`) excludes **the non-taxon rows**: a mix of species is a mix of
-    /// species, and a tree the city labelled `Shrub` belongs in neither the numerator nor the
+    /// species, and a tree the city labeled `Shrub` belongs in neither the numerator nor the
     /// denominator of a share.
     ///
     /// **It does not exclude vacant sites, and widening it would not admit one** (ERRATA E115).
@@ -269,7 +269,7 @@ public struct AlmanacQueries {
 
     // MARK: - Where eyes are needed
 
-    /// Young trees in the neighbourhood that carry no visit since they were planted
+    /// Young trees in the neighborhood that carry no visit since they were planted
     /// (SCREENS.md 12 §4).
     ///
     /// `NOT EXISTS` rather than a `LEFT JOIN … IS NULL`, so SQLite stops at the first visit it finds
@@ -353,10 +353,10 @@ public struct AlmanacQueries {
 
     // MARK: - This season · the first bloom
 
-    /// The earliest flowering visit recorded in the neighbourhood this year (SCREENS.md 12 §2 row 1).
+    /// The earliest flowering visit recorded in the neighborhood this year (SCREENS.md 12 §2 row 1).
     ///
     /// `flowering` is `PhenologyTag`'s own raw value and `visits.phenology_tags` is a JSON array of
-    /// them, so the membership test is `json_each` rather than a `LIKE` over the serialised array —
+    /// them, so the membership test is `json_each` rather than a `LIKE` over the serialized array —
     /// a `LIKE '%flowering%'` would also match a tag that merely contained the word.
     ///
     /// **What this counts, and what it refuses to count.** `MIN(captured_at)` is an event, not an
@@ -422,7 +422,7 @@ public struct AlmanacQueries {
 
     // MARK: - Where a tree could go · the vacant planting sites
 
-    /// How many planting sites in the neighbourhood have no tree in them, and the nearest one to the
+    /// How many planting sites in the neighborhood have no tree in them, and the nearest one to the
     /// reader (RULINGS R10, closing the proposal ERRATA E115 made and did not build).
     ///
     /// **This is the one read in the file that inverts `Self.standing`.** Every other read asks for a
@@ -435,19 +435,19 @@ public struct AlmanacQueries {
     ///
     /// The count and the nearest come from one scan of `idx_trees_neighborhood`: `COUNT(*)` over the
     /// filtered set and, from the same set, the id with the smallest squared distance. E115 measured
-    /// every one of the 41 neighbourhoods carrying between 4 and 1,474 sites, so `count` is never zero
-    /// where a neighbourhood resolved — but the caller still treats zero as "no block", because §5.6
+    /// every one of the 41 neighborhoods carrying between 4 and 1,474 sites, so `count` is never zero
+    /// where a neighborhood resolved — but the caller still treats zero as "no block", because §5.6
     /// is a rule about the general case rather than about today's seed.
     ///
     /// `nearest` is empty only if `count` is zero. Every row in it is a `vacant_site` in *this*
-    /// neighbourhood, so the destination can never show the reader a basin in the next neighbourhood
+    /// neighborhood, so the destination can never show the reader a basin in the next neighborhood
     /// over — the block's subject and its destination are the same set.
     ///
     /// **`nearest` is a list rather than one id since ERRATA E129**, and the two halves are
     /// deliberately separate reads of the same index. The count is a `COUNT(*)` over the whole
     /// filtered set and has to stay that way: it is the number screen 12 prints, so it may never
     /// become the size of a page (ERRATA E38). The rows are the nearest `limit` of that set, which is
-    /// all a map can hold — E115 measured neighbourhoods at between 4 and 1,474 sites. Because the
+    /// all a map can hold — E115 measured neighborhoods at between 4 and 1,474 sites. Because the
     /// total is read independently, the caller can prove whether the page is the whole group by
     /// comparing the two, which is what `PinSet.isComplete` does.
     public func vacantSites(

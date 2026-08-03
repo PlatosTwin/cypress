@@ -9,7 +9,7 @@
 //  people" (PRODUCT §3). Everything below is decided by two rules and one absence.
 //
 //  - **ARCHITECTURE §5.6 / A9 — an aggregate below its threshold does not render at all.** Not a
-//    zero, not a placeholder, not a greyed-out card. This file is where that happens, and it is
+//    zero, not a placeholder, not a grayed-out card. This file is where that happens, and it is
 //    almost the whole file: every block on the screen is an optional and every optional is nil for
 //    a reason it can state. The screen a fresh install draws is the proof, not the exception.
 //  - **ARCHITECTURE §5.1 / D1 — no counts of user actions, no ranks, no leaderboards.** The numbers
@@ -67,7 +67,7 @@ struct AlmanacPresentation: Equatable {
         /// `18%`, mono.
         let value: String
         /// Which of §3's four swatches this row draws — an index into
-        /// `CypressColor.compositionSwatches`, so the feature holds no colour of its own.
+        /// `CypressColor.compositionSwatches`, so the feature holds no color of its own.
         let swatchIndex: Int
         /// The `Everyone else` row draws its name in `text.muted` rather than in ink (§3).
         let isRemainder: Bool
@@ -167,7 +167,7 @@ struct AlmanacPresentation: Equatable {
     /// **NOT SPECIFIED.** SCREENS.md 12 draws one state, the full one. What an almanac with nothing
     /// in it looks like is not drawn anywhere, and it is the state most devices are in: no seeded
     /// tree carries an observation or a photo, so the bloom row has nothing behind it, and a device
-    /// with no location fix has no neighbourhood at all. What was built is the restrained reading —
+    /// with no location fix has no neighborhood at all. What was built is the restrained reading —
     /// each block derives from data and a block with no data behind it is absent (§5.6) — leaving
     /// the screen's own chrome. See ERRATA.
     var isEmpty: Bool { seasonRows.isEmpty && composition == nil && coverage == nil && vacantSites == nil }
@@ -320,7 +320,7 @@ struct AlmanacPresentation: Equatable {
 
         let namedShare = named.reduce(0.0) { $0 + Double($1.treeCount) / total }
         let remainder = max(1 - namedShare, 0)
-        // Only when there is a remainder to name. A neighbourhood whose whole inventory is three
+        // Only when there is a remainder to name. A neighborhood whose whole inventory is three
         // species has no "everyone else", and drawing a 0% row would be the zero §5.6 forbids.
         if composition.leading.count > named.count {
             rows.append(
@@ -385,7 +385,7 @@ struct AlmanacPresentation: Equatable {
 
     /// §-new: `Where a tree could go` (RULINGS R10). A count and a destination, or nothing.
     ///
-    /// Absent when the neighbourhood holds no sites — which E115 measured as nowhere in the city, but
+    /// Absent when the neighborhood holds no sites — which E115 measured as nowhere in the city, but
     /// §5.6 is a rule about the general case — and absent when there is nowhere to send the tap, so
     /// the row is never a statement the reader cannot act on.
     private static func vacantSites(_ sites: VacantSites?, in area: String, locale: Locale) -> VacantBlock? {
@@ -394,7 +394,7 @@ struct AlmanacPresentation: Equatable {
             label: AlmanacCopy.vacantLabel,
             title: AlmanacCopy.vacantTitle(count: sites.count, locale: locale),
             subtitle: AlmanacCopy.vacantSubtitle,
-            // The count is the neighbourhood's; the pins are the nearest page of it. The two are
+            // The count is the neighborhood's; the pins are the nearest page of it. The two are
             // different numbers on purpose and the destination prints both, because a map of 1,474
             // basins is not available at any zoom a person can read (ERRATA E38, E129).
             group: PinSet(
@@ -443,7 +443,7 @@ enum AlmanacCopy {
     /// §1's title.
     static let screenTitle = "Almanac"
 
-    /// §5, verbatim. Centred, `text.faintAlt`.
+    /// §5, verbatim. Centered, `text.faintAlt`.
     static let footnote = "No ranks, no counters. The almanac notices trees, not scores."
 
     /// §2's micro-label.
@@ -526,7 +526,7 @@ enum AlmanacCopy {
         return "\(names[first - 1]) to \(names[last - 1])"
     }
 
-    /// Capitalises a clause written to sit mid-sentence and closes it.
+    /// Capitalizes a clause written to sit mid-sentence and closes it.
     private static func sentence(_ clause: String) -> String {
         guard let first = clause.first else { return clause }
         return first.uppercased() + clause.dropFirst() + "."
@@ -574,7 +574,7 @@ enum AlmanacCopy {
     /// are different promises; a pill reading `Your area` would make the smaller promise while
     /// looking like the larger one, which is the failure this copy exists to avoid.
     ///
-    /// The fallback reads as a walk rather than as metres because the screen already has a unit for
+    /// The fallback reads as a walk rather than as meters because the screen already has a unit for
     /// this distance — §4's body says "within a 15-minute walk" of the same 1,200 m — and a reader
     /// who is being told how far the almanac reaches is better served by the time it takes to cross
     /// it than by a number they have to convert.
@@ -622,10 +622,10 @@ enum AlmanacCopy {
 
     /// **NOT SPECIFIED** by SCREENS.md 12, which draws no error state.
     ///
-    /// It says the almanac could not be read, and says nothing at all about the neighbourhood —
+    /// It says the almanac could not be read, and says nothing at all about the neighborhood —
     /// which is the distinction `AlmanacModel.Phase` exists to keep, and the one this screen can
     /// least afford to lose, its whole subject being what is and is not out there. A screen that
-    /// draws its five blocks away and leaves a footnote is reporting a quiet neighbourhood; that
+    /// draws its five blocks away and leaves a footnote is reporting a quiet neighborhood; that
     /// report has to be earned by a read that finished.
     static let loadFailed = "This almanac could not be loaded."
     static let loadRetry = "Try again"
@@ -683,20 +683,20 @@ enum AlmanacCopy {
         return "\(subject) · \(record)"
     }
 
-    // MARK: §2 row 3 — newest neighbours
+    // MARK: §2 row 3 — newest neighbors
 
     /// `23 trees planted this spring, mostly ginkgo and tea tree`.
     ///
     /// **The `mostly` clause needs two trees to be true of.** One tree is not "mostly" anything, so
     /// at a count of one the sentence stops after the season. Two names at most, because the mock
-    /// draws two and a list of nine species is not a characterisation. **NOT SPECIFIED** — §2 gives
+    /// draws two and a list of nine species is not a characterization. **NOT SPECIFIED** — §2 gives
     /// one instance of this string and no rule; see ERRATA.
     ///
-    /// **The names are the record's, capitalisation and all.** The mock writes `mostly ginkgo and
+    /// **The names are the record's, capitalization and all.** The mock writes `mostly ginkgo and
     /// tea tree` in lower case, mid-sentence, which is right for those two words and wrong for the
     /// seed: its common names are title case and include proper nouns and initialisms, so
     /// lower-casing turns `NZ tea tree` into `nz tea tree` and `New Zealand Xmas Tree` into a
-    /// sentence about a place that is not capitalised. Deciding which words inside a name may be
+    /// sentence about a place that is not capitalized. Deciding which words inside a name may be
     /// lowered is deciding what kind of word each one is, and getting that wrong renames a species
     /// (the same reasoning that keeps `AlmanacCopy.street(from:)` from stripping a street type).
     static func newestSubtitle(treeCount: Int, leadingSpecies: [String], locale: Locale) -> String {
@@ -819,7 +819,7 @@ enum AlmanacCopy {
 /// The geometry SCREENS.md gives screen 12 that `CypressSpacing` does not already name.
 ///
 /// Same arrangement as `GroveMetrics`: screen-specific numbers are named once here so the view body
-/// carries no loose values, while every colour, font and radius stays a `DesignSystem` token
+/// carries no loose values, while every color, font and radius stays a `DesignSystem` token
 /// (ARCHITECTURE §6).
 enum AlmanacMetrics {
     /// §3 draws three named species above the remainder.
@@ -828,7 +828,7 @@ enum AlmanacMetrics {
     /// How far §4's `within a 15-minute walk` reaches.
     ///
     /// 15 minutes at 4.8 km/h — the walking speed transport planning uses for a "15-minute
-    /// neighbourhood" — is 1,200 m. **NOT SPECIFIED**: the mock states the claim and no source
+    /// neighborhood" — is 1,200 m. **NOT SPECIFIED**: the mock states the claim and no source
     /// states the distance behind it, so the number is named here and recorded in ERRATA rather than
     /// buried in a comparison. It is used to *withhold* a sentence, never to select trees, so
     /// getting it slightly wrong costs a true sentence rather than producing a false one.

@@ -58,7 +58,7 @@ struct SegmentedControl<Option: Hashable>: View {
         // any layout change.
         //
         // Stacked, every label is whole and the 1 pt divider becomes a horizontal rule between
-        // rows rather than a vertical one between columns. Nothing about the control's behaviour
+        // rows rather than a vertical one between columns. Nothing about the control's behavior
         // changes — same options, same selection, same 44 pt targets.
         // ══════════════════════════════════════════════════════════════════════════════════════
         Group {

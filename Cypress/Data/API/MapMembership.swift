@@ -42,7 +42,7 @@ public enum MapMembership: String, Sendable, Hashable, CaseIterable, Identifiabl
     /// say they have (`DeviceContributions.favorites` makes the same call for the same reason).
     ///
     /// **Spelled the American way, on the owner's instruction** (R23.1). The rest of the codebase
-    /// still says `favourite` in 157 places and that is a separate ticket; what is renamed here is
+    /// still says `favorite` in 157 places and that is a separate ticket; what is renamed here is
     /// the vocabulary of the control the owner was looking at when they said it — this case, its
     /// label, and the two empty-state sentences. `DeviceContributions.favorites` and the
     /// `favorites` table were already spelled this way, so this narrows a split rather than

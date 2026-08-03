@@ -4,7 +4,7 @@ import Foundation
 ///
 /// Six columns on `seed.trees`, added so that a tree page can show the city's own record rather than
 /// only Cypress's reading of it. Every field is the city's string exactly as the city wrote it —
-/// nothing here is normalised, corrected, parsed or ranked. Blank in the export becomes `nil`, so
+/// nothing here is normalized, corrected, parsed or ranked. Blank in the export becomes `nil`, so
 /// "the city recorded nothing" and "the city recorded an empty string" are the same absence rather
 /// than two states a screen has to tell apart.
 ///
@@ -17,7 +17,7 @@ import Foundation
 /// records a pruning event, a pruning date or a pruning schedule — verified against the dataset's own
 /// published column metadata, not only against a downloaded copy. The nearest thing in the data is
 /// two `legalStatus` values, `"Prune Opt Out"` (196 rows) and `"Street Tree Maintenance Opt Out"` (58
-/// rows), which say that somebody withdrew a site from the city's maintenance programme. That is a
+/// rows), which say that somebody withdrew a site from the city's maintenance program. That is a
 /// standing policy about a tree, not a date on which anything happened to it, and it must never be
 /// rendered as one. Pruning history would have to come from a different city system; this dataset
 /// cannot answer the question at any grain.
@@ -225,7 +225,7 @@ extension LandContext {
         // Jurisdiction: the public right-of-way. "Permitted Site" is a planting DPW issued a permit
         // for, which is a sidewalk site; the two Planning Code sections and Public Works Code
         // 806(d) are the ordinances that require and govern street trees; and only a street tree can
-        // opt out of the city's street-tree maintenance or pruning programme, so both opt-outs are
+        // opt out of the city's street-tree maintenance or pruning program, so both opt-outs are
         // themselves evidence of a street site.
         case "DPW Maintained",
              "Permitted Site",

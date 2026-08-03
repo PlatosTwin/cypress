@@ -121,7 +121,7 @@ struct CityRecordTests {
     ///
     /// Recorded as a test rather than only as a comment so that the day DataSF adds such a column and
     /// somebody ingests it, this fails and the owner's question gets reopened deliberately. The two
-    /// `legal_status` values that mention pruning are opt-outs from the city's maintenance programme
+    /// `legal_status` values that mention pruning are opt-outs from the city's maintenance program
     /// — a standing policy, not an event — and this asserts they are the only mention, so nothing
     /// downstream can mistake one for a date.
     @Test("no column in the seed records a pruning event, and the two that say 'prune' are opt-outs")

@@ -33,8 +33,8 @@ struct MapHomeView: View {
     ///
     /// It was `@State private var location = MapLocationProvider()`, and that one line is the
     /// single largest thing wrong with this screen's frame rate. A SwiftUI `@State` default
-    /// expression is re-evaluated every time the view struct is initialised, and `RootView.body`
-    /// initialises this one on every pass; `MapLocationProvider.init` used to open a
+    /// expression is re-evaluated every time the view struct is initialized, and `RootView.body`
+    /// initializes this one on every pass; `MapLocationProvider.init` used to open a
     /// `CLLocationManager` session there and then, so screen 01 was standing up and discarding
     /// around **fifty GPS sessions a second** — measured, 336 provider instances in seven seconds —
     /// each of which delivered a cached fix and rewrote observable state on its way out.
@@ -52,7 +52,7 @@ struct MapHomeView: View {
     @State private var model: MapModel
     /// **Where the map opens: the camera this install was last left on** (#115).
     ///
-    /// It was `MapLayout.defaultCentre` — Mission Dolores Park — unconditionally, for everyone,
+    /// It was `MapLayout.defaultCenter` — Mission Dolores Park — unconditionally, for everyone,
     /// forever. See `MapOpeningCamera` for why a place the reader has actually been beats a
     /// stranger's park, and ERRATA E168 for the separate defect that stopped even the *fix* from
     /// reaching the camera once it arrived.
@@ -73,24 +73,24 @@ struct MapHomeView: View {
     @State private var region = MapOpening.openingRegion(
         remembered: MapCameraMemory.shared.openingSnapshot
     )
-    /// One-shot: the first fix recentres the map, later ones must not yank it out from under a pan.
+    /// One-shot: the first fix recenters the map, later ones must not yank it out from under a pan.
     ///
     /// **Kept, deliberately.** Task #85 was "the map snaps back to your location and cannot be panned
     /// away" and this flag is what closed it; #115 is about the map arriving on the reader in the
     /// first place, which is a different sentence. What changed is that it is now consulted from two
-    /// places rather than one — see `centreOnUserIfNeeded()`.
+    /// places rather than one — see `centerOnUserIfNeeded()`.
     ///
     /// **And it is no longer the only gate** (task #128). It is `@State` on a view `RootView`
     /// remakes on every tab switch, so by itself it re-arms on every return to this screen — which
-    /// re-ran the one-shot and re-centred a camera the reader had deliberately panned away: #85's
-    /// defect arriving through the tab bar. `centreOnUserIfNeeded()` therefore also consults
+    /// re-ran the one-shot and re-centered a camera the reader had deliberately panned away: #85's
+    /// defect arriving through the tab bar. `centerOnUserIfNeeded()` therefore also consults
     /// `MapCameraMemory.shared.readerMovedCamera`, which survives the identity reset.
     @State private var hasCenteredOnUser = false
     /// Whether the current wait for a location has gone on long enough to owe the reader a sentence.
     /// Driven by the task below; the decision it feeds is `MapOpening.standing`.
     @State private var waited = false
-    /// The answer to a press of the recentre control that could not move the camera. See
-    /// `MapRecentre` — the whole point of the control is that no press is ever silent.
+    /// The answer to a press of the recenter control that could not move the camera. See
+    /// `MapRecenter` — the whole point of the control is that no press is ever silent.
     @State private var recenterAnswer: RecenterAnswer?
     /// A press made while waiting for the first fix. The notice promises the map will move when one
     /// arrives; this is the promise, held.
@@ -178,7 +178,7 @@ struct MapHomeView: View {
             #endif
             await model.fetch()
         }
-        // The wait, timed. Restarted whenever *what* is being waited for changes, and cancelled
+        // The wait, timed. Restarted whenever *what* is being waited for changes, and canceled
         // outright when there is nothing to wait for — `MapOpening.Wait` collapses every `.located`
         // to the same value, so a reader walking down a street does not restart this on every fix.
         .task(id: MapOpening.wait(for: location.availability)) {
@@ -223,7 +223,7 @@ struct MapHomeView: View {
             recenterAnswer = nil
             guard availability.coordinate != nil else { return }
             // Two reasons to move on a fix, and they want different cameras. The one-shot opening
-            // recentre goes to the screen's own opening scale, because there is no scale the reader
+            // recenter goes to the screen's own opening scale, because there is no scale the reader
             // chose yet. A press that was held for this fix keeps whatever they have since zoomed to.
             if !centerOnUserIfNeeded(), recenterWhenFixArrives, let coordinate = availability.coordinate {
                 recenterWhenFixArrives = false
@@ -254,7 +254,7 @@ struct MapHomeView: View {
                 model.cameraDidChange(bounds: bounds, zoom: zoom)
             },
             onSelectPin: { pin in
-                // A pin tap is a new question. Whatever the recentre control was explaining is no
+                // A pin tap is a new question. Whatever the recenter control was explaining is no
                 // longer what the reader is asking about, and the card needs the slot.
                 recenterAnswer = nil
                 model.select(pin)
@@ -262,7 +262,7 @@ struct MapHomeView: View {
             onSelectCluster: zoom(into:),
             onReaderGesture: {
                 // The camera is the reader's from the first touch (task #128). The flag outlives
-                // this view's identity, which is the point — see `centreOnUserIfNeeded()`.
+                // this view's identity, which is the point — see `centerOnUserIfNeeded()`.
                 MapCameraMemory.shared.noteReaderMovedCamera()
             }
         )
@@ -344,9 +344,9 @@ struct MapHomeView: View {
                     // map. The sort priorities either side are unchanged, so the reading order a
                     // listener walks — field → suggestions → chips → search status → legend — is
                     // the same order with one stop removed.
-                    // And below that, for the same reason. The key to the species colouring — which
-                    // names the four species the map has coloured, and draws nothing when it has
-                    // coloured none. **It is also the species filter** (#116) — see
+                    // And below that, for the same reason. The key to the species coloring — which
+                    // names the four species the map has colored, and draws nothing when it has
+                    // colored none. **It is also the species filter** (#116) — see
                     // `MapSpeciesLegend` for why the filter and the legend had to be one control.
                     MapSpeciesLegend(
                         palette: model.speciesPalette,
@@ -374,7 +374,7 @@ struct MapHomeView: View {
             #endif
     }
 
-    /// The recentre control, the FAB and the one bottom slot, as one absolutely positioned block.
+    /// The recenter control, the FAB and the one bottom slot, as one absolutely positioned block.
     ///
     /// Lifted out of `chrome` unchanged so the two blocks could be reordered without the diff
     /// pretending anything inside either of them moved. See the comment at the reorder.
@@ -382,7 +382,7 @@ struct MapHomeView: View {
         VStack(alignment: .trailing, spacing: 0) {
             // Above the FAB and right-aligned with it, inside the same absolutely positioned
             // block — which is the position MapKit's own `MapUserLocationButton` could not
-            // have been given (`MapRecentre`, and ERRATA E110 for why the arithmetic here is
+            // have been given (`MapRecenter`, and ERRATA E110 for why the arithmetic here is
             // not something a system control can be dropped into).
             MapRecenterButton(engagement: recenterEngagement) { recenter() }
                 .padding(.horizontal, MapLayout.sideInset - MapLayout.cardInset)
@@ -402,10 +402,10 @@ struct MapHomeView: View {
         .padding(.bottom, MapLayout.tabBarHeight + MapLayout.cardToTabBarGap)
     }
 
-    /// One slot, four possible occupants, in priority order: the answer to a recentre press, the
+    /// One slot, four possible occupants, in priority order: the answer to a recenter press, the
     /// selected tree, the standing location refusal, or nothing at all.
     ///
-    /// **The recentre answer outranks the card**, which is the only ordering that keeps the control's
+    /// **The recenter answer outranks the card**, which is the only ordering that keeps the control's
     /// promise. A reader with a tree card open who presses the control and cannot be found has asked
     /// a question, and leaving the card in place would be the silent no-op the control exists to
     /// abolish. The card comes back the moment they touch a pin again.
@@ -489,7 +489,7 @@ struct MapHomeView: View {
             }
         case let .notAsked(showing):
             // No Settings button: this is not a state Settings fixes. The way out is the permission
-            // sheet, which the recentre control raises — and says so, in its hint.
+            // sheet, which the recenter control raises — and says so, in its hint.
             MapLocationNotice(
                 title: MapOpeningCopy.notAskedTitle,
                 message: MapOpeningCopy.notAskedMessage(showing)
@@ -517,17 +517,17 @@ struct MapHomeView: View {
     /// The one-shot, in one place, callable from both the moment the screen appears and the moment a
     /// fix lands — whichever happens second is the one that finds a coordinate (#115).
     ///
-    /// Returns whether it moved the camera, so the fix handler can tell "the opening centring just
-    /// used this fix" from "the opening centring already happened and this fix is for a held press".
+    /// Returns whether it moved the camera, so the fix handler can tell "the opening centering just
+    /// used this fix" from "the opening centering already happened and this fix is for a held press".
     /// Those wanted different cameras before and still do.
     @discardableResult
     private func centerOnUserIfNeeded() -> Bool {
         // **A camera the reader deliberately moved is theirs** (task #128). The `@State` one-shot
-        // resets every time `RootView`'s tab switch remakes this view, so on its own it re-centred
+        // resets every time `RootView`'s tab switch remakes this view, so on its own it re-centered
         // the map on every return — #85's defect verbatim, through a different door. The memory's
         // flag is set by a real gesture on the glass (never by comparing cameras, E140) and lives
         // for the process, so a pan survives Journal-and-back. A camera the reader never touched
-        // still centres on them here, which is #115's promise kept.
+        // still centers on them here, which is #115's promise kept.
         guard !hasCenteredOnUser,
               !MapCameraMemory.shared.readerMovedCamera,
               let coordinate = location.availability.coordinate else { return false }
@@ -560,12 +560,12 @@ struct MapHomeView: View {
         MapOpening.showing(remembered: MapCameraMemory.shared.hasRememberedCamera)
     }
 
-    // MARK: - Recentre
+    // MARK: - Recenter
 
-    /// Where the camera is, in the terms `MapRecentre` decides in.
+    /// Where the camera is, in the terms `MapRecenter` decides in.
     ///
     /// `region` is what MapKit last reported *when it settled*, which before the first settle is the
-    /// opening region rather than a zero span — so `isCentred` is asked an honest question from the
+    /// opening region rather than a zero span — so `isCentered` is asked an honest question from the
     /// first frame.
     private var camera: MapRecenter.Camera {
         MapRecenter.Camera(
@@ -586,7 +586,7 @@ struct MapHomeView: View {
         case .ask:
             // `start()` is the same call `.task` makes on appear, and it is the *only* one that can
             // produce the sheet — iOS presents it once per undetermined status and silently ignores
-            // a request in any other. The press is held so the fix this grants recentres the map.
+            // a request in any other. The press is held so the fix this grants recenters the map.
             recenterAnswer = nil
             recenterWhenFixArrives = true
             location.start()
@@ -613,12 +613,12 @@ struct MapHomeView: View {
     }
 
     /// Moves the camera to `coordinate`. A `nil` span keeps whatever the reader is looking at, which
-    /// is the recentre control's first step and the same rule `VisitPinAdjustView.move(to:)` follows.
+    /// is the recenter control's first step and the same rule `VisitPinAdjustView.move(to:)` follows.
     ///
     /// The search narrowing is untouched on purpose and by construction: the species live on
     /// `MapViewport`, which `MapModel` rebuilds from `MapModel.search` on every camera change, so a
-    /// recentre refetches *through* the narrowing rather than around it. Clearing the field here
-    /// would be a second, hidden meaning for a button that says it centres the map.
+    /// recenter refetches *through* the narrowing rather than around it. Clearing the field here
+    /// would be a second, hidden meaning for a button that says it centers the map.
     private func flyTo(_ coordinate: Coordinate, meters: CLLocationDistance?) {
         // **No `withAnimation`, and the camera still flies.** The basemap is a `UIViewRepresentable`
         // over `MKMapView` now, so the thing that animates is `setRegion(_:animated:)` on the far
@@ -628,7 +628,7 @@ struct MapHomeView: View {
         // camera is the answer to the press, not the way the answer is delivered — and that decision
         // is made in `MapAnnotationLayer.applyCameraIfChanged`, where the animation actually is.
         // `.move(to:)`, which takes a fresh ticket every time. That is what makes a second press of
-        // the recentre control work even when it asks for the camera the first press already gave —
+        // the recenter control work even when it asks for the camera the first press already gave —
         // and it is why the annotation layer no longer has to guess, from how far the map has
         // drifted, whether the reader moved it. See `MapCameraRequest` and ERRATA E140.
         if let meters {
@@ -651,7 +651,7 @@ struct MapHomeView: View {
         AccessibilityNotification.Announcement(sentence).post()
     }
 
-    // MARK: - Behaviour
+    // MARK: - Behavior
 
     /// What a tap on the bottom card opens.
     ///
@@ -678,7 +678,7 @@ struct MapHomeView: View {
     /// Tapping a cluster zooms in, which is what the badge means (`TreeCluster`'s own note).
     private func zoom(into cluster: TreeCluster) {
         // Reduce Motion snaps the camera instead of flying it, and `MapAnnotationLayer` is where
-        // that decision is now made — see the note on the first-fix centring above.
+        // that decision is now made — see the note on the first-fix centering above.
         position = .move(to: MapLayout.zoomedIn(on: cluster, from: region))
     }
 

@@ -19,7 +19,7 @@ struct ProximityDedupeTests {
 
     private static let deviceID = UUID(uuidString: "D0000000-0000-4000-8000-0000000000B1")!
 
-    /// A point `metres` from `origin` along the north-east diagonal — the direction in which a
+    /// A point `meters` from `origin` along the north-east diagonal — the direction in which a
     /// square bounding box reaches furthest past its radius. Negative walks south-west.
     static func diagonal(from origin: Coordinate, meters: Double) -> Coordinate {
         let leg = meters / 2.0.squareRoot()

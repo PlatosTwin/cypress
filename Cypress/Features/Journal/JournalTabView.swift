@@ -41,7 +41,7 @@ struct JournalTabView: View {
 
     let api: any CypressAPI
     /// The caller's fix, from the composition root's shared provider (ARCHITECTURE §3). Screen 12
-    /// resolves its neighbourhood from it and names no neighbourhood at all without one.
+    /// resolves its neighborhood from it and names no neighborhood at all without one.
     let coordinate: Coordinate?
 
     /// Screen 12's own outbound affordances, resolved by the composition root so this folder does not

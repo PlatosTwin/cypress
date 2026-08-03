@@ -10,7 +10,7 @@
 //
 //  **What is not here is the screen.** "no Visit CTA, no quad action row, no foliage strip. That
 //  absence *is* the read-only state." So there is no disabled button anywhere in this file and no
-//  greyed-out affordance: a read-only profile is one with nothing to press, not one with everything
+//  grayed-out affordance: a read-only profile is one with nothing to press, not one with everything
 //  pressed out.
 //
 //  Not a raw hex or a raw font size in the file (ARCHITECTURE §6).

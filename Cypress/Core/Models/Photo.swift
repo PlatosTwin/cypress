@@ -53,7 +53,7 @@ public struct Photo: CoreEntity, SoftDeletable {
     public var storageKey: String?
     public var shotType: ShotType
     public var moderationState: ModerationState
-    /// Face and licence-plate blurring runs at upload (BUILD-PLAN §10).
+    /// Face and license-plate blurring runs at upload (BUILD-PLAN §10).
     public var blurApplied: Bool
     public var width: Int?
     public var height: Int?
@@ -151,7 +151,7 @@ public struct Photo: CoreEntity, SoftDeletable {
 /// **Three cases, where `FavoriteOwner` and `ReminderOwner` have two**, and the third is the whole
 /// reason this is a separate type rather than a fourth use of `FavoriteOwner`. Those two live under
 /// `CHECK ((user_id IS NULL) <> (device_id IS NULL))` — exactly one owner, no other state
-/// representable — because a reminder and a favourite are *deleted* with the account that owns them
+/// representable — because a reminder and a favorite are *deleted* with the account that owns them
 /// under both doors of `AccountDeletionChoice`. A photograph is not: the default door's promise is
 /// that the work stays on the tree and the name comes off it, so a photograph owned by nobody is
 /// not a hole in the rule, it is where the rule ends up. v12's CHECK is at most one owner for
@@ -266,7 +266,7 @@ public struct PhotoTally: Sendable, Hashable, Codable {
 ///    has no A3 candidate, and drawing a gradient over a tree that has photographs would be the
 ///    same emptiness E37 left behind. The eyebrow that names the choice is the caller's to omit.
 ///
-/// Deliberately free of any visibility judgement: the caller passes the set it may show, exactly as
+/// Deliberately free of any visibility judgment: the caller passes the set it may show, exactly as
 /// `Photo.isBestPhotoShot` requires, and this ranks it.
 public enum PhotoHero {
 

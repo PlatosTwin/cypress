@@ -52,7 +52,7 @@ final class MapModel {
         // `isApplyingChoice` is set only by `chooseSuggestion`, which writes the chosen species'
         // name into the field and has already decided what the map should narrow to. Without the
         // guard that write would look exactly like a keystroke: the debounce would start, the
-        // catalogue would be re-read for the name we just resolved, and the answer could be wider
+        // catalog would be re-read for the name we just resolved, and the answer could be wider
         // than the one row the reader tapped.
         didSet { if searchText != oldValue, !isApplyingChoice { searchDidChange() } }
     }
@@ -110,7 +110,7 @@ final class MapModel {
     /// The trees the membership chip has narrowed to, or nil when no chip is on.
     ///
     /// Read once per press of the chip rather than once per pan — `membershipDidChange` fills it and
-    /// the map refetches through it. `[]` is a real answer here (a reader with no favourites) and it
+    /// the map refetches through it. `[]` is a real answer here (a reader with no favorites) and it
     /// narrows the map to nothing, which screen 01 renders as an empty map — the empty map is the
     /// whole answer, on the owner's instruction (task #165).
     private(set) var membershipIDs: Set<UUID>?
@@ -120,7 +120,7 @@ final class MapModel {
     private var searchTask: Task<Void, Never>?
 
     /// Typing is a keystroke stream exactly as a pan is a camera stream, and it is debounced for the
-    /// same reason — every settled query is a catalogue read *and* a refetch of the map. Longer than
+    /// same reason — every settled query is a catalog read *and* a refetch of the map. Longer than
     /// the camera's 200 ms because a word takes longer to finish than a flick.
     static let searchDebounce: Duration = .milliseconds(300)
 
@@ -184,7 +184,7 @@ final class MapModel {
     private(set) var selectedPinID: UUID?
 
     /// Species resolved for the bloom filter, keyed by id. Populated lazily and only for species
-    /// that are actually on screen — the catalogue is 569 rows and the map does not need it.
+    /// that are actually on screen — the catalog is 569 rows and the map does not need it.
     private var species: [UUID: Species] = [:] {
         didSet { if filter.condition?.needsSeasonalData == true { recomputeAdmittedPins() } }
     }
@@ -313,7 +313,7 @@ final class MapModel {
         didSet { recomputeSpeciesPalette() }
     }
 
-    /// Which four species hold the four colour slots, for the pins that are drawn right now.
+    /// Which four species hold the four color slots, for the pins that are drawn right now.
     ///
     /// **Derived from `pins`, which is why it is set here and nowhere else.** A filter chip changes
     /// which pins are admitted, and a palette ranked over the pins the reader cannot see would light
@@ -334,7 +334,7 @@ final class MapModel {
 
     /// Reads the common names of the ≤4 species holding slots, so the legend can name them.
     ///
-    /// Four reads at worst, against a 569-row catalogue, and only when the palette actually changed.
+    /// Four reads at worst, against a 569-row catalog, and only when the palette actually changed.
     /// It reuses the cache the bloom chip already fills (`species`), so a species resolved for one is
     /// free for the other.
     private func resolveSpeciesNamesForPalette() {
@@ -524,7 +524,7 @@ final class MapModel {
 
     /// Resolves what was typed to a set of species, then refetches the map through it.
     ///
-    /// The catalogue read and the map read are deliberately two steps rather than one: 577 species
+    /// The catalog read and the map read are deliberately two steps rather than one: 577 species
     /// answer a substring in 0.1 ms and 195,309 trees do not, so the narrow thing is resolved first and
     /// the wide query is asked once, already narrowed.
     private func searchDidChange() {
@@ -568,7 +568,7 @@ final class MapModel {
     /// `Cypress` narrows to the six species whose names contain the word (E165). Picking
     /// `Monterey Cypress` off the list is a statement about one of those six, and the map must stop
     /// showing the other five — so the species set is pinned here rather than re-derived from the
-    /// text, which would resolve `Monterey Cypress` back through the catalogue and could pick up
+    /// text, which would resolve `Monterey Cypress` back through the catalog and could pick up
     /// anything else that happens to contain the phrase.
     ///
     /// **The keyboard goes.** This is the deliberate opposite of R16's ✕, which clears and *keeps*
@@ -621,7 +621,7 @@ final class MapModel {
         refetchThroughNarrowing()
     }
 
-    /// Reads the id set behind `Yours` or `Favourites`, then refetches the map through it.
+    /// Reads the id set behind `Yours` or `Favorites`, then refetches the map through it.
     ///
     /// The same two-step shape as `searchDidChange`, and for the same reason: the narrow thing is
     /// resolved first — here from `main`, a table of tens of rows — and the wide query over 145,837
@@ -636,7 +636,7 @@ final class MapModel {
         membershipTask = Task { [weak self, api] in
             let ids = (try? await api.mapMembership(kind)) ?? []
             guard let self, !Task.isCancelled, self.filter.membership == kind else { return }
-            // `[]` is published deliberately rather than left nil. A reader with no favourites has
+            // `[]` is published deliberately rather than left nil. A reader with no favorites has
             // asked a question and the honest answer is an empty map that says why (ERRATA E126),
             // not the whole city.
             self.membershipIDs = ids
@@ -657,7 +657,7 @@ final class MapModel {
 
     /// Resolves the species of the pins currently on screen, once each, so `In bloom` can answer
     /// from real seasonal data. Bounded by the pin budget and by the distinct species in view — in
-    /// SF that is a few dozen, not the whole 569-row catalogue.
+    /// SF that is a few dozen, not the whole 569-row catalog.
     private func resolveSpeciesForVisiblePins() {
         guard case let .pins(pins) = content else { return }
         let wanted = Set(pins.compactMap(\.speciesID))
@@ -743,10 +743,10 @@ enum MapPinKind {
     ///
     /// **A slot is only ever added to a pin that would already have been `.cityTree`.** Every other
     /// pin's fill is carrying a meaning that outranks "which species is this" — amber says the tree
-    /// needs something, dashes say the record is unverified, grey and hollow say there is no living
+    /// needs something, dashes say the record is unverified, gray and hollow say there is no living
     /// tree here — so this delegates to `kind(for:)` first and only then looks the species up. The
-    /// argument is in `MapSpeciesPalette`'s header; the guarantee is that no colour of the map's
-    /// existing vocabulary can be replaced by a species colour.
+    /// argument is in `MapSpeciesPalette`'s header; the guarantee is that no color of the map's
+    /// existing vocabulary can be replaced by a species color.
     static func kind(for pin: TreePin, palette: MapSpeciesPalette) -> MapPin.Kind {
         let base = kind(for: pin)
         guard base == .cityTree, let slot = palette.slot(for: pin.speciesID) else { return base }
@@ -759,10 +759,10 @@ enum MapPinKind {
     ///
     /// C19's own labels, except on a vacant site, which speaks `SiteCopy`'s words.
     ///
-    /// E107 wrote this override because the grey pin was shared with a memorial and its label —
+    /// E107 wrote this override because the gray pin was shared with a memorial and its label —
     /// `Removed tree, memorial` — claimed a tree had been here; a site never had one. It noted that
     /// only the *spoken* half of the distinction could be made then, since a new pin was a design
-    /// decision against a closed catalogue. R7 made that decision, so the pin is now `.vacantSite`
+    /// decision against a closed catalog. R7 made that decision, so the pin is now `.vacantSite`
     /// and the drawn half is fixed too.
     ///
     /// **The override survives anyway**, deliberately. `MapPin.Kind.vacantSite` carries a sane default
@@ -772,13 +772,13 @@ enum MapPinKind {
     /// and this keeps overriding it.
     ///
     /// **A confirmed-dead tree is the second override, for the same reason** (ERRATA E170). It draws
-    /// the grey pin, which is right — there is no living tree at this site, and `MapPin.Kind` is a
-    /// closed catalogue whose sixth entry took a ruling. But the grey pin *says* `Removed tree,
+    /// the gray pin, which is right — there is no living tree at this site, and `MapPin.Kind` is a
+    /// closed catalog whose sixth entry took a ruling. But the gray pin *says* `Removed tree,
     /// memorial`, and a dead street tree has not been removed: it is standing there, over a pavement,
     /// and it keeps its profile and its REPORT button precisely because reporting it is the most
     /// useful thing a passer-by can do. A reader sweeping a block was told the one thing that would
     /// stop them walking over to it. Same split E107 made and same half — the words are fixable here
-    /// without touching the catalogue; whether a standing dead tree deserves its own drawn pin is a
+    /// without touching the catalog; whether a standing dead tree deserves its own drawn pin is a
     /// design decision, and it is left open rather than guessed at.
     static func accessibilityLabel(for pin: TreePin) -> String {
         switch kind(for: pin) {
@@ -796,7 +796,7 @@ enum MapPinKind {
         }
     }
 
-    /// The same label, with the species named when the map has a colour on this pin.
+    /// The same label, with the species named when the map has a color on this pin.
     ///
     /// **This is the third channel, and the only one that works with the screen off.** A slot is a
     /// hue plus a glyph, and both are things you have to see. A reader on VoiceOver sweeping a block
@@ -817,15 +817,15 @@ enum MapPinKind {
     }
 }
 
-/// The words the map says about a pin that the closed `MapPin.Kind` catalogue has no case for.
+/// The words the map says about a pin that the closed `MapPin.Kind` catalog has no case for.
 ///
 /// **NOT SPECIFIED** — C19 names five pins and none of them is a standing dead tree. It lives in
 /// `Features/Map` rather than in the component for the reason `SiteCopy.pinAccessibilityLabel` does:
-/// a component in `DesignSystem` must not reach into `Features` for a string, so the catalogue keeps
+/// a component in `DesignSystem` must not reach into `Features` for a string, so the catalog keeps
 /// its own default and the feature overrides it.
 enum MapPinCopy {
     /// Says the two things a listener needs and neither of the two it must not: that the tree is dead
-    /// (so the grey dot is explained), that it is still standing (so nobody reads "gone"), and no
+    /// (so the gray dot is explained), that it is still standing (so nobody reads "gone"), and no
     /// word of "memorial" or "removed", which are the other status.
     static let deadReportedLabel = "Dead tree, still standing"
 }
@@ -905,7 +905,7 @@ struct MapCardSubject: Identifiable, Equatable {
         return PhotoHero.choose(from: profile.photos.items, tallies: profile.photoTallies)
     }
 
-    /// The four canonical C22 thumbnails cover four species; the rest of the catalogue has no
+    /// The four canonical C22 thumbnails cover four species; the rest of the catalog has no
     /// authored artwork and no photograph yet. Genus decides where it can, and a stable hash of the
     /// name decides the rest — the same tree always gets the same placeholder, and none of it
     /// claims to be a picture of this tree.

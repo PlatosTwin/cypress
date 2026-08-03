@@ -148,7 +148,7 @@ final class VisitCameraController {
 
         let settings = AVCapturePhotoSettings()
         // Fastest path to a frame: this screen's budget is ten seconds for the whole visit, and a
-        // quality-prioritised capture spends a visible fraction of it.
+        // quality-prioritized capture spends a visible fraction of it.
         settings.photoQualityPrioritization = .speed
 
         return await withCheckedContinuation { continuation in

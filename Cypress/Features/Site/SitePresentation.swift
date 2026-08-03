@@ -306,7 +306,7 @@ enum SiteCopy {
     static let cardMeta = "no tree at this site"
 
     /// The pin's VoiceOver label. C19 has no pin for a site, so 12,518 pins announced themselves as
-    /// `Removed tree, memorial`; the drawn pin is still the grey one (ERRATA E107) and this is the
+    /// `Removed tree, memorial`; the drawn pin is still the gray one (ERRATA E107) and this is the
     /// half of the distinction that could be made without inventing a component.
     static let pinAccessibilityLabel = "Planting site, no tree"
 

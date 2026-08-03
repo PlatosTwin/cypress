@@ -21,7 +21,7 @@ struct VisitPinAdjustView: View {
     /// measured from.
     ///
     /// Frozen rather than live, and that is a decision. `VisitLocationProvider` updates on every
-    /// metre, so a live anchor would mean the circle moving under a reader who is aiming — a spot
+    /// meter, so a live anchor would mean the circle moving under a reader who is aiming — a spot
     /// that was 74 m away when they looked at it becomes 78 m and refused because they shifted their
     /// weight. The reader opened this screen to say "the tree is over *there*, from *here*", and here
     /// is where they were when they said it. It is also exactly the coordinate the add would have
@@ -119,19 +119,19 @@ struct VisitPinAdjustView: View {
 
     /// Screen 01's basemap with nothing on it but the reader's fix, and the pin drawn over the middle.
     ///
-    /// ── The pin is the centre of the map, and the map moves under it ──────────────────────────
+    /// ── The pin is the center of the map, and the map moves under it ──────────────────────────
     /// The alternative — a draggable annotation — was rejected for three reasons, in order of how
     /// much they matter. **The pin under your thumb is the pin you cannot see**, and the thing being
     /// aimed at is a tree the reader is looking at in the street, so hiding the target under a finger
     /// for the whole gesture is the one thing this screen cannot afford. **Every point on the screen
     /// becomes a handle**, instead of an 18 pt dot in a 44 pt hit area, which is the tap-target
     /// problem SCREENS.md §5 gap 12 raises about pins turned into the aiming problem. And MapKit's own
-    /// pan recogniser is the only thing that moves a map smoothly; a `DragGesture` layered on an
+    /// pan recognizer is the only thing that moves a map smoothly; a `DragGesture` layered on an
     /// annotation has to fight it for the touch.
     ///
     /// **No pins and no clusters.** The trees already on record nearby would genuinely help — they
     /// are what the 10 m dedupe is about to refuse against — but a pin on this screen would be a
-    /// labelled button with nowhere to go: opening a tree profile from inside a placement would
+    /// labeled button with nowhere to go: opening a tree profile from inside a placement would
     /// abandon a photograph, and a button that does nothing is worse than no button (ERRATA E125's
     /// lesson, from the other direction). Left out on purpose; see the round's report for the shape
     /// of adding it.
@@ -176,10 +176,10 @@ struct VisitPinAdjustView: View {
     /// `source = community, verification_state = unverified` record. Drawing it as anything else would
     /// promise a status the add cannot deliver.
     ///
-    /// Past the limit it fades rather than changing colour. Signal Amber is reserved for "this tree
+    /// Past the limit it fades rather than changing color. Signal Amber is reserved for "this tree
     /// needs something" (§1.1) and a pin that is merely too far away is not a tree in trouble; the
     /// two sentences above and the disabled CTA below are already saying it in words, and §5.6's
-    /// restraint says not to say it a third way in a new colour.
+    /// restraint says not to say it a third way in a new color.
     private func reticle(_ presentation: VisitPinAdjustPresentation) -> some View {
         MapPin(.community)
             .opacity(presentation.isWithinBound ? 1 : VisitMetrics.PinAdjust.beyondLimitOpacity)
@@ -220,15 +220,15 @@ struct VisitPinAdjustView: View {
     ///
     /// **This is the accessibility answer, and it is a real control rather than a concession.** A map
     /// with a draggable pin is the hardest thing in this app for VoiceOver: a pan is a gesture the
-    /// screen reader owns, and there is no amount of labelling that turns "drag the world 30 m
+    /// screen reader owns, and there is no amount of labeling that turns "drag the world 30 m
     /// north-east" into something a swipe-and-double-tap can perform. So the pin has a second way to
     /// move that needs no gesture at all, the screen says where the pin is above the map in reading
     /// order, and every press announces the result — including the presses that are refused, because
     /// a control that stops working silently is the failure this bound would otherwise produce.
     ///
-    /// Four `SecondaryOutlineButton`s rather than a drawn D-pad: C7 is the catalogue's control for
+    /// Four `SecondaryOutlineButton`s rather than a drawn D-pad: C7 is the catalog's control for
     /// "another thing you may do here", it is already well over 44 pt at its compact size, and an
-    /// invented four-way pad would be a new component in a closed catalogue. The drawn label is the
+    /// invented four-way pad would be a new component in a closed catalog. The drawn label is the
     /// compass letter — `VisitBearing`'s own vocabulary, and all that fits four across — and the
     /// spoken label is the whole sentence.
     private var nudgePad: some View {

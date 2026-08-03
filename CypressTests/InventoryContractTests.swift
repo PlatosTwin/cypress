@@ -284,7 +284,7 @@ struct InventoryContractTests {
             // The property that actually matters survives and is stronger, because it is per row
             // rather than per file: an inventory's declared space must equal the space its own rows
             // were written with. `identityIsAPureFunctionOfTheSourceId` then re-derives every uuid
-            // through that space's prefix, so a mislabelled inventory fails there too, over 198,625
+            // through that space's prefix, so a mislabeled inventory fails there too, over 198,625
             // rows.
             guard declared != nil else { continue }
             // Folded in from what used to be a test of its own. A receipt that names a contract

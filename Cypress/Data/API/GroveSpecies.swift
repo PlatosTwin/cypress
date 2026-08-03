@@ -10,19 +10,19 @@ import Foundation
 ///
 /// **Why the two halves are separate.** The screen shows a ring reading `12 of 40 species` over the
 /// caption `you can recognize in the Outer Sunset`, so the numerator is a fact about the
-/// contributor and the denominator is a fact about the city's inventory of one neighbourhood. They
+/// contributor and the denominator is a fact about the city's inventory of one neighborhood. They
 /// come from different tables with different provenance and they are not sub-parts of one number:
 /// the grid below the ring shows *every* species the contributor knows, including ones that do not
-/// grow in their own neighbourhood. Intersecting the two is `GrovePresentation`'s job, and
+/// grow in their own neighborhood. Intersecting the two is `GrovePresentation`'s job, and
 /// `Series.filter` keeps the completeness of both while it does it.
 public struct GroveSpecies: Hashable, Sendable {
 
-    /// Where this contributor's own trees are — A4: "resident neighbourhood inferred from
+    /// Where this contributor's own trees are — A4: "resident neighborhood inferred from
     /// most-visited".
     ///
     /// `nil` on a device that has contributed nothing, because there is nothing to infer it from.
     /// That is the cold-start case rather than an error: a grove with no trees in it has no
-    /// neighbourhood, and a ring captioned "in the ___" cannot render (ARCHITECTURE §5.6).
+    /// neighborhood, and a ring captioned "in the ___" cannot render (ARCHITECTURE §5.6).
     public let neighborhood: GroveNeighborhood?
 
     /// Every species this contributor has met, oldest first.
@@ -41,7 +41,7 @@ public struct GroveSpecies: Hashable, Sendable {
 
 /// The contributor's resident area and the species the city records growing in it.
 ///
-/// "Neighbourhood" in the type name is A4's word and stays; since R29 reached this screen the
+/// "Neighborhood" in the type name is A4's word and stays; since R29 reached this screen the
 /// area itself may be either of R29's two shapes, and the two are different promises the caption
 /// keeps apart: a polygon is a *place*, the fallback is a stated *distance* around the
 /// contributor's own most-visited tree, taken only when no tree they have touched carries a
@@ -53,12 +53,12 @@ public struct GroveNeighborhood: Hashable, Sendable {
     /// distance where no polygon covers anything the contributor has touched.
     public let area: AlmanacArea
 
-    /// The distinct species of every city-inventory tree standing in this neighbourhood — the
+    /// The distinct species of every city-inventory tree standing in this neighborhood — the
     /// ring's denominator.
     ///
     /// Species ids rather than a count, so the numerator can be computed by intersecting this with
     /// what the contributor knows without a second query that could disagree with it. It is a
-    /// `Series` for the same reason `known` is: a partial read of the neighbourhood would make the
+    /// `Series` for the same reason `known` is: a partial read of the neighborhood would make the
     /// denominator too small and the ring too full.
     ///
     /// **City inventory only.** A community-added tree carries an unverified species assertion

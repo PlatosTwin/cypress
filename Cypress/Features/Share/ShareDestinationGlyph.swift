@@ -13,7 +13,7 @@
 //  for it.
 //
 //  Local to this folder rather than in `DesignSystem/Components`: no other screen in SCREENS.md
-//  uses them, and C1–C30 is a closed catalogue. Same arrangement as 14's camera glyph.
+//  uses them, and C1–C30 is a closed catalog. Same arrangement as 14's camera glyph.
 //
 //  No SF Symbols. The design system is explicit that every icon in the app is hand-drawn and there
 //  is no icon font (SCREENS.md §2 C16), and the Apple glyphs would put three vendors' marks on one
@@ -109,12 +109,12 @@ private struct ShareTrayArrow: Shape {
     }
 }
 
-/// Two rounded link halves overlapping at the centre, drawn in a 24×24 box.
+/// Two rounded link halves overlapping at the center, drawn in a 24×24 box.
 ///
 /// ── The construction, because the numbers below are not arbitrary ──────────────────────────
 /// Both halves are the same capsule end — a **half turn** of a `3.54pt` cap plus two straight arms
-/// of the same length — sitting on the box's leading diagonal, one rotated 180° about the centre
-/// `(12, 12)`. The cap centres are `(18, 8)` and `(6, 16)`, each `3.54pt` off the diagonal on
+/// of the same length — sitting on the box's leading diagonal, one rotated 180° about the center
+/// `(12, 12)`. The cap centers are `(18, 8)` and `(6, 16)`, each `3.54pt` off the diagonal on
 /// opposite sides, so the two halves read as two rings hooked through each other rather than as one
 /// ring cut in half. The bar runs *on* the diagonal, between the two inner arms, and joins them.
 ///

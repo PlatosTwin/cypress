@@ -217,20 +217,20 @@ public enum DataGates {
                     '\(now)','\(now)','\(now)')
                 """)
 
-            // A favourite always has exactly one owner too (ERRATA E89), by the same CHECK and for
+            // A favorite always has exactly one owner too (ERRATA E89), by the same CHECK and for
             // the same reasons as a private reminder. Never none…
             await rejects("favorite with no owner", """
                 INSERT INTO favorites (id, tree_uuid, client_uuid, created_at, updated_at)
                 VALUES ('\(UUID().uuidString)','\(tree)','\(UUID().uuidString)','\(now)','\(now)')
                 """)
-            // …and never two, which is what would make "whose favourite is this" a precedence rule.
+            // …and never two, which is what would make "whose favorite is this" a precedence rule.
             await rejects("favorite owned by both a user and a device", """
                 INSERT INTO favorites (id, user_id, device_id, tree_uuid, client_uuid, created_at, updated_at)
                 VALUES ('\(UUID().uuidString)','\(UUID().uuidString)','\(device)','\(tree)',
                     '\(UUID().uuidString)','\(now)','\(now)')
                 """)
 
-            // Favourites are tombstoned, never hard-deleted.
+            // Favorites are tombstoned, never hard-deleted.
             try await store.queue.write { connection in
                 try ContributionStore().applyFavoriteToggle(
                     owner: .user(OutboxTestSupport.userID),
@@ -278,11 +278,11 @@ public enum DataGates {
             }
             expect(
                 bothOwners == 2,
-                "uniqueness: a device and an account cannot both favourite one tree (\(bothOwners) rows)",
+                "uniqueness: a device and an account cannot both favorite one tree (\(bothOwners) rows)",
                 into: &failures
             )
 
-            // The trigger's adoption exception is exactly one row wide. A device-owned favourite
+            // The trigger's adoption exception is exactly one row wide. A device-owned favorite
             // with no account row beside it is still undeletable — otherwise the exception would be
             // a hole rather than a merge (see `AppSchema` v5).
             let lonely = UUID()
@@ -301,15 +301,15 @@ public enum DataGates {
                 "DELETE FROM favorites WHERE tree_uuid = '\(lonely.uuidString)'"
             )
 
-            // The trigger's *second* exception (v6, RULINGS R3): an account's own favourites are
+            // The trigger's *second* exception (v6, RULINGS R3): an account's own favorites are
             // deleted with the account. It is keyed on a sentinel that exists only inside a deletion
-            // transaction, so with nobody being deleted a user-owned favourite is exactly as
+            // transaction, so with nobody being deleted a user-owned favorite is exactly as
             // undeletable as it was under v5.
             //
             // This is the assertion that catches the natural, wrong spelling of the WHEN clause.
             // `OLD.user_id = (SELECT value FROM app_state WHERE key = …)` is NULL when the sentinel
             // is absent, `NOT (0 OR NULL)` is NULL, and a NULL WHEN does not fire — so that form
-            // permits every hard delete of a user-owned favourite on every database where nobody is
+            // permits every hard delete of a user-owned favorite on every database where nobody is
             // being deleted at all.
             let erasedAccount = UUID()
             let keptTree = UUID()
@@ -344,7 +344,7 @@ public enum DataGates {
                     )
                 }
             } catch {
-                failures.append("R3: an account's own favourite could not be deleted with the account: \(error)")
+                failures.append("R3: an account's own favorite could not be deleted with the account: \(error)")
             }
             let erasedRows = try await store.queue.read { connection -> Int in
                 let statement = try connection.prepare("""
@@ -353,7 +353,7 @@ public enum DataGates {
                 defer { statement.finalize() }
                 return try statement.fetchOne { try $0.int("n") } ?? -1
             }
-            expect(erasedRows == 0, "R3: \(erasedRows) favourites survived their account", into: &failures)
+            expect(erasedRows == 0, "R3: \(erasedRows) favorites survived their account", into: &failures)
             // The permission slip is torn up by the same transaction that wrote it. A sentinel left
             // on disk would be a standing hole in the trigger for exactly one account id.
             let sentinelSurvived = try await store.queue.read { connection -> Bool in
@@ -681,7 +681,7 @@ public enum DataGates {
     /// **The framing chip the contributor tapped is what the upload records.**
     ///
     /// The outbox used to carry paths alone, so `APIOutboxTransport` had nothing to send and
-    /// labelled every binary `full_tree`. `photos.shot_type` is append-only and drives both the
+    /// labeled every binary `full_tree`. `photos.shot_type` is append-only and drives both the
     /// ghost overlay's reference shot and A3's best photo, so a wrong label is permanent and
     /// visible. This gate follows one non-full-tree photo the whole way: enqueue, close the
     /// database, reopen it, drain, and check what the transport was handed.
@@ -814,7 +814,7 @@ public enum DataGates {
             )
             expect(
                 rows.first?.item.photos.allSatisfy { $0.shotType == .other } == true,
-                "upgrade: an old row was labelled \(String(describing: rows.first?.item.photos.map(\.shotType)))",
+                "upgrade: an old row was labeled \(String(describing: rows.first?.item.photos.map(\.shotType)))",
                 into: &failures
             )
             expect(
@@ -1012,7 +1012,7 @@ public enum DataGates {
                 )
             }
             // And no row is in a space this gate has no box for, so a third city cannot arrive
-            // unchecked by being unrecognised.
+            // unchecked by being unrecognized.
             let unboxed = try await count("""
                 SELECT COUNT(*) AS n FROM \(SeedDatabase.schemaName).trees
                  WHERE id_space NOT IN (\(boxes.map { "'\($0.space)'" }.joined(separator: ",")))
@@ -1210,7 +1210,7 @@ public enum DataGates {
             expect(record?.tree.id == sampleUUID, "profile: resolved the wrong tree", into: &failures)
             expect(record?.tree.source == .cityImport, "profile: seeded tree is not a city import", into: &failures)
             expect(record?.species != nil, "profile: a tree with species_current resolved no species", into: &failures)
-            expect(record?.neighborhoodName?.isEmpty == false, "profile: no neighbourhood name", into: &failures)
+            expect(record?.neighborhoodName?.isEmpty == false, "profile: no neighborhood name", into: &failures)
         } else {
             failures.append("profile: no seeded tree carries a species")
         }
@@ -1279,7 +1279,7 @@ public enum DataGates {
         )
 
         // --- A tree whose city record names no taxon carries no species at all, so it cannot
-        // inherit a real species' phenology, autumn colour or field guide.
+        // inherit a real species' phenology, autumn color or field guide.
         let nonTaxonWithSpecies = try await count("""
             SELECT COUNT(*) AS n FROM \(SeedDatabase.schemaName).species_map
              WHERE is_non_taxon = 1 AND species_id IS NOT NULL
@@ -1299,7 +1299,7 @@ public enum DataGates {
         //
         // The column list is read from the seed's own receipt rather than written out here, so the
         // generator and the gate cannot drift: adding a column to `NORMALISED_SEED_COLUMNS` extends
-        // this check by rebuilding, and removing one from the normaliser without removing it from
+        // this check by rebuilding, and removing one from the normalizer without removing it from
         // the receipt fails immediately.
         //
         // **Deliberately not every column.** `address` (2,277 case-variant groups), `plot_size` (61)
@@ -1322,7 +1322,7 @@ public enum DataGates {
         )
         for column in normalizedColumns {
             guard treeColumnNames.contains(column) else {
-                failures.append("seed contract: seed_meta names '\(column)' as case-normalised but "
+                failures.append("seed contract: seed_meta names '\(column)' as case-normalized but "
                     + "seed.trees has no such column")
                 continue
             }

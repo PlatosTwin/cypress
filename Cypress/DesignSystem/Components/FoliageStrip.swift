@@ -14,9 +14,9 @@
 //  (ERRATA E9), and it clamps exactly as an evergreen does. The asymmetry is deliberate: drawing a
 //  bare month is a claim about the tree, leaving it out is not.
 //
-//  The 3-step ramp of §1.2 is the *only* colour vocabulary SCREENS.md gives this component — there
-//  is no autumn hue anywhere in the spec. So the enforcement is a clamp, not a colour swap, and no
-//  fourth colour is invented here (SCREENS.md ground rule: nothing is invented).
+//  The 3-step ramp of §1.2 is the *only* color vocabulary SCREENS.md gives this component — there
+//  is no autumn hue anywhere in the spec. So the enforcement is a clamp, not a color swap, and no
+//  fourth color is invented here (SCREENS.md ground rule: nothing is invented).
 //
 
 import SwiftUI
@@ -26,7 +26,7 @@ struct FoliageStrip: View {
     /// How much foliage the tree carries in one month.
     ///
     /// `bare` is only meaningful for a species that drops its leaves; for an evergreen the
-    /// initializer raises it to `thin` (D5). SCREENS.md specifies no distinct colour for a bare
+    /// initializer raises it to `thin` (D5). SCREENS.md specifies no distinct color for a bare
     /// month, so `bare` renders as the sparsest ramp step for every species — see the file header.
     enum Density: String, CaseIterable, Identifiable {
         case full
@@ -160,8 +160,8 @@ struct FoliageStrip: View {
             //
             // A `.accessibilityLabel` on a bare `RoundedRectangle` never reaches VoiceOver — a
             // `Shape` is not an accessibility element, so there is nothing for the label to attach
-            // to. Twelve cells labelled that way are twelve *silent* cells, which reads on device
-            // exactly like a strip that was never labelled at all.
+            // to. Twelve cells labeled that way are twelve *silent* cells, which reads on device
+            // exactly like a strip that was never labeled at all.
             //
             // And even working, twelve stops is the wrong shape for the information. The strip is
             // a visual encoding of one sentence — when this tree carries leaves — and a spoken

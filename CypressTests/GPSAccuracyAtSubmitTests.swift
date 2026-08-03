@@ -7,8 +7,8 @@
 //
 //  ── The defect these tests are the assertion form of ──────────────────────────────────────
 //  Four views carried D6's per-contribution GPS accuracy into a model built in a `@State`
-//  initialiser: the care log, the check-in, the measure sheet and the visit camera. `@State` runs
-//  its initialiser exactly once for the lifetime of a view's identity, so the number handed in was
+//  initializer: the care log, the check-in, the measure sheet and the visit camera. `@State` runs
+//  its initializer exactly once for the lifetime of a view's identity, so the number handed in was
 //  whichever one the composition root's provider had published in the first frame — and on a cold
 //  launch that is `nil`, because the provider is inert until screen 01 asks it to start and
 //  CoreLocation then takes its own time.

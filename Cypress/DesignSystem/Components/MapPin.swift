@@ -20,16 +20,16 @@ struct MapPin: View {
     enum Kind: Hashable {
         /// 18pt Canopy circle, `3px` ring, `shadow.pin`.
         ///
-        /// **Also the residual class of the species colouring**, and that is load-bearing rather
+        /// **Also the residual class of the species coloring**, and that is load-bearing rather
         /// than incidental: a city tree whose species did not win one of the four viewport slots
         /// draws *exactly this*, unchanged, and Canopy green is deliberately absent from the slot
         /// palette. Green therefore asserts "street tree" and never "the same tree as that one".
         /// See `MapSpeciesSlot` and `MapSpeciesPalette`.
         case cityTree
-        /// A city tree whose species holds one of the four viewport colour slots (task #80).
+        /// A city tree whose species holds one of the four viewport color slots (task #80).
         ///
         /// The geometry is `cityTree`'s to the point — 18 pt, a 3 pt ring, `shadow.pin` — because a
-        /// species colour must not also change what kind of thing the pin is. Only the fill moves,
+        /// species color must not also change what kind of thing the pin is. Only the fill moves,
         /// and a glyph appears inside it so the grouping survives a reader who sees no hue at all
         /// (RULINGS R8). `MapSpeciesSlot` carries both.
         ///
@@ -42,7 +42,7 @@ struct MapPin: View {
         /// 18pt pale circle with a `2.5px` **dashed** Canopy ring — the community layer, which
         /// never reads as part of the official inventory (DECISIONS §3.16).
         case community
-        /// 16pt gray circle at 85 % opacity with a centred bar — a removed tree's memorial.
+        /// 16pt gray circle at 85 % opacity with a centered bar — a removed tree's memorial.
         case removed
         /// A planting basin with nothing in it: the same 16pt footprint as a memorial, drawn as an
         /// **empty ring with no fill** (RULINGS R7, closing the half of ERRATA E107 that was deferred).
@@ -51,11 +51,11 @@ struct MapPin: View {
         /// here and is gone — the same lie E107 and E113 removed from the profile and the almanac, left
         /// standing on the one surface where 12,518 of these records actually live. E107 fixed what the
         /// pin *says* and explicitly deferred what it *draws*, because "a new pin is a design decision
-        /// and C1–C30 is a closed catalogue". That decision is now made.
+        /// and C1–C30 is a closed catalog". That decision is now made.
         ///
-        /// Hollow rather than a second grey: an absence of fill reads as an absence of tree without
-        /// anyone having to learn a colour, and it cannot be confused with a filled dot at any size —
-        /// which a second grey could. Solid rather than dashed, because dashes already mean the
+        /// Hollow rather than a second gray: an absence of fill reads as an absence of tree without
+        /// anyone having to learn a color, and it cannot be confused with a filled dot at any size —
+        /// which a second gray could. Solid rather than dashed, because dashes already mean the
         /// community layer (DECISIONS §3.16) and a dashed hollow ring would read as an unverified
         /// community tree.
         case vacantSite
@@ -157,7 +157,7 @@ struct MapPin: View {
             case .community: return "Community-added tree"
             case .removed: return "Removed tree, memorial"
             // `MapPinKind.accessibilityLabel` overrides this with `SiteCopy`'s wording for a real
-            // pin; this is the catalogue's own default, and it must never say a tree was here.
+            // pin; this is the catalog's own default, and it must never say a tree was here.
             case .vacantSite: return "Planting site, no tree"
             case let .cluster(count, _): return "\(count) trees"
             case .gps: return "Your location"

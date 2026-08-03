@@ -182,7 +182,7 @@ struct GroveTreesTests {
     /// The word is `QuadActionRow.Action.favorite.label`'s, not a second spelling of it: the list
     /// describes what the button did, and a list that renamed the act would be describing a
     /// different one.
-    @Test("the grove calls a favourite what the button that made it is called")
+    @Test("the grove calls a favorite what the button that made it is called")
     func favoriteMatchesTheControl() {
         let row = Self.presentation([Self.entry(1, lastVisitedAt: nil, isFavorite: true, record: GroveRecord.none)]).rows[0]
         #expect(row.subtitle == QuadActionRow.Action.favorite.label)
@@ -236,7 +236,7 @@ struct GroveTreesTests {
     /// hands back `nil`, and nil must draw nothing — not `0 visits`, which is a claim about a
     /// person's history that an unproven read is not entitled to make.
     ///
-    /// The favourite clause survives, because it comes from a different fact that *was* proved.
+    /// The favorite clause survives, because it comes from a different fact that *was* proved.
     @Test("a record that could not be proved prints no tally, and does not print a zero")
     func anUnprovenRecordSaysNothing() {
         let unproven = Self.presentation([
@@ -248,7 +248,7 @@ struct GroveTreesTests {
         #expect(unproven[0].subtitle.contains("0") == false)
         #expect(unproven[1].subtitle == "Favorite")
 
-        // And the proved-empty case is a different answer from the unproved one: a favourite with a
+        // And the proved-empty case is a different answer from the unproved one: a favorite with a
         // read behind it saying "nothing yet" draws the same line here, but the two arrive by
         // different routes and `.none` is the one that means zero.
         let proved = Self.presentation([Self.entry(3, isFavorite: false, record: GroveRecord.none)]).rows
@@ -491,10 +491,10 @@ struct GroveTreesTests {
         #expect(cypressRow.subtitle == "3 visits · 1 care log")
     }
 
-    /// A tree in the grove that has never been contributed to — a favourite, the second arm of
+    /// A tree in the grove that has never been contributed to — a favorite, the second arm of
     /// `groveTreeIDs` — has **no key** in the records map, and that absence must read as `.none`
     /// rather than as nil. Nil means "this read could not answer"; this read answered.
-    @Test("a favourite nobody has visited has a record, and it is empty")
+    @Test("a favorite nobody has visited has a record, and it is empty")
     @MainActor
     func aFavoriteWithNoContributionsIsEmptyNotUnknown() async throws {
         let deviceID = UUID(uuidString: "D0000000-0000-4000-8000-0000000000C2")!
@@ -505,7 +505,7 @@ struct GroveTreesTests {
         let tree = try await api.addTree(
             TreeDraft(
                 coordinate: Coordinate(latitude: 37.7841, longitude: -122.4464),
-                photoLocalPath: "/tmp/cypress-grove-record-favourite.jpg",
+                photoLocalPath: "/tmp/cypress-grove-record-favorite.jpg",
                 attribution: attribution
             )
         ).id

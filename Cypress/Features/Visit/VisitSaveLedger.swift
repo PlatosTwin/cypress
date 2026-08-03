@@ -43,7 +43,7 @@ final class VisitSaveLedger {
     /// A plain `>=` is the other failure. It re-asks on every save until answered, and DECISIONS §3
     /// is built end to end on not pressuring a contributor — D1 kills the leaderboard, D9 exists
     /// only to move the auth sheet off "second 8 of a ten-second street-corner visit". An ask that
-    /// returns every time somebody saves a tree is that friction handed back in instalments.
+    /// returns every time somebody saves a tree is that friction handed back in installments.
     ///
     /// Two is the smallest bound that fixes the loss without becoming the nag: the ask gets one
     /// second chance, on the next save after one that went unanswered, and then stops for good.
@@ -88,7 +88,7 @@ final class VisitSaveLedger {
     /// Returning `true` counts as a presentation, because the caller's only reason to ask is to
     /// show the sheet. If it turns out to be shown and not answered, the next save gets one more
     /// go — see `maxAccountAskPresentations` for why exactly one more.
-    /// - Parameter mayAsk: whether this build is *able* to honour an ask (RULINGS **R4**). Default
+    /// - Parameter mayAsk: whether this build is *able* to honor an ask (RULINGS **R4**). Default
     ///   `true`, because D9's rule is the ledger's job and a capability is not — the caller knows
     ///   whether there is a server to send a magic link, and this type never should.
     ///

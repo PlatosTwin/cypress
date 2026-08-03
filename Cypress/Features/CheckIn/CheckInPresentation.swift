@@ -270,7 +270,7 @@ enum StructureFlagLabel {
 /// The geometry SCREENS.md gives screen 05 that `CypressSpacing` does not already name.
 ///
 /// Same arrangement as `ReportMetrics` and `TreeProfileMetrics`: screen-specific numbers are named
-/// once here so the view body carries no loose values, while every colour, font and radius stays a
+/// once here so the view body carries no loose values, while every color, font and radius stays a
 /// `DesignSystem` token (ARCHITECTURE §6).
 enum CheckInMetrics {
     /// 05 §2: the first label block sits at `padding:10px 18px 0`, tighter than the `14px` the

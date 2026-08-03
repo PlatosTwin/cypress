@@ -13,9 +13,9 @@ import XCTest
 /// gone on passing.
 ///
 /// Black-box, like the rest of `CypressUITests`: it imports nothing from `Cypress` and knows the app
-/// only as a tree of labelled elements.
+/// only as a tree of labeled elements.
 ///
-/// ── One rule this file learnt the hard way (tasks #101 and #104) ─────────────────────────────────
+/// ── One rule this file learned the hard way (tasks #101 and #104) ─────────────────────────────────
 /// **A test here states its own preconditions or it does not have any.** Both defects it was sent to
 /// fix were the same mistake wearing different clothes: a test depending on ambient machine state it
 /// never named. One asserted that searching `Platanus` leaves pins drawn, which is true or false
@@ -45,11 +45,11 @@ final class MapSearchUITests: XCTestCase {
     private static let hitTargetTolerance: CGFloat = 0.001
 
     /// Screen 01's pins, as the accessibility tree exposes them. `MapPin.Kind.accessibilityLabel`
-    /// is the catalogue; a city tree is the overwhelming majority of the seed and the only kind the
+    /// is the catalog; a city tree is the overwhelming majority of the seed and the only kind the
     /// Mission fixture reliably draws.
     ///
     /// **A prefix, not an equality, and the difference is a real defect this test caught.** Task #80
-    /// gives a city tree whose species holds one of the four viewport colour slots the label
+    /// gives a city tree whose species holds one of the four viewport color slots the label
     /// `City tree, London Plane` — the third channel of the species grouping, and the only one a
     /// reader with the screen off gets. Narrowing the search to one species makes *every* visible pin
     /// that species, so it wins slot A and every label gains its name: an exact match on
@@ -73,24 +73,24 @@ final class MapSearchUITests: XCTestCase {
     /// `MapPin.Kind.cityTree`'s own word, and the first thing every tree pin's label says.
     private static let pinPrefix = "City tree"
 
-    /// What a pin says once the map has coloured it **and** read back the species' name:
+    /// What a pin says once the map has colored it **and** read back the species' name:
     /// `City tree, Sycamore, London Plane`. That name — the commonest tree in the city — contains a
     /// comma of its own, so what follows this prefix is taken whole rather than split on anything.
     private static let namedPinPrefix = "City tree, "
 
-    /// What the same pin says in the window between the colour landing and the name arriving:
+    /// What the same pin says in the window between the color landing and the name arriving:
     /// `City tree, marked dot` (`MapPin.Kind.cityTreeSpecies`). That is a *slot*, not a species, and
     /// a helper that read it as one would spend this file's whole argument searching for
     /// “marked dot”.
     private static let unnamedSlotPrefix = "City tree, marked "
 
-    /// `MapSpeciesSlot`'s four colours, which is the most species the map can name at once.
+    /// `MapSpeciesSlot`'s four colors, which is the most species the map can name at once.
     private static let slotCount = 4
 
     /// Which species the map is naming on its pins right now, most pins first — the viewport's own
     /// answer to "what is actually drawn here".
     ///
-    /// **This is the question task #104 never asked.** The map colours the commonest few species
+    /// **This is the question task #104 never asked.** The map colors the commonest few species
     /// among the pins it has drawn and puts their names on those pins' labels
     /// (`MapSpeciesPalette`, `MapPinKind.accessibilityLabel(for:palette:)`). So the pins say what
     /// this viewport holds, and a black-box test can read it instead of assuming it. Assuming it —
@@ -154,8 +154,8 @@ final class MapSearchUITests: XCTestCase {
     /// It was written as a *GPS-fix detector*: "screen 01 opens on the user when it has a fix and on
     /// the whole city when it does not, and the whole city is zoom ≤ 15, which is A1's clustered
     /// side: badges, not individual pins." Every clause after the first is wrong. Screen 01 opens at
-    /// `MapLayout.defaultSpanMetres` — 120 m across — with a fix and without one; only the *centre*
-    /// differs, and the fixless centre is `MapLayout.defaultCentre`, Mission Dolores Park. 120 m is
+    /// `MapLayout.defaultSpanMeters` — 120 m across — with a fix and without one; only the *center*
+    /// differs, and the fixless center is `MapLayout.defaultCenter`, Mission Dolores Park. 120 m is
     /// far inside A1's pin threshold, so the clustered city this guard was watching for is a state
     /// launch cannot produce. `AlmanacGroupTapTests` had already measured and written this down —
     /// "measured with location revoked outright for this app, the map opens on Dolores Park and
@@ -226,7 +226,7 @@ final class MapSearchUITests: XCTestCase {
             throw XCTSkip(
                 "screen 01 is naming \(Self.census(named)) on its pins, and this needs two species "
                     + "that are not each other's substring — one to search for, one to watch "
-                    + "disappear. The map colours a species only where it has drawn at least two of "
+                    + "disappear. The map colors a species only where it has drawn at least two of "
                     + "its pins (MapSpeciesPalette.minimumPinsForASlot), so an empty or "
                     + "one-species viewport has nothing here to narrow. A mixed one: xcrun simctl "
                     + "location <udid> set 37.78485,-122.4215"
@@ -258,7 +258,7 @@ final class MapSearchUITests: XCTestCase {
     }
 
     /// Type the name of a species **this viewport is holding**; watch the map narrow to it and the
-    /// others go. Clear it; watch the neighbourhood come back.
+    /// others go. Clear it; watch the neighborhood come back.
     ///
     /// The species is not written down here on purpose. It used to be `Platanus`, on the true but
     /// irrelevant grounds that the London Plane is the commonest tree in San Francisco; what the
@@ -281,8 +281,8 @@ final class MapSearchUITests: XCTestCase {
 
         // **What went into the field, not what was aimed at it.** Species names in this seed carry
         // apostrophes — `Indian Laurel Fig Tree 'Green Gem'` is 45 trees deep at the map's own
-        // opening centre — and iOS smart punctuation rewrites a typed `'` into `’`, which matches no
-        // row in the catalogue. A test that skipped this check would report the substitution as
+        // opening center — and iOS smart punctuation rewrites a typed `'` into `’`, which matches no
+        // row in the catalog. A test that skipped this check would report the substitution as
         // "narrowing emptied the map": the exact misdiagnosis this whole change is about, arriving
         // by a different door. Checked rather than avoided, so awkward names stay covered.
         XCTAssertEqual(
@@ -323,7 +323,7 @@ final class MapSearchUITests: XCTestCase {
             "narrowing to \(searched) drew \(narrowed) pins where the unnarrowed map drew \(before)"
         )
 
-        // Clearing it puts the neighbourhood back — through the ✕ the bar now draws (task #110,
+        // Clearing it puts the neighborhood back — through the ✕ the bar now draws (task #110,
         // ruling R16), which is also the only way a person without a hardware keyboard could do it.
         app.buttons["Clear search"].tap()
         XCTAssertTrue(
@@ -370,7 +370,7 @@ final class MapSearchUITests: XCTestCase {
     // passed with `onSubmit` deleted, and then with `focused`, `submitLabel` and `onSubmit` all
     // deleted, which is `SearchBar` exactly as it shipped before task #110. So the return key was
     // never broken: SwiftUI resigns focus on submit for a single-line `TextField` by default, and
-    // the test was asserting the platform's behaviour, not this app's. It could not fail, and a test
+    // the test was asserting the platform's behavior, not this app's. It could not fail, and a test
     // that cannot fail is worse than no test on a project where a green suite has ratified a real
     // defect before.
     //
@@ -378,7 +378,7 @@ final class MapSearchUITests: XCTestCase {
     // which XCUITest cannot read off the keyboard. `testTheKeyboardCanBeDismissed` covers the part
     // that is ours and can fail: the `Done` affordance.
 
-    /// The ✕ the owner asked for: present only when there is something to clear, labelled for
+    /// The ✕ the owner asked for: present only when there is something to clear, labeled for
     /// VoiceOver, and genuinely touchable. That last clause is not a formality — a control has
     /// reported `isHittable` true on this project while sitting under a `.clipped()` that made it
     /// untouchable, and task #100 is open on a map control that lies to VoiceOver about its state.

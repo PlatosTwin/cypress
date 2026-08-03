@@ -65,7 +65,7 @@ enum ReportSelection: Hashable {
 /// status. E143 measured that leading on `caretaker` mislabels ~152,000 street trees and built the
 /// mapping so jurisdiction leads — but for these 11,153 rows there is no jurisdiction to lead, and
 /// the caretaker decides alone. On the *Street* Tree List, "no legal status on file and a private
-/// party waters it" describes a great many ordinary street trees whose neighbour holds the hose.
+/// party waters it" describes a great many ordinary street trees whose neighbor holds the hose.
 ///
 /// So the harms are not symmetric and the design follows the asymmetry:
 ///
@@ -105,13 +105,13 @@ struct ReportPresentation: Equatable {
     /// `nil` is the honest majority and the safe default: an unasked community row, a city row whose
     /// `legal_status` and `caretaker` both say nothing, and — deliberately — a tree whose read
     /// failed. `ReportModel.load` swallows the error, so a screen that could not reach the database
-    /// falls back to *today's behaviour* rather than to a suppressed call. The failure mode of the
+    /// falls back to *today's behavior* rather than to a suppressed call. The failure mode of the
     /// new code is the old code.
     let landContext: KnownLandContext?
 
     /// The default keeps every existing call site — the previews, the sweep shots, the tests that
     /// are about the picker and not about the tree — meaning what they already meant, because `nil`
-    /// is genuinely "nobody asked" and that is genuinely unchanged behaviour.
+    /// is genuinely "nobody asked" and that is genuinely unchanged behavior.
     init(selection: ReportSelection, landContext: KnownLandContext? = nil) {
         self.selection = selection
         self.landContext = landContext
@@ -144,7 +144,7 @@ struct ReportPresentation: Equatable {
     ///
     /// **Whether the branch draws is still the chip alone, and that did not change** when the screen
     /// learned about the tree (E146). A hazard is a hazard on any ground: a split trunk over a
-    /// private drive is worth a private reminder and worth a neighbour knowing, and a branch that
+    /// private drive is worth a private reminder and worth a neighbor knowing, and a branch that
     /// vanished for a private tree would delete the reminder button along with the call. What the
     /// branch *says* is `hazardHandoff`'s question, and it is a different one.
     ///
@@ -347,7 +347,7 @@ enum CommunityNoteCategoryLabel {
 /// The margins SCREENS.md gives screen 06 that `CypressSpacing` does not already name.
 ///
 /// Same arrangement as `TreeProfileMetrics`: screen-specific geometry is named once here so the
-/// view body carries no loose numbers, while every colour and font stays a `DesignSystem` token
+/// view body carries no loose numbers, while every color and font stays a `DesignSystem` token
 /// (ARCHITECTURE §6).
 enum ReportMetrics {
     /// Gap between a section's micro-label and its chips. **NOT SPECIFIED** — SCREENS.md 06 gives

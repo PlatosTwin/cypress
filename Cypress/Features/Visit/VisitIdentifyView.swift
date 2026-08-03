@@ -432,13 +432,13 @@ struct VisitIdentifyNotice: View {
 /// These are the four canonical §2 C22 placeholders, not species artwork — there is no photograph
 /// on a seed row, and drawing a Monterey Cypress silhouette next to an unidentified elm would be
 /// exactly the fabricated content BUILD-PLAN §15 rules out. The pick is stable per tree so a row
-/// does not change colour as the list re-ranks.
+/// does not change color as the list re-ranks.
 enum VisitThumbnail {
     static func placeholder(for candidate: VisitCandidate) -> CypressGradient.Thumbnail {
         let options: [CypressGradient.Thumbnail] = [.cypress, .ginkgo, .londonPlane, .victorianBox]
         let key = candidate.tree.speciesCurrentID ?? candidate.tree.id
         // The UUID's own bytes, not `hashValue`: Swift's String hashing is seeded per process, so a
-        // relaunch would repaint every thumbnail a different colour.
+        // relaunch would repaint every thumbnail a different color.
         let index = Int(key.uuid.15) % options.count
         return options[index]
     }

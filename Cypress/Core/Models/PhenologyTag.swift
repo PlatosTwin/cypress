@@ -14,7 +14,7 @@ public enum PhenologyTag: String, Codable, Sendable, Hashable, CaseIterable {
     case flowering = "flowering"
     case fruiting = "fruiting"
 
-    /// Whether this tag may be offered for a species (D5). Evergreens never get fall colour.
+    /// Whether this tag may be offered for a species (D5). Evergreens never get fall color.
     public func isAvailable(for species: Species) -> Bool {
         species.availablePhenologyTags.contains(self)
     }

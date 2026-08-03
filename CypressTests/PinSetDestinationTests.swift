@@ -72,7 +72,7 @@ struct PinSetDestinationTests {
         }))
     }
 
-    /// `count` basins in the neighbourhood, of which `shown` are carried to the map.
+    /// `count` basins in the neighborhood, of which `shown` are carried to the map.
     private static func vacant(count: Int, shown: Int) -> VacantSites {
         VacantSites(count: count, nearest: (0..<shown).map { pin(400 + $0, status: .vacantSite) })
     }
@@ -148,7 +148,7 @@ struct PinSetDestinationTests {
         }
     }
 
-    /// The one place a group legitimately holds one record: a neighbourhood with a single basin. E115
+    /// The one place a group legitimately holds one record: a neighborhood with a single basin. E115
     /// found none like it in the shipped seed, but §5.6 is a rule about the general case, and the
     /// sentence for it has to be a sentence.
     @Test("a group of one is a group, and says so in the singular")
@@ -225,7 +225,7 @@ struct PinSetDestinationTests {
     }
 
     /// The floor: a group of one must not open at a zoom with nothing on screen but its own pin.
-    /// `MapLayout.defaultSpanMetres` is screen 01's opening scale and the scale ERRATA E12 measured as
+    /// `MapLayout.defaultSpanMeters` is screen 01's opening scale and the scale ERRATA E12 measured as
     /// the point where pins stop fusing, so it is the floor rather than a number of my own.
     @Test("a group of one opens at screen 01's own scale, not on top of the pin")
     func aSinglePinGetsAReadableCamera() throws {
@@ -323,14 +323,14 @@ struct PinSetDestinationTests {
         #expect(basinsWithSpecies == 0)
     }
 
-    /// The vacant read, at the numbers the running corpus holds: a whole-neighbourhood count and a
-    /// page of it, every one of them a basin in this neighbourhood with a coordinate a map can draw.
+    /// The vacant read, at the numbers the running corpus holds: a whole-neighborhood count and a
+    /// page of it, every one of them a basin in this neighborhood with a coordinate a map can draw.
     ///
     /// E115 measured 1,474 and a full page of 20 against the DataSF export. **Under `--source city`
     /// Sunset/Parkside holds 7 basins**, because the city's own layer has no vacant-site category —
     /// so the page is the whole set and the two-block radius the row limit was chosen against does
     /// not hold. Both facts are pinned per source rather than relaxed to an inequality.
-    @Test("the vacant read returns a page of placeable basins and the neighbourhood's whole count")
+    @Test("the vacant read returns a page of placeable basins and the neighborhood's whole count")
     func vacantReadReturnsPlaceablePins() async throws {
         let store = try await Self.store()
         let corpus = try await SeedCorpus.current(store)
@@ -363,7 +363,7 @@ struct PinSetDestinationTests {
 
         // And they are actually near — where there are enough of them to be. 400 m is about two
         // blocks and is what `AlmanacLimits.vacantSiteRowLimit` was chosen against, on a corpus with
-        // 1,474 basins in this neighbourhood. With 7 the nearest twenty are simply all of them,
+        // 1,474 basins in this neighborhood. With 7 the nearest twenty are simply all of them,
         // spread across the whole of Sunset/Parkside, and a tight radius is not a property the read
         // can have. The city-wide bound is what is left to assert.
         let radius = corpus.sunsetVacantSites >= AlmanacLimits.vacantSiteRowLimit ? 400.0 : 12_000.0

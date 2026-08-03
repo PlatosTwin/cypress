@@ -143,7 +143,7 @@ struct MeasurePresentationTests {
 
     // MARK: - Units
 
-    @Test("switching the unit clears the entry rather than relabelling it")
+    @Test("switching the unit clears the entry rather than relabeling it")
     func switchingUnitsClearsTheEntry() {
         var draft = Self.draft(entry: "64")
         #expect(draft.unit == .centimeters)

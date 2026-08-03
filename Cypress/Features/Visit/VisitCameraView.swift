@@ -28,7 +28,7 @@ struct VisitCameraView: View {
     init(
         treeID: UUID,
         treeDisplayName: String,
-        // A closure, not a number: `@State` runs its initialiser once, and a camera session is the
+        // A closure, not a number: `@State` runs its initializer once, and a camera session is the
         // longest a contribution form stays open in this app
         // (ERRATA E158).
         gpsAccuracyM: @escaping @MainActor () -> Double?,
@@ -152,7 +152,7 @@ struct VisitCameraView: View {
             // ══════════════════════════════════════════════════════════════════════════════════
             // THE GHOST OVERLAY — the last full-tree photo at 30 % opacity.
             //
-            // This is the single artefact the docs say the official city app will never have. It
+            // This is the single artifact the docs say the official city app will never have. It
             // is drawn *over* the live preview and *under* the framing furniture, and it goes away
             // the moment a frame is taken, because at that point there is nothing left to line up.
             //
@@ -213,10 +213,10 @@ struct VisitCameraView: View {
             // `PhotoFill`, not `scaledToFill` — a portrait photo measured 234 pt wider than the
             // phone and took the tray with it (ERRATA E125). See `PhotoFill`.
             //
-            // **`.centre`, against the component's default**, and it has to be: this frame, the
+            // **`.center`, against the component's default**, and it has to be: this frame, the
             // ghost under it and the live `AVCaptureVideoPreviewLayer` behind both are three
             // drawings of the same scene that only mean anything if they agree, and the preview
-            // layer's `.resizeAspectFill` centres. See `PhotoCropAnchor.centre`.
+            // layer's `.resizeAspectFill` centers. See `PhotoCropAnchor.center`.
             PhotoFill(image: snapshot, label: "The photo you just took", anchor: .center)
         } else if model.camera.isLive, let session = model.camera.session {
             VisitCameraPreview(session: session)
@@ -230,7 +230,7 @@ struct VisitCameraView: View {
     @ViewBuilder
     private var ghostLayer: some View {
         if let ghost = model.ghost, model.subjectTakesGhost {
-            // `.centre` for the same reason the snapshot above uses it, and it is the half that
+            // `.center` for the same reason the snapshot above uses it, and it is the half that
             // matters most: the ghost is what the new frame is lined up against.
             PhotoFill(image: ghost, anchor: .center)
                 .opacity(VisitMetrics.Camera.ghostOpacity)
@@ -509,7 +509,7 @@ struct VisitCameraView: View {
         .padding(.top, VisitMetrics.Camera.trayPadding)
         .padding(.bottom, VisitMetrics.Camera.trayBottom)
         // The fill belongs to whatever is hosting this: the tray itself in the drawn layout, the
-        // scroll view in the accessibility one, so that the colour reaches the bottom of the display
+        // scroll view in the accessibility one, so that the color reaches the bottom of the display
         // whether or not the content does.
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -534,7 +534,7 @@ struct VisitCameraView: View {
 
     /// `ghost overlay 30%`, in the scroll (accessibility sizes only; see `ghostCaption`).
     ///
-    /// It keeps its mono face and its colour, so it is recognisably the same caption, and drops the
+    /// It keeps its mono face and its color, so it is recognizably the same caption, and drops the
     /// 80 pt width cap that is the only part of it the type ramp cannot survive.
     @ViewBuilder
     private var ghostCaptionLine: some View {
@@ -637,7 +637,7 @@ struct VisitCameraView: View {
 /// The three framings, and which of them this session has already photographed.
 ///
 /// ── Why the chips had to start reporting state (ERRATA E152) ───────────────────────────────
-/// One session can take all three now, so these chips are no longer three ways of labelling one
+/// One session can take all three now, so these chips are no longer three ways of labeling one
 /// photograph — they are three slots, and a contributor has to be able to see which are filled without
 /// tapping each one to find out. The mark is a `CypressCheckmark`, the same shape screen 18's success
 /// circle and screen 05's selected row draw, so nothing new is invented for it; it is a `Shape` sized by
@@ -707,7 +707,7 @@ struct VisitPhenologyChips: View {
         CypressChipFlow(spacing: VisitMetrics.Camera.chipGap) {
             // D5, enforced by the component itself: `Chip.phenology(_:for:isOn:)` renders nothing for
             // a tag outside `species.availablePhenologyTags`, and there is no String initializer that
-            // could get around it. An evergreen is never asked about fall colour.
+            // could get around it. An evergreen is never asked about fall color.
             ForEach(tags, id: \.self) { tag in
                 Chip.phenology(
                     tag,

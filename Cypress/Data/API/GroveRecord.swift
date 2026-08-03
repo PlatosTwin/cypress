@@ -23,7 +23,7 @@ import Foundation
 /// - **never compared** — nothing sums these across the grove, nothing sorts on them, and nothing
 ///   picks a maximum. The list's order is `last_visited DESC NULLS LAST`, the store's, and
 ///   `GroveTreesTests.theTallyDoesNotSortTheList` fails if that ever becomes an ordering by size;
-/// - **never a reward** — no badge, no colour that changes with the number, no threshold, no
+/// - **never a reward** — no badge, no color that changes with the number, no threshold, no
 ///   celebration. The row is drawn identically at one and at forty.
 ///
 /// And two clauses this type needs that screen 15's does not, because a grove is a list and a list
@@ -34,7 +34,7 @@ import Foundation
 ///   would be a count of a person's actions with nothing else it could mean.
 /// - **kinds, not a single number.** `4 entries` is one figure per tree, which is a figure a person
 ///   can rank their own trees by and want to raise. `3 visits · 1 measurement` says what kind of
-///   relationship it is, which is a thing to have rather than a thing to maximise. It is also the
+///   relationship it is, which is a thing to have rather than a thing to maximize. It is also the
 ///   more useful sentence: it tells you that you have never measured the tree you walk past daily.
 ///
 /// If a later round finds itself summing these, or ordering by them, or drawing anything that gets
@@ -69,7 +69,7 @@ public struct GroveRecord: Hashable, Sendable {
         self.careEvents = careEvents
     }
 
-    /// A tree in the grove with no contribution against it — which is a real state: a favourite
+    /// A tree in the grove with no contribution against it — which is a real state: a favorite
     /// nobody has visited (`ContributionStore.groveTreeIDs`'s second arm).
     public static let none = GroveRecord()
 

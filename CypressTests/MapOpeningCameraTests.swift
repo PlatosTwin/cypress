@@ -154,7 +154,7 @@ struct MapOpeningCameraTests {
     // MARK: - What is not worth remembering
 
     /// A zero span is the camera before MapKit has settled once — the same case
-    /// `MapRecentre.Camera.isCentred` guards — and 37.3346 is what a map view that was never aimed
+    /// `MapRecenter.Camera.isCentered` guards — and 37.3346 is what a map view that was never aimed
     /// reads back as, which is the whole of E168. Neither is a place the reader has been.
     @Test("a camera that is not a place is neither stored nor restored")
     func rubbishIsRejected() {
@@ -309,7 +309,7 @@ struct MapOpeningCameraTests {
         #expect(MapOpeningCopy.notAskedMessage(.theCityFallback).contains("city"))
         #expect(MapOpeningCopy.searchingMessage(.whereYouLeftOff).contains("left it"))
         #expect(MapLocationCopy.message(.whereYouLeftOff).contains("left it"))
-        // `MapRecentreUITests` reads this prefix as its witness that location is denied.
+        // `MapRecenterUITests` reads this prefix as its witness that location is denied.
         #expect(MapLocationCopy.message(.theCityFallback).hasPrefix("The map still works"))
     }
 
@@ -341,7 +341,7 @@ struct MapOpeningCameraTests {
 ///
 /// `makeUIView` recorded the ticket as applied when the map had no area to apply it to, so the
 /// request minted by the first GPS fix was already "stale" by the time there was a map to show it on
-/// — and `MapHomeView.hasCentredOnUser` is a one-shot, so nothing ever asked again.
+/// — and `MapHomeView.hasCenteredOnUser` is a one-shot, so nothing ever asked again.
 ///
 /// Written against the coordinator for `MapCameraOwnershipTests`' reason: the whole loop lives inside
 /// the seam and both halves can be driven directly. The gesture was never the doubtful part.
@@ -414,7 +414,7 @@ struct MapOpeningCameraApplyTests {
         ///
         /// The hook is installed here the way `makeUIView` installs it, because a `Context` cannot be
         /// constructed in a test. What is under test is therefore not *that* the hook is wired — the
-        /// UI test `MapCentredStateUITests.testTheMapOpensOnTheReaderWithoutBeingAsked` is what holds
+        /// UI test `MapCenteredStateUITests.testTheMapOpensOnTheReaderWithoutBeingAsked` is what holds
         /// that end, on a real launch — but `AimableMapView`'s own rule about firing it, and what
         /// `aimAtCurrentRequest` does when it does fire. Both of those are production code.
         func layOut(width: CGFloat = 402, height: CGFloat = 874) {
@@ -513,7 +513,7 @@ struct MapOpeningCameraApplyTests {
     /// discarded. See `MapAnnotationLayer.Coordinator.echo(_:)` for the trace.
     ///
     /// That is the shape of defect this project keeps finding — a value that looks answered and is
-    /// not — and everything downstream of the settled camera was quietly wrong: the recentre control's
+    /// not — and everything downstream of the settled camera was quietly wrong: the recenter control's
     /// spoken state (#100), a cluster tap's "two zoom levels in" measured from a 98° span, and the
     /// camera this app now remembers between launches.
     ///
@@ -523,9 +523,9 @@ struct MapOpeningCameraApplyTests {
     /// inline instead of through `echo(_:)`, and aiming re-entrantly from `layoutSubviews` — because a
     /// map view outside a window and outside a SwiftUI update pass reproduces neither condition. The
     /// witness for the first is
-    /// `CypressUITests/MapCentredStateUITests.testTheMapOpensOnTheReaderWithoutBeingAsked`, which
-    /// fails with the control reading `Not centred`. There is no witness for the second and there
-    /// does not need to be — see that file for why the re-entrant break changes no behaviour at all
+    /// `CypressUITests/MapCenteredStateUITests.testTheMapOpensOnTheReaderWithoutBeingAsked`, which
+    /// fails with the control reading `Not centered`. There is no witness for the second and there
+    /// does not need to be — see that file for why the re-entrant break changes no behavior at all
     /// on screen 01.
     @Test("the region the map settles on is echoed back to the screen")
     func theSettledRegionIsEchoedBack() async {

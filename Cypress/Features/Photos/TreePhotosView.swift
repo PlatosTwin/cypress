@@ -262,7 +262,7 @@ struct TreePhotosView: View {
     /// one grammar. **In the amber register, because there is no red in this palette** — the 311
     /// hazard ramp is what this app means by "destructive", which `AccountDeletionSheet` established
     /// and said so in as many words. It is the only cell in the row that is not in the caption
-    /// greys, which is the whole of the visual warning a glyph can carry; the words are in the
+    /// grays, which is the whole of the visual warning a glyph can carry; the words are in the
     /// confirmation, where somebody is actually reading.
     ///
     /// **One tap opens a question and destroys nothing.** That is the same three-beat shape as
@@ -408,8 +408,8 @@ enum TreePhotosCopy {
     static let thumbOn = "on"
     static let thumbOff = "off"
     /// The row's photograph is a crop; this is what pressing it gets you. The hint rather than the
-    /// label, on R2's rule: the element is named for what it is — the photograph, already labelled
-    /// with its subject and date — rather than relabelled with the next tap.
+    /// label, on R2's rule: the element is named for what it is — the photograph, already labeled
+    /// with its subject and date — rather than relabeled with the next tap.
     static let openHint = "Opens the whole photo"
     /// The same thing, named as an action for the VoiceOver rotor — a verb, because that is what a
     /// rotor lists.

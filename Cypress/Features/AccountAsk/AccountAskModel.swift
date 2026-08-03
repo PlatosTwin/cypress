@@ -33,7 +33,7 @@ final class AccountAskModel {
     ///
     /// Unchecking does not disable the sign-in buttons. SCREENS.md 15 states no such rule, and
     /// inventing a gate would decide a data-governance question — what a contribution that carries
-    /// no licence consent may be used for — that belongs to whoever owns the licence (D12,
+    /// no license consent may be used for — that belongs to whoever owns the license (D12,
     /// BUILD-PLAN §5). The answer travels on the request instead, so the account records what was
     /// actually agreed to and `User.licenseVersion` stays honestly nil when nothing was. Recorded
     /// in ERRATA.

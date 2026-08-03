@@ -28,7 +28,7 @@ struct CommunityAddTests {
     ///
     /// Two bare JPEG markers used to do, because staging only wrote the bytes down. It rewrites the
     /// container to drop the metadata now (E148) and refuses bytes that are not one — that refusal is
-    /// the behaviour E148 exists for — so the fixture is the same real photograph the model is given.
+    /// the behavior E148 exists for — so the fixture is the same real photograph the model is given.
     @MainActor
     private static func stagedPhoto() throws -> String {
         try VisitPhotoStaging.write(try jpeg(), for: UUID(), shotType: .fullTree)
@@ -135,7 +135,7 @@ struct CommunityAddTests {
             TreeDraft(coordinate: Self.spot, photoLocalPath: try Self.stagedPhoto(), attribution: Self.attribution)
         )
 
-        // Four metres on the diagonal — well inside the circle, and inside the box too, so this
+        // Four meters on the diagonal — well inside the circle, and inside the box too, so this
         // passes for the right reason rather than because of E35's square.
         let closeBy = ProximityDedupeTests.diagonal(from: Self.spot, meters: 4)
         let subject = Self.model(api: api, fix: .located(closeBy, accuracyM: 6))

@@ -21,7 +21,7 @@ import UIKit
 /// image. What it asserts is that an image was produced; the images are the output, and the paths
 /// are printed for a reviewer.
 @MainActor
-@Suite("Screen 03 · the favourite cell, photographed")
+@Suite("Screen 03 · the favorite cell, photographed")
 struct FavoriteAppearanceShots {
 
     @Test("the quad row renders in both states, light and dark")

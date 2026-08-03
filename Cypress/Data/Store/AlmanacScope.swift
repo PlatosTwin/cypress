@@ -13,7 +13,7 @@ import Foundation
 /// it does not.** The two cases below are that ruling, and they are deliberately not
 /// interchangeable:
 ///
-/// - `.neighborhood` is a *place*. Its boundary is the city's, it has a name a reader recognises,
+/// - `.neighborhood` is a *place*. Its boundary is the city's, it has a name a reader recognizes,
 ///   and — the property a radius cannot have — it is the **same area for everybody standing in
 ///   it**, so "the elder" and "nine young trees" are statements about a place rather than about
 ///   where one person happens to be.
@@ -27,7 +27,7 @@ import Foundation
 /// the *unit* would differ city by city — San Francisco publishes 41 statistical Analysis
 /// Neighborhoods, San Jose publishes council districts that are redrawn every ten years, most cities
 /// publish nothing — and presenting all of them under one word would reintroduce at the polygon
-/// level exactly the seam D16's normalised format removes at the tree level.
+/// level exactly the seam D16's normalized format removes at the tree level.
 ///
 /// The bindings are prefixed `:area…` so a scope can be dropped into a query that already binds
 /// `:lat`, `:lon` or `:limit` of its own without colliding — `vacantSites` does exactly that.
@@ -36,7 +36,7 @@ public enum AlmanacScope: Hashable, Sendable {
     /// A polygon the seed carries, keyed by `trees.neighborhood_id`.
     case neighborhood(id: Int, name: String)
 
-    /// Everything within `metres` of the reader.
+    /// Everything within `meters` of the reader.
     ///
     /// The predicate is a bounding box (which uses `idx_trees_lat_lon`) narrowed by the same
     /// squared-distance test `TreeQueries.nearest` and `SpeciesQueries.resolveNeighborhood` use:

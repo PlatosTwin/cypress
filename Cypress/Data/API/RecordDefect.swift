@@ -8,7 +8,7 @@
 //  ── Why this is not a removal, and therefore not `appearsRemoved` ───────────────────────────────
 //  `RULINGS R46` decided it before anything was built, and AppSchema v14 reserved the
 //  `review_flags.kind` value. Confirming `appears_removed` writes `TreeStatus.removed`, which this
-//  product has settled as a **memorial** — grey pin spoken as "Removed tree, memorial", screen 19,
+//  product has settled as a **memorial** — gray pin spoken as "Removed tree, memorial", screen 19,
 //  `acceptsNewContributions == false` (E170, R19). A record that never had a tree behind it would
 //  get a memorial page for a tree that never lived. That is R7's vacant-site argument, arriving at
 //  the case where the map's assertion is not merely imprecise but false, and D16 needs the two apart
@@ -18,7 +18,7 @@
 //  ── Why it is not `vacantSite` either ───────────────────────────────────────────────────────────
 //  R46 left that open — `TreeStatus.vacantSite` exists and looks like the truthful confirmed state.
 //  It is not. A vacant site is a planting *site* with its tree missing, drawn as a hollow ring
-//  exactly so it does not borrow the removed pin's meaning. A duplicate pin two metres from another,
+//  exactly so it does not borrow the removed pin's meaning. A duplicate pin two meters from another,
 //  or a record standing in the middle of a building, is not a vacant planting site; writing one
 //  would leave the map asserting a site where there is nothing. See
 //  `ReviewFlag.Kind.confirmedStatus`, which stays nil for this kind and must.

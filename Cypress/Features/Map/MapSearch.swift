@@ -25,7 +25,7 @@
 //  question each time, and the reader cannot tell those apart from an empty map:
 //
 //      typed nothing              → the map is not narrowed at all
-//      typed a word nothing knows → the catalogue has no such species; the map is showing you none
+//      typed a word nothing knows → the catalog has no such species; the map is showing you none
 //      typed a real species       → and there are none of them *in this viewport*, which is not the
 //                                   same statement and deserves different words
 //      typed a real species       → and there are more here than the map can draw as pins
@@ -39,14 +39,14 @@ import Foundation
 /// What the search bar resolved to, and what the map may honestly claim about it.
 enum MapSearch: Equatable {
 
-    /// Nothing typed. The map is the whole neighbourhood.
+    /// Nothing typed. The map is the whole neighborhood.
     case off
 
-    /// A query the species catalogue has no match for.
+    /// A query the species catalog has no match for.
     ///
     /// Carries the query so the message can quote it back — "No species called *sycamore*" is a
     /// different sentence from "no results", and the difference is that the first one tells the
-    /// reader the app understood them and the catalogue simply does not have it.
+    /// reader the app understood them and the catalog simply does not have it.
     case noMatch(query: String)
 
     /// A query that resolved to at least one species.
@@ -57,9 +57,9 @@ enum MapSearch: Equatable {
         /// Every species the query matched. More than one is common and correct: `Prunus` is a
         /// genus, and narrowing to all of it is what the reader asked for.
         let speciesIDs: Set<UUID>
-        /// For the message. The first few names, in the order the catalogue ranked them.
+        /// For the message. The first few names, in the order the catalog ranked them.
         let names: [String]
-        /// Whether the catalogue had more matches than `speciesLimit` and this is the first page.
+        /// Whether the catalog had more matches than `speciesLimit` and this is the first page.
         ///
         /// **This is E38 applied one level up from the pins.** The other counts on this struct are
         /// about trees; this one is about species, and it became reachable the moment matching
@@ -103,7 +103,7 @@ enum MapSearch: Equatable {
     /// How many names the status line will read out before it starts counting instead.
     static let namesShown = 2
 
-    /// Resolves a settled query against what the catalogue returned.
+    /// Resolves a settled query against what the catalog returned.
     init(query: String, matches: [Species]) {
         guard !matches.isEmpty else {
             self = .noMatch(query: query)
@@ -114,7 +114,7 @@ enum MapSearch: Equatable {
             // "the species common name is the fallback display everywhere" (D15) — and the other way
             // round here, because a species with no common name still has a scientific one.
             names: matches.map { $0.commonName.isEmpty ? $0.scientificName : $0.commonName },
-            // A full page is the only signal the catalogue gives that there were more; it cannot
+            // A full page is the only signal the catalog gives that there were more; it cannot
             // distinguish "exactly 100 matched" from "500 did", so it claims the weaker of the two.
             // Saying "the first 100" of exactly 100 is a true sentence; the reverse is not.
             isTruncated: matches.count >= MapSearch.speciesLimit

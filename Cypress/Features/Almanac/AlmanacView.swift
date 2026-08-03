@@ -5,7 +5,7 @@
 //  Screen 12 · Neighborhood almanac. SCREENS.md lines 1053–1091.
 //
 //  Composed from C1 (ScreenHeader + HeaderPill), C10 (IconTextRow) ×3, C24 (AttentionCard) and
-//  C6 compact. The composition card in §3 has no C-number — SCREENS.md §2's catalogue does not
+//  C6 compact. The composition card in §3 has no C-number — SCREENS.md §2's catalog does not
 //  carry it and §3 describes it inline — so it is built here from tokens, the same way screen 08's
 //  three-pill row was (ERRATA E46).
 //
@@ -44,8 +44,8 @@ struct AlmanacView: View {
 
     /// The composition root's fix as of **this** pass through the parent's body.
     ///
-    /// Stored, where it used to be consumed by the initialiser and forgotten. `@State` runs its
-    /// initialiser exactly once, so the model below was built from whichever coordinate happened to
+    /// Stored, where it used to be consumed by the initializer and forgotten. `@State` runs its
+    /// initializer exactly once, so the model below was built from whichever coordinate happened to
     /// exist at first construction and never heard about another — and on a cold launch that is
     /// `nil`, because CoreLocation has not answered yet. Keeping the parameter is what lets the
     /// `.task(id:)` notice it change (ERRATA E155).
@@ -78,7 +78,7 @@ struct AlmanacView: View {
             onShowGroup: onShowGroup,
             // E123's prompt condition, asked of the model rather than of the parameter. The
             // parameter answers "is there a fix"; the screen is asking "is this blank because there
-            // is no fix", and between the fix arriving and the neighbourhood being read those two
+            // is no fix", and between the fix arriving and the neighborhood being read those two
             // give opposite answers — which is how the prompt came to be withdrawn from a screen
             // that then had nothing on it. See `AlmanacModel.needsLocation`.
             showsLocationPrompt: model.needsLocation,
@@ -90,7 +90,7 @@ struct AlmanacView: View {
             onRetry: { Task { await model.retry() } }
         )
         // `id:` and not a bare `.task`. The bare form runs once at mount, which is the same
-        // once-only that the `@State` initialiser has, so the first frame's coordinate would still
+        // once-only that the `@State` initializer has, so the first frame's coordinate would still
         // be the only one this screen ever read from. Keyed on the coordinate, the read re-runs when
         // — and only when — the fix changes, which on a cold launch is `nil` → San Francisco a
         // second after the tab is pressed.
@@ -121,7 +121,7 @@ struct AlmanacScreen: View {
     /// while the read is still in flight (ERRATA E126).
     var hasFailed: Bool = false
     /// Absent when nobody is listening — a button that looks pressable and does nothing is worse
-    /// than no button, the judgement `GroveTabRow` already made about its two inert pills.
+    /// than no button, the judgment `GroveTabRow` already made about its two inert pills.
     var onRetry: (() -> Void)?
 
     var body: some View {
@@ -175,9 +175,9 @@ struct AlmanacScreen: View {
 
     /// `title: Almanac`, trailing pill `Outer Sunset`.
     ///
-    /// The pill is the neighbourhood's own name from the seed, so it reads `Sunset/Parkside` rather
+    /// The pill is the neighborhood's own name from the seed, so it reads `Sunset/Parkside` rather
     /// than the mock's colloquial `Outer Sunset` — SF's official polygon set carries no such
-    /// neighbourhood (A4, ERRATA E47). No pill at all when there is no fix: a header that named an
+    /// neighborhood (A4, ERRATA E47). No pill at all when there is no fix: a header that named an
     /// area we could not determine would be the screen's first lie.
     @ViewBuilder
     private var header: some View {
@@ -218,7 +218,7 @@ struct AlmanacScreen: View {
     /// The label goes with the rows: a heading over nothing is a heading that promises something.
     /// The note goes with them for the same reason — it describes the rows that drew, so it cannot
     /// outlive them (task #177; `AlmanacCopy.seasonNote`). It is drawn in `areaNote`'s type and
-    /// colour because it is doing `areaNote`'s job on the same screen: saying which promise a
+    /// color because it is doing `areaNote`'s job on the same screen: saying which promise a
     /// heading is making, where the heading alone is too quiet to say it.
     @ViewBuilder
     private func seasonBlock(_ presentation: AlmanacPresentation) -> some View {
@@ -267,7 +267,7 @@ struct AlmanacScreen: View {
     /// behind it.
     ///
     /// Nil when nobody is listening, which keeps a row that cannot go anywhere from looking like one
-    /// that can — the judgement `GroveTabRow` made about its two inert pills.
+    /// that can — the judgment `GroveTabRow` made about its two inert pills.
     private func action(for row: AlmanacPresentation.SeasonRow) -> (() -> Void)? {
         if let id = row.treeID, let onOpenTree {
             return { onOpenTree(id) }
@@ -283,7 +283,7 @@ struct AlmanacScreen: View {
     /// A single C10 row: the count of empty basins, tapping to a map of the nearest of them
     /// (ERRATA E129).
     ///
-    /// Placed after §3 and before §4 on purpose. §3 says what lives in the neighbourhood; this says
+    /// Placed after §3 and before §4 on purpose. §3 says what lives in the neighborhood; this says
     /// where nothing does — two readings of the same canopy — while §4 stays the screen's one
     /// directed ask, the last thing the reader is left with before the footnote. A plain row before
     /// §4's amber card also reads as the statement it is rather than as a second ask.
@@ -384,7 +384,7 @@ struct AlmanacScreen: View {
     ///
     /// No button. There is genuinely nothing to press: a retry would read the same file and get the
     /// same answer, and a control that cannot change the outcome is worse than no control (the same
-    /// judgement `AlmanacCopy.loadFailed`'s retry is *not* an instance of, because that read really
+    /// judgment `AlmanacCopy.loadFailed`'s retry is *not* an instance of, because that read really
     /// can succeed the second time).
     private var outOfRange: some View {
         VStack(alignment: .leading, spacing: CypressSpacing.gapVitality) {
@@ -410,11 +410,11 @@ struct AlmanacScreen: View {
     ///
     /// `AlmanacModel.Phase` makes the argument for this arm and then had nowhere to make it: with no
     /// branch here, a failed read drew the almanac with every block withheld — which is this screen's
-    /// way of saying the neighbourhood is quiet. Five true blocks removed and one removed because we
+    /// way of saying the neighborhood is quiet. Five true blocks removed and one removed because we
     /// could not ask produced the same picture, on the one screen whose entire subject is what is and
     /// is not there (ERRATA E126).
     ///
-    /// The header above it drops its neighbourhood pill on its own, since there is no presentation to
+    /// The header above it drops its neighborhood pill on its own, since there is no presentation to
     /// name one, so nothing on the screen claims an area it never resolved.
     @ViewBuilder
     private var failure: some View {
@@ -455,7 +455,7 @@ struct AlmanacScreen: View {
 /// 5px) filled via linear-gradient(90deg, <color> 0 N%, #EDEFE3 N%) · mono 12px value`.
 ///
 /// The gradient is drawn as two rectangles rather than as a `LinearGradient` with coincident stops:
-/// the CSS is a hard-edged two-colour stop, which is a bar, and a bar drawn as a gradient rounds its
+/// the CSS is a hard-edged two-color stop, which is a bar, and a bar drawn as a gradient rounds its
 /// own edge at fractional widths.
 struct CompositionShareRow: View {
 
@@ -504,7 +504,7 @@ struct CompositionShareRow: View {
         }
     }
 
-    /// Never a colour of its own: the presentation chose an index into the design system's own
+    /// Never a color of its own: the presentation chose an index into the design system's own
     /// four-swatch series (ARCHITECTURE §6).
     private var swatch: Color {
         let swatches = CypressColor.compositionSwatches

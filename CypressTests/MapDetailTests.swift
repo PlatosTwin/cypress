@@ -38,7 +38,7 @@ struct MapDetailTests {
     /// the Mission.
     private static let densest = Coordinate(latitude: 37.778_756, longitude: -122.424_661)
 
-    /// What MapKit reports for a screen of `screen` at this zoom, centred here — *before*
+    /// What MapKit reports for a screen of `screen` at this zoom, centered here — *before*
     /// `MapModel`'s own 8 % pad, which is the model's business and not the camera's.
     private static func bounds(around center: Coordinate, zoom: Int) -> BoundingBox {
         let degreesPerPoint = 360.0 / (256.0 * pow(2.0, Double(zoom)))
@@ -154,7 +154,7 @@ struct MapDetailTests {
     /// the map drew 1,300 of them and — because `idx_trees_lat_lon` orders by latitude and a `LIMIT`
     /// keeps the *southernmost* rows — put each band's 260 into a strip along the bottom of that
     /// band, which is the horizontal striping the map showed. Bounded, and spread, and still
-    /// recognisably a thinning rather than a sample of a corner.
+    /// recognizably a thinning rather than a sample of a corner.
     @MainActor
     @Test("the densest screenful is bounded, and it is the whole screenful")
     func theDensestScreenfulIsBoundedAndWhole() async throws {

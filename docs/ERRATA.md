@@ -98,13 +98,13 @@ profile with fields missing.
 leaves **66 of 577 species null** — no authoritative source states their habit. Every proposed
 default is a botanical claim we cannot support:
 
-- defaulting to `deciduous` lets a fall-colour chip onto an unclassified tree, violating the spirit
+- defaulting to `deciduous` lets a fall-color chip onto an unclassified tree, violating the spirit
   of D5 while satisfying its letter;
 - defaulting to `evergreen` (the current `Data` fallback, chosen because it is the only value that
   *cannot* violate D5) asserts that 66 species keep their leaves, which is unsourced.
 
 The honest model is `LeafRetention?`, with unknown rendering **no** phenology chips and **no** autumn
-strip colours — the same treatment the long tail already gets for `id_tips`.
+strip colors — the same treatment the long tail already gets for `id_tips`.
 
 **Resolved.** `Species.leafRetention` is now `LeafRetention?` and the seed column round-trips SQL
 NULL rather than a substitute. What each call site decided, since "what does nil mean here" is a
@@ -138,7 +138,7 @@ simultaneously.** Sixteen of those species are in the SF inventory, covering 7,3
 One of them is ***Prunus cerasifera*, the 6th most common street tree in San Francisco**, which is
 deciduous. Taking the field at face value would have written `evergreen` onto it and — through the
 D5 rule enforced in Swift, in the database CHECK, and in `FoliageStrip` — **permanently suppressed
-its autumn colour everywhere in the app**, with every layer of the D5 machinery working exactly as
+its autumn color everywhere in the app**, with every layer of the D5 machinery working exactly as
 designed to enforce the wrong fact.
 
 All 35 are quarantined and resolved against NC State Extension where possible; 10 with no second
@@ -148,7 +148,7 @@ than no pipeline, because the enforcement makes it look deliberate.
 
 Also rejected during sourcing, for the record: SelecTree's `memo` field is machine-generated and
 describes a fir as having "elongated, oval leaves"; the SF Public Works PDF's bold-means-evergreen
-convention mislabels Jacaranda and the entire palm page; USA-NPN has 8 usable fall-colour records
+convention mislabels Jacaranda and the entire palm page; USA-NPN has 8 usable fall-color records
 for Ginkgo across California in 15 years; USDA PLANTS' documented API paths 404 and POWO returns 403.
 
 ### E8 — Dark mode is specified for four screens, but the app has more than four
@@ -175,13 +175,13 @@ numbers are.
 
 **The counts, recounted.** The 137 / 78 / 59 above was right when it was written and has drifted
 since — E20 added a token, E27 and the taped badge converted three. `CypressColor` now holds **157
-colour tokens** carrying a value of their own (plus five aliases that resolve through another
+color tokens** carrying a value of their own (plus five aliases that resolve through another
 token), of which **62 carry a documented pair** — 55 before this pass, plus 7 found in the D1–D2
 delta prose (below). Of the remaining 95, **32 have no second appearance by definition**: they ride
 on imagery, they live on screen 04 which is dark always, they belong to the spec document or to W1,
 or they are the six raw brand hues, whose scheme-dependent roles are carried by the paired role
 tokens instead. That leaves **63 genuine gaps: 47 derived, 16 escalated** — 64 rows in the review
-sheet, because the gradient callout is escalated too and is not a colour.
+sheet, because the gradient callout is escalated too and is not a color.
 
 **Seven more dark values were documented in prose and missed by the table-driven transcription.**
 E27 called itself the third instance of this; there are now ten. All seven below are `dynamic`,
@@ -200,7 +200,7 @@ not derived — they were never gaps, only unread:
 Anyone auditing a token table against a screen should read the delta prose first. Every one of
 these ten was in the document; none of them was in §1.
 
-**The transform, and it is not one transform.** The 55 pairs were analysed in OKLCh rather than
+**The transform, and it is not one transform.** The 55 pairs were analyzed in OKLCh rather than
 sRGB, because lightness, chroma and hue are the three things a designer moves and sRGB mixes them.
 Fitted per role, on documented pairs, with the map excluded (D1 paints every map layer by hand and
 all of them are already specified):
@@ -247,7 +247,7 @@ percentile of the fit residual across all 26 covered pairs (median 0.027), and i
 the smallest step between two adjacent rungs of the documented dark text ladder (0.075), so a
 prediction inside it lands unambiguously on one rung. A separate, tighter threshold — ΔE 0.02 —
 decides when to stop minting: below it the fitted value and a hex the designer already wrote are
-the same colour, so the designer's hex is used. **38 of the 47 derived values reuse a documented
+the same color, so the designer's hex is used. **38 of the 47 derived values reuse a documented
 hex; 9 are minted**, all of them borders and tinted panels for which the palette has no rung.
 
 **The amber family, which is the one that changes a screen.** SCREENS.md gives it no dark row at
@@ -295,7 +295,7 @@ own value.
   first two sections — derived first to check, escalated second to answer. Design review of this
   entry is one screen, which was the point of the decision in ROADMAP §3.
 - `CypressTests/DerivedTokenTests.swift` pins the three ways this fails quietly: a token that
-  claims to be derived and still resolves to one colour, a review sheet that has drifted from the
+  claims to be derived and still resolves to one color, a review sheet that has drifted from the
   tokens it prints, and an amber or badge pair that stops clearing WCAG AA after dark.
 
 **What remains, and it is the original entry.** SCREENS.md still documents dark for three screens
@@ -339,13 +339,13 @@ inventory's bounding box:
 | 19 | 95 × 207 m | 36 | 86 | 324 | 4.3 m |
 
 At 24th & Valencia a zoom-16 screen holds 4,695 trees; at Dolores Park, 4,757. The Outer Sunset, the
-neighbourhood the mock actually draws, is the quiet case at 2,555.
+neighborhood the mock actually draws, is the quiet case at 2,555.
 
-**The pins fuse long before the count does.** Nearest-neighbour distance between street trees in the
+**The pins fuse long before the count does.** Nearest-neighbor distance between street trees in the
 seed (n = 19,969 sampled): p10 1.8 m, median **5.5 m**, p75 8.3 m, p90 13.4 m, mean 7.1 m. C19 draws
-an 18 pt pin, so the share of trees whose nearest neighbour is closer than one pin diameter is:
+an 18 pt pin, so the share of trees whose nearest neighbor is closer than one pin diameter is:
 
-| Zoom | 1 pt = | 18 pt = | Trees overlapping their nearest neighbour |
+| Zoom | 1 pt = | 18 pt = | Trees overlapping their nearest neighbor |
 |---|---|---|---|
 | 16 | 1.888 m | 34.0 m | **98.6 %** |
 | 17 | 0.944 m | 17.0 m | 94.5 % |
@@ -366,7 +366,7 @@ only structure a reader gets from it is the shape of the grid — the pins draw 
 map carrying the pins.
 
 **What was done about it, and what was not.** A1 is not touched, no de-densification was invented
-and the pins were not shrunk — an unmocked behaviour is a question for design, not something to
+and the pins were not shrunk — an unmocked behavior is a question for design, not something to
 invent (DECISIONS constraint 21). The only lever inside the existing spec is where the camera opens,
 so screen 01 now opens at **120 m across**: 0.298 m per point, an 18 pt pin covering 5.37 m, which
 is the median tree spacing, and a median of 55 trees on screen (p90 129). That is about one
@@ -391,7 +391,7 @@ SCREENS.md 06 §4 gives the 311 panel `radius 20px` and puts a phone glyph fille
   as a fill.
 
 Both are transcription-complete, so this is a gap in the token tables rather than in screen 06.
-Resolved by adding `CypressColor.hazardPanelGlyph` beside the other 311 tokens (a colour in a
+Resolved by adding `CypressColor.hazardPanelGlyph` beside the other 311 tokens (a color in a
 feature is a bug, ARCHITECTURE §6) and by naming the radius in `ReportMetrics` with the rest of 06's
 one-off geometry, the way `TreeProfileMetrics` already holds 03's.
 
@@ -413,7 +413,7 @@ categories are undrawn. This is load-bearing rather than cosmetic: the chip deci
 chip with no category either cannot be built or is stored as a hazard it is not.
 
 Resolved by precedence. Categories are data, and on data BUILD-PLAN/PRODUCT outrank the drawing
-(ARCHITECTURE §1), so the picker is driven by `HazardCategory.allCases` and labelled with PRODUCT's
+(ARCHITECTURE §1), so the picker is driven by `HazardCategory.allCases` and labeled with PRODUCT's
 own words shortened to chip length: `Hanging limb` · `Uprooted` · `Struck by vehicle` ·
 `Blocking a sightline`. Four chips wrap to two rows where the mock draws one row of three.
 
@@ -439,7 +439,7 @@ rather than an invention:
 
 Also unspecified and needed: the *selected* appearance of a neighborly chip, since 06 draws all
 three off. C4's "structure flag, on (05)" — `#2F6B4F` / `#fff` / 700 at the same `11px 16px` — is
-the catalogue's existing partner for the idle variant 06 does specify, so it is used unchanged
+the catalog's existing partner for the idle variant 06 does specify, so it is used unchanged
 rather than a new amber-free selected style being drawn.
 
 Two smaller gaps in the same screen: the vertical gap between a section's micro-label and its chips
@@ -461,7 +461,7 @@ record a hazard is allowed to leave. It cannot be saved today, and the blocker i
 So the reminder is unwritable *by construction* on every device the app currently runs on, and the
 two decisions that produce that are both binding. Adding a write path does not fix it: a
 `CypressAPI.savePrivateReminder` would throw `unauthorized` on every call, and the outbox has no
-kind for one either (`OutboxPayload` covers visit, observation, measurement, care event, favourite).
+kind for one either (`OutboxPayload` covers visit, observation, measurement, care event, favorite).
 
 Nothing was faked. The button is drawn as specified, `ReportModel` assembles a
 `PrivateReminderDraft` (tree + hazard category — the part it can honestly know) and hands it to an
@@ -574,7 +574,7 @@ two-way split). Seven strings covering **312 trees** fit neither — `Shrub :: S
 `Palm (unknown Genus) :: Palm Spp`, `New Zealand Tea Tree :: New Zealand Tea Tree`,
 `:: Brisbane Box`. Something is growing at each of these sites, so they are not vacant; none of the
 strings names a taxon, so they are not species either. The parser minted a species row per string,
-which meant a planting site labelled `Shrub` had a species uuid, a field-guide slot and a phenology
+which meant a planting site labeled `Shrub` had a species uuid, a field-guide slot and a phenology
 surface of its own — the shape of a botanical record, holding a growth habit.
 
 They now map to **no species at all** (`NON_TAXON_SPECIES` in `Tools/build_seed.py`), keep
@@ -644,7 +644,7 @@ with exactly four) and a second primary CTA on 03 (which is drawn with exactly o
 mocked screen, which is not a call to make inside a view file.
 
 Screen 18 is also not wired as 05's confirmation, for a smaller reason: `VisitSavedView` takes a
-`VisitSaveReceipt` and its model derives the next tree from a `Visit`. Generalising it over both
+`VisitSaveReceipt` and its model derives the next tree from a `Visit`. Generalizing it over both
 contribution kinds is real work in another feature's folder, and until an entry point exists there
 is no flow to put it in. The check-in pops back to wherever it was pushed from.
 
@@ -756,7 +756,7 @@ at rating time".
 There are no such assets in the repository. What 05 draws, and what is built, is SCREENS.md §1.2's
 `linear-gradient(140deg, …)` placeholder — the design export's own stand-in, transcribed exactly.
 
-The gate is not satisfied. It is worth stating plainly what is missing: colour is explicitly
+The gate is not satisfied. It is worth stating plainly what is missing: color is explicitly
 secondary coding (D3), so a gradient swatch carries none of the calibration the reference photo is
 there to provide. What ships today is the label and the anchor sentence, always visible, which is
 the part D3 could specify without photography.
@@ -770,14 +770,14 @@ Those are not implemented as drops. A check-in that offers four structure flags 
 the morning, and cannot record foliage density after dark, would make the record depend on the
 device's appearance setting — and every one of the three is a field that reaches `observations`.
 
-Read as drawing economy, which is what the neighbouring dark screens do with theirs: D1 omits
+Read as drawing economy, which is what the neighboring dark screens do with theirs: D1 omits
 `48TH AVE` and the removed pin, D2 "drops" the regulars row and the season strip's month row. None
-of those is a behaviour either. D3 is described as "Same structure as 05 with these deltas", and a
+of those is a behavior either. D3 is described as "Same structure as 05 with these deltas", and a
 missing field is not a delta of appearance.
 
 Everything else in D3's list — the mint selection, the weight-800 chips and CTA, the desaturated
 swatch column, the shadowless selected row, `#D6E0CE` titles against `#E4EBE2` on the selected one —
-is implemented, and resolves off the system colour scheme rather than being pinned dark.
+is implemented, and resolves off the system color scheme rather than being pinned dark.
 
 ### E32 — `awaitingWifiCount` counted items that were not waiting on wi-fi
 
@@ -848,7 +848,7 @@ D9 is the decision that gets anyone an account at all.
 A plain `>=` is the other failure, and it is the one DECISIONS is more explicit about: it re-offers
 the ask on every save until answered, and D9 exists precisely to keep the auth sheet off "second 8 of
 a ten-second street-corner visit". An ask that returns every time somebody saves a tree hands that
-friction back in instalments.
+friction back in installments.
 
 The ledger now counts presentations separately from resolution and bounds them at two: the ask is
 owed from the third save (D9's threshold is the earliest save it may appear on, not the only one),
@@ -884,7 +884,7 @@ a pre-filter rather than the answer.
 Found in the same place: `CommunityTreeStore.near` passed the caller's limit down into `inBounds`,
 which has no `ORDER BY`. A `LIMIT` there drops rows in storage order, so the row discarded can be
 the 2 m duplicate the query exists to find. The box is now read whole and the limit applied to exact
-metres afterwards; within any dedupe radius that table holds tens of rows.
+meters afterwards; within any dedupe radius that table holds tens of rows.
 
 ### E36 — community-added trees were silently dropped from the map
 
@@ -928,7 +928,7 @@ publishes.
 
 The two questions are now two names, in `Photo`: `isPubliclyVisible` / `isPublicBestPhotoCandidate`
 for "the world can see this", `isVisibleToItsContributor` / `isBestPhotoShot` for "I can see this".
-Which photos are the viewer's own is not a judgement a view can make and not one to infer from a
+Which photos are the viewer's own is not a judgment a view can make and not one to infer from a
 `.pending` state, so it travels on the payload as `TreeProfile.ownPhotoIDs`. `LocalAPI` fills it
 with everything it read, because `main.photos` holds what this device wrote and nothing else;
 `RemoteAPI` will fill it from the server's attribution, and everything it does not list stays gated
@@ -996,7 +996,7 @@ call, and orientation is not personal data — it is which way up the picture go
 photograph is landscape pixels plus an orientation tag, so a single-pass strip turns every portrait
 shot on its side in the hero and behind the ghost overlay. So: strip everything, then put that one
 value back. What survives is what ImageIO synthesises for any JPEG it writes — pixel dimensions,
-colour space, an Exif version number — and `PhotoBinary.carriesIdentifyingMetadata` is the
+color space, an Exif version number — and `PhotoBinary.carriesIdentifyingMetadata` is the
 postcondition, written against the fields that identify a person or a place rather than against the
 presence of a container.
 
@@ -1064,7 +1064,7 @@ turned up four values with no field behind them and three states with no drawing
 - **The long tail.** 529 of 569 species carry no `id_tips`, no care notes and no seasonal calendar.
   Their page is the hero, the chips that have facts behind them, and the population cards. That is
   BUILD-PLAN §8's own rule for the long tail — "name, family, and a generic silhouette" — rendered
-  rather than apologised for. There is no "we don't have this yet" copy, because a page that says so
+  rather than apologized for. There is no "we don't have this yet" copy, because a page that says so
   is a page about the app rather than about the tree.
 - **The failed read.** `SpeciesCopy.loadFailed` / `loadRetry` say what happened and nothing about the
   species, since nothing about the species was read.
@@ -1085,17 +1085,17 @@ neighborhood inferred from most-visited, overridable in settings". Screen 07 §5
 the first surface that needs it.
 
 Neither half of the mechanism is buildable today: there is no visit history to infer a resident
-neighbourhood from on a fresh install — which is every install — and there is no settings screen to
-override it in. The *unit* is available: the seed carries all 41 neighbourhoods and the city's own
+neighborhood from on a fresh install — which is every install — and there is no settings screen to
+override it in. The *unit* is available: the seed carries all 41 neighborhoods and the city's own
 assignment of every one of the 195,309 trees to one, in `trees.neighborhood_id`.
 
-**`Near you` therefore counts the species inside the neighbourhood the caller is standing in, and
-that neighbourhood is resolved through the nearest inventoried tree rather than through a
+**`Near you` therefore counts the species inside the neighborhood the caller is standing in, and
+that neighborhood is resolved through the nearest inventoried tree rather than through a
 point-in-polygon test.** `neighborhoods.geom_geojson` is present, so the polygon test is available
 in principle; what it would add is a *second* answer to a question the ingest already answered
 195,309 times, and a ray-cast that disagreed with `neighborhood_id` on a boundary block would put
-the count card and the map in different neighbourhoods for no gain. In SF the nearest inventoried
-tree is metres away.
+the count card and the map in different neighborhoods for no gain. In SF the nearest inventoried
+tree is meters away.
 
 This is a derivation, not the resolution A4 states, and it is recorded rather than assumed. When a
 visit history and a settings screen exist, `SpeciesQueries.resolveNeighborhood(near:)` is the one
@@ -1120,14 +1120,14 @@ on rather than a general "it looks fine":
   existence shows the designer did not think that was acceptable for the other hero.
 - **The recognize-it glyph tints are light-only and one of them nearly vanishes.** SCREENS.md 07 §3
   names `#2F6B4F`, `#4E8F6A` and `#7A4F33` for the three 10 pt leaf glyphs. All three are brand
-  palette entries and all three are `lightOnly` tokens, correctly — they are the brand's colours,
-  not surface colours. Against the light card they read clearly. Against `dark.surface.card`
+  palette entries and all three are `lightOnly` tokens, correctly — they are the brand's colors,
+  not surface colors. Against the light card they read clearly. Against `dark.surface.card`
   (`#18251D`) the Canopy glyph is very close to its own background, and it is the *first* bullet, so
   the card reads as though its top row lost its mark.
 
 Neither was invented around. No literal was written and no token was re-tinted; both are recorded
-here because inventing a dark value for a documented brand colour is precisely the failure the
-`derived` / `escalated` labelling exists to prevent (ROADMAP, "Dark mode for the 59 unspecified
+here because inventing a dark value for a documented brand color is precisely the failure the
+`derived` / `escalated` labeling exists to prevent (ROADMAP, "Dark mode for the 59 unspecified
 tokens").
 
 ### E46 — 08's tab row is not C5, and two of its three pills have nowhere to go
@@ -1141,9 +1141,9 @@ building 08's as a C5 variant would have meant widening a shared component to ho
 not. It is built in `Features/Grove` from tokens (`CypressRadius.grovePill`, which §1.4 already
 carries for exactly this).
 
-The second half is behavioural. The three pills read `Trees`, `Journal`, `Species`, and only
+The second half is behavioral. The three pills read `Trees`, `Journal`, `Species`, and only
 `Species` — screen 08 itself — has been built or mocked. `Trees` corresponds to the grove screen in
-the clickable prototype (PROTOTYPE-FLOW §1.7 "Grove fixtures": a `Your trees` list, a neighbourhood
+the clickable prototype (PROTOTYPE-FLOW §1.7 "Grove fixtures": a `Your trees` list, a neighborhood
 callout and a steward card), which is a *different screen* from SCREENS.md 08 and is not in the
 mock set; `Journal` is a BUILD-PLAN §9 M2 build requirement with no mock at all. The prototype's own
 answer for this screen is explicit — PROTOTYPE-FLOW §1.5, `grove`: "Progress card, neighborhood
@@ -1163,7 +1163,7 @@ it (§5) draws **seven** known tiles and two locked. Both numbers are in the sam
 reconciles them. The build derives both from one series, so they cannot disagree; the previews use
 seven, because seven is what is drawn.
 
-**San Francisco has no "Outer Sunset".** A4 fixes neighbourhood names to the SF Analysis
+**San Francisco has no "Outer Sunset".** A4 fixes neighborhood names to the SF Analysis
 Neighborhoods polygons, and the seed carries all 41 of them. The Sunset is **two** of those
 polygons, named `Sunset/Parkside` and `Inner Sunset`. "Outer Sunset" is the colloquial name for the
 western half of `Sunset/Parkside` and is not a row in the dataset the product committed to. The
@@ -1182,7 +1182,7 @@ SELECT COUNT(DISTINCT t.species_current) FROM trees t
 -- 215
 ```
 
-Fifty-six of those 215 are represented by a single tree in the whole neighbourhood, and the
+Fifty-six of those 215 are represented by a single tree in the whole neighborhood, and the
 distribution has a very long tail (1,561 New Zealand Xmas Trees at the head). The consequence on
 screen is that a contributor who has met seven species sees **`7 of 215 species`** and a ring at
 **3%** — a correct fraction that will read as near-empty for a very long time, where the mock's
@@ -1233,7 +1233,7 @@ new find appends rather than reshuffling everything above it.
 under no stated pattern, and gives no rule for how many there are. Under the real denominator the
 question becomes sharp: 208 remaining species cannot be 208 tiles. The build **pads the last row to
 a multiple of three** — a layout rule, not a claim — and caps the padding at the number of species
-actually left to meet, so a contributor one species short of the whole neighbourhood sees one locked
+actually left to meet, so a contributor one species short of the whole neighborhood sees one locked
 tile rather than two. A grid read from an incomplete page is never padded at all, because the last
 row of a page is not the last row of the series.
 
@@ -1252,11 +1252,11 @@ types, and getting that wrong renames a street. So it reads `on Noriega St`.
 ### E50 — 08 in dark, and one place the brand hues were being read directly
 
 E8 records that dark is documented for D1–D3 and screen 04 only; 08 inherits nothing, and E45 makes
-the same observation for 07. Running 08 in dark turned up one defect and one judgement call.
+the same observation for 07. Running 08 in dark turned up one defect and one judgment call.
 
 **The defect: C27 was reaching past the role tokens to the raw brand hues.** `ProgressRing` filled
 its arc with `CypressColor.canopy` and drew its label in `CypressColor.cypressDeep`. Both are
-`lightOnly`, correctly — they are two of the six brand colours, and `CypressColor`'s own header says
+`lightOnly`, correctly — they are two of the six brand colors, and `CypressColor`'s own header says
 so, adding that "the scheme-dependent roles are carried by the paired role tokens further down
 (`ctaFill`, `pinFill`, `selectionFill`, `accentAmber`), which is where a caller belongs". Reading the
 hue directly meant that in dark the ring drew `#2F6B4F` against `#0E1712` and its `#1D4634` label was
@@ -1268,11 +1268,11 @@ for the arc and `ctaFill` for the label. **No value was invented and the light r
 unchanged to the byte** — both pairs are documented, and both light halves are the hexes C27 already
 drew. Verified by screenshot in both schemes.
 
-**The judgement call, left alone: the celebration callout stays light.** C14's gradient fill,
+**The judgment call, left alone: the celebration callout stays light.** C14's gradient fill,
 its border and its ink are all `escalated` — the transform was run against them and rejected, and
 §1.2 documents no dark counterpart for `linear-gradient(120deg,#EAF2E6,#F6F2DF)` anywhere. On 08
 that is a full-width cream block on a near-black screen, and it is the brightest thing on the page
-at night. It is the intended behaviour of an escalated token and it is not re-tinted here. It is
+at night. It is the intended behavior of an escalated token and it is not re-tinted here. It is
 also, in practice, a glare, and 07's "In July" callout has the same problem. One designer decision
 covers both.
 
@@ -1295,7 +1295,7 @@ any real grove the two come apart immediately:
 
 Those three are same-genus renamings and merely wrong. The failure mode that matters is the hashed
 fall-through: a species with no authored art gets whichever of the seven gradients the hash lands
-on, and it was being **labelled with that gradient's species name**. A Silver Maple drawn with the
+on, and it was being **labeled with that gradient's species name**. A Silver Maple drawn with the
 Pōhutukawa gradient read `Pōhutukawa`. That is fabricated botany on screen, which BUILD-PLAN §15
 forbids, arriving through a component's default rather than through anything a feature wrote.
 
@@ -1325,8 +1325,8 @@ Three ways out, and why the third was taken:
 **What it changes on screen: almost nothing, and that is the finding.** DataSF's `PlantDate` is
 sparse and lags. Spring 2026 (1 March – 31 May) holds **15 plantings in the whole city** — five in
 Lone Mountain/USF, three in Bernal Heights, two each in Inner Sunset and the Marina, one each in
-three more, and **none at all in the other 34 neighbourhoods**. So the row the mock draws with `23
-trees` renders in seven neighbourhoods out of 41 and is absent everywhere else, permanently, until a
+three more, and **none at all in the other 34 neighborhoods**. So the row the mock draws with `23
+trees` renders in seven neighborhoods out of 41 and is absent everywhere else, permanently, until a
 future data refresh says otherwise. That is the honest answer and the column is what makes it
 provably the honest answer rather than a substitution nobody would have noticed.
 
@@ -1349,7 +1349,7 @@ over the identical inputs both produced
 `4cd9ccd61cb52c9ebde15d26affdb5a5ca3152115af341547fa7f2e53652d141` (95.3 MB, 195,309 trees).
 `Tools/verify_seed.py` passes 32/32, including a new check 14b that the two planting columns agree.
 
-### E53 — A4 for screen 12, and what a neighbourhood almanac does without a location
+### E53 — A4 for screen 12, and what a neighborhood almanac does without a location
 
 E44 records that A4 fixes the *unit* of "your area" and that neither half of its stated mechanism —
 most-visited inference, settings override — exists. Screen 07 resolved it through the nearest
@@ -1360,7 +1360,7 @@ screen that is made of contribution history.
 Three reasons, in order of weight:
 
 1. **Four of its five blocks are city data that is complete on day one.** The elder, the species
-   mix, the coverage list and the newest neighbours all exist on a device that has contributed
+   mix, the coverage list and the newest neighbors all exist on a device that has contributed
    nothing. Deriving the area from contribution history would blank the whole screen on every fresh
    install to protect a mechanism that has no data behind it either.
 2. **The screen's own copy is about where you are standing.** §4's body says the trees are "within a
@@ -1370,9 +1370,9 @@ Three reasons, in order of weight:
    its mechanism exists, and 07 and 12 now both go through it.
 
 **The consequence is a state SCREENS.md does not draw: no fix, no area, no almanac.** Not an empty
-neighbourhood — no neighbourhood. The header keeps its title and loses its pill, the footnote sits
+neighborhood — no neighborhood. The header keeps its title and loses its pill, the footnote sits
 at the bottom of an empty column, and nothing else renders. "We could not tell where you are" and
-"nothing is happening in your neighbourhood" are different facts and only one of them is ever true;
+"nothing is happening in your neighborhood" are different facts and only one of them is ever true;
 drawing the second over the first is the same class of error as printing a page's size as a total.
 
 Recorded rather than invented around, and flagged for design alongside E48's empty grove — these are
@@ -1401,11 +1401,11 @@ So the coverage card is absent in two cases, and the second is the same rule:
 - **there are none**, per the above;
 - **the read came back a page** (ERRATA E38). The card is a count and nothing else; a page's size
   printed as a total would read `200 young trees` when the true figure is unknown. The read asks for
-  one row more than its cap (`AlmanacLimits.coverageRowLimit`, 200 — the busiest neighbourhood in
+  one row more than its cap (`AlmanacLimits.coverageRowLimit`, 200 — the busiest neighborhood in
   the seed holds 21) so that `isComplete` is a fact rather than a hope.
 
 The same reading resolves the species mix: it renders from city data whenever there is city data,
-and a neighbourhood whose inventory holds no species-bearing tree draws no card rather than a card
+and a neighborhood whose inventory holds no species-bearing tree draws no card rather than a card
 of zeroes. Treasure Island's eight trees are the closest the seed comes to testing it.
 
 ### E55 — three claims screen 12 makes that the record has to be checked against
@@ -1414,14 +1414,14 @@ Recorded together because each is a decision inside `AlmanacPresentation` that w
 invisible, and each is a sentence the mock states as though it were always true.
 
 **"All nine are within a 15-minute walk" is verified, not asserted.** §4's body makes a claim about
-distance from the reader. The coverage list is scoped to the neighbourhood — that is the screen's
-unit — and a neighbourhood is bigger than a fifteen-minute walk: `Sunset/Parkside` is about 4 km
+distance from the reader. The coverage list is scoped to the neighborhood — that is the screen's
+unit — and a neighborhood is bigger than a fifteen-minute walk: `Sunset/Parkside` is about 4 km
 across. So the sentence renders only when the farthest tree on the list really is inside the radius,
 and is simply left off when it is not. **NOT SPECIFIED**: no source states what distance a
 "15-minute walk" is, so `AlmanacMetrics.walkRadiusM` is 1,200 m — fifteen minutes at the 4.8 km/h
 that transport planning uses — and it is used only to *withhold* a sentence, never to choose trees,
 so an imprecise number costs a true sentence rather than producing a false one. On the fresh-install
-state it is withheld: the seed's 17 young Sunset/Parkside trees are spread across the neighbourhood.
+state it is withheld: the seed's 17 young Sunset/Parkside trees are spread across the neighborhood.
 
 **"The elder" is the oldest *recorded* planting, and the mock's own words are what make that
 sayable.** DataSF fills `PlantDate` on 70,067 of 195,309 rows, so the oldest tree with a date is not
@@ -1454,10 +1454,10 @@ its own card.** SCREENS.md 12 §3 names `#1D4634`, `#4E8F6A`, `#7A4F33` and `#C2
 brand hues, which §1.1 says have no single dark answer; the fourth is the neutral that means
 "everyone else". They are registered as **escalated as a set**, for the reason `chartSeriesPrimary`
 already carries: a series palette is chosen for separation *between* its members, and the accent
-transform anchors lightness, so running it per colour is the one operation guaranteed to break what
+transform anchors lightness, so running it per color is the one operation guaranteed to break what
 they are for. Left light, the honest consequence is visible in the dark screenshot: Cypress Deep
-(`#1D4634`) against `dark.surface.card` (`#18251D`) is very nearly the same colour, so the most
-common species in the neighbourhood has the least visible swatch and the least visible bar. That is
+(`#1D4634`) against `dark.surface.card` (`#18251D`) is very nearly the same color, so the most
+common species in the neighborhood has the least visible swatch and the least visible bar. That is
 a stated failure rather than a hidden one, and the four want answering as one.
 
 **The track behind the bars derives cleanly.** `#EDEFE3` goes to `dark.border` `#27352B`, which is
@@ -1465,7 +1465,7 @@ where `chartGridline` (`#EAEDDF`) already goes under the border rule; the two li
 RGB steps apart, so this is the rule agreeing with itself rather than a second guess. Registered as
 derived.
 
-Two tokens and one radius were added for this card, since SCREENS.md §2's catalogue has no C-number
+Two tokens and one radius were added for this card, since SCREENS.md §2's catalog has no C-number
 for it and a feature may not write a hex (ARCHITECTURE §6): `CypressColor.compositionSwatches`,
 `CypressColor.compositionOther`, `CypressColor.compositionTrack`, `CypressRadius.compositionTrack`,
 and `CypressFont.LineSpacing.body125` for §4's 12.5px/1.45 body.
@@ -1519,7 +1519,7 @@ Three separate gaps in one row of icons.
 
 **1. Three of the four destinations have no direct API.** SCREENS.md 10 §4 draws `Messages`,
 `Instagram`, `AirDrop` and `Copy link`. On iOS, `Copy link` is the only one that can be performed
-exactly as labelled — it writes to `UIPasteboard`. AirDrop and Messages are reached through the
+exactly as labeled — it writes to `UIPasteboard`. AirDrop and Messages are reached through the
 system share sheet and have no addressable API of their own; Instagram publishes none for links at
 all. So the three non-pasteboard targets present `ShareLink`'s system sheet, which is the row those
 three words name on this platform. **Judgment call**, recorded because the alternative readings are
@@ -1531,7 +1531,7 @@ says it outright: the prototype's copied state is "**NOT SPECIFIED** in this spe
 state is drawn". PROTOTYPE-FLOW §"Share sheet" does carry one — `Copy link` → `Link copied`, fill
 `#E2EFE2`, `2px solid #2F6B4F`, `czPop .3s` — but it is styling for a *full-width CTA*, and this
 layout has no CTA to turn green. Transplanting it onto a 52pt circle would be designing. So the copy
-happens with no visual acknowledgement, which is a real usability gap and is a question for design.
+happens with no visual acknowledgment, which is a real usability gap and is a question for design.
 
 **3. The prototype's privacy footnote is not in this spec.** PROTOTYPE-FLOW's share sheet ends with
 `The link opens the public tree page. Your name appears only if you opted in.` SCREENS.md 10
@@ -1583,7 +1583,7 @@ is still a judgment a designer should look at, because the light version disting
 
 Also new and derived: `shareTargetWellFill` (`#EAF0E2` → `dark.surface.thumb` `#1F2E22`, a circular
 recess), `shareTargetWellBorder` (`#DDE2D2` → `dark.border.alt`, the border rule, same light hex as
-`borderSheetGrabber`), and `ctaDisabledFill` — see E64's neighbour below. All four are in
+`borderSheetGrabber`), and `ctaDisabledFill` — see E64's neighbor below. All four are in
 `CypressColor.derivedTokens`, so they appear on the TokenGallery review sheet and
 `DerivedTokenTests` holds them to it.
 
@@ -1652,7 +1652,7 @@ SCREENS.md 11 §6 ends the screen with `Tap any point to open the observation be
 nothing behind a point to open. A measurement is not an observation — they are separate tables with
 separate outbox kinds — `Route` has no case for either, and no screen in SCREENS.md is drawn as that
 destination. Wiring one would be inventing a screen (DECISIONS constraint 21); rendering the sentence
-over inert dots would print an instruction the app does not honour, which is the same class of claim
+over inert dots would print an instruction the app does not honor, which is the same class of claim
 as "sent to the city" (ARCHITECTURE §5.4), smaller and still a promise.
 
 So the footnote is absent. The string is kept verbatim in `GrowthHistoryCopy.unrenderedFootnote` so
@@ -1739,7 +1739,7 @@ screen:
 - **Nothing on the record at all** → the header and `Nothing has been recorded on this tree yet.`
 - **A year with nothing in it, on a tree with older records** → no chart card. Thirty-six empty bars
   under `This year at a glance` is exactly the zero ARCHITECTURE §5.6 forbids, and E54 already
-  settled that argument at zero in §5.6's favour on screen 12.
+  settled that argument at zero in §5.6's favor on screen 12.
 - **A page rather than a series** → nothing at all. See E68.
 
 The empty string is **NOT SPECIFIED** and is the one place copy was invented on this screen. It is a
@@ -1797,7 +1797,7 @@ series the data model singles out. BUILD-PLAN sits above SCREENS.md in the prece
 (ARCHITECTURE §1), and `CareEvent`'s own doc comment already reads it that way: "nothing may
 aggregate it into a user-visible total".
 
-**Resolved in BUILD-PLAN's favour, and narrowly.** The Care row draws its twelve bars — D2 keeps the
+**Resolved in BUILD-PLAN's favor, and narrowly.** The Care row draws its twelve bars — D2 keeps the
 chart, the caption's whole subject is the *rhythm* of care read against the photo spike, and a shape
 is not a tally — and prints no total. The moments row becomes `Watered through the dry weeks` /
 `Jun–Aug`. §5's ceiling sentence names the month that set the scale, so when that month is a care
@@ -1818,7 +1818,7 @@ is written down. If the reviewers want the `9` back, it is one `mayPrintTotal` a
 Worth recording because 13 reads as the screen an avatar stack belongs on — it is the screen about
 who has been looking after a tree — and it does not have one.
 
-**SCREENS.md 13 draws no AvatarStack.** C26's catalogue entry names screen 03 and only 03; 13's parts
+**SCREENS.md 13 draws no AvatarStack.** C26's catalog entry names screen 03 and only 03; 13's parts
 are a header, a chart card, three C10 rows, a photo strip and a footnote. So nothing was removed.
 
 **And on 03, where it *is* drawn, it shows nothing either.** Three facts stack up:
@@ -1855,7 +1855,7 @@ One thing is worse here than a missing row, and it was predicted in the token fi
 and New Growth — 0.117 apart in light — land 0.011 apart in dark and C23's three series become two",
 and the three are escalated as a set for that reason. Screen 11 draws one series at a time and never
 showed it. **Screen 13 draws all three at once, and it shows.** In the dark screenshot the `Photos`
-and `Check-ins` rows are told apart by position and by their labels, not by colour; only `Care`
+and `Check-ins` rows are told apart by position and by their labels, not by color; only `Care`
 (Bark) separates. Left light, which is a stated failure rather than a hidden one, and it is now a
 failure with a picture of it.
 
@@ -1879,7 +1879,7 @@ There is no linear map from those heights to counts that also sums to the drawn 
 were treated as what they are — a drawing of one tree's year — and the rule was rebuilt from the two
 things the mock does state: one shared scale, and `4` for a month with nothing in it. A count of `n`
 draws `4 + 30·n/peak`; the peak reaches `34`; an empty month keeps the `4` stub and is told apart by
-colour, which is exactly how the mock's Care row distinguishes its starred bars from its unstarred
+color, which is exactly how the mock's Care row distinguishes its starred bars from its unstarred
 ones at the same height.
 
 **"Watered through the dry weeks" is checked, not asserted.** §3's second row is the mock's `Jun–Aug`
@@ -1994,14 +1994,14 @@ disabled until a key is pressed. `MeasureDraft.value` also refuses a typed `0`, 
 `CareLogModel.save` refuses an empty care event: an empty keypad is not an imprecise reading, it is
 no reading.
 
-**Switching the unit clears the entry.** §3's `switch to inches` has no stated behaviour. Keeping the
+**Switching the unit clears the entry.** §3's `switch to inches` has no stated behavior. Keeping the
 digits and swapping the label turns `64 cm` into `64 in`, a 2.5× error written to an append-only
 record with nothing on screen to catch it. Converting them makes `Quantity.value` — "the number as
 the human typed it… never silently converted" — false in the other direction. So the entry is
 cleared: the number was an answer in the old unit, and the new unit needs a new one. Four digits is
 the cheap half of that trade.
 
-**Height's unit pair.** §3 draws only the trunk's `cm ⇄ in`. A height in centimetres is nobody's
+**Height's unit pair.** §3 draws only the trunk's `cm ⇄ in`. A height in centimeters is nobody's
 reading, so the pair is `m ⇄ ft`, chosen per kind in `MeasureMetrics.alternateUnit`. Changing what is
 being measured therefore also changes the unit, and clears the entry for the same reason.
 
@@ -2023,7 +2023,7 @@ manufactures a delta nobody measured, and printing `+2 cm` off it would be a mea
 from an unmeasured one. The pill anchors on a real reading or it does not draw.
 
 **The verdict clause is written only when the record supports it.** `+2 cm in a year sounds right` is
-three claims: a direction, a span, and a judgement. It is written only when the reading went up, at
+three claims: a direction, a span, and a judgment. It is written only when the reading went up, at
 least `MeasureMetrics.minimumVerdictMonths` have passed (two readings a fortnight apart say nothing
 about a rate), and the annualised change is inside `MeasureMetrics.maxAnnualGrowthM` — 10 cm a year
 for a trunk, which is far outside anything ordinary for an SF street tree while staying clear of
@@ -2153,7 +2153,7 @@ Two smaller corrections came with it:
   Every associated value already was, through `CoreEntity`.
 
 Two of §2's three leading glyphs are **not built**: the camera and the check-in ring are drawn in
-SCREENS.md 17 and are not in the C1–C30 catalogue, and adding two icons to the design system to draw
+SCREENS.md 17 and are not in the C1–C30 catalog, and adding two icons to the design system to draw
 one screen is not this round's work. Every non-measurement row takes C21's leaf, which is the app's
 only bespoke mark; the measurement row draws its reading in mono inside the tile, as the mock does.
 The tile's amber fill follows the *terminal state* rather than the kind, because Signal Amber is
@@ -2210,7 +2210,7 @@ sentences end on the screen's own §7 promise:
 - `Accounts are not ready yet. Everything you have saved stays on this phone.`
 - `That did not go through. Everything you have saved stays on this phone.`
 
-**What a decision-owner has to settle:** whether an ask that cannot be honoured should be presented
+**What a decision-owner has to settle:** whether an ask that cannot be honored should be presented
 at all. The argument for presenting it is that the decline path is real, it works, and the ledger's
 resolution is what stops the ask returning for ever (E34). The argument against is §5.6's principle —
 a surface that cannot state its own truth does not render — and that interrupting the third save to
@@ -2270,25 +2270,25 @@ nothing to adopt, and one indexed SELECT when the device was never claimed.
 Two tests in `DeviceClaimTests` hold it: a visit and a private reminder, each queued before the claim
 and drained after it.
 
-### E89 — an anonymous device cannot favourite a tree, so sign-in carries no favourites
+### E89 — an anonymous device cannot favorite a tree, so sign-in carries no favorites
 
 `favorites` is the one contribution table with a `NOT NULL user_id` and no `device_id` column
-(`AppSchema`), and `ContributionStore.groveTreeIDs` only reads favourites when a user is present. So
+(`AppSchema`), and `ContributionStore.groveTreeIDs` only reads favorites when a user is present. So
 on every device the app currently runs on, the heart on screen 03's quad-action row has nowhere to
 write to. `RootView` says as much at the call site — `onFavorite: { _ in /* outbox mutation — wired
 with the grove, M2 */ }` — so nothing is lost today, because nothing is written.
 
 It matters here because "everything you have already done survives signing in" is screen 15's
-promise, and favourites are the one thing on that list which survives by being impossible rather than
+promise, and favorites are the one thing on that list which survives by being impossible rather than
 by being adopted. `DeviceContributions` says so in a named constant rather than by omission.
 
 This is the same decision E23 settled for private reminders — give the row a device owner, with a
 `CHECK` making ownership exclusive so adoption is a move — and it should be taken the same way,
-deliberately, rather than by a second quiet precedent. It also has a wrinkle E23 did not: favourites
+deliberately, rather than by a second quiet precedent. It also has a wrinkle E23 did not: favorites
 are tombstone toggles with a `UNIQUE (user_id, tree_uuid)`, so the pair becomes
 `(owner, tree_uuid)` and the uniqueness has to survive the move.
 
-**RESOLVED — favourites are device-scoped, on E23's terms.** The decision was taken the same way and
+**RESOLVED — favorites are device-scoped, on E23's terms.** The decision was taken the same way and
 for the same reason: D9 is what makes every device anonymous, and a first save that cannot be made
 is not a deferred account ask, it is a missing feature. PRODUCT §Conflicts 22 had already named the
 hole — "offline favorites are listed as outbox mutations, but favoriting is also the account-gate
@@ -2303,7 +2303,7 @@ permanent device↔account link. Exclusive ownership makes adoption a *move*, so
 strictly less about the device afterwards than before. `FavoriteOwner` is the same rule in Swift —
 two cases, no third state — and it is a separate type from `ReminderOwner` on purpose: the two have
 the same shape and different invariants, since a reminder's owner is a privacy boundary and a
-favourite's owner is half of a uniqueness key with a merge rule attached.
+favorite's owner is half of a uniqueness key with a merge rule attached.
 
 **What the UNIQUE constraint became, which is the part E23 never had to answer.** Two partial unique
 indexes:
@@ -2313,7 +2313,7 @@ CREATE UNIQUE INDEX idx_favorites_user_tree   ON favorites(user_id, tree_uuid)  
 CREATE UNIQUE INDEX idx_favorites_device_tree ON favorites(device_id, tree_uuid) WHERE device_id IS NOT NULL;
 ```
 
-One owner cannot favourite a tree twice; two different owners can each favourite it. The obvious
+One owner cannot favorite a tree twice; two different owners can each favorite it. The obvious
 one-line alternative, `UNIQUE (user_id, device_id, tree_uuid)`, enforces **nothing** on the device
 arm: SQL compares NULLs as distinct inside a unique index, so `(NULL, this device, this tree)` would
 be storable any number of times, and the constraint would look present in the DDL while doing half
@@ -2323,19 +2323,19 @@ two indexes state the two sentences separately. The cost is that an upsert names
 so `applyFavoriteToggle` prepares one of two statements — which is not a guess, because the owner is
 known at the call site. That is what exclusive ownership buys.
 
-**The collision at sign-in, which is real and is now a merge.** A device favourites a tree that the
-account it is about to claim had *already* favourited. Two rows then say one thing, and after the
+**The collision at sign-in, which is real and is now a merge.** A device favorites a tree that the
+account it is about to claim had *already* favorited. Two rows then say one thing, and after the
 claim only one owner exists — so the plain `UPDATE` would hit the user index and abort the whole
 claim, meaning sign-in fails for the contributor whose grove overlaps most. `claimDevice` runs three
 statements instead, each an UPDATE or a narrowly-predicated DELETE whose WHERE stops matching once
 it has run:
 
 1. **The later statement wins.** Where both hold a tree and the device's row is the more recent, its
-   state, its `client_uuid` and its timestamp move onto the account's row. A favourite is a toggle
+   state, its `client_uuid` and its timestamp move onto the account's row. A favorite is a toggle
    event with a tombstone (BUILD-PLAN §4 and §6) and a toggle resolves by time: whichever the person
-   said last is what they meant. So a device that un-favourited in June overrides an account that
-   favourited in January, and an account that un-favourited in June overrides a device that
-   favourited in January. Timestamps compare as strings because `SQLiteTimestamp` writes fixed-width
+   said last is what they meant. So a device that un-favorited in June overrides an account that
+   favorited in January, and an account that un-favorited in June overrides a device that
+   favorited in January. Timestamps compare as strings because `SQLiteTimestamp` writes fixed-width
    UTC ISO-8601, where lexicographic order is chronological order.
 2. **The superseded device row is deleted** — the one delete this table permits. Keeping it would
    leave the account and the device each holding a row for one tree, which is the permanent
@@ -2346,22 +2346,22 @@ it has run:
    NULL` guarding against a claim by a different account stealing an attributed row.
 
 **The tombstone trigger keeps its job and gains exactly one exception.** Its stated reason is that a
-stray `DELETE` loses the un-favourite *event*, so the row comes back on the next sync from another
+stray `DELETE` loses the un-favorite *event*, so the row comes back on the next sync from another
 device. Step 2 above loses no event: it has just been folded onto the surviving row for the same
 tree, in the same transaction. The trigger's `WHEN` clause permits precisely that case — a
 device-owned row for a tree an account already holds — and refuses everything else, including a
 device-owned row with no account row beside it, which `DataGates` now asserts so the exception cannot
 quietly widen into a hole.
 
-**Whether a memorial or a vacant site can be favourited: yes, and it is not gated.**
+**Whether a memorial or a vacant site can be favorited: yes, and it is not gated.**
 `TreeStatus.acceptsNewContributions` gates the visit, the photo, the check-in and the measure sheet,
-and the property says why: those are observations of a tree that has to exist. A favourite observes
+and the property says why: those are observations of a tree that has to exist. A favorite observes
 nothing — it writes to the person's grove, not to the tree's record, which is exactly why it is the
 one non-append-only row in the model (DECISIONS §3.7) and why D1 had to kill the version of it that
 was a public vote. The deciding argument is reversibility: **gating the write would make the toggle
-one-way for anyone whose favourite tree is later removed**, since the same gate that refuses the
+one-way for anyone whose favorite tree is later removed**, since the same gate that refuses the
 heart refuses taking it off. A rule that turns a reversible thing into an irreversible one is worse
-than what it was preventing. It also costs nothing to allow, because a favourite adds no row anyone
+than what it was preventing. It also costs nothing to allow, because a favorite adds no row anyone
 else can read: the grove that lists it is the person's own.
 
 Where the affordance actually is, stated exactly rather than reassuringly: 03 draws the quad row only
@@ -2381,36 +2381,36 @@ enqueued a `favorite_toggle`, precisely because this entry's bug meant there was
 so there are no rows on any disk in the old shape. `outbox.kind` already carried `favorite_toggle`
 from v1, so no outbox rebuild was needed.
 
-**What else now reads a device-owned favourite.** `groveTreeIDs` read favourites only when a user was
+**What else now reads a device-owned favorite.** `groveTreeIDs` read favorites only when a user was
 present, which is what made the absence invisible; it now reads both arms, like its own visits arm
 and like `privateReminders`. `DeviceContributions` gains `favorites` and loses
 `favouritesAreAccountOnly` — screen 15's headline still counts visits only, so no drawn sentence
 changes, but the type's claim that these are "exactly the record kinds `claimDevice` moves" is true
 again.
 
-**Where favourites are still not visible, and why nothing was built for it.** Screen 08 is the
-*Species* tab of My Grove: a progress ring and species tiles, and it never shows a favourited tree.
+**Where favorites are still not visible, and why nothing was built for it.** Screen 08 is the
+*Species* tab of My Grove: a progress ring and species tiles, and it never shows a favorited tree.
 The surface that would is the `Trees` pill beside it, which E46 records as drawn and inert because
 the screen behind it belongs to the clickable prototype and is not in the mock set. `CypressAPI
-.grove()` — the read that returns favourited and visited trees, and which now returns the device's —
+.grove()` — the read that returns favorited and visited trees, and which now returns the device's —
 still has no caller anywhere in the app. Building the Trees list would be inventing a screen
 (DECISIONS constraint 21), so it was not built; the read is correct for the day somebody draws it.
 
-Proven by `CypressTests/FavoriteTests.swift`: a favourite saves with no user present and is owned by
-the device, and reaches the grove and the device holdings; two taps of one heart save one favourite;
+Proven by `CypressTests/FavoriteTests.swift`: a favorite saves with no user present and is owned by
+the device, and reaches the grove and the device holdings; two taps of one heart save one favorite;
 migrating a v4 database preserves live rows and tombstones alike and the migration replays as a
-no-op; `claimDevice` adopts device-owned favourites, claiming twice changes nothing and nobody else's
+no-op; `claimDevice` adopts device-owned favorites, claiming twice changes nothing and nobody else's
 moves; the sign-in collision merges in both directions and leaves one row per tree; uniqueness holds
-per owner on both arms; a replayed toggle does not flip the state and an un-favourite tombstones
-rather than deletes; a removed tree can be favourited and, more to the point, un-favourited.
-`DataGates` adds the schema invariants: an ownerless or doubly-owned favourite is rejected by the
+per owner on both arms; a replayed toggle does not flip the state and an un-favorite tombstones
+rather than deletes; a removed tree can be favorited and, more to the point, un-favorited.
+`DataGates` adds the schema invariants: an ownerless or doubly-owned favorite is rejected by the
 engine, a second row for one owner and one tree is rejected on both arms, two owners holding one tree
 is accepted, and the tombstone trigger still refuses every delete except the adoption merge.
 
 **One thing this hands to whoever builds account deletion**, unchanged from E23 and now true of a
 second table: DECISIONS §3.12 anonymizes attributed rows — "user_id nulled, device link severed" —
 and an exclusively-owned row cannot survive both. That path has to choose, for reminders and
-favourites alike, between deleting them with the account and re-homing them onto the device. **OPEN.**
+favorites alike, between deleting them with the account and re-homing them onto the device. **OPEN.**
 
 ### E90 — 15's consent box has no unchecked state, and no rule for what refusing it means — OPEN
 
@@ -2420,17 +2420,17 @@ dismissal gesture." Two gaps, and only one of them is visual.
 **The styling** is answered with the smallest possible thing: the same 20pt box, without the glyph.
 Nothing else moves.
 
-**What refusing the licence means is not answered, and is not this screen's to answer.** The three
+**What refusing the license means is not answered, and is not this screen's to answer.** The three
 sign-in buttons stay live when the box is unchecked, because 15 states no rule that they should not
 and a disabled primary CTA would be inventing one. The answer travels on `AccountLinkRequest
 .acceptsLicense`, so an account can record honestly that nothing was agreed to — `User
 .licenseVersion` is optional and `hasAcceptedLicense(version:)` already returns false for a nil.
 
-What nobody has decided is what a contribution carrying no licence consent may then be used for. D12
+What nobody has decided is what a contribution carrying no license consent may then be used for. D12
 pins `verification_state` into the export and BUILD-PLAN §5 pins the export's headers, and neither
 says anything about a row whose contributor declined the ODbL. The plausible answers — exclude those
-rows from the export, or refuse the sign-in until the box is ticked — are a licence decision and a
-product decision respectively, and both belong to whoever owns the licence declaration.
+rows from the export, or refuse the sign-in until the box is ticked — are a license decision and a
+product decision respectively, and both belong to whoever owns the license declaration.
 
 ### E91 — 15's logo is not in the bundle, and its map backdrop is drawn with the pins the app has
 
@@ -2438,7 +2438,7 @@ Two small substitutions on screen 15, both recorded because they are visible and
 resource or a component to fix:
 
 - §1 specifies "40×40 Cypress logo PNG". There is no logo in `Cypress/Resources` and no asset
-  catalogue; `mocks/assets/logo-192.png` exists in the repo but is not a build input. The mark is C21
+  catalog; `mocks/assets/logo-192.png` exists in the repo but is not a build input. The mark is C21
   `LeafGlyph` — "the app's only bespoke mark" — at 40pt. Swapping in the artwork is one line at the
   call site.
 - The frame's three pins are specified as 16×16 in `#4E8F6A`. `MapPin.cityTree` is 18pt in Canopy
@@ -2574,7 +2574,7 @@ be loaded" are different facts, and this is the screen where conflating them wou
 ### E97 — screen 16 has no state after the save, and screen 18 is not it
 
 SCREENS.md 16 ends at its CTA. Nothing says what the sheet does once `Save measurement` is tapped,
-and the obvious neighbour is not a candidate: screen 18's success block reads `Check-in saved` and
+and the obvious neighbor is not a candidate: screen 18's success block reads `Check-in saved` and
 its whole content is "which tree is next" on a route, which is a different flow from standing at one
 trunk with a tape.
 
@@ -2672,7 +2672,7 @@ Two things whoever builds it will need, recorded now:
 
 **OPEN.**
 
-### E100 — D11's privacy toggle is modelled, unstorable, and therefore stated rather than switched
+### E100 — D11's privacy toggle is modeled, unstorable, and therefore stated rather than switched
 
 BUILD-PLAN §9 asks the You tab for "privacy toggles". There is exactly one privacy toggle in the
 data model — `User.publicAttribution`, D11's "contribution feeds private by default with opt-in
@@ -2693,33 +2693,33 @@ clause is checkable — the default is `false`, `LocalAPI` writes only to this d
 path flips it.
 
 The one setting that *is* persisted, `AppStateKey.syncPhotosOnWifiOnly`, is on the tab under
-`Settings` and labelled as what it is. **It is not a privacy setting** — it decides when photo
+`Settings` and labeled as what it is. **It is not a privacy setting** — it decides when photo
 binaries leave the phone, not who may see them — and it is deliberately not filed under the privacy
 heading. It is the same `OutboxViewState` screen 17 binds, held once in `RootView`, because two
 copies of one preference would agree only until somebody used one of them.
 
 **OPEN**, and the thing that closes it is an account, not a toggle.
 
-### E101 — the heart has an on state and nothing draws it, so the favourite is one-way — RESOLVED by RULINGS R2, built in E112
+### E101 — the heart has an on state and nothing draws it, so the favorite is one-way — RESOLVED by RULINGS R2, built in E112
 
-Falls out of E89, and is a gap in the mock set rather than in the fix. Now that a favourite can be
+Falls out of E89, and is a gap in the mock set rather than in the fix. Now that a favorite can be
 written, screen 03 needs an answer to two questions it never had to have one for, and SCREENS.md
 gives neither:
 
-- **What a favourited tree looks like.** C8's four cells are drawn once each — `Favorite` · `Care` ·
+- **What a favorited tree looks like.** C8's four cells are drawn once each — `Favorite` · `Care` ·
   `Share` · `Report`, 12px semibold on a card fill — and §2 C8's own NOT SPECIFIED note is about the
-  *icons*, not about state. No selected variant, no filled heart, no colour change, no label change.
+  *icons*, not about state. No selected variant, no filled heart, no color change, no label change.
   Care, Share and Report open something, so a cell that changes nothing on the screen is the right
-  drawing for them; a favourite changes only itself.
-- **Where the heart comes off.** Nothing in the mock set un-favourites a tree. The `Trees` pill on 08
-  that would list favourites is drawn inert (E46), 13 cut the favourites series outright (D2), and
+  drawing for them; a favorite changes only itself.
+- **Where the heart comes off.** Nothing in the mock set un-favorites a tree. The `Trees` pill on 08
+  that would list favorites is drawn inert (E46), 13 cut the favorites series outright (D2), and
   the profile draws one cell whose label is a noun.
 
 So `RootView` writes `isFavorite: true` and never `false`. The tombstone path is real and tested —
 the payload carries the resulting state rather than a verb, the store toggles through `deleted_at`,
-and `claimDevice` merges an un-favourite across sign-in — but no drawn control produces one. **A tap
+and `claimDevice` merges an un-favorite across sign-in — but no drawn control produces one. **A tap
 is a statement that can be made and not taken back**, which is the shape of thing DECISIONS §3.7 went
-out of its way to avoid for exactly this record: favourites are the one contribution the model allows
+out of its way to avoid for exactly this record: favorites are the one contribution the model allows
 to be reversed.
 
 Two smaller consequences, recorded so they are not read as bugs:
@@ -2731,20 +2731,20 @@ Two smaller consequences, recorded so they are not read as bugs:
   fire-and-forget and its error is dropped, because there is no drawn state in which the screen could
   honestly report one.
 - **A second tap is deliberately not a second event.** The composition root keeps the client UUID it
-  minted for each tree, so an impatient double tap replays one key and stores one favourite — the
+  minted for each tree, so an impatient double tap replays one key and stores one favorite — the
   trick screen 06 plays with `PrivateReminderDraft.reminderID`. Without it a control with no visible
   on-state would queue one "favorited" event per tap, all true and all pointless.
 
 What a decision-owner owes this screen: a selected appearance for C8's first cell, or a surface that
-lists favourites and can remove one. Either closes it; neither may be invented here.
+lists favorites and can remove one. Either closes it; neither may be invented here.
 
 **RESOLVED — the first of the two, under RULINGS R2, built and recorded in E112.** C8's first cell has
-a selected appearance and a second tap removes the favourite. Read E112 before trusting the two
+a selected appearance and a second tap removes the favorite. Read E112 before trusting the two
 "deliberate" notes above: both of them were consequences of this entry's own gap rather than
 independent decisions, and both are reversed. The write is no longer fire-and-forget — the state
 reverts, which reports the failure without needing a drawn error state — and the replayed client UUID
 is retired, because with an on-state the second tap is a different statement and a reused key turns
-un-favouriting into a silent no-op against `applyFavoriteToggle`'s replay guard.
+un-favoriting into a silent no-op against `applyFavoriteToggle`'s replay guard.
 
 ### E102 — the six named animation curves were in the handoff and not in the spec, and three literals had drifted in their place
 
@@ -2761,7 +2761,7 @@ second control point sits above 1. Both transcribe onto `Animation.timingCurve`,
 same four numbers, so nothing here is a fit or a guess.
 
 **What existed before this pass:** three animations, all literals in `Features/`, none matching each
-other. `MapHomeView` recentred on a fix with `easeInOut(0.4)` and zoomed into a cluster with
+other. `MapHomeView` recentered on a fix with `easeInOut(0.4)` and zoomed into a cluster with
 `easeInOut(0.35)`; `MapKitBasemap` scaled a selected pin with `snappy(0.18)`. ARCHITECTURE §6 bans a
 raw hex or font size inside a feature and a duration is the same kind of literal — with more force,
 because six curves used in eleven places drift apart the moment each place owns its own number.
@@ -2800,7 +2800,7 @@ both take the house easing rather than a seventh curve being invented for them.
 returns `nil` rather than a shorter curve: `Animation` has no "off", and `nil` is how SwiftUI is told
 to apply a state change without one. A faster animation is still an animation. What Reduce Motion
 does *not* remove is a final state — a pin that drops is at rest in the same place either way, and
-the amber pulse still draws its ring at a resting radius, because the meaning is in the colour and
+the amber pulse still draws its ring at a resting radius, because the meaning is in the color and
 the motion was only emphasis. `AccessibilityTests` pins that every named curve can be switched off.
 
 ### E103 — every label on a bare `Shape` was silent, and three of them were the app's visual encodings
@@ -2809,12 +2809,12 @@ Three components carried `.accessibilityLabel` on a view that is not an accessib
 the label attached to nothing and VoiceOver read past it. A `Shape` — `RoundedRectangle`, `Circle`,
 a `GeometryReader` containing only fills — is not focusable, and a label on one is not an error at
 compile time or at run time. It is invisible in both directions: the source says the component is
-labelled, and the device says nothing.
+labeled, and the device says nothing.
 
-- **C3 `FoliageStrip`** (`FoliageStrip.swift:156`) labelled each of twelve `RoundedRectangle` cells.
-- **C23 `LineChart`** (`ChartCard.swift:209`) labelled each data dot, which is a `Circle` in a
+- **C3 `FoliageStrip`** (`FoliageStrip.swift:156`) labeled each of twelve `RoundedRectangle` cells.
+- **C23 `LineChart`** (`ChartCard.swift:209`) labeled each data dot, which is a `Circle` in a
   `Group`.
-- **C28 `ConfidenceBar`** (`ProgressRing.swift:100`) labelled a `GeometryReader` of two fills — and
+- **C28 `ConfidenceBar`** (`ProgressRing.swift:100`) labeled a `GeometryReader` of two fills — and
   was then silent twice over, because the 02 candidate row that hosts it applies
   `children: .combine`, which walks a subtree that had no element in it to collect.
 
@@ -2843,12 +2843,12 @@ shape for the information:
   phrasing now, and the 08 call site hides the ring outright — it sits beside "12 of 40 species you
   can recognize in the Outer Sunset", which is the same fact in better words.
 
-**C23's `BarChart` took the opposite fix: its label is a required initialiser parameter.** The
+**C23's `BarChart` took the opposite fix: its label is a required initializer parameter.** The
 component cannot write this one and must not try. `heights` are drawing units in the mock's 0…34
 viewBox, already scaled against a maximum the caller chose — and on screen 13 that maximum is shared
 across three series so the rows can be compared (D2). Reading a height back out would announce a
 fraction of someone else's maximum, which is a wrong count rather than no count. C25 `CypressToggle`
-was already the only component in the catalogue that forces a label at the call site; C23's bar row
+was already the only component in the catalog that forces a label at the call site; C23's bar row
 is now the second.
 
 **C12 was already right and is worth saying so.** `taped` speaks as "measured with a tape" and
@@ -2881,7 +2881,7 @@ The same principle produced the rest of the decoration pass, which is one rule a
 when they are not tappable, because SCREENS.md §5 gap 13 says outright that every image in the spec
 is a CSS gradient placeholder and every shipping call site draws one beside the name of the thing it
 stands for; C16's hand-drawn tab icons, which sit directly above their own labels; C23's legend
-swatches, which are the colour key for the row that names itself in the same breath. `AccessibilityTests`
+swatches, which are the color key for the row that names itself in the same breath. `AccessibilityTests`
 pins the empty case, the §5.6 threshold and `Series.totalCount`'s nil.
 
 ### E105 — Dynamic Type: the ramp scaled and six layouts did not
@@ -3015,7 +3015,7 @@ a number quietly getting *better* both fail.
 every timestamp and every meta line in the app, and it fails in *both* appearances. It is also the
 easiest to answer: `text.muted`, one rung up, clears at 4.62:1 light and 6.97:1 dark, so the palette
 already contains the fix and taking it is a visual change to nineteen mocked screens rather than a
-new colour. That is a designer's call.
+new color. That is a designer's call.
 
 **The `est.` badge misses by a third of a point and is the one with meaning attached.** D7 makes
 "estimated" the difference between a reading and a guess, and it is the half of the pair that is
@@ -3028,7 +3028,7 @@ all of these it is not — a card is identified by the type in it. The exception
 card is `surface.card` on `surface.screen`, 1.09:1, so its 1.5 pt amber border is the only thing
 saying "this one is different", at 2.30:1. That is the row to look at first.
 
-Nothing in this pass changed a colour token. **Dark mode was not re-opened** — E8's derivation stands
+Nothing in this pass changed a color token. **Dark mode was not re-opened** — E8's derivation stands
 and the only dark-mode observation to add is that `text.faint` on a card is *worse* after dark
 (2.98:1) than in light (3.16:1), which is the one place the transform moved a ratio the wrong way.
 
@@ -3036,7 +3036,7 @@ and the only dark-mode observation to add is that `text.faint` on a card is *wor
 
 E11 left 12,518 rows — 6.4% of the map — rendering as screen 14 with the photo well and the CTA
 deleted, and called that a placeholder rather than an answer. ROADMAP §1 took the decision that a
-site gets a state of its own, on the grounds that modelling it as a degraded tree is what produced
+site gets a state of its own, on the grounds that modeling it as a degraded tree is what produced
 the wrong copy in the first place, and flagged the surface itself for design. This entry is what was
 built under that delegation and what a designer would overrule to change it.
 
@@ -3053,7 +3053,7 @@ name and the address is the only thing that identifies it, over an italic line r
 for absence, which is what 14's empty well, C15 and 06's disclosure all use — saying `No tree at this
 site.` and then that Cypress keeps the record of what is planted and does not plant. A C11 grid of
 what the city actually recorded: the `qSiteInfo` string verbatim, the citable `SF #` reference, and
-the neighbourhood when the payload carries one. No `StatusBadge`: C13 has three kinds, and the only
+the neighborhood when the payload carries one. No `StatusBadge`: C13 has three kinds, and the only
 one that could fire here is `PLANTED <year>`, which would assert a planting on an empty basin.
 
 **What it offers is one row, and the finding underneath that is the entry.** Every contribution this
@@ -3070,8 +3070,8 @@ the app with nothing to do into a place you can leave in the direction of a real
 `the nearest tree` survives the query's `LIMIT` because `TreeQueries.nearest` returns rows in
 ascending distance: a standing tree the limit dropped is farther than every row it kept.
 
-**Two affordances were considered and declined.** The favourite would work — `FavoriteTests` already
-records deliberately that a vacant site can be favourited — and it is the only writable statement
+**Two affordances were considered and declined.** The favorite would work — `FavoriteTests` already
+records deliberately that a vacant site can be favorited — and it is the only writable statement
 left that asserts nothing about a tree. It is not offered because the only control that would carry
 it here is C7, which has no selected appearance, and a heart that cannot show that it is on is the
 defect RULINGS R2 has just closed on C8. Reopening it on a brand-new screen to gain one control is a
@@ -3091,7 +3091,7 @@ empties the screen, and D1's coverage panel turns out to be about gaps in *obser
 gaps in the canopy. E115 fixes the one read that really was wrong (`firstBloom`, which applied no
 status filter at all) and proposes the block screen 12 would need, rather than inventing it.
 C19 has no pin for a site, and the map
-therefore still draws one as `removed`, a grey dot with a bar struck through it, which says *was and
+therefore still draws one as `removed`, a gray dot with a bar struck through it, which says *was and
 is no longer* about a basin that never held a tree; a new pin is a drawn decision and was not
 invented, so the distinction is carried by the card and by the VoiceOver label instead — the card now
 titles itself `Planting site`, drops the badge that would have said `PLANTED`, and leads its meta
@@ -3128,7 +3128,7 @@ different purpose: E8 fitted a light→dark transform, this fits nothing and sol
 `Tools/retint_ramp.py` is the derivation, so every number below is reproducible rather than a value
 that appeared in a diff. Across the five tokens chroma moves by at most 0.0013 and hue by at most
 0.7°, both of which are under a single 8-bit step; the palette is the same palette with three of its
-greys and two of its ambers set darker.
+grays and two of its ambers set darker.
 
 | Token | Light was | Light now | Dark was | Dark now |
 |---|---|---|---|---|
@@ -3175,7 +3175,7 @@ already read 6.97 on the screen and 6.06 on a card, so it clears R1's 6.0 floor 
 the dark `est.` badge reads 6.11 and the dark C24 border 6.57. An overrule is spent where it is
 needed and nowhere else, and there is a second reason in the muted case: `#94A496` is
 `dark.text.muted` by name, and three derived badge labels point at it. Moving it to buy 0.1 would
-have desynchronised four tokens for nothing.
+have desynchronized four tokens for nothing.
 
 **Two placements needed a rule rather than a floor.**
 
@@ -3183,7 +3183,7 @@ have desynchronised four tokens for nothing.
   to E106's proposed fix, reappearing one rung lower. So it instead keeps the fraction of the
   faint→muted lightness interval §1.2 gave it (0.52, near enough the midpoint) reapplied to the two
   retinted ends. The three-way spacing the designer drew survives the move, and the two footnote
-  colours stay one colour after dark exactly as D3 wrote them.
+  colors stay one color after dark exactly as D3 wrote them.
 - The C24 border is solved against `surface.card` **and** `surface.screen`. A boundary is adjacent to
   a surface on each side of it, the page is the harder of the two by 0.27, and C24 is the one place
   in this palette where WCAG 1.4.11 genuinely binds — the card is `surface.card` on `surface.screen`
@@ -3211,7 +3211,7 @@ micro-labels in it directly. 04 is dark whether or not the phone is, so R1's ret
 token never reached it: the same label was legible when the phone was in dark mode and illegible when
 the *screen* was dark, which is R1's own argument — that the ramp is every micro-label in the app and
 not one badge — failing on its own terms. Overruled to **`#7E8F80`**, which is `textFaint`'s retinted
-dark half exactly, so it mints nothing and the two halves of the ramp are one colour again.
+dark half exactly, so it mints nothing and the two halves of the ramp are one color again.
 
 | Screen 04 pair | Before | After |
 |---|---|---|
@@ -3261,7 +3261,7 @@ recorded that `borderAmberSoft`, `borderAmberMid` and `borderAmberStrong` collap
 *after dark*. R1 has now split them in *light*, at the other end: C24's attention-card border left
 `#D9A05B` for `#B8803A`, and `borderAmberMid` and `amberChipSelectedBorder` — which were the same hex
 and the same 1.5 pt weight — did not follow it. **The attention card's border is now visibly darker
-than the selected amber chip's, where before this pass they were one colour.** That is correct under
+than the selected amber chip's, where before this pass they were one color.** That is correct under
 1.4.11, which asks for 3:1 only where a boundary is required to identify a component: a selected chip
 is identified by its fill and its label, and the attention card is identified by nothing else. R1a's
 line is that an accessibility floor justifies an overrule and a matching set does not, so no further
@@ -3298,7 +3298,7 @@ third answer available in the schema and no document said which of the two to ta
 **R3's answer, which is the one implemented: these rows are deleted.** §3.12 anonymizes
 *contributions*, and the word carries the argument. A photograph, a measurement, a check-in have
 value to the forest independent of who made them, which is the entire reason for keeping them past
-the account. A private reminder and a favourite have no such value: nobody but their owner could ever
+the account. A private reminder and a favorite have no such value: nobody but their owner could ever
 read them, and after anonymization nobody at all can, so what survives is not a preserved
 contribution but an unreachable row that no query returns and no person can remove. Anonymize what
 the forest keeps; delete what only one person could ever see.
@@ -3318,7 +3318,7 @@ available: SQLite forbids a trigger from referencing a table in another database
 `OLD.user_id = (SELECT value FROM app_state WHERE key = …)` reads correctly and is wrong: with no
 sentinel row the subquery is NULL, the comparison is NULL, `NOT (0 OR NULL)` is NULL, and a `WHEN`
 clause that evaluates to NULL does not fire. That form permits every hard delete of every
-account-owned favourite on every database where nobody is being deleted at all — the trigger would
+account-owned favorite on every database where nobody is being deleted at all — the trigger would
 have looked present in the DDL while doing none of its job, which is the same failure mode E89
 recorded for `UNIQUE (user_id, device_id, tree_uuid)` and the reason that warning was worth carrying
 forward. It was verified rather than reasoned about: the naive form leaves zero rows where the
@@ -3332,7 +3332,7 @@ deletion is worse, because an item that drains afterwards re-creates, under the 
 that no longer exists, precisely what the deletion just removed. The two kinds of queued row take the
 two answers R3 gives:
 
-- **A queued favourite toggle or private reminder belonging to the account is deleted from the
+- **A queued favorite toggle or private reminder belonging to the account is deleted from the
   outbox.** Its only possible destination is a row that may not exist: an ownerless one fails the
   CHECK, and a device-owned one is the re-homing R3 refused. There is nothing left for the mutation
   to mean, so the row goes rather than failing in the queue for ever where screen 17 would keep
@@ -3347,11 +3347,11 @@ two answers R3 gives:
 
 Both statements run over every state, not only the pending ones. A `done` row is screen 17's receipt
 and its payload is a second copy of the attribution sitting on disk, so anonymizing the table and
-leaving the receipt would leave the account's id on the device; a `done` favourite's receipt is worse
+leaving the receipt would leave the account's id on the device; a `done` favorite's receipt is worse
 still, because it names a tree this person kept, which is the record R3 says nobody else could read.
 
-**What happens to the tombstones, and why.** A favourite un-favourites through `deleted_at` rather
-than a `DELETE` because a stray delete loses the un-favourite *event*, so the row returns on the next
+**What happens to the tombstones, and why.** A favorite un-favorites through `deleted_at` rather
+than a `DELETE` because a stray delete loses the un-favorite *event*, so the row returns on the next
 sync from another device (v1, restated in E89). That reason does not survive an account deletion.
 There is no next sync: the account those other devices would sync as no longer exists, and the same
 transaction removes the account's queued toggles. A tombstone is also exactly as exclusively owned
@@ -3361,7 +3361,7 @@ tombstones are deleted on the same argument as the rows they are tombstones for,
 is keyed on the row's owner rather than on its `deleted_at` so that it covers both without a second
 clause.
 
-**A device's own reminders and favourites are not touched.** They were written before there was an
+**A device's own reminders and favorites are not touched.** They were written before there was an
 account and were never the account's; `claimDevice` moves such a row *onto* an account and nothing
 has moved these. Deleting them would delete the next person's records, or the same person's
 pre-sign-in work, on the strength of a shared installation id.
@@ -3388,23 +3388,23 @@ pre-sign-in work, on the strength of a shared installation id.
    writes one this is a number somebody can see rather than a silence. **OPEN**, and it is the next
    thing to settle if community notes are ever built.
 3. **`FavoriteTests` pinned the migration list as a literal `[5]`** — the exact mistake that test's
-   neighbours (`PrivateReminderTests`, `DataGates.outboxPhotoShotTypes`) each carry a comment
+   neighbors (`PrivateReminderTests`, `DataGates.outboxPhotoShotTypes`) each carry a comment
    warning against, written by the entry that added v5. Adding v6 failed it. It now filters
    `$0 > 4` like the others.
 
 Proven by `CypressTests/AccountDeletionTests.swift`: a contribution of each of the four kinds
 survives with its `user_id` nulled and its device id and its place on the tree intact, and so do the
 two nullable attributions (`tree_names.given_by`, `review_flags.raised_by`); the device link and the
-signed-in state are severed and a second deletion is refused; a reminder, a favourite and a favourite
+signed-in state are severed and a second deletion is refused; a reminder, a favorite and a favorite
 tombstone do not survive, and are not re-homed onto the device; the device's own rows and a second
 account's are untouched; a failure injected part-way through — an aborting trigger on
 `private_reminders`, which fires after the anonymization has already run — leaves every row, the
 signed-in state and the sentinel exactly as they were, and the same call succeeds once the failure is
-removed; a queued toggle does not re-create the deleted favourite when the queue is drained
+removed; a queued toggle does not re-create the deleted favorite when the queue is drained
 afterwards and a queued visit lands anonymous with its idempotency key unmoved; the trigger still
 refuses a hard delete when no erasure is in progress and after one has finished; a v5 database
 migrates with its live rows and its tombstones intact and replays as a no-op; and the copy names the
-reminders and the favourites in the one sentence that tells a person their observations stay.
+reminders and the favorites in the one sentence that tells a person their observations stay.
 `DataGates` adds the schema invariants: the erasure exception is refused with no sentinel set,
 refused when the sentinel names a different account, and accepted for the account it names, and the
 sentinel does not outlive the transaction that wrote it.
@@ -3460,7 +3460,7 @@ and is waiting on a server rather than on an engineer.
 exactly one second chance, then stops for good — and D9 is true whether or not this particular build
 has a server behind it. **A capability flag that has to rewrite six tests about a product decision is
 sitting in the wrong place.** The ledger answers "has the ask earned its interruption"; the capability
-answers "can this build honour it"; they are different questions and they now live in different
+answers "can this build honor it"; they are different questions and they now live in different
 types. `recordSave(mayAsk:)` takes the answer to the second one from its caller and defaults to
 `true`, so the D9 suite is untouched.
 
@@ -3475,8 +3475,8 @@ later be measured from the wrong zero.
 
 ### E112 — the heart now comes off where it went on, and three things E101 recorded as forced were consequences of the missing state rather than of the design
 
-E101 recorded a favourite that could be written and not removed, and left the closure to a
-decision-owner: "a selected appearance for C8's first cell, or a surface that lists favourites and can
+E101 recorded a favorite that could be written and not removed, and left the closure to a
+decision-owner: "a selected appearance for C8's first cell, or a surface that lists favorites and can
 remove one." **RULINGS R2 chose the first**, on the grounds that a list is a new screen and the
 authorization that covered inventing entrances (E98) did not cover inventing screens, while a state on
 a drawn component is a variant of something the designer already drew. This entry is what that cost,
@@ -3495,9 +3495,9 @@ nobody asked for. So the glyph clause is unbuilt and named here rather than quie
 design lands the four icons, the filled/outline pair is one line in `QuadActionRow.appearance`. The
 label is `Favorite` in both states, per R2 and for R2's reason.
 
-**The state is not carried by colour, and that is not decoration.** The selected cell also takes a
+**The state is not carried by color, and that is not decoration.** The selected cell also takes a
 `hairlineStrong` border against the idle `hairline`, and 12/800 against 12/600. Those are the two
-channels that survive greyscale, and with no glyph the hue would otherwise be the whole encoding —
+channels that survive grayscale, and with no glyph the hue would otherwise be the whole encoding —
 which is E103's finding arriving by a different road. VoiceOver gets the label unchanged and the state
 as a *value*: `Favorite, On, selected, button`, and `Favorite, Off, button`. The off state is spoken
 too, deliberately. A listener who hears only "Favorite, button" has been told nothing about whether
@@ -3513,13 +3513,13 @@ state through immediately so the control answers the finger, then **re-reads wha
 shows that. A write that does not land is a heart that goes back where it was. This is stronger than
 propagating the error would have been, because the failure it catches includes the ones that never
 throw — `FavoriteOutboxWriter` swallows a drain failure by design (the row is durable and the outbox
-owns retrying it), so a thrown error is not the same question as a stored favourite.
+owns retrying it), so a thrown error is not the same question as a stored favorite.
 
 **2. The double-tap trick is retired, and it had become the bug it was preventing.** The composition
 root kept the client UUID it minted per tree and replayed it, so an impatient double tap on a control
-with no on-state stored one favourite rather than two identical ones. `applyFavoriteToggle`'s replay
+with no on-state stored one favorite rather than two identical ones. `applyFavoriteToggle`'s replay
 guard is `WHERE favorites.client_uuid <> excluded.client_uuid` — the mechanism that makes a re-sent
-outbox item a no-op — so with an on-state that same reused key makes *un-favouriting* a silent no-op:
+outbox item a no-op — so with an on-state that same reused key makes *un-favoriting* a silent no-op:
 tap, tap, and the row is still live. Each call now mints its own key, and idempotency stays where
 ARCHITECTURE §4 puts it, on the mutation rather than on the control. The write lives in
 `ProfileFavoriteWriter` rather than in a private method of `RootView`, because a rule held privately by
@@ -3532,7 +3532,7 @@ previous one, so the last tap is the last word. This is a new failure mode creat
 is the one thing here that the old replayed key genuinely did prevent.
 
 **3. The initial state has to be read, and the read it uses is one E89 left correct and callerless.**
-`grove()` is `GET /me/grove` — favourited and visited trees, both ownership arms — and E89 records that
+`grove()` is `GET /me/grove` — favorited and visited trees, both ownership arms — and E89 records that
 nothing in the app called it, because the surface that would (screen 08's `Trees` pill) is drawn inert
 (E46). Screen 03 calls it now. **The tidier read would be a per-tree `isFavorite` on `CypressAPI`**,
 which ARCHITECTURE §4 explicitly sanctions ("if a screen needs data, the protocol grows a method");
@@ -3543,8 +3543,8 @@ large. A read that fails is `false`: "not known to be yours" and "not yours" dra
 drawn way is the state the cell has always had.
 
 **A memorial keeps the heart, and loses the two cells that write.** E89 settled that a removed tree can
-be favourited and the reason is reversibility — gating the write makes the toggle one-way for anyone
-whose favourite tree is later removed, because the gate that refuses the heart also refuses removing
+be favorited and the reason is reversibility — gating the write makes the toggle one-way for anyone
+whose favorite tree is later removed, because the gate that refuses the heart also refuses removing
 it. Nothing here changes that. What did change is the rest of the row: `Care` writes a care event and
 `Report` opens screen 06, whose subject is a `HazardCategory` whose four values are all statements
 about a standing tree. Both were being offered on a photographed removed tree — the residual E95 names
@@ -3618,12 +3618,12 @@ removed tree can reach this screen from the almanac and the visit flow too — E
 and `Route.memorial` exists, so sending `.removed` to screen 19 from the same switch would close E95
 here. It would also break RULINGS R2 in the place R2 says matters most. Screen 19 is drawn with
 deliberately nothing to press, so a redirect to it takes away the last surface in the app that can take
-a favourite off a tree somebody loved before it was felled — which is E89's deciding argument for not
+a favorite off a tree somebody loved before it was felled — which is E89's deciding argument for not
 gating the heart, arriving by a different road. **A redirect can be a gate wearing a router.** So
 `.removed` stays on the profile, explicitly and with the reasoning at the case, and what the profile
 owes it instead is to offer nothing that writes: see E112 for the two quad-row cells that went.
 
-**The redirect takes nothing away from the site, either.** A vacant site could never be favourited from
+**The redirect takes nothing away from the site, either.** A vacant site could never be favorited from
 any screen: the quad row is drawn only on the warm variant, and a site is always cold because nothing
 can contribute to it. E107 declined to put a heart on the site screen for its own reason — the only
 control available there is C7, which has no selected appearance, which is the defect R2 has just closed
@@ -3657,7 +3657,7 @@ first, because it is the one somebody would act on.
 do not join species at all, and every one of them still returns no vacant site. What returns none is
 `AlmanacQueries.standing` — `t.status IN ('alive','declining')` — which is applied by every read and
 whose own doc comment has said since it was written that "a basin with nothing in it is not an elder,
-not a newest neighbour and not a young tree anybody can go and look at". The inner join in
+not a newest neighbor and not a young tree anybody can go and look at". The inner join in
 `speciesMix` excludes something else entirely: the 312 city rows whose label names no taxon (E14).
 
 **Widening it admits no site, moves two numbers that are load-bearing, and takes the screen down.**
@@ -3679,7 +3679,7 @@ and nothing else — no status at all. A `flowering` visit recorded against a va
 produced `First bloom of the year` over a planting basin, named by its street and tappable: the one
 row on screen 12 that names a specific record was the only one that could name a record with no tree
 in it. Reproduced against the real seed at `2501 Lincoln Way`. That the app cannot write such a visit
-today is not a defence — it cannot only because E113 redirects a site away from the tree profile the
+today is not a defense — it cannot only because E113 redirects a site away from the tree profile the
 camera opens from, which is the almanac's own rule being enforced in another feature's router, one
 release after the almanac was written. `Self.standing` now applies to all five reads. The same
 predicate also drops a bloom recorded on a tree since removed, which is the rule saying what it
@@ -3699,7 +3699,7 @@ D4 exists to prevent. So a site does not belong in §4, and a `Walk to it` that 
 pavement is not a smaller version of `Walk the nine`; it is a different kind of sentence.
 
 **What screen 12 should say about them, and why this entry proposes it rather than building it.**
-There is one honest statement — *N planting sites in this neighbourhood have no tree in them* — and
+There is one honest statement — *N planting sites in this neighborhood have no tree in them* — and
 one honest destination, the nearest of them on `Route.site`. That is one number and one row, and it
 has nowhere on screen 12 to go. §2 is `This season`, and 1,474 basins are not seasonal and are not a
 first, an elder or a newcomer, which is what the screen's own caption says that block holds. §3 is
@@ -3716,15 +3716,15 @@ a subtitle rule, a tile accent and a position relative to §4; all four are draw
 Two facts a designer answering this will want. The count itself is D1-legal without qualification: it
 counts *records the city holds*, not anything anybody did, so ARCHITECTURE §5.1's trap — a number
 that is a count of user actions wearing a different noun — does not apply, and unlike §2's headcount
-it needs no A8 floor. And it never renders as a zero: every one of the 41 neighbourhoods carries
+it needs no A8 floor. And it never renders as a zero: every one of the 41 neighborhoods carries
 between 4 and 1,474 sites, so ARCHITECTURE §5.6 would never suppress this block anywhere in the city.
 No query was added for it, because a read nothing draws is the thing E113 deleted `isVacantSite` for;
 the destination it would need already exists as `TreeQueries.nearest` filtered on status, which is
-how `SiteModel` finds its neighbour today.
+how `SiteModel` finds its neighbor today.
 
 Proven by `CypressTests/AlmanacVacantSiteTests.swift`, all of it against the shipped 195,309-row seed
-rather than a fixture: the population (12,518, every one inside a neighbourhood, none with a species,
-none in a neighbourhood that has no others, 1,474 in Sunset/Parkside); the join arithmetic above,
+rather than a fixture: the population (12,518, every one inside a neighborhood, none with a species,
+none in a neighborhood that has no others, 1,474 in Sunset/Parkside); the join arithmetic above,
 including the NULL comparison proved by query rather than reasoned about, per E89 and E109; that the
 live mix is still 215 species over 11,026 trees and every row can name itself; that the elder, the
 plantings and the coverage read return no site even though **9,294 of the 12,518 carry a planting
@@ -3800,14 +3800,14 @@ The images are under
 `/private/tmp/claude-501/-Users-nikitabogdanov-PycharmProjects-cypress/0d7c1eed-65e3-4ed3-b24f-b64dc9fb8b1c/scratchpad/sweep`,
 one `*-SHEET.png` per screen. The one surprise worth recording is how little there was to find: the
 defect rate on fifteen never-before-photographed screens was zero, which says the token layer and the
-component catalogue are carrying dark and AX5 correctly on their own, and that the two defects that were
+component catalog are carrying dark and AX5 correctly on their own, and that the two defects that were
 found by eye earlier were failures of *coverage* — screens nobody had looked at — rather than of a
 class of screen that keeps going wrong.
 
 ### E116 — the accessibility tree was never checked as a tree, only one label at a time
 
 Every accessibility fix in this project — E103's labels on bare `Shape`s that reached nobody, E104's
-component announcing an empty row, the VoiceOver values on the favourite toggle (E112) — was verified
+component announcing an empty row, the VoiceOver values on the favorite toggle (E112) — was verified
 against `CypressTests`, which is a **unit** suite. A unit test can assert that a modifier is present
 on a value. It cannot assert that the element the modifier is on is in the accessibility tree at all,
 that a screen's elements are reachable in the order a VoiceOver user hears them, or that an
@@ -3819,14 +3819,14 @@ the source and the element is not in the tree" was unfalsifiable.
 `TEST_TARGET_NAME = Cypress`, added to the shared scheme's test action so `xcodebuild test` runs it —
 and it is black-box on purpose: it imports nothing from `Cypress` and sees the app the way VoiceOver
 does, as a tree of elements with traits, labels and an order. `AccessibilityTreeTests` pins that the
-four C16 tabs are present *and hittable* (a tab that is drawn and labelled but not activatable by an
+four C16 tabs are present *and hittable* (a tab that is drawn and labeled but not activatable by an
 assistive technology is the failure a screenshot cannot show), that the map's search field is exposed
 as a field rather than as anonymous pixels, and that no hittable control on launch has an empty label.
 
 **The target was verified to be able to fail, not merely to pass.** A UI test green against correct
 code proves nothing, so one tab's label was hidden as a negative control: the tab test reported "the
 My Grove tab is not in the accessibility tree" and went red, then the control was reverted. That is
-the same discipline every behavioural fix in this file was held to — prove the failure against the
+the same discipline every behavioral fix in this file was held to — prove the failure against the
 broken code before trusting the pass — applied to the tool itself.
 
 **What this does not yet cover, and is the next work.** Three screens, all reachable without a
@@ -3862,7 +3862,7 @@ preview fixtures; a UI test that also used them would prove the fixtures are acc
 a failing test names a tree somebody can go and look at.
 
 **A failure draws itself.** This is the part that matters most and is easiest to get wrong. The
-obvious behaviour when resolution finds no record is to do nothing and leave the app on screen 01 —
+obvious behavior when resolution finds no record is to do nothing and leave the app on screen 01 —
 at which point all fourteen tests pass, because screen 01 *is* accessible, while each reports the name
 of a screen it never visited. So `DebugDeepLink.Failure` is rendered over the app in words, and the
 test reads the banner: a typo'd screen name produced
@@ -3870,9 +3870,9 @@ test reads the banner: a typo'd screen name produced
 the link exactly once per launch, because `.task` re-fires on reappearance and a re-fired deep link
 pushes a second copy of the screen under the first — which also looks exactly like a passing test.
 
-**What the fourteen tests found: nothing unlabelled, anywhere.** The accessibility tree of each screen
+**What the fourteen tests found: nothing unlabeled, anywhere.** The accessibility tree of each screen
 was dumped and read before a single assertion was written — 188 interactive elements across the
-fourteen, every one of them labelled. (188 is the count in the dumped trees; the tests assert over the
+fourteen, every one of them labeled. (188 is the count in the dumped trees; the tests assert over the
 *hittable* subset of that, which excludes what is scrolled off or behind a cover.) The M4 VoiceOver
 pass and E103/E104 held. Two things were confirmed rather than fixed, and both are worth naming
 because the suite now pins them: the `fullScreenCover` behind 09 and 10 **does** take the map out of
@@ -3982,7 +3982,7 @@ name, and the `Path to element` footer that must not be counted twice.
 **Screen 05 is confirmed correct** by the method that replaced the one that accused it.
 
 **Grouping, the third and last structural question — and the same trap a second time.** E116 and E117
-asked whether elements are *labelled*; the duplication check above asked whether anything is said
+asked whether elements are *labeled*; the duplication check above asked whether anything is said
 *twice*; grouping asks whether things that belong together arrive together.
 
 Screen 03's stat grid did not. Its one **interactive** card read as a single element — a `Button` forms
@@ -4006,7 +4006,7 @@ value were merged, so the test asserts the *whole is present* rather than that t
 negative control needs no run — the pre-fix dump contains zero labels of the form `DBH, `, so the test
 would have failed before the change.
 
-**The generalisable rule, now twice paid for:** XCUITest can prove an element *is* in the tree with a
+**The generalizable rule, now twice paid for:** XCUITest can prove an element *is* in the tree with a
 given label. It cannot prove an element is *not a VoiceOver stop*, because the tree lists elements the
 accessibility runtime merges away. Every assertion here must therefore be phrased as the presence of
 something correct, never as the absence of something wrong.
@@ -4018,34 +4018,34 @@ E115 stopped the almanac from naming one as a tree. Each of those removed the sa
 had been here and was gone — from a surface that was making it about 12,518 records that never held
 one. The map kept making it, and the map is where those records actually live.
 
-`MapPinKind.kind(for:)` returned `.removed` for `.vacantSite`, so a basin drew as the memorial's grey
+`MapPinKind.kind(for:)` returned `.removed` for `.vacantSite`, so a basin drew as the memorial's gray
 dot. **E107 fixed only half of this and said so**: it wrote the `accessibilityLabel` override, so the
 pin *said* `Planting site, no tree` while *drawing* a memorial, and recorded why it stopped there — "a
-new pin is a design decision and C1–C30 is a closed catalogue". That is a constraint-21 refusal, and
+new pin is a design decision and C1–C30 is a closed catalog". That is a constraint-21 refusal, and
 it was the right call at the time. The decision has since been delegated (RULINGS R7), so the drawn
 half is now fixed and the two halves agree.
 
-**Hollow, not a second grey.** `MapPin.Kind.vacantSite` keeps the memorial's 16pt footprint and its
+**Hollow, not a second gray.** `MapPin.Kind.vacantSite` keeps the memorial's 16pt footprint and its
 muted shadow, and draws with **no fill at all** — a ring in `borderDashedStrong`, the token the
 vacant-site screen and the empty photo well already speak, so nothing is added to the palette. An
-absence of fill reads as an absence of tree without anyone having to learn a colour, and it cannot be
-confused with a filled dot at any size, which a second grey could.
+absence of fill reads as an absence of tree without anyone having to learn a color, and it cannot be
+confused with a filled dot at any size, which a second gray could.
 
 **Solid ring, not dashed**, even though the ruling reached for the dashed *family*. Dashes already mean
 the community layer (DECISIONS §3.16), and a dashed hollow ring would read as an unverified community
-tree — trading one wrong claim for another. `borderDashedStrong` is used here as a colour, not as a
+tree — trading one wrong claim for another. `borderDashedStrong` is used here as a color, not as a
 stroke style.
 
 **The label override survives on purpose.** With a dedicated kind it looks redundant, and
 `MapPin.Kind.vacantSite` does carry a sane default. But the words a basin says belong to the feature
 that owns basins, and a `DesignSystem` component must not reach into `Features` for a string — so the
-catalogue keeps a default that must never claim a tree was here, and `MapPinKind` keeps overriding it
+catalog keeps a default that must never claim a tree was here, and `MapPinKind` keeps overriding it
 with `SiteCopy`'s wording. The override's guard changed from `pin.status == .vacantSite, kind == .removed`
 to `kind(for:) == .vacantSite`, which preserves the case E107 was careful about: a *community-added*
 vacant site still resolves to `.community` first, keeps the dashed pin, and keeps the community label.
 
 **The test now pins both halves.** `sitePinAnnouncesItself` asserted only the spoken label, and its
-doc comment still said the drawn pin "is still the memorial's grey dot" — true when written, false
+doc comment still said the drawn pin "is still the memorial's gray dot" — true when written, false
 after this change, and the kind of stale comment that outlives the thing it describes. It now asserts
 the kind as well, and that `vacantSite.fill` is `.clear` and differs from `.removed`'s — because the
 absence of fill *is* the distinction, and an absence is exactly what a screenshot nobody diffs will
@@ -4054,7 +4054,7 @@ not catch.
 ### E120 — the C10 exemption rested on a label nobody can see; C23 is deferred on a measurement, not on taste
 
 R8 delegated the two contrast pairs R1 left to design — the C10 locked glyph and the C23 chart series
-on a dark card, both under 3:1. One turned out to be a mislabelled defect and the other turned out to
+on a dark card, both under 3:1. One turned out to be a mislabeled defect and the other turned out to
 be a genuinely harder problem than the ruling assumed.
 
 **C10: the exemption was wrong.** E8 recorded the `?` at 1.84:1 light and 2.12:1 dark and exempted it
@@ -4066,7 +4066,7 @@ entire visible content of the tile, and the only thing that distinguishes a lock
 plane. WCAG 1.4.11 binds, and a low-vision user was being asked to find a 1.84:1 mark with nothing else
 to go on.
 
-Fixed by **lightness only**, holding chroma and hue in OKLCh — R1's method, so the glyph stays the grey
+Fixed by **lightness only**, holding chroma and hue in OKLCh — R1's method, so the glyph stays the gray
 green it always was. `#A8B29C ↔ #4C584B` → `#7F8974 ↔ #647062`, landing at 3.06:1 and 3.05:1. The tile
 fill does not move. The pair left `knownFailures` for `retinted`, where the suite pins the exact
 ratios — which is what independently confirmed the arithmetic, rather than the arithmetic confirming
@@ -4078,8 +4078,8 @@ to 3.05:1 on the dark card means `#3C785B`, which costs **38% of its OKLab separ
 — 0.117 down to 0.073, and both are greens. `ActivityView` draws all three series at once (photos,
 check-ins, care), so that separation is load-bearing rather than theoretical.
 
-R8 pre-authorised the compensator: a non-colour encoding, which is owed anyway because a chart
-separated only by hue is unreadable to a colour-blind reader at *any* ratio. But a dash belongs to a
+R8 pre-authorized the compensator: a non-color encoding, which is owed anyway because a chart
+separated only by hue is unreadable to a color-blind reader at *any* ratio. But a dash belongs to a
 **stroked** mark, `ChartCard`'s `LineChart` strokes polylines while 13's three series are drawn through
 a different path, and applying a stroke dash to the wrong mark type is a design change made by
 guessing. **Shipping the lightness move alone would trade one failure for another** — better contrast,
@@ -4090,7 +4090,7 @@ The `knownFailures` entries now carry that reasoning and the measurement instead
 
 **A note on how this went, because it is the fourth time today.** Four premises were checked against
 the code before building and three were wrong: R6's defect was already fixed, R9's "weights" were
-colours, and C10's exemption was backwards. The one that nearly slipped through was the opposite —
+colors, and C10's exemption was backwards. The one that nearly slipped through was the opposite —
 a grep suggested `chartSeriesSecondary` and `chartSeriesTertiary` were drawn nowhere, which would have
 made the separation question moot and the whole C23 fix trivial. That conclusion was written down
 before the output was read properly: `ActivityView` uses both, on screen 13. **The check is worth
@@ -4109,7 +4109,7 @@ subtitle `The city has mapped them. Nothing is growing there.`, tapping to the n
 `yet`, no ask to plant, no implication anyone has been told (ARCHITECTURE §5.4). Cypress keeps the
 record of what is planted; it does not plant.
 
-**Where it sits, and why not in §4.** After §3, before §4. §3 says what lives in the neighbourhood;
+**Where it sits, and why not in §4.** After §3, before §4. §3 says what lives in the neighborhood;
 this says where nothing does — two readings of the same canopy, kept adjacent. §4 stays the screen's
 one *directed ask*, the last thing before the footnote, and a plain row before its amber card reads as
 the statement it is rather than as a second ask. E115 drew this line first: a vacant site takes no
@@ -4118,9 +4118,9 @@ bare pavement — the "sent to the city" defect. This block only counts and offe
 
 **The query is the one read in `AlmanacQueries` that inverts `standing`.** Every other read asks for a
 tree the city believes is standing; `vacantSites` asks for the basins that are its opposite, counting
-`status = 'vacant_site'` in the neighbourhood and returning the nearest by squared distance from one
-scan. The nearest is scoped to the *same* neighbourhood, so the tap can never route the reader from
-one basin to a basin in the next neighbourhood over — subject and destination are one set. Because it
+`status = 'vacant_site'` in the neighborhood and returning the nearest by squared distance from one
+scan. The nearest is scoped to the *same* neighborhood, so the tap can never route the reader from
+one basin to a basin in the next neighborhood over — subject and destination are one set. Because it
 counts city records rather than user actions, ARCHITECTURE §5.1's "a count of actions wearing a
 different noun" trap does not apply and it needs no A8 floor; it draws on a fresh install exactly as
 the species mix does.
@@ -4128,13 +4128,13 @@ the species mix does.
 **The tile accent adds no hue.** `TileAccent.vacantSite` is composed from tokens the vacant-site
 family already owns — `surfaceEmptyThumb` as its ground, `borderDashedStrong` as its mark — the same
 dashed-ring vocabulary R7 gave the map pin, the site screen and the empty photo well (E119). Reusing
-`elder` or `newGrowth` would paint a hole in the pavement in a living tree's colour, the exact
+`elder` or `newGrowth` would paint a hole in the pavement in a living tree's color, the exact
 category error R7 removed from the map.
 
 **Proven, all against the shipped seed.** `AlmanacVacantSiteTests` gains: the count is 1,474 in
 Sunset/Parkside (E115's own measurement, now the query's), the nearest really is a `vacant_site` and
-really is in that neighbourhood, the presentation states the count and inherits the site line, a count
-with no destination does not draw (no statement the reader cannot act on), a neighbourhood with no
+really is in that neighborhood, the presentation states the count and inherits the site line, a count
+with no destination does not draw (no statement the reader cannot act on), a neighborhood with no
 basins does not draw (§5.6, though E115 found none like it), and one basin reads in the singular.
 
 **A note on a self-inflicted near-miss.** A grep for `chartSeriesSecondary` in the previous entry
@@ -4172,11 +4172,11 @@ than on them. Recorded so that a later reader does not mistake a green count for
 Three of the delegated design calls, resolved together because all three are token-layer.
 
 **C23 (R8): a plain lightness fix, not the deferred dash.** E120 deferred C23 believing the three chart
-series were "separated by hue alone" and would need a non-colour encoding. Looking at `ActivityView`
-showed the premise was wrong: screen 13 draws the series as **three spatially-separate, text-labelled
+series were "separated by hue alone" and would need a non-color encoding. Looking at `ActivityView`
+showed the premise was wrong: screen 13 draws the series as **three spatially-separate, text-labeled
 strips** — each `ChartSeriesLegend` names its series (`Photos` / `Check-ins` / `Care`), and each
-`BarChart` carries a VoiceOver label reading its months. A colour-blind reader already tells them apart
-three ways before hue enters it, so the pre-authorised dash solves a problem that does not exist, and
+`BarChart` carries a VoiceOver label reading its months. A color-blind reader already tells them apart
+three ways before hue enters it, so the pre-authorized dash solves a problem that does not exist, and
 the 38%-separation-loss E120 measured is moot because the series never share a visual space.
 
 So C23 is the same fix as C10: **lightness-only in OKLCh, dark value only.** `chartSeriesPrimary`
@@ -4189,8 +4189,8 @@ the escalated invariant is "resolves the same in both appearances", and these no
 **The vacant tile (R10 follow-up): visible, still not alive.** Looking at the shipped screen 12 showed
 `TileAccent.vacantSite` reading as an almost-blank square: its ground was `surfaceEmptyThumb`, ≈1.05:1
 on the card. Base and highlight are swapped — `borderDashedStrong` is the ground now, `surfaceEmptyThumb`
-the dished centre — so the tile is a present muted grey-green basin, clearly distinct from the card and
-from the living elder tile beside it, while adding no new hue and no life colour. Verified by
+the dished center — so the tile is a present muted gray-green basin, clearly distinct from the card and
+from the living elder tile beside it, while adding no new hue and no life color. Verified by
 deep-linking the running app to the journal tab against the real seed.
 
 **R9 (amber borders): declined, and the reason is a trap the ruling could not see.** R9 read "three
@@ -4226,14 +4226,14 @@ owner ruled to show the prompt; this builds it.
 
 **`LocationPrompt`** is a tappable card in the dashed-ring vocabulary the vacant-site family already
 speaks (`borderDashedStrong`, `surfaceEmptyThumb`) — so the one place the app breaks §5.6 silence still
-looks like the rest of it. The almanac shows `See your neighbourhood / Turn on location and the almanac
+looks like the rest of it. The almanac shows `See your neighborhood / Turn on location and the almanac
 fills with the trees around you`; screen 07 shows `See it near you / Turn on location to find this
 species on the blocks around you`. Tapping calls `onRequestLocation`, wired by the composition root to
 `MapLocationProvider.start()` — the same provider screen 01 asks with, so a grant here reports fixes
 everywhere. On a device that already refused, `start()` is a safe no-op.
 
 **The condition is `coordinate == nil`, computed at the view layer, not in the presentation.** A nil
-fix yields no neighbourhood and therefore an empty almanac, so "no fix" and "the screen would be blank"
+fix yields no neighborhood and therefore an empty almanac, so "no fix" and "the screen would be blank"
 are the same condition — the prompt takes the place of the blank rather than sitting beside content.
 Because it is a view decision rather than a derived value, it carries no presentation test; it was
 verified by **looking** — deep-linking the running app to the journal tab with location cleared, and
@@ -4244,7 +4244,7 @@ so granting location while standing on the almanac does not reactively reload it
 on the next visit to the tab rather than the instant the permission is granted. Reworking the almanac
 to observe location changes is a larger change than this prompt, and the prompt is honest either way:
 it says "turn on location", which remains true, and the reader reaches the filled screen by the next
-navigation. Noted here so it is a known behaviour rather than a surprise.
+navigation. Noted here so it is a known behavior rather than a surprise.
 
 ### E124 — screen 15 signs people in, locally (RULINGS R4, #1/#2 Part A)
 
@@ -4400,7 +4400,7 @@ tests plus 26 UI tests, including the four that the seeding defect had broken.
 
 **And then the thumbs did not work, for a third reason nobody would have guessed.** Every tap on
 every thumb in the list did nothing: no vote, no error, no filled glyph. The buttons were in the
-accessibility tree, correctly labelled, and `isHittable` reported true. The cause is the other half
+accessibility tree, correctly labeled, and `isHittable` reported true. The cause is the other half
 of the bug `PhotoFill` was built to prevent — **`.clipped()` clips drawing, not touches.** The
 overflowing `Image` keeps its full scaled footprint for hit testing, so SwiftUI routes taps to pixels
 it never painted. Measured on screen 20: a 361 × 217 pt box holding a 3:4 photograph reports an
@@ -4426,7 +4426,7 @@ throughout the entire period the feature was broken. 447 unit tests and 27 UI te
 
 Both `GroveModel.Phase` and `AlmanacModel.Phase` keep `.failed` as its own case, and both say why in a
 comment: an empty grove means "you have not met a species yet" and an empty almanac means "nothing is
-happening in your neighbourhood", while a failed read means "we could not tell". `AlmanacModel` calls
+happening in your neighborhood", while a failed read means "we could not tell". `AlmanacModel` calls
 its screen "the last place to conflate them". Both views then conflated them, by having exactly one
 branch: `if let presentation` with no `else`, and `presentation` is nil for `.loading` and `.failed`
 alike. `hasFailed` was written for this and had **zero readers anywhere in the codebase**. A failed
@@ -4458,7 +4458,7 @@ footnote. The injection was removed before commit; `e08-grove-read-failed` and
 
 **One known limitation, left as-is.** On screen 12 a missing location fix still wins over a failed
 read: `showsLocationPrompt` is checked first, so a device with no fix sees E123's prompt rather than
-this sentence. That is the right order — without a fix there is no neighbourhood to have failed to
+this sentence. That is the right order — without a fix there is no neighborhood to have failed to
 read — but it means the two cannot be seen at once, and the prompt is the one that has an action
 behind it.
 
@@ -4504,7 +4504,7 @@ against.
 worse than unreachable: "None of these? Add this tree" drew at full opacity and was wired to
 `router.sheet = nil`, so it dismissed the whole flow and recorded nothing, while `LocalAPI.addTree`
 sat fully implemented and tested with no caller. PROTOTYPE-FLOW drew that button *inert*, at opacity
-.55, labelled "· not in this prototype"; the build kept the label and dropped the honesty. It is built
+.55, labeled "· not in this prototype"; the build kept the label and dropped the honesty. It is built
 now — BUILD-PLAN §9 M2 names the duplicate-proximity warning as required and §7 specifies the
 endpoint, so this is a deliverable that was skipped rather than a screen invented here, and with no
 mock every part is borrowed from a specified one. The screen never pre-checks the 10 m circle: it
@@ -4551,7 +4551,7 @@ screens cannot come to disagree about the number. And it is a plain column rathe
 full-bleed frame, because E110: 01's absolute positions are arithmetic against a safe-area inset that
 reads 0 under a navigation bar, and this screen is pushed.
 
-**The group travels on the route rather than being re-read**, which is not an optimisation. The row
+**The group travels on the route rather than being re-read**, which is not an optimization. The row
 has already printed a count; a read a second later can disagree with the sentence the reader tapped,
 and then the screen contradicts the control that opened it. A consequence worth having: the
 destination never calls `mapContent`, so it costs no query however far it is panned, and the map's
@@ -4559,9 +4559,9 @@ pin budget is untouched.
 
 **E38 decided the copy.** Coverage is provably whole — `Series.totalCount` is why the card draws at
 all — so its map holds all of it and says "All seventeen are on this map." The vacant group cannot
-be, because E115 measured between 4 and 1,474 basins per neighbourhood, so its map holds the 20
+be, because E115 measured between 4 and 1,474 basins per neighborhood, so its map holds the 20
 nearest and says exactly that, while the count above it remains the `COUNT(*)`. The limit of 20 was
-chosen against two measurements rather than taste: the busiest neighbourhood's coverage set is 21
+chosen against two measurements rather than taste: the busiest neighborhood's coverage set is 21
 trees, and the 20 nearest basins in Sunset/Parkside span 197 m × 212 m — close to screen 01's own
 120 m opening view, which E12 measured as the scale where 18 pt pins stop fusing.
 
@@ -4569,7 +4569,7 @@ trees, and the 20 nearest basins in Sunset/Parkside span 197 m × 212 m — clos
 this week was something the suite *failed to notice*. This one it had positively ratified:
 `AlmanacPresentationTests` contained `@Test("the CTA opens the nearest of them")`, asserting
 `coverage?.firstTreeID == near.id` — against a button whose visible label reads "Walk the nine". It
-passed every run since the coverage card shipped. A test named after the wrong behaviour is worse
+passed every run since the coverage card shipped. A test named after the wrong behavior is worse
 than no test, because it converts the defect into a requirement and the next person to touch the card
 has to argue with the suite to fix it. It has been rewritten, with a note recording what it used to
 say.
@@ -4589,7 +4589,7 @@ accessibility tree the way it reads the other sixteen. Its only interactive elem
 `ScreenHeader`'s Back circle and `MapPin`s, both covered by components that suite already exercises,
 but it is a gap in that sweep. Also: `Route` now carries a payload for the first time. `AppRouter`'s
 `replace(_:with:)` uses `path.lastIndex(of:)`, which is fine on a `Hashable` payload, and nothing
-serialises `Route` — noted so the next payload-carrying case is not added blind.
+serializes `Route` — noted so the next payload-carrying case is not added blind.
 
 ### E130 — screen 01 had no level of detail, and the annotation count tracked the viewport's area
 
@@ -4646,7 +4646,7 @@ milliseconds are not a claim about an iPhone and should not be quoted as one.
 
 **The grid was not absolute, and its own comment said it was.** This is the part worth remembering.
 The cells are `CAST((lat + 90) / latCell AS INTEGER)` — origin at the south pole, so a San Francisco
-index is around 171,000 — and `cellSize` took the *viewport's own* centre latitude for its `cos()`
+index is around 171,000 — and `cellSize` took the *viewport's own* center latitude for its `cos()`
 term. `cos` is continuous, so `latCell` moved a little with every pan, and a relative change of one
 part in five thousand slides an index of 171,000 by more than thirty whole cells. The new stability
 test measured the consequence: **67 of about 190 interior pins picked a different tree after a
@@ -4718,7 +4718,7 @@ that would have been worst to ship, because nothing on screen would ever reveal 
 **The deletion surface was driven by hand against the live database, because R3 is a destructive
 promise and a passing test is not evidence about a destructive promise.** One tap on the row destroys
 nothing — it raises the dialog, and a read of the app's own sqlite immediately afterwards showed the
-reminder, the observation, the two outbox items and `current_user_id` all still present. Cancelling
+reminder, the observation, the two outbox items and `current_user_id` all still present. Canceling
 changes nothing; dismissing by tapping outside changes nothing; both were checked against the
 database rather than the screen. And what it deletes matches what its copy promises, clause by
 clause: the private reminder went 1 → 0, the observation stayed on its tree with `user_id` NULL and
@@ -4727,9 +4727,9 @@ nothing left on them saying they were yours" — and the queued outbox item for 
 went with it, which is "anything still waiting to sync is included".
 
 **One record kind is deleted without being named.** `AccountDeletion` also removes `photo_votes`
-(schema v8), and `AccountDeletionCopy.whatHappens` lists only reminders and favourites. R3's whole
+(schema v8), and `AccountDeletionCopy.whatHappens` lists only reminders and favorites. R3's whole
 rule is that deleting *more* than the person expected is the failure mode, so an unnamed record kind
-is a gap in that defence — narrow, because a vote is invisible to its owner and the aggregate it
+is a gap in that defense — narrow, because a vote is invisible to its owner and the aggregate it
 feeds is public either way, but the sentence should probably grow a clause. Left open deliberately
 rather than fixed in passing.
 
@@ -4758,9 +4758,9 @@ camera is handled properly: `needsLibraryFallback` becomes true and screen 04 of
 library instead. It is purely that a test host cannot answer a prompt, and the failure mode is an
 indefinite hang rather than an error, which is the part that wastes the time.
 
-**Open.** A favourite was never driven through deletion by hand (there were none in the session);
+**Open.** A favorite was never driven through deletion by hand (there were none in the session);
 `AccountDeletionTests` covers the row, and the reminder and observation paths stand in for the
-behaviour. Screen 06's 311 redirect card showed hanging-limb body text while "Uprooted" was selected —
+behavior. Screen 06's 311 redirect card showed hanging-limb body text while "Uprooted" was selected —
 the *saved* category was correct on disk, so it is a cosmetic copy-selection bug in the redirect card,
 pre-existing and untouched here.
 
@@ -4770,7 +4770,7 @@ The project owner: *"the ability to adjust the pin/location of where the 'What t
 location is; making it right where you stand is super limiting."* `VisitAddTreeModel.add()` passed
 `location.fix.coordinate` to the draft verbatim, and the screen's own footnote said as much — "the
 coordinate is the phone's current fix". E127 made that a deliberate choice. Using it revealed three
-cases it cannot serve: a tree photographed from the far kerb, from a car or through a window; a fix
+cases it cannot serve: a tree photographed from the far curb, from a car or through a window; a fix
 20–40 m out, which is ordinary in an SF street canyon; and a row of street trees shot from one
 standing spot, every one landing on the same point and every one after the first refused by the 10 m
 dedupe.
@@ -4788,10 +4788,10 @@ still one tap and nobody is routed through a map they did not need. A fix is sti
 *start*: `canAdjustPin` is false without one, so this changes where the pin ends, not whether the app
 will invent a location it does not have.
 
-**The pin is the centre of the map and the map moves under it.** Three reasons, and the first is the
+**The pin is the center of the map and the map moves under it.** Three reasons, and the first is the
 one that decided it: the pin under your thumb is the pin you cannot see, and the thing being aimed at
 is a tree in the street. The second is that it makes every point on screen a handle rather than an
-18 pt dot. The third is that MapKit's own pan recogniser is the only thing that moves a map smoothly,
+18 pt dot. The third is that MapKit's own pan recognizer is the only thing that moves a map smoothly,
 and a hand-rolled drag on an annotation competes with it.
 
 **75 m, and the number is argued rather than picked.** It absorbs the two errors the owner named
@@ -4813,7 +4813,7 @@ stops working never stops silently. There is no drawn circle: it would be wrong 
 rotation and invisible to the reader who most needs the bound.
 
 **VoiceOver got a real answer rather than a label.** A pan is a gesture the screen reader owns; no
-amount of labelling fixes that, so the pin has a second way to move that needs no gesture at all —
+amount of labeling fixes that, so the pin has a second way to move that needs no gesture at all —
 four nudge buttons at 5 m a press, spelled out in words because a bare "N" is heard as a letter. The
 pin carries its position as its `accessibilityValue`, the two sentences sit above the map in reading
 order so the whole state is met before any control, every press posts an announcement, and one press
@@ -4834,8 +4834,8 @@ placed a pin, left the map without confirming, and the row reverted to the defau
 stayed at two. Had either placement been discarded on the write path, both rows would have sat exactly
 on the fix at 0.000 m, which is what makes this a proof rather than a screenshot.
 
-Two behaviours the drive surfaced that no unit test would have: MapKit's pan **decelerates**, so a
-flick keeps travelling after the finger lifts — one run read 46 m mid-glide and settled at 92 m, with
+Two behaviors the drive surfaced that no unit test would have: MapKit's pan **decelerates**, so a
+flick keeps traveling after the finger lifts — one run read 46 m mid-glide and settled at 92 m, with
 the confirm correctly disabling itself on the way. And on a tree-lined street a moved pin frequently
 lands within 10 m of a seeded tree and is refused by the dedupe, which is the API doing its job and
 the reader meeting it for the first time.
@@ -4845,16 +4845,16 @@ the reader meeting it for the first time.
 placed or measured. `address` is a street address, `external_ref` is the city's identifier, `site_type`
 is where a tree is planted; writing a flag into any of them makes that column mean two things. It
 needs a `placement` column and an `AppSchema` v9, and inventing a migration was not this change's to
-make. The distinction *is* modelled in `VisitAddTreeModel.Placement` and *is* stated on screen, which
+make. The distinction *is* modeled in `VisitAddTreeModel.Placement` and *is* stated on screen, which
 is the honest half that does not require the schema.
 
 **Also open.** Correcting an existing community tree's location is not cheap: `community_trees` is
 insert-only by design, so it needs an update path, an outbox kind (there is none for trees at all), a
 patch on `CypressAPI` and an entrance on screen 03 gated on `source == .community`.
 `VisitPinAdjustView` takes a coordinate and two closures and owns no draft, so the *screen* is already
-reusable verbatim — the work is entirely the write path. And neighbouring trees are not drawn on the
+reusable verbatim — the work is entirely the write path. And neighboring trees are not drawn on the
 pin map: they would genuinely help, since they are what the dedupe is about to refuse against, but a
-pin there is a labelled button with nowhere to go, and opening a profile from inside a placement
+pin there is a labeled button with nowhere to go, and opening a profile from inside a placement
 abandons a photograph.
 
 ### E133 — the rule said "case", and the writer was a test
@@ -5018,9 +5018,9 @@ planner answers it through `idx_trees_species_current` instead. So A1's rule sta
 species asked for rather than every tree underneath them.
 
 **Four states, because "nothing drawn" would otherwise answer a different question each time.** Typed
-nothing; typed a word the catalogue has no prefix match for; typed a real species with none in *this
+nothing; typed a word the catalog has no prefix match for; typed a real species with none in *this
 viewport*; typed a real species with more here than the map can draw. The middle two are the pair that
-matter — "No species matches “sycamore”" tells the reader the app understood them and the catalogue
+matter — "No species matches “sycamore”" tells the reader the app understood them and the catalog
 does not have it, where "No Platanus in view" tells them to move the map rather than doubt their
 spelling. `MapSearchCopy.status` returns `nil` for the ordinary success case, because a map showing
 every match it found does not need a banner over it announcing that it did.
@@ -5028,8 +5028,8 @@ every match it found does not need a banner over it announcing that it did.
 **The placeholder was cut from three promises to one**, and that is part of the fix rather than a
 tidy-up. `Search a species…`. A street search wants `trees.address`, which carries no index — every
 keystroke would be a scan of 195,309 rows on the map's critical path, the one thing `TreeQueries`
-forbids outright. A neighbourhood search wants boundary geometry the seed does not ship;
-`TreeProfile.neighborhoodName` exists precisely because a neighbourhood has no identity in this
+forbids outright. A neighborhood search wants boundary geometry the seed does not ship;
+`TreeProfile.neighborhoodName` exists precisely because a neighborhood has no identity in this
 database beyond a name hanging off a tree. Both are `Tools/build_seed.py`'s work before they can be
 the client's. A bar that offers three kinds of search and answers one is *worse* than a bar that
 offers one, because a reader who types a street and watches the map empty out has been told, wrongly,
@@ -5083,12 +5083,12 @@ pills were inert. `api.grove()` had worked all along; `api.journal(cursor:limit:
 screen at all, marked OPEN by E99 because there is no mock for a journal list. So the journal's
 presentation was unspecified and is now designed and marked as such.
 
-**The Journal tab holds two segments — your own journal and the neighbourhood almanac — and that is
+**The Journal tab holds two segments — your own journal and the neighborhood almanac — and that is
 structural rather than cosmetic.** `Route.almanac` has no push call site anywhere; the Journal tab is
 what renders screen 12. A journal that simply took the tab would have silently deleted the almanac's
 only entrance. The segment is router state, so a deep link can still ask for either.
 
-**E38 is honoured at the source rather than in the copy.** `hasOlder` derives from `nextCursor != nil`
+**E38 is honored at the source rather than in the copy.** `hasOlder` derives from `nextCursor != nil`
 and nothing else, and the empty state is gated on the *cursor* rather than on `rows.isEmpty` — so a
 read that stopped early cannot tell somebody they have recorded nothing. There is no count, no total
 and no "N entries" anywhere, held by a blunt test that refuses digits in any of those strings.
@@ -5145,9 +5145,9 @@ option—one kills all photos, up votes, etc, the other leaves them in place and
 anonymous/deleted account, with that being the default."*
 
 E131 had recorded that `AccountDeletion` removed `photo_votes` while R3's copy named only reminders and
-favourites, and asked whether the sentence should grow a clause. The answer turned out to be neither:
-stop deciding it for the person. The behaviour the safe door describes already existed for
-observations — they stay on their tree with `user_id` nulled — so this generalises it rather than
+favorites, and asked whether the sentence should grow a clause. The answer turned out to be neither:
+stop deciding it for the person. The behavior the safe door describes already existed for
+observations — they stay on their tree with `user_id` nulled — so this generalizes it rather than
 inventing it, and makes the other option explicit instead of implicit.
 
 **"Anonymous" means NULL, not a stand-in id.** A sentinel deleted-account id is a *pseudonym*, and
@@ -5155,11 +5155,11 @@ these rows carry a tree, a date and a time: a stable key joining one person's wh
 reconstructs where they walked, at street-tree resolution, in one city. Deletion is a privacy promise,
 and a promise that leaves behind a key relinking everything it claimed to unlink is the version that
 would be worst to ship — because nothing on screen would reveal it. The cost is real and is accepted
-rather than hidden: a moderator can no longer tell that forty anonymised observations were one
+rather than hidden: a moderator can no longer tell that forty anonymized observations were one
 person's.
 
-**Reminders and favourites are outside the choice** and go under both doors. R3's original argument
-survives intact: an ownerless favourite is a row no query returns and no person can remove, so
+**Reminders and favorites are outside the choice** and go under both doors. R3's original argument
+survives intact: an ownerless favorite is a row no query returns and no person can remove, so
 offering to keep one is a decorative control. The copy says so unconditionally, above both doors,
 opening with "Either way".
 
@@ -5181,9 +5181,9 @@ door — "Delete account, leave my records" against "…and erase everything" �
 cannot be taken without the word *erase* under your thumb, and it gets a second gate besides.
 
 **Verified against the database and the disk, on a real account** holding three visits with
-photographs, a check-in, a vote, a favourite, a private reminder and two queued outbox rows. Default
+photographs, a check-in, a vote, a favorite, a private reminder and two queued outbox rows. Default
 door: three visits still present with none naming a user, **three JPEGs still on disk**, the vote row
-surviving with both owner columns NULL, favourite and reminder gone, outbox six to four. Destructive
+surviving with both owner columns NULL, favorite and reminder gone, outbox six to four. Destructive
 door, from the same state restored from a container snapshot: every contribution row gone and **the
 photo directory empty**. One tap on the row destroys nothing; both ways out leave everything intact; a
 destructive selection does not survive dismissal. Signing in afterwards minted a different id.
@@ -5195,8 +5195,8 @@ a photograph on a tree you added is attributable to nobody, and **neither door c
 everything" leaves it on disk. Closing this needs an owner column; there is now a test that fails the
 day somebody adds one and forgets this path.
 
-And `claimDevice` re-adopts anonymised rows onto the *next* account signed in on that phone, because
-they keep their `device_id`. That is pre-existing D9 behaviour and predates this change, but it means
+And `claimDevice` re-adopts anonymized rows onto the *next* account signed in on that phone, because
+they keep their `device_id`. That is pre-existing D9 behavior and predates this change, but it means
 the default door's promise is weaker than its sentence: records unlinked from you can become linked to
 whoever signs in next on the same device. Recorded here because it is a privacy promise rather than an
 implementation detail, and the ruling belongs to the owner.
@@ -5292,7 +5292,7 @@ vocabulary of trustworthiness. A contributor who moved the pin was very often **
 the phone: they could see the tree and the phone could not, and a GPS fix in a San Francisco street
 canyon is routinely 20–40 m out, which is the argument the movable pin was built on in the first
 place. The column exists so that somebody correcting a coordinate later, or a moderator looking at
-one, can tell a judgement from a reading. It does not exist so that either can be doubted on sight.
+one, can tell a judgment from a reading. It does not exist so that either can be doubted on sight.
 
 **Which is why the tree profile states both arms.** `position from GPS` and `position placed by hand`,
 appended as the last element of screen 03's provenance line, where `source` and `verification_state`
@@ -5325,11 +5325,11 @@ to gain nothing, and copying rows is the one thing in a migration that can lose 
 
 *The `'gps'` default is a true statement about every row it backfills, not a plausible guess.* Every
 community tree written before this column existed was written at `location.fix.coordinate` verbatim,
-because the add screen had no other behaviour until E132 gave it one. The backfill records what
+because the add screen had no other behavior until E132 gave it one. The backfill records what
 happened. That is the **opposite** of v2's situation, where the old rows' real value was unrecorded and
 the plausible guess was the harmful one, and the distinction is worth keeping in mind the next time a
 migration needs a default: the question is not whether the value is likely, it is whether the history
-is known. It also fails in the safe direction if it is ever wrong — a row mislabelled `gps`
+is known. It also fails in the safe direction if it is ever wrong — a row mislabeled `gps`
 under-claims, and the failure this column must never have is a coordinate silently claiming to have
 been placed by somebody who never touched it.
 
@@ -5337,7 +5337,7 @@ been placed by somebody who never touched it.
 away are different claims, and storing the offset was genuinely on the table. Three things decided
 against it. The offset is measured from an anchor whose own error is the reason the pin exists — a
 40 m street-canyon fix — so "74 m" is 74 ± 40, and `community_trees` is the one contribution table
-with no `gps_accuracy_m` column to say so; storing a REAL to millimetres against an anchor that vague
+with no `gps_accuracy_m` column to say so; storing a REAL to millimeters against an anchor that vague
 dresses an estimate as a measurement, which is precisely what D7 refuses for the city's DBH buckets.
 It would be the only continuous quantity in a provenance vocabulary that is otherwise categorical, and
 a number invites ranking in a way a category does not — 74 m starts to look like a worse tree. And the
@@ -5362,7 +5362,7 @@ record does not keep — the pin, and the fix it was placed against — which is
 "23 m north-east" while the reader can still change their mind. The mapping is one-way and lossy on
 purpose, and it lives in a derived `treePlacement` property rather than inside `add()`, so that what
 the record *will* say can be asserted without performing a write. A pin nudged back onto the fix reads
-`.gps`, because a reader who moved nothing made no judgement to record.
+`.gps`, because a reader who moved nothing made no judgment to record.
 
 **The value is bound on the insert rather than left to the column default**, and the comment in
 `CommunityTreeStore` says why: the default is what an upgraded row that predates the column gets, and a
@@ -5385,7 +5385,7 @@ can be the thing holding the property up.
 
 **Still open, and inherited rather than introduced.** E132's other open item is untouched:
 `community_trees` is insert-only by design, so a placement can now be recorded and still cannot be
-revised, and the same is true of the coordinate it describes. A contributor who realises afterwards
+revised, and the same is true of the coordinate it describes. A contributor who realizes afterwards
 that the pin went in the wrong place has nowhere to say so.
 
 ---
@@ -5399,7 +5399,7 @@ SwiftUI cannot diff away". The owner's phone disproved that sentence, and it too
 find out why nobody had seen it.
 
 **Both prior measurements were taken with location permission declined.** That opens the camera at
-the fixed fallback centre — Mission Dolores **Park**, a park, in a *street* tree inventory — with ten
+the fixed fallback center — Mission Dolores **Park**, a park, in a *street* tree inventory — with ten
 markers on screen. Neither run was ever a measurement of a full screen of pins, and a static
 `simctl location` fires `didUpdateLocations` once and never again, so neither *could* have exercised
 the GPS path. With a fix granted and 167 markers, the same build idles at **1 fps with a worst frame
@@ -5410,7 +5410,7 @@ with nobody touching the glass.
 
 **A `@State` default expression that opened a GPS session.** `MapHomeView` declared
 `@State private var location = MapLocationProvider()`. A SwiftUI `@State` default expression is
-re-evaluated on *every initialisation of the view struct*; `RootView.body` initialises this one on
+re-evaluated on *every initialization of the view struct*; `RootView.body` initializes this one on
 every pass; and `MapLocationProvider.init` called `startUpdatingLocation()` right there. So screen 01
 stood up and discarded roughly **fifty `CLLocationManager` sessions a second**, each delivering a
 cached fix and rewriting observable state on its way out — 336 provider instances in seven measured
@@ -5419,8 +5419,8 @@ required; the app had been running two providers and two GPS sessions against th
 `RootView`'s own comment claiming its provider "is never `start()`ed here" had been false since it
 was written. **A comment asserting an invariant is not a test of it.**
 
-**`distanceFilter = 5` is not honoured.** Measured on a simulated 4 m/s walk: 24–42 fixes a second,
-one every fifteen centimetres. The fix is not to coarsen anything — `desiredAccuracy` stays at
+**`distanceFilter = 5` is not honored.** Measured on a simulated 4 m/s walk: 24–42 fixes a second,
+one every fifteen centimeters. The fix is not to coarsen anything — `desiredAccuracy` stays at
 `Best` and `distanceFilter` stays at 5, because 5 m is what screen 02 needs to tell two trees on one
 block apart — but to keep, in the write, the promise the setting was already making.
 
@@ -5464,7 +5464,7 @@ fifth of the frame budget rather than ninety-eight per cent of it, because a pas
 
 And the limit on every number above: these are **simulator** figures. The *rate* of 24–42 callbacks
 a second at walking pace is a simulator artifact — no GNSS receiver produces a fix every fifteen
-centimetres; a phone gives roughly 1 Hz. What transfers is the per-publish cost and the mechanism,
+centimeters; a phone gives roughly 1 Hz. What transfers is the per-publish cost and the mechanism,
 not the absolute frame rate. The overlay exists precisely so that the claim can be checked on the
 owner's own hardware instead of inferred from a Mac, which is what went wrong twice.
 
@@ -5477,7 +5477,7 @@ The owner, on their own iPhone, on the build that shipped that morning:
 > could figure out around this. STUPID AND BAD"
 
 The default screen of the app could not be panned. It had shipped that way in the merge of two rounds
-that both touched the camera — the recentre control (#66) and the `MKMapView` rewrite (E139).
+that both touched the camera — the recenter control (#66) and the `MKMapView` rewrite (E139).
 
 **The gesture was landing all along.** The first reproduction attempts drew a blank: a synthetic drag
 left the geography unchanged and `mapViewDidChangeVisibleRegion` never fired, which looked like a
@@ -5489,9 +5489,9 @@ inside a frame.
 
 **What drove it back.** When the camera settled, the coordinator asked whether the map had drifted far
 from the last camera the app had requested, and if it had — a real pan — it cleared its record of that
-request. The intent was to stop a second press of the recentre control being swallowed as a duplicate
+request. The intent was to stop a second press of the recenter control being swallowed as a duplicate
 value. But nothing upstream had changed: a pan writes `region`, never `position`, and `position` still
-held the one-shot centring on the first GPS fix. So the next `updateUIView` found a position that
+held the one-shot centering on the first GPS fix. So the next `updateUIView` found a position that
 differed from an empty record, took it for a fresh request, and drove the camera to the fix. Ablating
 that single line, the same drag left the map on Shotwell St with no camera write at all.
 
@@ -5506,7 +5506,7 @@ weaker claim that a *copy* equals its original.
 
 Copying one value fixed that and the map still came back — 39 camera writes per pan. The instrument
 answered the question directly: at the moment the guard let a write through, the record was **not**
-empty, and the two cameras were **147 metres apart**, which is the length of the pan. Reading
+empty, and the two cameras were **147 meters apart**, which is the length of the pan. Reading
 `position` straight back after writing it returned exactly what had been written. The write was fine;
 the *reader* was stale. `updateUIView` is called with the view value from a body pass, and that pass
 read the app's state when it ran — so after a pan there is an update already in flight carrying the
@@ -5535,9 +5535,9 @@ around 200 times a second at rest with `Self._printChanges()` blaming something 
 `MapCameraPosition` for a small `Equatable` struct took it to **zero**. E139 guessed these might share
 a root cause. They did.
 
-**The recentre control, checked by hand afterwards, four presses on the device.** Panned away at z15:
-first press centres and keeps z15, second press zooms to z18 — the 120 m opening scale, which is what
-`MapRecentre` specifies. Already at 120 m: both presses are honoured and drive the camera rather than
+**The recenter control, checked by hand afterwards, four presses on the device.** Panned away at z15:
+first press centers and keeps z15, second press zooms to z18 — the 120 m opening scale, which is what
+`MapRecentre` specifies. Already at 120 m: both presses are honored and drive the camera rather than
 being swallowed. A pinch produces no app-driven write at all.
 
 **Two other screens had the same defect and are fixed by the same change**, because they share the
@@ -5573,7 +5573,7 @@ A `species_source` column was considered and refused, with E136's caution applie
 actually points here. On `community_trees` the provenance of a species claim is already two columns:
 `source` is CHECK-pinned to `'community'` and `verification_state` defaults to `'unverified'`, so every
 row says *a person put this here and nobody has stood behind it* by construction. A third column would
-have had exactly one reachable value in this client — there is no organisation confirming botany here
+have had exactly one reachable value in this client — there is no organization confirming botany here
 and no classifier suggesting it — and a CHECK over a vocabulary guessed for futures that do not exist
 is E136's mistake written in advance rather than discovered afterwards.
 
@@ -5592,7 +5592,7 @@ coordinate always exists and always came from one of two instruments, so those a
 one fact and marking one ranks it against the other. A species does not always exist: the alternative
 to "species named by a contributor" is not a second way of arriving at a species, it is **no species at
 all**, which prints nothing because there is nothing to attribute. A symmetric second arm would have to
-be a sentence about a species that does not exist. The symmetry E138 is really about is honoured one
+be a sentence about a species that does not exist. The symmetry E138 is really about is honored one
 level up and already — a city row reads `SF city inventory` and a community row reads
 `community-added, unverified`, on the same line, neither of them the marked case. The new element only
 says which *part* of a community record the contributor authored, and it names an author without
@@ -5619,7 +5619,7 @@ backed by `SpeciesQueries.search`'s covering prefix scan over both names — and
 No second search and no second query were written. `MapSearch` itself was *not* reused: its states are
 claims about a viewport ("no sycamore in view", "showing 30 of 214 here") and a picker that borrowed
 them would be answering questions nobody asked it. The prefix gap is stated rather than hidden: the
-catalogue matches a prefix of either name, so the empty state says nothing *starts with* the query
+catalog matches a prefix of either name, so the empty state says nothing *starts with* the query
 rather than claiming no such tree exists.
 
 **Not built, stated plainly.** Correcting a species already claimed, on any tree. It needs
@@ -5668,7 +5668,7 @@ whose rows change height cannot be scanned. The arithmetic is what makes it a de
 photograph scaled to fill 393 pt of width is 524 pt tall, so a 224 pt band keeps **42.7%** of the
 picture, and it kept the middle 42.7% because `.center` is SwiftUI's default and nobody had ever
 chosen it. Rows 28.5% to 71.5% survive. A street tree photographed from the pavement has its crown
-in the top third and the kerb in the bottom third, so what survived was upper trunk — the part of a
+in the top third and the curb in the bottom third, so what survived was upper trunk — the part of a
 tree that identifies nothing.
 
 And the tap that should have escaped all of this had nowhere to go. Pressing the hero pushed screen
@@ -5686,7 +5686,7 @@ the tree has swapped one bad crop for another. `.crown` is the default because e
 this app has a tree in it. **Screen 04 asks for `.centre` explicitly and must keep it**: its ghost
 overlay, the frame just taken and the live `AVCaptureVideoPreviewLayer` behind both are three
 drawings of one scene that only mean anything if they agree, and the layer's `.resizeAspectFill`
-centres and is not ours to reconfigure.
+centers and is not ours to reconfigure.
 
 *The absence of a viewer.* `PhotoFit` is `PhotoFill`'s counterpart — the whole frame, letterboxed,
 at the shape of the file, still reporting the box it was proposed. `PhotoViewerView` is the screen
@@ -5712,11 +5712,11 @@ have silently turned that test's subject into something it could no longer find.
 **Verified by breaking it, because a crop is invisible to every measurement.** This is the E137
 lesson in a second costume. `PhotoFill` reports the box it was proposed *whichever* part of the
 photograph it keeps — that is its whole documented promise — so `sizeThatFits` is identical against a
-centred crop and a crown-anchored one, and any test written on it would have been green against the
+centered crop and a crown-anchored one, and any test written on it would have been green against the
 bug. The assertion has to be on pixels. `PhotoCropTests` renders a 300×400 fixture of three flat
-bands (red canopy, green trunk, blue ground) into the hero's own 393×224 box and reads the colours
+bands (red canopy, green trunk, blue ground) into the hero's own 393×224 box and reads the colors
 back out; the discriminating fact is that a crown-anchored crop contains **no blue at all** and a
-centred one does. Setting the anchor fraction back to 0.5 turns it red.
+centered one does. Setting the anchor fraction back to 0.5 turns it red.
 
 **A third defect, found only by looking, that every test was blind to.** The viewer came up on the
 device with its close button, its caption pill and the sentence "That photograph could not be opened"
@@ -5737,7 +5737,7 @@ crops of it look identical. It is now a crude tree at 1200×1600, matching the `
 row had always claimed while producing 300×400. A screenshot of a hero can now be looked at and
 answered.
 
-### E143 — the six columns the seed was throwing away, and the mapping that would have mislabelled 150,000 street trees
+### E143 — the six columns the seed was throwing away, and the mapping that would have mislabeled 150,000 street trees
 
 The project owner asked for two things: *"Want to see more city details about trees e.g. when planted
 next pruning last pruning and others"* (#68), and a way for a new tree to say *"whether it stands on a
@@ -5769,7 +5769,7 @@ Populations over all 195,309 seed rows: `legal_status` 195,252 (99.97%), `careta
 not one records a pruning event, date or schedule — verified against the dataset's live column
 metadata, not only against a downloaded copy. The nearest things in the data are two `qLegalStatus`
 values, `Prune Opt Out` (196 rows) and `Street Tree Maintenance Opt Out` (58), which say somebody
-withdrew a site from the city's maintenance programme. That is a **standing policy about a tree, not a
+withdrew a site from the city's maintenance program. That is a **standing policy about a tree, not a
 date on which anything happened to it**, and it must never render as one. Pruning history would have
 to come from a different city system. `CityRecordTests.thereIsNoPruningData` asserts no seed column
 mentions pruning, so the day DataSF starts publishing one the test fails and #68's question is
@@ -5833,7 +5833,7 @@ question the same way for `site_type`. The vocabulary that *is* Cypress's is CHE
 actually written: `land_context`.
 
 **`land_context` is nullable with no default, unlike v10's `placement`.** Every community tree written
-before v10 *had* a placement — `gps`, because the screen had no other behaviour — so backfilling
+before v10 *had* a placement — `gps`, because the screen had no other behavior — so backfilling
 recorded what happened. No tree written before v11 has ever been asked what ground it stands on, so
 there is no true value and any default would be Cypress putting words in a contributor's mouth.
 `'street'` is the plausible guess and the harmful one: it is the answer that makes a tree look like
@@ -5846,7 +5846,7 @@ a bare integer of unstated unit: `Width 3ft` (36,866), `3x3` (31,760), `3X3` (12
 `PlantDate` — the field is under-curated at the source. Deriving an area would be D7's forbidden move,
 dressing an estimate as a measurement.
 
-**Nothing is normalised on the way in.** `PlantType` holds `Tree` 194,988 times, `Landscaping` 318
+**Nothing is normalized on the way in.** `PlantType` holds `Tree` 194,988 times, `Landscaping` 318
 times and `tree` 3 times. Correcting that case would be editing the city's record to make it tidier,
 which is not the builder's job; readers compare case-folded. Blank becomes `NULL`, because storing
 `''` makes "the city recorded nothing" indistinguishable from "the value is nothing".
@@ -5867,7 +5867,7 @@ in `LandContext.inferred(from:)`, in `Core`, under test.
 rows and is stated rather than buried. Row counts did not move — 195,309 trees, 569 species — and
 `ANALYZE` still runs, so `sqlite_stat1` survives and E134's 14× map regression stays fixed. If bundle
 size later becomes the binding constraint, `legal_status`, `caretaker` and `plant_type` are 42
-distinct strings across 585,927 cells and normalise into a lookup table cleanly; that was not done now
+distinct strings across 585,927 cells and normalize into a lookup table cleanly; that was not done now
 because nobody has asked for the bytes back.
 
 **A consequence #69 must know about, flagged and not fixed.** `ReportPresentation.showsHazardBranch`
@@ -5904,8 +5904,8 @@ which is the shape of defect E129 was itself closing.
 has:
 
 - **The camera opens at `MapLayout.defaultSpanMetres`** — E12's 120 m, measured as the scale where
-  San Francisco's street trees stop fusing into a mat — **centred on the record and never on what the
-  read returned.** Framing the neighbours instead opens at whatever they happen to span: with the
+  San Francisco's street trees stop fusing into a mat — **centered on the record and never on what the
+  read returned.** Framing the neighbors instead opens at whatever they happen to span: with the
   camera deliberately broken that way the assertion measured **1,080 m**, nine times out, with the
   subject a dot among dots.
 - **The record is on the map from the first frame.** It travels on the route as a payload and is
@@ -5934,7 +5934,7 @@ answers where the tree stood, which is a fact the record already holds.
 **The one camera write on this screen is a press.** A pushed map opens on `MapCameraRequest.opening`,
 sequence zero, because that getter runs on every pass and a ticket there would be a new request sixty
 times a second. What mints a ticket is the control that goes back to the subject after a pan —
-`.move(to:)`, from a main-thread gesture handler, exactly as the recentre press does (E140). Nothing
+`.move(to:)`, from a main-thread gesture handler, exactly as the recenter press does (E140). Nothing
 in the file drives the camera off a state change, which is the property E140 paid for; checked by
 hand on the device with a ten-point drag, the map stayed where it was put and the press brought it
 back.
@@ -5947,9 +5947,9 @@ because nothing was wrong with either string.
 
 **Verified end to end on the simulator, location granted**, over the owner's own route: almanac →
 `The elder` → the profile → `Show me where this is` → a map of 21st St in the Mission with the
-Brazilian Pepper at 3426 21st St the larger pin among some thirty neighbours. The vacant site and the
-memorial were driven the same way and drew the basin pin and the grey dash-marked pin respectively,
-each enlarged, each centred.
+Brazilian Pepper at 3426 21st St the larger pin among some thirty neighbors. The vacant site and the
+memorial were driven the same way and drew the basin pin and the gray dash-marked pin respectively,
+each enlarged, each centered.
 
 ### E145 — the city's record on the tree page, and the pruning answer the data cannot give
 
@@ -5962,7 +5962,7 @@ street / city park / private property, task #69. E143 landed the six DataSF colu
 **Screen 03/14 §9b, `What San Francisco has on file`.** Five cards at most: what the city lists the
 record as, the legal status, who cares for the tree, who assists, the plot size. Under them, a
 sentence or two. Above them, one sentence about where the tree stands. No new component: it is
-`StatGrid`/`StatCard` (C11), which is what already renders labelled facts on this screen, under a
+`StatGrid`/`StatCard` (C11), which is what already renders labeled facts on this screen, under a
 `.cypressMicroLabel()` header, which is how the You tab labels a section.
 
 **Every card is a `StatCard.Value.cityRecord`, and that is the whole design.** D7 built that case for
@@ -6007,15 +6007,15 @@ unusual case" mistake: that argument is about two provenances of one fact, where
 against the other. `Tree` restates what the rest of the screen has already said and `Landscaping`
 contradicts it — suppressing an echo is not suppressing an alternative.
 
-**`caretaker` is labelled `Cared for by`, never `Owner`, and that label is load-bearing.** DataSF's
+**`caretaker` is labeled `Cared for by`, never `Owner`, and that label is load-bearing.** DataSF's
 own description ends "Owner of Tree", and reading it that way is the 152,240-tree error E143 measured.
 163,955 rows say `Private` and 112,955 of those also say `DPW Maintained`: sidewalk trees whose
-adjacent owner waters them. A card labelled `Caretaker` invites the reader to make by hand exactly the
+adjacent owner waters them. A card labeled `Caretaker` invites the reader to make by hand exactly the
 inference `LandContext.inferred(from:)` exists not to make.
 
 **Codes are expanded; nothing else is.** `FUF` → `Friends of the Urban Forest` (22,879 trees, and the
 one value in these columns worth telling somebody about), plus `DPW`, `PUC`, `MTA`, `SFUSD`,
-`Rec/Park`, and `Private` → `A private party` because a bare adjective in a card labelled `Cared for
+`Rec/Park`, and `Private` → `A private party` because a bare adjective in a card labeled `Cared for
 by` reads as a category and the category a reader reaches for is the property line. **Unknown values
 pass through verbatim** — `Port`, `Mission Verde`, `CAN` — which is what keeps this safe against the
 weekly refresh, the same shape of answer E143 gave when it refused a CHECK on these columns.
@@ -6040,7 +6040,7 @@ wanted, the honest move is one "what the city does not record" sentence, not a g
 **The 254 opt-out trees get a sentence of their own**, because `Prune Opt Out` (196) and `Street Tree
 Maintenance Opt Out` (58) are real facts about specific trees and are exactly the strings a reader
 looking for pruning history will read as pruning history. The status renders verbatim on its card, and
-under the grid: `This site is withdrawn from the city's pruning programme — a standing arrangement,
+under the grid: `This site is withdrawn from the city's pruning program — a standing arrangement,
 with no date on the record.`
 
 **Land context is a sentence, outside the city's section, naming whoever concluded it.** A city row's
@@ -6049,7 +6049,7 @@ so it reads `Cypress reads the city's record as a tree on a street.` A community
 observation and reads `A contributor said this tree stands in a city park.` A `StatCard` was rejected
 because it has nowhere to put a source but a badge, and C12's two cases do not fit: stamping
 `city record` on Cypress's own inference is precisely the failure this round exists to avoid, and
-adding cases would need a colour ramp ranking the two ways of knowing. There is no such ranking — a
+adding cases would need a color ramp ranking the two ways of knowing. There is no such ranking — a
 contributor who was standing there beats the seed, and the seed covers 195,309 trees nobody has
 visited. A sentence has room to name its speaker in words, which is `speciesClaimNote`'s grammar one
 block up the same screen. Putting it inside a section headed with the city's name would have been the
@@ -6064,7 +6064,7 @@ sentence. The full account, including what of E146 stayed, is in that entry.
 
 **A community tree draws no section and no empty state for one.** The subtitle already reads
 `community-added, unverified`; a second sentence saying the city has nothing would be the app
-apologising for a tree somebody added on purpose.
+apologizing for a tree somebody added on purpose.
 
 **Two defects that only a rendered screen could show, both in C11.** The `.cityRecord` case had held
 one shape of value since it was written — `30–35 cm`, six characters — and §9b put whole strings in it
@@ -6085,7 +6085,7 @@ silently at 3,600: `drawHierarchy` into an off-screen window stops producing pix
 failing**. Five 1,179 × 10,800 PNGs of nothing were written and every `#expect` around them passed,
 because this harness's only assertion was that a capture *happened* — which is not the same claim as
 a capture having a screen in it. `isNotBlank` now refuses a capture that comes back as one flat
-colour, so `sweep`/`pair` return false and the expectation fails. The AX5 shot sits at 2,700 pt,
+color, so `sweep`/`pair` return false and the expectation fails. The AX5 shot sits at 2,700 pt,
 under the limit. The states are `c01`–`c05` light and dark, and `c06` across the type ramp.
 
 23 tests, 689 total.
@@ -6103,14 +6103,14 @@ AppSchema **v11**, CHECK-pinned to four values plus NULL, `TreeDraft.landContext
 deliberately unbuilt, plus the consequence E143 wrote down and handed forward (task #88).
 
 **Three chips on the composer, and not a fourth phase.** `VisitAddTreeModel` already has two phases
-that replace the whole screen — the pin map and the species catalogue — because each is a screen with
+that replace the whole screen — the pin map and the species catalog — because each is a screen with
 its own interaction. Three chips are not, and a separate step between the photograph and the CTA that
 existed to hold three chips would be the second step this flow was told not to grow. The row is C4's
 chip flow in `CypressChipFlow`, sitting between `placementRow` and `speciesRow`, and the order is the
 argument: the pin decides the coordinate, this decides the ground under it, and only then does the
 screen ask what the tree *is*. It uses C4's neutral selected/idle pair rather than screen 06's amber
 one, because the amber means "this tree needs something" (§1.1) and a tree in a garden is not a worse
-tree than a tree on a kerb.
+tree than a tree on a curb.
 
 **Optional — and E141's argument is not what decides it, which is worth saying plainly.** E141 made
 the species optional because a mandatory 569-row picker collects *guessed* botany: somebody who cannot
@@ -6135,7 +6135,7 @@ Three other things decide it, and they are stronger than the one that does not a
    boundary is a screen inventing a rule — E141's opening move, which does carry.
 
 **Optional is not the same as hidden, and that is the difference from the species row.** Naming a
-species costs a trip to a catalogue, so that row is a sentence and a link. This is three chips, always
+species costs a trip to a catalog, so that row is a sentence and a link. This is three chips, always
 visible, one tap to answer and no taps to skip. The question is asked as plainly as a required field
 would ask it; only the refusal is free. Tapping the lit chip is the retraction — there is no second
 screen to back out of, so `skipSpecies`'s distinction between *leaving* and *saying you are not sure*
@@ -6161,7 +6161,7 @@ once in §9b as `A contributor said this tree stands on private property.` The s
 The reason is the one E145 had already written down and this round had not been in a position to read.
 A `StatCard`'s only place for a source is a badge; C12's badge vocabulary is `city record`; and
 stamping `city record` on Cypress's own inference from `qLegalStatus` is the exact failure both rounds
-existed to avoid. Adding badge cases would need a colour ramp ranking observation against inference,
+existed to avoid. Adding badge cases would need a color ramp ranking observation against inference,
 and there is no such ranking. The card's best available shape was therefore a `·`-joined tail — four
 words after a middle dot — and that is thinnest on the distinction that is the whole point: *Cypress
 reads* and *A contributor said* are different verbs by different speakers, and the tail flattens them
@@ -6214,7 +6214,7 @@ Francisco recording `Private` or `Property Tree` as the legal status. E143 built
 jurisdiction leads precisely because leading on `caretaker` mislabels ~152,000 street trees; for these
 11,153 rows there is no jurisdiction to lead and the caretaker decides alone. On the *Street* Tree List,
 "no legal status on file and a private party waters it" describes a great many ordinary street trees
-whose neighbour holds the hose.
+whose neighbor holds the hose.
 
 So the harms are not symmetric and the design follows the asymmetry. Suppressing the call on a misread
 street tree means somebody with a hanging limb over a pavement was told by an app that the city will
@@ -6316,7 +6316,7 @@ migration already scheduled behind it. Those two tables are *deleted* with their
 doors, so an ownerless row is a state they never need. A photograph is the opposite: the default
 door's entire promise is that the work stays and the name comes off, so an ownerless photograph is
 not a hole in the rule, it is the rule's terminal state. Exactly-one-owner would have **forbidden
-anonymisation**, leaving the leaving-door a choice between deleting the photograph (breaking its own
+anonymization**, leaving the leaving-door a choice between deleting the photograph (breaking its own
 promise) and re-homing it onto the device (handing one person's picture to whoever picks the phone up
 next) — which is precisely what v8 did to `photo_votes` and v9 had to be written to undo. Ask what a
 constraint forbids, not only what it permits.
@@ -6335,11 +6335,11 @@ performs on every visit, which E136 recorded as the owner's to rule on. It is no
 and this is the third of them for the same reason.
 
 **Both doors now reach it.** The erasing door deletes by `photos.user_id`, tombstones included. The
-anonymising door nulls it, which it never had to do before because there was no name on the row to
+anonymizing door nulls it, which it never had to do before because there was no name on the row to
 take off — `AccountDeletion`'s comment saying "the anonymizing door does not name `photos` once, and
 that is correct rather than an omission" was true when it was written and is now the opposite, and it
 says so. `claimDevice` adopts a device-owned photograph on the reminder's terms: the account gains it
-and the device link drops in one statement, and the `user_id IS NULL` guard leaves an *anonymised*
+and the device link drops in one statement, and the `user_id IS NULL` guard leaves an *anonymized*
 photograph alone so it cannot be re-attributed to the next person to sign in.
 
 **The test E136 planted did its job.** `anUnattributablePhotographSurvivesBothDoors` existed "so that
@@ -6352,11 +6352,11 @@ the sentence the deletion copy always claimed — on the row *and* on the bytes.
 **1. It is a real delete, and it does not get E136's two doors.** The two doors exist because leaving
 an account is a statement about *identity*, and the check-ins, measurements and votes left behind are
 worth something to the forest whoever made them. None of that transfers. A single photograph is
-deleted **because of what is in it** — a face, a licence plate, the inside of somebody's front
-garden — and anonymising it addresses none of that: it would leave the picture on the tree and take
+deleted **because of what is in it** — a face, a license plate, the inside of somebody's front
+garden — and anonymizing it addresses none of that: it would leave the picture on the tree and take
 the name off the picture, answering a question nobody asked. That is E136's own test for a door worth
-offering, applied and failed; E136 refuses to offer "keep my favourites" on the grounds that an
-ownerless favourite is a decorative control, and "keep this photograph, unnamed" is the same control
+offering, applied and failed; E136 refuses to offer "keep my favorites" on the grounds that an
+ownerless favorite is a decorative control, and "keep this photograph, unnamed" is the same control
 facing the other way. What the design owes instead is **intent**: the trash control opens a
 confirmation naming the consequence, the verb is on the button (`Delete photo`), and the button that
 does nothing says what nothing means (`Keep it`). One tap destroys nothing.
@@ -6370,11 +6370,11 @@ deleted photograph winning a hero election.
 
 **3. The last photograph of a community-added tree is deletable — allowed, named, and recorded.**
 BUILD-PLAN §6 says "Community add: requires photo", so this is a genuine conflict and it is settled
-in favour of the person. "Requires photo" is a rule about *making* a record — evidence at the point
+in favor of the person. "Requires photo" is a rule about *making* a record — evidence at the point
 of creation, and the anti-spam gate on a table any phone can write to — not an invariant the row must
 satisfy forever. Refusing would mean the app declining to remove a photograph of somebody's window
 because the tree's paperwork needs it, which subordinates the exact request this feature exists to
-honour; it is also defeated by photographing the pavement first. So: the tree stays (deleting it
+honor; it is also defeated by photographing the pavement first. So: the tree stays (deleting it
 would remove a real tree from the map that other people may have visited), it stays `unverified`
 because that word is already correct, and the stripped tombstone stays on the row so the record still
 says a photograph was taken for it and withdrawn. The confirmation says so **before** the tap: *"It
@@ -6394,8 +6394,8 @@ sound argument that a photograph is immutable once written, and a deletion is th
 breaks the argument.
 
 **5. Votes and outbox rows.** Every vote on the photograph is deleted, whoever cast it — they were
-judgements about a thing that no longer exists, which is `AccountDeletion`'s argument for the same
-deletion under the erasing door. v9's at-most-one-owner CHECK means an already-anonymised vote is
+judgments about a thing that no longer exists, which is `AccountDeletion`'s argument for the same
+deletion under the erasing door. v9's at-most-one-owner CHECK means an already-anonymized vote is
 deleted by photo id like any other, with no owner arm to strand. And any queued mutation still
 carrying the staged binary has it taken out of its `photo_paths` list, or the next drain would upload
 a photograph that had been deleted; the mutation itself stays queued, because the person deleted a
@@ -6417,7 +6417,7 @@ the concrete type and would pass against exactly that bug.
 **Seeing and unmaking are two questions, so they are two sets.** `TreeProfile.ownPhotoIDs` stays what
 it was — every row this device holds, because moderation does not stand between a contributor and
 their own picture (E37) — and `deletablePhotoIDs` is the narrower one. They differ on exactly one
-kind of row and it is the one that matters: a photograph anonymised by an account deletion is still
+kind of row and it is the one that matters: a photograph anonymized by an account deletion is still
 *shown*, because that is what the leaving door promised, and is nobody's to take back.
 
 #### Verified on the simulator, and one thing that was only visible by looking
@@ -6475,7 +6475,7 @@ written file, before and after, with `CGImageSourceCopyPropertiesAtIndex`; all e
 a 25 m grid, and E42 went further and stores no photo coordinate at all, on the argument that a second
 independent record of where the contributor stood is the thing the fuzz exists to prevent. Every one
 of those decisions is about a *column*. The file sat beside them carrying a latitude good to about
-eleven centimetres. A mitigation is a claim about what the system will not reveal, and a system that
+eleven centimeters. A mitigation is a claim about what the system will not reveal, and a system that
 rounds a number in one place while shipping it unrounded in another has not made the number private,
 it has made the rounding decorative — and it has done so in the way that misleads its own authors,
 because the code that reads as careful is the code that was audited. The community add is the worst
@@ -6534,7 +6534,7 @@ app went back on its side.
 
 **Two fixtures had to become photographs.** `CommunityAddTests` and `VisitPreviews` staged
 `Data([0xFF, 0xD8, 0xFF, 0xD9])` — two markers, chosen when staging only had to produce a path on
-disk. Staging refuses that now, which is the behaviour under test, so both supply a real 1×1 JPEG.
+disk. Staging refuses that now, which is the behavior under test, so both supply a real 1×1 JPEG.
 
 **A misdiagnosis, recorded because it is ARCHITECTURE §7's own warning and it was walked into anyway.**
 The full suite came back red four times over the course of this work, always in
@@ -6563,25 +6563,25 @@ The proving run was moved to its own simulator — a private device as well as a
 which is what §7's "boot your own device" buys once you notice that the sentence about it only ruling
 out *looking* was written about sharing one device, not about having two.
 
-### E149 — thirty green dots on one street, and the 569-colour legend that is not a design
+### E149 — thirty green dots on one street, and the 569-color legend that is not a design
 
 Task **#80**, the project owner's words: *"Add ability to color different species differently so it's
 easy to tell which trees are same on a local zoom."* One sentence, and the first thing to do with it
 is refuse the literal reading.
 
-**There are 569 species in the seed.** A colour per species is a colour wheel, not an encoding — the
+**There are 569 species in the seed.** A color per species is a color wheel, not an encoding — the
 fortieth hue and the forty-first are the same hue to anybody's eye, and a reader who *thinks* they can
 tell two pins apart when they cannot has been handed a wrong answer rather than no answer. So the
 question the map answers is the one the owner actually asked, which is narrower than the words: *which
-of these are the same tree?* That is a question about **matching**, and matching needs colours unique
-among the ones on screen right now. It does not need a colour that means *Platanus* forever.
+of these are the same tree?* That is a question about **matching**, and matching needs colors unique
+among the ones on screen right now. It does not need a color that means *Platanus* forever.
 
 #### What the encoding is
 
 Four **slots** (`MapSpeciesSlot`), handed to the four species with the most drawn pins in the current
 viewport (`MapSpeciesPalette`). Everything else keeps the pin it has today.
 
-Counted against the shipped seed over ten neighbourhoods, using the pins as `TreeQueries` actually
+Counted against the shipped seed over ten neighborhoods, using the pins as `TreeQueries` actually
 thins them (one per 44 pt cell, `MapModel.markerCellPoints`) rather than the trees in the box:
 
 ```
@@ -6593,7 +6593,7 @@ zoom 17 · 93–222 pins       · 27–64 species  ·  top 4 cover 27–64 %
 **There is no zoom at which a screenful of San Francisco is four species**, so the residual class is
 not an edge case — it is often most of the screen, and what it draws is the load-bearing decision.
 It draws **today's pin, unchanged**: Canopy green, no glyph. And Canopy green is deliberately *not*
-one of the four slot colours, which is what makes the residual honest rather than a fifth group.
+one of the four slot colors, which is what makes the residual honest rather than a fifth group.
 Green says "a street tree"; it has never said "the same tree as that one" and it still does not.
 `ContrastTests.slotsStayOutOfTheReservedFills` is that sentence as an assertion.
 
@@ -6601,33 +6601,33 @@ Three further rules, each of which is a decision:
 
 - **A species with one pin in view gets no slot.** A singleton has nothing to be the same as, so a
   slot spent on it is spent on a question nobody asked. At zoom 19 in the Excelsior the tail is almost
-  entirely singletons, and this is the difference between four useful colours and one.
-- **Only a pin that would already draw as `.cityTree` can take a colour**, and the others are not
+  entirely singletons, and this is the difference between four useful colors and one.
+- **Only a pin that would already draw as `.cityTree` can take a color**, and the others are not
   even *counted*. Amber is "reserved solely for 'this tree needs something'" (SCREENS.md §1.1); the
   dashed ring is the community layer, which "never renders as part of the official city inventory
-  until verified" (DECISIONS §3.16); grey and hollow mean there is no living tree. A species whose
+  until verified" (DECISIONS §3.16); gray and hollow mean there is no living tree. A species whose
   visible pins are nine memorials and two live trees is not two-thirds of a street's canopy.
 - **Slots are sticky.** A palette recomputed from scratch permutes on every fetch: nudge the camera
-  one block west, the third and fourth species swap counts, and every pin changes colour while the
+  one block west, the third and fourth species swap counts, and every pin changes color while the
   reader watches. That is E130's cluster badges re-keying on every pan, in another costume, and the
   answer has the same shape — a species that already holds a slot keeps it while it still qualifies,
-  and newcomers take what is free. A reader who has learnt "the purple ones are the Victorian Box"
+  and newcomers take what is free. A reader who has learned "the purple ones are the Victorian Box"
   keeps that for the length of a walk. `slotsAreSticky` and `slotsAreReusedWhenVacated` pin it.
 
-#### A cluster badge is not given a species colour, and that is a refusal rather than an omission
+#### A cluster badge is not given a species color, and that is a refusal rather than an omission
 
 A cluster is a **count**, produced by an absolute SQL grid that knows nothing about species (E130).
-Nine trees under one badge are usually nine different trees, so any colour on that badge would assert
-homogeneity the data does not support — and the honest colour for "mixed" is the one it already has.
+Nine trees under one badge are usually nine different trees, so any color on that badge would assert
+homogeneity the data does not support — and the honest color for "mixed" is the one it already has.
 `TreeQueries.cellSize` is untouched, MapKit's `clusteringIdentifier` is still not used, and a
 clustered viewport draws no legend at all because there are no pins to rank.
 
 #### The second channel, which was owed regardless
 
-**RULINGS R8** settled this for C23 in a sentence that generalises: "a chart that distinguishes its
-lines only by hue is unreadable to a colour-blind reader at *any* contrast ratio, so the redundant
+**RULINGS R8** settled this for C23 in a sentence that generalizes: "a chart that distinguishes its
+lines only by hue is unreadable to a color-blind reader at *any* contrast ratio, so the redundant
 encoding is owed regardless". A map is a data encoding on the same terms. So each slot carries a
-**glyph** in the ring colour inside the pin — a dot, a triangle, a cross, a standing bar — chosen to
+**glyph** in the ring color inside the pin — a dot, a triangle, a cross, a standing bar — chosen to
 differ in silhouette rather than in detail, and the legend chip shows the same mark beside the name.
 A reader who sees no hue at all still sees four different marks.
 
@@ -6637,7 +6637,7 @@ belongs: `MapSpeciesLegend` names the species, and `MapPinKind.accessibilityLabe
 speaks it — `City tree, Victorian Box` from every Victorian Box on the block, which answers the
 owner's question better than either drawn channel does.
 
-**The standing bar is vertical**, because a memorial is a grey pin with a *horizontal* bar across it.
+**The standing bar is vertical**, because a memorial is a gray pin with a *horizontal* bar across it.
 Two bars at right angles cannot be read for each other; two parallel ones could. No slot uses a
 hollow inner ring, because a hollow pin is a vacant planting site (R7), and none uses a check,
 because a check is screen 18's visited route pin.
@@ -6646,7 +6646,7 @@ because a check is screen 18's visited route pin.
 
 Four `derived` tokens — `pinSpeciesA`…`D`. **They are the only tokens in `CypressColor` whose light
 half is ours too**; every other `derived` value is a documented light hex with a computed dark
-counterpart, and SCREENS.md draws no species colouring at all. `derived` is still the right claim,
+counterpart, and SCREENS.md draws no species coloring at all. `derived` is still the right claim,
 because it is the constructor that puts a value in `reviewTokens`, and `TokenGallery` renders those
 first — four swatches on one screen for a designer to answer, rather than a palette to audit.
 
@@ -6660,11 +6660,11 @@ Chosen by search in OKLCh (`Tools/map_species_palette.py`), against:
    the city pin and the amber pin against the paper and stopped there, which is how a palette passes
    on paper and vanishes over Golden Gate Park.
 2. **≥ 0.10 OKLab ΔE from each other**, five times the ~0.02 just-noticeable difference. Measured as
-   ΔE and not as WCAG contrast: contrast is a luminance ratio, so two colours of the same lightness
+   ΔE and not as WCAG contrast: contrast is a luminance ratio, so two colors of the same lightness
    and opposite hue read 1.0:1, which is the right tool for "can I see this on that" and the wrong
    one for "can I tell these two apart".
 3. **≥ 0.099 ΔE from every mark whose hue already means something** — Canopy, Signal Amber, the GPS
-   dot, the cluster badge, a memorial's grey. No slot sits in the amber arc (hue 20–115°), the Canopy
+   dot, the cluster badge, a memorial's gray. No slot sits in the amber arc (hue 20–115°), the Canopy
    arc (125–200°) or the GPS arc (232–272°) at all. **Removing those three arcs from the wheel is
    also why there are four slots and not six**: what is left will not hold six hues this far apart.
 4. **The ring and the glyph read on every fill** — `pinRingStroke` is 5.4:1 or better on all eight.
@@ -6748,7 +6748,7 @@ palette from the pins it has, then reads the four species' names asynchronously,
 is born under has no name in it and the label it stores is the plain `City tree`. A name arriving
 changes no pin's *kind*, so `Coordinator.sync`'s kind comparison correctly leaves every annotation
 where it is — which means a label stored once at init is the label that pin keeps forever, and every
-coloured pin in the running app is in exactly that position. The third channel named nothing, ever,
+colored pin in the running app is in exactly that position. The third channel named nothing, ever,
 while `voiceOverNamesTheSpecies` passed, because that test asks `MapPinKind` directly and never goes
 through the layer.
 
@@ -6758,7 +6758,7 @@ what: a string built per pin per pass, against a screen that runs **240 body pas
 promise is that an update whose pins are the same pins does no work at all.
 
 **What noticed was `DeepLinkVoiceOverTests.testThePinSaysWhenItHasGoneAsFarAsItGoes`** — a test about
-screen 16's *nudge control*, which has nothing to do with species colours. Fifteen 5 m nudges landed
+screen 16's *nudge control*, which has nothing to do with species colors. Fifteen 5 m nudges landed
 the pin at 74 m instead of 75, three runs out of three, because that screen reads the pin's position
 off the settled MapKit camera and the camera settles differently when the update pass costs more. It
 is green on `cc01e32` and green two runs out of two once the refresh is gated on the palette having
@@ -6773,7 +6773,7 @@ rather than a thing to re-run.
 #### What was looked at, because tests cannot say whether it reads
 
 Twelve screenshots off the booted device, both appearances, every one checked for an opaque alpha
-channel and a colour count (9,069–37,418 distinct colours) rather than trusted because a file was
+channel and a color count (9,069–37,418 distinct colors) rather than trusted because a file was
 written — the shot harness has returned fully transparent PNGs while every test passed. Compared by
 eye and never by hash or `cmp`: the probe's own text ticks once a second, so a byte comparison always
 reports "different".
@@ -6784,7 +6784,7 @@ lagoon triangles along the south side of Page, Swamp Myrtle as iris crosses on O
 as cherry bars in a run of eight, over a residual green that claims nothing. "Which of these are the
 same?" is answerable at a glance, and before the change every one of those 292 dots was the same green.
 
-**And the crops were converted to greyscale and looked at again**, in both appearances, which is the
+**And the crops were converted to grayscale and looked at again**, in both appearances, which is the
 check the glyph exists to pass: with every hue removed, the dot, the triangle, the cross and the
 standing bar are still four different marks — and the residual pin, which carries no mark at all, is
 still a fifth thing. The legend chips key them with the same four marks.
@@ -6794,23 +6794,23 @@ markers it drew a single chip, and at z15 the map is badges and it drew nothing.
 
 #### What was not built
 
-**No legend for the residual class.** `MapSpeciesLegend` names the four coloured species and says
+**No legend for the residual class.** `MapSpeciesLegend` names the four colored species and says
 nothing about the rest, because there is nothing true and short to say — "and 27 others" is a number
 that changes with every pan and answers no question. The honest surface for "what is this green one"
 is the one that already exists: tap it.
 
 **Genus was weighed and rejected.** It would have collapsed 569 species to ~130 and bought about a
 tenth of a slot's worth of coverage (11 genera against 12 species in a Mission zoom-19 screenful),
-while making "same colour" mean "same genus" — so two *Prunus* species would share a hue and a reader
+while making "same color" mean "same genus" — so two *Prunus* species would share a hue and a reader
 would read "same tree" and be wrong. The whole point of the constraint is that the map must not be
 able to say something false.
 
 **The other two basemaps are left alone.** `MapKitBasemap` takes the palette with a default of
 nothing, so 16's pin adjust and the pin-set map draw what they drew: both are about *one* tree and its
-neighbours rather than about the mix of species on a street, and four hues there would be answering a
+neighbors rather than about the mix of species on a street, and four hues there would be answering a
 question nobody asked.
 
-### E150 — "this one" was a pin two and a half points wider than its thirty neighbours
+### E150 — "this one" was a pin two and a half points wider than its thirty neighbors
 
 Task **#89**. A tapped pin was distinguished by `MapLayout.selectedPinScale` and nothing else, and
 that constant's own comment says why it was defensible: **NOT SPECIFIED** in SCREENS.md, so it was
@@ -6828,15 +6828,15 @@ touched.
 Two concentric rings **outside** the pin, at 1.7× and 2.0× its diameter, in `textInk` and
 `pinRingStroke`. The scale stays, because it is what makes the pin and the card read as one selection.
 
-Three properties make it unconfusable with the species colours above, and they are properties by
+Three properties make it unconfusable with the species colors above, and they are properties by
 construction rather than by taste:
 
-1. **It is achromatic.** The two ring colours carry OKLCh chroma ≤ 0.026 (`textInk` in light, the
+1. **It is achromatic.** The two ring colors carry OKLCh chroma ≤ 0.026 (`textInk` in light, the
    highest of the four values); every species slot carries ≥ 0.080. No overlap, no near miss, and
    `MapSpeciesColourTests.theReticleCannotBeASpeciesColour` asserts the gap rather than describing it.
    The reader for whom four hues are the *hardest* thing on the map finds this the easiest.
 2. **It is outside the pin's own footprint**, in a band where no pin of any kind draws fill. A species
-   colour is always a fill *inside* a pin. It is also inside the 44 pt tap target, so the mark never
+   color is always a fill *inside* a pin. It is also inside the 44 pt tap target, so the mark never
    claims ground the finger does not own.
 3. **It is a ring rather than a fill**, and there is only ever one of them on the map.
 
@@ -6847,7 +6847,7 @@ redrawn on a scheme flip, because a `CGColor` in a `CALayer` is the one thing on
 cannot resolve itself.
 
 **The selected marker also comes to the front** (`zPriority = .max`). Two pins 20 pt apart overlap
-across 36 pt of reticle, and a reticle half-covered by the neighbour it is distinguishing itself from
+across 36 pt of reticle, and a reticle half-covered by the neighbor it is distinguishing itself from
 is not a mark.
 
 #### It costs no bitmaps, which is why it is layers
@@ -6962,7 +6962,7 @@ out of a screen — screenshots and the route are in the branch's report.
 
 The report is #81: "should be possible to take a full and then trunk and then leaf photo from one
 camera screen without having to leave and come back". The screen already drew the three chips. What it
-did not have was three photographs — the chips were three ways of *labelling* one.
+did not have was three photographs — the chips were three ways of *labeling* one.
 
 **The data model was narrow in exactly one place.** `OutboxItem.photos` has been `[OutboxPhoto]` since
 it was written and `outbox.enqueue(_:photos:)` has always taken a list; `VisitDraft.photo` was a single
@@ -7064,7 +7064,7 @@ It is pre-existing, the same before this change as after, and it is not a layout
 moving a padding: at AX5 an overlay-based camera is not a workable arrangement and what replaces it is a
 screen variant SCREENS.md does not draw. ARCHITECTURE §5.8 says stop and ask, so this stops and asks.
 
-**The framing is frozen at the shutter, and that is a behaviour change with a reason.** It used to be
+**The framing is frozen at the shutter, and that is a behavior change with a reason.** It used to be
 re-read at "Log visit", on the recorded argument that "the chip row stays live after the shutter and
 the last tap before Log visit is the answer". That was reasonable for one photograph and is destructive
 for three: it would relabel every staged photograph as whichever chip happened to be selected when the
@@ -7094,7 +7094,7 @@ skips the strip, which is precisely E148's failure mode — fails the two new st
 issues naming the GPS dictionary, `MakerApple`, `TIFF.Make`, `TIFF.Model` and `Exif.BodySerialNumber`
 read off the written files.
 
-Making `shotType`'s setter bump `captureTick` — which is the old flash behaviour, expressed on the
+Making `shotType`'s setter bump `captureTick` — which is the old flash behavior, expressed on the
 model — fails `theFlashCountsCapturesOnly` with "selecting a photographed chip flashed the screen 3
 times". Taking the ghost from `shotType` rather than `.fullTree` fails
 `theGhostComesFromTheFullTreeShot`. Requiring all three framings in `enqueue` fails
@@ -7122,7 +7122,7 @@ and `R10's row is not on the almanac` — and it failed with them on every machi
 simulated fix over San Francisco. Two separate things were wrong, and only the first was the one that
 had been noticed.
 
-**The guard that could not fire.** Without a coordinate there is no neighbourhood (A4, ERRATA E44) and
+**The guard that could not fire.** Without a coordinate there is no neighborhood (A4, ERRATA E44) and
 `AlmanacScreen` draws E123's `See your neighbourhood` prompt **in place of** all four blocks, so both
 counted rows are correctly absent. `reachAlmanac` knew that and carried the right message; it detected
 the state with `app.staticTexts["See your neighbourhood"].waitForExistence(timeout: 3)`. A fixed wait
@@ -7138,7 +7138,7 @@ turns up, and this helper has been wrong once already about how long that takes 
 row has failed to arrive does the prompt decide which report is honest. The report is then a skip
 rather than a failure, which `MapSearchUITests.requireAMapWithPins` had already settled for the same
 missing fix and in the same words: "a skip says 'not checked here', which is true, where a failure says
-'broken', which is not". It carries the same literal command its neighbours do, `xcrun simctl location
+'broken', which is not". It carries the same literal command its neighbors do, `xcrun simctl location
 <udid> set 37.78485,-122.4215`. The helper throws rather than returning `Bool`, which is what `XCTSkip`
 needs and what removes the `guard … else { return }` at both call sites; nothing else called it.
 
@@ -7155,7 +7155,7 @@ with. What is left is a header with no pill, the footnote, and eleven hundred po
 
 **That state is a defect in the app, not in the test, and it is left standing.** It is precisely what
 ERRATA E126 built the failure sentence for — "a screen that draws its five blocks away and leaves a
-footnote is reporting a quiet neighbourhood" — and it slips past both guards, because the read did not
+footnote is reporting a quiet neighborhood" — and it slips past both guards, because the read did not
 fail and the coordinate is no longer nil. E123's own note is too kind to it: the prompt is *not* honest
 either way, because by then the prompt is gone. The fix belongs with `AlmanacModel` — reload when the
 coordinate it was built without turns up — and it is a product change with its own tests, not a line to
@@ -7177,14 +7177,14 @@ own words, with no basemap involved. Measured on a simulator with a fix set over
 reads `Not centred` for the whole of a 39-second run, and a screenshot of that same launch shows the
 camera sitting on the fix with the reader's blue dot in the middle of the screen. The control is
 describing a camera that is not the one on screen. It belongs to screen 01, it is not this task's, and
-it is filed rather than fixed here — but it means the recentre control's `accessibilityValue` is
+it is filed rather than fixed here — but it means the recenter control's `accessibilityValue` is
 telling a VoiceOver reader the map is not on them while it is, and `MapRecentreUITests` cannot catch it
 because it only asserts the value is non-empty.
 
 **The other candidate turns out not to mean what the codebase thinks it means either.**
 `MapSearchUITests.requireAMapWithPins` treats "the map drew individual pins" as "there is a fix", on
 the reasoning that a fixless map opens on the whole city at a clustered zoom. It does not: screen 01
-opens at `MapLayout.defaultSpanMetres`, 120 m across, whether or not there is a fix — only the centre
+opens at `MapLayout.defaultSpanMetres`, 120 m across, whether or not there is a fix — only the center
 differs — and measured with location revoked outright for the app, the map opens on Dolores Park and
 draws pins there anyway. That skip cannot fire. It is harmless where it sits (those two tests then run
 and pass), but it is not a fix detector and it is not used as one here. What the pin wait does in this
@@ -7196,12 +7196,12 @@ the one screen 12 itself justifies, and it is the prompt that decides it.
 … set 37.78485,-122.4215`, both tests **pass** — 18.3 s and 19.1 s — and they tap through to the
 screens they were written for, which their own screenshot notes record: `Walk the two → …` and
 `187 empty planting sites → …`, in Western Addition. With location revoked from the app, both
-**skip** — `screen 12 drew "See your neighbourhood" instead of its neighbourhood, so neither counted
+**skip** — `screen 12 drew "See your neighborhood" instead of its neighborhood, so neither counted
 row exists to tap — this needs a simulated GPS fix over San Francisco: xcrun simctl location <udid> set
 37.78485,-122.4215`. And with screen 12 deliberately broken — `vacantSitesBlock` and `coverageBlock`
-deleted from `AlmanacScreen.body`, leaving §3 and therefore a neighbourhood — both **fail**, at the
+deleted from `AlmanacScreen.body`, leaving §3 and therefore a neighborhood — both **fail**, at the
 caller, naming the row: `XCTAssertTrue failed - R10's row is not on the almanac, which does have a
-neighbourhood` and `… §4's CTA is not on the almanac, which does have a neighbourhood`. That is the
+neighborhood` and `… §4's CTA is not on the almanac, which does have a neighborhood`. That is the
 one thing a skip must never do, done on purpose to check it does not. The break was reverted and the
 app tree is byte-identical to what it was before it.
 
@@ -7267,7 +7267,7 @@ the journal has a caller, and exactly one.
 
 **The survivors were then made to look like what they are.** They were identical *today* only
 because the app is new and most trees carry one event; they diverge permanently the first time
-somebody visits one tree twice. Both drew title = tree name, subtitle = grey text ending in a date.
+somebody visits one tree twice. Both drew title = tree name, subtitle = gray text ending in a date.
 
 - **Trees is a set of nouns.** The date is gone from the row entirely; recency moved out of the text
   and into the ordering, which is `last_visited DESC NULLS LAST` and was always the store's. In its
@@ -7276,7 +7276,7 @@ somebody visits one tree twice. Both drew title = tree name, subtitle = grey tex
 - **The Journal is a stream of verbs.** The date leads: one `micro.label` section header per day —
   §1.3's own treatment for "section headers inside screens" — with that day's acts under it. Row
   titles are verb-first (`Visited Grandmother Cypress`), so the act is the subject rather than a
-  clause in grey at 12.5 pt. The note is the only thing left on the second line.
+  clause in gray at 12.5 pt. The note is the only thing left on the second line.
 - **One explanatory line under each header**, which is what was asked for, written as a pair:
   *"One line per tree, however many times you have been back."* against *"One line for each thing
   you did, newest first, under the day it happened."* Same length, same shape, opposite content.
@@ -7300,13 +7300,13 @@ visits`, on three clauses. `GroveRecord` carries those three and adds two that a
 2. **never compared** — nothing sorts on it, nothing takes a maximum. The list's order is the
    store's, and `theTallyDoesNotSortTheList` is built so that a sort in either direction changes the
    answer;
-3. **never a reward** — no badge, no threshold, no colour that changes. The row is drawn identically
+3. **never a reward** — no badge, no threshold, no color that changes. The row is drawn identically
    at one and at forty;
 4. **never summed** — there is deliberately no `total` on the type and nothing anywhere produces a
    row about the grove rather than about a tree (`theTallyIsNeverATotal`);
 5. **kinds, not one number** — `4 entries` is a single figure a person can rank their own trees by
    and want to raise; `3 visits · 1 measurement` says what *kind* of relationship it is, which is a
-   thing to have rather than a thing to maximise. It is the more useful sentence besides: it tells
+   thing to have rather than a thing to maximize. It is the more useful sentence besides: it tells
    you that you have never measured the tree you walk past every day.
 
 `GroveQueries`' header says "nothing here counts contributions", and that stays true of that file —
@@ -7329,7 +7329,7 @@ record: records[row.treeID] ?? .none
 
 `records[key]` is `GroveRecord?`, so the contextual type of `.none` is `Optional<GroveRecord>` and
 the leading dot resolved to `Optional.none` rather than `GroveRecord.none`. It compiled. Every
-favourite nobody had visited came back as *"this read could not answer"* when the read had in fact
+favorite nobody had visited came back as *"this read could not answer"* when the read had in fact
 answered. **A leading-dot `.none` against an optional of a type that has its own `none` is a silent
 type error**, and it was caught only by the test that goes through `LocalAPI` against a real store —
 no test over the doubles could see it, because a double hands that field over directly.
@@ -7347,11 +7347,11 @@ on the drawing.
 
 **Looked at, not only tested.** `CypressTests/GroveJournalShots.swift` draws both surfaces from one
 contribution history and lays them out two columns wide, so the comparison is one image. The fixture
-is the argument: one tree carries six records, one carries two, one is a favourite nobody has
+is the argument: one tree carries six records, one carries two, one is a favorite nobody has
 visited — Trees draws three rows over the history the journal draws eight rows of. Five trees with
 one event each would have photographed the two screens agreeing, which proves nothing.
 
-Before, both columns are a white card, a green tile, a bold tree name and a grey line with a date in
+Before, both columns are a white card, a green tile, a bold tree name and a gray line with a date in
 it, under a My Grove that offers a `Journal` pill. After, they share no element of grammar.
 
 The shot harness had to be talked down from 2,400 pt to 1,200: the contact sheet is
@@ -7375,9 +7375,9 @@ at AX5 where three were tight. Neither was the point of the change.
 `DeepLinkVoiceOverTests.testTheNudgeControlsActuallyMoveThePin` — failed on this branch and passed the
 moment the simulator's fix was moved. They had been run against a streaming `simctl location` route
 over the **Outer Sunset**, and E153's own skip message names the fix these tests want:
-`37.78485,-122.4215`. A neighbourhood with no young unvisited trees in it has no §4 coverage CTA, so
+`37.78485,-122.4215`. A neighborhood with no young unvisited trees in it has no §4 coverage CTA, so
 the test failed on a *correctly* absent row — the state E153 was written to distinguish, one
-neighbourhood further out than it had been asked about. The same two failed on pristine `main` under
+neighborhood further out than it had been asked about. The same two failed on pristine `main` under
 the same conditions, which is how they were attributed.
 
 So: **a red UI test on this project is a question about the simulator's fix before it is a question
@@ -7396,10 +7396,10 @@ a row, and not a duration since (a duration is one rendering away from a lapsed 
 
 Screen 12 has one input that is not the database: a coordinate. Everything on it — the pill, the
 three season rows, the composition card, the vacant-site count, the coverage ask — hangs off
-resolving a neighbourhood from that coordinate, and `LocalAPI.almanac(near:)` answers `.empty` for a
+resolving a neighborhood from that coordinate, and `LocalAPI.almanac(near:)` answers `.empty` for a
 `nil` one, which is right: without a fix there is no area and the almanac has no subject (A4, E44).
 
-`AlmanacView` built its model in a `@State` initialiser. `@State` runs its initialiser exactly once
+`AlmanacView` built its model in a `@State` initializer. `@State` runs its initializer exactly once
 for the lifetime of the view's identity, so the coordinate the almanac was derived from was whichever
 one existed in the first frame, permanently. On a cold launch that is `nil` — the composition root's
 `MapLocationProvider` is inert until screen 01 asks it to start, and CoreLocation then takes its own
@@ -7410,7 +7410,7 @@ while standing on the almanac would not reload it, "and the prompt is honest eit
 reaches the filled screen by the next navigation".
 
 **The second half of that sentence is false, and this is the case that disproves it.**
-`showsLocationPrompt` was `coordinate == nil` computed in the same initialiser — but as a plain `let`
+`showsLocationPrompt` was `coordinate == nil` computed in the same initializer — but as a plain `let`
 on a struct, which SwiftUI recomputes on every pass the parent makes through its body, unlike the
 `@State` beside it. The two therefore came apart the instant the fix landed: the model still held the
 empty almanac it had read from `nil`, and the prompt that explained it evaluated to `false` and
@@ -7420,7 +7420,7 @@ points of nothing, until the view is torn down and rebuilt.
 So the prompt is not honest either way. It is honest for about a second, and then it removes itself
 from precisely the screen that most needs it. This is the state E126 built screen 12's failure
 sentence for — "a screen that draws its five blocks away and leaves a footnote is reporting a quiet
-neighbourhood" — and it walks past both of that entry's guards, because the read did not fail
+neighborhood" — and it walks past both of that entry's guards, because the read did not fail
 (`hasFailed` is correctly `false`) and the coordinate is no longer `nil`.
 
 It is reachable in the shipping app: cold launch, tap `Journal`, tap `Neighborhood` before the fix
@@ -7439,7 +7439,7 @@ failure sentence.
 
 1. `AlmanacModel.coordinate` is a `var` the model can be told about again, and `AlmanacView` reads
    with `.task(id: coordinate)` rather than a bare `.task`. A bare `.task` runs once at mount, which
-   is the same once-only the `@State` initialiser has, so it would have moved the bug rather than
+   is the same once-only the `@State` initializer has, so it would have moved the bug rather than
    fixed it. Keyed on the coordinate, the read re-runs when — and only when — the fix changes.
    `AlmanacModel.update(coordinate:)` is the entry point and returns without a read when the value
    has not moved, so a provider republishing the same fix does not re-read the whole almanac.
@@ -7451,11 +7451,11 @@ failure sentence.
    also deliberately does **not** reset the phase to `.loading`: the empty almanac and its prompt
    stay on the glass until the replacement has actually been read. Without that pairing the fix
    would still leave a window, one database read wide, in which the prompt has gone and the
-   neighbourhood has not arrived — the same blank, made brief instead of made impossible.
+   neighborhood has not arrived — the same blank, made brief instead of made impossible.
 
 A read that is superseded by a newer fix while it is in flight drops its own answer rather than
 writing it. Two fixes in quick succession is ordinary on a phone that is still settling, and the
-stale one landing last would put a neighbourhood on screen that `displayedCoordinate` no longer
+stale one landing last would put a neighborhood on screen that `displayedCoordinate` no longer
 describes — which would break the invariant in the other direction, by making the prompt's condition
 answer for a picture nobody is looking at.
 
@@ -7530,8 +7530,8 @@ that twenty seconds later. **After**, the same launch draws the pill `Western Ad
 with the elder (`New Zealand Xmas Tree · in the city record since 1972`), `WHO LIVES HERE · 135
 SPECIES` with its four-row composition card, `WHERE A TREE COULD GO · 187 empty planting sites`, and
 `WHERE EYES ARE NEEDED · 2 young trees with no visits since planting / Walk the two` — the same
-neighbourhood and the same two numbers E153 recorded from the front door. With location revoked
-outright from the app, the same launch draws E123's `See your neighbourhood / Turn on location and the
+neighborhood and the same two numbers E153 recorded from the front door. With location revoked
+outright from the app, the same launch draws E123's `See your neighborhood / Turn on location and the
 almanac fills with the trees around you` and nothing else, so the prompt still owns the state it was
 built for.
 
@@ -7610,7 +7610,7 @@ those seven columns from the export for the 130,070 records both list — 97% co
 3,507 the export has never heard of — and the controls fire again.
 
 The vacant-site collapse was the one loss that join could not repair, because a vacant site is a
-*row* and rows come from the spine: **12,518 → 153**, with 17 of 41 neighbourhoods holding none. The
+*row* and rows come from the spine: **12,518 → 153**, with 17 of 41 neighborhoods holding none. The
 state #11 designed, #31 redirects to and #32 counts still worked and was still tested; it described
 a third of the city and nothing else. **That has been undone, and the reason it could be undone
 without touching the tree row set is the part worth keeping.**
@@ -7622,7 +7622,7 @@ the world from the shape of a schema. That is a different claim from the one thi
 living trees, where the layer *is* the operational record and a tree it stopped listing is most
 likely gone. So the seed now carries the export's vacant planting sites as rows alongside the city's
 trees: **145,837 rows — 133,577 trees from the city's layer, 12,260 sites from the export** — and
-all 41 neighbourhoods hold at least one site again.
+all 41 neighborhoods hold at least one site again.
 
 The one place the two inventories genuinely contradict each other is a TreeID the export calls an
 empty basin and the layer lists as a planted tree. **128 rows**, measured rather than assumed, and
@@ -7670,7 +7670,7 @@ silently removed the entire section from every tree in the seed. The section now
 **A UI test had been red since the first round and was not read as such.** `AlmanacGroupTapTests`
 locates screen 12's coverage CTA with `label BEGINSWITH "Walk the "`, but
 `AlmanacPresentation.coverageCTA` renders `Walk to it` when the count is one, because "walk the one"
-is not a sentence. The neighbourhood these tests land in from the simulated fix — Western Addition —
+is not a sentence. The neighborhood these tests land in from the simulated fix — Western Addition —
 held two young trees under the DataSF export and holds one under the city's, because the switch cut
 the seed's planting dates from 70,067 to 28,747. So the button was drawn correctly and the locator
 could not see it, and the failure read `§4's CTA is not on the almanac`: a true sentence about the
@@ -7690,7 +7690,7 @@ ship: it carries `Prune_Year` on every record. That field belongs to the **keyma
 — so the seed does not carry it and the sentence now says the city records pruning by block and not by
 tree.
 And the debug harness's candidate window, widened from 500 to 4,000 in the first round because the
-nearest vacant site to the map's opening centre had become the 1,181st record by distance, goes back
+nearest vacant site to the map's opening center had become the 1,181st record by distance, goes back
 to 500: it is the 16th again, and the widening was making a harness green over a surface that had
 gone vestigial.
 
@@ -7741,20 +7741,20 @@ and screen 15's count read the same predicate and showed them for the same reaso
 deliberately unlinked from themselves became linked to whoever came next: on a shared or handed-down
 phone, a re-identification of somebody who had asked not to be identifiable.
 
-The behaviour is older than the two-door deletion — it is D9's, and E136 recorded it as a known hole
+The behavior is older than the two-door deletion — it is D9's, and E136 recorded it as a known hole
 and left it to the owner. What made it a defect rather than a quirk is that E136 also put the promise
 on screen in words. `AccountDeletionCopy.leaveRecordsBody` said the records stay "with nothing left
 on them saying they were yours", and that was true until somebody signed in. A promise on screen that
 the database does not keep is not a backlog item.
 
-The project owner ruled: *"Yes, anonymize with tombstone."* Rows anonymised by a deletion are marked,
+The project owner ruled: *"Yes, anonymize with tombstone."* Rows anonymized by a deletion are marked,
 and are skipped for ever.
 
 **The shape, and the two obvious alternatives that are wrong.**
 
 *Clearing `device_id` instead* is one `UPDATE` and it fails twice over. The column is `NOT NULL` on
 all four tables, so the state does not exist; and if it did, it would erase the distinction the whole
-fix rests on. **Anonymised by a deletion** and **never had an account** currently look identical, and
+fix rests on. **Anonymized by a deletion** and **never had an account** currently look identical, and
 they are not the same thing: the second is D9's own case, an unsigned-in contributor keeping their own
 work on their own phone, and it must go on being claimed. A fix that made those two states equally
 unclaimable would trade one broken promise for another.
@@ -7793,11 +7793,11 @@ would rebuild exactly the joining key `AccountDeletionChoice` refuses a sentinel
 handle relinking one person's whole history of trees, dates and times.
 
 **Which tables.** The four with `device_id NOT NULL`: `visits`, `observations`, `measurements`,
-`care_events`. The anonymising path also names `photos` and `photo_votes`, and neither needs a
+`care_events`. The anonymizing path also names `photos` and `photo_votes`, and neither needs a
 tombstone, for a reason worth writing down rather than assuming: both carry **at most one** owner
-(v12 and v9), so an account-owned row has `device_id IS NULL`, and anonymising leaves both columns
+(v12 and v9), so an account-owned row has `device_id IS NULL`, and anonymizing leaves both columns
 NULL. `claimDevice`'s `device_id = :device` cannot match it. `tree_names`, `review_flags` and
-`tree_status_overrides` are anonymised too and have no device column at all, so no claim path reaches
+`tree_status_overrides` are anonymized too and have no device column at all, so no claim path reaches
 them. `private_reminders` and `favorites` are deleted with the account under both doors. The
 tombstone lands on exactly the tables that can be re-adopted, and on all of them — a tombstone on
 three of four would have been worse than none, because it would have made the guarantee look kept.
@@ -7835,7 +7835,7 @@ a second paragraph to learn what believing it costs.
 tree-scoped query, which is the entire point of the door: `treeProfile` returns the visit, the
 photograph keeps its place, the vote still counts toward the hero. What the tombstone removes is
 ownership, not existence. And `AccountDeletion.Outcome` gained no counter for it — the number of
-tombstones is the number of anonymised contributions, already reported, and a second field carrying
+tombstones is the number of anonymized contributions, already reported, and a second field carrying
 the same total is a field that will one day disagree with the first.
 
 ---
@@ -7843,7 +7843,7 @@ the same total is a field that will one day disagree with the first.
 ### E158 — Four contribution forms recorded the GPS accuracy from before the phone had one (#102)
 
 Found while fixing E155, and it is the same mechanism read a second time. `@State` runs its
-initialiser exactly once for the lifetime of a view's identity, so anything a view carries into a
+initializer exactly once for the lifetime of a view's identity, so anything a view carries into a
 model built there is the value that existed in the first frame and no other. E155 was a coordinate.
 This is D6's per-contribution GPS accuracy, on the four views that carry one:
 
@@ -7879,7 +7879,7 @@ excluded from that tree's growth chart for the lifetime of the record, on a phon
 perfectly good fix by the time they pressed Save.
 
 **What changed.** The parameter is a closure — `@escaping @MainActor () -> Double?` — which is the
-shape `now` already has beside it in all four initialisers, and for the same reason: it is a
+shape `now` already has beside it in all four initializers, and for the same reason: it is a
 question about the present, and a form is a thing somebody fills in over a minute. Each model asks
 it once, at the moment the contribution is written:
 
@@ -7908,7 +7908,7 @@ sentences are true at the moment they are made, and any alternative freezes some
 should be retired rather than acted on.
 
 - Before the save, `MeasurePresentation.chartNotice` prints `Without a location fix the reading is
-  saved but stays off the growth chart.` — and a separate sentence naming the metres when the fix
+  saved but stays off the growth chart.` — and a separate sentence naming the meters when the fix
   is real and too poor. `ChartEligibility` has three cases and not two precisely so that the screen
   can say which.
 - After the save, the reading is on screen 11's log. D6 excludes a reading from *charting*; it does
@@ -7916,7 +7916,7 @@ should be retired rather than acted on.
   dot or no dot. When nothing is chartable the screen prints a sentence where the cards would have
   been.
 
-So E126's invariant — a screen showing nothing must say why — was already honoured at both ends.
+So E126's invariant — a screen showing nothing must say why — was already honored at both ends.
 What was wrong is one word of it. Screen 11's sentence read `taken with a GPS fix too weak to
 attribute them to this tree`, which describes a bad fix to somebody whose phone had not answered
 yet, and on the broken app that was not an edge case: the cold-launch population was the *whole*
@@ -8102,11 +8102,11 @@ ratio and not a height, so the well is right on a phone this was never measured 
 any well shorter than its own capture crops the live preview again, which is the defect. The composer
 scrolls and the CTA is pinned outside that scroll, so a taller well costs scrolling, never reach.
 
-One consequence worth naming, because the old behaviour had been written up as a feature. The code
+One consequence worth naming, because the old behavior had been written up as a feature. The code
 argued that the jump from a filling viewfinder to a fitted still was intended — the frame "pulls
 back" at the moment of capture and shows what the well was never going to show. With the well the
 same shape as the capture there is no jump: fill and fit are the same drawing, and what you aimed at
-is what you are shown. The old behaviour was a symptom being read as a design, and what it really
+is what you are shown. The old behavior was a symptom being read as a design, and what it really
 told a volunteer was that the viewfinder had been lying to them.
 
 ---
@@ -8128,13 +8128,13 @@ merged into a filled-looking blob with a spur out of the lower left. What the ow
 questionable mark, it was a broken one.
 
 **The dot had already been moved to escape it, which is the part worth recording.** The dot was
-offset `0.30 · side` *below* the arcs, under a comment stating that at 24pt a centred dot touches the
-inner arc. It does not, and could not: the inner arc's nearest point to its own centre of curvature
+offset `0.30 · side` *below* the arcs, under a comment stating that at 24pt a centered dot touches the
+inner arc. It does not, and could not: the inner arc's nearest point to its own center of curvature
 is `radius − stroke/2 = 5.1pt` away and the dot's radius is under 2. What the dot would have touched
-is the **chord**, which crossed 4.4pt above that centre. So a real defect was diagnosed in the wrong
+is the **chord**, which crossed 4.4pt above that center. So a real defect was diagnosed in the wrong
 element, and the repair — a full stop floating below the mark — was carried in the file as a
 deliberate decision, with a reason that reads plausibly and is false. The dot is now at the arcs'
-centre of curvature, where it belongs, and the chord is gone.
+center of curvature, where it belongs, and the chord is gone.
 
 **The mark stays `arcs + dot`.** Apple's own AirDrop glyph is an upward triangle under the arcs, and
 the fixed mark still reads closer to a wi-fi symbol than to Apple's. That is what SCREENS.md 10 §4
@@ -8168,7 +8168,7 @@ under one sentence.
 `MeasureDraft.kind` defaults to `.dbh` — SCREENS.md 16 §2's drawn selection. So every entrance to
 screen 16 opened on DBH, including the empty `Height` stat card whose whole meaning is that this
 tree has no height on it. A contributor entering from the Height box and typing a number without
-looking at the segmented control wrote a **trunk diameter in metres**, and nothing downstream would
+looking at the segmented control wrote a **trunk diameter in meters**, and nothing downstream would
 have caught it: `MeasurePresentation`'s sanity pill compares against previous readings *of the
 drafted kind*, of which there were none. The route now carries a `MeasurementKind` and the profile
 hands it the kind of the card that was tapped.
@@ -8196,7 +8196,7 @@ mapping is how a basin comes to open a tree's profile (E113). Both of screen 16'
 into `GrowthHistoryPresentation.addReadingKind`.
 
 The general rule this is the third instance of: **a comment naming which layer owns a decision is not
-a mechanism that makes the other layer honour it.** The comment on the line above this bug said, in as
+a mechanism that makes the other layer honor it.** The comment on the line above this bug said, in as
 many words, "which card means which kind is the presentation's call, not this view's" — and the view
 was free to ignore it, because nothing could call the view.
 
@@ -8213,7 +8213,7 @@ one line: "Trigram matching finds 'oak' inside 'Coast Live Oak'; a prefix scan d
 That line understated it. The seed's common names are overwhelmingly `Adjective Noun` — the noun
 being the word a person types. So the gap is not an edge case, it is the normal case:
 
-| typed | the prefix scan found | the catalogue holds |
+| typed | the prefix scan found | the catalog holds |
 |---|---|---|
 | `cypress` | 1 — `Cypress species / Cupressus spp` | 6 |
 | `oak` | 1 — `Oak / Quercus spp` | 21 |
@@ -8250,16 +8250,16 @@ to 0.13–0.83 ms and the whole read is unchanged wherever the two return the sa
 **What this newly exposes, and what was done about it (E38).** Matching anywhere makes the 100-species
 cap reachable in ordinary use where it was not before: `a` prefix-matched 97 species and *contains* in
 555. A truncated species set narrowing the map while the status line calls it "Showing 100 species" is
-a page wearing a total's clothes. `MapSearch.Narrowed` now carries whether the catalogue returned a
+a page wearing a total's clothes. `MapSearch.Narrowed` now carries whether the catalog returned a
 full page, and `MapSearchCopy` says so in all four of the sentences it can produce.
 
 **Two things moved with it, because the change made them untrue.** `SpeciesPickCopy.noMatch` told a
-contributor "Nothing in the catalogue starts with …. Try the first word of either name", which now
+contributor "Nothing in the catalog starts with …. Try the first word of either name", which now
 sends them to retype a query that already worked. `DataGates`' species-search assertion checked that
 every match had a name *beginning* with the query.
 
 **What is still not fixed.** This is substring matching, not the trigram matching §6 specifies: a typo
-misses, and so does a name the catalogue spells differently. That still wants an FTS5 index the seed
+misses, and so does a name the catalog spells differently. That still wants an FTS5 index the seed
 does not carry, and it still belongs in `Tools/build_seed.py` beside the data rather than being built
 on device at first launch.
 
@@ -8288,14 +8288,14 @@ no keyboard trap. Measured on the simulator against the component exactly as it 
 `FocusState`, no `submitLabel`, no `onSubmit` — pressing return already resigned focus, because that
 is SwiftUI's default for a single-line `TextField`. A UI test written to prove the return key had
 been *fixed* passed against the *unfixed* component, which is how this was found; the test was
-asserting the platform's behaviour rather than the app's, and has been deleted rather than kept.
+asserting the platform's behavior rather than the app's, and has been deleted rather than kept.
 
 The defect is real but it is **discoverability, not capability**. The key that worked said `return`,
 which reads as "insert a newline"; nothing else on screen 01 dismisses the keyboard, because an
 `MKMapView` does not resign anyone's first responder and a tap-catcher over it would take the pan and
 the pinch with it; and the keyboard covers the FAB, the bottom card and the tab bar while it is up.
 
-Fixed by relabelling the key that already worked (`submitLabel(.search)` → `Search`) and adding a
+Fixed by relabeling the key that already worked (`submitLabel(.search)` → `Search`) and adding a
 `Done` above the keyboard, plus the ✕ that genuinely did not exist — trailing edge, VoiceOver label
 `Clear search`, 44 pt target, drawn as a `Shape` like every other glyph in the app. Recorded as
 ruling **R15**, since SCREENS.md §2 specifies neither affordance (DECISIONS constraint 21).
@@ -8342,7 +8342,7 @@ Two traps that kept it hidden and are worth writing down: `xcrun simctl location
 unfixes it), and a *streaming* route started with `simctl location <udid> start` persists across
 runs and appears in no failure message.
 
-**Fixed by asking instead of assuming.** The map already colours the commonest few species among the
+**Fixed by asking instead of assuming.** The map already colors the commonest few species among the
 pins it has drawn and puts their names on those pins' accessibility labels (`MapSpeciesPalette`,
 `MapPinKind.accessibilityLabel(for:palette:)`). So the test reads the viewport's own census, types
 the name of a species that is provably on this screen, and watches a second one disappear while the
@@ -8359,7 +8359,7 @@ on the user when it has a fix and on the whole city when it does not, and the wh
 — A1's clustered side: badges, not individual pins."
 
 Every clause after the first is false. Screen 01 opens at `MapLayout.defaultSpanMetres` — 120 m
-across — with a fix and without one; only the centre differs, and the fixless centre is
+across — with a fix and without one; only the center differs, and the fixless center is
 `MapLayout.defaultCentre`, Mission Dolores Park. 120 m is far inside A1's pin threshold, so the
 clustered whole-city view the guard was watching for is a state launch cannot produce.
 `AlmanacGroupTapTests` had already measured this and written it down against this file by name.
@@ -8376,7 +8376,7 @@ a GPS fix.
 
 ---
 
-**The product behaviour the red test was actually finding, checked on the device rather than read off
+**The product behavior the red test was actually finding, checked on the device rather than read off
 the source.** The obvious suspicion is that a search narrowing to zero visible pins draws an empty map
 and says nothing — which would be a real defect, and the one worth finding here. It does not. Typed
 into a running build at `37.7505,-122.4950`, `Platanus` empties the map and draws, under the search
@@ -8461,14 +8461,14 @@ whole launch:
 
     region 37.1328,-95.7856   span 98.0°×61.3°
 
-That is the geographic centre of the continental United States, sitting behind a map of Folsom Street
+That is the geographic center of the continental United States, sitting behind a map of Folsom Street
 with the reader's blue dot in the middle of it. Everything downstream of the settled camera was
-reading it: the recentre control's `Centred on you` (#100), a cluster tap's "two zoom levels in"
+reading it: the recenter control's `Centred on you` (#100), a cluster tap's "two zoom levels in"
 measured from a 98° span, and the camera this app now remembers between launches — which is why
 nothing was ever written down.
 
 **The first fix for this named the wrong mechanism, and the wrong one was ruled out by measurement.**
-It said that aiming from inside `layoutSubviews` is re-entrant, that `setRegion` is honoured but
+It said that aiming from inside `layoutSubviews` is re-entrant, that `setRegion` is honored but
 `regionDidChangeAnimated` "is never delivered", and it moved the aim to the main queue. The symptom
 survived that change untouched. A probe in the layer itself, cold launch, iPhone 16 Pro, static fix at
 37.7599, −122.4148, timestamps in milliseconds:
@@ -8520,12 +8520,12 @@ Two things follow, and both are worth more than the green line.
 **The re-entrancy break is invisible because there is nothing to see.** On screen 01 the
 `onFirstLayout` hook never applies a camera at all: `updateUIView` reaches `applyCameraIfChanged`
 first on every launch and spends the ticket, so the hook only ever logs `REJECT` (line `.885` above).
-No test guards it because no behaviour depends on it.
+No test guards it because no behavior depends on it.
 
 **Say this plainly, because the comment above it does not read that way.** `AimableMapView`'s
 `DispatchQueue.main.async` carries a long, careful, confident note about re-entrancy, and the next
 person to read it will assume it is load-bearing. On screen 01, as currently wired, **it is dead in
-practice** — the whole hook, not just the hop. Mutating it either way changes no observable behaviour
+practice** — the whole hook, not just the hop. Mutating it either way changes no observable behavior
 and no test.
 
 **It should nonetheless stay, and the reason changed during this round.** When it was written it was
@@ -8576,20 +8576,20 @@ the middle of Kansas before they touched anything. Measured on merged main in cl
         XCTAssertEqual failed: ("2344980 m east of where you are standing.")
 
 2,344,980 m observed, against a great-circle distance of **2,343,915 m** from the fix to MapKit's
-default centre. A 0.05 % match is an identification, not a resemblance. The first of the three fails
+default center. A 0.05 % match is an identification, not a resemblance. The first of the three fails
 differently only because a pin in Kansas has no activation point on a map of San Francisco.
 
 **The gate.** `mapViewDidChangeVisibleRegion` now returns unless `appliedSequence != nil`.
 That property is exactly the question "has this layer ever aimed this map", and the callback's
 contract is *the app moved the camera, here is where it is now* — a camera nobody asked for has no
-business travelling through it. All three tests pass with the gate and fail without it, which is the
+business traveling through it. All three tests pass with the gate and fail without it, which is the
 red-then-green this entry is entitled to claim.
 
 **Two lessons, and the second is the one worth carrying.** The first is ordinary: a fix that makes a
 value arrive *later* has to be checked against everything that reads it *earlier*. The second is that
 this branch's own tests could not see it. Screen 01 is where all the attention went, and on screen 01
 the same defect is a rounding error in a database query. It surfaced only because screen 16 happens to
-wire a user-visible artefact straight to the same callback — and it surfaced as three red tests that
+wire a user-visible artifact straight to the same callback — and it surfaced as three red tests that
 were initially, and wrongly, written off as derived-data contamination.
 
 ---
@@ -8605,7 +8605,7 @@ must say why. **E158** is the warning — screen 11 spent its life telling peopl
 *entire* population of that message.
 
 `MapCameraMemory` remembers the camera the reader last left the map on. A place they have actually
-been beats a stranger's park: the app reopened in the same neighbourhood is very nearly right, and
+been beats a stranger's park: the app reopened in the same neighborhood is very nearly right, and
 Dolores Park survives as the answer to the one question nothing else can answer — a first launch, no
 history, no fix. `UserDefaults` rather than `app_state`, for `VisitSaveLedger`'s reason (a UI fact,
 not a contribution) and one that decides it outright: `CypressStore.appState(_:)` is `async`, and a
@@ -8621,7 +8621,7 @@ Four standing states now, and no two of them read the same:
 | State | What the map shows | What it says |
 |---|---|---|
 | `located` | the reader | nothing — there is nothing to explain |
-| `notAsked` | remembered camera, or the city | **Cypress has not been given your location.** Nothing has answered the location request yet, so there is nowhere to centre the map. + where it is |
+| `notAsked` | remembered camera, or the city | **Cypress has not been given your location.** Nothing has answered the location request yet, so there is nowhere to center the map. + where it is |
 | `waitingForFix` | remembered camera, or the city | **Finding you.** Cypress has permission and is still waiting for a first fix. + where it is + it will move as soon as one arrives |
 | `denied` / `servicesOff` | remembered camera, or the city | **Location is off** / **Location Services are off.** The map still works—it just cannot show where you are… + where it is |
 
@@ -8642,7 +8642,7 @@ Driven on the running app rather than reasoned about, iPhone 16 Pro, one screens
 
 | Asked for | `simctl` | What appeared |
 |---|---|---|
-| fix present | `privacy grant location` + `location set 37.7599,-122.4148` | map on Folsom & 9th, dot dead centre, **no notice**, control filled and reading `Centred on you` |
+| fix present | `privacy grant location` + `location set 37.7599,-122.4148` | map on Folsom & 9th, dot dead center, **no notice**, control filled and reading `Centred on you` |
 | permission revoked, no history | fresh install + `privacy revoke location` | Dolores Park, **Location is off** + "…The map is over the middle of the city." + Settings, control struck through |
 | permission revoked, with history | as above, after one granted launch was backgrounded | **Folsom & 9th**, no dot, **Location is off** + "…The map is where you last left it." |
 | never asked | fresh install + `privacy reset location` | Dolores Park, system sheet up, control in the plain `askable` drawing |
@@ -8650,7 +8650,7 @@ Driven on the running app rather than reasoned about, iPhone 16 Pro, one screens
 **`waitingForFix` is not reachable on a simulator, and that is a property of the design rather than a
 gap in the testing.** Two things were confirmed by driving it. First, `xcrun simctl location <udid>
 clear` does **not** unfix a device: on a fresh install with permission granted and the location
-cleared, the map still opened centred on the fix with the dot in the middle — the only way to take a
+cleared, the map still opened centered on the fix with the dot in the middle — the only way to take a
 fix away from the app is to take the *permission* away, which produces `denied`, a different state
 with different copy. Second, `simctl location <udid> list` offers only City Run, City Bicycle Ride,
 Freeway Drive and Apple; there is no no-fix scenario. And even if there were, `MapOpening.patience`
@@ -8679,12 +8679,12 @@ actually located when you go back to map, which shouldn't happen."*
 Driven on the device rather than reasoned about, on this branch, with a fix at 37.7599, −122.4148.
 
 **As worded it does not reproduce.** Map → Journal → Map with the camera untouched lands on Folsom &
-9th with the reader's dot dead centre and the control reading `Centred on you`. You land exactly where
+9th with the reader's dot dead center and the control reading `Centred on you`. You land exactly where
 you are located, which is what the ticket asks for.
 
 **What does reproduce is the opposite, and it is worse.** Pan the map away first — south to Folsom &
 20th, the dot off screen, the control correctly reading `Not centred` — then Journal, then Map. The
-map is back on the reader, dot dead centre, and **the pan is gone**.
+map is back on the reader, dot dead center, and **the pan is gone**.
 
 That is #85's shape returning through a door #85 did not close: "the map snaps back to your location
 and cannot be panned away". The mechanism is not the `@State` discard this entry is about, so
@@ -8696,7 +8696,7 @@ made and the reader's pan is never represented in any value that survives the ta
 standing hazard. But the thing that actually re-aims the camera is simpler and is exactly what the
 guard rail names: **`hasCentredOnUser` is `@State` on a tab root that SwiftUI rebuilds**, so returning
 to the tab resets the one-shot, `.task` runs `centreOnUserIfNeeded()` again, it finds a fix, and it
-mints a *fresh* fly-to. The map re-centres on every appearance. `#85` closed that for later fixes
+mints a *fresh* fly-to. The map re-centers on every appearance. `#85` closed that for later fixes
 arriving within one visit; it did not close it for a second visit.
 
 Both readings agree the view's state was rebuilt, which is what the observation shows; whoever fixes
@@ -8754,7 +8754,7 @@ and an implausible cause of a new one.
 
 #### #100 was not the defect it was reported as
 
-Reported as: the recentre control's accessibility state does not track whether the map is centred, so
+Reported as: the recenter control's accessibility state does not track whether the map is centered, so
 VoiceOver announces the wrong thing.
 
 Measured first, before changing anything. `MapCentredStateUITests.testTheControlSaysCentredOnceTheMapIsOnYou`
@@ -8786,7 +8786,7 @@ cases and `away` carried all of "I know where you are and the map is not there",
 the permission ask" and "I am still looking" — and `MapRecentreCopy.value` spoke one word over all
 three: `Not centred`. For a sighted reader that is a caption on a picture they can also see. For a
 VoiceOver reader it is the *entire* report on where the map is, and in two of the three states it
-describes a relationship that does not exist: there is no "centred" to be short of, because the app
+describes a relationship that does not exist: there is no "centered" to be short of, because the app
 does not know where the reader is, and pressing will not move the camera at all — it will raise a
 permission sheet, or promise a move later.
 
@@ -8794,7 +8794,7 @@ So it is E126 arriving at the one control whose whole purpose is that no press i
 fix is five cases where there were three: `centred`, `away`, `askable`, `searching`, `unavailable`,
 each with its own spoken value and its own hint about what the press will do. The *drawing* is
 unchanged — `askable` and `searching` still look exactly like `away` did, because a control that
-changed colour while CoreLocation thought about it would be flicker with no information in it, and
+changed color while CoreLocation thought about it would be flicker with no information in it, and
 only `unavailable` is struck through. `engagementTracksThePress` holds the shape: every availability
 that presses differently now describes itself differently.
 
@@ -8961,14 +8961,14 @@ what changed is that all three stop being silent about it:
 | surface | before | after |
 | --- | --- | --- |
 | profile | identical to a live tree with no check-ins | `DEAD` badge and a Callout: reported dead, a reviewer confirmed, still standing so still worth reporting |
-| map pin | grey dot spoken as `Removed tree, memorial` | grey dot spoken as `Dead tree, still standing` |
+| map pin | gray dot spoken as `Removed tree, memorial` | gray dot spoken as `Dead tree, still standing` |
 | queue row | `Reported removed` / `Confirm removed` | `Reported dead` / `Confirm dead`, beside `Dismiss` |
 
-The pin's *drawn* half is deliberately unchanged. `MapPin.Kind` is a closed catalogue whose sixth
+The pin's *drawn* half is deliberately unchanged. `MapPin.Kind` is a closed catalog whose sixth
 entry took a ruling (R7), and whether a standing dead tree deserves its own drawn pin is a design
 decision this errata has no standing to make. It is the same split E107 made for the vacant site: fix
-the words, leave the drawing for whoever owns the catalogue. The badge borrows the removed pair's
-grey for the same reason — the two badges never say the same word, and there is no fifth badge colour
+the words, leave the drawing for whoever owns the catalog. The badge borrows the removed pair's
+gray for the same reason — the two badges never say the same word, and there is no fifth badge color
 to invent.
 
 **Screen 05 says where a report goes.** Both flagging segments now draw
@@ -8987,7 +8987,7 @@ one row on this phone. Both kinds' messages now end on `The city is not notified
 property is right about the product: those two segments are the only ones on a 60-second card whose
 effect leaves the phone and lands in front of another person, and "appears dead" is a claim worth a
 second tap. `CheckInModel` holds the proposed status in `pendingStatus` and never touches the draft
-until the dialog returns, so cancelling leaves the card exactly as it was — a dialog that backed out
+until the dialog returns, so canceling leaves the card exactly as it was — a dialog that backed out
 onto the segment it had proposed would be worse than no dialog. The other two segments stay one tap:
 `Declining` has no consequence outside this phone, and taxing the common path buys nothing.
 
@@ -9077,12 +9077,12 @@ printing what it bound:
     [MIMIC var]   result=true   T=CGFloat  U=CGFloat      size=8   value=0.75
 
 `AnyHashable` equality compares the **dynamic type first**. Both boxes hold the same 64 bits; one is
-labelled `CGFloat` and the other `Double`, so they are unequal:
+labeled `CGFloat` and the other `Double`, so they are unequal:
 
     [BOX] AnyHashable(CGFloat(0.75)) == AnyHashable(Double(0.75)) -> false
     [BOX] base types: CGFloat vs Double
 
-That is the whole failure. Not a float, not the optimiser, not constant-folding: a type-erasing
+That is the whole failure. Not a float, not the optimizer, not constant-folding: a type-erasing
 comparison, reported through a message that shows the values and hides the types.
 
 **Which spellings are affected.** Run against the same `ratio`, in one test:
@@ -9148,7 +9148,7 @@ the contract carry a genuinely foreign inventory without being widened for it?* 
 inventories were probed through their own APIs on **2026-07-31**, 195 requests in total, every
 response cached under `Fixtures/raw/ca_survey/` and every request logged, so the count is read off a
 file. Nothing was bulk-downloaded and nothing was fetched from behind a login or a click-through
-licence, because nothing found required one.
+license, because nothing found required one.
 
 **The recommendation is San Jose**, and the reason is not its size.
 
@@ -9163,7 +9163,7 @@ Monica, Oakland, San Mateo and Long Beach the
 inference would be reached by *every record*, because none of them publishes a vacancy or site
 concept at all.
 
-**Three sources publish a licence that is a grant; two publish a disclaimer or nothing.** Measured
+**Three sources publish a license that is a grant; two publish a disclaimer or nothing.** Measured
 from each publisher's own metadata:
 
 - **San Jose — CC-BY.** `license_id: cc-by` on the city's CKAN package `street-tree`,
@@ -9174,7 +9174,7 @@ from each publisher's own metadata:
   FIRE grant. A grant deliverable, not a city inventory.
 - **Santa Monica — ODC-BY-1.0**, 40,966 rows.
 - **Sacramento** states *"provided as a public service and for general informational purposes only"*
-  — a disclaimer, not a licence.
+  — a disclaimer, not a license.
 - **Los Angeles** and **San Mateo** state nothing at all: empty `licenseInfo`, empty `copyrightText`.
 
 **Two findings that stop a source rather than rank it.**
@@ -9403,7 +9403,7 @@ The pill's own discoverability is untouched. It is now a second way to the same 
 the only way, which is the part of this that mattered; whether a mono-10.5 capsule over a photograph
 should look like a door at all is a design question and not this entry's.
 
-**The silent case is still silent, and it is now silent in two places.** An anonymised photograph —
+**The silent case is still silent, and it is now silent in two places.** An anonymized photograph —
 one whose contributor left through the door that keeps their work — is still *shown*, correctly, and
 has no delete on it, correctly. What neither screen 20 nor the viewer does is **say so**. The row
 simply has one fewer control than the row above it, and the viewer simply has an empty corner. E126
@@ -9443,7 +9443,7 @@ That paragraph is correct about the mechanism and wrong about the conclusion, an
 one word. A cap on the well's **height** does return the letterbox — the well would be gutter-wide
 and too short, `VisitCameraPreview` is `.resizeAspectFill`, and the crown would go off the top of a
 street tree again, which is exactly E162's defect. A cap on the well's **width** does not: the well
-keeps its ratio to the last bit and is simply drawn smaller and centred. E162 refused the only cap it
+keeps its ratio to the last bit and is simply drawn smaller and centered. E162 refused the only cap it
 considered, and there was a second one.
 
 **Measured on the running app, iPhone 16e (390 × 844 pt), the add screen with a fix:**
@@ -9464,7 +9464,7 @@ At the drawn size the 83 % left 105 pt under the photograph, into which the scre
 photo-source link, one sentence, and the top half of the words `Move the pin` — a clipped line above
 a pinned CTA, which reads as the bottom of a screen rather than as the middle of a form. At AX5 it
 was worse than the owner reported: the well did not fit in the viewport at all, so the entire first
-screenful was one grey box clipped at the footer, and the photo sources, the pin row, the land
+screenful was one gray box clipped at the footer, and the photo sources, the pin row, the land
 question and the species row were all below a fold that nothing on the screen admitted to. That is
 E159's failure in a different costume — a thing sized by something other than the type ramp growing
 past the space the type ramp left it.
@@ -9550,7 +9550,7 @@ written to do. San Jose publishes a planting date for **222 of its 52,788 rows (
 Francisco's 26.03 %, so the two-city seed is **80.78 % undated** where one city was 73.97 %. The
 sentence, the constant and the test bounds were all moved together.
 
-The generalisation is worth more than either number: under **D16** the seed is a *merged* inventory, so
+The generalization is worth more than either number: under **D16** the seed is a *merged* inventory, so
 the coverage of any field is not a property of this app at all — it is a weighted average over
 whichever cities happen to be in, and it moves every time one is added. Any sentence quoting a coverage
 figure is permanently provisional. The only thing keeping this one honest is that the constant is
@@ -9631,7 +9631,7 @@ issues.` Each mutation was reverted afterwards and the tree re-verified clean.
 |---|---|---|
 | M1 | `contributedTreeIDs` loses its owner clause | Yours holds the trees this device contributed to, and no one else's |
 | M2 | an empty `treeIDs` set resolves to "not narrowed" instead of `.matchesNothing` | an empty membership set empties the map rather than showing every tree |
-| M3 | `favoriteTreeIDs` drops `deleted_at IS NULL` | Favourites excludes a tree whose favourite was turned back off |
+| M3 | `favoriteTreeIDs` drops `deleted_at IS NULL` | Favorites excludes a tree whose favorite was turned back off |
 | M4 | the `plantedYears` clause is never emitted | a year-narrowed viewport returns no tree without a planting date |
 | M5 | `MapFilterCopy.result` always reports the drawn page | the result line reports matches, not the size of the thinned page |
 | M6 | `MapViewport.shouldCluster` stops exempting membership | only a membership narrowing suspends clustering |
@@ -9692,11 +9692,11 @@ Opened in a real browser, as the survey asked:
 - `data.cityofberkeley.info/browse?q=tree` — **loads**, and returns **0 results**.
 - `data.cityofberkeley.info/Environment/City-Trees/9t35-jmin` — **403**, the same
   `Attack ID 20000009` block page a scripted request gets, from a real Chrome with a real UA.
-- The Socrata federated catalogue (`api.us.socrata.com`, a different host and not blocked) lists
+- The Socrata federated catalog (`api.us.socrata.com`, a different host and not blocked) lists
   **66 datasets** for the domain. Enumerated in full: **none of them is a tree dataset.**
 
 So the WAF is real and is not the finding. **The finding is that Berkeley's `City Trees` dataset is
-not published on Berkeley's portal**, by its own catalogue and by Socrata's. The description the
+not published on Berkeley's portal**, by its own catalog and by Socrata's. The description the
 survey found — trees, planting sites *and* stumps — is third-party copy about a dataset that has
 since been withdrawn or unpublished. It is not a better fit than San Jose; it is not a fit at all
 until the city republishes it. **E172's Berkeley paragraph should be read as closed, not open.**
@@ -9714,7 +9714,7 @@ violations over the whole corpus**, which is the thing E172 could assert only ov
 | SF Public Works layer | **67** | `Tools/fetch_city_trees.py`, the existing 67 pages. The worktree had no cache; the shipped seed is `--source city` and E169 records that extract as absent from this machine |
 | DataSF | **2** | `street_tree_list.csv` and the Analysis Neighborhoods GeoJSON, both fetched once by `build_seed.py` |
 | `data.cityofberkeley.info` | **5** | 2 scripted (403), 3 browser page loads and their subresources |
-| `api.us.socrata.com` | **3** | the federated catalogue, to enumerate Berkeley's 66 datasets |
+| `api.us.socrata.com` | **3** | the federated catalog, to enumerate Berkeley's 66 datasets |
 | ArcGIS layer metadata (San Jose) | **1** | field list, before the fetcher existed |
 | **total** | **256** | |
 
@@ -9856,27 +9856,27 @@ Fixed by `LandContext.inferred(from:idSpace:)` returning nil for any space that 
 decision made in passing, and `GROWSPACE` (`Park Strip`, `Well/Pit`, `Median`, `Tree Lawn`) is a
 better signal than `OWNEDBY` anyway. RULINGS R24.
 
-**2. The almanac's neighbourhood framing assumes one city, and it still does.**
+**2. The almanac's neighborhood framing assumes one city, and it still does.**
 
 `seed.neighborhoods` is San Francisco's 41 Analysis Neighborhoods and nothing else. Every San Jose
 row therefore carries `neighborhood_id IS NULL` — 52,788 of the seed's 52,790 nulls — and is
-**invisible to every neighbourhood-scoped surface in the app**, screen 12 included. Nothing renders
+**invisible to every neighborhood-scoped surface in the app**, screen 12 included. Nothing renders
 wrongly; a whole city's rows simply never appear in the almanac, the coverage panel, or the
-neighbourhood species mix.
+neighborhood species mix.
 
-**This is reported and NOT fixed.** A San Jose neighbourhood layer is a source nobody has surveyed, a
+**This is reported and NOT fixed.** A San Jose neighborhood layer is a source nobody has surveyed, a
 `neighborhoods` table that mixes two cities' polygons needs a city column and a rule for what "your
-neighbourhood" means when you are in neither, and both are product decisions this entry has no
+neighborhood" means when you are in neither, and both are product decisions this entry has no
 standing to make. It is a known hole in the shipped build, not a surprise waiting for somebody.
 
-**Two more surfaces were checked and hold.** The species legend and map species colouring key off
-`species.id` and a palette generated per species, and 577 → 738 species changes only how many colours
+**Two more surfaces were checked and hold.** The species legend and map species coloring key off
+`species.id` and a palette generated per species, and 577 → 738 species changes only how many colors
 are minted; `MapContentBudgetTests`' floor is a `>` bound and central San Jose is not denser than
 central San Francisco. `SeedCorpus.densestScreenfulFloor` is unchanged for that reason.
 
-**And one thing worked better than expected: the species catalogue merged rather than duplicated.**
+**And one thing worked better than expected: the species catalog merged rather than duplicated.**
 215 species rows are now carried by trees in *both* cities — `Lophostemon confertus` over 6,746 trees,
-`Magnolia grandiflora` over 6,098 — because `emit()` keys species on the normalised scientific name
+`Magnolia grandiflora` over 6,098 — because `emit()` keys species on the normalized scientific name
 and San Jose's `NAMESCIENTIFIC` lands on San Francisco's existing row. San Jose publishes no common
 name at all, so those 215 species inherit SF's curated one, and the field guide gains no `Unknown` and
 no duplicate. That is the D16 merge working at the smallest scale it can: 376 species carry San Jose
@@ -9912,7 +9912,7 @@ four other call sites do not use it.
 
 **None of this is fixed here, and the reason is a rule rather than a budget.** `SF city inventory`,
 `SF #13284` and `What San Francisco has on file` are copy pinned by SCREENS.md and by four suites.
-ARCHITECTURE §5 rule 8 is that a screen or state not in SCREENS.md is a stop-and-ask, and generalising
+ARCHITECTURE §5 rule 8 is that a screen or state not in SCREENS.md is a stop-and-ask, and generalizing
 a city's name across five surfaces is a design decision about what the app calls a city, not an
 ingest change. It is filed here so the next person makes it deliberately.
 
@@ -9975,7 +9975,7 @@ weaker guarantee of the two and is stated as weaker.
 ### Why there is no `AppSchema` v14, although v14 was reserved for this ticket
 
 **`trees` is not in `AppSchema`.** The app's writable database (`main.*`, `PRAGMA user_version`,
-`AppSchema.migrations`) holds only what the device produces — contributions, the outbox, favourites,
+`AppSchema.migrations`) holds only what the device produces — contributions, the outbox, favorites,
 review flags. The city inventory lives in the **bundled read-only seed**, which carries no
 `user_version`, has no migration list, and is replaced wholesale by a rebuild. Both schema changes
 E169 reproduced are in `Tools/build_seed.py`'s `CREATE TABLE trees`, and `SeedSchema.introspect`
@@ -10003,10 +10003,10 @@ bar never said **what it had understood the query to mean**. A person typing `cy
 changed shape and no way to find out what it had changed *to*, and the status line's own vocabulary
 admits it: `Showing the 6 matching species` names a count where the reader wanted six names.
 
-The defect is worst exactly where E165 made the search best. Since task #108 the catalogue matches a
+The defect is worst exactly where E165 made the search best. Since task #108 the catalog matches a
 word anywhere in either name, so `cypress` resolves to the genus *and* Monterey, Italian, Leyland,
 Hinoki and Montezuma Cypress. That is the fix the owner asked for; it also means a query now routinely
-means six different things at once, and the map draws all six as identically coloured dots. The
+means six different things at once, and the map draws all six as identically colored dots. The
 narrowing got broader and the explanation did not.
 
 **Fixed** by dropping a list of species under the bar as you type: common name in the serif list face,
@@ -10027,14 +10027,14 @@ prefix-matched 97 species before that change and *contains*-matched 555 after it
 is a page of a page, and six rows of five hundred and fifty-five matches drawn with nothing saying so
 is precisely the defect E38 names.
 
-So the remainder is modelled rather than described. `MapSuggestions.Remainder` has three cases and the
+So the remainder is modeled rather than described. `MapSuggestions.Remainder` has three cases and the
 third is the whole point:
 
 | case | when | the sentence |
 |---|---|---|
-| `.none` | every match is on screen and the catalogue's answer was not itself a page | *nothing* |
-| `.exactly(n)` | more matched; the catalogue counted them all | `Showing 6 of 21 matching species. Keep typing to narrow it.` |
-| `.atLeast(n)` | the catalogue returned a full page, so the total is unknown | `Showing 6 of at least 100 matching species. Keep typing to narrow it.` |
+| `.none` | every match is on screen and the catalog's answer was not itself a page | *nothing* |
+| `.exactly(n)` | more matched; the catalog counted them all | `Showing 6 of 21 matching species. Keep typing to narrow it.` |
+| `.atLeast(n)` | the catalog returned a full page, so the total is unknown | `Showing 6 of at least 100 matching species. Keep typing to narrow it.` |
 
 `atLeast` claims the weaker of the two available sentences, for the same reason `isTruncated` does one
 level up: "at least 100" is true when exactly 100 matched *and* when 555 did, and the reverse is not.
@@ -10060,7 +10060,7 @@ The sentence is now pinned under the scroll and inside the accessibility contain
 VoiceOver, and never scrollable away.
 
 **2 · At AX5 the FAB drew on top of that sentence.** Screen 01's chrome is two absolutely positioned
-blocks and the bottom one — recentre, FAB, tree card — was applied *after* the top one, so it won every
+blocks and the bottom one — recenter, FAB, tree card — was applied *after* the top one, so it won every
 overlap. At the drawn size the two never overlap and nobody had noticed in the year the screen has
 existed. At AX5 with the list open, `What tree is this?` sat squarely across the middle of the
 sentence: `Showing 6 of at least 100 match……. Keep ty…… it.` The blocks are now applied in the other
@@ -10205,7 +10205,7 @@ the tree page's *what the city has on file* panel". `legal_status` is one of the
 (3,548 are null).
 
 So for a `city` row, `legal_status` is a value from the *other* inventory joined on `TreeID`. That
-is almost certainly correct behaviour and is what makes §3 of the landmark investigation possible.
+is almost certainly correct behavior and is what makes §3 of the landmark investigation possible.
 But it means a `city` row's `inventory_source` does not describe where every one of its fields came
 from, and the "what the city has on file" panel is quietly showing a reader one inventory's column
 under another inventory's name — the precise thing the `inventory_source` comment says the column
@@ -10661,7 +10661,7 @@ to say — the elder of Golden Gate Park is the elder of whichever sixth of it y
   species and one tree** in the whole file — measured, not assumed — so it is a source-data curiosity
   rather than a pattern; it is worth recording only because that single row happens to be the elder
   of downtown San Jose and therefore sits on the screen's flagship line. Not fixed here: correcting a
-  species row is the species catalogue's business, not screen 12's. (215 species carry no common name
+  species row is the species catalog's business, not screen 12's. (215 species carry no common name
   at all and render their scientific name, which is `SpeciesQueries`' documented E51 fallback and
   predates the second city.)
 - `AlmanacCopy.street(from:)` drops a leading house number. Checked against San Jose's addresses
@@ -10725,12 +10725,12 @@ that shape, because tests written against the old row would have been obsolete t
 | `testTheHiddenFilterIsOnlyInTheTreeWhileTheControlIsOpen` | shut → the drawer's chip is **not in the tree**; open → it is, hittable, announcing `Off`, inside a named group; shut again → gone |
 | `testAShutControlSaysWhatIsSetInsideIt` | `Collapsed` / `Expanded`, and `Collapsed, on: Favorites` when something is set behind it; the selected trait on the shut control; the membership swap crossing the two surfaces; `Clear filters` still reachable |
 | `testClearFiltersAppearsWithTheFilterAndTakesAwayEvenTheHiddenOne` | the one clear-everything control reaches a filter set behind a shut drawer (R23.1 §3) |
-| `testTheEmptyNoticeOffersASecondWayOutAndItWorks` | two controls labelled `Clear filters`, the notice's one hittable, on the card, and it clears |
+| `testTheEmptyNoticeOffersASecondWayOutAndItWorks` | two controls labeled `Clear filters`, the notice's one hittable, on the card, and it clears |
 | `testTheCountYieldsToTheNotice` | R23 §5's conditional: an empty map draws **no** count while the notice is speaking |
 | `testTheResultLineIsOneCountingPhrase` | the count is one element matching `^[0-9]+ tree(s)?(—showing [0-9]+)?$`, and no fragment of it is a separate element |
 | `testTheFilterRowWrapsAndStaysOnThePhoneAtAX5` | AX5 on a 390 pt phone: the size actually arrived, the row uses more than one line, every chip is inside the display and hittable, and so is the chip inside the opened drawer |
 | `testTheEmptyNoticesWayOutIsUnreachableAtAX5` | a defect, pinned — see §2 |
-| `testAnOpenSuggestionListLeavesTheWholeFilterRowOrderedAndHittable` | with a filter on and `Clear filters` present, the list pushes both down rather than covering them, both stay hittable, the row's own order is unchanged, and the `Menu`'s unlabelled leftover element stays unreachable |
+| `testAnOpenSuggestionListLeavesTheWholeFilterRowOrderedAndHittable` | with a filter on and `Clear filters` present, the list pushes both down rather than covering them, both stay hittable, the row's own order is unchanged, and the `Menu`'s unlabeled leftover element stays unreachable |
 
 Five unit tests were added to `CypressTests/MapFilterTests` for the channels a black-box test cannot
 reach: the drawn `More filters (1)` label (the chip overrides its accessibility label, so XCUITest
@@ -10785,7 +10785,7 @@ chips move down rather than being covered, and they stay hittable — but the or
 **Recorded, not fixed.** Making it true means giving screen 01's chrome explicit
 `accessibilitySortPriority` values, which is a change to R25's surface rather than to this ticket's.
 Note also that R25's block reorder (bottom applied first so the top draws over it, added for the FAB
-that was covering the remainder sentence at AX5) is what puts the recentre control and the FAB at the
+that was covering the remainder sentence at AX5) is what puts the recenter control and the FAB at the
 head of the order; that is a consequence nobody had looked at.
 
 #### 4 · **Finding: a SwiftUI `Menu`'s items are in no element tree XCUITest hands back**
@@ -10843,7 +10843,7 @@ is what a maintainer reads six months from now.
 | M3 | `if isExpanded { drawer }` → `drawer.opacity(isExpanded ? 1 : 0)` | `testTheHiddenFilterIsOnlyInTheTreeWhileTheControlIsOpen` — *“Favorites” is reachable while the control holding it is shut — a filter a sighted reader cannot see and an assistive technology can still press* |
 | M4 | `moreValue` returns the state and drops the names | `testAShutControlSaysWhatIsSetInsideIt` — *the map is narrowed by “Favorites” and the shut control announces “Collapsed” — a listener is given no way to find out what is thinning the map* |
 | M5 | `MapFilter.isActive` stops counting `membership` | `testClearFiltersAppearsWithTheFilterAndTakesAwayEvenTheHiddenOne` — *a filter is on behind a shut control and no “Clear filters” is drawn, so the only way out is to remember that it is there* |
-| M6 | the empty notice loses its `actionLabel`/`onAction` (i.e. #116's change reverted) | `testTheEmptyNoticeOffersASecondWayOutAndItWorks` — *an emptied map offers 1 controls labelled “Clear filters”, and R23 requires two* |
+| M6 | the empty notice loses its `actionLabel`/`onAction` (i.e. #116's change reverted) | `testTheEmptyNoticeOffersASecondWayOutAndItWorks` — *an emptied map offers 1 controls labeled “Clear filters”, and R23 requires two* |
 | M7 | delete `guard !pins.isEmpty else { return nil }` from `MapModel.filterResult` | `testTheCountYieldsToTheNotice` — *`["0 trees"]` is not equal to `[]` … a count is sitting in the chrome above it saying the same thing in weaker words (R23 §5)* |
 | M9 | `MapFilterCopy.result` returns a bare `"\(drawn)"` | `testTheResultLineIsOneCountingPhrase` — *narrowing the map to “Southern Magnolia, plum pins marked dot” … put 0 result lines over the map. The tree holds `[]`* |
 | M10 | `FlowRow` stops wrapping (`next > .infinity`) | `testTheFilterRowWrapsAndStaysOnThePhoneAtAX5` — *at AX5 the “Needs care” chip in the row runs to 500.33 pt on a 390.0 pt screen, so the end of its label is off the edge. Its frame is (308.67, 143.33, 191.67, 59.67)* |
@@ -10881,7 +10881,7 @@ UI      Test Suite 'CypressUITests.xctest' passed
 
 Run on iPhone 16e (`3A1F212D-8F3A-41F1-AF72-EC95E155A4C9`), a 390 pt phone, which is the AX5 case the
 ticket names. `testTheResultLineIsOneCountingPhrase`'s guard did not fire: the map opened on the
-default centre and was colouring `Southern Magnolia`.
+default center and was coloring `Southern Magnolia`.
 
 ---
 
@@ -10891,12 +10891,12 @@ default centre and was colouring `Southern Magnolia`.
   one of them is machine-pinned. Both fixes are design decisions inside R23's and R25's territory.
 - **No test drives the year menu** (§4), so no test proves the caveat sentence reaches the tree.
 - **`testTheResultLineIsOneCountingPhrase` carries the only precondition in the file** and it is the
-  legend, which needs a viewport where the map has coloured a species. It skips when there is none —
+  legend, which needs a viewport where the map has colored a species. It skips when there is none —
   and, unlike the two skips #121 is open about, it **prints a banner** naming itself and the `xcrun
   simctl location` that fixes it before it does. On this machine it did not fire: the map opened over
-  the default centre and the legend was showing `Southern Magnolia`.
+  the default center and the legend was showing `Southern Magnolia`.
 - **`testTheEmptyNoticesWayOutIsUnreachableAtAX5` is not mutation-proved**, because its failure mode is
-  structural rather than behavioural: strict `XCTExpectFailure` turns it red exactly when the defect it
+  structural rather than behavioral: strict `XCTExpectFailure` turns it red exactly when the defect it
   records stops happening. Proving that would mean fixing the defect, which is §2's whole point.
 - **No spelling sweep.** `favorites` was renamed in `MapMembership`, `MapFilterCopy`, `LocalAPI`'s one
   switch arm and `MapFilterTests`. The other 157 `favourite`, 422 `centre`, 189 `neighbourhood` and
@@ -11286,7 +11286,7 @@ remakes it. Two things died with it:
    design* ("where you left the map last time" must not drift as the reader pans). So even with no
    fix and no one-shot, a within-session pan reopened on last launch's camera. The plain
    tab-switch-lands-correctly observation in the ticket holds only because an untouched camera and
-   the re-centred one coincide.
+   the re-centered one coincide.
 
 ## The fix, on the seam the brief named
 
@@ -11300,10 +11300,10 @@ remakes it. Two things died with it:
   additive gesture recognizers on the `MKMapView` (`cancelsTouchesInView = false`, simultaneous
   recognition). Never set by comparing camera values — E140 established no such comparison can
   tell a reader's move from a stale update pass. The one-shot consults it: a camera the reader
-  deliberately moved is theirs; a camera they never touched may still centre on them (#115's
+  deliberately moved is theirs; a camera they never touched may still center on them (#115's
   promise kept — the flag is per-process, so a relaunch still opens on the reader).
 
-No re-centre on appearance was added anywhere; the one-shot still fires at most once per process
+No re-center on appearance was added anywhere; the one-shot still fires at most once per process
 unless the reader has claimed the camera, in which case never.
 
 ## Tests
@@ -11311,17 +11311,17 @@ unless the reader has claimed the camera, in which case never.
 - Unit: `MapOpeningCameraTests` — session-beats-launch precedence (and `remembered` still frozen),
   `isWorthRemembering` gating the session snapshot, flag lifecycle. Mutation M-D (note() stops
   writing the session snapshot) went red saying the right thing.
-- UI: `MapPanTabSwitchUITests`, both directions, witnessing the camera through the recentre
+- UI: `MapPanTabSwitchUITests`, both directions, witnessing the camera through the recenter
   control's accessibility value (`MapCentredStateUITests`' technique, fixless-skips included):
   a pan survives Journal-and-back (held open 8 s so a re-arming one-shot would hang itself), and
-  an untouched camera still centres after the round trip.
+  an untouched camera still centers after the round trip.
 
 ### E191 — The location dot jumped between fixes and hid under the pins (tasks #149, #150)
 
 ## #149 — the glide
 
 `Coordinator.syncUserDot` wrote the new fix straight into the annotation's KVO'd `coordinate`, so
-the view moved in one frame: a walking reader's dot teleported a few metres once a second. The fix
+the view moved in one frame: a walking reader's dot teleported a few meters once a second. The fix
 wraps the same write in a `UIView` animation — `MKMapView`'s own mechanism for interpolating an
 annotation between coordinates, on the render server, inside #75's architecture. One object, one
 view, zero SwiftUI passes: nothing per-update touches observable state, so the E139
@@ -11336,7 +11336,7 @@ never happened. Duration is `MapLayout.userDotGlideSeconds` (1 s, linear) to mat
 
 **Verified on the simulator with a moving `simctl location start` scenario, measured rather than
 eyeballed**: an east–west pass at 15 m/s with fixes at 1 Hz, screenshotted every 0.33 s, put the
-dot's measured centre at x = 8 → 100 → 198 px across three consecutive frames — continuous
+dot's measured center at x = 8 → 100 → 198 px across three consecutive frames — continuous
 intermediate positions between fixes, where a snapping dot would have held one x for two of any
 three frames and jumped ~150 px once a second. The dot also survived a 90-second scenario with
 the tree card's distance line updating live. **Device verification is still owed** — E139 stands
@@ -11351,7 +11351,7 @@ declared together so call sites cannot disagree:
 
 - `userDotZPriority = .max` — the dot, topmost, above the selected pin's #89 emphasis too. It is
   small, single, and `isEnabled == false` (it steals no taps from the pins beneath it).
-- `selectedPinZPriority = 750` — above every unselected neighbour (the reticle must not be
+- `selectedPinZPriority = 750` — above every unselected neighbor (the reticle must not be
   half-covered, #89), below the dot.
 - `pinZPriority = .defaultUnselected` — everything else, and the `prepareForReuse` floor.
 
@@ -11849,8 +11849,8 @@ resolves, and nothing where the record does not cover the ground.**
 - `LocalAPI.groveSpecies` prefers `residentNeighborhood` (the exact query it always ran), and where
   that returns nil falls back to the new `GroveQueries.mostVisitedTree` — A4's own inference,
   "resident neighborhood inferred from most-visited", still with **no location permission**: the
-  radius is centred on the tree the contributor's record says they go to, not on where they are
-  standing. No coverage guard is needed on this arm; the centre is itself an inventoried tree, so
+  radius is centered on the tree the contributor's record says they go to, not on where they are
+  standing. No coverage guard is needed on this arm; the center is itself an inventoried tree, so
   the circle covers record by construction.
 
 #### Two copy decisions, both NOT SPECIFIED, recorded here for the owner
@@ -11861,7 +11861,7 @@ resolves, and nothing where the record does not cover the ground.**
    most-visited tree`. The mock draws only the polygon case (`you can recognize in the Outer
    Sunset`); R29's third rule decides the fallback's shape — never dressed as a place, the distance
    stated in the words screen 12's pill already uses for the same 1,200 m, and what the distance is
-   measured *from* said out loud, because "within a 15-minute walk" alone would read as centred on
+   measured *from* said out loud, because "within a 15-minute walk" alone would read as centered on
    the reader and it is not. It never names the city. R29's screen-12 fallback also carries an
    explanatory sentence under the header; this caption was judged to carry the same information in
    its own line, and adding a second sentence to §3's ring would be inventing a surface the mock
@@ -11999,7 +11999,7 @@ that one default let both tests reach their own location guard again (they `XCTS
 fixless device, which is what they do on a clean one too — they are 2 of the suite's 8 skips).
 
 The comment above that assertion says screen 01 "opens at `MapLayout.defaultSpanMetres` — 120 m
-across — either way, and only the centre differs". **That is false whenever a camera is
+across — either way, and only the center differs". **That is false whenever a camera is
 remembered**, which is any device a human or an agent has actually driven. The measurement it
 records was taken before the camera was remembered across launches; it was true then and has not
 been true since. It is the CLAUDE.md rule about confident comments, caught in the act: the comment
@@ -12079,7 +12079,7 @@ exist, which is the defect:
   via `IconTextRow`) — the elder and the first bloom are each **literally** one named tree
   (`ElderTree.treeID`, `BloomFirst.treeID`); `newestNeighbors` names a group and was left with no
   photo id on purpose (see the rule, below). Almost always still the placeholder in practice: the
-  almanac is neighbourhood-wide and this device's `main.photos` holds only what this device itself
+  almanac is neighborhood-wide and this device's `main.photos` holds only what this device itself
   photographed, so a season row draws a real photo only for a tree this installation has actually
   been to.
 - **The map pin card** (`MapCardSubject.heroPhoto`, drawn by `MapTreeCard`) — one tree at a time,
@@ -12106,7 +12106,7 @@ exist, which is the defect:
 - **Screen 02's shortlist / `VisitIdentifyView` candidates.** These name a species suggestion
   during identification, not yet a tree the app has a record of — there is no `treeID` to have
   chosen a photo for.
-- **`ComponentGallery`.** A developer-only catalogue of every drawn component, never a user-facing
+- **`ComponentGallery`.** A developer-only catalog of every drawn component, never a user-facing
   screen.
 
 #### The rule for "which photograph", made a value rather than left to a view
@@ -12177,7 +12177,7 @@ obvious objection before it is made: counts and narrowing facts "already have th
 channels (R23.1: chip fill, count *on the chip*, spoken names) — on the chip is the chip's voice,
 not a companion message". A capsule on the glass is not one of the three.
 
-Removing the sentence and keeping its neighbour would have been precisely the failure R41 was
+Removing the sentence and keeping its neighbor would have been precisely the failure R41 was
 written to end. The ruling says so in terms: this is the third filter-adjacent message to be ruled
 out (#142's growing notice, the R31 correction's empty-filter box), "each time, a message survived
 under a different mechanism. The rule is now categorical so no mechanism can shelter one."
@@ -12223,7 +12223,7 @@ So the sentence dies, and the measurement dies with it: `CypressStore.seedUndate
 dead code, and leaving the property in place unread is the #62/E126 shape the brief warned against.
 
 **R43 §5 needs striking in `docs/RULINGS.md` at merge.** Nothing else in R43 is affected — §1–§4 and
-§6 are untouched, and the city-downloads feature loses no behaviour: the undated share was never
+§6 are untouched, and the city-downloads feature loses no behavior: the undated share was never
 read by anything except the caveat.
 
 ### The three tests that went with it
@@ -12411,7 +12411,7 @@ Both call sites now use `try` (with the enclosing test made `throws`). Red-proof
 `24D1629F-9FA8-4E3D-812E-F6BC85C9E668`: the nudge loop widened to `1...16` and the city record
 changed to `CityRecord(legalStatus: "Undocumented", caretaker: nil)`. Both went red **at the
 `#require` line itself** — `PinAdjustTests.swift:81` and `CityRecordTests.swift:333` — with
-`Expectation failed: … → nil`, which is the reason expected and not merely the colour expected.
+`Expectation failed: … → nil`, which is the reason expected and not merely the color expected.
 Both were restored and the full unit suite re-run green.
 
 #### The rule
@@ -12460,7 +12460,7 @@ number in the fixture had been right about a file, not about the pipeline, for s
 
 #### 2 · One plant, several spellings — and #103 fixes only the unreadable ones
 
-The catalogue carries the same plant under spellings that differ by more than case, so the seed's
+The catalog carries the same plant under spellings that differ by more than case, so the seed's
 own key (`normalise_species_key`, which lowercases and collapses whitespace) cannot merge them:
 
 - `Arbutus 'Marina'` · `Arbutus marina` · `Arbutus ‘Marina’` — straight quotes, none, typographic
@@ -12480,7 +12480,7 @@ which names two species this inventory carries separately. Typographic-versus-st
 one subgroup that looks mechanical enough to fix without a source, and even there `Arbutus ‘Marina’`
 and `Arbutus 'Marina'` being the same plant is an inference about a keyboard, not a citation.
 
-Anyone taking this on should note it changes species uuids (`uuid5` of the normalised name), which
+Anyone taking this on should note it changes species uuids (`uuid5` of the normalized name), which
 is the thing the seed is careful never to move.
 
 ### E209 — The San-Francisco-assumption family, swept: four more members, and the two shapes they come in (found while fixing #181)
@@ -12571,11 +12571,11 @@ other label.
 consumed by `MapOpeningCamera.openingRegion` and `PinSetPresentation.frame(around:)`, with the copy
 at `MapOpeningCamera.swift:360`: `"The map is over the middle of the city."`
 
-Documented as "near enough the centre of the inventory", which was true when the inventory was one
+Documented as "near enough the center of the inventory", which was true when the inventory was one
 city. Under R43 a reader can attach San Jose's file as the *only* inventory; on a cold launch with no
 fix they are dropped on San Francisco and told the map is over the middle of the city, above ground
 the attached inventory does not cover. Lower severity than B1/B2 and it needs a data-side companion
-— `CityManifest.City` carries no centre or bbox to derive one from — which is likely why it survived.
+— `CityManifest.City` carries no center or bbox to derive one from — which is likely why it survived.
 
 ---
 
@@ -12772,7 +12772,7 @@ and E23 was closed by **AppSchema v3**, which made `private_reminders.user_id` n
 v5 did it for `favorites`, v12 for `photos`. `community_notes` is the table that never got the
 treatment.
 
-**2 · The anonymizing door cannot honour a note.** DECISIONS §3.12 anonymizes attributed rows;
+**2 · The anonymizing door cannot honor a note.** DECISIONS §3.12 anonymizes attributed rows;
 `RULINGS R3` refined it to *anonymize what the forest keeps, delete what only one person could ever
 see*. A community note is public — the forest keeps it — so it must be anonymizable, and
 `user_id NOT NULL` means it cannot be. `AccountDeletion.Outcome.communityNotesLeftAttributed` exists
@@ -12904,7 +12904,7 @@ built. **All four are exactly right.**
 
 2. **San Francisco has the same defect, in its own data.** `site_type` is the bare separator `:` on
    **4,608 SF rows** — `qSiteInfo`'s two halves with both halves empty — and it drew `Site — :` on
-   screen 14 and on screen 19. E209 characterised Shape B as San Jose's problem; it is not. The
+   screen 14 and on screen 19. E209 characterized Shape B as San Jose's problem; it is not. The
    count of rows drawing a `Site` card that states nothing is **30,445** across the two cities.
 
 3. **Screen 19 is not a footnote here.** 5,393 of San Jose's 11,787 vacant planting sites in the
@@ -12974,14 +12974,14 @@ test too.
 
 **The general rule, which is why this is an errata entry and not a commit message: a guard must not
 use the code it guards as its oracle, and the only thing that detects one that does is a red-proof
-you actually read.** A red-proof that is run but whose colour is assumed is worth nothing here — this
+you actually read.** A red-proof that is run but whose color is assumed is worth nothing here — this
 one was green when it should have been red, and looked exactly like a passing test.
 
 #### Left alone, deliberately
 
 E209's other members are untouched and still want tickets: `SharePresentation.ShareCopy.city`
 (Shape A — needs a source for a short civic name no table carries) and `MapKitBasemap.defaultCentre`
-(Shape B — needs a per-city centre `CityManifest.City` does not carry).
+(Shape B — needs a per-city center `CityManifest.City` does not carry).
 
 **#134 was read and not taken.** It is the observation that a `city` row's `inventory_source` does
 not describe where every one of its fields came from — 130,029 of the 133,577 `city` rows carry a
@@ -13016,7 +13016,7 @@ locations of assets like trash cans, picnic tables, benches, etc"*. Its `asset_t
 arbor — and **no tree**. Measured twice, through Socrata and directly against the ArcGIS layer; the
 two agree exactly, so the open-data mirror is not a filtered subset.
 
-The city's ArcGIS Online organisation (`services.arcgis.com/Zs2aNLFN00jrS4gG`, 2,075 services, the
+The city's ArcGIS Online organization (`services.arcgis.com/Zs2aNLFN00jrS4gG`, 2,075 services, the
 same org `BUF_Street_Trees` lives in) was searched two ways — a name scan of the whole service
 directory and a full-text item search, which catches services with opaque names. 68 tree items;
 every one belongs to Public Works, SF Environment, SF Planning, 311 or SFO. The Rec & Park staff
@@ -13030,7 +13030,7 @@ of the Urban Forest Plan would cover parks and open space. Ten years on, none ha
 
 A bounding box is not good enough here: the usual Golden Gate Park rectangle contains Fulton,
 Lincoln, Stanyan and the whole Richmond and Sunset frontage. So the boundary used is Rec & Park's
-own — the `Recreation_and_Parks_Properties` feature labelled `Golden Gate Park`, `complex = All
+own — the `Recreation_and_Parks_Properties` feature labeled `Golden Gate Park`, `complex = All
 Sections`, 1,031.65 acres — and the test is point-in-polygon over `Fixtures/seed/cypress-seed.sqlite`.
 
 | | rows |
@@ -13086,12 +13086,12 @@ Two sources were refused deliberately rather than left to be rediscovered:
 
 - **SFO's tree inventory** (`SFO_TREE`, 3,128 rows with genus, species, DBH, spread, height,
   condition) is real, publicly published, and a City and County of San Francisco department's. It is
-  also twelve miles outside the city, in San Mateo County, outside all 41 analysis neighbourhoods,
+  also twelve miles outside the city, in San Mateo County, outside all 41 analysis neighborhoods,
   and nowhere near a park. Ingesting it would answer a different question than the one asked.
 - **The San Francisco Botanical Garden's Garden Explorer** (`sfbg.gardenexplorer.org`) is the only
   accessible record of individually located plants inside Golden Gate Park, but it is a 501(c)(3)'s
   garden accession list rather than a municipal inventory, it asserts copyright with no stated
-  licence, and it offers no export. Under #106's own data-fetching rules that is a stop-and-ask.
+  license, and it offers no export. Under #106's own data-fetching rules that is a stop-and-ask.
 
 #### Addendum, 2026-08-03 (#190): the 65 is not reproducible from anything the app ships
 
@@ -13208,8 +13208,8 @@ They look like a defect in whatever you just changed, because they are two tests
 they name the map.
 
 **The cause.** The device's location fix was `37.769402, -122.486198` — the western end of Golden
-Gate Park. Screen 01 opens at `MapLayout.defaultSpanMetres`, 120 m across, **centred on the user**.
-The seed holds **zero** trees within 200 m of that point and 3,230 within a kilometre, so the map
+Gate Park. Screen 01 opens at `MapLayout.defaultSpanMetres`, 120 m across, **centered on the user**.
+The seed holds **zero** trees within 200 m of that point and 3,230 within a kilometer, so the map
 opened over a rectangle of the city that SF's *street* tree inventory does not cover, and drew
 nothing. `reachAlmanac` then waited thirty seconds for a pin that was never going to appear.
 
@@ -13235,7 +13235,7 @@ states it reasoned about.
    launch, and the log's next header showed the identical coordinate back again.
 2. Ran the same two tests at the **merge base** `10c8bd9`, on the same device, with none of the
    branch's changes present: **same two failures**. That is #183's control, and it settles authorship.
-3. `xcrun simctl location <udid> set 37.7596,-122.4269` — the map's own default centre, 36 trees
+3. `xcrun simctl location <udid> set 37.7596,-122.4269` — the map's own default center, 36 trees
    within 200 m — and re-ran: **`Executed 2 tests, with 0 failures`**. Then the full suite:
    `** TEST SUCCEEDED **`, 70 executed, 0 failures.
 
@@ -13252,7 +13252,7 @@ the `CYPRESS-RUN` header and ask the seed how many trees are near it. If the ans
 fix rather than the code. `xcrun simctl location <udid> set 37.7596,-122.4269` is the repair; note
 that `simctl location clear` does **not** unfix a device (CLAUDE.md), so clearing is not it.
 
-The device was left with the fix at the default centre.
+The device was left with the fix at the default center.
 
 **Worth mechanizing, not done here.** `run_tests.sh` already knows the camera and the worktree, so it
 could count seed trees inside the remembered viewport and refuse on zero with the same voice it uses

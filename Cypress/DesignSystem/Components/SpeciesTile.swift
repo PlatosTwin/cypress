@@ -13,9 +13,9 @@ import SwiftUI
 struct SpeciesTile: View {
 
     enum Content {
-        /// A species the user can recognise. Art comes from `CypressGradient.SpeciesTileArt`.
+        /// A species the user can recognize. Art comes from `CypressGradient.SpeciesTileArt`.
         case known(CypressGradient.SpeciesTileArt)
-        /// A species not yet learned — `#E9ECDE` with a centred `?`.
+        /// A species not yet learned — `#E9ECDE` with a centered `?`.
         case locked
     }
 
@@ -26,8 +26,8 @@ struct SpeciesTile: View {
     /// `SpeciesTileArt.label` was doing both jobs. The seed carries 569 species and §2 authors art
     /// for seven, so on any real grove the two come apart: the art is chosen by genus or by a stable
     /// hash (`SpeciesTileArtwork`) while the name has to be the species' own. Left unset the tile
-    /// printed the *artwork's* name — a Maidenhair Tree drawn with the Ginkgo gradient was labelled
-    /// `Ginkgo`, and a species with no genus match was labelled with whatever the hash landed on.
+    /// printed the *artwork's* name — a Maidenhair Tree drawn with the Ginkgo gradient was labeled
+    /// `Ginkgo`, and a species with no genus match was labeled with whatever the hash landed on.
     /// That is fabricated botany on screen (BUILD-PLAN §15). See ERRATA E51.
     var label: String?
     var action: (() -> Void)?

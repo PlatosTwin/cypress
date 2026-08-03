@@ -2,9 +2,9 @@
 //  VisitMetrics.swift
 //  Cypress — Features/Visit
 //
-//  The geometry and the handful of colours that SCREENS.md states for screens 02, 04 and 18 but
+//  The geometry and the handful of colors that SCREENS.md states for screens 02, 04 and 18 but
 //  that `CypressSpacing.Component` / `CypressColor` do not carry, because they are used on exactly
-//  one screen and the token files transcribe §1 and §2 (the catalogue), not §3 (the screens).
+//  one screen and the token files transcribe §1 and §2 (the catalog), not §3 (the screens).
 //
 //  ARCHITECTURE §6's rule is "a literal in `Features/` is a bug" — the point of the rule is that a
 //  value has one home and a spec change has one place to land. That is what this file is: every
@@ -92,7 +92,7 @@ enum VisitMetrics {
         /// that they can fill out."* Measured on the running app, iPhone 16e (390 × 844 pt): the
         /// composer's scroll viewport was 573 pt and the well drew 476 of it — **83 %**. At AX5 the
         /// viewport falls to 247 pt and the well's 476 does not fit in it at all, so the entire
-        /// first screenful was one grey box clipped at the footer, with the form, the pin row and
+        /// first screenful was one gray box clipped at the footer, with the form, the pin row and
         /// the land question all below a fold nothing on the screen admitted to. On the 393 × 852
         /// phone the tests host, the same two are 481 pt of a 617 pt viewport — 78 % — and 219
         /// *drawn* rows of a 287 pt one, 219 being where the footer cut the well off.
@@ -142,23 +142,23 @@ enum VisitMetrics {
     /// screen's argument rather than its geometry and the model enforces them without drawing
     /// anything.
     enum PinAdjust {
-        /// How much of the city the map opens on, in metres across, when the pin screen appears.
+        /// How much of the city the map opens on, in meters across, when the pin screen appears.
         ///
         /// **Not a spec value** — the screen has no mock. 200 m rather than `MapLayout
-        /// .defaultSpanMetres`' 120: the pin may travel 75 m in any direction, which is a 150 m
+        /// .defaultSpanMeters`' 120: the pin may travel 75 m in any direction, which is a 150 m
         /// circle, and a reader who cannot see the whole area the pin is allowed into has to zoom out
         /// before they can aim. The 50 m of margin on top is what keeps the boundary off the bezel.
         static let openingSpanM: Double = 200
 
         /// The pin's opacity once it is past the limit.
         ///
-        /// Faded rather than recoloured: Signal Amber means "this tree needs something" (§1.1) and a
+        /// Faded rather than recolored: Signal Amber means "this tree needs something" (§1.1) and a
         /// pin that is merely too far from the reader is not that. 0.4 is far enough down to read as
         /// "this is not live" at a glance without the pin disappearing off a busy basemap — the reader
         /// still has to be able to find it to bring it back.
         static let beyondLimitOpacity: Double = 0.4
 
-        /// Below this many metres, the camera has not moved.
+        /// Below this many meters, the camera has not moved.
         ///
         /// `onMapCameraChange(.continuous)` fires on layout, on the settling frames of a
         /// programmatic move, and on every frame of a pan, and only the last of those means the
@@ -338,7 +338,7 @@ enum VisitMetrics {
     }
 }
 
-// MARK: - Screen-local colours
+// MARK: - Screen-local colors
 
 /// The three fills SCREENS.md states inside screen 04's body and screen 18's route map that §1/§2
 /// do not tokenise. Same convention as `CypressColor`: hex quoted from the spec line, one home.

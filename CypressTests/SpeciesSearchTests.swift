@@ -13,7 +13,7 @@ import Testing
 ///
 /// Every expectation below names real rows of the shipped seed. That is deliberate: a fixture built
 /// for the test could not have caught the original defect, because the original defect was that the
-/// query disagreed with the catalogue about what the word "cypress" refers to.
+/// query disagreed with the catalog about what the word "cypress" refers to.
 @Suite("Species search")
 struct SpeciesSearchTests {
 
@@ -39,7 +39,7 @@ struct SpeciesSearchTests {
 
     /// The owner's sentence, as an assertion: "should bring up all Monterey cypress not just cypress
     /// spp". All six of the seed's Cypresses, named.
-    @Test("typing cypress finds every Cypress in the catalogue, not just the one called Cypress")
+    @Test("typing cypress finds every Cypress in the catalog, not just the one called Cypress")
     func cypressFindsEveryCypress() async throws {
         let matches = try await Self.search("cypress")
         let found = Set(Self.names(matches))
@@ -105,14 +105,14 @@ struct SpeciesSearchTests {
     /// Case is ignored on both sides, which is the whole point of an autocomplete field and was true
     /// of the range scan's `COLLATE NOCASE` before it. `LIKE`'s default ASCII case folding is the
     /// same fold, so this is a property being *kept*, not a new one.
-    @Test("matching ignores case in the query and in the catalogue")
+    @Test("matching ignores case in the query and in the catalog")
     func matchingIsCaseInsensitive() async throws {
         let lower = try await Self.search("cypress")
         let upper = try await Self.search("CYPRESS")
         let mixed = try await Self.search("CyPrEsS")
         #expect(Set(lower.map(\.id)) == Set(upper.map(\.id)))
         #expect(Set(lower.map(\.id)) == Set(mixed.map(\.id)))
-        // `Hinoki cypress` is stored lowercase; finding it at all proves the catalogue side folds.
+        // `Hinoki cypress` is stored lowercase; finding it at all proves the catalog side folds.
         #expect(Self.names(upper).contains("Hinoki cypress"))
     }
 
@@ -120,11 +120,11 @@ struct SpeciesSearchTests {
 
     /// `%` and `_` are `LIKE`'s wildcards, and a query is user input.
     ///
-    /// Unescaped, a lone `%` matches every name in the catalogue: the map would narrow to the first
+    /// Unescaped, a lone `%` matches every name in the catalog: the map would narrow to the first
     /// 100 species for a keystroke that means nothing, and `_` would silently match any character
     /// inside a cultivar name typed with one. Escaped, both are ordinary characters — and no species
     /// name contains either, so both queries correctly find nothing.
-    @Test("LIKE's own wildcards are matched literally, not honoured")
+    @Test("LIKE's own wildcards are matched literally, not honored")
     func wildcardsInTheQueryAreEscaped() async throws {
         let percent = try await Self.search("%")
         let underscore = try await Self.search("_")
@@ -157,7 +157,7 @@ struct SpeciesSearchTests {
         #expect(newlines.isEmpty)
     }
 
-    @Test("the limit is honoured, and it is a page of the ranking rather than of the table")
+    @Test("the limit is honored, and it is a page of the ranking rather than of the table")
     func theLimitTakesTheTopOfTheRanking() async throws {
         let all = try await Self.search("oak", limit: 100)
         let three = try await Self.search("oak", limit: 3)

@@ -46,7 +46,7 @@ import SwiftUI
 /// snapshot skew can turn an old request into a new one.**
 ///
 /// It also retires the heuristic it replaces. The layer used to notice a pan by measuring how far the
-/// camera had drifted from the request, purely so that pressing the recentre control twice was not
+/// camera had drifted from the request, purely so that pressing the recenter control twice was not
 /// swallowed as a duplicate value (#66). A press now mints a ticket whether or not it asks for the
 /// same place, so the second press works by construction and the settle handler has nothing to say.
 struct MapCameraRequest: Equatable {
@@ -74,7 +74,7 @@ struct MapCameraRequest: Equatable {
         MapCameraRequest(region: region, sequence: 0)
     }
 
-    /// A camera somebody asked for: a press of the recentre control, a cluster tap, a nudge of a
+    /// A camera somebody asked for: a press of the recenter control, a cluster tap, a nudge of a
     /// pin. Always a new request, even when it names the same place as the last one.
     static func move(to region: MKCoordinateRegion) -> MapCameraRequest {
         ticket += 1
@@ -95,10 +95,10 @@ struct MapKitBasemap: View {
     @Binding var region: MKCoordinateRegion
     let clusters: [TreeCluster]
     let pins: [TreePin]
-    /// Which species hold the four colour slots for these pins (task #80). Defaults to nothing,
+    /// Which species hold the four color slots for these pins (task #80). Defaults to nothing,
     /// because the two other screens that draw this basemap — 16's pin adjust and the pin-set map —
-    /// are about *one* tree and its neighbours rather than about the mix of species on a street, and
-    /// a species colouring there would be four hues answering a question nobody is asking.
+    /// are about *one* tree and its neighbors rather than about the mix of species on a street, and
+    /// a species coloring there would be four hues answering a question nobody is asking.
     var speciesPalette: MapSpeciesPalette = .empty
     let userCoordinate: Coordinate?
     let selectedPinID: UUID?
@@ -107,7 +107,7 @@ struct MapKitBasemap: View {
     var onSelectPin: (TreePin) -> Void
     var onSelectCluster: (TreeCluster) -> Void
     /// A pan or pinch began on the glass (task #128). Nil on the two one-tree screens, which have
-    /// no auto-centring to gate. See `MapAnnotationLayer.onReaderGesture`.
+    /// no auto-centering to gate. See `MapAnnotationLayer.onReaderGesture`.
     var onReaderGesture: (() -> Void)?
 
     var body: some View {
@@ -138,7 +138,7 @@ struct MapKitBasemap: View {
 // MARK: - Layout constants
 
 /// The numbers SCREENS.md 01 gives as absolute positions in its 874pt frame, plus the few this
-/// screen needs that no component owns. Colours, fonts, radii and shadows are **never** here —
+/// screen needs that no component owns. Colors, fonts, radii and shadows are **never** here —
 /// those are `CypressColor` / `CypressFont` / `CypressRadius` / `CypressShadow` (ARCHITECTURE §6).
 enum MapLayout {
 
@@ -166,9 +166,9 @@ enum MapLayout {
     static let fabPaddingH: CGFloat = 20
     static let fabSpacing: CGFloat = 9
 
-    // MARK: The recentre control
+    // MARK: The recenter control
 
-    /// **NOT SPECIFIED** — see `MapRecentre` for why this control exists and why it is ours. The
+    /// **NOT SPECIFIED** — see `MapRecenter` for why this control exists and why it is ours. The
     /// numbers are its own; SCREENS.md 01 gives none, so they are derived from what is already drawn.
     ///
     /// The gap to the FAB below it is the same 12 the search bar keeps from the chip row, which is
@@ -215,13 +215,13 @@ enum MapLayout {
     // put on top and the most expensive to lose.
     //
     // The selected pin sits *under* the dot for the same reason stated from the other side: #89's
-    // reticle exists to make one pin findable among neighbours, and the reader's own position
+    // reticle exists to make one pin findable among neighbors, and the reader's own position
     // outranks even that — a selection half-covered by the dot is still findable (the rings are
     // outside the dot's footprint at any overlap), where a dot behind a scaled selected pin is
     // simply gone.
     /// The reader's dot. `MKAnnotationViewZPriority.max` — nothing may be given a higher one.
     static let userDotZPriority = MKAnnotationViewZPriority.max
-    /// The selected pin: above every unselected neighbour (two pins 20 pt apart overlap inside
+    /// The selected pin: above every unselected neighbor (two pins 20 pt apart overlap inside
     /// 36 pt of reticle), below the dot.
     static let selectedPinZPriority = MKAnnotationViewZPriority(
         rawValue: (MKAnnotationViewZPriority.max.rawValue + MKAnnotationViewZPriority.defaultUnselected.rawValue) / 2
@@ -243,7 +243,7 @@ enum MapLayout {
 
     /// A jump longer than this snaps instead of gliding, in degrees of latitude/longitude.
     ///
-    /// ~0.01° is about a kilometre: no pedestrian, cyclist or bus covers it between two fixes, so
+    /// ~0.01° is about a kilometer: no pedestrian, cyclist or bus covers it between two fixes, so
     /// a delta past it is a teleport — a simulator's `simctl location set`, a cold fix correcting
     /// a cached one — and a dot seen sliding across the city at 1 km/s would be the animation
     /// claiming a journey that never happened.
@@ -255,26 +255,26 @@ enum MapLayout {
     // A scale was "deliberately the smallest change that still answers the tap", and on the screen
     // it was drawn against — a handful of pins around one tree — it was enough. On a Mission block
     // the map draws up to 288 pins, and 1.25 of 18 pt is 22.5 pt: a pin two and a half points wider
-    // than thirty identical neighbours, which is not a thing a reader can find. The card at the
+    // than thirty identical neighbors, which is not a thing a reader can find. The card at the
     // bottom names the tree and the map does not say which dot it is talking about.
     //
-    // ── What replaces it, and why it cannot be read as a species colour ────────────────────────
-    // Two concentric rings **outside** the pin, in ink and in the ring colour, and the scale stays.
+    // ── What replaces it, and why it cannot be read as a species color ────────────────────────
+    // Two concentric rings **outside** the pin, in ink and in the ring color, and the scale stays.
     // Three properties make it unconfusable with the species palette, by construction rather than by
     // taste:
     //
     //   1. **It is achromatic.** `textInk` and `pinRingStroke` are the near-black and the white of
     //      the app's two ends; every species slot is a chromatic fill at OKLCh chroma ≥ 0.08. A
-    //      reader cannot mistake a black-and-white ring for one of four hues, and a colour-blind
+    //      reader cannot mistake a black-and-white ring for one of four hues, and a color-blind
     //      reader — for whom the four hues are the *hardest* thing on the map — finds this one
     //      easiest.
     //   2. **It is outside the pin's own footprint**, at 1.7× and 2× the 18 pt dot, where no pin of
-    //      any kind ever draws fill. Species colour is always *inside* a pin.
+    //      any kind ever draws fill. Species color is always *inside* a pin.
     //   3. **It is a ring, not a fill**, and there is only ever one of them on the map.
     //
     // Two rings rather than one because the ground is a live MapKit basemap: a white ring vanishes on
     // the paper and an ink one vanishes over a park polygon after dark, so the mark carries both ends
-    // of the ramp and one of them always reads. The inner ring takes the outer's colour in the other
+    // of the ramp and one of them always reads. The inner ring takes the outer's color in the other
     // appearance, which is the same crossed-over trick C19's FAB glyph already uses.
     //
     // It costs **no new bitmap**. The rings are `CALayer`s on the one selected marker view, the way
@@ -305,18 +305,18 @@ enum MapLayout {
 
     // MARK: Camera
 
-    /// Where the map opens when there is no fix: Mission Dolores Park, near enough the centre of
+    /// Where the map opens when there is no fix: Mission Dolores Park, near enough the center of
     /// the inventory that the first screen is full of trees wherever the user actually is.
     /// (An earlier comment here claimed the Sunset, the corner of the city SCREENS.md 01 draws.
     /// The coordinate has always been Dolores Park; the prose was wrong, not the number.)
     static let defaultCenter = Coordinate(latitude: 37.7596, longitude: -122.4269)
 
-    /// Where the map opens, in metres across the short edge of the phone.
+    /// Where the map opens, in meters across the short edge of the phone.
     ///
     /// SCREENS.md gives no opening zoom, and the number is the whole difference between a map and a
     /// stain. A1 (BUILD-PLAN §11) starts drawing individual pins at zoom 16; on this phone zoom 16
     /// is 742 m wide, and 742 m of San Francisco is a median of 1,807 street trees — 4,556 at this
-    /// very coordinate. 98.6 % of trees in the seed are closer to their nearest neighbour than one
+    /// very coordinate. 98.6 % of trees in the seed are closer to their nearest neighbor than one
     /// 18 pt pin diameter at that scale, so the pin layer's own first zoom is the worst it ever
     /// looks. E12 has the full table.
     ///
@@ -332,7 +332,7 @@ enum MapLayout {
     ///
     /// One consequence worth knowing before it is reported as a bug: the seed is the *street* tree
     /// list, so standing in the middle of a large park opens on a screen with no pins on it. At
-    /// Mission Dolores Park — 390 m across, and the fallback centre above — the nearest inventoried
+    /// Mission Dolores Park — 390 m across, and the fallback center above — the nearest inventoried
     /// tree is on 18th or 20th St, outside a 120 × 261 m view. That is the honest answer to "what is
     /// near me", not a failure to load; the trees appear as soon as the camera reaches a street.
     static let defaultSpanMeters: CLLocationDistance = 120

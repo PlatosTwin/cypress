@@ -50,7 +50,7 @@ struct GrovePresentationTests {
         )
     }
 
-    /// `count` species in the neighbourhood, the first `known.count` of which are the known ones.
+    /// `count` species in the neighborhood, the first `known.count` of which are the known ones.
     private static func neighborhood(
         totalling count: Int,
         complete: Bool = true,
@@ -80,7 +80,7 @@ struct GrovePresentationTests {
 
     // MARK: - The ring, when it is honest
 
-    @Test("The ring reads species recognised over species the city records nearby")
+    @Test("The ring reads species recognized over species the city records nearby")
     func ringCountsSpeciesNotActions() throws {
         let subject = Self.presentation(
             known: (1...12).map { Self.known($0) },
@@ -97,7 +97,7 @@ struct GrovePresentationTests {
 
     @Test("A species known but not growing nearby raises no numerator")
     func numeratorIsTheIntersection() throws {
-        // Twelve known, but four of them are not in the neighbourhood's forty at all.
+        // Twelve known, but four of them are not in the neighborhood's forty at all.
         let known = (1...8).map { Self.known($0) } + (41...44).map { Self.known($0) }
         let subject = Self.presentation(known: known, neighborhood: Self.neighborhood(totalling: 40))
         let progress = try #require(subject.progress)
@@ -131,10 +131,10 @@ struct GrovePresentationTests {
         #expect(subject.footnote == "Quiet collecting. There are no streaks and no leaderboards.")
     }
 
-    @Test("Zero recognised species renders no ring rather than a ring at zero")
+    @Test("Zero recognized species renders no ring rather than a ring at zero")
     func zeroRecognizedIsBelowThreshold() {
-        // A contributor whose only species does not grow in their own neighbourhood: the
-        // neighbourhood is known, the denominator is known, and the numerator is 0.
+        // A contributor whose only species does not grow in their own neighborhood: the
+        // neighborhood is known, the denominator is known, and the numerator is 0.
         let subject = Self.presentation(
             known: [Self.known(99)],
             neighborhood: Self.neighborhood(totalling: 40)
@@ -145,7 +145,7 @@ struct GrovePresentationTests {
         #expect(subject.tiles.contains { $0.isKnown })
     }
 
-    @Test("One recognised species is the threshold, and it renders")
+    @Test("One recognized species is the threshold, and it renders")
     func oneRecognizedSpeciesRenders() throws {
         let subject = Self.presentation(
             known: [Self.known(1)],
@@ -154,7 +154,7 @@ struct GrovePresentationTests {
         #expect(try #require(subject.progress).headline == "1 of 40 species")
     }
 
-    @Test("A neighbourhood the city has no species for renders no ring")
+    @Test("A neighborhood the city has no species for renders no ring")
     func emptyNeighborhoodRendersNothing() {
         let subject = Self.presentation(
             known: [Self.known(1)],
@@ -179,7 +179,7 @@ struct GrovePresentationTests {
         #expect(subject.tiles.filter(\.isKnown).count == 12)
     }
 
-    @Test("A page of the neighbourhood's species prints no fraction")
+    @Test("A page of the neighborhood's species prints no fraction")
     func pagedDenominatorPrintsNothing() {
         let subject = Self.presentation(
             known: (1...12).map { Self.known($0) },
@@ -188,7 +188,7 @@ struct GrovePresentationTests {
         #expect(subject.progress == nil)
     }
 
-    @Test("Filtering the known series to the neighbourhood cannot launder a page into a total")
+    @Test("Filtering the known series to the neighborhood cannot launder a page into a total")
     func intersectionKeepsIncompleteness() {
         // The guarantee `Series.filter` gives, exercised through the screen that depends on it: a
         // page filtered by a visibility rule is still a page.
@@ -217,7 +217,7 @@ struct GrovePresentationTests {
 
     @Test("Locked tiles square off the last row and never out-run what is left to meet")
     func lockedTilesPadTheRow() {
-        // Seven known in a 3-column grid leaves two cells in the last row, and the neighbourhood has
+        // Seven known in a 3-column grid leaves two cells in the last row, and the neighborhood has
         // thirty-three species left, so both are drawn — the mock's nine cells exactly.
         let padded = Self.presentation(
             known: (1...7).map { Self.known($0) },

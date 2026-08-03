@@ -247,7 +247,7 @@ struct YouTabView: View {
     /// The wi-fi preference (C25), the one setting `AppStateKey` persists.
     ///
     /// It is a *sync* setting and not a privacy one — it decides when photo binaries leave the
-    /// phone, not who may see them — and it is labelled as what it is. Screen 17 §3 draws the same
+    /// phone, not who may see them — and it is labeled as what it is. Screen 17 §3 draws the same
     /// control; both read and write the one `OutboxViewState`, so they cannot disagree.
     private var settingsSection: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -365,7 +365,7 @@ enum YouCopy {
     /// **Stated rather than switched, and that is the finding this screen exists to surface.**
     ///
     /// D11's privacy toggle is `User.publicAttribution` — "contribution feeds private by default
-    /// with opt-in public attribution". It is modelled in `Core` and it is not settable anywhere:
+    /// with opt-in public attribution". It is modeled in `Core` and it is not settable anywhere:
     /// there is no `users` table in `AppSchema`, no `CypressAPI` method that reads or writes it, and
     /// no account on any device the app currently runs on (ERRATA E86). A switch here would be a
     /// control that forgets what it was told, which is worse than no control at all.

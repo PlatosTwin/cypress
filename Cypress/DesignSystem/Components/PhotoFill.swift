@@ -19,7 +19,7 @@
 //  which is exactly the report that found it: once the ghost overlay appeared, the note box and the
 //  Log visit button ran off the right edge and were cut off (ERRATA E125).
 //
-//  `Color.clear` is the fix and it is not a trick. A colour takes the size it is proposed and no
+//  `Color.clear` is the fix and it is not a trick. A color takes the size it is proposed and no
 //  other, an `.overlay` is sized by its parent rather than the other way round, and `.clipped()`
 //  keeps the overspill inside. So the reported size is the proposal, always, whatever the aspect
 //  ratio of the photograph — the same guarantee `.aspectRatio(contentMode: .fill)` cannot give.
@@ -52,9 +52,9 @@
 //  upright is 3:4. Scaled to fill a 393 pt wide hero it is 524 pt tall, of which 224 is drawn — 43%
 //  of the picture, taken from the middle, so rows 28.5% to 71.5% survive and everything outside them
 //  is thrown away. A street tree photographed from the pavement has its crown in the top third and
-//  its trunk and the kerb in the bottom third; the middle 43% of that frame is upper trunk and the
+//  its trunk and the curb in the bottom third; the middle 43% of that frame is upper trunk and the
 //  underside of the canopy. The crown — the part that says which species this is, and whether it is
-//  in leaf, in flower or dead — is exactly the part a centred crop removes. The tree is tall and
+//  in leaf, in flower or dead — is exactly the part a centered crop removes. The tree is tall and
 //  portrait is the right way to photograph it, so this is the common case and not an edge one.
 //
 //  So the default anchor is the crown: the alignment guide sits one third of the way down both the
@@ -63,8 +63,8 @@
 //  whole tree leaves headroom above the crown, and an anchor that keeps the headroom and drops the
 //  tree has swapped one bad crop for another.
 //
-//  `.centre` stays available and screen 04 uses it, for a reason that is not taste — see
-//  `PhotoCropAnchor.centre`.
+//  `.center` stays available and screen 04 uses it, for a reason that is not taste — see
+//  `PhotoCropAnchor.center`.
 //
 
 import SwiftUI
@@ -73,7 +73,7 @@ import SwiftUI
 ///
 /// Vertical only. Every fixed frame in this app is wider than a phone photograph is, so the crop
 /// that matters is the one along the tall edge; the horizontal crop of a landscape shot takes
-/// equally from two sides of a subject that is centred in the frame anyway.
+/// equally from two sides of a subject that is centered in the frame anyway.
 enum PhotoCropAnchor {
 
     /// One third of the way down: the canopy and the top of the trunk. The default, and the reason
@@ -85,7 +85,7 @@ enum PhotoCropAnchor {
     /// **Screen 04 needs this and must keep it.** The camera screen draws the frame just taken and,
     /// under it, a 30% ghost of the last visit's photograph, and the whole point of the screen is
     /// that the two line up. It draws both through `PhotoFill`, and behind them a live
-    /// `AVCaptureVideoPreviewLayer` whose `videoGravity` is `.resizeAspectFill` — which centres, and
+    /// `AVCaptureVideoPreviewLayer` whose `videoGravity` is `.resizeAspectFill` — which centers, and
     /// is not a thing this app gets to change. An anchor that disagrees with the layer would move
     /// the crown of the ghost away from the crown in the viewfinder, which is the one measurement
     /// that screen exists to make.

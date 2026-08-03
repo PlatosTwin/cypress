@@ -2,7 +2,7 @@ import Foundation
 
 /// A pinned, publicly visible note on a tree (BUILD-PLAN §4 `community_notes`).
 ///
-/// Labelled "Community-reported. The city has not been notified." wherever it renders
+/// Labeled "Community-reported. The city has not been notified." wherever it renders
 /// (PRODUCT §9 copy table). Never write "sent to the city" copy (DECISIONS §3.3).
 public struct CommunityNote: CoreEntity, SoftDeletable {
     /// `community_notes.category` (BUILD-PLAN §4), verbatim and exhaustive.
@@ -84,7 +84,7 @@ public struct ReviewFlag: CoreEntity, SoftDeletable {
         ///
         /// Reserved in the `review_flags` CHECK by AppSchema v14 and unreachable until this case
         /// existed. It is deliberately **not** `appearsRemoved`: confirming that writes
-        /// `TreeStatus.removed`, which this product has settled as a memorial — grey pin spoken as
+        /// `TreeStatus.removed`, which this product has settled as a memorial — gray pin spoken as
         /// "Removed tree, memorial", screen 19, `acceptsNewContributions == false` (E170, R19) — and
         /// a record that never had a tree behind it would get a memorial for a tree that never
         /// lived. That is R7's vacant-site argument, and D16's merged inventory needs the two apart:
@@ -149,7 +149,7 @@ public struct ReviewFlag: CoreEntity, SoftDeletable {
         /// not be.** `TreeStatus.vacantSite` exists and reads like the truthful confirmed state; it
         /// is not. A vacant site is a planting site with a tree missing from it, drawn as a hollow
         /// ring precisely so it does not borrow the removed pin's meaning (R7). A duplicate pin two
-        /// metres from another, or a record standing in the middle of a building, is not a vacant
+        /// meters from another, or a record standing in the middle of a building, is not a vacant
         /// planting site, and writing one would leave the map asserting a site where there is
         /// nothing — R7's own argument, arriving at the case where the assertion is not imprecise
         /// but false. Pointing this at any status to make the kind resolvable is the E170 defect in

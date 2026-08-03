@@ -7,7 +7,7 @@ import Foundation
 /// Screen 12 printed two counts and offered one record each. `Where eyes are needed` said
 /// `9 young trees with no visits since planting`, its button said `Walk the nine`, and the button
 /// opened *one* tree's profile — so the cold profile it landed on ended with the line "This is the
-/// almanac's 'walk the nine' list, one tree at a time", which is the app apologising in copy for a
+/// almanac's 'walk the nine' list, one tree at a time", which is the app apologizing in copy for a
 /// missing destination. `Where a tree could go` (RULINGS R10, ERRATA E121) shipped the same defect
 /// four commits later: `1,474 empty planting sites`, tapping through to the nearest basin.
 ///
@@ -80,14 +80,14 @@ public struct PinSet: Hashable, Sendable {
     /// true because both reads behind this type order by distance from the reader's fix.
     public let pins: [TreePin]
 
-    /// How many records the neighbourhood holds — the number screen 12 printed.
+    /// How many records the neighborhood holds — the number screen 12 printed.
     ///
     /// **This is a total, never a page size** (ERRATA E38). Both sources prove it: the coverage
     /// group's number is `Series.totalCount`, which is nil unless the read was whole, and the vacant
     /// group's is a `COUNT(*)` over the same predicate the rows came from.
     public let count: Int
 
-    /// The neighbourhood the group is inside, for the header pill. `nil` never happens today — a
+    /// The neighborhood the group is inside, for the header pill. `nil` never happens today — a
     /// group can only be built from a resolved almanac — and is carried as an optional because C1's
     /// pill is optional and an area we could not name must not be named.
     public let neighborhoodName: String?

@@ -2,10 +2,10 @@
 //  ComponentSupport.swift
 //  Cypress — DesignSystem/Components
 //
-//  Shared plumbing for the C1–C30 catalogue: forced-dark surfaces, the tap-target rule, the two
-//  hand-drawn glyph shapes the catalogue keeps re-using, and the border helpers.
+//  Shared plumbing for the C1–C30 catalog: forced-dark surfaces, the tap-target rule, the two
+//  hand-drawn glyph shapes the catalog keeps re-using, and the border helpers.
 //
-//  Nothing here invents a value. Sizes come from `CypressSpacing.Component`, colours from
+//  Nothing here invents a value. Sizes come from `CypressSpacing.Component`, colors from
 //  `CypressColor`, radii from `CypressRadius`.
 //
 
@@ -188,7 +188,7 @@ struct CypressClearGlyph: Shape {
         // Drawn in the same 16×16 box as `CypressSearchGlyph`, then scaled to `rect`.
         let scale = min(rect.width, rect.height) / 16
         var path = Path()
-        // The ring: r=7 centred, inset by half the stroke so the outer edge lands on the box.
+        // The ring: r=7 centered, inset by half the stroke so the outer edge lands on the box.
         path.addEllipse(
             in: CGRect(x: 1 * scale, y: 1 * scale, width: 14 * scale, height: 14 * scale)
         )

@@ -168,7 +168,7 @@ struct JournalPresentationTests {
             nextCursor: nil
         ).rows
 
-        // **The verb is the title now, not a clause inside a grey second line.** A journal row is a
+        // **The verb is the title now, not a clause inside a gray second line.** A journal row is a
         // sentence about something that happened; My Grove's rows are titled with a tree's name, and
         // when these were too, the two lists read as one.
         #expect(rows[0].title.hasPrefix("Visited"))
@@ -178,7 +178,7 @@ struct JournalPresentationTests {
         #expect(rows[0].title == "Visited Grandmother Cypress")
 
         // Three of the four are screen 13's own assignments, so the same kind of contribution is the
-        // same colour on both screens. The fourth may not be `vacantSite`, which R7 reserves for a
+        // same color on both screens. The fourth may not be `vacantSite`, which R7 reserves for a
         // basin with no tree in it (ERRATA E119).
         #expect(rows[1].accent == .newGrowth)
         #expect(rows[2].accent == .record)
@@ -201,7 +201,7 @@ struct JournalPresentationTests {
     // MARK: - Days
 
     /// **The structural half of telling a chronology from a collection.** My Grove's list has no
-    /// dates on it at all now; this one is organised by nothing else.
+    /// dates on it at all now; this one is organized by nothing else.
     ///
     /// Grouping is by *consecutive run* rather than by key, which is what keeps the store's order
     /// (`captured_at DESC`) intact — see `JournalPresentation.Day`. The fixture is deliberately not

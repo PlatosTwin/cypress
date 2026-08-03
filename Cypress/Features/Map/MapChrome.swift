@@ -96,7 +96,7 @@ struct MapFilterChips: View {
             }
             // The named container is the scroller itself, not the stack around it. It was the
             // outer VStack's, and moving the chips into a `ScrollView` silently removed the
-            // labelled group from the accessibility tree XCUITest reads — `otherElements["Filter
+            // labeled group from the accessibility tree XCUITest reads — `otherElements["Filter
             // trees"]` matched nothing, measured on the assigned simulator, not reasoned about.
             // On the scroller, the group survives, and it is also the truer boundary: the row is
             // the group; the drawer below is its own named group (`moreLabel`).
@@ -242,7 +242,7 @@ struct MapFilterChips: View {
     private func chip(_ title: String, isOn: Bool, action: @escaping () -> Void) -> some View {
         Chip(title, style: isOn ? .filterSelected : .filterIdle, action: action)
             // The fill and the weight say "on" and neither reaches a listener, so the state travels
-            // as a value the way `MapRecentreButton`'s engagement does.
+            // as a value the way `MapRecenterButton`'s engagement does.
             .accessibilityValue(MapFilterCopy.chipValue(isOn: isOn))
     }
 }
@@ -265,7 +265,7 @@ struct MapFilterChips: View {
 // third filter-adjacent message to be ruled out and the first two came back "under a different
 // mechanism"; the ruling says in terms that it is categorical so no mechanism can shelter one. The
 // count sat in the same view, in the same capsule, in the same position, appearing for the same
-// cause. Removing the sentence and keeping its neighbour would be exactly the survival R41 was
+// cause. Removing the sentence and keeping its neighbor would be exactly the survival R41 was
 // written to stop. See `ERRATA E205` for the whole argument and for the
 // one thing this costs.
 //
@@ -375,7 +375,7 @@ struct MapSuggestionList: View {
     /// like a species everywhere in this app rather than looking like a search result here.
     ///
     /// **Nothing else is on the row, and that is a decision** (R25): no thumbnail, because C22's
-    /// gradient is derived from the name rather than photographed and would add four colours over the
+    /// gradient is derived from the name rather than photographed and would add four colors over the
     /// map for no information; and no count of trees, because a per-species count is a read of a
     /// 195,309-row table on the typing path, and a count of what is *in view* is not the same number
     /// as a count of what is in the city — which is E38 again, one row further down.
@@ -508,8 +508,8 @@ struct IdentifyFAB: View {
 ///
 /// **It draws the sentence it is handed rather than deriving one.** It started out switching on
 /// `Availability` itself, which was right while it answered one question; it now answers two — the
-/// standing "there is no dot on this map" and the recentre control's "that press could not move
-/// anything" (`MapRecentreCopy`) — and those are different sentences about the same permission. The
+/// standing "there is no dot on this map" and the recenter control's "that press could not move
+/// anything" (`MapRecenterCopy`) — and those are different sentences about the same permission. The
 /// words live in the `*Copy` enums where they can be asserted without rendering a view.
 struct MapLocationNotice: View {
     let title: String
@@ -522,7 +522,7 @@ struct MapLocationNotice: View {
     ///
     /// **The button was hard-coded to `Settings` and is not any more** (#116). ERRATA E126 requires
     /// a filtered empty map to offer a way *out*, and the way out is `Clear filters` — a different
-    /// sentence on the same control, on the same card, in the same slot. Generalising the label was
+    /// sentence on the same control, on the same card, in the same slot. Generalizing the label was
     /// the whole change; both existing call sites pass neither and get `Settings`, so nothing that
     /// already used this moved.
     var actionLabel: String = "Settings"
@@ -587,7 +587,7 @@ enum MapLocationCopy {
     /// see — and once the map opens on a remembered camera rather than always on the same park, which
     /// stretch it is became a fact worth stating rather than a constant nobody could be told about.
     ///
-    /// The `The map still works` opening is load-bearing: `MapRecentreUITests` reads it as the
+    /// The `The map still works` opening is load-bearing: `MapRecenterUITests` reads it as the
     /// black-box witness that this simulator has location denied.
     static func message(_ showing: MapOpening.Showing) -> String {
         "The map still works—it just cannot show where you are, or work out which tree you are "
@@ -595,11 +595,11 @@ enum MapLocationCopy {
     }
 }
 
-// MARK: - Recentre
+// MARK: - Recenter
 
 /// The control that puts the camera back on the GPS dot. **NOT SPECIFIED** — the argument for
 /// building it, for building it ourselves rather than using `MapUserLocationButton`, and for what a
-/// press does about the zoom, is all in `MapRecentre`.
+/// press does about the zoom, is all in `MapRecenter`.
 ///
 /// It sits directly above the FAB in the bottom-right block, which is the one part of screen 01 whose
 /// position this screen owns — and owning the position is half the reason the system control could
@@ -621,7 +621,7 @@ struct MapRecenterButton: View {
             .frame(width: CypressSpacing.minTapTarget, height: CypressSpacing.minTapTarget)
             .overlay {
                 // Only the unengaged circle carries an edge. Filled, it is the CTA green against the
-                // map and the ring would be a line drawn on top of its own colour.
+                // map and the ring would be a line drawn on top of its own color.
                 if engagement != .centered {
                     Circle().strokeBorder(
                         CypressColor.borderPinRing,
@@ -644,7 +644,7 @@ struct MapRecenterButton: View {
         case .centered: return CypressColor.ctaLabel
         // `askable` and `searching` draw exactly as `away` did when all three were one case (#100).
         // The words told the reader apart; the picture never claimed to, and a control that changed
-        // colour while CoreLocation thought about it would be flicker with no information in it.
+        // color while CoreLocation thought about it would be flicker with no information in it.
         case .away, .askable, .searching: return CypressColor.ctaFill
         // Struck through *and* muted. Either alone reads as a disabled control, which this is not —
         // it is a control that answers with words instead of with the camera.

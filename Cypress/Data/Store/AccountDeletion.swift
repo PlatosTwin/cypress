@@ -16,7 +16,7 @@ import Foundation
 /// argument for it is unchanged and it is the door most people should take; what changed is that a
 /// person who means "I want what I put here gone" is no longer told no. `AccountDeletionChoice`
 /// argues the whole of it, including why anonymous means NULL rather than a stand-in id, and why
-/// reminders and favourites are outside the choice rather than inside it. This type implements it.
+/// reminders and favorites are outside the choice rather than inside it. This type implements it.
 ///
 /// **Both halves commit or neither does.** Everything below runs inside one transaction, because a
 /// deletion that anonymized and then failed before deleting would leave a person half-deleted with
@@ -125,7 +125,7 @@ public struct AccountDeletion {
 
         /// Reminders deleted (E23's rows), tombstoned ones included.
         public var deletedPrivateReminders: Int = 0
-        /// Favourites deleted (E89's rows), of which `deletedFavoriteTombstones` were already turned
+        /// Favorites deleted (E89's rows), of which `deletedFavoriteTombstones` were already turned
         /// off. Both are exclusively owned; see `delete` for why a tombstone goes too.
         public var deletedFavorites: Int = 0
         public var deletedFavoriteTombstones: Int = 0
@@ -134,8 +134,8 @@ public struct AccountDeletion {
         /// Under `eraseEverything` this is the account's own votes **plus** everybody else's votes on
         /// the account's photographs, which the foreign key from `photo_votes.photo_id` requires to
         /// go first. That second group is a real cost of the erasing door and is stated here rather
-        /// than discovered: erasing your photograph erases the judgements other people made about it,
-        /// because those judgements were about a thing that no longer exists.
+        /// than discovered: erasing your photograph erases the judgments other people made about it,
+        /// because those judgments were about a thing that no longer exists.
         ///
         /// Under `leaveRecords` it is zero — the votes are anonymized instead, and counted in
         /// `anonymizedPhotoVotes`.
@@ -216,9 +216,9 @@ public struct AccountDeletion {
 
     /// Deletes an account, through the door the person chose.
     ///
-    /// **The tombstones go too, and E89's reason for them does not survive here.** A favourite
-    /// un-favourites through `deleted_at` rather than a `DELETE` because a stray delete loses the
-    /// un-favourite *event*, so the row comes back on the next sync from another device. There is no
+    /// **The tombstones go too, and E89's reason for them does not survive here.** A favorite
+    /// un-favorites through `deleted_at` rather than a `DELETE` because a stray delete loses the
+    /// un-favorite *event*, so the row comes back on the next sync from another device. There is no
     /// such next sync: the account those other devices would sync as no longer exists, and this
     /// transaction removes the account's queued toggles in the same breath. A tombstone is also
     /// exactly as exclusively owned as a live row and exactly as unreadable — it is a sentence about
@@ -227,7 +227,7 @@ public struct AccountDeletion {
     /// doors.
     ///
     /// **What happens to the device's own rows: nothing, under either door.** A device-owned reminder
-    /// or favourite was written before there was an account and was never the account's; `claimDevice`
+    /// or favorite was written before there was an account and was never the account's; `claimDevice`
     /// moves such a row *onto* an account, and nothing has moved these. Deleting them would delete a
     /// stranger's records — the next person to use this phone, or the same person's pre-sign-in work —
     /// on the strength of a shared installation id. The erasing door is emphatically not an exception:

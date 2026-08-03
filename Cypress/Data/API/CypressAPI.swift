@@ -121,11 +121,11 @@ public protocol CypressAPI: Sendable {
 
     // MARK: - Almanac
 
-    /// The neighbourhood almanac (screen 12). `near` is the caller's fix, or nil when there is none.
+    /// The neighborhood almanac (screen 12). `near` is the caller's fix, or nil when there is none.
     ///
     /// Not a BUILD-PLAN §6 endpoint: §6 has no aggregate read at all, because the almanac arrived
     /// with D1 after the API contract was written. On a server it is one `GET /neighborhoods/{id}/
-    /// almanac`; here the neighbourhood is resolved from the fix rather than named by the caller,
+    /// almanac`; here the neighborhood is resolved from the fix rather than named by the caller,
     /// because A4's mechanism for naming one does not exist (ERRATA E44).
     ///
     /// Defaulted in `Almanac.swift` to the empty almanac, which is what an implementation with no
@@ -172,7 +172,7 @@ public protocol CypressAPI: Sendable {
     /// photos or visits", which is about what *sync* may do to somebody else's record and not about
     /// what a contributor may do to their own. The ask is the owner's, verbatim — "allow photo
     /// deletions for your own photos" — and it is a privacy control before it is a tidiness one: a
-    /// photograph can hold a face, a licence plate or the inside of somebody's front garden, and the
+    /// photograph can hold a face, a license plate or the inside of somebody's front garden, and the
     /// person who took it has to be able to take it back. When the service lands this becomes
     /// `DELETE /photos/{id}` and this signature does not move.
     ///
@@ -233,7 +233,7 @@ public protocol CypressAPI: Sendable {
     func deviceContributions() async throws -> DeviceContributions
 
     /// The trees this reader has a relationship with, by kind — the sets behind screen 01's `Yours`
-    /// and `Favourites` chips (#116, RULINGS R23).
+    /// and `Favorites` chips (#116, RULINGS R23).
     ///
     /// Not a BUILD-PLAN §6 endpoint, for the reason `deviceContributions()` is not: §6 was written
     /// for a server, where the client's own rows are the client's own business. On a local-first
@@ -312,7 +312,7 @@ public struct BoundingBox: Hashable, Sendable {
         self.maxLongitude = max(minLongitude, maxLongitude)
     }
 
-    /// A box around a point, sized in metres. Used to turn `?near=lng,lat&radius=m` into an
+    /// A box around a point, sized in meters. Used to turn `?near=lng,lat&radius=m` into an
     /// index-usable range on `lat`/`lon`.
     public init(around center: Coordinate, radiusM: Double) {
         let metersPerDegreeLatitude = 111_320.0
@@ -416,7 +416,7 @@ public struct MapViewport: Hashable, Sendable {
     public let siteKind: MapSiteKind?
 
     /// The trees this reader has a relationship with, when the map has been narrowed to them — the
-    /// `Yours` and `Favourites` chips (#116, RULINGS R23). `nil` for every tree.
+    /// `Yours` and `Favorites` chips (#116, RULINGS R23). `nil` for every tree.
     ///
     /// **It is an explicit id set rather than a predicate because it is a fact about `main`, not
     /// about the inventory.** What this device has visited, photographed, checked in on, measured or
@@ -426,7 +426,7 @@ public struct MapViewport: Hashable, Sendable {
     /// and the fetch debounce can see the difference.
     ///
     /// **Empty means "the map is narrowed to nothing", never "no narrowing"**, on the same terms as
-    /// `speciesIDs`: a reader with no favourites who taps `Favourites` has asked a question whose
+    /// `speciesIDs`: a reader with no favorites who taps `Favorites` has asked a question whose
     /// honest answer is an empty map with a sentence over it, not the whole city.
     ///
     /// It is bounded by what one person tapped — tens, not thousands — which is why the queries
@@ -546,7 +546,7 @@ public struct TreePin: Hashable, Sendable, Identifiable {
 /// presented as a complete one.
 ///
 /// Before the search bar did anything the distinction was invisible, because an un-narrowed map is
-/// *about* the neighbourhood rather than about a set the reader named, and nobody counts the trees
+/// *about* the neighborhood rather than about a set the reader named, and nobody counts the trees
 /// out of a window. Ask for London Planes and it is a claim: the reader has named a set and the map
 /// is answering with it. So the count travels.
 ///
@@ -633,7 +633,7 @@ public enum MapContent: Hashable, Sendable {
 public struct NearbyTree: Hashable, Sendable, Identifiable {
     public var id: UUID { tree.id }
     public let tree: Tree
-    /// Great-circle metres from the query point. Screen 02 renders this as `17 m S`.
+    /// Great-circle meters from the query point. Screen 02 renders this as `17 m S`.
     public let distanceM: Double
     public let speciesScientificName: String?
     public let speciesCommonName: String?
@@ -705,7 +705,7 @@ public struct TreeProfile: Hashable, Sendable {
     ///
     /// Moderation gates *publication*, not a person's own screen (see `Photo.isPubliclyVisible` vs
     /// `Photo.isVisibleToItsContributor`). Deciding which photos are the viewer's own is not a
-    /// judgement a view can make, and it is not one to infer from a `.pending` state either — every
+    /// judgment a view can make, and it is not one to infer from a `.pending` state either — every
     /// photo in the app is `.pending`, including, one day, other people's. So the fact travels on
     /// the payload, from whoever knows it.
     ///

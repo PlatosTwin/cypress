@@ -7,7 +7,7 @@ import Foundation
 /// view renders `Vitality.rubric`; it never authors this copy, and there is no code path that can
 /// show a class without its anchor.
 ///
-/// Colour is secondary coding only (D3) and therefore lives in the design system, not here.
+/// Color is secondary coding only (D3) and therefore lives in the design system, not here.
 ///
 /// Status: the rubric is "draft v0 — needs urban forestry advisor sign-off before launch"
 /// (PRODUCT §3, DECISIONS §2.5 P-C1). Which rubric ultimately ships — USFS urban FIA crown classes

@@ -590,7 +590,7 @@ struct ScreenEntranceTests {
 
         #expect(!pending.canAdjustPin)
         pending.beginPlacingPin()
-        #expect(pending.phase == .composing, "a map opened with nothing to centre it on")
+        #expect(pending.phase == .composing, "a map opened with nothing to center it on")
     }
 
     // MARK: - The activity link

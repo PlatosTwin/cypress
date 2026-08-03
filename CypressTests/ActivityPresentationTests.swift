@@ -8,7 +8,7 @@ import Testing
 /// 1. **A below-threshold aggregate draws a zero.** ARCHITECTURE §5.6: "aggregate surfaces below
 ///    their cold-start threshold do not render at all." A8 floors the headcount at three; §5.6
 ///    floors an empty year at nothing. E54 settled the same argument at zero on screen 12 in §5.6's
-///    favour, and the same reasoning applies here.
+///    favor, and the same reasoning applies here.
 /// 2. **A page's size is printed as a total.** ERRATA E38. On this screen a page is worse than a
 ///    wrong total: D2 makes the three rows share one vertical scale, so a page understates the
 ///    ceiling and the two rows it did not come from get drawn too tall.
@@ -411,7 +411,7 @@ struct ActivityPresentationTests {
 /// says.
 ///
 /// Screen 13 has no attribution call site — it renders no name, initial or avatar — so the way this
-/// screen honours D11 is by having nothing for the predicate to gate. That makes the risk *forward*
+/// screen honors D11 is by having nothing for the predicate to gate. That makes the risk *forward*
 /// rather than present: the day somebody adds an avatar row to this screen, the raw preference is
 /// the field autocomplete offers. So the predicate itself is pinned here alongside the screen, the
 /// way `SharePresentationTests` pins it alongside screen 10.

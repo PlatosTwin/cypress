@@ -89,7 +89,7 @@ struct AlmanacGeographyTests {
     /// This asserts the identity in the numbers rather than in the SQL text, against the corpus
     /// figures R5 fixed and E115 measured — because a denominator that quietly moves is exactly the
     /// failure R5 exists to prevent, and it would move silently.
-    @Test("a named neighbourhood reads exactly what it read before the scope existed")
+    @Test("a named neighborhood reads exactly what it read before the scope existed")
     func namedAreaIsUnchanged() async throws {
         let store = try await Self.store()
         let corpus = try await SeedCorpus.current(store)
@@ -126,7 +126,7 @@ struct AlmanacGeographyTests {
     static let locale = Locale(identifier: "en_US")
 
     /// Screen 12, end to end, in the city it was designed for.
-    @Test("an almanac read in San Francisco still resolves a named neighbourhood")
+    @Test("an almanac read in San Francisco still resolves a named neighborhood")
     func sanFranciscoResolvesAPolygon() async throws {
         let store = try await Self.store()
         let almanac = try await Self.api(store).almanac(near: Self.outerSunset)
@@ -142,7 +142,7 @@ struct AlmanacGeographyTests {
 
     /// The hole E176 recorded and declined to fix, asserted from the other side.
     ///
-    /// The precondition is checked first and it is not decoration: if a San Jose neighbourhood layer
+    /// The precondition is checked first and it is not decoration: if a San Jose neighborhood layer
     /// ever does land in the seed, this test would otherwise go on passing while measuring the
     /// polygon path, and the fallback would be untested by a suite that claims to test it.
     @Test("downtown San Jose has no polygon, and gets a radius almanac instead")
@@ -150,7 +150,7 @@ struct AlmanacGeographyTests {
         let store = try await Self.store()
         let schema = try #require(store.seed)
 
-        // The precondition: San Jose rows carry no neighbourhood, so no polygon can resolve here.
+        // The precondition: San Jose rows carry no neighborhood, so no polygon can resolve here.
         let assigned = try await Self.scalar(
             """
             SELECT COUNT(*) AS n FROM \(Self.seed).trees

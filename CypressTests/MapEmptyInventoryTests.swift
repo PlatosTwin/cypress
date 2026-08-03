@@ -326,7 +326,7 @@ struct MapEmptyInventoryTests {
     private static let fultonCenter = Coordinate(latitude: 37.7754, longitude: -122.4862)
 
     /// Polls rather than sleeping a fixed span: the map debounces the camera, and a test that
-    /// pinned the debounce would fail the day it is retuned (`MapRecentreTests.waitUntil`).
+    /// pinned the debounce would fail the day it is retuned (`MapRecenterTests.waitUntil`).
     private static func waitUntil(
         timeout: Duration = .seconds(5),
         _ condition: @MainActor () -> Bool
