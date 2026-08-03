@@ -58,7 +58,12 @@ final class MapModel {
     }
 
     /// The species the current query resolved to, and what the map is able to say about it.
-    private(set) var search: MapSearch = .off
+    ///
+    /// The `didSet` is task #190's: a search is a narrowing, and a narrowed map is never owed the
+    /// empty-inventory sentence (RULINGS R41). See `recomputeInventoryEmptiness`.
+    private(set) var search: MapSearch = .off {
+        didSet { recomputeInventoryEmptiness() }
+    }
 
     /// What drops under C20 for the text currently in it (task #109, ruling R25).
     ///
@@ -120,19 +125,60 @@ final class MapModel {
     static let searchDebounce: Duration = .milliseconds(300)
 
     var filter: Filter = .all {
-        didSet { if filter != oldValue { filterDidChange(from: oldValue) } }
+        didSet {
+            if filter != oldValue { filterDidChange(from: oldValue) }
+            recomputeInventoryEmptiness()
+        }
     }
 
     private(set) var viewport: MapViewport?
     private(set) var content: MapContent = .pins([]) {
-        didSet { recomputeAdmittedPins() }
+        didSet {
+            recomputeAdmittedPins()
+            recomputeInventoryEmptiness()
+        }
     }
     private(set) var isLoading = false
     /// A read that failed. Deliberately not drawn: SCREENS.md 01 lists no error state and
     /// ARCHITECTURE §5.8 says not to invent one. What it buys is that a failed read leaves the last
     /// good content on screen instead of blanking the map, and the reason is recorded rather than
     /// swallowed.
-    private(set) var loadFailure: APIError?
+    private(set) var loadFailure: APIError? {
+        didSet { recomputeInventoryEmptiness() }
+    }
+
+    /// Whether a read has ever completed for a viewport. See `MapInventoryNotice.isOwed`'s
+    /// `hasSettled` — `content` opens at `.pins([])`, which is the same value an answered-and-empty
+    /// viewport produces, so "empty" cannot be read off it until something has answered.
+    private(set) var hasSettled = false {
+        didSet { recomputeInventoryEmptiness() }
+    }
+
+    /// **Whether the inventory answered this screenful with nothing, unnarrowed** (task #190).
+    ///
+    /// Stored rather than computed for `pins`' reason (E130): screen 01's chrome is rebuilt on every
+    /// frame of a pan, and this is read from it. The three things that can change the answer all
+    /// write it — a completed read, a filter, a search.
+    private(set) var inventoryIsEmptyHere = false
+
+    /// Whether anything at all is narrowing the map — the filter row, the drawer, the legend, or
+    /// the search bar.
+    ///
+    /// `MapFilter.isActive` covers the first three; the search is its own state and is deliberately
+    /// counted here, because a typed species that matches nothing in this viewport empties the map
+    /// exactly as a chip does, and RULINGS R41's question is about *any* narrowing.
+    var isNarrowed: Bool { filter.isActive || search != .off }
+
+    private func recomputeInventoryEmptiness() {
+        let next = MapInventoryNotice.isOwed(
+            hasSettled: hasSettled,
+            isNarrowed: isNarrowed,
+            readFailed: loadFailure != nil,
+            markerCount: content.markerCount
+        )
+        guard next != inventoryIsEmptyHere else { return }
+        inventoryIsEmptyHere = next
+    }
 
     private(set) var selection: MapCardSubject?
     private(set) var selectedPinID: UUID?
@@ -459,6 +505,11 @@ final class MapModel {
             // exactly what changes how much of it fits.
             search = search.reporting(content)
             loadFailure = nil
+            // **After `content`, never before.** This is the flag that lets an empty answer be told
+            // apart from the empty value the model opens on (task #190), so it must not be raised
+            // while `content` still holds the opening `.pins([])` — that ordering would post the
+            // notice for one publish cycle on every launch, over any street in the city.
+            hasSettled = true
             if filter.condition?.needsSeasonalData == true { resolveSpeciesForVisiblePins() }
         } catch let error as APIError {
             guard !Task.isCancelled else { return }

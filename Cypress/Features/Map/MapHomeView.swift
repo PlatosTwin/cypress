@@ -466,7 +466,27 @@ struct MapHomeView: View {
             showing: showing
         ) {
         case .nothing:
-            EmptyView()
+            // **The map is the reader's, and it drew nothing** (task #190). Golden Gate Park at
+            // street zoom: no pins, only the basemap's canopy artwork, which reads as a failed load
+            // rather than as an empty record. E126 is the rule; `MapInventoryNotice` carries the
+            // whole argument, including why the trigger is the emptiness rather than a park, and
+            // why RULINGS R41 is what keeps a filter out of it.
+            //
+            // **Below the four location states, deliberately.** E126's own precedent on screen 12
+            // is that a missing fix wins over a failed read — "the prompt is the one that has an
+            // action behind it" — and the same holds here: the location notices are about the
+            // reader's own device and two of them carry a Settings button, while this one is a
+            // standing fact about the record with nothing to press. They are barely rivals in
+            // practice: a located reader gets `.nothing` from `MapOpening.standing`, which is this
+            // arm.
+            if model.inventoryIsEmptyHere {
+                MapLocationNotice(
+                    title: MapInventoryCopy.title,
+                    message: MapInventoryCopy.message
+                )
+            } else {
+                EmptyView()
+            }
         case let .notAsked(showing):
             // No Settings button: this is not a state Settings fixes. The way out is the permission
             // sheet, which the recentre control raises — and says so, in its hint.
