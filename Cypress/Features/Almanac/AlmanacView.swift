@@ -212,9 +212,14 @@ struct AlmanacScreen: View {
 
     // MARK: - §2 This season (C10 ×3)
 
-    /// Micro-label plus up to three C10 rows, `VStack(spacing:7)`.
+    /// Micro-label, the note that says what the heading is actually over, then up to three C10
+    /// rows, `VStack(spacing:7)`.
     ///
     /// The label goes with the rows: a heading over nothing is a heading that promises something.
+    /// The note goes with them for the same reason — it describes the rows that drew, so it cannot
+    /// outlive them (task #177; `AlmanacCopy.seasonNote`). It is drawn in `areaNote`'s type and
+    /// colour because it is doing `areaNote`'s job on the same screen: saying which promise a
+    /// heading is making, where the heading alone is too quiet to say it.
     @ViewBuilder
     private func seasonBlock(_ presentation: AlmanacPresentation) -> some View {
         if !presentation.seasonRows.isEmpty {
@@ -222,6 +227,15 @@ struct AlmanacScreen: View {
                 Text(AlmanacCopy.seasonLabel)
                     .cypressMicroLabel()
                     .padding(.bottom, CypressSpacing.gapVitality)
+
+                if let note = presentation.seasonNote {
+                    Text(note)
+                        .font(CypressFont.body125)
+                        .foregroundStyle(CypressColor.textMuted)
+                        .lineSpacing(CypressFont.LineSpacing.body125)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.bottom, CypressSpacing.gapVitality)
+                }
 
                 VStack(spacing: AlmanacMetrics.seasonRowGap) {
                     ForEach(presentation.seasonRows) { row in

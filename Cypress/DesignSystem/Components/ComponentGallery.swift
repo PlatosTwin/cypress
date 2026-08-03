@@ -625,7 +625,7 @@ private struct GalleryC11: View {
                 }
                 Variant("large variant · mono 17 (07)") {
                     HStack(spacing: CypressSpacing.gapRows) {
-                        StatCard(label: "In San Francisco", value: .text("1,204"), size: .large)
+                        StatCard(label: "In this inventory", value: .text("1,204"), size: .large)
                         StatCard(label: "Near you", value: .text("61"), size: .large)
                     }
                 }

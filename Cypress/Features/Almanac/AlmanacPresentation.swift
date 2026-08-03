@@ -144,6 +144,16 @@ struct AlmanacPresentation: Equatable {
     let areaNote: String?
 
     let seasonRows: [SeasonRow]
+
+    /// The line under §2's micro-label saying what determines the rows below it (task #177).
+    ///
+    /// **NOT SPECIFIED** — SCREENS.md 12 §2 draws the heading and the rows and nothing between
+    /// them. `AlmanacCopy.seasonNote` has what it says and why `This season` is not a filter, so
+    /// R41 does not reach it. `nil` exactly when `seasonRows` is empty, because the block does not
+    /// draw at all then and a note explaining three absent rows is the heading-over-nothing defect
+    /// that `AlmanacView.seasonBlock` already guards against.
+    let seasonNote: String?
+
     let composition: Composition?
     let coverage: Coverage?
     let vacantSites: VacantBlock?
@@ -170,6 +180,7 @@ struct AlmanacPresentation: Equatable {
             self.neighborhoodName = nil
             self.areaNote = nil
             self.seasonRows = []
+            self.seasonNote = nil
             self.composition = nil
             self.coverage = nil
             self.vacantSites = nil
@@ -183,7 +194,9 @@ struct AlmanacPresentation: Equatable {
         self.hasArea = true
         self.neighborhoodName = pill
         self.areaNote = AlmanacCopy.areaNote(area.area, locale: locale)
-        self.seasonRows = Self.seasonRows(area, in: pill, now: now, calendar: calendar, locale: locale)
+        let rows = Self.seasonRows(area, in: pill, now: now, calendar: calendar, locale: locale)
+        self.seasonRows = rows
+        self.seasonNote = AlmanacCopy.seasonNote(kinds: rows.map(\.kind), calendar: calendar, locale: locale)
         self.composition = Self.composition(area.composition, locale: locale)
         self.coverage = Self.coverage(area.coverage, in: pill, locale: locale)
         self.vacantSites = Self.vacantSites(area.vacantSites, in: pill, locale: locale)
@@ -440,6 +453,84 @@ enum AlmanacCopy {
     static let bloomTitle = "First bloom of the year"
     static let elderTitle = "The elder"
     static let newestTitle = "Newest neighbors"
+
+    // MARK: §2's note — what actually determines what is under this heading (task #177)
+
+    /// The line under `This season`, assembled from the rows that actually drew.
+    ///
+    /// **NOT SPECIFIED**; the decision is
+    /// `docs/rulings-pending/almanac-season-note.md`, which also records why R41 does not reach
+    /// this. R41 forbids any message accompanying a **filter**, categorically. `This season` is a
+    /// static micro-label over a content block: there is no chip, no selection, no state, and
+    /// nothing here appears *because a filter did something* — R41's own test. E205 confirms the
+    /// scope by showing what R41 did reach, which was chrome on the map beside the chip row.
+    ///
+    /// ── What the heading is actually over, which is three different clocks ────────────────────
+    /// Read from the code rather than from the heading:
+    /// - **first bloom** — `captured_at >= AlmanacWindow.yearStart`, so it is year-to-date, not
+    ///   this season, and in December it is still March's sighting. Its own title says
+    ///   `of the year`, so it is the one row whose drawn copy already admits its clock.
+    /// - **the elder** — `ORDER BY planted_on LIMIT 1` with **no window at all**. It is the same
+    ///   tree in January and in July, every year. Nothing about it is seasonal.
+    /// - **newest neighbors** — `planted_on BETWEEN` `AlmanacWindow.currentSpring`, a fixed
+    ///   March–May window of the current year that keeps drawing, still saying `planted this
+    ///   spring`, until the year ends.
+    ///
+    /// So none of the three is scoped to the current season, and the honest sentence says so
+    /// rather than dressing the heading up. The months are read from `AlmanacWindow.springMonths`
+    /// and the reader's own calendar, so the sentence cannot drift from the window it describes.
+    ///
+    /// Assembled from the drawn rows, never templated whole — this enum's own rule, so a clause
+    /// about a row that is not on screen is never written.
+    static func seasonNote(
+        kinds: [AlmanacPresentation.SeasonRow.Kind],
+        calendar: Calendar,
+        locale: Locale
+    ) -> String? {
+        guard !kinds.isEmpty else { return nil }
+
+        let clauses: [String] = kinds.map { kind in
+            switch kind {
+            case .bloom:
+                return "the first bloom is this year's earliest"
+            case .elder:
+                return "the elder is the oldest on file in any season"
+            case .newestNeighbors:
+                return "the newest neighbors were planted \(springSpan(calendar: calendar, locale: locale))"
+            }
+        }
+
+        // One row makes no claim about differing windows; it just states its own.
+        guard clauses.count > 1 else { return sentence(clauses[0]) }
+
+        let joined = clauses.dropLast().joined(separator: ", ") + ", and " + clauses[clauses.count - 1]
+        return "Each row keeps its own window: \(joined)."
+    }
+
+    /// `March to May`, from the constant the read is actually scoped to.
+    ///
+    /// **The locale is applied to the calendar rather than taken from it**, which the red-proof for
+    /// this note caught: `Calendar.standaloneMonthSymbols` reads the *calendar's* own locale, and a
+    /// calendar constructed as `Calendar(identifier: .gregorian)` carries none, so the months came
+    /// out as `M03 to M05`. Every other sentence in this enum already takes the reader's locale as
+    /// its own parameter; this one now does too, instead of hoping the two agree.
+    private static func springSpan(calendar: Calendar, locale: Locale) -> String {
+        var calendar = calendar
+        calendar.locale = locale
+        let names = calendar.standaloneMonthSymbols
+        let first = AlmanacWindow.springMonths.lowerBound
+        let last = AlmanacWindow.springMonths.upperBound
+        guard (1...names.count).contains(first), (1...names.count).contains(last) else {
+            return "in spring"
+        }
+        return "\(names[first - 1]) to \(names[last - 1])"
+    }
+
+    /// Capitalises a clause written to sit mid-sentence and closes it.
+    private static func sentence(_ clause: String) -> String {
+        guard let first = clause.first else { return clause }
+        return first.uppercased() + clause.dropFirst() + "."
+    }
 
     /// §3's fourth row, verbatim.
     static let everyoneElse = "Everyone else"

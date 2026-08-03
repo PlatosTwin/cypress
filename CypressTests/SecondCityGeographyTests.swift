@@ -188,6 +188,62 @@ struct SecondCityGeographyTests {
         #expect(guide.cityTreeCount != nil, "the whole-city card does not depend on where you stand")
     }
 
+    // MARK: - Screen 07 · the other count card (task #181)
+
+    /// **The fourth member of the family, and the one where naming the reader's city is also wrong.**
+    ///
+    /// `SpeciesQueries.cityTreeCount` carries no id-space predicate: it is `COUNT(*)` over the
+    /// whole attached inventory, and the built-in bundle is fused across `sf` and `us-ca-sj`. So
+    /// the card labelled `In San Francisco` was printing a two-city number — for Crape Myrtle, 97
+    /// San Francisco trees and 3,649 San Jose ones under San Francisco's name alone.
+    ///
+    /// The test asserts the fact first and the copy second, in that order deliberately: **because
+    /// the number provably spans two cities, no city name can label it**, which is why the fix is
+    /// not "say San Jose to a San Jose reader". The probe species is resolved at runtime as one the
+    /// seed holds in both spaces, so the assertion is about the read rather than about one row.
+    @Test("the whole-inventory count spans both cities, and its label names neither")
+    func theCountCardNamesThePopulationItCounted() async throws {
+        let store = try await Self.store()
+
+        let probe = try await store.queue.read { connection -> (uuid: UUID, sf: Int, sj: Int)? in
+            let statement = try connection.prepare("""
+                SELECT s.uuid AS species_uuid,
+                       SUM(CASE WHEN t.id_space = 'sf' THEN 1 ELSE 0 END) AS sf_count,
+                       SUM(CASE WHEN t.id_space = 'us-ca-sj' THEN 1 ELSE 0 END) AS sj_count
+                  FROM \(Self.seed).trees t
+                  JOIN \(Self.seed).species s ON s.id = t.species_current
+                 WHERE t.deleted_at IS NULL
+                 GROUP BY s.uuid
+                HAVING sf_count > 0 AND sj_count > 0
+                 ORDER BY sj_count DESC LIMIT 1
+                """)
+            defer { statement.finalize() }
+            return try statement.fetchOne { row in
+                (uuid: try row.uuid("species_uuid"), sf: try row.int("sf_count"), sj: try row.int("sj_count"))
+            }
+        }
+        let species = try #require(probe, "no species stands in both cities; the probe cannot fire")
+
+        let guide = try await Self.api(store).speciesGuide(id: species.uuid, near: nil)
+        let counted = try #require(guide.cityTreeCount)
+
+        // 1 · the number is both cities' trees, which is what makes any single city name a lie.
+        #expect(
+            counted == species.sf + species.sj,
+            "the card's count is not the whole attached inventory: \(counted) != \(species.sf) + \(species.sj)"
+        )
+        #expect(species.sf > 0 && species.sj > 0, "the probe stopped spanning two cities")
+
+        // 2 · so the label names the inventory it counted, and no city in it. Markers rather than a
+        //     fixed string, so swapping one hardcoded city for another cannot satisfy this.
+        for marker in ["San Francisco", "San Jose", "SF", "DataSF"] {
+            #expect(
+                !SpeciesCopy.cityCountLabel.contains(marker),
+                "07 §5's count card says \(marker) over a number counting \(species.sf + species.sj) trees in two cities"
+            )
+        }
+    }
+
     // MARK: - Screen 08 · the recognition ring
 
     /// One visit to a Sunset/Parkside tree, and the ring's denominator is the polygon's own species
