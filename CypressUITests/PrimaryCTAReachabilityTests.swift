@@ -32,10 +32,11 @@ import XCTest
 /// 3. **enabled** — after the screen's own arming step, where it has one. A control drawn in its
 ///    disabled fill is a control a reader cannot press, and `PrimaryButton(isEnabled: false)` stays
 ///    in the tree, so `exists` alone would pass over it.
-/// 4. **on the glass** — the frame lies inside the app's own frame. This is the assertion that
-///    catches the E196 family directly: at AX5 the ramp pushes content wider and taller than the
-///    layout budgeted for it, and screens 02 and 11 were found with their chrome clipped off both
-///    edges.
+/// 4. **on the glass** — the whole frame can be brought inside the app's own frame. This is the
+///    assertion that catches the E196 family directly: at AX5 the ramp pushes content wider and
+///    taller than the layout budgeted for it, and screens 02 and 11 were found with their chrome
+///    clipped off both edges. "Can be brought" rather than "is", because a CTA inside a scroll sits
+///    wherever the scroll stopped and that is not a fact about the layout — see `reach`.
 /// 5. **drawn** — the frame has a width and a height. Deliberately *not* a 44 pt tap-target
 ///    assertion; see `assertDrawn` for the false red that would have been.
 /// 6. **no ellipsis inside the label** — see the honesty note below.
@@ -295,7 +296,7 @@ final class PrimaryCTAReachabilityTests: XCTestCase {
 
         let predicate = NSPredicate(format: "label IN %@", target.ctaLabels)
         let cta = app.buttons.matching(predicate).firstMatch
-        let swipes = reach(cta, in: app)
+        let swipes = reach(cta, in: app, wholly: true)
         XCTAssertTrue(
             cta.exists,
             "\(screen): no button labeled \(target.ctaLabels.map { "“\($0)”" }.joined(separator: " or ")) "
@@ -315,7 +316,7 @@ final class PrimaryCTAReachabilityTests: XCTestCase {
                 + (target.arm.isEmpty ? "" : " even after \(target.arm.joined(separator: ", "))")
         )
 
-        assertOnTheGlass(cta, in: app, screen: screen)
+        assertOnTheGlass(cta, in: app, screen: screen, swipes: swipes)
         assertDrawn(cta, screen: screen)
         assertNotElided(cta, screen: screen)
 
@@ -347,16 +348,33 @@ final class PrimaryCTAReachabilityTests: XCTestCase {
     /// Swipes on the app rather than on a named scroll view, because the screens on this list use
     /// several different containers and naming one per screen would be a second table to keep in
     /// step with the first.
+    /// **`wholly` is the second thing this function got wrong, and the correction is the same shape
+    /// as the first.** It stopped at `isHittable`, which asks only whether the element's *center*
+    /// point receives the tap — so on screen 16, whose CTA is inside a `ScrollView` rather than
+    /// pinned, the loop stopped with the button's bottom 56 pt below the glass and
+    /// `assertOnTheGlass` failed on a state one more swipe would have fixed. That is a probe
+    /// artifact reported as an AX5 defect, and filing it would have been worse than not looking.
+    /// A CTA in a scroll is not "off the glass" because the scroll happens to be stopped short of
+    /// it; it is off the glass when it **cannot be brought on**, which is what the budget now
+    /// decides. Horizontal clipping — E196 items 1 and 3, content wider than the phone — no amount
+    /// of vertical scrolling repairs, so it still spends the budget and still fails, correctly.
+    ///
+    /// The arming controls use the weaker `wholly: false`, because tapping needs a hittable center
+    /// and nothing more; only the CTA under judgment is held to the whole rectangle.
     @discardableResult
-    private func reach(_ element: XCUIElement, in app: XCUIApplication) -> Int {
+    private func reach(_ element: XCUIElement, in app: XCUIApplication, wholly: Bool = false) -> Int {
+        func satisfied() -> Bool {
+            guard element.exists, element.isHittable else { return false }
+            return wholly ? isWhollyOnTheGlass(element, in: app) : true
+        }
         // One short wait first: a screen that has just been deep-linked is still settling, and every
         // CTA on the list that needs no scrolling at all is on the glass within this window.
-        if element.waitForExistence(timeout: 6), element.isHittable { return 0 }
+        if element.waitForExistence(timeout: 6), satisfied() { return 0 }
         var swipes = 0
         while swipes < Self.scrollBudget {
             app.swipeUp()
             swipes += 1
-            if element.exists, element.isHittable { return swipes }
+            if satisfied() { return swipes }
         }
         return swipes
     }
@@ -372,20 +390,30 @@ final class PrimaryCTAReachabilityTests: XCTestCase {
     ///
     /// A half-point tolerance, because frames arrive in device points off a 3× screen and an exact
     /// comparison would fail on a rounding nobody can see.
-    private func assertOnTheGlass(_ element: XCUIElement, in app: XCUIApplication, screen: String) {
+    private func assertOnTheGlass(
+        _ element: XCUIElement,
+        in app: XCUIApplication,
+        screen: String,
+        swipes: Int
+    ) {
+        XCTAssertTrue(
+            isWhollyOnTheGlass(element, in: app),
+            "\(screen): the primary CTA “\(element.label)” could not be brought entirely onto the "
+                + "glass at AX5 in \(swipes) swipes — its frame is \(element.frame) and the screen "
+                + "is \(app.frame), so part of the control a reader is meant to press stays off the "
+                + "edge. A frame wider than the screen is the E196 shape: content wider than the "
+                + "phone, centered and clipped rather than wrapped"
+        )
+    }
+
+    private func isWhollyOnTheGlass(_ element: XCUIElement, in app: XCUIApplication) -> Bool {
         let glass = app.frame
         let frame = element.frame
         let slack: CGFloat = 0.5
-        let outside = frame.minX < glass.minX - slack
-            || frame.minY < glass.minY - slack
-            || frame.maxX > glass.maxX + slack
-            || frame.maxY > glass.maxY + slack
-        XCTAssertFalse(
-            outside,
-            "\(screen): the primary CTA “\(element.label)” is not entirely on the glass at AX5 — "
-                + "its frame is \(frame) and the screen is \(glass), so part of the control a reader "
-                + "is meant to press is drawn off the edge"
-        )
+        return frame.minX >= glass.minX - slack
+            && frame.minY >= glass.minY - slack
+            && frame.maxX <= glass.maxX + slack
+            && frame.maxY <= glass.maxY + slack
     }
 
     /// Every button label on screen, for a failure message.
