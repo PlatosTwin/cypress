@@ -32,11 +32,20 @@
 //  block of chrome competing for the same strip of glass.
 //
 //  ── Why the year control is a decade and says so out loud ────────────────────────────────────
-//  Counted against the shipped seed, not assumed (ERRATA E175): **198,625 trees, 38,185 with a
-//  planting year — 19.22 %.** The two cities are nothing alike on this column: San Francisco records
-//  a year for 26.03 % of its rows and San Jose for **0.42 %** (222 of 52,788), which is why adding a
-//  city made the control's caveat *stronger* rather than weaker (E176). A year filter therefore
-//  cannot be a plain predicate with a silent complement; four out of five trees are unjudgeable, and
+//  **About one row in five carries a planting year, and no version of that number belongs in this
+//  comment.** It is counted, not assumed (ERRATA E175), and it is counted by
+//  `MapFilterTests.plantingDateCoverageIsWhatTheDecadeBucketsWereBuiltFor` against the seed that
+//  is actually attached, with the exact figure pinned per corpus in `SeedCorpus.datedTrees`. The
+//  numbers that used to stand here were wrong by one row — copied from E206, which had made an
+//  arithmetic slip — which is the whole argument for reading them from the test instead (#122).
+//  The two cities are nothing alike on this column: San Francisco records a year for about a
+//  quarter of its rows and San Jose for well under one percent, which is why adding a city made
+//  the control's caveat *stronger* rather than weaker (E176). And under **D16** the seed is a
+//  merged inventory, so this share is not a property of this app at all — it is a weighted average
+//  over whichever cities happen to be in the file, and it moves every time one is added.
+//
+//  A year filter cannot be a plain predicate with a silent complement; four out of five trees are
+//  unjudgeable on today's seed, and
 //  a control that quietly dropped them would be answering "when was this planted?" with "never" for
 //  most of the map. A sentence on the map used to say so (`MapYearFilterCopy.setAside`); **RULINGS
 //  R41 removed it and every other message beside a filter** (task #180), so the fact survives as the
@@ -52,10 +61,11 @@
 //  those sites their own way to be found (`MapSiteKind`), which is what keeps this a correction
 //  rather than a disappearance.
 //
-//  Decades rather than years because the seed spans 1955–2026: 72 options holding a mean of 530 dated
-//  trees each, which is invisible in a viewport. Five buckets, sized off the real distribution —
-//  pre-1990 7,742 · 1990s 8,746 · 2000s 10,134 · 2010s 8,493 · 2020s 3,070. San Jose's 222 dated rows
-//  all landed in the last bucket and moved no boundary; the shape of this control is San Francisco's,
+//  Decades rather than years because the seed spans 1955–2026: 72 options holding a mean of a few
+//  hundred dated trees each, which is invisible in a viewport. Five buckets, sized off the real
+//  distribution, which at the time of sizing was thinnest before 1990 and in the 2020s and
+//  thickest in the 2000s. San Jose's dated rows all landed in the last bucket and moved no
+//  boundary; the shape of this control is San Francisco's,
 //  and the first city that records planting dates properly is the one that should revisit it.
 //
 
@@ -441,8 +451,10 @@ enum MapYearFilterCopy {
     // `measureUndatedShare` went with it rather than being left unread (#62/E126).
     //
     // **What was lost, honestly stated.** The sentence existed for a real reason and the reason has
-    // not gone away: 160,440 of the seed's 198,625 rows carry no `planted_year`, so a year
-    // narrowing sets aside four rows in five before it judges anything, and their absence can read
+    // not gone away: four rows in five carry no `planted_year` on the seed that ships today
+    // (counted by `MapFilterTests`, pinned in `SeedCorpus.datedTrees`, and a weighted average over
+    // whichever cities are installed rather than a fact about this app — D16), so a year
+    // narrowing sets most of the map aside before it judges anything, and their absence can read
     // as "there are no trees here from the 2010s" when the truth is "the city did not record when
     // most of these were planted". R41 weighed that and ruled the clutter worse, permitting a
     // single-dismiss popup for anything genuinely essential and judging that nothing in the product
