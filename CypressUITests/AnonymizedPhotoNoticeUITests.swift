@@ -104,13 +104,30 @@ final class AnonymizedPhotoNoticeUITests: XCTestCase {
             return
         }
 
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        // **Hittable, not merely present, and this is not a formality — it is the whole test.**
+        //
+        // The viewer is a cover over screen 20, and SwiftUI leaves the covered screen in the
+        // accessibility tree. Screen 20 is *already* drawing this sentence on the row that was just
+        // tapped, so `staticTexts[...].exists` is true in the viewer whether or not the viewer draws
+        // anything at all. Written that way first, this assertion passed with the viewer's notice
+        // deleted — a red-proof caught it, and the version that could not fail is the version that
+        // would have shipped.
+        //
+        // Hit-testing is what separates them: the cover is over the browser, so the browser's copy
+        // of the sentence is not hittable while the viewer is up, and only a sentence the viewer
+        // itself draws can be. That is also the claim worth making — the words have to be on the
+        // screen the reader is looking at, not merely somewhere in the process.
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        let notices = app.staticTexts
+            .matching(NSPredicate(format: "label BEGINSWITH %@", Self.noticeOpening))
         XCTAssertTrue(
-            app.staticTexts
-                .matching(NSPredicate(format: "label BEGINSWITH %@", Self.noticeOpening))
-                .firstMatch
-                .waitForExistence(timeout: 10),
+            wait(timeout: 10) {
+                notices.allElementsBoundByAccessibilityElement.contains { $0.isHittable }
+            },
             "the viewer opened over a photograph nobody owns, drew no delete, and said nothing "
-                + "about why — an empty corner is not an explanation"
+                + "about why — an empty corner is not an explanation. "
+                + "(\(notices.count) copies of the sentence in the tree, none of them on top.)"
         )
         // The half that makes the sentence true. A viewer carrying both would be contradicting
         // itself out loud.
@@ -131,6 +148,17 @@ final class AnonymizedPhotoNoticeUITests: XCTestCase {
     /// The seam frames its third photograph as a leaf close-up, and that is the one it anonymizes.
     private static let ownerlessRowPrefix = "Photo · Leaf close-up"
     private static let deleteControl = "Delete this photo"
+
+    /// Poll a condition that is not an element's existence — the same shape three other files in
+    /// this target already keep.
+    private func wait(timeout: TimeInterval = 20, for condition: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return true }
+            usleep(200_000)
+        }
+        return condition()
+    }
 
     private func launch() -> XCUIApplication {
         let app = XCUIApplication()
