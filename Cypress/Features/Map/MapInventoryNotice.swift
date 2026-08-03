@@ -118,9 +118,22 @@ enum MapInventoryCopy {
     /// directly above this card whether it draws or not, so repeating it in prose would be a
     /// second, weaker copy of a control the reader is already looking at.
     ///
-    /// No spaces around em dashes (ARCHITECTURE §5.7) — there are none to space; the clause break
-    /// is a semicolon, because the two halves are one thought about the same ground.
+    /// **It is as short as it is because of AX5, and the measurement is in the test.** The first
+    /// draft ended `…; the inventory has never listed them.` and measured **502.3 pt** tall at
+    /// accessibility5 on a 393 pt phone, against **456.7 pt** for the tallest location notice
+    /// already shipping in this slot — a full line taller than the precedent, in a slot whose
+    /// unfixed defect (`ERRATA E183 §2`) is that it lays out from its bottom edge and grows off
+    /// the *top* of the display. `MapEmptyInventoryTests.theNoticeFitsTheSlotAtAX5` holds the
+    /// budget, so a copy edit that spends the line back fails rather than ships.
+    ///
+    /// `may well stand here` is doing load-bearing work and is not a hedge to be tidied away: the
+    /// trigger fires wherever the record is empty, which includes the Pacific and the ground
+    /// outside a downloaded city's window. `Trees stand here` would be a stronger sentence and a
+    /// false one in those places; `may well` is true in all of them and still refuses the reading
+    /// the ticket is about — that the park has no trees.
+    ///
+    /// No spaces around em dashes (ARCHITECTURE §5.7) — there are none to space.
     static let message =
         "Cypress draws a city street-tree inventory, and this ground is not on it. "
-        + "Trees may well stand here; the inventory has never listed them."
+        + "Trees may well stand here, unlisted."
 }
