@@ -327,4 +327,56 @@ struct PhotoOwnershipTests {
         #expect(profile.ownPhotoIDs.contains(photo), "the contributor's own screen stopped showing it")
         #expect(!profile.deletablePhotoIDs.contains(photo), "an ownerless photograph offered a delete")
     }
+
+    // MARK: - Saying why (task #131)
+
+    /// The third set, and the reason the other two disagree.
+    ///
+    /// `deletablePhotoIDs` says a control is not drawn; `anonymizedPhotoIDs` says why, and both
+    /// surfaces that show a photograph read the second to write a sentence. It is asked of the
+    /// columns rather than derived, so this pins the columns: a photograph with an owner is not in
+    /// it whichever owner that is, and one with neither is.
+    @Test("a photograph with no owner at all is reported as such, and an owned one is not")
+    func theOwnerlessRowIsNamed() async throws {
+        let store = try await CypressStore.inMemory()
+        let signedIn = Self.api(store: store, userID: Self.userID)
+        let tree = try await Self.addATree(signedIn)
+        let mine = try await Self.photoID(ofTree: tree.id, in: store)
+
+        // A second photograph on the same tree, owned by somebody who is not this account. It is
+        // the row that makes this a test of the columns rather than of "everything undeletable":
+        // it is undeletable here and it is emphatically not nobody's.
+        let theirs = UUID()
+        let stamp = ISO8601DateFormatter().string(from: Self.moment)
+        try await store.queue.write { connection in
+            try connection.execute("""
+                INSERT INTO photos (id, tree_uuid, shot_type, captured_at, created_at, updated_at, user_id)
+                VALUES ('\(theirs.uuidString)','\(tree.id.uuidString)','trunk',
+                        '\(stamp)','\(stamp)','\(stamp)','\(Self.strangerID.uuidString)');
+                """)
+        }
+
+        var profile = try await signedIn.treeProfile(id: tree.id)
+        #expect(profile.anonymizedPhotoIDs.isEmpty, "a photograph with an owner was called nobody's")
+        #expect(!profile.isDeletablePhoto(try #require(profile.photos.items.first { $0.id == theirs })))
+
+        // Now the leaving door's row: `AccountDeletion.anonymizeContributions` nulls `user_id`, and
+        // `photos` carries at most one owner, so a photograph contributed while signed in has no
+        // `device_id` left to fall back on.
+        try await store.queue.write { connection in
+            try connection.execute("UPDATE photos SET user_id = NULL WHERE id = '\(mine.uuidString)'")
+        }
+
+        profile = try await signedIn.treeProfile(id: tree.id)
+        #expect(
+            profile.anonymizedPhotoIDs == [mine],
+            "the ownerless photograph is \(profile.anonymizedPhotoIDs), which is not exactly the one "
+                + "whose owner was taken off"
+        )
+        #expect(
+            !profile.isAnonymizedPhoto(try #require(profile.photos.items.first { $0.id == theirs })),
+            "a stranger's photograph was reported as belonging to nobody — the sentence both photo "
+                + "surfaces draw would then be a claim about somebody else's record"
+        )
+    }
 }
