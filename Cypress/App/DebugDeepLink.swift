@@ -417,6 +417,50 @@ enum DebugDeepLink {
     /// The fourth, ~200 m off the third, under the same rule (task #125).
     private static let recordDefectSpot = Coordinate(latitude: 37.7654, longitude: -122.5300)
 
+    /// The candidate window, **with this device's own status overrides laid over it**.
+    ///
+    /// ── Why every case below goes through this rather than `treesNear` (task #173) ──────────
+    /// `LocalAPI.treesNear` returns the *seed's* status for a record. `LocalAPI.treeProfile` layers
+    /// the local `tree_status_overrides` table on top of it — that is E124-B's whole mechanism, and
+    /// it is what makes `.memorial` work at all. The two disagree, and the harness was reading the
+    /// one the screens do not.
+    ///
+    /// The consequence was invisible and cumulative. `.memorial` marks the nearest standing tree
+    /// removed; the comment on `photographedTree` below stated confidently that `standingTree`
+    /// "steps one outward each time it runs". **It does not.** `standingTree` re-read the seed's
+    /// status, found the same record still `alive` there, and returned it — so on any device that had
+    /// ever opened screen 19, `CYPRESS_SCREEN=treeProfile` opened a tree the app holds as removed:
+    /// `acceptsContributions` false, no primary CTA, no check-in button, and screen 11's `Add a
+    /// reading` gone with it. `DeepLinkVoiceOverTests.testTreeProfile` passed throughout, because it
+    /// anchors on `TreeProfilePresentation.fallbackTitle` and checks that the controls which *are*
+    /// there carry labels — a removed tree satisfies both.
+    ///
+    /// It was found by `CypressUITests/PrimaryCTAReachabilityTests` on its first run, which is the
+    /// one thing in this repository that asks a deep-linked screen whether the control it exists to
+    /// have pressed is on it. This is the CLAUDE.md rule about confident comments caught in the act:
+    /// the comment described a mechanism that was never wired, and it is the reason nobody looked.
+    ///
+    /// One extra read per resolution, of a table that usually holds a handful of rows.
+    private static func candidates(_ api: LocalAPI) async throws -> [NearbyTree] {
+        let nearby = try await api.treesNear(center, radiusM: radiusM, limit: candidateLimit)
+        let overrides = try await api.debugStatusOverrides()
+        guard !overrides.isEmpty else { return nearby }
+        return nearby.map { row in
+            guard let overridden = overrides[row.tree.id], overridden != row.tree.status else {
+                return row
+            }
+            var tree = row.tree
+            tree.status = overridden
+            return NearbyTree(
+                tree: tree,
+                distanceM: row.distanceM,
+                speciesScientificName: row.speciesScientificName,
+                speciesCommonName: row.speciesCommonName,
+                tell: row.tell
+            )
+        }
+    }
+
     /// The nearest tree to the map's opening center that is actually standing.
     ///
     /// `acceptsNewContributions` rather than `status == .alive`, because that is the property the
@@ -441,10 +485,18 @@ enum DebugDeepLink {
     /// standing tree removed, so `standingTree` steps one outward each time it runs) and this mutates
     /// from the far end. They march away from each other, with 456 standing records between them.
     ///
+    /// **The parenthesis above was false for as long as it stood, and is true again now (task #173).**
+    /// `standingTree` scanned `treesNear`, which returns the seed's status and not this device's
+    /// override, so `.memorial` marked the same record removed on every run and `standingTree` kept
+    /// handing that record back — `CYPRESS_SCREEN=treeProfile` opened a removed tree on any device
+    /// that had ever opened screen 19. `candidates(_:)` now lays the overrides on, which is what makes
+    /// the march real. Left in place rather than rewritten because the sentence describes the design
+    /// correctly; what is added is that it describes it correctly *now*.
+    ///
     /// The rule this encodes, for whoever adds the next case: **a case that writes persistent state
     /// must not write it onto a tree another case reads.**
     private static func photographedTree(_ api: LocalAPI) async throws -> UUID {
-        let candidates = try await api.treesNear(center, radiusM: radiusM, limit: candidateLimit)
+        let candidates = try await candidates(api)
         guard let match = candidates.last(where: { $0.tree.status.acceptsNewContributions }) else {
             throw Failure(
                 screen: "a standing tree to photograph",
@@ -468,7 +520,7 @@ enum DebugDeepLink {
     /// is `.memorial`'s outward march reaching a quarter of the way out, which takes as many runs as
     /// there are records in between — the same exposure `.measure` has carried since E133.
     private static func anonymizedPhotoTree(_ api: LocalAPI) async throws -> UUID {
-        let candidates = try await api.treesNear(center, radiusM: radiusM, limit: candidateLimit)
+        let candidates = try await candidates(api)
         let standing = candidates.filter { $0.tree.status.acceptsNewContributions }
         guard !standing.isEmpty else {
             throw Failure(
@@ -502,7 +554,7 @@ enum DebugDeepLink {
     /// The rule, restated because it needed restating: **a case that writes persistent state must not
     /// write it onto a tree another case reads** — and "the case" includes the test driving it.
     private static func measuredTree(_ api: LocalAPI) async throws -> UUID {
-        let candidates = try await api.treesNear(center, radiusM: radiusM, limit: candidateLimit)
+        let candidates = try await candidates(api)
         let standing = candidates.filter { $0.tree.status.acceptsNewContributions }
         guard !standing.isEmpty else {
             throw Failure(
@@ -533,7 +585,7 @@ enum DebugDeepLink {
     /// Re-running is idempotent rather than marching: this returns the same tree and re-writes the
     /// same override, which is the correct behavior for a case whose whole subject is a status.
     private static func deadCandidateTree(_ api: LocalAPI) async throws -> UUID {
-        let candidates = try await api.treesNear(center, radiusM: radiusM, limit: candidateLimit)
+        let candidates = try await candidates(api)
         // `.alive` here rather than `acceptsNewContributions`, precisely because a tree this case has
         // already marked dead would pass the latter and re-anchoring on it is fine — but a tree the
         // *photo* cases have warmed must not be picked up as this slot drifts.
@@ -558,7 +610,7 @@ enum DebugDeepLink {
         api: LocalAPI,
         wanted: String
     ) async throws -> UUID {
-        let candidates = try await api.treesNear(center, radiusM: radiusM, limit: candidateLimit)
+        let candidates = try await candidates(api)
         guard let match = candidates.first(where: { predicate($0.tree) }) else {
             throw Failure(
                 screen: wanted,

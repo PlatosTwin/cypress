@@ -68,7 +68,29 @@ struct RootView: View {
     /// already granted permission this provider opened a GPS session the instant the composition
     /// root was built — never mind that nothing had asked it to. It is inert until `start()` now,
     /// which is what makes the paragraph above true and what makes a stray construction harmless.
-    @State private var location = MapLocationProvider()
+    ///
+    /// **In a DEBUG build it may be a pinned double** (task #121). `CYPRESS_LOCATION` in the launch
+    /// environment replaces the real provider with one reporting exactly the availability the
+    /// launching process named, which is what lets `MapRecenterUITests` exercise the denied refusal
+    /// path and `AlmanacGroupTapTests` reach a populated screen 12 without either of them having to
+    /// *detect* the simulator's ambient state and skip when it is not the one they need. See
+    /// `DebugLocationOverride`. On every ordinary launch, and in every Release build, this is the
+    /// real provider and the expression below is one dictionary lookup that finds nothing.
+    @State private var location = RootView.launchLocationProvider()
+
+    /// The provider this process should use. See `location`.
+    ///
+    /// A `static` rather than an expression inline in the `@State` default, because a SwiftUI
+    /// `@State` default is re-evaluated on every initialization of the view struct — the fact that
+    /// cost this screen fifty GPS sessions a second — and a named function is a place to say so
+    /// once. Constructing a `MapLocationProvider` is inert either way now, pinned or not.
+    @MainActor
+    private static func launchLocationProvider() -> MapLocationProvider {
+        #if DEBUG
+        if let pinned = DebugLocationOverride.resolve().provider { return pinned }
+        #endif
+        return MapLocationProvider()
+    }
 
     var body: some View {
         @Bindable var router = router
@@ -171,7 +193,18 @@ struct RootView: View {
     /// looks exactly like a passing test until somebody presses Back.
     @MainActor
     private func openDebugDeepLink() async {
-        guard !deepLinkAttempted, let request = DebugDeepLink.requested() else { return }
+        guard !deepLinkAttempted else { return }
+        // A junk `CYPRESS_LOCATION` draws itself, for `DebugDeepLink.Failure`'s reason: a seam that
+        // quietly fell back to the real provider would leave a test asserting the denied refusal
+        // path against a simulator with a perfectly good fix, and it would fail somewhere else —
+        // or, worse, pass. Reported before the deep link, because a wrong location is the more
+        // upstream fact and a reader should be told the first thing that went wrong.
+        if let failure = DebugLocationOverride.resolve().failure {
+            deepLinkAttempted = true
+            deepLinkFailure = failure
+            return
+        }
+        guard let request = DebugDeepLink.requested() else { return }
         deepLinkAttempted = true
         switch request {
         case let .success(screen):

@@ -10,12 +10,24 @@ import XCTest
 /// So this launches the app, finds the control by the label a VoiceOver user would find it by, and
 /// presses it. Black-box like the rest of `CypressUITests`: it imports nothing from `Cypress`.
 ///
-/// The refusal test needs the permission actually revoked, which a UI test cannot do to itself:
+/// ── The refusal test used to skip, and does not any more (task #121) ─────────────────────────
+/// It needed the permission actually revoked, which a UI test cannot do to itself:
 ///
 ///     xcrun simctl privacy <udid> revoke location app.cypress.Cypress
 ///
-/// Without that it **skips** rather than fails, for `MapSearchUITests`' reason — a skip says "not
-/// checked here", which is true, where a failure would say "broken", which is not.
+/// Without that it threw `XCTSkip`, for `MapSearchUITests`' reason — a skip says "not checked here",
+/// which is true, where a failure would say "broken", which is not. That reasoning was correct and
+/// it was not the problem. The problem is that a skipped test is invisible in the line this project
+/// judges a run by: `Test run with N tests passed` counts a test that declined to run exactly the
+/// same as one that ran and passed. Since no simulator anybody hands this suite has location denied,
+/// the refusal path — the sentence naming the limit, and the Settings button — went unexercised in
+/// every ordinary run, under a green number.
+///
+/// `CYPRESS_LOCATION=denied` in the launch environment now *drives* the state instead of detecting
+/// it (`DebugLocationOverride`, ruling `docs/rulings-pending/location-state-launch-seam.md`), so the
+/// test is unconditional. What it proves is narrower than what the skip pretended to be waiting for,
+/// and the ruling says so: this is the app's behavior in the denied state, not CoreLocation's
+/// behavior in producing that state.
 final class MapRecenterUITests: XCTestCase {
 
     override func setUp() {
@@ -23,8 +35,14 @@ final class MapRecenterUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    private func launch() -> XCUIApplication {
+    /// The environment key that pins the app's idea of where the phone is. `DebugLocationOverride
+    /// .environmentKey`, repeated as a literal because this target imports nothing from `Cypress` —
+    /// the same bargain every other anchor in this suite makes.
+    private static let locationKey = "CYPRESS_LOCATION"
+
+    private func launch(location: String? = nil) -> XCUIApplication {
         let app = XCUIApplication()
+        if let location { app.launchEnvironment[Self.locationKey] = location }
         app.launch()
         return app
     }
@@ -69,20 +87,23 @@ final class MapRecenterUITests: XCTestCase {
     /// `MapUserLocationButton` is simply inert, and so was every hand-rolled version of this button
     /// that forgot the state. Pressing must put a sentence on screen naming the limit and pointing at
     /// Settings.
-    func testPressingItWithLocationDeniedExplainsRatherThanDoingNothing() throws {
-        let app = launch()
+    ///
+    /// **Unconditional since task #121.** The state is driven, not detected — see the type comment.
+    func testPressingItWithLocationDeniedExplainsRatherThanDoingNothing() {
+        let app = launch(location: "denied")
         let control = recenterControl(app)
         XCTAssertTrue(control.waitForExistence(timeout: 15))
 
-        // The standing notice is how a black-box test can tell the permission was refused: screen 01
-        // draws it, unprompted, in exactly that state.
+        // The standing notice is how a black-box test can tell the app believes the permission was
+        // refused: screen 01 draws it, unprompted, in exactly that state. It used to be the guard
+        // this test skipped on; it is now the first assertion, because the launch environment put
+        // the app in that state and a screen 01 that did not draw it is a defect.
         let standing = text(containing: "The map still works", in: app)
-        guard standing.waitForExistence(timeout: 10) else {
-            throw XCTSkip(
-                "location is not denied for this app on this simulator, so there is no refusal to "
-                    + "check: xcrun simctl privacy <udid> revoke location app.cypress.Cypress"
-            )
-        }
+        XCTAssertTrue(
+            standing.waitForExistence(timeout: 15),
+            "launched with location denied and screen 01 drew no standing notice about it, so "
+                + "either the notice is gone or CYPRESS_LOCATION did not reach MapLocationProvider"
+        )
 
         control.tap()
 

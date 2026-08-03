@@ -105,10 +105,46 @@ final class MapLocationProvider {
         apply(authorization: manager.authorizationStatus)
     }
 
+    #if DEBUG
+    /// A provider pinned to one availability, which never talks to CoreLocation (task #121).
+    ///
+    /// `VisitLocationProvider(pinnedFix:)` is the same seam for the same reason one screen over, and
+    /// this is deliberately shaped like it: no delegate is attached, so nothing CoreLocation has to
+    /// say can arrive; `start()` and `stop()` are no-ops, so nothing here can raise a permission
+    /// sheet or move a fix out from under a test. `#if DEBUG`, so it does not exist in a shipping
+    /// build — see `.measurements/` for how E117 proved the same of `DebugDeepLink`.
+    ///
+    /// **`authorization` is derived rather than asked for**, because the two are not independent:
+    /// `.denied` with an `authorizedWhenInUse` status is not a state iOS can be in, and a seam that
+    /// let a test construct one would be a seam for testing states the app will never see.
+    ///
+    /// The `CLLocationManager` is still constructed and still configured, because the alternative is
+    /// making `manager` optional and adding a `nil` branch to every use of it on the shipping path —
+    /// a change to production code to serve a test double, which is the wrong direction. It has no
+    /// delegate and is never started, so it does nothing.
+    init(pinnedAvailability: Availability) {
+        self.manager = CLLocationManager()
+        self.availability = pinnedAvailability
+        switch pinnedAvailability {
+        case .notAsked:                     self.authorization = .notDetermined
+        case .denied:                       self.authorization = .denied
+        case .servicesOff:                  self.authorization = .restricted
+        case .waitingForFix, .located:      self.authorization = .authorizedWhenInUse
+        }
+        self.isPinned = true
+    }
+    #endif
+
+    /// Whether this provider is a pinned double. Always `false` in a shipping build.
+    private var isPinned = false
+
     /// Called once when the map appears. Only `notDetermined` produces a system sheet; every other
     /// status is already an answer and must not be re-asked (iOS silently no-ops, and pretending
     /// otherwise would put a dead button in the denied state).
     func start() {
+        // A pinned provider (task #121) is the whole answer already; asking CoreLocation anything
+        // here would raise the system sheet the pin exists to make unnecessary.
+        if isPinned { return }
         hasStarted = true
         switch manager.authorizationStatus {
         case .notDetermined:
@@ -121,6 +157,7 @@ final class MapLocationProvider {
     }
 
     func stop() {
+        if isPinned { return }
         hasStarted = false
         manager.stopUpdatingLocation()
     }
