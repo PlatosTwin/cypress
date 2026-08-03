@@ -18,10 +18,13 @@
 # - a collision refusal: a dead agent's xcodebuild keeps running, and a second run against the
 #   same simulator or the same worktree fakes "app is not running" / "never appeared" /
 #   "Test run with 0 tests" with no crash report (CLAUDE.md, simulators).
-# - a device-state refusal (E202): a leftover `active-city` marker survives reinstall, and a
+# - a device-state refusal (E202, E216): a leftover `active-city` marker survives reinstall; a
 #   remembered `map.lastCamera` too wide for THIS screen draws cluster badges where a test
-#   waits for tree pins. Location state is deliberately NOT checked — a fixless or
-#   location-denied device is a legitimate configuration and two tests skip on it (#121).
+#   waits for tree pins; and a camera narrow enough but pointed at a patch of the city the
+#   inventory does not cover draws nothing at all, which is the same symptom from the opposite
+#   geometry. Whether the device HAS a fix is still deliberately NOT checked — a fixless or
+#   location-denied device is a legitimate configuration and two tests skip on it (#121). What
+#   is checked is a good fix in the wrong place, which is neither of those states.
 # - bootstatus -b before anything: simctl against a Shutdown device fails quietly in && chains.
 # - camera grant: the unit suite hangs forever on a simulator that never granted camera.
 # - verify_test_log.sh at the end: the only judgment that counts.
@@ -125,6 +128,7 @@ read_device_state() {
   vals="$(printf '%s\n' "$raw" | awk '/^[[:space:]]*-?[0-9]/ {gsub(/[[:space:]]/,""); print}')"
   [ "$(printf '%s\n' "$vals" | grep -c .)" -eq 4 ] || return 0
   LAST_CAMERA="$(printf '%s\n' "$vals" | paste -sd, -)"
+  local lat_span; lat_span="$(printf '%s\n' "$vals" | sed -n '3p')"
   local lon_span; lon_span="$(printf '%s\n' "$vals" | sed -n '4p')"
   # MapZoom.level: zoom = log2(360 · viewWidth / (256 · Δlon)), floored. MapViewport clusters
   # at zoom ≤ 15 and draws individual pins at ≥ 16, so the pin threshold on THIS screen is
@@ -133,6 +137,49 @@ read_device_state() {
     if (d<=0 || w<=0) { print ""; exit }
     z = int(log(360*w/(256*d))/log(2));
     if (z>21) z=21; if (z<1) z=1; print z }')"
+  count_camera_trees "$(printf '%s\n' "$vals" | sed -n '1p')" \
+                     "$(printf '%s\n' "$vals" | sed -n '2p')"
+}
+
+# E216: a camera can be narrow enough for pins and still point somewhere the inventory does not
+# cover. Screen 01 reopens on the remembered camera, draws nothing, and `cityTreePins(app) > 0`
+# waits thirty seconds for a pin that was never coming — two red tests that name the map and read
+# exactly like a defect in whatever you just changed. The coordinate was already stamped in every
+# header; nothing read it against the seed.
+#
+# Counted over a fixed ±250 m box around the camera's CENTRE, not over the camera's own rectangle.
+# The first draft used the rectangle, on the reasoning that it is what the map draws — and it
+# refused a device that runs the full suite green, which is a worse failure than the one it
+# prevents. Measured on the healthy 16 Pro at [37.759602,-122.426903]:
+#
+#     ±60 m   0 trees      ±150 m  177     ±300 m  889
+#     ±100 m  45           ±200 m  342     ±500 m  2,573
+#
+# versus the treeless Golden Gate Park fix at [37.769402,-122.486198]: 0 at every radius out to
+# ±300 m, and 198 only at ±500 m. So a camera can sit on a genuinely covered block and still hold
+# no tree inside its own 120 m rectangle — the map pans, and the tests navigate. What separates
+# the two states cleanly is the coarser question, and that is the one asked here: **is this part
+# of the city covered by the inventory at all.** 250 m is chosen to sit inside the gap those two
+# columns leave, not to model the viewport, and this comment says so because a threshold whose
+# justification is lost becomes a number nobody dares change.
+CAMERA_TREES="n/a"
+count_camera_trees() {
+  local lat="$1" lon="$2"
+  local seed="$REPO/Cypress/Resources/cypress-seed.sqlite"
+  command -v sqlite3 >/dev/null 2>&1 || { CAMERA_TREES="n/a (no sqlite3)"; return 0; }
+  # Not an error: `setup_worktree.sh` copies the git-ignored seed in, and a worktree without it
+  # already fails 13 tests for its own reasons. Say so rather than refuse on the wrong grounds.
+  [ -f "$seed" ] || { CAMERA_TREES="n/a (no seed in this worktree)"; return 0; }
+  local box
+  box="$(awk -v la="$lat" -v lo="$lon" 'BEGIN{
+    pi = 3.14159265358979;
+    dlat = 250 / 111320;
+    dlon = 250 / (111320 * cos(la * pi / 180));
+    printf "%.6f %.6f %.6f %.6f", la-dlat, la+dlat, lo-dlon, lo+dlon }')"
+  set -- $box
+  CAMERA_TREES="$(sqlite3 "$seed" \
+    "SELECT count(*) FROM trees WHERE lat BETWEEN $1 AND $2 AND lon BETWEEN $3 AND $4;" \
+    2>/dev/null)" || CAMERA_TREES="n/a (seed unreadable)"
 }
 
 device_state_check() {
@@ -151,6 +198,20 @@ device_state_check() {
     echo "  Screen 01 reopens there and draws cluster badges, so cityTreePins(app) > 0 is never true." >&2
     echo "  Clear it with the app not running, or it is rewritten on exit:" >&2
     echo "    /usr/libexec/PlistBuddy -c 'Delete :map.lastCamera' \"\$(xcrun simctl get_app_container $UDID $APP_ID data)/Library/Preferences/$APP_ID.plist\"" >&2
+    exit 1
+  fi
+  # Zero is the only refusing value. "n/a …" means the question could not be asked — a fresh
+  # install with no remembered camera, or a worktree without the seed — and an unasked question
+  # must not read as an answered one, so it is stamped in the header either way.
+  if [ "$CAMERA_TREES" = "0" ]; then
+    echo "VERIFY-FAIL: this device's map camera points somewhere the inventory does not cover (E216)." >&2
+    echo "  map.lastCamera = [$LAST_CAMERA] → zoom $CAMERA_ZOOM, and the seed holds 0 trees within 250 m of it." >&2
+    echo "  Screen 01 reopens there and draws nothing, so tests waiting on a tree pin time out after 30 s." >&2
+    echo "  This is NOT a missing fix — a fixless device is fine and #121's tests skip on it. It is a" >&2
+    echo "  good fix in a place SF's street-tree inventory has no rows for (Golden Gate Park, the" >&2
+    echo "  Presidio, Lake Merced, the ocean, anywhere outside the two shipped cities)." >&2
+    echo "  Move the fix onto covered ground and relaunch the app once so it rewrites the camera:" >&2
+    echo "    xcrun simctl location $UDID set 37.7596,-122.4269" >&2
     exit 1
   fi
 }
@@ -178,7 +239,7 @@ read_device_state
   echo "CYPRESS-RUN: worktree $REPO"
   echo "CYPRESS-RUN: head $(git -C "$REPO" rev-parse --short HEAD 2>/dev/null || echo unknown)" \
        "$(git -C "$REPO" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
-  echo "CYPRESS-RUN: device-state active-city=${ACTIVE_CITY} map.lastCamera=[${LAST_CAMERA}]${CAMERA_ZOOM:+ zoom=$CAMERA_ZOOM}"
+  echo "CYPRESS-RUN: device-state active-city=${ACTIVE_CITY} map.lastCamera=[${LAST_CAMERA}]${CAMERA_ZOOM:+ zoom=$CAMERA_ZOOM} camera-trees=${CAMERA_TREES}"
   echo "CYPRESS-RUN: args $*"
   [ "$SKIP_PREFLIGHT" = "1" ] && echo "CYPRESS-RUN: PREFLIGHT SKIPPED (CYPRESS_RUN_TESTS_SKIP_PREFLIGHT=1) — guards did not run"
   echo "CYPRESS-RUN: ---"

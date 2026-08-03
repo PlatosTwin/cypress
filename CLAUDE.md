@@ -50,13 +50,18 @@ conflicts with convenience, the rule wins.
 - One simulator per agent, explicitly assigned. Cap **three** concurrent `xcodebuild`s
   machine-wide — orchestrator verification runs count against the cap.
 - **A dead agent's `xcodebuild` keeps running**, and **the UI suite inherits the device's state**
-  (E202). `Tools/run_tests.sh` now refuses on all three: another `xcodebuild` live against the same
-  simulator or worktree, a leftover `active-city` marker, and a `map.lastCamera` too wide for that
-  device's own screen. Do **not** hand-roll the collision check — `grep [x]codebuild` glob-expands
-  under zsh, matches nothing, and passes vacuously; use `grep -F xcodebuild` if you inspect by hand.
-  Keep reading E202 to interpret a red run: two runs on one device fake `Application … is not
-  running`, `'X' never appeared` and `Test run with 0 tests` with no crash report, and a wide
-  camera draws cluster badges where a test waits for pins.
+  (E202, E216). `Tools/run_tests.sh` now refuses on all four: another `xcodebuild` live against the
+  same simulator or worktree, a leftover `active-city` marker, a `map.lastCamera` too wide for that
+  device's own screen, and a camera with **no seed tree within 250 m of it**. Do **not** hand-roll
+  the collision check — `grep [x]codebuild` glob-expands under zsh, matches nothing, and passes
+  vacuously; use `grep -F xcodebuild` if you inspect by hand.
+  Keep reading E202 and E216 to interpret a red run: two runs on one device fake `Application … is
+  not running`, `'X' never appeared` and `Test run with 0 tests` with no crash report; a wide camera
+  draws cluster badges where a test waits for pins; and a narrow camera **pointed somewhere the
+  inventory does not cover** draws nothing at all, which is the same symptom from the opposite
+  geometry. Whether the device has a fix is still not checked — fixless is legitimate and #121's
+  tests skip on it. **A UI log whose skip count changed between two runs of the same tree is
+  reporting a device change, not a code change.**
 - **Every log carries its own provenance** — `run_tests.sh` stamps `CYPRESS-RUN:` lines with the
   device, `screen-width-pt`, worktree, HEAD and both E202 states. Judge a width-sensitive UI result
   only from a log whose width you have read. A log with no `CYPRESS-RUN` header did not come from
