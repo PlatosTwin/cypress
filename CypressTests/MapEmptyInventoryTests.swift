@@ -287,6 +287,11 @@ struct MapEmptyInventoryTests {
 
         // Nothing has been asked yet: the model's opening `content` is `.pins([])` and must not be
         // mistaken for an answer.
+        //
+        // **This line documents the state; it does not prove the settle gate.** Watched during the
+        // red-proof: with `hasSettled` removed from `isOwed` this expectation stayed green, because
+        // nothing has been *assigned* yet and so no `didSet` has run the recompute. The gate itself
+        // is proved by `anUnansweredViewportSaysNothing` above, which asks the function directly.
         #expect(!model.inventoryIsEmptyHere, "the flag was up before any read had answered")
 
         // A screenful the inventory has nothing for — Golden Gate Park.
