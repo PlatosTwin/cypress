@@ -11,6 +11,10 @@
 # Usage: Tools/verify_test_log.sh [--warnings] <log> [max-age-minutes] [file…]
 #          (default max age 60)
 #
+# It also prints the XCTest skip count as a VERIFY-NOTE, and appends the XCTest summary to
+# VERIFY-OK when both frameworks ran — see the block above that line for why the count is
+# surfaced and deliberately not refused against an expectation (#121, E216).
+#
 # --warnings certifies a warning count instead of taking one on trust (E203). A green *test*
 # line survives an incremental build; a *warning* line does not, so a reused DerivedData
 # recompiles nothing and reports zero warnings whether or not any exist. This mode refuses to
@@ -126,4 +130,29 @@ if printf '%s' "$SWIFT_LINE" | grep -q 'failed'; then
   fail "Swift Testing reports failures: $SWIFT_LINE"
 fi
 
-echo "VERIFY-OK: ${SWIFT_LINE:-$XCTEST_LINE}"
+# The skip count, surfaced rather than buried (task #121, E216).
+#
+# A skipped test is invisible in the line this project judges a run by: `Test run with N tests
+# passed` does not distinguish "ran and passed" from "declined to run", and in a run of BOTH
+# targets the Swift Testing line wins the VERIFY-OK below, so XCTest's own "with M tests skipped"
+# clause disappears from the judgment entirely. That is how a refusal path went unexercised under
+# a green number for as long as it did.
+#
+# E216 records the other half: the count is a DEVICE signal. A run on a device whose location fix
+# sat on a treeless block reported `70 tests, with 4 tests skipped` where a healthy one reports 2.
+# **A UI log whose skip count changed between two runs of the same tree is reporting a device
+# change, not a code change.**
+#
+# **Reported, deliberately not refused against a recorded expectation.** A threshold would have to
+# live somewhere, and there is nowhere honest to put it: the legitimate count moves whenever a test
+# is added, removed, or — as in #121 — stops skipping, so the number would be edited on most
+# branches and would spend its life wrong or stale. Worse, a wrong expectation refuses runs that
+# are fine, which is the failure mode that gets a guard switched off. What a reader needs is the
+# number in front of them next to the device that produced it, which is what this line is. Judging
+# it is a person's job and takes one glance.
+SKIPPED=$(printf '%s' "$XCTEST_LINE" | sed -n 's/.*with \([0-9][0-9]*\) test[s]* skipped.*/\1/p')
+if [ -n "$XCTEST_LINE" ]; then
+  note "XCTest skipped=${SKIPPED:-0} — a change in this number between two runs of the same tree is a device change, not a code change (E216)"
+fi
+
+echo "VERIFY-OK: ${SWIFT_LINE:-$XCTEST_LINE}${SWIFT_LINE:+${XCTEST_LINE:+ | XCTest: $(printf '%s' "$XCTEST_LINE" | sed 's/^[[:space:]]*//')}}"
