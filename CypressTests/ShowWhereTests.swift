@@ -52,11 +52,11 @@ struct ShowWhereTests {
     }
 
     /// A neighbour on the same block, `metres` north of the subject.
-    private static func neighbour(_ index: Int, metresNorth: Double) -> TreePin {
+    private static func neighbor(_ index: Int, metersNorth: Double) -> TreePin {
         TreePin(
             id: UUID(uuidString: "E1440000-0000-4000-8000-00000000010\(index)")!,
             coordinate: Coordinate(
-                latitude: coordinate.latitude + metresNorth / 111_320,
+                latitude: coordinate.latitude + metersNorth / 111_320,
                 longitude: coordinate.longitude
             ),
             status: .alive,
@@ -88,7 +88,7 @@ struct ShowWhereTests {
         let cold = Self.present(set)
         #expect(cold.pins.map(\.id) == [Self.treeID])
 
-        let warm = Self.present(set, context: [Self.neighbour(1, metresNorth: 12)])
+        let warm = Self.present(set, context: [Self.neighbor(1, metersNorth: 12)])
         #expect(warm.pins.first?.id == Self.treeID)
         #expect(warm.pins.count == 2)
     }
@@ -109,7 +109,7 @@ struct ShowWhereTests {
 
         let presentation = Self.present(
             set,
-            context: [subjectAgain, Self.neighbour(1, metresNorth: 12)]
+            context: [subjectAgain, Self.neighbor(1, metersNorth: 12)]
         )
 
         #expect(presentation.pins.count == 2)
@@ -127,16 +127,16 @@ struct ShowWhereTests {
         let set = PinSet.locate(Self.profile(), name: "Lombard Elm")
         let frame = Self.present(
             set,
-            context: [Self.neighbour(1, metresNorth: 400), Self.neighbour(2, metresNorth: -400)]
+            context: [Self.neighbor(1, metersNorth: 400), Self.neighbor(2, metersNorth: -400)]
         ).frame
 
-        let centreLatitude = (frame.minLatitude + frame.maxLatitude) / 2
-        let centreLongitude = (frame.minLongitude + frame.maxLongitude) / 2
-        #expect(abs(centreLatitude - Self.coordinate.latitude) < 0.000_001)
-        #expect(abs(centreLongitude - Self.coordinate.longitude) < 0.000_001)
+        let centerLatitude = (frame.minLatitude + frame.maxLatitude) / 2
+        let centerLongitude = (frame.minLongitude + frame.maxLongitude) / 2
+        #expect(abs(centerLatitude - Self.coordinate.latitude) < 0.000_001)
+        #expect(abs(centerLongitude - Self.coordinate.longitude) < 0.000_001)
 
-        let metresTall = (frame.maxLatitude - frame.minLatitude) * 111_320
-        #expect(abs(metresTall - MapLayout.defaultSpanMetres) < 1)
+        let metersTall = (frame.maxLatitude - frame.minLatitude) * 111_320
+        #expect(abs(metersTall - MapLayout.defaultSpanMeters) < 1)
     }
 
     // MARK: - 3 · Which of the thirty it is
@@ -151,7 +151,7 @@ struct ShowWhereTests {
 
         let nine = PinSet(
             subject: .coverageGap,
-            pins: [Self.neighbour(1, metresNorth: 10), Self.neighbour(2, metresNorth: 20)],
+            pins: [Self.neighbor(1, metersNorth: 10), Self.neighbor(2, metersNorth: 20)],
             count: 9,
             neighborhoodName: "Marina"
         )
@@ -167,7 +167,7 @@ struct ShowWhereTests {
 
         #expect(Self.present(set).coverage == "The larger pin is Lombard Elm.")
         #expect(
-            Self.present(set, context: [Self.neighbour(1, metresNorth: 12)]).coverage
+            Self.present(set, context: [Self.neighbor(1, metersNorth: 12)]).coverage
                 == "The larger pin is Lombard Elm. The rest of the block is drawn around it."
         )
     }
@@ -270,16 +270,16 @@ struct ShowWhereTests {
     /// cannot be seen.
     @Test("the block is read un-clustered, over the box the camera opens on")
     func theReadAsksForPins() async {
-        let api = Block(content: .pins(PinAnswer([Self.neighbour(1, metresNorth: 12)])))
+        let api = Block(content: .pins(PinAnswer([Self.neighbor(1, metersNorth: 12)])))
 
-        let pins = await PinSetNeighbours.around(api).read(Self.coordinate)
+        let pins = await PinSetNeighbors.around(api).read(Self.coordinate)
 
         #expect(pins.count == 1)
         let viewport = try! #require(api.asked.viewport)
         #expect(!viewport.shouldCluster)
         #expect(viewport.bounds.contains(Self.coordinate))
-        let metresTall = (viewport.bounds.maxLatitude - viewport.bounds.minLatitude) * 111_320
-        #expect(abs(metresTall - MapLayout.defaultSpanMetres) < 1)
+        let metersTall = (viewport.bounds.maxLatitude - viewport.bounds.minLatitude) * 111_320
+        #expect(abs(metersTall - MapLayout.defaultSpanMeters) < 1)
     }
 
     /// A clustered answer is no answer to this question, and a failed read is not an error to show.
@@ -289,8 +289,8 @@ struct ShowWhereTests {
         let clustered = Block(content: .clusters([
             TreeCluster(id: "c", coordinate: Self.coordinate, count: 31)
         ]))
-        #expect(await PinSetNeighbours.around(clustered).read(Self.coordinate).isEmpty)
-        #expect(await PinSetNeighbours.none.read(Self.coordinate).isEmpty)
+        #expect(await PinSetNeighbors.around(clustered).read(Self.coordinate).isEmpty)
+        #expect(await PinSetNeighbors.none.read(Self.coordinate).isEmpty)
     }
 
     // MARK: - 6 · E129's two rows are untouched
@@ -301,7 +301,7 @@ struct ShowWhereTests {
     func countedGroupsAreUnchanged() {
         let page = PinSet(
             subject: .vacantSites,
-            pins: (1...3).map { Self.neighbour($0, metresNorth: Double($0) * 10) },
+            pins: (1...3).map { Self.neighbor($0, metersNorth: Double($0) * 10) },
             count: 1_474,
             neighborhoodName: "Marina"
         )
@@ -312,7 +312,7 @@ struct ShowWhereTests {
 
         let whole = PinSet(
             subject: .coverageGap,
-            pins: (1...3).map { Self.neighbour($0, metresNorth: Double($0) * 10) },
+            pins: (1...3).map { Self.neighbor($0, metersNorth: Double($0) * 10) },
             count: 3,
             neighborhoodName: "Marina"
         )

@@ -222,7 +222,7 @@ struct MapQueryPlanTests {
         )
         let cell = TreeQueries.cellSize(
             zoom: 16,
-            centreLatitude: (Self.bounds.minLatitude + Self.bounds.maxLatitude) / 2,
+            centerLatitude: (Self.bounds.minLatitude + Self.bounds.maxLatitude) / 2,
             points: MapModel.markerCellPoints
         )
         // The overlap, less one cell at each end where partial membership is expected.

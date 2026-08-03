@@ -89,12 +89,12 @@ enum PhotoCropAnchor {
     /// is not a thing this app gets to change. An anchor that disagrees with the layer would move
     /// the crown of the ghost away from the crown in the viewfinder, which is the one measurement
     /// that screen exists to make.
-    case centre
+    case center
 
     var alignment: Alignment {
         switch self {
         case .crown: return Alignment(horizontal: .center, vertical: .photoCrown)
-        case .centre: return .center
+        case .center: return .center
         }
     }
 }

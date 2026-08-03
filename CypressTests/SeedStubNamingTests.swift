@@ -59,7 +59,7 @@ struct SeedStubNamingTests {
     /// Seven trees stand under these five names as of the #103 rebuild; `Tools/build_seed.py`'s swap
     /// removed the other fifty-eight by reading the name the city actually wrote.
     @Test("the catalogue still carries species the ingest could not read")
-    func theCatalogueStillCarriesUnreadableNames() async throws {
+    func theCatalogStillCarriesUnreadableNames() async throws {
         let unreadable = try await Self.unreadableNames()
         #expect(!unreadable.isEmpty, "no species carries the ':: ' marker; this suite guards nothing")
         for row in unreadable {

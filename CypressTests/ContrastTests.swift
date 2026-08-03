@@ -235,8 +235,8 @@ struct ContrastTests {
         ]
         for (appearance, traits) in [("light", Self.light), ("dark", Self.dark)] {
             for slot in Self.speciesSlots {
-                for (what, colour) in reserved {
-                    let separation = Self.deltaE(slot.fill, colour, traits)
+                for (what, color) in reserved {
+                    let separation = Self.deltaE(slot.fill, color, traits)
                     #expect(
                         separation >= 0.09,
                         """

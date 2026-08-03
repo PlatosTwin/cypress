@@ -291,20 +291,20 @@ struct MapSearchTests {
     func communityTreesAreNarrowedToo() async throws {
         let store = try await Self.store()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
-        let centre = Coordinate(
+        let center = Coordinate(
             latitude: (Self.bounds.minLatitude + Self.bounds.maxLatitude) / 2,
             longitude: (Self.bounds.minLongitude + Self.bounds.maxLongitude) / 2
         )
 
-        let match = Tree(source: .community, coordinate: centre, speciesCurrentID: Self.londonPlane)
+        let match = Tree(source: .community, coordinate: center, speciesCurrentID: Self.londonPlane)
         let other = Tree(
             source: .community,
-            coordinate: Coordinate(latitude: centre.latitude + 0.0001, longitude: centre.longitude),
+            coordinate: Coordinate(latitude: center.latitude + 0.0001, longitude: center.longitude),
             speciesCurrentID: Self.brisbaneBox
         )
         let unidentified = Tree(
             source: .community,
-            coordinate: Coordinate(latitude: centre.latitude + 0.0002, longitude: centre.longitude)
+            coordinate: Coordinate(latitude: center.latitude + 0.0002, longitude: center.longitude)
         )
         for tree in [match, other, unidentified] {
             try await store.queue.write { connection in

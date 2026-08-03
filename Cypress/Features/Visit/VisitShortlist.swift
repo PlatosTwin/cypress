@@ -239,8 +239,8 @@ enum VisitBearing {
     /// Metres are whole numbers: the mock draws `3 m N` / `17 m S`, and a decimal on a number whose
     /// error bar is ±9 m would be false precision.
     static func label(distanceM: Double, from origin: Coordinate?, to destination: Coordinate) -> String {
-        let metres = Int(distanceM.rounded())
-        guard let origin, metres > 0 else { return "\(metres) m" }
-        return "\(metres) m \(compass(from: origin, to: destination))"
+        let meters = Int(distanceM.rounded())
+        guard let origin, meters > 0 else { return "\(meters) m" }
+        return "\(meters) m \(compass(from: origin, to: destination))"
     }
 }

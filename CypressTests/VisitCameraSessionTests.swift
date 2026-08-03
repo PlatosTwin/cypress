@@ -1154,11 +1154,11 @@ struct VisitCameraSessionTests {
             return (Int(bytes[i]), Int(bytes[i + 1]), Int(bytes[i + 2]))
         }
 
-        func matches(_ x: Int, _ y: Int, _ colour: (r: Int, g: Int, b: Int), tolerance: Int) -> Bool {
+        func matches(_ x: Int, _ y: Int, _ color: (r: Int, g: Int, b: Int), tolerance: Int) -> Bool {
             let p = rgb(x, y)
-            return abs(p.r - colour.r) <= tolerance
-                && abs(p.g - colour.g) <= tolerance
-                && abs(p.b - colour.b) <= tolerance
+            return abs(p.r - color.r) <= tolerance
+                && abs(p.g - color.g) <= tolerance
+                && abs(p.b - color.b) <= tolerance
         }
     }
 
@@ -1198,7 +1198,7 @@ struct VisitCameraSessionTests {
     /// drawn size, which breaks any single run, and only the first and last rows are being asked
     /// for. The threshold is what keeps a stray antialiased pixel from counting as the well.
     static func rows(
-        of colour: (r: Int, g: Int, b: Int),
+        of color: (r: Int, g: Int, b: Int),
         in bitmap: Bitmap,
         band: Range<Int>,
         minimumRun: Int
@@ -1207,7 +1207,7 @@ struct VisitCameraSessionTests {
         var last: Int?
         for y in band where y >= 0 && y < bitmap.height {
             var count = 0
-            for x in 0..<bitmap.width where bitmap.matches(x, y, colour, tolerance: 2) { count += 1 }
+            for x in 0..<bitmap.width where bitmap.matches(x, y, color, tolerance: 2) { count += 1 }
             if count >= minimumRun {
                 if first == nil { first = y }
                 last = y

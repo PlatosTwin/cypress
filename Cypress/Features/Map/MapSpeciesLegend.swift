@@ -139,12 +139,12 @@ enum MapSpeciesLegendCopy {
     /// "London Plane, plum pins marked dot". The colour is named as well as the mark, because a
     /// reader with partial colour vision may be able to use one and not the other.
     static func chipLabel(name: String, slot: MapSpeciesSlot) -> String {
-        "\(name), \(colourName(slot)) pins marked \(slot.glyphName)"
+        "\(name), \(colorName(slot)) pins marked \(slot.glyphName)"
     }
 
     /// Plain words for the four hues. They are *descriptions*, not token names: a listener has no
     /// use for "slot B".
-    static func colourName(_ slot: MapSpeciesSlot) -> String {
+    static func colorName(_ slot: MapSpeciesSlot) -> String {
         switch slot {
         case .a: return "plum"
         case .b: return "lagoon"

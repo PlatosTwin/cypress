@@ -132,7 +132,7 @@ struct GrovePresentationTests {
     }
 
     @Test("Zero recognised species renders no ring rather than a ring at zero")
-    func zeroRecognisedIsBelowThreshold() {
+    func zeroRecognizedIsBelowThreshold() {
         // A contributor whose only species does not grow in their own neighbourhood: the
         // neighbourhood is known, the denominator is known, and the numerator is 0.
         let subject = Self.presentation(
@@ -146,7 +146,7 @@ struct GrovePresentationTests {
     }
 
     @Test("One recognised species is the threshold, and it renders")
-    func oneRecognisedSpeciesRenders() throws {
+    func oneRecognizedSpeciesRenders() throws {
         let subject = Self.presentation(
             known: [Self.known(1)],
             neighborhood: Self.neighborhood(totalling: 40)
@@ -193,8 +193,8 @@ struct GrovePresentationTests {
         // The guarantee `Series.filter` gives, exercised through the screen that depends on it: a
         // page filtered by a visibility rule is still a page.
         let page = Series(items: (1...12).map { Self.known($0) }, isComplete: false)
-        let neighbourhoodIDs = Set((1...40).map(Self.speciesID))
-        let intersection = page.filter { neighbourhoodIDs.contains($0.speciesID) }
+        let neighborhoodIDs = Set((1...40).map(Self.speciesID))
+        let intersection = page.filter { neighborhoodIDs.contains($0.speciesID) }
 
         #expect(intersection.items.count == 12)
         #expect(intersection.totalCount == nil)

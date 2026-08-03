@@ -304,7 +304,7 @@ struct MapEmptyInventoryTests {
         )
 
         // One pan north, onto a street the inventory does list.
-        await api.answer(with: .clusters([TreeCluster(id: "fulton-1", coordinate: Self.fultonCentre, count: 27)]))
+        await api.answer(with: .clusters([TreeCluster(id: "fulton-1", coordinate: Self.fultonCenter, count: 27)]))
         model.cameraDidChange(bounds: Self.fulton, zoom: 18)
         try await Self.waitUntil { !model.inventoryIsEmptyHere }
         #expect(
@@ -323,7 +323,7 @@ struct MapEmptyInventoryTests {
         minLatitude: 37.7740, maxLatitude: 37.7768,
         minLongitude: -122.4878, maxLongitude: -122.4846
     )
-    private static let fultonCentre = Coordinate(latitude: 37.7754, longitude: -122.4862)
+    private static let fultonCenter = Coordinate(latitude: 37.7754, longitude: -122.4862)
 
     /// Polls rather than sleeping a fixed span: the map debounces the camera, and a test that
     /// pinned the debounce would fail the day it is retuned (`MapRecentreTests.waitUntil`).

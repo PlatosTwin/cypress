@@ -30,18 +30,18 @@ public enum MeasurementSeries: String, Codable, Sendable, Hashable, CaseIterable
 /// A length unit a value can be *entered* in. Canonical storage is SI (metres) regardless
 /// (DECISIONS §3.6: "Canonical SI internally, entered unit captured").
 public enum LengthUnit: String, Codable, Sendable, Hashable, CaseIterable {
-    case millimetres = "mm"
-    case centimetres = "cm"
-    case metres = "m"
+    case millimeters = "mm"
+    case centimeters = "cm"
+    case meters = "m"
     case inches = "in"
     case feet = "ft"
 
     /// Metres per one unit.
-    public var metresPerUnit: Double {
+    public var metersPerUnit: Double {
         switch self {
-        case .millimetres: return 0.001
-        case .centimetres: return 0.01
-        case .metres: return 1
+        case .millimeters: return 0.001
+        case .centimeters: return 0.01
+        case .meters: return 1
         case .inches: return 0.0254
         case .feet: return 0.3048
         }
@@ -49,7 +49,7 @@ public enum LengthUnit: String, Codable, Sendable, Hashable, CaseIterable {
 
     public var isMetric: Bool {
         switch self {
-        case .millimetres, .centimetres, .metres: return true
+        case .millimeters, .centimeters, .meters: return true
         case .inches, .feet: return false
         }
     }
@@ -79,13 +79,13 @@ public struct Quantity: Hashable, Codable, Sendable {
     public init(value: Double, unit: LengthUnit, method: MeasurementMethod) {
         self.value = value
         self.unitEntered = unit
-        self.siValue = value * unit.metresPerUnit
+        self.siValue = value * unit.metersPerUnit
         self.method = method
     }
 
     /// The value expressed in another unit, for display only. The stored entry is untouched.
     public func converted(to unit: LengthUnit) -> Double {
-        siValue / unit.metresPerUnit
+        siValue / unit.metersPerUnit
     }
 
     /// Which chart series this point belongs to (D7).

@@ -28,7 +28,7 @@ public struct OutboxPhoto: Codable, Hashable, Sendable {
         let container = try decoder.singleValueContainer()
         if let path = try? container.decode(String.self) {
             self.path = path
-            self.shotType = OutboxPhoto.shotTypeForRowsWrittenBeforeShotTypesTravelled
+            self.shotType = OutboxPhoto.shotTypeForRowsWrittenBeforeShotTypesTraveled
             return
         }
         let keyed = try decoder.container(keyedBy: CodingKeys.self)
@@ -45,7 +45,7 @@ public struct OutboxPhoto: Codable, Hashable, Sendable {
     /// close-up as the framing reference for a whole tree, permanently, with no way to tell which
     /// records were guesses. `.other` is the stored vocabulary's "unclassified" (BUILD-PLAN §4): the
     /// photo still reaches the timeline, it just does not get promoted on a label nobody chose.
-    public static let shotTypeForRowsWrittenBeforeShotTypesTravelled: ShotType = .other
+    public static let shotTypeForRowsWrittenBeforeShotTypesTraveled: ShotType = .other
 }
 
 /// The client-side outbox row (BUILD-PLAN §4, "Client-side outbox (SQLite on device)").

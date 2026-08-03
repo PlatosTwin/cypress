@@ -83,7 +83,7 @@ struct MeasureEntranceKindTests {
             attribution: attribution,
             capturedAt: date(2026, 6, 1),
             gpsAccuracyM: 6,
-            quantity: Quantity(value: value, unit: .metres, method: .estimate)
+            quantity: Quantity(value: value, unit: .meters, method: .estimate)
         )
     }
 
@@ -93,7 +93,7 @@ struct MeasureEntranceKindTests {
             attribution: attribution,
             capturedAt: date(2026, 6, 1),
             gpsAccuracyM: 6,
-            quantity: Quantity(value: value, unit: .centimetres, method: .tape)
+            quantity: Quantity(value: value, unit: .centimeters, method: .tape)
         )
     }
 

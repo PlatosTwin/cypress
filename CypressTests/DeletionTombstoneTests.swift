@@ -75,7 +75,7 @@ struct DeletionTombstoneTests {
                     treeID: treeID,
                     attribution: attribution,
                     capturedAt: moment,
-                    quantity: Quantity(value: 31, unit: .centimetres, method: .tape)
+                    quantity: Quantity(value: 31, unit: .centimeters, method: .tape)
                 ),
                 connection: connection
             )

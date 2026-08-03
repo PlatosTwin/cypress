@@ -29,7 +29,7 @@ struct GrowthHistoryPresentationTests {
 
     private static func dbh(
         _ year: Int,
-        _ centimetres: Double,
+        _ centimeters: Double,
         _ method: MeasurementMethod,
         accuracyM: Double? = 6
     ) -> TreeMeasurement {
@@ -38,13 +38,13 @@ struct GrowthHistoryPresentationTests {
             attribution: .anonymous(deviceID: deviceID),
             capturedAt: date(year, 6),
             gpsAccuracyM: accuracyM,
-            quantity: Quantity(value: centimetres, unit: .centimetres, method: method)
+            quantity: Quantity(value: centimeters, unit: .centimeters, method: method)
         )
     }
 
     private static func height(
         _ year: Int,
-        _ metres: Double,
+        _ meters: Double,
         _ method: MeasurementMethod,
         accuracyM: Double? = 6
     ) -> TreeMeasurement {
@@ -53,7 +53,7 @@ struct GrowthHistoryPresentationTests {
             attribution: .anonymous(deviceID: deviceID),
             capturedAt: date(year, 6),
             gpsAccuracyM: accuracyM,
-            quantity: Quantity(value: metres, unit: .metres, method: method)
+            quantity: Quantity(value: meters, unit: .meters, method: method)
         )
     }
 

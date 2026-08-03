@@ -55,7 +55,7 @@ struct AlmanacLateFixTests {
 
     /// Enough of a neighbourhood to be unmistakably *not* the empty one: a name for the header pill
     /// and a composition card under it. The numbers are not the subject and are not asserted on.
-    static let neighbourhood = Almanac(
+    static let neighborhood = Almanac(
         neighborhood: AlmanacNeighborhood(
             area: .named("Sunset/Parkside"),
             composition: NeighborhoodComposition(
@@ -172,7 +172,7 @@ struct AlmanacLateFixTests {
 
     @Test("An almanac built without a fix re-reads when the fix arrives")
     func lateFixIsRead() async {
-        let api = FixSensitive(payload: Self.neighbourhood)
+        let api = FixSensitive(payload: Self.neighborhood)
         let model = AlmanacModel(api: api, coordinate: nil, now: { Self.now })
 
         // Mount, exactly as `AlmanacView`'s `.task(id:)` does it: the first call carries the same
@@ -191,7 +191,7 @@ struct AlmanacLateFixTests {
 
     @Test("The same coordinate arriving again does not re-read")
     func unchangedFixIsNotReRead() async {
-        let api = FixSensitive(payload: Self.neighbourhood)
+        let api = FixSensitive(payload: Self.neighborhood)
         let model = AlmanacModel(api: api, coordinate: Self.fix, now: { Self.now })
 
         await model.update(coordinate: Self.fix)
@@ -222,7 +222,7 @@ struct AlmanacLateFixTests {
         .timeLimit(.minutes(3))
     )
     func promptSurvivesUntilContentArrives() async {
-        let api = Held(payload: Self.neighbourhood)
+        let api = Held(payload: Self.neighborhood)
         let model = AlmanacModel(api: api, coordinate: nil, now: { Self.now })
 
         await model.update(coordinate: nil)
@@ -252,7 +252,7 @@ struct AlmanacLateFixTests {
     /// computed from a read the reader is not looking at.
     @Test("A superseded read does not overwrite the fix that replaced it", .timeLimit(.minutes(3)))
     func supersededReadIsDropped() async {
-        let api = Held(payload: Self.neighbourhood)
+        let api = Held(payload: Self.neighborhood)
         let model = AlmanacModel(api: api, coordinate: nil, now: { Self.now })
 
         let first = Task { await model.update(coordinate: Self.fix) }
@@ -358,7 +358,7 @@ struct AlmanacLateFixTests {
     private static func render(late: Bool) async -> Data? {
         let host = UIHostingController(
             rootView: AnyView(
-                LateFixHost(api: FixSensitive(payload: neighbourhood), late: late)
+                LateFixHost(api: FixSensitive(payload: neighborhood), late: late)
                     .frame(width: width, height: height)
                     .background(CypressColor.surfaceScreen)
             )

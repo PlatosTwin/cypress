@@ -73,7 +73,7 @@ struct ScreenEntranceTests {
             attribution: attribution,
             capturedAt: date(2026, 6, 1),
             gpsAccuracyM: 6,
-            quantity: Quantity(value: 64, unit: .centimetres, method: .tape)
+            quantity: Quantity(value: 64, unit: .centimeters, method: .tape)
         )
     }
 
@@ -83,7 +83,7 @@ struct ScreenEntranceTests {
             attribution: attribution,
             capturedAt: date(2026, 6, 1),
             gpsAccuracyM: 6,
-            quantity: Quantity(value: 18, unit: .metres, method: .estimate)
+            quantity: Quantity(value: 18, unit: .meters, method: .estimate)
         )
     }
 
@@ -486,7 +486,7 @@ struct ScreenEntranceTests {
             capturedAt: Self.date(2026, 6, 1),
             // Worse than D6's 15 m ceiling, so `isChartable` is false and `charts` is empty.
             gpsAccuracyM: 40,
-            quantity: Quantity(value: 64, unit: .centimetres, method: .tape)
+            quantity: Quantity(value: 64, unit: .centimeters, method: .tape)
         )
         let subject = Self.presentation(measurements: [unchartable])
 

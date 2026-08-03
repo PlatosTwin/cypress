@@ -22,7 +22,7 @@ struct MapContentBudgetTests {
         minLongitude: -122.4445, maxLongitude: -122.4430
     )
 
-    private static var centre: Coordinate {
+    private static var center: Coordinate {
         Coordinate(
             latitude: (bounds.minLatitude + bounds.maxLatitude) / 2,
             longitude: (bounds.minLongitude + bounds.maxLongitude) / 2
@@ -48,7 +48,7 @@ struct MapContentBudgetTests {
         let seedOnly = Self.pins(try await api.mapContent(in: viewport))
         #expect(seedOnly.count == limit, "the fixture block is not dense enough to reach the cap")
 
-        let added = Tree(source: .community, coordinate: Self.centre)
+        let added = Tree(source: .community, coordinate: Self.center)
         try await store.queue.write { connection in
             try CommunityTreeStore().insert(added, clientUUID: UUID(), connection: connection)
         }
@@ -84,8 +84,8 @@ struct MapContentBudgetTests {
             let tree = Tree(
                 source: .community,
                 coordinate: Coordinate(
-                    latitude: Self.centre.latitude + Double(index) * 0.000_02,
-                    longitude: Self.centre.longitude
+                    latitude: Self.center.latitude + Double(index) * 0.000_02,
+                    longitude: Self.center.longitude
                 )
             )
             added.insert(tree.id)
@@ -108,7 +108,7 @@ struct MapContentBudgetTests {
         let viewport = MapViewport(bounds: Self.bounds, zoom: 14, pinLimit: 3)
         let before = try await api.mapContent(in: viewport).pinCount
 
-        let added = Tree(source: .community, coordinate: Self.centre)
+        let added = Tree(source: .community, coordinate: Self.center)
         try await store.queue.write { connection in
             try CommunityTreeStore().insert(added, clientUUID: UUID(), connection: connection)
         }

@@ -134,7 +134,7 @@ enum VisitPinAdjust {
     /// fifteen of them land 84 mm short of the limit, and the screen ends up printing `75 m` beside a
     /// pin that is not there. The discrepancy is far too small to matter to a tree and exactly large
     /// enough to matter to an assertion, which is how it was found.
-    static let metresPerDegreeLatitude: Double = .pi * 6_371_008.8 / 180
+    static let metersPerDegreeLatitude: Double = .pi * 6_371_008.8 / 180
 
     /// A coordinate displaced by a number of metres north and east.
     ///
@@ -146,8 +146,8 @@ enum VisitPinAdjust {
         // `BoundingBox(around:radiusM:)` does.
         let cosLatitude = max(cos(origin.latitude * .pi / 180), 0.000_01)
         return Coordinate(
-            latitude: origin.latitude + northM / metresPerDegreeLatitude,
-            longitude: origin.longitude + eastM / (metresPerDegreeLatitude * cosLatitude)
+            latitude: origin.latitude + northM / metersPerDegreeLatitude,
+            longitude: origin.longitude + eastM / (metersPerDegreeLatitude * cosLatitude)
         )
     }
 
@@ -173,7 +173,7 @@ enum VisitPinAdjust {
     /// The conversion lives here rather than on `BoundingBox` because this screen is its only caller,
     /// for the reason `PinSetPresentation` gives for keeping its own inverse local: adding it to a
     /// type the whole data layer shares would be a change to that type's surface for one use.
-    static func centre(of box: BoundingBox) -> Coordinate {
+    static func center(of box: BoundingBox) -> Coordinate {
         Coordinate(
             latitude: (box.minLatitude + box.maxLatitude) / 2,
             longitude: (box.minLongitude + box.maxLongitude) / 2
@@ -244,7 +244,7 @@ enum VisitPinAdjustCopy {
     static let confirm = "Use this spot"
 
     /// Undo, in one press, without having to aim.
-    static let recentre = "Back to where you are standing"
+    static let recenter = "Back to where you are standing"
 
     /// The micro-label over the nudge controls, so four compass letters read as a control rather than
     /// as a legend.
@@ -278,9 +278,9 @@ enum VisitPinAdjustCopy {
     /// error bar is the GPS accuracy chip at the top of this screen would be false precision.
     static func placement(distanceM: Double, from anchor: Coordinate, to pin: Coordinate) -> String {
         guard distanceM >= VisitPinAdjust.fixToleranceM else { return atFix }
-        let metres = Int(distanceM.rounded())
+        let meters = Int(distanceM.rounded())
         let heading = spelledOut(VisitBearing.compass(from: anchor, to: pin))
-        return "\(metres) m \(heading) of where you are standing."
+        return "\(meters) m \(heading) of where you are standing."
     }
 
     static let atFix = "Right where you are standing."

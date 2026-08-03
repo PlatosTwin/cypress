@@ -171,7 +171,7 @@ struct AlmanacGeographyTests {
         // And the almanac a reader standing there actually gets.
         let almanac = try await Self.api(store).almanac(near: Self.downtownSanJose)
         let area = try #require(almanac.neighborhood, "San Jose still has no almanac at all")
-        #expect(area.area == .radius(metres: AlmanacLimits.fallbackRadiusM))
+        #expect(area.area == .radius(meters: AlmanacLimits.fallbackRadiusM))
         #expect(area.name == nil, "a distance is not a name")
 
         // Four of the five blocks have something behind them. The bloom row does not, and cannot on

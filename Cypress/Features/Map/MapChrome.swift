@@ -607,22 +607,22 @@ enum MapLocationCopy {
 ///
 /// A 44pt circle, which is `CypressSpacing.minTapTarget` exactly: the control has no label to widen
 /// it, so the drawn shape is the hit target rather than something smaller with padding around it.
-struct MapRecentreButton: View {
-    let engagement: MapRecentre.Engagement
+struct MapRecenterButton: View {
+    let engagement: MapRecenter.Engagement
     var action: () -> Void
 
     var body: some View {
         Button(action: action) {
             ZStack {
                 Circle()
-                    .fill(engagement == .centred ? CypressColor.ctaFill : CypressColor.surfaceCard)
+                    .fill(engagement == .centered ? CypressColor.ctaFill : CypressColor.surfaceCard)
                 MapLocateGlyph(tint: tint, struckThrough: engagement == .unavailable)
             }
             .frame(width: CypressSpacing.minTapTarget, height: CypressSpacing.minTapTarget)
             .overlay {
                 // Only the unengaged circle carries an edge. Filled, it is the CTA green against the
                 // map and the ring would be a line drawn on top of its own colour.
-                if engagement != .centred {
+                if engagement != .centered {
                     Circle().strokeBorder(
                         CypressColor.borderPinRing,
                         lineWidth: CypressSpacing.Component.hairline
@@ -634,14 +634,14 @@ struct MapRecentreButton: View {
             .cypressShadow(light: CypressShadow.fab, dark: CypressShadow.Dark.fab)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(MapRecentreCopy.label)
-        .accessibilityValue(MapRecentreCopy.value(engagement))
-        .accessibilityHint(MapRecentreCopy.hint(engagement) ?? "")
+        .accessibilityLabel(MapRecenterCopy.label)
+        .accessibilityValue(MapRecenterCopy.value(engagement))
+        .accessibilityHint(MapRecenterCopy.hint(engagement) ?? "")
     }
 
     private var tint: Color {
         switch engagement {
-        case .centred: return CypressColor.ctaLabel
+        case .centered: return CypressColor.ctaLabel
         // `askable` and `searching` draw exactly as `away` did when all three were one case (#100).
         // The words told the reader apart; the picture never claimed to, and a control that changed
         // colour while CoreLocation thought about it would be flicker with no information in it.

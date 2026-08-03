@@ -60,7 +60,7 @@ struct DeviceClaimTests {
                 treeID: treeID,
                 attribution: attribution,
                 capturedAt: moment,
-                quantity: Quantity(value: 31, unit: .centimetres, method: .tape)
+                quantity: Quantity(value: 31, unit: .centimeters, method: .tape)
             ))
         )
         _ = try await outbox.enqueue(

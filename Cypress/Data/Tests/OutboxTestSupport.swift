@@ -186,7 +186,7 @@ public enum OutboxTestSupport {
                         clientUUID: clientUUID,
                         capturedAt: moment,
                         gpsAccuracyM: 5,
-                        quantity: Quantity(value: 31, unit: .centimetres, method: .tape),
+                        quantity: Quantity(value: 31, unit: .centimeters, method: .tape),
                         createdAt: moment,
                         updatedAt: moment
                     )),

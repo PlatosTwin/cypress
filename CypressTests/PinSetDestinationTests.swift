@@ -234,7 +234,7 @@ struct PinSetDestinationTests {
 
         let acrossM = Coordinate(latitude: frame.minLatitude, longitude: frame.minLongitude)
             .distance(to: Coordinate(latitude: frame.maxLatitude, longitude: frame.minLongitude))
-        #expect(acrossM >= MapLayout.defaultSpanMetres * 0.99)
+        #expect(acrossM >= MapLayout.defaultSpanMeters * 0.99)
         #expect(frame.contains(block.group.pins[0].coordinate))
     }
 

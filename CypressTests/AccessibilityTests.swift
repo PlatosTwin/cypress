@@ -90,7 +90,7 @@ struct AccessibilityTests {
     /// The three ramp steps say what they stand for, not what colour they are. The strip's whole
     /// visual vocabulary is three greens; "densest" is a token name, "full canopy" is the thing.
     @Test("C3 · the ramp is spoken as leaf, not as colour")
-    func foliageDensitiesSpeakLeafNotColour() {
+    func foliageDensitiesSpeakLeafNotColor() {
         #expect(FoliageStrip.Density.full.spokenName == "full canopy")
         #expect(FoliageStrip.Density.partial.spokenName == "partial canopy")
         #expect(FoliageStrip.Density.thin.spokenName == "thin canopy")
@@ -122,7 +122,7 @@ struct AccessibilityTests {
             (.estimate, "est.", "estimated"),
         ]
         for (method, drawn, spoken) in cases {
-            let badge = MethodBadge(Quantity(value: 64, unit: .centimetres, method: method))
+            let badge = MethodBadge(Quantity(value: 64, unit: .centimeters, method: method))
             #expect(badge.label == drawn, "the drawn badge changed: \(badge.label)")
             #expect(
                 badge.accessibilityLabel == spoken,
@@ -139,8 +139,8 @@ struct AccessibilityTests {
     /// tell "taped" from "estimated" has lost the distinction the whole `Quantity` type exists for.
     @Test("C12 · measured and estimated are audibly different")
     func measuredAndEstimatedDoNotSoundAlike() {
-        let taped = MethodBadge(Quantity(value: 64, unit: .centimetres, method: .tape))
-        let estimated = MethodBadge(Quantity(value: 64, unit: .centimetres, method: .estimate))
+        let taped = MethodBadge(Quantity(value: 64, unit: .centimeters, method: .tape))
+        let estimated = MethodBadge(Quantity(value: 64, unit: .centimeters, method: .estimate))
         #expect(taped.accessibilityLabel != estimated.accessibilityLabel)
         #expect(taped.accessibilityLabel.contains("measured"))
         #expect(!estimated.accessibilityLabel.contains("measured"))
@@ -150,7 +150,7 @@ struct AccessibilityTests {
     /// same sentence — the abbreviation is a drawing decision and never reaches the listener.
     @Test("C12 · both drawn sizes speak the same meaning")
     func bothBadgeSizesSpeakTheSame() {
-        let quantity = Quantity(value: 64, unit: .centimetres, method: .estimate)
+        let quantity = Quantity(value: 64, unit: .centimeters, method: .estimate)
         let inline = MethodBadge(quantity, size: .inline)
         let log = MethodBadge(quantity, size: .growthLog)
         #expect(inline.label != log.label, "the two drawn sizes stopped differing")
@@ -168,10 +168,10 @@ struct AccessibilityTests {
     @Test("C23 · the growth plot speaks each series separately, with its method")
     func lineChartSpeaksSeriesSeparately() {
         let chart = LineChart(points: [
-            ChartPoint(x: 0, y: 0.1, quantity: Quantity(value: 47, unit: .centimetres, method: .estimate)),
-            ChartPoint(x: 0.3, y: 0.3, quantity: Quantity(value: 52, unit: .centimetres, method: .estimate)),
-            ChartPoint(x: 0.7, y: 0.7, quantity: Quantity(value: 58, unit: .centimetres, method: .tape)),
-            ChartPoint(x: 1, y: 0.9, quantity: Quantity(value: 64, unit: .centimetres, method: .tape)),
+            ChartPoint(x: 0, y: 0.1, quantity: Quantity(value: 47, unit: .centimeters, method: .estimate)),
+            ChartPoint(x: 0.3, y: 0.3, quantity: Quantity(value: 52, unit: .centimeters, method: .estimate)),
+            ChartPoint(x: 0.7, y: 0.7, quantity: Quantity(value: 58, unit: .centimeters, method: .tape)),
+            ChartPoint(x: 1, y: 0.9, quantity: Quantity(value: 64, unit: .centimeters, method: .tape)),
         ])
         let spoken = chart.accessibilityLabel
 
@@ -187,7 +187,7 @@ struct AccessibilityTests {
     @Test("C23 · a one-point series speaks the point")
     func lineChartSingleReading() {
         let chart = LineChart(points: [
-            ChartPoint(x: 0, y: 0.5, quantity: Quantity(value: 47, unit: .centimetres, method: .tape)),
+            ChartPoint(x: 0, y: 0.5, quantity: Quantity(value: 47, unit: .centimeters, method: .tape)),
         ])
         #expect(chart.accessibilityLabel.contains("1 reading measured with a tape: 47 cm"))
         #expect(!chart.accessibilityLabel.contains("47 cm to 47 cm"))
@@ -290,7 +290,7 @@ struct AccessibilityTests {
     /// curve — is what it returns: `Animation` has no "off", and `nil` is how SwiftUI is told to
     /// apply a state change without one. A faster animation is still an animation.
     @Test("every named curve can be switched off")
-    func everyCurveHonoursReduceMotion() {
+    func everyCurveHonorsReduceMotion() {
         let curves: [(String, Animation)] = [
             ("czFade", CypressMotion.fade),
             ("czSheet", CypressMotion.sheet),

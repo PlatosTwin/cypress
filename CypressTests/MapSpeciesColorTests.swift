@@ -23,7 +23,7 @@ import UIKit
 ///    which is E130's badge re-keying in another costume.
 @MainActor
 @Suite("Map species colouring and selection")
-struct MapSpeciesColourTests {
+struct MapSpeciesColorTests {
 
     // MARK: - Fixtures
 
@@ -73,7 +73,7 @@ struct MapSpeciesColourTests {
     }
 
     @Test("a species with one pin in view is not worth a slot")
-    func singletonsAreNotColoured() {
+    func singletonsAreNotColored() {
         let id = Self.ids(4)
         let palette = MapSpeciesPalette.assign(
             pins: Self.pins(id[0], 4) + Self.pins(id[1], 1) + Self.pins(id[2], 1) + Self.pins(id[3], 1)
@@ -308,11 +308,11 @@ struct MapSpeciesColourTests {
     func annotationKindTracksThePalette() {
         let id = UUID()
         let pin = Self.pin(species: id)
-        let coloured = MapSpeciesPalette.assign(pins: Self.pins(id, 4))
-        let uncoloured = MapSpeciesPalette.empty
+        let colored = MapSpeciesPalette.assign(pins: Self.pins(id, 4))
+        let uncolored = MapSpeciesPalette.empty
 
-        let hot = TreePinAnnotation(pin: pin, palette: coloured)
-        let cold = TreePinAnnotation(pin: pin, palette: uncoloured)
+        let hot = TreePinAnnotation(pin: pin, palette: colored)
+        let cold = TreePinAnnotation(pin: pin, palette: uncolored)
         #expect(hot.kind == .cityTreeSpecies(.a))
         #expect(cold.kind == .cityTree)
         #expect(
@@ -462,7 +462,7 @@ struct MapSpeciesColourTests {
     /// chroma ≥ 0.07 in both appearances, and both reticle colours carry ≤ 0.04. There is no overlap
     /// and no near miss.
     @Test("the selection reticle is achromatic and every species colour is not")
-    func theReticleCannotBeASpeciesColour() {
+    func theReticleCannotBeASpeciesColor() {
         for traits in [UITraitCollection(userInterfaceStyle: .light), UITraitCollection(userInterfaceStyle: .dark)] {
             for reticle in [CypressColor.textInk, CypressColor.pinRingStroke] {
                 #expect(

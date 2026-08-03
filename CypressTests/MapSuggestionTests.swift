@@ -77,7 +77,7 @@ struct MapSuggestionTests {
     /// **E38, the countable half.** More matched than fits, but the catalogue counted them all, so the
     /// total is a fact and the sentence may print it.
     @Test("more matches than rows are counted, and the count is exact when the catalogue counted it")
-    func aRemainderTheCatalogueCounted() throws {
+    func aRemainderTheCatalogCounted() throws {
         let suggestions = MapSuggestions(matches: try Self.many(21))
         guard case let .listing(listing) = suggestions else {
             Issue.record("21 matches produced \(suggestions)")

@@ -91,7 +91,7 @@ final class DeepLinkVoiceOverTests: XCTestCase {
         let app = launch("pinAdjust")
         guard arrive(app, screen: "pinAdjust", anchor: "Move the pin") else { return }
 
-        assertEveryControlIsLabelled(app, screen: "pinAdjust")
+        assertEveryControlIsLabeled(app, screen: "pinAdjust")
 
         for direction in ["north", "east", "south", "west"] {
             let nudge = app.buttons["Move the pin \(direction)"]
@@ -689,7 +689,7 @@ final class DeepLinkVoiceOverTests: XCTestCase {
         let app = launch(screen)
         guard arrive(app, screen: screen, anchor: anchor, file: file, line: line) else { return }
 
-        assertEveryControlIsLabelled(app, screen: screen, file: file, line: line)
+        assertEveryControlIsLabeled(app, screen: screen, file: file, line: line)
 
         if pushed {
             // A pushed screen covers the tab root, so the bottom bar is gone. Its absence is a second,
@@ -724,7 +724,7 @@ final class DeepLinkVoiceOverTests: XCTestCase {
     /// Scoped to what is *hittable*, for the same reason E116's version is: an element behind a cover
     /// or scrolled off the bottom is in the hierarchy without being reachable, and holding it to the
     /// same standard would report failures a user cannot encounter.
-    private func assertEveryControlIsLabelled(
+    private func assertEveryControlIsLabeled(
         _ app: XCUIApplication,
         screen: String,
         file: StaticString = #filePath,

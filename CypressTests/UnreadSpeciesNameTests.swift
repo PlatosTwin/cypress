@@ -111,7 +111,7 @@ struct UnreadSpeciesNameTests {
     /// assertion is the one the copy depends on and is not in R47: on every one of these rows the
     /// *common* half parsed and is the city's own word, which is what there is to quote.
     @Test("the catalogue still carries names the ingest could not read, each with a city wording")
-    func theCatalogueStillCarriesUnreadNames() async throws {
+    func theCatalogStillCarriesUnreadNames() async throws {
         let species = try await Self.unreadSpecies()
         let counts = try await Self.treeCounts()
 

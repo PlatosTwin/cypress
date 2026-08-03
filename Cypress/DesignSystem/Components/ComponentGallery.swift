@@ -119,12 +119,12 @@ private struct Variant<Content: View>: View {
 // MARK: - Sample data
 
 enum GallerySample {
-    static let dbhTaped = Quantity(value: 64, unit: .centimetres, method: .tape)
-    static let dbhPrevious = Quantity(value: 62, unit: .centimetres, method: .tape)
-    static let dbhEstimated = Quantity(value: 60, unit: .centimetres, method: .estimate)
-    static let heightEstimated = Quantity(value: 18, unit: .metres, method: .estimate)
-    static let dbhCaliper = Quantity(value: 31, unit: .centimetres, method: .caliper)
-    static let heightLaser = Quantity(value: 21.5, unit: .metres, method: .laser)
+    static let dbhTaped = Quantity(value: 64, unit: .centimeters, method: .tape)
+    static let dbhPrevious = Quantity(value: 62, unit: .centimeters, method: .tape)
+    static let dbhEstimated = Quantity(value: 60, unit: .centimeters, method: .estimate)
+    static let heightEstimated = Quantity(value: 18, unit: .meters, method: .estimate)
+    static let dbhCaliper = Quantity(value: 31, unit: .centimeters, method: .caliper)
+    static let heightLaser = Quantity(value: 21.5, unit: .meters, method: .laser)
 
     /// An evergreen — the flagship Monterey Cypress that D5 exists because of.
     static let evergreen: Species? = try? Species(
@@ -1038,7 +1038,7 @@ private struct GalleryC23: View {
                 y: ys[index],
                 quantity: Quantity(
                     value: values[index],
-                    unit: .centimetres,
+                    unit: .centimeters,
                     method: methods[index]
                 )
             )

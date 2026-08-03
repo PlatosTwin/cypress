@@ -158,7 +158,7 @@ struct GrovePresentation: Equatable {
         // is what keeps the completeness attached to the rows all the way to the counts below.
         let known = grove.known.sorted { $0.firstMetAt < $1.firstMetAt }
 
-        let recognisedHere = grove.neighborhood.map { neighborhood in
+        let recognizedHere = grove.neighborhood.map { neighborhood in
             // Intersection, with `Series.filter` so a page cannot become a total on the way through.
             // Both sides have to be whole for the result to be whole, which `filter` preserves and
             // `Progress` then checks.
@@ -166,10 +166,10 @@ struct GrovePresentation: Equatable {
         }
 
         self.progress = Self.progress(
-            recognisedHere: recognisedHere,
+            recognizedHere: recognizedHere,
             neighborhood: grove.neighborhood
         )
-        self.tiles = Self.tiles(known: known, neighborhood: grove.neighborhood, recognisedHere: recognisedHere)
+        self.tiles = Self.tiles(known: known, neighborhood: grove.neighborhood, recognizedHere: recognizedHere)
         self.celebration = Self.celebration(known: known, now: now, calendar: calendar)
     }
 
@@ -193,21 +193,21 @@ struct GrovePresentation: Equatable {
     ///   cold-start threshold do not render at all"). A ring at 0% captioned "you can recognize in
     ///   the Sunset" is an aggregate with no data in it.
     private static func progress(
-        recognisedHere: Series<KnownSpecies>?,
+        recognizedHere: Series<KnownSpecies>?,
         neighborhood: GroveNeighborhood?
     ) -> Progress? {
-        guard let neighborhood, let recognisedHere else { return nil }
-        guard let numerator = recognisedHere.totalCount,
+        guard let neighborhood, let recognizedHere else { return nil }
+        guard let numerator = recognizedHere.totalCount,
               let denominator = neighborhood.species.totalCount,
               denominator > 0,
-              numerator >= GroveThresholds.minimumRecognisedSpecies
+              numerator >= GroveThresholds.minimumRecognizedSpecies
         else { return nil }
 
         let fraction = min(Double(numerator) / Double(denominator), 1)
         return Progress(
             fraction: fraction,
             ringLabel: GroveCopy.ringLabel(fraction: fraction),
-            headline: GroveCopy.headline(recognised: numerator, total: denominator),
+            headline: GroveCopy.headline(recognized: numerator, total: denominator),
             caption: GroveCopy.caption(area: neighborhood.area)
         )
     }
@@ -230,7 +230,7 @@ struct GrovePresentation: Equatable {
     private static func tiles(
         known: Series<KnownSpecies>,
         neighborhood: GroveNeighborhood?,
-        recognisedHere: Series<KnownSpecies>?
+        recognizedHere: Series<KnownSpecies>?
     ) -> [Tile] {
         // A page of species is a real collection of species — every row in it is one the contributor
         // genuinely met — so unlike the counts, the grid may render from an incomplete read. What it
@@ -250,10 +250,10 @@ struct GrovePresentation: Equatable {
 
         guard let neighborhood,
               let total = neighborhood.species.totalCount,
-              let recognised = recognisedHere?.totalCount
+              let recognized = recognizedHere?.totalCount
         else { return cells }
 
-        let leftToMeet = max(total - recognised, 0)
+        let leftToMeet = max(total - recognized, 0)
         let lockedCount = min(remainderOfRow, leftToMeet)
         return cells + (0..<lockedCount).map { Tile.locked(index: $0) }
     }
@@ -295,7 +295,7 @@ enum GroveThresholds {
     /// ring captioned "you can recognize in ___" can be about. A8's 3 is not the analogue — that
     /// threshold protects *other people's* identities on a public surface, and this surface has
     /// neither.
-    static let minimumRecognisedSpecies = 1
+    static let minimumRecognizedSpecies = 1
 }
 
 // MARK: - Copy
@@ -313,8 +313,8 @@ enum GroveCopy {
 
     /// §3: `12 of 40 species`. The numbers are the contributor's and the city's; the words are the
     /// mock's.
-    static func headline(recognised: Int, total: Int) -> String {
-        "\(recognised) of \(total) species"
+    static func headline(recognized: Int, total: Int) -> String {
+        "\(recognized) of \(total) species"
     }
 
     /// §3: `you can recognize in the Outer Sunset`.

@@ -71,18 +71,18 @@ import Foundation
 ///
 /// Pure, and deliberately free of MapKit and SwiftUI, so the whole of it can be asserted in
 /// `CypressTests/MapRecentreTests` without a camera or a view.
-enum MapRecentre {
+enum MapRecenter {
 
     /// Where the camera is, in the terms this decision needs. Degrees, because that is what
     /// `MKCoordinateRegion` carries and converting to metres to compare a fraction of a span to
     /// itself would only add a rounding.
     struct Camera: Equatable {
-        var centre: Coordinate
+        var center: Coordinate
         var latitudeSpan: Double
         var longitudeSpan: Double
 
-        init(centre: Coordinate, latitudeSpan: Double, longitudeSpan: Double) {
-            self.centre = centre
+        init(center: Coordinate, latitudeSpan: Double, longitudeSpan: Double) {
+            self.center = center
             self.latitudeSpan = latitudeSpan
             self.longitudeSpan = longitudeSpan
         }
@@ -97,17 +97,17 @@ enum MapRecentre {
         /// they were reaching for.
         ///
         /// A zero span is the camera before MapKit has settled once. It is not centred on anything.
-        func isCentred(on coordinate: Coordinate) -> Bool {
+        func isCentered(on coordinate: Coordinate) -> Bool {
             guard latitudeSpan > 0, longitudeSpan > 0 else { return false }
-            return abs(centre.latitude - coordinate.latitude) <= latitudeSpan * MapRecentre.centredFraction
-                && abs(centre.longitude - coordinate.longitude) <= longitudeSpan * MapRecentre.centredFraction
+            return abs(center.latitude - coordinate.latitude) <= latitudeSpan * MapRecenter.centeredFraction
+                && abs(center.longitude - coordinate.longitude) <= longitudeSpan * MapRecenter.centeredFraction
         }
 
         /// Roughly how much ground the short edge of the camera covers. Latitude only: a degree of
         /// latitude is 111.32 km everywhere, and this number is compared against a threshold with a
         /// 50 % margin on it, so the longitude convergence San Francisco does not need is not worth
         /// the cosine.
-        var metresAcross: Double { latitudeSpan * MapRecentre.metresPerDegreeLatitude }
+        var metersAcross: Double { latitudeSpan * MapRecenter.metersPerDegreeLatitude }
     }
 
     /// What the press means. Every case is something the reader can see happen — that is the point of
@@ -121,9 +121,9 @@ enum MapRecentre {
         /// Permission granted, no fix yet. The press says so, and the map moves when one lands.
         case waitForFix
         /// Move the camera to the user, keeping whatever span the reader is looking at.
-        case centre(Coordinate)
+        case center(Coordinate)
         /// Already centred and looking at more than one intersection: go to the opening scale.
-        case centreAndZoomIn(Coordinate)
+        case centerAndZoomIn(Coordinate)
     }
 
     /// How the control draws itself, which is a continuous answer rather than a reaction to a press.
@@ -142,7 +142,7 @@ enum MapRecentre {
     /// after.
     enum Engagement: Equatable {
         /// There is a fix and the camera is on it.
-        case centred
+        case centered
         /// There is a fix, and it is somewhere other than the middle of the map. A press moves it.
         case away
         /// Nobody has answered the permission ask. A press asks.
@@ -154,10 +154,10 @@ enum MapRecentre {
     }
 
     /// 5 % of the visible span on each axis. See `Camera.isCentred(on:)`.
-    static let centredFraction: Double = 0.05
+    static let centeredFraction: Double = 0.05
 
     /// One degree of latitude, in metres. WGS-84's mean; the meridian is 20,003.93 km / 180°.
-    static let metresPerDegreeLatitude: Double = 111_320
+    static let metersPerDegreeLatitude: Double = 111_320
 
     /// How much wider than the opening scale the camera has to be before a second press is allowed to
     /// zoom in. Half again: inside that the step is a few points of movement and the risk on the
@@ -174,13 +174,13 @@ enum MapRecentre {
         case .waitingForFix:
             return .waitForFix
         case let .located(coordinate, _):
-            guard camera.isCentred(on: coordinate) else { return .centre(coordinate) }
-            guard camera.metresAcross > MapLayout.defaultSpanMetres * zoomInThreshold else {
+            guard camera.isCentered(on: coordinate) else { return .center(coordinate) }
+            guard camera.metersAcross > MapLayout.defaultSpanMeters * zoomInThreshold else {
                 // Centred and already close. The press is honoured — the camera is driven to the
                 // fix, which is where it very nearly is — rather than being swallowed.
-                return .centre(coordinate)
+                return .center(coordinate)
             }
-            return .centreAndZoomIn(coordinate)
+            return .centerAndZoomIn(coordinate)
         }
     }
 
@@ -204,7 +204,7 @@ enum MapRecentre {
         case .denied, .servicesOff:
             return .unavailable
         case let .located(coordinate, _):
-            return camera.isCentred(on: coordinate) ? .centred : .away
+            return camera.isCentered(on: coordinate) ? .centered : .away
         }
     }
 }
@@ -215,7 +215,7 @@ enum MapRecentre {
 ///
 /// Out of the view for the reason every other `*Copy` in this app is: the sentence a state produces
 /// is a decision worth a test, and a test should not have to render a `View` to read it.
-enum MapRecentreCopy {
+enum MapRecenterCopy {
 
     /// The control's accessibility label. It says what the control *does*, not what it looks like —
     /// "Locate" names a picture, and a reader who cannot see the picture learns nothing from it.
@@ -231,9 +231,9 @@ enum MapRecentreCopy {
     /// true of — there is a fix, and the map is not on it — and the two states it used to be borrowed
     /// for now say what is actually the case. Neither of them is a degree of "centred": in both, the
     /// app does not know where the reader is, so there is nothing to be off-centre from.
-    static func value(_ engagement: MapRecentre.Engagement) -> String {
+    static func value(_ engagement: MapRecenter.Engagement) -> String {
         switch engagement {
-        case .centred: return "Centered on you"
+        case .centered: return "Centered on you"
         case .away: return "Not centered"
         case .askable: return "Cypress has not been given your location"
         case .searching: return "Finding you"
@@ -247,9 +247,9 @@ enum MapRecentreCopy {
     /// map on you and the value says it is not centred, so a hint would be the same sentence a third
     /// time. The other four each promise something the label does not — a zoom, a permission sheet, a
     /// held press, an explanation.
-    static func hint(_ engagement: MapRecentre.Engagement) -> String? {
+    static func hint(_ engagement: MapRecenter.Engagement) -> String? {
         switch engagement {
-        case .centred: return "Zooms in to street level"
+        case .centered: return "Zooms in to street level"
         case .away: return nil
         case .askable: return "Asks for permission to use your location"
         case .searching: return "The map moves to you as soon as a first fix arrives"
@@ -262,7 +262,7 @@ enum MapRecentreCopy {
     /// The map has changed under a VoiceOver reader's finger and nothing else reports it — the same
     /// argument `VisitPinAdjustView.speak(_:)` makes for the nudge pad. Focus stays on the button, so
     /// the reader can press again and hear the second step.
-    static let spokenCentred = "The map is on you."
+    static let spokenCentered = "The map is on you."
     static let spokenZoomedIn = "The map is on you, at street level."
 
     // MARK: The two presses that cannot move the camera

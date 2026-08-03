@@ -107,9 +107,9 @@ struct MapTreeCard: View {
         if subject.isVacantSite { clauses.append(SiteCopy.cardMeta) }
         if let latin = subject.scientificName { clauses.append(latin) }
         if let userCoordinate {
-            let metres = userCoordinate.distance(to: subject.pin.coordinate)
+            let meters = userCoordinate.distance(to: subject.pin.coordinate)
             let bearing = CompassPoint.from(userCoordinate, to: subject.pin.coordinate)
-            clauses.append("\(Int(metres.rounded())) m \(bearing)")
+            clauses.append("\(Int(meters.rounded())) m \(bearing)")
         }
         if let visited = subject.lastVisitedAt {
             clauses.append("visited \(MapRelativeTime.string(from: visited, to: now))")

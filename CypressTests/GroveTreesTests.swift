@@ -496,7 +496,7 @@ struct GroveTreesTests {
     /// rather than as nil. Nil means "this read could not answer"; this read answered.
     @Test("a favourite nobody has visited has a record, and it is empty")
     @MainActor
-    func aFavouriteWithNoContributionsIsEmptyNotUnknown() async throws {
+    func aFavoriteWithNoContributionsIsEmptyNotUnknown() async throws {
         let deviceID = UUID(uuidString: "D0000000-0000-4000-8000-0000000000C2")!
         let attribution = Attribution.anonymous(deviceID: deviceID)
         let store = try await CypressStore.inMemory()

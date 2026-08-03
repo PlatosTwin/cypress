@@ -145,7 +145,7 @@ struct VisitPinAdjustView: View {
                 // `.opening`, not `.move(to:)`: this getter runs on every pass, and a request that
                 // took a fresh ticket here would be a new camera sixty times a second. See
                 // `MapCameraRequest`.
-                get: { position ?? .opening(MapLayout.region(around: start, metres: VisitMetrics.PinAdjust.openingSpanM)) },
+                get: { position ?? .opening(MapLayout.region(around: start, meters: VisitMetrics.PinAdjust.openingSpanM)) },
                 set: { position = $0 }
             ),
             region: $region,
@@ -155,12 +155,12 @@ struct VisitPinAdjustView: View {
             userCoordinate: anchor,
             selectedPinID: nil,
             onCameraChange: { box, _ in
-                let centre = VisitPinAdjust.centre(of: box)
+                let center = VisitPinAdjust.center(of: box)
                 // A pan clears the refusal, because the pin is moving again. Compared rather than
                 // cleared unconditionally: this closure also fires for the camera move a *refused*
                 // nudge does not make, and for every settling frame of one that is accepted.
-                if centre.distance(to: pin) > VisitMetrics.PinAdjust.stillnessM { refusedNudge = false }
-                pin = centre
+                if center.distance(to: pin) > VisitMetrics.PinAdjust.stillnessM { refusedNudge = false }
+                pin = center
             },
             onSelectPin: { _ in },
             onSelectCluster: { _ in }
@@ -201,8 +201,8 @@ struct VisitPinAdjustView: View {
             ) {
                 onConfirm(pin)
             }
-            Button { recentre() } label: {
-                Text(VisitPinAdjustCopy.recentre)
+            Button { recenter() } label: {
+                Text(VisitPinAdjustCopy.recenter)
                     .font(CypressFont.body13Bold)
                     .foregroundStyle(CypressColor.ctaFill)
                     .frame(maxWidth: .infinity)
@@ -261,7 +261,7 @@ struct VisitPinAdjustView: View {
         speak(VisitPinAdjustPresentation(anchor: anchor, pin: moved).placement)
     }
 
-    private func recentre() {
+    private func recenter() {
         move(to: anchor)
         speak(VisitPinAdjustCopy.atFix)
     }
@@ -274,7 +274,7 @@ struct VisitPinAdjustView: View {
     private func move(to coordinate: Coordinate) {
         let span = region.span.latitudeDelta > 0
             ? region.span
-            : MapLayout.region(around: coordinate, metres: VisitMetrics.PinAdjust.openingSpanM).span
+            : MapLayout.region(around: coordinate, meters: VisitMetrics.PinAdjust.openingSpanM).span
         refusedNudge = false
         pin = coordinate
         position = .move(to: MKCoordinateRegion(center: coordinate.clLocationCoordinate, span: span))

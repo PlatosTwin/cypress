@@ -58,7 +58,7 @@ final class AccessibilityTreeTests: XCTestCase {
     /// button with no label as the word "button" and nothing else — the E103 failure mode, caught
     /// here structurally rather than one component at a time. Scoped to the launch screen so it is a
     /// deterministic check rather than a crawl; each screen that earns its own test extends it.
-    func testNoUnlabelledButtonsOnLaunch() {
+    func testNoUnlabeledButtonsOnLaunch() {
         let app = launch()
         XCTAssertTrue(app.buttons.firstMatch.waitForExistence(timeout: 10))
         for i in 0..<app.buttons.count {

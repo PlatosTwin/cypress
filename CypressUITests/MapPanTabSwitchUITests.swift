@@ -30,8 +30,8 @@ final class MapPanTabSwitchUITests: XCTestCase {
     }
 
     private static let controlLabel = "Center the map on you"
-    private static let centred = "Centered on you"
-    private static let notCentred = "Not centered"
+    private static let centered = "Centered on you"
+    private static let notCentered = "Not centered"
 
     /// `MapRecentreCopy.value`'s three fixless states, copied exactly (see
     /// `MapCentredStateUITests` for the day this list was one word wrong).
@@ -45,7 +45,7 @@ final class MapPanTabSwitchUITests: XCTestCase {
 
     /// Launches, and waits for the opening camera to settle on the reader. Skips when this
     /// simulator has no fix to settle on.
-    private func launchCentred() throws -> (XCUIApplication, XCUIElement) {
+    private func launchCentered() throws -> (XCUIApplication, XCUIElement) {
         let app = XCUIApplication()
         app.launch()
         let control = app.buttons[Self.controlLabel]
@@ -54,7 +54,7 @@ final class MapPanTabSwitchUITests: XCTestCase {
             "screen 01 has no control labelled “\(Self.controlLabel)”"
         )
         let deadline = Date().addingTimeInterval(20)
-        while Date() < deadline, value(control) != Self.centred {
+        while Date() < deadline, value(control) != Self.centered {
             usleep(250_000)
         }
         let seen = value(control)
@@ -67,7 +67,7 @@ final class MapPanTabSwitchUITests: XCTestCase {
             )
         }
         XCTAssertEqual(
-            seen, Self.centred,
+            seen, Self.centered,
             "the map never settled on the reader, so this test cannot tell a preserved pan from "
                 + "a launch that failed #115 — see MapCentredStateUITests"
         )
@@ -115,11 +115,11 @@ final class MapPanTabSwitchUITests: XCTestCase {
     /// one-shot flew the camera back to the fix within a second or two of reappearing, so the
     /// assertion holds the window open long enough for that regression to hang itself.
     func testADeliberatePanSurvivesLeavingForJournalAndBack() throws {
-        let (app, control) = try launchCentred()
+        let (app, control) = try launchCentered()
 
         pan(app)
         XCTAssertTrue(
-            wait(timeout: 10) { self.value(control) == Self.notCentred },
+            wait(timeout: 10) { self.value(control) == Self.notCentered },
             "panning the map did not move the camera off the reader (the control reads "
                 + "“\(value(control))”), so there is no deliberate camera to preserve"
         )
@@ -131,15 +131,15 @@ final class MapPanTabSwitchUITests: XCTestCase {
         // the screen remounts, so the claim is "it never re-centres", watched for long enough that
         // the one-shot (which fires on appearance or on the first availability change) has no
         // window left.
-        let recentred = wait(timeout: 8) { self.value(control2) == Self.centred }
+        let recentered = wait(timeout: 8) { self.value(control2) == Self.centered }
         XCTAssertFalse(
-            recentred,
+            recentered,
             "the reader panned the map away, visited Journal, came back — and the screen "
                 + "re-centred on them. A camera the reader deliberately moved is theirs (#128; "
                 + "this is #85's defect through the tab bar)."
         )
         XCTAssertEqual(
-            value(control2), Self.notCentred,
+            value(control2), Self.notCentered,
             "after the round trip the control reads “\(value(control2))”, which is neither "
                 + "preserved-pan nor re-centred — something else moved the camera"
         )
@@ -148,13 +148,13 @@ final class MapPanTabSwitchUITests: XCTestCase {
     /// Direction two — the overcorrection. No pan, leave, come back: the map may (and, with the
     /// one-shot re-armed on a camera nobody owns, does) settle on the reader again. A fix that
     /// suppressed centring wholesale would fail here.
-    func testAnUntouchedCameraStillCentresOnTheReaderAfterTheRoundTrip() throws {
-        let (app, _) = try launchCentred()
+    func testAnUntouchedCameraStillCentersOnTheReaderAfterTheRoundTrip() throws {
+        let (app, _) = try launchCentered()
 
         switchTabs(app)
         let control = app.buttons[Self.controlLabel]
         XCTAssertTrue(
-            wait(timeout: 15) { self.value(control) == Self.centred },
+            wait(timeout: 15) { self.value(control) == Self.centered },
             "the reader never touched the camera, and the returning map is not on them: the "
                 + "control reads “\(value(control))”. #128's fix has overshot into #115's "
                 + "regression."

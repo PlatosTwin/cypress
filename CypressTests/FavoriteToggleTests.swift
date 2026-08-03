@@ -65,7 +65,7 @@ struct FavoriteToggleTests {
 
     /// A store that answers `grove()` from a box the test can also write to, which is what makes
     /// "the cell shows what is stored" a testable sentence rather than a comment.
-    private final class Favourites: @unchecked Sendable {
+    private final class Favorites: @unchecked Sendable {
         var held: Set<UUID> = []
         /// Whether `grove()` can be read at all. A device whose store will not answer is a real
         /// state, and the cell has to draw *something* in it.
@@ -74,7 +74,7 @@ struct FavoriteToggleTests {
 
     private struct Records: CypressAPI {
         var profile: TreeProfile
-        let favourites: Favourites
+        let favorites: Favorites
 
         func treeProfile(id: UUID) async throws -> TreeProfile {
             guard id == profile.tree.id else { throw APIError.notFound }
@@ -82,8 +82,8 @@ struct FavoriteToggleTests {
         }
 
         func grove() async throws -> [GroveEntry] {
-            if favourites.readFails { throw APIError.serverError }
-            return favourites.held.map { id in
+            if favorites.readFails { throw APIError.serverError }
+            return favorites.held.map { id in
                 GroveEntry(
                     treeID: id,
                     displayName: "",
@@ -119,7 +119,7 @@ struct FavoriteToggleTests {
     /// reads — which is what a working store does, and what a broken one does not (`landing: false`).
     private static func model(
         _ api: Records,
-        favourites: Favourites,
+        favorites: Favorites,
         writes: Writes,
         landing: Bool = true
     ) -> TreeProfileModel {
@@ -129,7 +129,7 @@ struct FavoriteToggleTests {
             setFavorite: { treeID, isFavorite in
                 writes.states.append(isFavorite)
                 guard landing else { return }
-                if isFavorite { favourites.held.insert(treeID) } else { favourites.held.remove(treeID) }
+                if isFavorite { favorites.held.insert(treeID) } else { favorites.held.remove(treeID) }
             }
         )
     }
@@ -138,11 +138,11 @@ struct FavoriteToggleTests {
 
     @Test("a tree the store already holds opens with the cell selected")
     func theStateIsReadOnLoad() async {
-        let favourites = Favourites()
-        favourites.held = [Self.treeID]
+        let favorites = Favorites()
+        favorites.held = [Self.treeID]
         let model = Self.model(
-            Records(profile: Self.profile(), favourites: favourites),
-            favourites: favourites,
+            Records(profile: Self.profile(), favorites: favorites),
+            favorites: favorites,
             writes: Writes()
         )
 
@@ -154,10 +154,10 @@ struct FavoriteToggleTests {
 
     @Test("a tree the store does not hold opens idle")
     func theIdleStateIsAlsoRead() async {
-        let favourites = Favourites()
+        let favorites = Favorites()
         let model = Self.model(
-            Records(profile: Self.profile(), favourites: favourites),
-            favourites: favourites,
+            Records(profile: Self.profile(), favorites: favorites),
+            favorites: favorites,
             writes: Writes()
         )
 
@@ -167,12 +167,12 @@ struct FavoriteToggleTests {
 
     @Test("a store that cannot be read draws the idle cell and still draws the profile")
     func anUnreadableStoreDoesNotTakeTheScreenDown() async {
-        let favourites = Favourites()
-        favourites.held = [Self.treeID]
-        favourites.readFails = true
+        let favorites = Favorites()
+        favorites.held = [Self.treeID]
+        favorites.readFails = true
         let model = Self.model(
-            Records(profile: Self.profile(), favourites: favourites),
-            favourites: favourites,
+            Records(profile: Self.profile(), favorites: favorites),
+            favorites: favorites,
             writes: Writes()
         )
 
@@ -189,11 +189,11 @@ struct FavoriteToggleTests {
 
     @Test("the second tap writes false, which is the write that could not be made")
     func aSecondTapTakesTheHeartOff() async {
-        let favourites = Favourites()
+        let favorites = Favorites()
         let writes = Writes()
         let model = Self.model(
-            Records(profile: Self.profile(), favourites: favourites),
-            favourites: favourites,
+            Records(profile: Self.profile(), favorites: favorites),
+            favorites: favorites,
             writes: writes
         )
         await model.load()
@@ -201,21 +201,21 @@ struct FavoriteToggleTests {
         await model.toggleFavorite().value
         #expect(model.isFavorite)
         #expect(writes.states == [true])
-        #expect(favourites.held == [Self.treeID])
+        #expect(favorites.held == [Self.treeID])
 
         await model.toggleFavorite().value
         #expect(!model.isFavorite, "the heart could be put on and not taken off")
         #expect(writes.states == [true, false])
-        #expect(favourites.held.isEmpty)
+        #expect(favorites.held.isEmpty)
     }
 
     @Test("two taps in the same run land in the order they were made")
     func tapsAreSerialized() async {
-        let favourites = Favourites()
+        let favorites = Favorites()
         let writes = Writes()
         let model = Self.model(
-            Records(profile: Self.profile(), favourites: favourites),
-            favourites: favourites,
+            Records(profile: Self.profile(), favorites: favorites),
+            favorites: favorites,
             writes: writes
         )
         await model.load()
@@ -229,18 +229,18 @@ struct FavoriteToggleTests {
 
         #expect(writes.states == [true, false], "the two taps raced: \(writes.states)")
         #expect(!model.isFavorite)
-        #expect(favourites.held.isEmpty)
+        #expect(favorites.held.isEmpty)
     }
 
     // MARK: - 3. A write that does not land is visible
 
     @Test("a write the store refuses puts the cell back where it was")
     func aFailedWriteReverts() async {
-        let favourites = Favourites()
+        let favorites = Favorites()
         let writes = Writes()
         let model = Self.model(
-            Records(profile: Self.profile(), favourites: favourites),
-            favourites: favourites,
+            Records(profile: Self.profile(), favorites: favorites),
+            favorites: favorites,
             writes: writes,
             landing: false
         )
@@ -257,11 +257,11 @@ struct FavoriteToggleTests {
 
     @Test("taking the heart off, when that write does not land, leaves it on")
     func aFailedRemovalReverts() async {
-        let favourites = Favourites()
-        favourites.held = [Self.treeID]
+        let favorites = Favorites()
+        favorites.held = [Self.treeID]
         let model = Self.model(
-            Records(profile: Self.profile(), favourites: favourites),
-            favourites: favourites,
+            Records(profile: Self.profile(), favorites: favorites),
+            favorites: favorites,
             writes: Writes(),
             landing: false
         )

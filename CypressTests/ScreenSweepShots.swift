@@ -744,11 +744,11 @@ enum SweepFixtures {
         }
         // The neighbourhood's own species list has to contain the ones met, or the intersection
         // that produces the numerator is empty and the ring reads zero.
-        let neighbourhoodIDs = (0..<215).map { id($0) }
+        let neighborhoodIDs = (0..<215).map { id($0) }
         return GroveSpecies(
             neighborhood: GroveNeighborhood(
                 area: .named("Outer Sunset"),
-                species: Series(complete: neighbourhoodIDs)
+                species: Series(complete: neighborhoodIDs)
             ),
             known: Series(complete: known)
         )
@@ -857,7 +857,7 @@ enum SweepFixtures {
     /// in the pill instead of a place and the sentence that says so under the header.
     static var radiusAlmanac: Almanac {
         Almanac(neighborhood: AlmanacNeighborhood(
-            area: .radius(metres: AlmanacLimits.fallbackRadiusM),
+            area: .radius(meters: AlmanacLimits.fallbackRadiusM),
             elder: ElderTree(
                 treeID: id(901),
                 activeName: nil,

@@ -30,10 +30,10 @@ public struct Coordinate: Hashable, Codable, Sendable {
     /// parcels (A7, BUILD-PLAN §10). Tree pins themselves stay exact; this is only for photos.
     public func snappedToPublicPhotoGrid() -> Coordinate {
         let cell = Coordinate.publicPhotoGridM
-        let metresPerDegreeLat = 111_320.0
-        let metresPerDegreeLon = metresPerDegreeLat * cos(latitude * .pi / 180)
-        let latStep = cell / metresPerDegreeLat
-        let lonStep = metresPerDegreeLon > 1 ? cell / metresPerDegreeLon : latStep
+        let metersPerDegreeLat = 111_320.0
+        let metersPerDegreeLon = metersPerDegreeLat * cos(latitude * .pi / 180)
+        let latStep = cell / metersPerDegreeLat
+        let lonStep = metersPerDegreeLon > 1 ? cell / metersPerDegreeLon : latStep
         return Coordinate(
             latitude: (latitude / latStep).rounded() * latStep,
             longitude: (longitude / lonStep).rounded() * lonStep

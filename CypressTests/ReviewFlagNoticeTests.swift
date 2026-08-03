@@ -67,7 +67,7 @@ struct ReviewFlagNoticeTests {
     /// Cancelling leaves the card exactly as it was. A dialog that backed out onto the segment it had
     /// proposed would be worse than no dialog: it would ask a question and record the answer it wanted.
     @Test("cancelling leaves the card untouched", arguments: ReviewFlagNoticeTests.flagging)
-    func cancellingLeavesItAlone(_ status: ObservationStatus) async throws {
+    func cancelingLeavesItAlone(_ status: ObservationStatus) async throws {
         let model = try await Self.model()
         model.select(status: .declining)
         model.select(status: status)

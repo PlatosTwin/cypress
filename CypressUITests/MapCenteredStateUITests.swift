@@ -22,7 +22,7 @@ import XCTest
 /// Without a fix there is nothing to be centred on, so the test **skips** rather than fails —
 /// `MapSearchUITests.requireAMapWithPins`' judgement, in its own words: a skip says "not checked
 /// here", which is true, where a failure would say "broken", which is not.
-final class MapCentredStateUITests: XCTestCase {
+final class MapCenteredStateUITests: XCTestCase {
 
     override func setUp() {
         super.setUp()
@@ -32,7 +32,7 @@ final class MapCentredStateUITests: XCTestCase {
     /// `MapRecentreCopy.label`, the one string this file and the app have to agree on.
     private static let controlLabel = "Center the map on you"
     /// `MapRecentreCopy.value(.centred)`.
-    private static let centred = "Centered on you"
+    private static let centered = "Centered on you"
 
     /// The states that mean "this simulator has no fix for the app to centre on", spoken by
     /// `MapRecentreCopy.value`. Any one of them makes the assertion below meaningless rather than
@@ -94,7 +94,7 @@ final class MapCentredStateUITests: XCTestCase {
         var seen = ""
         while Date() < deadline {
             seen = control.value as? String ?? ""
-            if seen == Self.centred { break }
+            if seen == Self.centered { break }
             usleep(250_000)
         }
 
@@ -109,7 +109,7 @@ final class MapCentredStateUITests: XCTestCase {
 
         XCTAssertEqual(
             seen,
-            Self.centred,
+            Self.centered,
             """
             the app was launched on a phone that knows where it is, nobody touched anything, and \
             twenty seconds later the map still tells VoiceOver “\(seen)”. This is #115: the app \
@@ -118,7 +118,7 @@ final class MapCentredStateUITests: XCTestCase {
         )
     }
 
-    func testTheControlSaysCentredOnceTheMapIsOnYou() throws {
+    func testTheControlSaysCenteredOnceTheMapIsOnYou() throws {
         let app = XCUIApplication()
         app.launch()
 
@@ -150,13 +150,13 @@ final class MapCentredStateUITests: XCTestCase {
         var seen = control.value as? String ?? ""
         while Date() < deadline {
             seen = control.value as? String ?? ""
-            if seen == Self.centred { break }
+            if seen == Self.centered { break }
             usleep(250_000)
         }
 
         XCTAssertEqual(
             seen,
-            Self.centred,
+            Self.centered,
             """
             the recentre control was pressed, the map flew to the reader's own fix, and the control \
             still tells VoiceOver “\(seen)”. This is #100: the only sentence a VoiceOver reader gets \

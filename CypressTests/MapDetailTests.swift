@@ -40,15 +40,15 @@ struct MapDetailTests {
 
     /// What MapKit reports for a screen of `screen` at this zoom, centred here — *before*
     /// `MapModel`'s own 8 % pad, which is the model's business and not the camera's.
-    private static func bounds(around centre: Coordinate, zoom: Int) -> BoundingBox {
+    private static func bounds(around center: Coordinate, zoom: Int) -> BoundingBox {
         let degreesPerPoint = 360.0 / (256.0 * pow(2.0, Double(zoom)))
         let longitudeSpan = degreesPerPoint * screen.width
-        let latitudeSpan = degreesPerPoint * cos(centre.latitude * .pi / 180) * screen.height
+        let latitudeSpan = degreesPerPoint * cos(center.latitude * .pi / 180) * screen.height
         return BoundingBox(
-            minLatitude: centre.latitude - latitudeSpan / 2,
-            maxLatitude: centre.latitude + latitudeSpan / 2,
-            minLongitude: centre.longitude - longitudeSpan / 2,
-            maxLongitude: centre.longitude + longitudeSpan / 2
+            minLatitude: center.latitude - latitudeSpan / 2,
+            maxLatitude: center.latitude + latitudeSpan / 2,
+            minLongitude: center.longitude - longitudeSpan / 2,
+            maxLongitude: center.longitude + longitudeSpan / 2
         )
     }
 
@@ -61,20 +61,20 @@ struct MapDetailTests {
     /// The map as the user gets it: the model driven through the same camera callback
     /// `MapKitBasemap` calls, then asked what it would draw.
     @MainActor
-    private static func drawn(at zoom: Int, around centre: Coordinate, api: LocalAPI) async -> (
+    private static func drawn(at zoom: Int, around center: Coordinate, api: LocalAPI) async -> (
         model: MapModel, markers: Int
     ) {
         let model = MapModel(api: api)
-        model.cameraDidChange(bounds: bounds(around: centre, zoom: zoom), zoom: zoom)
+        model.cameraDidChange(bounds: bounds(around: center, zoom: zoom), zoom: zoom)
         await model.fetch()
         return (model, model.pins.count + model.clusters.count)
     }
 
     /// Every tree the same viewport holds, with the level-of-detail rule switched off — the number
     /// the annotation count used to chase.
-    private static func treesInView(at zoom: Int, around centre: Coordinate, api: LocalAPI) async throws -> Int {
+    private static func treesInView(at zoom: Int, around center: Coordinate, api: LocalAPI) async throws -> Int {
         let viewport = MapViewport(
-            bounds: bounds(around: centre, zoom: zoom).expanded(by: 0.08),
+            bounds: bounds(around: center, zoom: zoom).expanded(by: 0.08),
             zoom: zoom,
             pinLimit: 100_000
         )
@@ -91,10 +91,10 @@ struct MapDetailTests {
     /// under a pan — so a box 10.6 cells wide touches 11 columns or 12 depending on where it falls,
     /// and the count is taken off the cell indices themselves rather than from the span.
     private static func cellBound(_ viewport: MapViewport) -> Int {
-        let centreLatitude = (viewport.bounds.minLatitude + viewport.bounds.maxLatitude) / 2
+        let centerLatitude = (viewport.bounds.minLatitude + viewport.bounds.maxLatitude) / 2
         let cell = TreeQueries.cellSize(
             zoom: viewport.zoom,
-            centreLatitude: centreLatitude,
+            centerLatitude: centerLatitude,
             points: MapModel.markerCellPoints
         )
         func cells(_ lower: Double, _ upper: Double, offset: Double, size: Double) -> Int {

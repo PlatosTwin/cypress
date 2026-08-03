@@ -333,8 +333,8 @@ enum SpeciesCopy {
     static let loadRetry = "Try again"
 
     /// `220 m` — mono, as §1.3's `mono.12` row and every other distance in the app.
-    static func distance(_ metres: Double) -> String {
-        "\(Int(metres.rounded())) m"
+    static func distance(_ meters: Double) -> String {
+        "\(Int(meters.rounded())) m"
     }
 
     /// `1,204`. Grouping is the formatter's, so a reader in a locale that groups differently sees

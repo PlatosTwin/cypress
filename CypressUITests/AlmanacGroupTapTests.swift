@@ -164,7 +164,7 @@ final class AlmanacGroupTapTests: XCTestCase {
     /// A9 — "species mix always renders from city data" — is what makes it a sound witness: §2, §4 and
     /// the vacant block can each be absent on their own merits, and this one cannot. Matched by prefix
     /// because it carries a count (`Who lives here · 135 species`).
-    private static let neighbourhoodBlock = "Who lives here"
+    private static let neighborhoodBlock = "Who lives here"
 
     /// How many individual tree pins screen 01 has drawn — the same proxy, in the same words, as
     /// `MapSearchUITests.cityTreePins`, including its warning that this must match `label` rather than
@@ -234,12 +234,12 @@ final class AlmanacGroupTapTests: XCTestCase {
         )
 
         app.buttons["Journal"].tap()
-        let neighbourhood = app.buttons["Neighborhood"]
+        let neighborhood = app.buttons["Neighborhood"]
         XCTAssertTrue(
-            neighbourhood.waitForExistence(timeout: 20),
+            neighborhood.waitForExistence(timeout: 20),
             "the Journal tab draws no “Neighborhood” segment, so screen 12 has no entrance"
         )
-        neighbourhood.tap()
+        neighborhood.tap()
 
         guard app.staticTexts["Almanac"].waitForExistence(timeout: 30) else {
             XCTFail("the Journal tab did not draw the almanac")
@@ -264,11 +264,11 @@ final class AlmanacGroupTapTests: XCTestCase {
         // the state the deep-link entrance produced every time and the reason this test no longer uses
         // it. Naming it here rather than reporting it as a missing row is the whole point of the
         // exercise: the last thing this file should do is blame the almanac for it twice.
-        let hasNeighbourhood = app.staticTexts
-            .matching(NSPredicate(format: "label BEGINSWITH %@", Self.neighbourhoodBlock))
+        let hasNeighborhood = app.staticTexts
+            .matching(NSPredicate(format: "label BEGINSWITH %@", Self.neighborhoodBlock))
             .firstMatch
             .exists
-        if !hasNeighbourhood {
+        if !hasNeighborhood {
             XCTFail(
                 "screen 12 drew neither its neighbourhood nor “\(Self.locationPrompt)”: a blank "
                     + "almanac, which is what a coordinate arriving after `AlmanacModel` was built "

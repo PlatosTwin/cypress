@@ -314,17 +314,17 @@ public struct BoundingBox: Hashable, Sendable {
 
     /// A box around a point, sized in metres. Used to turn `?near=lng,lat&radius=m` into an
     /// index-usable range on `lat`/`lon`.
-    public init(around centre: Coordinate, radiusM: Double) {
-        let metresPerDegreeLatitude = 111_320.0
-        let latitudeSpan = radiusM / metresPerDegreeLatitude
+    public init(around center: Coordinate, radiusM: Double) {
+        let metersPerDegreeLatitude = 111_320.0
+        let latitudeSpan = radiusM / metersPerDegreeLatitude
         // cos() collapses toward the poles; the floor keeps the longitude span finite there.
-        let cosLatitude = max(cos(centre.latitude * .pi / 180), 0.000_01)
-        let longitudeSpan = radiusM / (metresPerDegreeLatitude * cosLatitude)
+        let cosLatitude = max(cos(center.latitude * .pi / 180), 0.000_01)
+        let longitudeSpan = radiusM / (metersPerDegreeLatitude * cosLatitude)
         self.init(
-            minLatitude: centre.latitude - latitudeSpan,
-            maxLatitude: centre.latitude + latitudeSpan,
-            minLongitude: centre.longitude - longitudeSpan,
-            maxLongitude: centre.longitude + longitudeSpan
+            minLatitude: center.latitude - latitudeSpan,
+            maxLatitude: center.latitude + latitudeSpan,
+            minLongitude: center.longitude - longitudeSpan,
+            maxLongitude: center.longitude + longitudeSpan
         )
     }
 

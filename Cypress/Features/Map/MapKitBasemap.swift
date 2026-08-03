@@ -309,7 +309,7 @@ enum MapLayout {
     /// the inventory that the first screen is full of trees wherever the user actually is.
     /// (An earlier comment here claimed the Sunset, the corner of the city SCREENS.md 01 draws.
     /// The coordinate has always been Dolores Park; the prose was wrong, not the number.)
-    static let defaultCentre = Coordinate(latitude: 37.7596, longitude: -122.4269)
+    static let defaultCenter = Coordinate(latitude: 37.7596, longitude: -122.4269)
 
     /// Where the map opens, in metres across the short edge of the phone.
     ///
@@ -335,13 +335,13 @@ enum MapLayout {
     /// Mission Dolores Park — 390 m across, and the fallback centre above — the nearest inventoried
     /// tree is on 18th or 20th St, outside a 120 × 261 m view. That is the honest answer to "what is
     /// near me", not a failure to load; the trees appear as soon as the camera reaches a street.
-    static let defaultSpanMetres: CLLocationDistance = 120
+    static let defaultSpanMeters: CLLocationDistance = 120
 
-    static func region(around centre: Coordinate, metres: CLLocationDistance = defaultSpanMetres) -> MKCoordinateRegion {
+    static func region(around center: Coordinate, meters: CLLocationDistance = defaultSpanMeters) -> MKCoordinateRegion {
         MKCoordinateRegion(
-            center: centre.clLocationCoordinate,
-            latitudinalMeters: metres,
-            longitudinalMeters: metres
+            center: center.clLocationCoordinate,
+            latitudinalMeters: meters,
+            longitudinalMeters: meters
         )
     }
 

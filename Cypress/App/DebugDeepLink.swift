@@ -148,7 +148,7 @@ enum DebugDeepLink {
     /// The fix the pin screen opens on, and a plausible street-canyon accuracy to draw beside it.
     /// The centre is `MapLayout.defaultCentre` for `centre`'s own reason: what the tests see is what a
     /// tester sees on launch.
-    static let pinAdjustFix = Standalone.pinAdjust(anchor: centre, accuracyM: 24)
+    static let pinAdjustFix = Standalone.pinAdjust(anchor: center, accuracyM: 24)
 
     /// Why a requested screen did not open. Rendered on top of the app, in words, by `RootView` —
     /// never swallowed. A silent failure here turns the whole suite into a suite that passes on
@@ -178,7 +178,7 @@ enum DebugDeepLink {
 
     /// Where records are looked for: the map's own opening camera, so the trees these tests read are
     /// the trees a tester sees on launch.
-    private static let centre = MapLayout.defaultCentre
+    private static let center = MapLayout.defaultCenter
     /// Wide enough to hold every status the cases below ask for, and narrow enough to stay one index
     /// scan.
     ///
@@ -444,11 +444,11 @@ enum DebugDeepLink {
     /// The rule this encodes, for whoever adds the next case: **a case that writes persistent state
     /// must not write it onto a tree another case reads.**
     private static func photographedTree(_ api: LocalAPI) async throws -> UUID {
-        let candidates = try await api.treesNear(centre, radiusM: radiusM, limit: candidateLimit)
+        let candidates = try await api.treesNear(center, radiusM: radiusM, limit: candidateLimit)
         guard let match = candidates.last(where: { $0.tree.status.acceptsNewContributions }) else {
             throw Failure(
                 screen: "a standing tree to photograph",
-                reason: "none among the \(candidates.count) records nearest \(centre.latitude), \(centre.longitude)"
+                reason: "none among the \(candidates.count) records nearest \(center.latitude), \(center.longitude)"
             )
         }
         return match.tree.id
@@ -468,12 +468,12 @@ enum DebugDeepLink {
     /// is `.memorial`'s outward march reaching a quarter of the way out, which takes as many runs as
     /// there are records in between — the same exposure `.measure` has carried since E133.
     private static func anonymizedPhotoTree(_ api: LocalAPI) async throws -> UUID {
-        let candidates = try await api.treesNear(centre, radiusM: radiusM, limit: candidateLimit)
+        let candidates = try await api.treesNear(center, radiusM: radiusM, limit: candidateLimit)
         let standing = candidates.filter { $0.tree.status.acceptsNewContributions }
         guard !standing.isEmpty else {
             throw Failure(
                 screen: "a standing tree to photograph anonymously",
-                reason: "none among the \(candidates.count) records nearest \(centre.latitude), \(centre.longitude)"
+                reason: "none among the \(candidates.count) records nearest \(center.latitude), \(center.longitude)"
             )
         }
         return standing[standing.count / 4].tree.id
@@ -502,12 +502,12 @@ enum DebugDeepLink {
     /// The rule, restated because it needed restating: **a case that writes persistent state must not
     /// write it onto a tree another case reads** — and "the case" includes the test driving it.
     private static func measuredTree(_ api: LocalAPI) async throws -> UUID {
-        let candidates = try await api.treesNear(centre, radiusM: radiusM, limit: candidateLimit)
+        let candidates = try await api.treesNear(center, radiusM: radiusM, limit: candidateLimit)
         let standing = candidates.filter { $0.tree.status.acceptsNewContributions }
         guard !standing.isEmpty else {
             throw Failure(
                 screen: "a standing tree to measure",
-                reason: "none among the \(candidates.count) records nearest \(centre.latitude), \(centre.longitude)"
+                reason: "none among the \(candidates.count) records nearest \(center.latitude), \(center.longitude)"
             )
         }
         return standing[standing.count / 2].tree.id
@@ -533,7 +533,7 @@ enum DebugDeepLink {
     /// Re-running is idempotent rather than marching: this returns the same tree and re-writes the
     /// same override, which is the correct behaviour for a case whose whole subject is a status.
     private static func deadCandidateTree(_ api: LocalAPI) async throws -> UUID {
-        let candidates = try await api.treesNear(centre, radiusM: radiusM, limit: candidateLimit)
+        let candidates = try await api.treesNear(center, radiusM: radiusM, limit: candidateLimit)
         // `.alive` here rather than `acceptsNewContributions`, precisely because a tree this case has
         // already marked dead would pass the latter and re-anchoring on it is fine — but a tree the
         // *photo* cases have warmed must not be picked up as this slot drifts.
@@ -541,7 +541,7 @@ enum DebugDeepLink {
         guard !standing.isEmpty else {
             throw Failure(
                 screen: "a standing tree to report dead",
-                reason: "none among the \(candidates.count) records nearest \(centre.latitude), \(centre.longitude)"
+                reason: "none among the \(candidates.count) records nearest \(center.latitude), \(center.longitude)"
             )
         }
         return standing[standing.count * 3 / 4].tree.id
@@ -558,11 +558,11 @@ enum DebugDeepLink {
         api: LocalAPI,
         wanted: String
     ) async throws -> UUID {
-        let candidates = try await api.treesNear(centre, radiusM: radiusM, limit: candidateLimit)
+        let candidates = try await api.treesNear(center, radiusM: radiusM, limit: candidateLimit)
         guard let match = candidates.first(where: { predicate($0.tree) }) else {
             throw Failure(
                 screen: wanted,
-                reason: "none among the \(candidates.count) records nearest \(centre.latitude), \(centre.longitude)"
+                reason: "none among the \(candidates.count) records nearest \(center.latitude), \(center.longitude)"
             )
         }
         return match.tree.id

@@ -476,14 +476,14 @@ enum TreeProfileSeedFixtures {
             attribution: Attribution(userID: caretakerN, deviceID: device),
             capturedAt: date(2025, 10, 12),
             gpsAccuracyM: 6,
-            quantity: Quantity(value: 18, unit: .metres, method: .estimate)
+            quantity: Quantity(value: 18, unit: .meters, method: .estimate)
         ),
         .dbh(
             treeID: montereyCypressID,
             attribution: Attribution(userID: caretakerN, deviceID: device),
             capturedAt: date(2025, 10, 12),
             gpsAccuracyM: 6,
-            quantity: Quantity(value: 64, unit: .centimetres, method: .tape)
+            quantity: Quantity(value: 64, unit: .centimeters, method: .tape)
         ),
     ]
 

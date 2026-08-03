@@ -37,7 +37,7 @@ struct PinSetMapView: View {
     /// The rest of the block, for a map about one record. `.none` for the two counted groups, which
     /// carry everything they draw — see `PinSetNeighbours` for why this read exists and why it
     /// cannot contradict the sentence above the map.
-    var neighbours: PinSetNeighbours = .none
+    var neighbors: PinSetNeighbors = .none
 
     @Environment(\.locale) private var locale
 
@@ -64,7 +64,7 @@ struct PinSetMapView: View {
         // not moved, and the map is already correct without it.
         .task {
             guard context.isEmpty, let focus = set.pins.first, set.focusPinID != nil else { return }
-            context = await neighbours.read(focus.coordinate)
+            context = await neighbors.read(focus.coordinate)
         }
     }
 
@@ -159,7 +159,7 @@ struct PinSetMapView: View {
             onSelectCluster: { _ in }
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .overlay(alignment: .bottomTrailing) { recentre(presentation) }
+        .overlay(alignment: .bottomTrailing) { recenter(presentation) }
         // No `accessibilityLabel` on the map itself. Every pin under it already speaks — a city tree
         // says C19's words and a basin says `SiteCopy`'s (ERRATA E107, RULINGS R7) — and labelling the
         // container is how a container stops being a container and starts being one element with the
@@ -183,7 +183,7 @@ struct PinSetMapView: View {
     /// three states are about the reader's GPS fix — granted, refused, waiting — and this one has no
     /// states at all. There is always a record and it is always somewhere.
     @ViewBuilder
-    private func recentre(_ presentation: PinSetPresentation) -> some View {
+    private func recenter(_ presentation: PinSetPresentation) -> some View {
         if presentation.focusPinID != nil, let pin = set.pins.first {
             Button {
                 // **A ticket, exactly as the recentre press mints one** (ERRATA E140). A press is an
@@ -195,11 +195,11 @@ struct PinSetMapView: View {
                 // Nothing else on this screen ever writes the camera. There is no state change
                 // anywhere in this file that drives it, which is the property E140 paid for.
                 position = .move(
-                    to: MapLayout.region(around: pin.coordinate, metres: MapLayout.defaultSpanMetres)
+                    to: MapLayout.region(around: pin.coordinate, meters: MapLayout.defaultSpanMeters)
                 )
                 // Back to the subject, in case a tap on a neighbour took the selection away.
                 selectedPinID = nil
-                AccessibilityNotification.Announcement(PinSetCopy.spokenRecentred).post()
+                AccessibilityNotification.Announcement(PinSetCopy.spokenRecentered).post()
             } label: {
                 ZStack {
                     Circle().fill(CypressColor.surfaceCard)
@@ -216,8 +216,8 @@ struct PinSetMapView: View {
             }
             .buttonStyle(.plain)
             .padding(CypressSpacing.gutter)
-            .accessibilityLabel(PinSetCopy.recentreLabel(presentation.title))
-            .accessibilityHint(PinSetCopy.recentreHint)
+            .accessibilityLabel(PinSetCopy.recenterLabel(presentation.title))
+            .accessibilityHint(PinSetCopy.recenterHint)
         }
     }
 

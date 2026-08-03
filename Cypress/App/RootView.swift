@@ -656,7 +656,7 @@ struct RootView: View {
                 userCoordinate: location.availability.coordinate,
                 onBack: { router.pop() },
                 onOpenPin: { pin in router.push(MapHomeView.route(for: pin)) },
-                neighbours: .around(data.api)
+                neighbors: .around(data.api)
             )
 
         case .measure(let id, let kind):

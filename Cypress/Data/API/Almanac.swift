@@ -63,7 +63,7 @@ public enum AlmanacArea: Hashable, Sendable {
 
     /// Everything within this many metres of the reader, because no boundary in the record covers
     /// where they are standing.
-    case radius(metres: Double)
+    case radius(meters: Double)
 }
 
 // MARK: - The neighborhood

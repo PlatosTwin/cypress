@@ -499,9 +499,9 @@ struct MapAnnotationLayer: UIViewRepresentable {
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
             guard let polygon = overlay as? MKPolygon else { return MKOverlayRenderer(overlay: overlay) }
             let renderer = MKPolygonRenderer(polygon: polygon)
-            let colour = isDark ? CypressColor.Dark.bgMap : CypressColor.surfaceMapPaper
+            let color = isDark ? CypressColor.Dark.bgMap : CypressColor.surfaceMapPaper
             let alpha = isDark ? MapLayout.washOpacityDark : MapLayout.washOpacityLight
-            renderer.fillColor = UIColor(colour).withAlphaComponent(alpha)
+            renderer.fillColor = UIColor(color).withAlphaComponent(alpha)
             renderer.strokeColor = .clear
             renderer.lineWidth = 0
             return renderer
@@ -968,7 +968,7 @@ final class MapMarkerView: MKAnnotationView {
         // Outer in ink, inner in the ring colour — so whichever end of the ramp the basemap is at,
         // one of the two rings is the opposite of it. `resolvedColor` because a `CALayer` holds a
         // `CGColor` and cannot resolve a dynamic one itself; the view's own traits are the map's.
-        let rings: [(scale: CGFloat, colour: UIColor)] = [
+        let rings: [(scale: CGFloat, color: UIColor)] = [
             (MapLayout.selectedReticleOuterScale, UIColor(CypressColor.textInk)),
             (MapLayout.selectedReticleInnerScale, UIColor(CypressColor.pinRingStroke)),
         ]
@@ -979,7 +979,7 @@ final class MapMarkerView: MKAnnotationView {
             layer.position = CGPoint(x: bounds.midX, y: bounds.midY)
             layer.cornerRadius = size / 2
             layer.borderWidth = MapLayout.selectedReticleStroke * compensation
-            layer.borderColor = ring.colour.resolvedColor(with: traitCollection).cgColor
+            layer.borderColor = ring.color.resolvedColor(with: traitCollection).cgColor
             layer.backgroundColor = UIColor.clear.cgColor
             // Under the pin's own bitmap, so a ring can never eat into the dot it is pointing at.
             layer.zPosition = -1

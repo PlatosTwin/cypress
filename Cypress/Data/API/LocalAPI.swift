@@ -221,8 +221,8 @@ public actor LocalAPI: CypressAPI {
             )))
 
         case var .clusters(clusters):
-            let centreLatitude = (viewport.bounds.minLatitude + viewport.bounds.maxLatitude) / 2
-            let cell = TreeQueries.cellSize(zoom: viewport.zoom, centreLatitude: centreLatitude)
+            let centerLatitude = (viewport.bounds.minLatitude + viewport.bounds.maxLatitude) / 2
+            let cell = TreeQueries.cellSize(zoom: viewport.zoom, centerLatitude: centerLatitude)
             var byCell = Dictionary(uniqueKeysWithValues: clusters.map { ($0.id, $0) })
             for tree in added {
                 let cellY = Int((tree.coordinate.latitude + 90.0) / cell.latitude)
@@ -943,8 +943,8 @@ public actor LocalAPI: CypressAPI {
                 scope = .neighborhood(id: polygon.id, name: polygon.name)
             } else if let almanacQueries {
                 let fallback = AlmanacScope.radius(
-                    centre: coordinate,
-                    metres: AlmanacLimits.fallbackRadiusM
+                    center: coordinate,
+                    meters: AlmanacLimits.fallbackRadiusM
                 )
                 scope = try almanacQueries.holdsAnyRecord(scope: fallback, connection: connection)
                     ? fallback : nil
@@ -1048,8 +1048,8 @@ public actor LocalAPI: CypressAPI {
                 scope = .neighborhood(id: polygon.id, name: polygon.name)
             } else {
                 let fallback = AlmanacScope.radius(
-                    centre: coordinate,
-                    metres: AlmanacLimits.fallbackRadiusM
+                    center: coordinate,
+                    meters: AlmanacLimits.fallbackRadiusM
                 )
                 guard try almanacQueries.holdsAnyRecord(scope: fallback, connection: connection) else {
                     return .empty
@@ -1707,12 +1707,12 @@ public actor LocalAPI: CypressAPI {
                 connection: connection
             ) {
                 scope = .neighborhood(id: resident.id, name: resident.name)
-            } else if let centre = try groveQueries.mostVisitedTree(
+            } else if let center = try groveQueries.mostVisitedTree(
                 userID: userID,
                 deviceID: deviceID,
                 connection: connection
             ) {
-                scope = .radius(centre: centre, metres: AlmanacLimits.fallbackRadiusM)
+                scope = .radius(center: center, meters: AlmanacLimits.fallbackRadiusM)
             } else {
                 return GroveSpecies(neighborhood: nil, known: known)
             }

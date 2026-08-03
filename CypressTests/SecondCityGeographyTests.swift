@@ -167,7 +167,7 @@ struct SecondCityGeographyTests {
         let guide = try await Self.api(store).speciesGuide(id: sanJose.speciesID, near: Self.downtownSanJose)
 
         let nearYou = try #require(guide.nearYou, "San Jose still has no Near you card at all")
-        #expect(nearYou.area == .radius(metres: AlmanacLimits.fallbackRadiusM))
+        #expect(nearYou.area == .radius(meters: AlmanacLimits.fallbackRadiusM))
         #expect(nearYou.count > 0, "a species the city records downtown counted to nothing")
 
         // And the whole-city card beside it still counts the whole merged inventory.
@@ -310,7 +310,7 @@ struct SecondCityGeographyTests {
 
         let grove = try await Self.api(store).groveSpecies()
         let neighborhood = try #require(grove.neighborhood, "a San Jose contributor still has no area")
-        #expect(neighborhood.area == .radius(metres: AlmanacLimits.fallbackRadiusM))
+        #expect(neighborhood.area == .radius(meters: AlmanacLimits.fallbackRadiusM))
 
         // The denominator holds the species standing around the visited tree — including, by
         // construction, the visited tree's own.

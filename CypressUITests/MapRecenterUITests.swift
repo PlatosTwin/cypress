@@ -16,7 +16,7 @@ import XCTest
 ///
 /// Without that it **skips** rather than fails, for `MapSearchUITests`' reason — a skip says "not
 /// checked here", which is true, where a failure would say "broken", which is not.
-final class MapRecentreUITests: XCTestCase {
+final class MapRecenterUITests: XCTestCase {
 
     override func setUp() {
         super.setUp()
@@ -32,7 +32,7 @@ final class MapRecentreUITests: XCTestCase {
     /// The one string this file and the app have to agree on: `MapRecentreCopy.label`.
     private static let controlLabel = "Center the map on you"
 
-    private func recentreControl(_ app: XCUIApplication) -> XCUIElement {
+    private func recenterControl(_ app: XCUIApplication) -> XCUIElement {
         app.buttons[Self.controlLabel]
     }
 
@@ -48,9 +48,9 @@ final class MapRecentreUITests: XCTestCase {
     /// at all. It would not catch one that is drawn but not in the tree — an overlay behind the map,
     /// say, or one clipped out of its parent's bounds, both of which are live risks on a screen whose
     /// chrome is absolutely positioned over a full-bleed `Map` (ERRATA E110).
-    func testTheRecentreControlIsInTheTreeAndSaysWhatItIsDoing() {
+    func testTheRecenterControlIsInTheTreeAndSaysWhatItIsDoing() {
         let app = launch()
-        let control = recentreControl(app)
+        let control = recenterControl(app)
         XCTAssertTrue(
             control.waitForExistence(timeout: 15),
             "screen 01 has no control labelled “\(Self.controlLabel)”"
@@ -71,7 +71,7 @@ final class MapRecentreUITests: XCTestCase {
     /// Settings.
     func testPressingItWithLocationDeniedExplainsRatherThanDoingNothing() throws {
         let app = launch()
-        let control = recentreControl(app)
+        let control = recenterControl(app)
         XCTAssertTrue(control.waitForExistence(timeout: 15))
 
         // The standing notice is how a black-box test can tell the permission was refused: screen 01

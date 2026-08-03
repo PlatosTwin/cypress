@@ -49,8 +49,8 @@ struct PhotoCropTests {
                 (1.0 / 3.0, 2.0 / 3.0, CGColor(red: 0, green: 1, blue: 0, alpha: 1)),
                 (2.0 / 3.0, 1.0, CGColor(red: 0, green: 0, blue: 1, alpha: 1)),
             ]
-            for (top, bottom, colour) in bands {
-                cg.setFillColor(colour)
+            for (top, bottom, color) in bands {
+                cg.setFillColor(color)
                 cg.fill(CGRect(
                     x: 0,
                     y: CGFloat(height) * top,
@@ -98,8 +98,8 @@ struct PhotoCropTests {
     /// two anchors have to actually differ. If this passed with the same colours as the test above,
     /// both would be measuring nothing.
     @Test("A centred crop of the same photograph reaches the ground, which is what was reported")
-    func centreAnchorReachesTheGround() async throws {
-        let sheet = try #require(await Self.render(anchor: .centre))
+    func centerAnchorReachesTheGround() async throws {
+        let sheet = try #require(await Self.render(anchor: .center))
 
         #expect(
             sheet.contains(.blue),
@@ -116,7 +116,7 @@ struct PhotoCropTests {
     }
 
     @Test("Screen 04's centre anchor is not the default, so it cannot be changed by accident")
-    func theCameraScreenMustAskForCentre() {
+    func theCameraScreenMustAskForCenter() {
         // `PhotoCropAnchor.centre` exists for the ghost overlay, which has to agree with an
         // `AVCaptureVideoPreviewLayer` this app does not get to reconfigure. Stated as a test so
         // that "the default is the crown" is a fact the suite holds rather than a comment.

@@ -70,7 +70,7 @@ enum GrowthHistoryPreviewFixtures {
     static func dbh(
         _ year: Int,
         _ month: Int,
-        _ centimetres: Double,
+        _ centimeters: Double,
         _ method: MeasurementMethod,
         accuracyM: Double = 6
     ) -> TreeMeasurement {
@@ -79,14 +79,14 @@ enum GrowthHistoryPreviewFixtures {
             attribution: .anonymous(deviceID: deviceID),
             capturedAt: date(year, month),
             gpsAccuracyM: accuracyM,
-            quantity: Quantity(value: centimetres, unit: .centimetres, method: method)
+            quantity: Quantity(value: centimeters, unit: .centimeters, method: method)
         )
     }
 
     static func height(
         _ year: Int,
         _ month: Int,
-        _ metres: Double,
+        _ meters: Double,
         _ method: MeasurementMethod,
         accuracyM: Double = 6
     ) -> TreeMeasurement {
@@ -95,7 +95,7 @@ enum GrowthHistoryPreviewFixtures {
             attribution: .anonymous(deviceID: deviceID),
             capturedAt: date(year, month),
             gpsAccuracyM: accuracyM,
-            quantity: Quantity(value: metres, unit: .metres, method: method)
+            quantity: Quantity(value: meters, unit: .meters, method: method)
         )
     }
 
@@ -156,7 +156,7 @@ enum GrowthHistoryPreviewFixtures {
                 attribution: .anonymous(deviceID: deviceID),
                 capturedAt: date(2022, 5),
                 gpsAccuracyM: nil,
-                quantity: Quantity(value: 57, unit: .centimetres, method: .estimate)
+                quantity: Quantity(value: 57, unit: .centimeters, method: .estimate)
             ),
         ])
     }

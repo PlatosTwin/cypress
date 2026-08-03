@@ -36,7 +36,7 @@ import Foundation
 /// A `Sendable` box around one async call, so the view can hold it, previews can hand it a constant,
 /// and tests can hand it a spy. It is deliberately not `any CypressAPI`: the whole surface this
 /// screen is allowed to touch is one read of one box.
-struct PinSetNeighbours: Sendable {
+struct PinSetNeighbors: Sendable {
 
     let read: @Sendable (Coordinate) async -> [TreePin]
 
@@ -45,7 +45,7 @@ struct PinSetNeighbours: Sendable {
     }
 
     /// The screen with no neighbours to draw — the two counted groups, and every preview.
-    static let none = PinSetNeighbours { _ in [] }
+    static let none = PinSetNeighbors { _ in [] }
 
     /// The real read, over the app's one boundary (ARCHITECTURE §4).
     ///
@@ -63,10 +63,10 @@ struct PinSetNeighbours: Sendable {
     /// A failure is an empty array and not an error. There is nothing for this screen to say about a
     /// read that only ever added context to a map that is already correct without it, and a banner
     /// over a working map would be the app apologising for something the reader did not ask for.
-    static func around(_ api: any CypressAPI) -> PinSetNeighbours {
-        PinSetNeighbours { coordinate in
+    static func around(_ api: any CypressAPI) -> PinSetNeighbors {
+        PinSetNeighbors { coordinate in
             let viewport = MapViewport(
-                bounds: BoundingBox(around: coordinate, radiusM: MapLayout.defaultSpanMetres / 2),
+                bounds: BoundingBox(around: coordinate, radiusM: MapLayout.defaultSpanMeters / 2),
                 zoom: MapViewport.highestClusteringZoom + 1
             )
             guard case let .pins(answer)? = try? await api.mapContent(in: viewport) else { return [] }

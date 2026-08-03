@@ -30,7 +30,7 @@ struct OutboxPresentationTests {
                 attribution: .anonymous(deviceID: deviceID),
                 capturedAt: moment,
                 gpsAccuracyM: 7,
-                quantity: Quantity(value: 31, unit: .centimetres, method: .tape),
+                quantity: Quantity(value: 31, unit: .centimeters, method: .tape),
                 createdAt: moment,
                 updatedAt: moment
             ))

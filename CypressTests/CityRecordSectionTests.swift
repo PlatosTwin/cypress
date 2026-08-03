@@ -370,7 +370,7 @@ struct CityRecordSectionTests {
     /// to avoid, and the label is the only thing standing between the reader and making the same
     /// inference by hand.
     @Test("the caretaker card never says owner, on the row where that would be most wrong")
-    func theCaretakerCardIsLabelledForCare() {
+    func theCaretakerCardIsLabeledForCare() {
         // 112,955 seed rows are exactly this: DPW-maintained right-of-way, private caretaker.
         let tree = Self.cityTree(CityRecord(legalStatus: "DPW Maintained", caretaker: "Private", plantType: "Tree"))
         let presentation = Self.presentation(TreeProfile(tree: tree))

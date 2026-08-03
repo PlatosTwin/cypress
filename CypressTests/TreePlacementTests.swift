@@ -265,14 +265,14 @@ struct TreePlacementTests {
     /// later edit that "clarifies" it into a warning — which is the one thing the owner's ruling and
     /// `TreePlacement` both refuse.
     @Test("neither placement line evaluates the coordinate it describes")
-    func thePlacementCopyPassesNoJudgement() {
-        let judgements = [
+    func thePlacementCopyPassesNoJudgment() {
+        let judgments = [
             "approx", "unverified position", "estimate", "estimated", "inaccurate", "accuracy",
             "warning", "caution", "may be", "might be", "unreliable", "unconfirmed", "rough"
         ]
         for line in [TreeProfilePresentation.placementFromGPS, TreeProfilePresentation.placementByHand] {
             let lowered = line.lowercased()
-            for word in judgements {
+            for word in judgments {
                 #expect(!lowered.contains(word), "\"\(line)\" reads as a verdict on the coordinate")
             }
             // Both name the instrument and nothing else, in the same shape, so neither is the

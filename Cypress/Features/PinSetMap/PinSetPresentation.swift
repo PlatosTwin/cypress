@@ -126,7 +126,7 @@ struct PinSetPresentation: Equatable {
         guard let first = coordinates.first else {
             // No pins means no group, and the almanac does not build one — but a box has to exist, so
             // it is the city's own default view rather than the null island off the coast of Africa.
-            return BoundingBox(around: MapLayout.defaultCentre, radiusM: MapLayout.defaultSpanMetres / 2)
+            return BoundingBox(around: MapLayout.defaultCenter, radiusM: MapLayout.defaultSpanMeters / 2)
         }
 
         let enclosing = coordinates.dropFirst().reduce(
@@ -150,7 +150,7 @@ struct PinSetPresentation: Equatable {
                 latitude: (enclosing.minLatitude + enclosing.maxLatitude) / 2,
                 longitude: (enclosing.minLongitude + enclosing.maxLongitude) / 2
             ),
-            radiusM: MapLayout.defaultSpanMetres / 2
+            radiusM: MapLayout.defaultSpanMeters / 2
         )
 
         return BoundingBox(
@@ -235,13 +235,13 @@ enum PinSetCopy {
 
     /// It names what it centres on rather than what it looks like, for `MapRecentreCopy.label`'s
     /// reason: a reader who cannot see the crosshair learns nothing from the word "locate".
-    static func recentreLabel(_ name: String) -> String { "Center the map on \(name)" }
+    static func recenterLabel(_ name: String) -> String { "Center the map on \(name)" }
 
-    static let recentreHint = "Returns to the larger pin at street level"
+    static let recenterHint = "Returns to the larger pin at street level"
 
     /// Said out loud after the press. The map has moved under a VoiceOver reader's finger and
     /// nothing else reports it — `MapRecentreCopy.spokenCentred`'s argument, on the screen next door.
-    static let spokenRecentred = "The map is back on it, at street level."
+    static let spokenRecentered = "The map is back on it, at street level."
 
     /// How much of the group is on the map (ERRATA E38).
     ///

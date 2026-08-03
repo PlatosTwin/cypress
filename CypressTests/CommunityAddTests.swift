@@ -137,7 +137,7 @@ struct CommunityAddTests {
 
         // Four metres on the diagonal — well inside the circle, and inside the box too, so this
         // passes for the right reason rather than because of E35's square.
-        let closeBy = ProximityDedupeTests.diagonal(from: Self.spot, metres: 4)
+        let closeBy = ProximityDedupeTests.diagonal(from: Self.spot, meters: 4)
         let subject = Self.model(api: api, fix: .located(closeBy, accuracyM: 6))
         subject.useLibraryImage(try Self.jpeg())
 
@@ -159,7 +159,7 @@ struct CommunityAddTests {
 
     @MainActor
     @Test("a tree 12 m away is not a duplicate on this path either")
-    func twelveMetresAddsThroughTheScreen() async throws {
+    func twelveMetersAddsThroughTheScreen() async throws {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
         _ = try await api.addTree(
@@ -168,7 +168,7 @@ struct CommunityAddTests {
 
         let subject = Self.model(
             api: api,
-            fix: .located(ProximityDedupeTests.diagonal(from: Self.spot, metres: 12), accuracyM: 6)
+            fix: .located(ProximityDedupeTests.diagonal(from: Self.spot, meters: 12), accuracyM: 6)
         )
         subject.useLibraryImage(try Self.jpeg())
 

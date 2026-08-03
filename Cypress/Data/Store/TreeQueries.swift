@@ -453,8 +453,8 @@ public struct TreeQueries {
         narrowing: Narrowing = .none,
         connection: SQLiteConnection
     ) throws -> [(rowID: Int64, memberCount: Int)] {
-        let centreLatitude = (viewport.bounds.minLatitude + viewport.bounds.maxLatitude) / 2
-        let cell = Self.cellSize(zoom: viewport.zoom, centreLatitude: centreLatitude, points: cellPoints)
+        let centerLatitude = (viewport.bounds.minLatitude + viewport.bounds.maxLatitude) / 2
+        let cell = Self.cellSize(zoom: viewport.zoom, centerLatitude: centerLatitude, points: cellPoints)
 
         let statement = try connection.cachedStatement(markerCellsSQL(strategy, narrowing: narrowing))
         _ = try statement.bind(bindings(for: viewport.bounds))
@@ -575,8 +575,8 @@ public struct TreeQueries {
         let narrowing = try narrowing(for: viewport, connection: connection)
         guard !narrowing.matchesNothing else { return [] }
 
-        let centreLatitude = (viewport.bounds.minLatitude + viewport.bounds.maxLatitude) / 2
-        let cell = Self.cellSize(zoom: viewport.zoom, centreLatitude: centreLatitude)
+        let centerLatitude = (viewport.bounds.minLatitude + viewport.bounds.maxLatitude) / 2
+        let cell = Self.cellSize(zoom: viewport.zoom, centerLatitude: centerLatitude)
         let statement = try connection.cachedStatement(clustersSQL(strategy, narrowing: narrowing))
         _ = try statement.bind(bindings(for: viewport.bounds))
         _ = try statement.bind([":latCell": cell.latitude, ":lonCell": cell.longitude])
@@ -624,13 +624,13 @@ public struct TreeQueries {
     /// across a whole degree of latitude, which this app cannot do.
     static func cellSize(
         zoom: Int,
-        centreLatitude: Double,
+        centerLatitude: Double,
         points: Double = clusterCellPoints
     ) -> (latitude: Double, longitude: Double) {
         let clampedZoom = max(0, min(zoom, 22))
         let degreesPerPoint = 360.0 / (256.0 * pow(2.0, Double(clampedZoom)))
         let longitude = degreesPerPoint * points
-        let band = centreLatitude.rounded(.down) + 0.5
+        let band = centerLatitude.rounded(.down) + 0.5
         let latitude = longitude * max(cos(band * .pi / 180), 0.05)
         return (latitude: latitude, longitude: longitude)
     }

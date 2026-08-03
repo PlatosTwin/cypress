@@ -72,7 +72,7 @@ struct SeedCorpus: Sendable {
     /// Vacant sites in no neighbourhood at all, and therefore invisible to every neighbourhood
     /// surface in the app. Zero for a San Francisco-only seed; a whole city's worth once a second
     /// city ships without a neighbourhood layer of its own (ERRATA E176).
-    let vacantSitesWithNoNeighbourhood: Int
+    let vacantSitesWithNoNeighborhood: Int
     /// Rows that are `alive` with no species because their **source said a tree is there and did not
     /// say which** — R18's answer for San Jose's `NAMESCIENTIFIC = 'Unknown'`. Distinct from
     /// `records_not_a_tree`, which is a source saying the thing growing there is not a tree. Neither
@@ -177,7 +177,7 @@ struct SeedCorpus: Sendable {
             landContextUnplaced: 3_506,
             landContextDeclinedForeignVocabulary: 0,
             neighborhoodsWithNoVacantSite: 0,
-            vacantSitesWithNoNeighbourhood: 0,
+            vacantSitesWithNoNeighborhood: 0,
             treesOfUnknownSpecies: 0,
             datedVacantSites: 9_237,
             sunsetVacantSites: 1_436,
@@ -250,7 +250,7 @@ struct SeedCorpus: Sendable {
             landContextUnplaced: 56_294,
             landContextDeclinedForeignVocabulary: 52_788,
             neighborhoodsWithNoVacantSite: 0,
-            vacantSitesWithNoNeighbourhood: 11_787,
+            vacantSitesWithNoNeighborhood: 11_787,
             treesOfUnknownSpecies: 705,
             datedVacantSites: 9_237,
             sunsetVacantSites: 1_436,
@@ -292,7 +292,7 @@ struct SeedCorpus: Sendable {
             landContextUnplaced: 0,
             landContextDeclinedForeignVocabulary: 0,
             neighborhoodsWithNoVacantSite: 0,
-            vacantSitesWithNoNeighbourhood: 0,
+            vacantSitesWithNoNeighborhood: 0,
             treesOfUnknownSpecies: 0,
             datedVacantSites: 9_294,
             sunsetVacantSites: 1_474,

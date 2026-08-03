@@ -45,7 +45,7 @@ struct MapCameraOwnershipTests {
     private static let pannedTo = CLLocationCoordinate2D(latitude: 37.7635, longitude: -122.4105)
 
     /// Metres between two coordinates, so an assertion can be written in a unit the reader has.
-    private static func metres(
+    private static func meters(
         _ a: CLLocationCoordinate2D,
         _ b: CLLocationCoordinate2D
     ) -> CLLocationDistance {
@@ -115,9 +115,9 @@ struct MapCameraOwnershipTests {
 
         /// The reader drags the map and lifts their finger. `setRegion` here is the gesture's own
         /// result, not an app-driven write — MapKit moves the map, then tells the delegate.
-        func readerPans(to centre: CLLocationCoordinate2D) {
+        func readerPans(to center: CLLocationCoordinate2D) {
             mapView.setRegion(
-                MKCoordinateRegion(center: centre, span: mapView.region.span),
+                MKCoordinateRegion(center: center, span: mapView.region.span),
                 animated: false
             )
             coordinator.mapView(mapView, regionDidChangeAnimated: false)
@@ -127,8 +127,8 @@ struct MapCameraOwnershipTests {
     private static func opening() -> MKCoordinateRegion {
         MKCoordinateRegion(
             center: fix,
-            latitudinalMeters: MapLayout.defaultSpanMetres,
-            longitudinalMeters: MapLayout.defaultSpanMetres
+            latitudinalMeters: MapLayout.defaultSpanMeters,
+            longitudinalMeters: MapLayout.defaultSpanMeters
         )
     }
 
@@ -145,7 +145,7 @@ struct MapCameraOwnershipTests {
         screen.readerPans(to: Self.pannedTo)
         let afterGesture = screen.mapView.region.center
         #expect(
-            Self.metres(afterGesture, Self.pannedTo) < 50,
+            Self.meters(afterGesture, Self.pannedTo) < 50,
             "the gesture itself must have moved the camera, or this test asserts nothing"
         )
 
@@ -153,17 +153,17 @@ struct MapCameraOwnershipTests {
         // These are the ordinary re-renders a live screen produces by the hundred.
         for _ in 0..<10 { screen.updatePass() }
 
-        let centre = screen.mapView.region.center
+        let center = screen.mapView.region.center
         #expect(
-            Self.metres(centre, Self.pannedTo) < 50,
+            Self.meters(center, Self.pannedTo) < 50,
             """
-            the map was dragged to \(Self.pannedTo) and the app put it back at \(centre), \
-            \(Int(Self.metres(centre, Self.pannedTo))) m away — this is E140, the map that cannot be \
+            the map was dragged to \(Self.pannedTo) and the app put it back at \(center), \
+            \(Int(Self.meters(center, Self.pannedTo))) m away — this is E140, the map that cannot be \
             moved off the reader's own location
             """
         )
         #expect(
-            Self.metres(centre, Self.fix) > 200,
+            Self.meters(center, Self.fix) > 200,
             "the camera returned to the GPS fix the one-shot centred on"
         )
     }
@@ -189,12 +189,12 @@ struct MapCameraOwnershipTests {
         screen.readerPans(to: Self.pannedTo)
         for _ in 0..<10 { screen.stalePass(inFlight) }
 
-        let centre = screen.mapView.region.center
+        let center = screen.mapView.region.center
         #expect(
-            Self.metres(centre, Self.pannedTo) < 50,
+            Self.meters(center, Self.pannedTo) < 50,
             """
             an update pass carrying the camera from before the pan drove the map \
-            \(Int(Self.metres(centre, Self.pannedTo))) m back toward the fix — this is E140
+            \(Int(Self.meters(center, Self.pannedTo))) m back toward the fix — this is E140
             """
         )
     }
@@ -205,7 +205,7 @@ struct MapCameraOwnershipTests {
     /// cleared record was protecting — #66's dead second press — and it has to survive the fix, or
     /// the map has been made movable by making the button useless.
     @Test("the recentre control still moves the camera after a pan")
-    func recentreStillWorksAfterAPan() {
+    func recenterStillWorksAfterAPan() {
         let screen = Screen(opening: Self.opening())
         screen.readerPans(to: Self.pannedTo)
         for _ in 0..<10 { screen.updatePass() }
@@ -218,7 +218,7 @@ struct MapCameraOwnershipTests {
         screen.updatePass()
 
         #expect(
-            Self.metres(screen.mapView.region.center, Self.fix) < 50,
+            Self.meters(screen.mapView.region.center, Self.fix) < 50,
             "a press of the recentre control did not move the camera to the fix"
         )
     }
@@ -226,7 +226,7 @@ struct MapCameraOwnershipTests {
     /// And the second press, which is the one that zooms. Same mechanism, different span, and it has
     /// to be applied even though the camera is already centred where it is being asked to go.
     @Test("a second recentre press still zooms in")
-    func secondRecentrePressStillZooms() {
+    func secondRecenterPressStillZooms() {
         let screen = Screen(opening: Self.opening())
         screen.readerPans(to: Self.pannedTo)
 
@@ -241,8 +241,8 @@ struct MapCameraOwnershipTests {
         screen.position = .move(
             to: MKCoordinateRegion(
                 center: Self.fix,
-                latitudinalMeters: MapLayout.defaultSpanMetres,
-                longitudinalMeters: MapLayout.defaultSpanMetres
+                latitudinalMeters: MapLayout.defaultSpanMeters,
+                longitudinalMeters: MapLayout.defaultSpanMeters
             )
         )
         screen.updatePass()

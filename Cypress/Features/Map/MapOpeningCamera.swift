@@ -65,7 +65,7 @@ final class MapCameraMemory {
 
     /// A camera, in the two facts that reproduce it: where it was pointed and how much it covered.
     struct Snapshot: Equatable, Sendable {
-        var centre: Coordinate
+        var center: Coordinate
         var latitudeSpan: Double
         var longitudeSpan: Double
     }
@@ -196,16 +196,16 @@ final class MapCameraMemory {
         guard snapshot.latitudeSpan > 0, snapshot.longitudeSpan > 0 else { return false }
         guard snapshot.latitudeSpan <= maximumSpanDegrees,
               snapshot.longitudeSpan <= maximumSpanDegrees else { return false }
-        guard abs(snapshot.centre.latitude) <= 90, abs(snapshot.centre.longitude) <= 180 else {
+        guard abs(snapshot.center.latitude) <= 90, abs(snapshot.center.longitude) <= 180 else {
             return false
         }
-        return CLLocationCoordinate2DIsValid(snapshot.centre.clLocationCoordinate)
+        return CLLocationCoordinate2DIsValid(snapshot.center.clLocationCoordinate)
     }
 
     static func encode(_ snapshot: Snapshot) -> [Double] {
         [
-            snapshot.centre.latitude,
-            snapshot.centre.longitude,
+            snapshot.center.latitude,
+            snapshot.center.longitude,
             snapshot.latitudeSpan,
             snapshot.longitudeSpan
         ]
@@ -218,7 +218,7 @@ final class MapCameraMemory {
         guard let values, values.count == 4 else { return nil }
         guard values.allSatisfy(\.isFinite) else { return nil }
         let snapshot = Snapshot(
-            centre: Coordinate(latitude: values[0], longitude: values[1]),
+            center: Coordinate(latitude: values[0], longitude: values[1]),
             latitudeSpan: values[2],
             longitudeSpan: values[3]
         )
@@ -293,10 +293,10 @@ enum MapOpening {
     /// Where the map opens.
     static func openingRegion(remembered: MapCameraMemory.Snapshot?) -> MKCoordinateRegion {
         guard let remembered else {
-            return MapLayout.region(around: MapLayout.defaultCentre)
+            return MapLayout.region(around: MapLayout.defaultCenter)
         }
         return MKCoordinateRegion(
-            center: remembered.centre.clLocationCoordinate,
+            center: remembered.center.clLocationCoordinate,
             span: MKCoordinateSpan(
                 latitudeDelta: remembered.latitudeSpan,
                 longitudeDelta: remembered.longitudeSpan

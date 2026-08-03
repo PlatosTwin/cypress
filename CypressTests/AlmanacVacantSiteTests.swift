@@ -101,8 +101,8 @@ struct AlmanacVacantSiteTests {
             on: store
         )
         #expect(
-            outOfScope == corpus.vacantSitesWithNoNeighbourhood,
-            "\(outOfScope) vacant sites sit outside every neighbourhood, expected \(corpus.vacantSitesWithNoNeighbourhood); a neighbourhood layer for the second city would change this"
+            outOfScope == corpus.vacantSitesWithNoNeighborhood,
+            "\(outOfScope) vacant sites sit outside every neighbourhood, expected \(corpus.vacantSitesWithNoNeighborhood); a neighbourhood layer for the second city would change this"
         )
 
         let inScope = try await Self.count(
@@ -112,7 +112,7 @@ struct AlmanacVacantSiteTests {
             """,
             on: store
         )
-        #expect(inScope == corpus.vacantSites - corpus.vacantSitesWithNoNeighbourhood)
+        #expect(inScope == corpus.vacantSites - corpus.vacantSitesWithNoNeighborhood)
 
         // A site has no species. This is the fact the inner join is wrongly credited with acting on.
         let withSpecies = try await Self.count(

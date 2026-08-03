@@ -235,13 +235,13 @@ struct TokenGallery: View {
         VStack(alignment: .leading, spacing: 14) {
             SectionTitle("§1.3 Compound styles (font + tracking + case + color)")
 
-            labelled(".cypressMicroLabel()") {
+            labeled(".cypressMicroLabel()") {
                 Text("Recent visits").cypressMicroLabel()
             }
-            labelled(".cypressMicroLabel10()") {
+            labeled(".cypressMicroLabel10()") {
                 Text("Canopy width").cypressMicroLabel10()
             }
-            labelled(".cypressBadge(color:)") {
+            labeled(".cypressBadge(color:)") {
                 Text("Thriving")
                     .cypressBadge(color: CypressColor.thrivingBadgeText)
                     .padding(.horizontal, 7)
@@ -251,32 +251,32 @@ struct TokenGallery: View {
                             .fill(CypressColor.thrivingBadgeFill)
                     )
             }
-            labelled(".cypressMonoSectionLabel()") {
+            labeled(".cypressMonoSectionLabel()") {
                 Text("Foliage through the year").cypressMonoSectionLabel()
             }
-            labelled(".cypressMapLabel(color:)") {
+            labeled(".cypressMapLabel(color:)") {
                 Text("Dolores St").cypressMapLabel(color: CypressColor.textMapLabelStreet)
             }
-            labelled(".cypressMonoReadout()") {
+            labeled(".cypressMonoReadout()") {
                 Text("64").cypressMonoReadout()
             }
-            labelled(".cypressLatinName()") {
+            labeled(".cypressLatinName()") {
                 Text("Hesperocyparis macrocarpa").cypressLatinName()
             }
-            labelled(".cypressBody15()") {
+            labeled(".cypressBody15()") {
                 Text("Watered, mulched. Thirty seconds, next tree.").cypressBody15()
             }
-            labelled(".cypressBody135()") {
+            labeled(".cypressBody135()") {
                 Text("In July this tree is usually in full leaf.").cypressBody135()
             }
-            labelled("CypressFont.monoStat") {
+            labeled("CypressFont.monoStat") {
                 Text("DBH 64 cm").cypressMonoStat()
             }
         }
         .cypressLabelGutter()
     }
 
-    private func labelled<Content: View>(
+    private func labeled<Content: View>(
         _ name: String,
         @ViewBuilder content: () -> Content
     ) -> some View {

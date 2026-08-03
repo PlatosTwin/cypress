@@ -146,7 +146,7 @@ struct SiteTests {
             SiteCopy.siteLabel,
             SiteCopy.cityRecordLabel,
             SiteCopy.neighborhoodLabel,
-            SiteCopy.neighbourDetail(metres: 24),
+            SiteCopy.neighborDetail(meters: 24),
             SiteCopy.unidentified,
             SiteCopy.footnote,
             SiteCopy.cardTitle,
@@ -341,16 +341,16 @@ struct SiteTests {
 
         await model.load()
 
-        let neighbour = try #require(model.presentation?.neighbour)
-        #expect(neighbour.id == SiteTests.standingID)
-        #expect(neighbour.title == "London Plane")
-        #expect(neighbour.detail == "24 m away · the nearest tree to this site")
+        let neighbor = try #require(model.presentation?.neighbor)
+        #expect(neighbor.id == SiteTests.standingID)
+        #expect(neighbor.title == "London Plane")
+        #expect(neighbor.detail == "24 m away · the nearest tree to this site")
     }
 
     /// A site is never its own nearest tree. It is in its own nearby list at distance zero, and it
     /// is excluded by the same test that excludes every other basin rather than by its id.
     @Test("a site does not point at itself")
-    func siteIsNotItsOwnNeighbour() async {
+    func siteIsNotItsOwnNeighbor() async {
         let model = SiteModel(
             treeID: SiteTests.siteID,
             api: Records(
@@ -361,7 +361,7 @@ struct SiteTests {
 
         await model.load()
 
-        #expect(model.presentation?.neighbour == nil)
+        #expect(model.presentation?.neighbor == nil)
     }
 
     /// The row is absent rather than reworded when there is nothing standing within reach — the same
@@ -379,7 +379,7 @@ struct SiteTests {
             return
         }
         #expect(profile.tree.id == SiteTests.siteID)
-        #expect(model.presentation?.neighbour == nil)
+        #expect(model.presentation?.neighbor == nil)
     }
 
     /// The accessory read must not take the screen down with it. Written as `try await` inside the
@@ -395,7 +395,7 @@ struct SiteTests {
         await model.load()
 
         #expect(model.presentation != nil)
-        #expect(model.presentation?.neighbour == nil)
+        #expect(model.presentation?.neighbor == nil)
         if case .failed = model.phase { Issue.record("a nearby read failed the whole screen") }
     }
 

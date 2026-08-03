@@ -1181,14 +1181,14 @@ public enum DataGates {
 
         // --- Nearest-N is ordered by true distance and stays inside the radius.
         try await store.queue.read { connection in
-            let centre = Coordinate(latitude: 37.7761, longitude: -122.4464)
-            let nearby = try queries.nearest(to: centre, radiusM: 120, limit: 8, connection: connection)
+            let center = Coordinate(latitude: 37.7761, longitude: -122.4464)
+            let nearby = try queries.nearest(to: center, radiusM: 120, limit: 8, connection: connection)
             expect(!nearby.isEmpty, "nearest-N: nothing found near a known-dense corner of SF", into: &failures)
             expect(nearby.count <= 8, "nearest-N: returned \(nearby.count) rows for limit 8", into: &failures)
             let distances = nearby.map(\.distanceM)
             expect(distances == distances.sorted(), "nearest-N: results are not ordered by distance", into: &failures)
             expect(
-                zip(nearby, distances).allSatisfy { abs(centre.distance(to: $0.0.tree.coordinate) - $0.1) < 0.001 },
+                zip(nearby, distances).allSatisfy { abs(center.distance(to: $0.0.tree.coordinate) - $0.1) < 0.001 },
                 "nearest-N: the reported distance is not the great-circle distance",
                 into: &failures
             )
@@ -1254,14 +1254,14 @@ public enum DataGates {
         // --- Every value in the column is one the enum knows, so nothing decodes to `nil` by
         // accident. `SpeciesQueries.leafRetention` maps an unknown string to `nil`, which would
         // silently look exactly like the honest unknown state.
-        let unrecognised = try await count("""
+        let unrecognized = try await count("""
             SELECT COUNT(*) AS n FROM \(SeedDatabase.schemaName).species
              WHERE leaf_retention IS NOT NULL
                AND leaf_retention NOT IN ('evergreen','deciduous','semi_deciduous')
             """)
         expect(
-            unrecognised == 0,
-            "seed contract: \(unrecognised) species carry a leaf_retention outside the enum",
+            unrecognized == 0,
+            "seed contract: \(unrecognized) species carry a leaf_retention outside the enum",
             into: &failures
         )
 
@@ -1310,17 +1310,17 @@ public enum DataGates {
         let treeColumnNames = try await store.queue.read { connection in
             Set(try connection.columnNames(ofTable: "trees", in: SeedDatabase.schemaName))
         }
-        let normalisedColumns = (meta["case_normalised_columns"] ?? "")
+        let normalizedColumns = (meta["case_normalised_columns"] ?? "")
             .split(separator: ",")
             .map { String($0).trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
         expect(
-            !normalisedColumns.isEmpty,
+            !normalizedColumns.isEmpty,
             "seed contract: seed_meta.case_normalised_columns is absent, so #95's assertion would "
                 + "silently check nothing",
             into: &failures
         )
-        for column in normalisedColumns {
+        for column in normalizedColumns {
             guard treeColumnNames.contains(column) else {
                 failures.append("seed contract: seed_meta names '\(column)' as case-normalised but "
                     + "seed.trees has no such column")

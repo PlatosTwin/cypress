@@ -217,7 +217,7 @@ struct VisitCameraView: View {
             // ghost under it and the live `AVCaptureVideoPreviewLayer` behind both are three
             // drawings of the same scene that only mean anything if they agree, and the preview
             // layer's `.resizeAspectFill` centres. See `PhotoCropAnchor.centre`.
-            PhotoFill(image: snapshot, label: "The photo you just took", anchor: .centre)
+            PhotoFill(image: snapshot, label: "The photo you just took", anchor: .center)
         } else if model.camera.isLive, let session = model.camera.session {
             VisitCameraPreview(session: session)
         } else {
@@ -232,7 +232,7 @@ struct VisitCameraView: View {
         if let ghost = model.ghost, model.subjectTakesGhost {
             // `.centre` for the same reason the snapshot above uses it, and it is the half that
             // matters most: the ghost is what the new frame is lined up against.
-            PhotoFill(image: ghost, anchor: .centre)
+            PhotoFill(image: ghost, anchor: .center)
                 .opacity(VisitMetrics.Camera.ghostOpacity)
                 .allowsHitTesting(false)
         } else if !model.camera.isLive, model.subjectTakesGhost {

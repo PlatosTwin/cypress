@@ -208,7 +208,7 @@ private enum AlmanacFixtures {
     /// boundaries for. The pill is a distance, and the sentence under the header says so.
     static let radiusArea = Almanac(
         neighborhood: AlmanacNeighborhood(
-            area: .radius(metres: AlmanacLimits.fallbackRadiusM),
+            area: .radius(meters: AlmanacLimits.fallbackRadiusM),
             firstBloom: nil,
             elder: elder,
             newestNeighbors: RecentPlanting(

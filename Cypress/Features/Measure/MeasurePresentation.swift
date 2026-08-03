@@ -280,7 +280,7 @@ struct MeasurePresentation {
         // 64 cm minus 62 cm is 2.0000000000000018 metres-worth of centimetres and `MeasuredValue
         // .number` — which decides "whole number" by exact equality — would print `+2.0 cm` for a
         // difference the contributor entered as two whole centimetres.
-        let delta = ((deltaSI / draft.unit.metresPerUnit) * 10).rounded() / 10
+        let delta = ((deltaSI / draft.unit.metersPerUnit) * 10).rounded() / 10
         return MeasureCopy.verdict(delta: delta, unit: draft.unit, span: span)
     }
 
@@ -383,9 +383,9 @@ enum MeasureCopy {
     /// three follow from the pairs in `MeasureMetrics.alternateUnit`.
     static func unitName(_ unit: LengthUnit) -> String {
         switch unit {
-        case .millimetres: return "millimeters"
-        case .centimetres: return "centimeters"
-        case .metres: return "meters"
+        case .millimeters: return "millimeters"
+        case .centimeters: return "centimeters"
+        case .meters: return "meters"
         case .inches: return "inches"
         case .feet: return "feet"
         }
@@ -503,8 +503,8 @@ enum MeasureMetrics {
     /// mock draws and the units `MeasuredValue` prints everywhere else in the app.
     static func defaultUnit(for kind: MeasurementKind) -> LengthUnit {
         switch kind {
-        case .dbh: return .centimetres
-        case .height: return .metres
+        case .dbh: return .centimeters
+        case .height: return .meters
         }
     }
 
@@ -512,8 +512,8 @@ enum MeasureMetrics {
     /// trunk's `cm ⇄ in`, and `m ⇄ ft` is the same pair one size up. See ERRATA.
     static func alternateUnit(for kind: MeasurementKind, from unit: LengthUnit) -> LengthUnit {
         switch kind {
-        case .dbh: return unit == .centimetres ? .inches : .centimetres
-        case .height: return unit == .metres ? .feet : .metres
+        case .dbh: return unit == .centimeters ? .inches : .centimeters
+        case .height: return unit == .meters ? .feet : .meters
         }
     }
 
