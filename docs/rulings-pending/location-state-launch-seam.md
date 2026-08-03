@@ -130,6 +130,29 @@ fixtures are inside the inventory's coverage and the counts were measured over t
 `MapCenteredStateUITests`' skip message already named and stays a literal in that file. A new
 coordinate must be measured the same way before it is pinned.
 
+#### One fallout, worth reading before the next agent changes a pinned coordinate
+
+Pinning moved the camera this suite leaves behind, and one existing test failed on the new one:
+
+    AccessibilityTreeTests.testNoUnlabeledButtonsOnLaunch
+      Failed to determine hittability of "City tree, Southern Magnolia" Button:
+      Activation point invalid and no suggested hit points based on element frame
+
+**`XCUIElement.isHittable` does not return `false` for an element XCUITest cannot compute an
+activation point for — it raises.** Screen 01 is a full-bleed `Map` whose pins are SwiftUI
+annotations MapKit hosts and places itself, and one at the edge of the basemap can be in the tree
+with a frame that has no interior. Whether any pin is in that state is a function of where the
+camera is, which is device state — so the test failed on a device left pointed at one block and not
+on one left pointed at another. E202's shape, wearing an accessibility failure's clothes.
+
+Repaired where it belongs: the loop asks the *frame* first and skips an element with no interior,
+which is the same judgment `isHittable` was being asked for, expressed in a way that cannot raise.
+Red-proofed by blanking `MapRecenterButton`'s `accessibilityLabel` — the assertion still fires:
+`an interactive control at (330.0, 608.7, 44.0, 44.0) has no accessibility label`.
+
+The general lesson for this seam: **a pinned coordinate is a change to the whole suite's device
+state, not a local decision inside one test file.**
+
 #### An invalid value is a banner, never a fallback
 
 `CYPRESS_LOCATION=Denied` does not quietly become the real provider. It draws
