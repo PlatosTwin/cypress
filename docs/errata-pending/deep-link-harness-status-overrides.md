@@ -70,6 +70,20 @@ it resolved carries a local override:
 Rows here are `memorial` and `deadProfile`'s leavings. They survive reinstall, like every other
 device-container fact E202 is about.
 
+**What the repair then broke, and why that was right.** With resolution unfrozen, `treeProfile` moved
+off the four Southern Magnolias nearest the harness's center — all four are the ones `.memorial` has
+marked removed on this device — and onto the fifth record, a Blackwood Acacia.
+`DeepLinkVoiceOverTests.testAStatCardIsOneStop` then failed on `Watch for`, which the app documents as
+conditional: `TreeProfilePresentation.watchForText` returns the species care note covering the current
+month, and "20 of the curated 40 carry any". Measured against the shipped seed: the four Magnolias
+carry 115 bytes of `care_notes`, the Acacia carries `[]`.
+
+So the test had been asserting a property of *one record the harness happened to be stuck on*, and
+`Watch for` is off its list now with the measurement written at the site. The app is correct in both
+states. This is worth reading as the second half of the same lesson: a frozen harness does not only
+hide defects, it also silently makes conditional content look unconditional, and tests grow to depend
+on it.
+
 **Still open, and not fixed here.** The overrides accumulate forever: nothing in the harness or the
 suite clears `tree_status_overrides`, so `standingTree` now genuinely walks outward one record per
 `memorial` run and will keep walking. That is the behaviour the design intended, and at a few hundred

@@ -566,7 +566,25 @@ final class DeepLinkVoiceOverTests: XCTestCase {
         // `staticTexts` asserted something narrower than this test's own name: that the card is not
         // interactive. That premise was false, and it took a saved measurement on the opened tree to
         // expose it — after which the suite failed on every run until the app was uninstalled.
-        for caption in ["DBH", "Site", "City record", "Watch for"] {
+        // **`Watch for` is not on this list any more, and the reason is a promise the app never
+        // made** (task #173). `TreeProfilePresentation.watchForText` returns the species care note
+        // covering the current month, and its own comment says 20 of the curated 40 carry any and "a
+        // species with none simply has no card". `DebugDeepLink` picks this screen's tree by
+        // *distance*, not by species — so requiring the card asserted a property of whichever record
+        // happened to be nearest, on whichever month the suite ran.
+        //
+        // It held for as long as it did because the harness was frozen. `standingTree` filtered
+        // `treesNear`, which returns the seed's status and not this device's overrides, so after
+        // `.memorial` ran once it kept returning the same record forever — a Southern Magnolia, whose
+        // species does carry an August note. With that repaired (see
+        // `docs/errata-pending/deep-link-harness-status-overrides.md`) resolution moves on to the
+        // next standing tree, a Blackwood Acacia, whose `care_notes` in the seed are `[]`. Measured
+        // against the shipped seed rather than guessed: the four nearest records to the harness's
+        // center are Magnolias carrying 115 bytes of care notes, and the fifth is the Acacia with 2.
+        //
+        // The three below are what a city-import record always has, and they still cover both shapes
+        // this property is about — a card wrapped in a `Button` and cards that stay `StaticText`.
+        for caption in ["DBH", "Site", "City record"] {
             let joint = NSPredicate(format: "label BEGINSWITH %@", "\(caption), ")
             let asText = app.staticTexts.matching(joint).firstMatch
             let asButton = app.buttons.matching(joint).firstMatch
