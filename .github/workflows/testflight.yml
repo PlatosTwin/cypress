@@ -71,13 +71,24 @@ jobs:
         id: sim
         run: |
           set -euo pipefail
-          # Matched with a trailing " (" so "iPhone 16 Pro" cannot also match
-          # "iPhone 16 Pro Max" — a wider screen would change what the UI suite sees.
-          udid="$(xcrun simctl list devices available \
-            | grep -F "$SIMULATOR (" \
-            | head -1 \
-            | sed -E 's/.*\(([0-9A-Fa-f-]{36})\).*/\1/')"
-          [ -n "$udid" ] || { echo "no available simulator named $SIMULATOR"; exit 1; }
+          # A CANDIDATE LIST, not one name: the runner image decides which simulators
+          # exist, and it moves. macos-26 has no "iPhone 16 Pro" at all, which is how the
+          # first macos-26 run died. Each name is matched with a trailing " (" so
+          # "iPhone 17 Pro" cannot also match "iPhone 17 Pro Max" — a wider screen changes
+          # what the UI suite sees, and run_tests.sh stamps screen-width-pt for exactly
+          # that reason. Ordered by preference; the whole available list is printed either
+          # way, so a future image bump is diagnosable from the log alone.
+          echo "available devices:"
+          xcrun simctl list devices available | grep -E "^\s+iPhone" || true
+          udid=""
+          for name in "iPhone 17 Pro" "iPhone 17" "iPhone 16 Pro" "iPhone 16"; do
+            udid="$(xcrun simctl list devices available \
+              | grep -F "$name (" \
+              | head -1 \
+              | sed -E 's/.*\(([0-9A-Fa-f-]{36})\).*/\1/')"
+            if [ -n "$udid" ]; then SIMULATOR="$name"; break; fi
+          done
+          [ -n "$udid" ] || { echo "::error::none of the candidate iPhone simulators exist on this image"; exit 1; }
           echo "using $SIMULATOR $udid"
           xcrun simctl boot "$udid" || true
           xcrun simctl bootstatus "$udid" -b
