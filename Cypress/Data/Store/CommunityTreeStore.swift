@@ -94,6 +94,40 @@ public struct CommunityTreeStore {
         return changed
     }
 
+    /// Moves the read cache to a species that is already claimed — the correction `claimSpecies`
+    /// refuses (AppSchema v14, tickets #86/#124).
+    ///
+    /// **Deliberately not a widening of `claimSpecies`.** The `species_current IS NULL` in that
+    /// method is first-claim-wins written in SQL, and a flag that switched it off would put this
+    /// project's one race guard behind a boolean. Two methods, two names, and the one that can
+    /// overwrite somebody's statement is reached only through `LocalAPI.correctSpecies`, which
+    /// checks who is asking. What this method does *not* do is decide anything: the chain in
+    /// `species_assertions` is the record, and this column follows it in the same transaction.
+    ///
+    /// - Returns: whether the row was there to move. `false` means no such row, or it is deleted.
+    public func setSpecies(
+        treeID: UUID,
+        speciesID: UUID,
+        at moment: Date,
+        connection: SQLiteConnection
+    ) throws -> Bool {
+        let statement = try connection.cachedStatement("""
+            UPDATE community_trees
+               SET species_current = :species, updated_at = :updated
+             WHERE id = :id COLLATE NOCASE
+               AND deleted_at IS NULL
+            """)
+        _ = try statement.bind([
+            ":species": speciesID,
+            ":updated": moment,
+            ":id": treeID
+        ])
+        try statement.run()
+        let changed = connection.changes > 0
+        _ = try statement.reset()
+        return changed
+    }
+
     // MARK: - Reading
 
     public func tree(id: UUID, connection: SQLiteConnection) throws -> Tree? {

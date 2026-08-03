@@ -15,6 +15,7 @@ public actor LocalAPI: CypressAPI {
     private let speciesQueries: SpeciesQueries?
     private let communityTrees = CommunityTreeStore()
     private let contributions = ContributionStore()
+    private let assertions = SpeciesAssertionStore()
     private let groveQueries: GroveQueries?
     private let almanacQueries: AlmanacQueries?
     private let now: @Sendable () -> Date
@@ -346,7 +347,12 @@ public actor LocalAPI: CypressAPI {
                 // over every one of those sites, which is a sentence about a record the city has
                 // never held. A seed built before `trees.inventory_source` existed reports nil there
                 // and falls back to the file's answer, which is correct for it.
-                inventorySource: Self.provenance(of: record, in: store)
+                inventorySource: Self.provenance(of: record, in: store),
+                // Read in the same transaction as the tree it is about: the offer is a statement
+                // about the chain's head and the reports against it, and a control drawn from one
+                // moment's answer against another moment's species is a control that offers to
+                // correct something that has already been corrected.
+                speciesCorrection: try speciesCorrectionOffer(tree: tree, connection: connection)
             )
         }
     }
@@ -424,6 +430,23 @@ public actor LocalAPI: CypressAPI {
 
         try await store.queue.write { connection in
             try communityTrees.insert(tree, clientUUID: draft.clientUUID, connection: connection)
+            // The "at the same time" half of the species request opens the chain, exactly as
+            // `claimSpecies` does for the "after" half (AppSchema v14). A tree added *with* a species
+            // and a tree named afterwards must end in the same state, or one of the two would be
+            // uncorrectable by the person who named it — which is the whole of ticket #86.
+            if let speciesID = draft.speciesID {
+                try assertions.insert(
+                    SpeciesAssertion(
+                        treeID: tree.id,
+                        speciesID: speciesID,
+                        source: .community,
+                        owner: ContributionOwner(attribution),
+                        createdAt: moment,
+                        updatedAt: moment
+                    ),
+                    connection: connection
+                )
+            }
             let photo = Photo(
                 treeID: tree.id,
                 shotType: .fullTree,
@@ -468,6 +491,7 @@ public actor LocalAPI: CypressAPI {
         }
         guard subject.speciesCurrentID == nil else { throw APIError.conflict }
 
+        let owner = ContributionOwner(attribution)
         try await store.queue.write { connection in
             guard try communityTrees.claimSpecies(
                 treeID: treeID, speciesID: speciesID, at: moment, connection: connection
@@ -477,9 +501,231 @@ public actor LocalAPI: CypressAPI {
                 // this branch is why the guard is in the SQL and not only in Swift.
                 throw APIError.conflict
             }
+            // The chain's head, in the same transaction as the read cache it is the head of
+            // (AppSchema v14). Two writes that could land apart would leave a species with no
+            // assertion behind it — the one state `correctSpecies` cannot append to, and the state
+            // every pre-v14 row is already stuck in.
+            try assertions.insert(
+                SpeciesAssertion(
+                    treeID: treeID,
+                    speciesID: speciesID,
+                    source: .community,
+                    owner: owner,
+                    createdAt: moment,
+                    updatedAt: moment
+                ),
+                connection: connection
+            )
         }
 
         return try await treeProfile(id: treeID).tree
+    }
+
+    /// Corrects the species on a community tree — the transition `SpeciesClaim` refused for want of
+    /// a chain, and the chain now exists (AppSchema v14). Tickets **#86** and **#124**.
+    ///
+    /// Nothing is overwritten. The claim in force is stamped `superseded_by` and keeps its row, a new
+    /// assertion is appended, and `community_trees.species_current` is moved to match — one
+    /// transaction, because the column is a read cache of the chain's head and a cache that can land
+    /// without its source is a cache that can disagree with it.
+    ///
+    /// ── Who may do it ───────────────────────────────────────────────────────────────────────────
+    /// `docs/rulings-pending/species-supersession.md` carries the argument; the rule is two arms:
+    ///
+    /// 1. **The author of the claim in force, always.** D15's "first namer wins" exists to stop one
+    ///    contributor discarding another's statement; where the two are the same person there is no
+    ///    statement to protect, and refusing is only a refusal to admit a mistake. Identity is
+    ///    `Attribution` — the account when signed in, this device otherwise (D9) — through
+    ///    `ContributionOwner.isOwned(by:)`.
+    /// 2. **A lead, but only in answer to a report.** `canConfirmReviewFlag` is not a licence to
+    ///    rewrite anybody's species at will: it is the authority to resolve a `wrong_species` flag
+    ///    somebody actually raised, which is why the second arm requires one to be open. A lead with
+    ///    an opinion and no report in front of them is a contributor, and takes arm 1's route.
+    ///
+    /// Everybody else gets `.forbidden` and the `flagWrongSpecies` route. An assertion owned by
+    /// **nobody** — every claim made before v14, whose author the database never recorded — is
+    /// nobody's to overwrite either, and takes the same route.
+    ///
+    /// Resolving the report *is* the correction, so an open `wrong_species` flag on this tree moves
+    /// to `confirmed` here rather than through a second verb somebody could forget. **No status is
+    /// written**, by either arm: a wrong species is not a statement about whether the tree is alive,
+    /// and `ReviewFlag.Kind.Resolution` keeps the two seams apart so this cannot drift into the one
+    /// that moves `trees.status` (ERRATA E170).
+    public func correctSpecies(treeID: UUID, speciesID: UUID) async throws -> Tree {
+        // The catalogue check first, for `claimSpecies`' reason: `species_current` and
+        // `species_uuid` are bare TEXT with no foreign key available to them, so nothing but this
+        // line stops a uuid that resolves to no species from being written and rendering as a tree
+        // whose species nobody can look up.
+        _ = try await species(id: speciesID)
+        let moment = now()
+        let mine = attribution
+        let isLead = userRole.canConfirmReviewFlag
+
+        let (head, openFlags) = try await store.queue.read {
+            connection -> (SpeciesAssertion?, [ReviewFlag]) in
+            guard try communityTrees.tree(id: treeID, connection: connection) != nil else {
+                // Same two-armed refusal `claimSpecies` makes, and for the same reason: a city row is
+                // real and this is not allowed, which is a different sentence from "no such tree".
+                let record = try treeQueries?.tree(id: treeID, connection: connection)
+                throw record.flatMap { $0 } != nil ? APIError.forbidden : APIError.notFound
+            }
+            return (
+                try assertions.current(treeID: treeID, connection: connection),
+                try Self.openSpeciesReviews(treeID: treeID, store: contributions, connection: connection)
+            )
+        }
+
+        // No head is not "nothing to correct by accident": it is a tree nobody has named, and naming
+        // one is `claimSpecies`. Saying so is better than appending a first assertion here and
+        // letting two verbs write the same row for different reasons.
+        guard let head else { throw APIError.validationFailed }
+        guard head.isSupersedable(by: mine) || (isLead && !openFlags.isEmpty) else {
+            throw APIError.forbidden
+        }
+
+        let successor = SpeciesAssertion(
+            treeID: treeID,
+            speciesID: speciesID,
+            source: .community,
+            owner: ContributionOwner(mine),
+            createdAt: moment,
+            updatedAt: moment
+        )
+        try await store.queue.write { connection in
+            // Stamp before insert, never after. The partial unique index allows one unsuperseded row
+            // per tree, so inserting first would be refused by the engine — which is the index doing
+            // its job, and is also why the order is not a matter of taste.
+            guard try assertions.supersede(
+                id: head.id, with: successor.id, at: moment, connection: connection
+            ) else {
+                // Somebody superseded this head between the read and the write. Their correction
+                // stands; this one is not silently layered on top of it.
+                throw APIError.conflict
+            }
+            try assertions.insert(successor, connection: connection)
+            guard try communityTrees.setSpecies(
+                treeID: treeID, speciesID: speciesID, at: moment, connection: connection
+            ) else {
+                throw APIError.conflict
+            }
+            for flag in openFlags {
+                try contributions.confirmReviewFlag(id: flag.id, at: moment, connection: connection)
+            }
+        }
+
+        return try await treeProfile(id: treeID).tree
+    }
+
+    /// Reports the species on a community tree as wrong — ticket **#124**, the half of the
+    /// correction path that belongs to somebody who is not the namer.
+    ///
+    /// Raises a `wrong_species` review flag and **changes nothing else**. `species_current` still
+    /// says what the namer said, because a report is a disagreement on the record and not a decision;
+    /// deciding is `correctSpecies`, and who may decide is the ruling.
+    ///
+    /// Refused when the claim is **yours** (`.validationFailed`): reporting your own statement to be
+    /// reviewed is not a thing to do with it, you correct it, and a surface offering both would be
+    /// offering a worse version of the same act.
+    ///
+    /// Refused when a report is already open (`.conflict`). BUILD-PLAN §6's "two offline users
+    /// flagging the same tree produce two flags on one thread, not a conflict" is about the *sync
+    /// merge* — two devices that could not see each other — and this write is neither. Here the
+    /// person can see the open report on the screen they are tapping from, and a second one says
+    /// nothing the first did not.
+    public func flagWrongSpecies(treeID: UUID) async throws {
+        let moment = now()
+        let mine = attribution
+        let raiser = userID
+
+        let head = try await store.queue.read { connection -> SpeciesAssertion? in
+            guard try communityTrees.tree(id: treeID, connection: connection) != nil else {
+                let record = try treeQueries?.tree(id: treeID, connection: connection)
+                throw record.flatMap { $0 } != nil ? APIError.forbidden : APIError.notFound
+            }
+            guard try Self.openSpeciesReviews(
+                treeID: treeID, store: contributions, connection: connection
+            ).isEmpty else { throw APIError.conflict }
+            return try assertions.current(treeID: treeID, connection: connection)
+        }
+
+        guard let head else { throw APIError.validationFailed }
+        guard !head.isSupersedable(by: mine) else { throw APIError.validationFailed }
+
+        let flag = ReviewFlag(
+            treeID: treeID,
+            kind: .wrongSpecies,
+            raisedBy: raiser,
+            createdAt: moment,
+            updatedAt: moment
+        )
+        try await store.queue.write { connection in
+            try contributions.insert(flag, connection: connection)
+        }
+    }
+
+    /// Closes a `wrong_species` report without changing the species — the second verb E170 taught
+    /// this queue to have, on the species seam rather than the status one.
+    ///
+    /// Nothing is appended and no status is written: dismissing says the species on record is right
+    /// after all, and it already says what it says. The flag row records that somebody looked.
+    ///
+    /// Same two arms as `correctSpecies`, minus the report requirement on the second: a lead may
+    /// dismiss any species report, and the author of the disputed claim may answer one raised against
+    /// their own statement. The author's arm is what keeps this loop closed on a phone with no lead
+    /// on it — the alternative is a report nobody present can resolve, which is precisely the state
+    /// E170 exists about.
+    public func dismissSpeciesReview(flagID: UUID) async throws {
+        let moment = now()
+        let mine = attribution
+        let isLead = userRole.canConfirmReviewFlag
+
+        let (flag, head) = try await store.queue.read {
+            connection -> (ReviewFlag, SpeciesAssertion?) in
+            guard let flag = try contributions.reviewFlag(id: flagID, connection: connection),
+                  flag.deletedAt == nil else { throw APIError.notFound }
+            return (flag, try assertions.current(treeID: flag.treeID, connection: connection))
+        }
+        guard flag.kind.resolution == .speciesAssertion else { throw APIError.validationFailed }
+        guard flag.status == .open else { throw APIError.conflict }
+        guard isLead || (head?.isSupersedable(by: mine) ?? false) else { throw APIError.forbidden }
+
+        try await store.queue.write { connection in
+            try contributions.dismissReviewFlag(id: flagID, at: moment, connection: connection)
+        }
+    }
+
+    /// The open species reports on one tree. Read through `speciesReviewKinds` rather than naming
+    /// `.wrongSpecies`, so this cannot drift out of step with the seam the way the removal queue did
+    /// before E170.
+    private static func openSpeciesReviews(
+        treeID: UUID,
+        store: ContributionStore,
+        connection: SQLiteConnection
+    ) throws -> [ReviewFlag] {
+        try store.openReviewFlags(kinds: ReviewFlag.Kind.speciesReviewKinds, connection: connection)
+            .filter { $0.treeID == treeID }
+    }
+
+    /// What this viewer may do about the species on this tree, decided where the identity and the
+    /// role live rather than in a view (`SpeciesCorrectionOffer`).
+    private func speciesCorrectionOffer(
+        tree: Tree,
+        connection: SQLiteConnection
+    ) throws -> SpeciesCorrectionOffer {
+        guard tree.source == .community, tree.speciesCurrentID != nil else { return .unavailable }
+        let head = try assertions.current(treeID: tree.id, connection: connection)
+        let isMine = head?.isSupersedable(by: attribution) ?? false
+        let reported = try Self.openSpeciesReviews(
+            treeID: tree.id, store: contributions, connection: connection
+        ).first
+        if let reported {
+            return .underReview(
+                flagID: reported.id,
+                canResolve: isMine || userRole.canConfirmReviewFlag
+            )
+        }
+        guard head != nil else { return .unavailable }
+        return isMine ? .correctable : .reportable
     }
 
     // MARK: - Species
