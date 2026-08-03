@@ -9,7 +9,7 @@
 //
 //  The mark's *geometry* is not asserted here and could not usefully be: E163 is the errata about
 //  two path defects in this app that no test could have seen, and both were found by looking at
-//  the running screen. The ruling `docs/rulings-pending/drawn-glyphs.md` records what was looked
+//  the running screen. The ruling `RULINGS R57` records what was looked
 //  at, at which type sizes.
 //
 

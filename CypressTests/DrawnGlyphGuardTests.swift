@@ -4,7 +4,7 @@
 //
 //  #130: the app's rule is that every glyph in it is a `Shape` drawn in this repo — no SF Symbols,
 //  no icon font. `ShareDestinationGlyph` states the policy; the ruling is
-//  `docs/rulings-pending/drawn-glyphs.md`. **This file is what makes the rule true tomorrow.**
+//  `RULINGS R57`. **This file is what makes the rule true tomorrow.**
 //
 //  ── Why a test and not a comment ────────────────────────────────────────────────────────────────
 //  For months the app shipped five `Image(systemName:)` calls while `ShareDestinationGlyph` said
@@ -183,7 +183,7 @@ struct DrawnGlyphGuardTests {
             """
             \(uses.count) SF Symbol call(s) in the app target. Every glyph in Cypress is a Shape \
             drawn in this repo — the policy is stated in ShareDestinationGlyph and ruled in \
-            docs/rulings-pending/drawn-glyphs.md. Draw the mark instead, beside the screen that \
+            RULINGS R57. Draw the mark instead, beside the screen that \
             uses it, or change the ruling; do not change this test to match the code.
             \(uses.map { "  \($0.path):\($0.line): \($0.source)" }.joined(separator: "\n"))
             """

@@ -25,7 +25,7 @@
 //  this comment. Ticket #130 is why: for months the app shipped five `Image(systemName:)` calls
 //  while this file said there were none, and a comment in `MapChrome` shrugged that there were two.
 //  The ruling that drew those five and put the rule under test is
-//  `docs/rulings-pending/drawn-glyphs.md`, which also records what it costs and why it was still
+//  `RULINGS R57`, which also records what it costs and why it was still
 //  the answer.
 //
 //  **Do not cite SCREENS.md §2 C16 for this.** C16 is the `BottomTabBar` component, and its "all

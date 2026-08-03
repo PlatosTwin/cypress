@@ -6,7 +6,7 @@
 //
 //  **All three were `Image(systemName:)` until ticket #130.** The app's rule is that every glyph in
 //  it is drawn here rather than borrowed — the rule is stated in `ShareDestinationGlyph`, and the
-//  ruling that made it true again is `docs/rulings-pending/drawn-glyphs.md`. Read that before adding
+//  ruling that made it true again is `RULINGS R57`. Read that before adding
 //  a mark or reaching for a symbol; `DrawnGlyphGuardTests` is what goes red if anybody does.
 //
 //  Local to this folder rather than in `DesignSystem/Components`: no screen outside Photos uses

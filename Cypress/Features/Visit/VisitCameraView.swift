@@ -856,7 +856,7 @@ struct VisitCloseGlyph: Shape {
 /// The library shutter's mark: a framed picture with a second card behind it.
 ///
 /// **Was `Image(systemName: "photo.on.rectangle")` until ticket #130**, which is the ruling in
-/// `docs/rulings-pending/drawn-glyphs.md`; `DrawnGlyphGuardTests` goes red if a symbol comes back.
+/// `RULINGS R57`; `DrawnGlyphGuardTests` goes red if a symbol comes back.
 ///
 /// The card behind is what carries the meaning the shutter needs. A single framed picture says
 /// "a photo"; a stack says "*pick* one", which is exactly the distinction this button is drawing
