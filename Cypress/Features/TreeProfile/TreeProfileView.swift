@@ -120,6 +120,15 @@ struct TreeProfileView: View {
                 guard nothingPresented, model.presentation != nil else { return }
                 Task { await model.reload() }
             }
+            // A withdrawn record is not a tree, so this screen leaves (task #125). The reload that
+            // follows the withdrawal already answers `.notFound` — `LocalAPI.treeProfile` refuses a
+            // withdrawn community row — so the alternative is not a stale profile but a failure
+            // sentence reading "this tree could not be found" at the person who just withdrew it,
+            // which is true and useless. Popping puts them back where the record was listed, which
+            // is the surface their decision changed.
+            .onChange(of: model.withdrewRecord) { _, withdrawn in
+                if withdrawn { router?.pop() }
+            }
             // A cover rather than a sheet, for the same reason the add flow uses one: the picker puts
             // a keyboard and a scrolling list up, and a half-height sheet leaves the list two rows
             // tall on a small phone. It is also the shape the same picker already has in the add
@@ -517,6 +526,53 @@ struct TreeProfileView: View {
                 .cypressBody135(color: CypressColor.textMuted)
                 .fixedSize(horizontal: false, vertical: true)
         }
+        recordDefect(presentation)
+    }
+
+    /// The record-defect block (#125) — *is this record a tree at all?*
+    ///
+    /// It sits under the species controls and inside the same column, because the three moves are a
+    /// ladder down one record: name what it is, say the name is wrong, say there is nothing here to
+    /// name. Splitting the last rung onto its own card would make it read as a different feature and
+    /// would put the most consequential of the three furthest from the two it qualifies.
+    ///
+    /// Which arm is offered is decided behind `CypressAPI` (`RecordDefectOffer`), because it needs
+    /// the viewer's role and a `review_flags` read.
+    @ViewBuilder
+    private func recordDefect(_ presentation: TreeProfilePresentation) -> some View {
+        switch presentation.recordDefect {
+        case .unavailable:
+            EmptyView()
+        case .reportable:
+            recordLinkAction(TreeProfileCopy.reportNeverExistedAction) {
+                Task { await model.reportNeverExisted() }
+            }
+            Text(TreeProfileCopy.neverExistedNotice)
+                .cypressBody135(color: CypressColor.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
+        case let .underReview(flagID, canResolve):
+            // Drawn to everybody, including whoever raised it: a record under dispute must not
+            // render as though nobody had objected.
+            Text(TreeProfileCopy.recordReported)
+                .cypressBody135(color: CypressColor.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
+            if canResolve {
+                recordLinkAction(TreeProfileCopy.withdrawRecordAction) {
+                    Task { await model.withdrawRecord(flagID: flagID) }
+                }
+                Text(TreeProfileCopy.withdrawRecordNotice)
+                    .cypressBody135(color: CypressColor.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+                recordLinkAction(TreeProfileCopy.keepRecordAction) {
+                    Task { await model.keepRecord(flagID: flagID) }
+                }
+            }
+        }
+        if let failure = model.recordDefectFailure {
+            Text(failure)
+                .cypressBody135(color: CypressColor.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     /// The correction half of the same block (#86, #124) — one control, in the same place as the
@@ -533,9 +589,9 @@ struct TreeProfileView: View {
         case .unavailable:
             EmptyView()
         case .correctable:
-            speciesAction(TreeProfileCopy.correctSpeciesAction) { model.beginCorrectingSpecies() }
+            recordLinkAction(TreeProfileCopy.correctSpeciesAction) { model.beginCorrectingSpecies() }
         case .reportable:
-            speciesAction(TreeProfileCopy.reportSpeciesAction) {
+            recordLinkAction(TreeProfileCopy.reportSpeciesAction) {
                 Task { await model.reportSpeciesAsWrong() }
             }
             Text(TreeProfileCopy.reportSpeciesNotice)
@@ -548,15 +604,15 @@ struct TreeProfileView: View {
                 .cypressBody135(color: CypressColor.textMuted)
                 .fixedSize(horizontal: false, vertical: true)
             if canResolve {
-                speciesAction(TreeProfileCopy.correctSpeciesAction) { model.beginCorrectingSpecies() }
-                speciesAction(TreeProfileCopy.keepSpeciesAction) {
+                recordLinkAction(TreeProfileCopy.correctSpeciesAction) { model.beginCorrectingSpecies() }
+                recordLinkAction(TreeProfileCopy.keepSpeciesAction) {
                     Task { await model.keepSpecies(flagID: flagID) }
                 }
             }
         }
     }
 
-    private func speciesAction(_ label: String, _ act: @escaping () -> Void) -> some View {
+    private func recordLinkAction(_ label: String, _ act: @escaping () -> Void) -> some View {
         Button(action: act) {
             Text(label)
                 .font(CypressFont.body13Bold)

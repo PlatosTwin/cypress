@@ -461,12 +461,18 @@ struct SpeciesCorrectionTests {
                 "replaying v14 backfilled a second assertion")
     }
 
-    /// #125's reservation, from both sides. The column takes the value; the enum does not offer it,
-    /// so nothing in the app can write one until #125 says what it means.
-    @Test("never_existed is reserved in the column and not yet in the enum")
-    func neverExistedIsReservedNotReachable() async throws {
-        #expect(ReviewFlag.Kind(rawValue: "never_existed") == nil,
-                "the enum gained a case #125 has not defined yet")
+    /// The v14 half of #125, which is all that is asserted here now.
+    ///
+    /// **This test used to require `ReviewFlag.Kind(rawValue: "never_existed") == nil`** — the
+    /// reservation, asserted from both sides, so nothing could write the value until #125 said what
+    /// it meant. #125 has landed: the case exists, the seam resolves it through
+    /// `.recordWithdrawal`, and `RecordDefectTests` proves the loop. The half that is still worth
+    /// pinning is the column's, because it is the one a later migration could silently drop while
+    /// every Swift-side test went on passing.
+    @Test("the review_flags CHECK accepts never_existed and refuses everything outside it")
+    func neverExistedIsInTheColumnVocabulary() async throws {
+        #expect(ReviewFlag.Kind(rawValue: "never_existed") == .neverExisted,
+                "the enum stopped binding the value the column reserves")
 
         let connection = try SQLiteConnection(path: ":memory:")
         _ = try SchemaMigrator.migrate(AppSchema.migrations, on: connection)
