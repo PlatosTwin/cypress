@@ -134,7 +134,7 @@ struct MapSpeciesLegend: View {
 // MARK: - Copy
 
 enum MapSpeciesLegendCopy {
-    static let rowLabel = "Species shown in colour on this map"
+    static let rowLabel = "Species shown in color on this map"
 
     /// "London Plane, plum pins marked dot". The colour is named as well as the mark, because a
     /// reader with partial colour vision may be able to use one and not the other.

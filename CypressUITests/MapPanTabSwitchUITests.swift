@@ -29,9 +29,9 @@ final class MapPanTabSwitchUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    private static let controlLabel = "Centre the map on you"
-    private static let centred = "Centred on you"
-    private static let notCentred = "Not centred"
+    private static let controlLabel = "Center the map on you"
+    private static let centred = "Centered on you"
+    private static let notCentred = "Not centered"
 
     /// `MapRecentreCopy.value`'s three fixless states, copied exactly (see
     /// `MapCentredStateUITests` for the day this list was one word wrong).

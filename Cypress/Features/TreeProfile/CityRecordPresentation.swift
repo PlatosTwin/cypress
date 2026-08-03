@@ -565,10 +565,10 @@ enum CityRecordCopy {
     static let maintenanceOptOutStatus = "Street Tree Maintenance Opt Out"
 
     static let pruneOptOutNote =
-        "This site is withdrawn from the city's pruning programme — a standing arrangement, "
+        "This site is withdrawn from the city's pruning program — a standing arrangement, "
         + "with no date on the record."
     static let maintenanceOptOutNote =
-        "This site is withdrawn from the city's street-tree maintenance programme — a standing "
+        "This site is withdrawn from the city's street-tree maintenance program — a standing "
         + "arrangement, with no date on the record."
 
     /// See `CityRecordPresentation.pruningNote` for why this sentence is on screen at all.

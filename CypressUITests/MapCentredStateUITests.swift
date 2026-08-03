@@ -30,9 +30,9 @@ final class MapCentredStateUITests: XCTestCase {
     }
 
     /// `MapRecentreCopy.label`, the one string this file and the app have to agree on.
-    private static let controlLabel = "Centre the map on you"
+    private static let controlLabel = "Center the map on you"
     /// `MapRecentreCopy.value(.centred)`.
-    private static let centred = "Centred on you"
+    private static let centred = "Centered on you"
 
     /// The states that mean "this simulator has no fix for the app to centre on", spoken by
     /// `MapRecentreCopy.value`. Any one of them makes the assertion below meaningless rather than

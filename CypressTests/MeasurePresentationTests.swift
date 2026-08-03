@@ -179,7 +179,7 @@ struct MeasurePresentationTests {
         #expect(Self.presentation(Self.draft(entry: "64")).unitSwitchLabel == "switch to inches")
         var inches = Self.draft(entry: "")
         inches.unit = .inches
-        #expect(Self.presentation(inches).unitSwitchLabel == "switch to centimetres")
+        #expect(Self.presentation(inches).unitSwitchLabel == "switch to centimeters")
         #expect(Self.presentation(Self.draft(kind: .height, entry: "")).unitSwitchLabel == "switch to feet")
     }
 

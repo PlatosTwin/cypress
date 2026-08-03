@@ -30,7 +30,7 @@ final class MapRecentreUITests: XCTestCase {
     }
 
     /// The one string this file and the app have to agree on: `MapRecentreCopy.label`.
-    private static let controlLabel = "Centre the map on you"
+    private static let controlLabel = "Center the map on you"
 
     private func recentreControl(_ app: XCUIApplication) -> XCUIElement {
         app.buttons[Self.controlLabel]
@@ -88,7 +88,7 @@ final class MapRecentreUITests: XCTestCase {
 
         // `MapRecentreCopy.refusalMessage`. The fragment is the clause that makes it an answer to
         // *this* press rather than the standing notice repeated.
-        let answer = text(containing: "nowhere to centre the map", in: app)
+        let answer = text(containing: "nowhere to center the map", in: app)
         XCTAssertTrue(
             answer.waitForExistence(timeout: 5),
             "pressing the recentre control with location denied changed nothing on screen"

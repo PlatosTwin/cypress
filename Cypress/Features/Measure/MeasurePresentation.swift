@@ -383,9 +383,9 @@ enum MeasureCopy {
     /// three follow from the pairs in `MeasureMetrics.alternateUnit`.
     static func unitName(_ unit: LengthUnit) -> String {
         switch unit {
-        case .millimetres: return "millimetres"
-        case .centimetres: return "centimetres"
-        case .metres: return "metres"
+        case .millimetres: return "millimeters"
+        case .centimetres: return "centimeters"
+        case .metres: return "meters"
         case .inches: return "inches"
         case .feet: return "feet"
         }

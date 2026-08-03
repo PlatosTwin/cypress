@@ -368,7 +368,7 @@ enum MapOpeningCopy {
     /// (`MapRecentreCopy.hint(.askable)`).
     static let notAskedTitle = "Cypress has not been given your location"
     static func notAskedMessage(_ place: MapOpening.Showing) -> String {
-        "Nothing has answered the location request yet, so there is nowhere to centre the map. "
+        "Nothing has answered the location request yet, so there is nowhere to center the map. "
             + showing(place)
     }
 

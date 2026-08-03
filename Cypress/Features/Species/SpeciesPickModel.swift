@@ -155,7 +155,7 @@ enum SpeciesPickCopy {
     /// differently still misses, and a picker that called that miss non-existence would be telling a
     /// contributor their tree is not real.
     static func noMatch(query: String) -> String {
-        "Nothing in the catalogue matches “\(query)”. Try part of either name, or check the spelling."
+        "Nothing in the catalog matches “\(query)”. Try part of either name, or check the spelling."
     }
 
     /// A chosen row, restated where the choice was made. Common name first when there is one, by

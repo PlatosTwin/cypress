@@ -220,21 +220,21 @@ enum MapRecentreCopy {
     /// The control's accessibility label. It says what the control *does*, not what it looks like —
     /// "Locate" names a picture, and a reader who cannot see the picture learns nothing from it.
     ///
-    /// British spelling, as `VisitPinAdjustCopy.recentre` and `AlmanacPresentation`'s "See your
-    /// neighbourhood" already write it.
-    static let label = "Centre the map on you"
+    /// American spelling, at the owner's instruction (#140): every user-visible string in this
+    /// app is American, and `BritishSpellingGuardTests` holds the line.
+    static let label = "Center the map on you"
 
     /// The state, spoken. `accessibilityValue` rather than a second label, so VoiceOver reads
-    /// "Centre the map on you, centred on you" — the control, then what it is currently doing.
+    /// "Center the map on you, centered on you" — the control, then what it is currently doing.
     ///
-    /// **Five sentences for five states (#100).** `Not centred` is kept for the one state it was ever
+    /// **Five sentences for five states (#100).** `Not centered` is kept for the one state it was ever
     /// true of — there is a fix, and the map is not on it — and the two states it used to be borrowed
     /// for now say what is actually the case. Neither of them is a degree of "centred": in both, the
     /// app does not know where the reader is, so there is nothing to be off-centre from.
     static func value(_ engagement: MapRecentre.Engagement) -> String {
         switch engagement {
-        case .centred: return "Centred on you"
-        case .away: return "Not centred"
+        case .centred: return "Centered on you"
+        case .away: return "Not centered"
         case .askable: return "Cypress has not been given your location"
         case .searching: return "Finding you"
         case .unavailable: return "Location is off"
@@ -287,6 +287,6 @@ enum MapRecentreCopy {
     }
 
     static let refusalMessage =
-        "Cypress cannot see where you are, so there is nowhere to centre the map. Turn location on "
+        "Cypress cannot see where you are, so there is nowhere to center the map. Turn location on "
         + "in Settings, or pan to the street you want."
 }

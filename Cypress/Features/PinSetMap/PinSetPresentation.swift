@@ -235,7 +235,7 @@ enum PinSetCopy {
 
     /// It names what it centres on rather than what it looks like, for `MapRecentreCopy.label`'s
     /// reason: a reader who cannot see the crosshair learns nothing from the word "locate".
-    static func recentreLabel(_ name: String) -> String { "Centre the map on \(name)" }
+    static func recentreLabel(_ name: String) -> String { "Center the map on \(name)" }
 
     static let recentreHint = "Returns to the larger pin at street level"
 
