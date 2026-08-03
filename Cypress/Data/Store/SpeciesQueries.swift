@@ -142,7 +142,7 @@ public struct SpeciesQueries {
     /// A species the ingest could not read keeps the raw source string as its scientific name, so its
     /// name still carries DataSF's `::` separator with an empty scientific half — `:: 9662`,
     /// `:: Magnolia`. Those are the rows this list must not offer, and the ruling that says so is
-    /// `docs/rulings-pending/species-suggestion-stubs.md`.
+    /// `RULINGS R47`.
     ///
     /// The exact statement of "the ingest could not read this" is `species_map.is_stub`, and the
     /// obvious query asks it directly. It is not asked here for two reasons, both measured rather
@@ -234,7 +234,7 @@ public struct SpeciesQueries {
     /// **This predicate is not scoped to an id space, and the label no longer claims it is.** The
     /// built-in bundle is fused across `sf` and `us-ca-sj`, so on it this count spans two cities —
     /// Crape Myrtle is 97 + 3,649. The card said `In San Francisco` over that number until
-    /// `docs/rulings-pending/species-count-names-the-inventory.md`. Adding an id-space predicate
+    /// `RULINGS R48`. Adding an id-space predicate
     /// here would be the other candidate fix and the ruling declines it: screen 07 has no row to
     /// take an id space from.
     ///

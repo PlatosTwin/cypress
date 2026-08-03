@@ -5,7 +5,7 @@ import Testing
 /// Correcting a species claim — tickets **#86** (your own claim) and **#124** (somebody else's), on
 /// the `species_assertions` chain AppSchema **v14** put in `main`.
 ///
-/// The rule these hold down is `docs/rulings-pending/species-supersession.md`: an assertion is
+/// The rule these hold down is `RULINGS R45`: an assertion is
 /// superseded without review only by the identity that made it; every other correction is a report
 /// against somebody's statement and is recorded as one. Two things follow that this suite proves
 /// separately, because each has passed while the other was broken in an earlier shape of this work:

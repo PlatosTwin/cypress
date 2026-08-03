@@ -1292,7 +1292,7 @@ public enum AppSchema {
     /// device by assumption hands that authority to whoever holds the phone. The honest value is the
     /// one the database can support. Its consequence is stated rather than hidden: a species claimed
     /// before v14 is nobody's, so nobody may correct it silently, and it is corrected through the
-    /// review route like a stranger's — see `docs/rulings-pending/species-supersession.md`.
+    /// review route like a stranger's — see `RULINGS R45`.
     ///
     /// `updated_at` is the assertion's `created_at`, and it is chosen as the tightest *true* bound
     /// rather than the likeliest guess: the claim was written at or before the row's last write, and

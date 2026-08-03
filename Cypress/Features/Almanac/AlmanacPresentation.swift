@@ -459,7 +459,7 @@ enum AlmanacCopy {
     /// The line under `This season`, assembled from the rows that actually drew.
     ///
     /// **NOT SPECIFIED**; the decision is
-    /// `docs/rulings-pending/almanac-season-note.md`, which also records why R41 does not reach
+    /// `RULINGS R49`, which also records why R41 does not reach
     /// this. R41 forbids any message accompanying a **filter**, categorically. `This season` is a
     /// static micro-label over a content block: there is no chip, no selection, no state, and
     /// nothing here appears *because a filter did something* — R41's own test. E205 confirms the

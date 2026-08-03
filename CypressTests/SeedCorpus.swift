@@ -230,7 +230,7 @@ struct SeedCorpus: Sendable {
                 // shipped file predates a refresh of `Fixtures/raw/street_tree_list.csv`, in which
                 // SF TreeID 234040 now publishes an empty `PermitNotes`. The SF-only variant above
                 // reads 27_046 before and after, which is what localises the drift to the shipped
-                // artifact rather than to the ingest. See docs/errata-pending/seed-rebuild-drift.md.
+                // artifact rather than to the ingest. See ERRATA E208.
                 "permit_notes": 78_094
             ],
             distinctPlotSizes: 411,

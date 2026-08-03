@@ -12362,3 +12362,248 @@ argument that was actually made.
 
 The branch itself changed no shared document — correctly, since R7 and ROADMAP are shared files with
 other branches live in them (CLAUDE.md, Numbering and shared files).
+
+### E207 — `try? #require(x)` is a dead requirement, and the compiler had been saying so (task #83)
+
+*Found closing #83 on branch `p1/test-warnings`, 2026-08-02, inside 380 warning lines nobody had read.*
+
+*Written from the branch `p1/test-warnings`. Unnumbered by CLAUDE.md's rule; the orchestrator
+splices the real number at merge and rewrites the citations that name this file.*
+
+#### What was found
+
+Two of the 58 unique warnings in #83's baseline were not concurrency warnings at all, and were not
+noise:
+
+    CypressTests/CityRecordTests.swift:330: warning: '#require(_:_:)' is redundant because
+      'Tree(source: .cityImport, …, cityRecord: city).landContext' never equals 'nil'
+    CypressTests/PinAdjustTests.swift:79: warning: '#require(_:_:)' is redundant because
+      'VisitPinAdjust.nudge(pin, towards: .north, from: Self.fix)' never equals 'nil'
+
+Both expressions **are** optional — `Tree.landContext` is `KnownLandContext?` and
+`VisitPinAdjust.nudge` is `Coordinate?`. The warning is right anyway, and it is about the `try?`.
+
+`#require` is generic: `require<T>(_ value: T?, …) throws -> T`. Written `try? #require(opt)`, the
+type checker is free to bind `T` to the *optional itself* — the argument `KnownLandContext?` is
+implicitly promoted to `KnownLandContext??`, whose outer level is never `nil` — and then `try?`
+flattens the result back to the same optional the expression started as. Every type checks, the
+call site reads exactly as intended, and the requirement can never fail.
+
+These were the only two `try? #require` sites in `CypressTests`, and both of them warned. Every
+`try #require` in the suite was clean.
+
+#### What the two dead requirements were covering for
+
+- **`PinAdjustTests.theNudgeStopsAtTheBoundary`.** The loop's message `"nudge \(step) of 15 was
+  refused inside the circle"` could not be printed by anything. A refused nudge fell through
+  `pin = moved ?? pin` silently; only the aggregate distance assertion three lines later could
+  notice, and it would have said "0.05" rather than which nudge was refused.
+- **`CityRecordTests.statedWinsAndIsLabelled`.** `inferred` stayed optional, so the two assertions
+  under it were `nil == .street` and `nil == .inferredFromCityRecord` on a nil answer — a failure,
+  but reported as a mismatched enum rather than as "the inference returned nothing".
+
+Neither was a false green: in both cases some later assertion still caught a nil. What was lost is
+the diagnostic — the failure named the wrong thing, which on this project is how afternoons go.
+
+#### The fix, and how it was proved
+
+Both call sites now use `try` (with the enclosing test made `throws`). Red-proofed on iPhone 16 Plus
+`24D1629F-9FA8-4E3D-812E-F6BC85C9E668`: the nudge loop widened to `1...16` and the city record
+changed to `CityRecord(legalStatus: "Undocumented", caretaker: nil)`. Both went red **at the
+`#require` line itself** — `PinAdjustTests.swift:81` and `CityRecordTests.swift:333` — with
+`Expectation failed: … → nil`, which is the reason expected and not merely the colour expected.
+Both were restored and the full unit suite re-run green.
+
+#### The rule
+
+`try? #require(…)` is never what the writer meant. If the value is genuinely allowed to be absent,
+the test should say so with `if let` or an `#expect` and no requirement; if it is required, `try`
+is the only form that makes the requirement do anything. The compiler already flags it, so the
+standing zero-warning line is what enforces this — which is the second reason #83's debt was worth
+paying rather than suppressing.
+
+### E208 — What a seed rebuild surfaced that nobody had changed (task #103)
+
+*Measured on branch `p1/species-stubs`, 2026-08-02 — the first ticket in a while to rebuild the seed rather than read it. Reproduced independently by the orchestrator at merge: an identical `--source city --sj-extent downtown` build in the main checkout produced the same sha256 `d3e3d229…`.*
+
+*Unnumbered. Written from a branch; the orchestrator splices it under the real next number at merge
+and rewrites the citation in `CypressTests/SeedCorpus.swift`.*
+
+Task #103 is the first ticket in a while to rebuild the seed rather than read it. Two things came
+out of the rebuild that are **not** consequences of #103's change, and both would otherwise be
+discovered by whoever rebuilds next, as a mysterious red.
+
+---
+
+#### 1 · The shipped seed was one raw-cache snapshot stale
+
+`CypressTests/SeedCorpus.cityWithSanJose` recorded `permit_notes: 78_095`. A rebuild from the current
+`Fixtures/raw/` reads **78,094**, and the difference is a single tree: SF TreeID 234040, which the
+shipped file carries as `Permit Number 805842` and which
+`Fixtures/raw/street_tree_list.csv` now publishes with an empty `PermitNotes`.
+
+**It is the artifact that moved, not the ingest.** The SF-only variant (`--source city --sj-extent
+none`) reads `permit_notes: 27_046` before and after the #103 change, which is the constant already
+checked in — so the SF-only number was recomputed against the current CSV at some point and the
+SF+San-Jose number was not. Nothing in the ingest treats that column differently between the two
+extents; the SF rows are identical in both builds.
+
+Everything else in the rebuild is identical to the shipped file. Compared table by table — `species`,
+`species_map`, `trees` (id, uuid, external_ref, status, species_current), `neighborhoods`,
+`inventories` — the only difference in the whole database was that one tree's free-text passthrough
+and the `seed_meta` counter that reports it.
+
+**Two consequences worth stating.** The build *is* byte-for-byte deterministic as its docstring
+claims: two consecutive rebuilds from the same inputs produced the same sha256
+(`d3e3d229…`). And a checked-in corpus constant is only as fresh as the last person who rebuilt; the
+number in the fixture had been right about a file, not about the pipeline, for some time.
+
+#### 2 · One plant, several spellings — and #103 fixes only the unreadable ones
+
+The catalogue carries the same plant under spellings that differ by more than case, so the seed's
+own key (`normalise_species_key`, which lowercases and collapses whitespace) cannot merge them:
+
+- `Arbutus 'Marina'` · `Arbutus marina` · `Arbutus ‘Marina’` — straight quotes, none, typographic
+- `Platanus acerifolia 'Columbia'` · `Platanus x acerifolia 'Columbia'` ·
+  `Platanus x hispanica 'Columbia'` · `Platanus hispanica 'columbia'`
+- `Magnolia grandiflora 'Samuel Sommer'` · `Magnolia grandiflora 'Sam Sommers'` ·
+  `Magnolia grandiflora 'Samuel Sommer"` — the last with a closing double quote
+
+The suggestion list shows every one of them, so a reader typing `marina` still sees duplicate rows
+after #103. This is the general form of the ticket's "one species appears twice under two names";
+#103 removed only the half where one of the two names was **not a name** (`:: Arbutus 'Marina'`).
+
+**It is left alone on purpose.** Merging `Arbutus marina` into `Arbutus 'Marina'` is a synonymy
+ruling, and no source in the pipeline states it — the same reason `QSPECIES_NAME_CORRECTIONS` admits
+a one-character misspelling that an outside source already resolved and refuses `Brisbane Box`,
+which names two species this inventory carries separately. Typographic-versus-straight quotes is the
+one subgroup that looks mechanical enough to fix without a source, and even there `Arbutus ‘Marina’`
+and `Arbutus 'Marina'` being the same plant is an inference about a keyboard, not a citation.
+
+Anyone taking this on should note it changes species uuids (`uuid5` of the normalised name), which
+is the thing the seed is careful never to move.
+
+### E209 — The San-Francisco-assumption family, swept: four more members, and the two shapes they come in (found while fixing #181)
+
+*Swept on branch `p1/species-page-copy`, 2026-08-02, after #181 turned out to be the fourth rediscovery of the same family (#137, #138, #141). Recorded rather than fixed; each member needs a decision wider than #181's delegation.*
+
+*UNNUMBERED — the orchestrator splices the number at merge. Filed from branch `p1/species-page-copy`.*
+
+---
+
+#137, #138, #141 and now #181 have each found one surface that assumed the only city was San
+Francisco. Four rediscoveries is enough; the brief for #181 asked for a sweep instead of a fifth
+ticket. This is the sweep. **Nothing below is fixed here** — #181's delegation covered its own
+card's copy and nothing wider — and each item is sized so it can be picked up as its own ticket.
+
+The sweep found that the family is really **two** families, and only one of them is what the
+previous four tickets fixed.
+
+---
+
+#### Shape A — a city's *name* hardcoded in reader-facing copy
+
+This is the shape R28 fixed four times over and #181 fixed a fifth. One member remains.
+
+##### A1 · The share card names San Francisco on every tree, including San Jose's
+
+**`Cypress/Features/Share/SharePresentation.swift`** — `ShareCopy.city = "San Francisco"`, assembled
+into `locationLine` as `<address> · San Francisco` (screen 10 §3).
+
+The doc comment states the justification: *"The city is a constant because the product is one city
+deep at launch."* **That premise is now false** — the shipped seed carries 52,788 San Jose rows — so
+a San Jose tree shared from screen 10 is captioned with the wrong city, which is #137's defect on a
+surface #137 did not reach. Related: `ShareCopy.publicURLPrefix = "https://cypress.app/sf/tree/"`
+hardcodes the `sf` slug for every tree (E60 already records that nothing is behind that link).
+
+**Why it is not fixed here.** Unlike screen 07, this surface *has* a row, so R28's mechanism applies
+in principle — but R28 derives an **inventory name** (`City of San Jose Street Tree inventory`), and
+what this line needs is a short **city name**, which no table carries: `id_spaces` has `id`,
+`identity_prefix` and a prose `note`, and `inventories` has the inventory's published name. Deciding
+where a short civic name comes from is a data decision beyond this ticket's delegation. It is the
+one remaining Shape A member and it should be ticketed.
+
+---
+
+#### Shape B — an SF-specific *column meaning* applied to every row
+
+Not a name. A rule written over San Francisco's vocabulary running against another city's data, and
+producing a confident, wrong sentence. **This is the shape the existing regression guard cannot
+see**, and it is worse on screen than A1.
+
+##### B1 · `City lists this as — N/A` on 97.9 % of San Jose trees
+
+**`Cypress/Features/TreeProfile/CityRecordPresentation.swift:125`** — `listedAsText` suppresses the
+card when `plant_type` is `"tree"` and draws it otherwise. That is exactly right for DataSF, where
+`PlantType` is `Tree` on ~194,988 rows and disagrees on a handful — the card exists to report the
+rare row the city says is *not* a tree.
+
+San Jose's `plant_type` is not a plant type at all. It is mapped from `GROWSPACE`, a growing-space
+category (`Tools/inventory_adapters.py:712`). **Verified against the shipped seed:**
+
+| id space | rows that draw the card |
+|---|---:|
+| `sf` | **166** |
+| `us-ca-sj` | **51,689** of 52,788 (97.9 %) |
+
+San Jose's values are `N/A` (25,032), `Park Strip` (15,907), `Well/Pit` (3,758), `Median` (1,868),
+`Tree Lawn` (1,732), `Open/Unrestricted` (1,200), `Unassigned` (805). So under a photograph of a
+tree, a San Jose reader is told **`City lists this as — N/A`**, which is the app asserting that the
+city's record says this is not a tree. San Jose's record says no such thing. This is R24's rule —
+*a rule written over one city's vocabulary does not run against another's* — broken on 51,689 rows.
+
+##### B2 · The `Site` card prints the same San Jose column a second time
+
+**`Cypress/Features/TreeProfile/TreeProfilePresentation.swift:833`** and
+**`Cypress/Features/Site/SitePresentation.swift:137`**, both commented as "the DataSF `qSiteInfo`
+string verbatim". San Jose's `site_type` is mapped from `GROWSPACE` too
+(`Tools/inventory_adapters.py:931`). **Verified: `site_type` is identical to `plant_type` on all
+52,788 San Jose rows.**
+
+So a San Jose reader gets one value under two headings — `Site — Park Strip` and
+`City lists this as — Park Strip` — and on 25,032 rows reads `Site — N/A` as a recorded placement.
+**B1 and B2 must be fixed together**: repairing B1 alone leaves the junk value on screen under the
+other label.
+
+##### B3 · The no-fix map opens on San Francisco and calls it "the city"
+
+**`Cypress/Features/Map/MapKitBasemap.swift:312`** — `defaultCentre` is Mission Dolores Park,
+consumed by `MapOpeningCamera.openingRegion` and `PinSetPresentation.frame(around:)`, with the copy
+at `MapOpeningCamera.swift:360`: `"The map is over the middle of the city."`
+
+Documented as "near enough the centre of the inventory", which was true when the inventory was one
+city. Under R43 a reader can attach San Jose's file as the *only* inventory; on a cold launch with no
+fix they are dropped on San Francisco and told the map is over the middle of the city, above ground
+the attached inventory does not cover. Lower severity than B1/B2 and it needs a data-side companion
+— `CityManifest.City` carries no centre or bbox to derive one from — which is likely why it survived.
+
+---
+
+#### Why the existing guard did not catch Shape B, and what would
+
+`CypressTests/CityRecordSectionTests.everyCitySurfaceNamesTheRowsOwnInventory` sweeps the drawn
+strings of one row per inventory for *another city's name* (`foreignCityMarkers`: `SF`,
+`San Francisco`, `DataSF`, `San Jose`). It is a good guard for Shape A and it is why Shape A is
+nearly extinct.
+
+**It cannot see Shape B, because `N/A` contains no city name.** The string sweep tests the symptom
+the first four tickets happened to share, not the disease. The property that would catch B1 and B2
+is different in kind: *no card derived from a column whose meaning differs by id space may render
+unguarded.* That needs a per-column judgment — which columns are cross-city facts (coordinates,
+species) and which are one publisher's vocabulary (`plant_type`, `site_type`, `plot_size`,
+`legal_status`, `caretaker`) — and is a ticket of its own.
+
+#### Checked and cleared
+
+Recorded so the next sweep does not re-walk them: `agencyGlossary` (keyed on SF caretaker codes San
+Jose never emits), `plotSizeText` (San Jose's `SPACEWIDTH` values all return nil — silent data loss,
+not a mislabel), `maintenanceOptOutNote` (switches on strings absent from San Jose's
+`legal_status`), `pruningNote(idSpace:)` and `LandContext.inferred(from:idSpace:)` (both explicitly
+guarded on `sf` — R28/R24 holding), `recordSource`/`recordNumber`/`provenanceNote` (row-derived),
+every `AlmanacQueries` read and `AlmanacScope` (fully scope-driven — R29 holding),
+`SpeciesQueries.resolveNeighborhood` and `GroveQueries.residentNeighborhood` (both callers fall
+through to a radius scope), `TreeQueries.tree` (`LEFT JOIN neighborhoods`, so a null does not drop
+the row), the `DataGates` bbox gate (already per-id-space), `ReportPresentation`/311 (copy is
+city-neutral; the hazard split runs off `LandContext`, nil outside `sf`), and
+`Cypress/Features/Cities/*` (no `sf` literal anywhere). **No hardcoded `id_space = 'sf'` exists in
+the app's read layer** — the only occurrences are in `DataGates`, correctly per-space, and in tests.

@@ -15,7 +15,7 @@
 //  That table used to be in the **read-only seed database** and nowhere else, which is why this file
 //  once recorded that a correction could not be written at all. **AppSchema v14 put a writable copy
 //  in `main`**, and `correctSpecies` is the correction; tickets #86 and #124, ruled in
-//  `docs/rulings-pending/species-supersession.md`. What follows is still true, and is now a division
+//  `RULINGS R45`. What follows is still true, and is now a division
 //  of labour between two verbs rather than a limit:
 //
 //  1. **Community rows only.** `main` has no writable `trees`; a city row's species is the city's,

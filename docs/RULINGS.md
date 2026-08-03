@@ -2824,3 +2824,543 @@ win. Red-proofed by inverting `MapSiteKind.statuses`, which reddens all three.
 
 `extraFiltersAreDrivenByTheirOwnCases` already existed and required a new arm to compile — R23.1's
 extension point catching its first new narrowing, exactly as designed.
+
+### R45 — A species claim is corrected by whoever made it; everybody else reports it (tasks #86 and #124, delegated)
+
+*Written under the delegated design authority for #86/#124, from the code and the migration rather than from the tickets — two of whose premises did not survive the check. Answers the governance question open since #15 and #58.*
+
+Raised by tasks **#86** ("a species claim cannot be corrected once made") and **#124** ("flag a
+manually-added tree's species as wrong"), which are one question asked from two sides. Open since
+**#15** and **#58**. R19's precedent puts an answer of this kind in a ruling rather than an errata:
+nothing here is a defect being repaired, it is a rule being chosen, and a rule chosen inside a bug
+fix is a rule nobody reviewed.
+
+The question: **who may supersede whose species assertion, with no moderator present?**
+
+---
+
+#### What was actually true before this round, and what was not
+
+Verified against the code rather than the tickets, because two premises in these four tickets did
+not survive the check.
+
+- `species_assertions` existed **only in the read-only bundled seed** (`Tools/build_seed.py`), with
+  the city's one `city_import` row per tree. `AppSchema` had no copy. That absence, not a missing
+  screen, is why `SpeciesClaim` refuses a correction: there was nowhere to put one.
+- The only writable species anywhere was `community_trees.species_current`, a bare TEXT column with
+  no foreign key available to it, and the only edit to it that needs no history is the one where
+  there is nothing to supersede. Hence `LocalAPI.claimSpecies`' two refusals — community rows only,
+  first claim wins — the second of them written into the SQL as `WHERE species_current IS NULL`, so
+  that two callers cannot both see NULL and the second one win.
+- `ReviewFlag.Kind.wrongSpecies` has existed in the enum and in the `review_flags` CHECK since they
+  were written, and **nothing raised it and nothing could resolve it**. `confirmedStatus` returns
+  nil for it, so `confirmReview` and `dismissReview` throw `.validationFailed`;
+  `ModerationTests` asserts exactly that. The vocabulary was there and the loop was not.
+- **`community_trees` records no author at all** — no `user_id`, no `device_id`, no `client_uuid`
+  owner. `TreeProfilePresentation.speciesNamedByContributor` says "a contributor", not "the
+  contributor", and says why: the record cannot name which person. So on the day this ruling is
+  written, **no species claim on this device is attributable to anybody**.
+
+That last fact is the ruling's hinge and it is not in any ticket.
+
+---
+
+#### Decided
+
+**An assertion may be superseded without review only by the identity that made it. Every other
+correction is a claim against somebody else's statement, and it is recorded as one — a
+`wrong_species` review flag — never as a silent overwrite.**
+
+Three arms, and the third is the one that pays for the first two.
+
+##### 1. Your own claim is yours to correct, with no moderator, for ever (#86)
+
+`tree_names`' rule — "one active name per tree; first namer wins" (BUILD-PLAN §4, binding through
+D15) — is the precedent `SpeciesClaim` reached for, and it was reached for slightly wrongly. That
+rule exists to stop one contributor discarding another's statement. Where the two are the same
+person there is no other statement to protect, and refusing is not protection, it is a refusal to
+let somebody admit a mistake about a tree they were standing in front of.
+
+Identity is `Attribution`: the signed-in account when there is one, this device otherwise (D9). Both
+arms, because on this app an anonymous contributor is a real contributor and the account arrives at
+the third save. The predicate is `ContributionOwner.isOwned(by:)`, which is `PhotoOwner`'s, already
+carrying "delete your own photograph" — one predicate for "this record is mine to act on", not two
+that will drift.
+
+Nothing is overwritten even here. The claim keeps its row, gains `superseded_by`, and the correction
+is appended. The history is what `species_assertions` is for, and a self-correction is history like
+any other.
+
+##### 2. Somebody else's claim is not yours to overwrite, with or without a moderator (#124)
+
+You report it. `flagWrongSpecies` raises a `wrong_species` flag and changes nothing else:
+`species_current` still says what the namer said, because a report is a disagreement on the record
+and not a decision. A person who thinks the species is wrong now has a move that is neither "shrug"
+nor "overwrite a stranger", which is what #124 asked for.
+
+Refused when the claim is your own — you correct it, and a screen offering both would be offering a
+worse version of the same act. Refused when a report is already open: BUILD-PLAN §6's "two offline
+users flagging the same tree produce two flags on one thread, not a conflict" governs the **sync
+merge** between devices that could not see each other, and this is a local write by somebody looking
+at the open report on their screen.
+
+##### 3. A claim owned by **nobody** is nobody's to overwrite either
+
+This is the arm the migration forces and the one worth arguing.
+
+Every species claimed before AppSchema v14 has no recorded author, because `community_trees` never
+had a column for one. The v14 backfill could have written this device's id into those rows — every
+community tree in the database really was added on this phone, since `LocalAPI.addTree` is the only
+writer and nothing syncs anyone else's rows down — and AppSchema v12's backfill reasoned in exactly
+that way for `photos`.
+
+It is refused here, and the difference between the two cases is the whole of it. v12 was retro-fitting
+who *took a photograph*; being wrong over-attributes a JPEG on the owner's own screen. This column
+decides **who may overwrite somebody's statement without asking**, and a claim attributed to this
+device by assumption hands that authority to whoever is holding the phone. The honest value is the
+one the database can support, and the database supports "unknown".
+
+So a pre-v14 claim is `.nobody`'s, `isOwned(by:)` is false for everybody — the same answer it already
+gives for a photograph whose author deleted their account — and correcting one goes through the
+report route. The cost is real and small: a handful of beta rows lose the one-tap fix and keep a
+two-tap one. The alternative was to write a fact the record does not hold.
+
+##### Resolution: correcting the species **is** confirming the report
+
+There is no second verb to forget. `correctSpecies` appends the correction and moves any open
+`wrong_species` flag on that tree to `confirmed`, in one transaction. `dismissSpeciesReview` is the
+other half — the report answered by leaving the species alone, nothing appended, on E170's argument
+that a queue whose only verb is "agree" is not a review.
+
+Who may answer a report:
+
+- **a lead** (`canConfirmReviewFlag`: moderator, admin, coordinator — DECISIONS §3.7), and for
+  `correctSpecies` **only in answer to a report that exists**. The role is authority to resolve
+  somebody's report, not a licence to rewrite any species at will. A lead with an opinion and no
+  report in front of them is a contributor and takes arm 1's route;
+- **the author of the disputed claim**, for both verbs. This is what keeps the loop closed on a
+  phone with no lead on it. Without it, "with no moderator present" would have an answer this
+  project has already paid for once: a kind that can be raised and never resolved (E170).
+
+"No moderator present" is otherwise not a special case. The local beta grants the lead role through
+the You tab's DEBUG affordance, which is how every `appears_removed` flag is resolved today; this
+seam inherits that route rather than inventing one.
+
+---
+
+#### What this deliberately does not build
+
+Named so the next round does not read the absence as an oversight.
+
+- **No queue.** The report is answered on the tree's own profile, where the species is. A second
+  section in the You tab would be a moderation product, and `openReviews` serves
+  `statusReviewKinds` — deriving it from `confirmedStatus != nil`, which is nil for `wrongSpecies`
+  and must stay nil.
+- **No reputation, no voting, no confidence weighting.** `confidence` is a column because BUILD-PLAN
+  §4 has one; nothing on device writes it. A rule that counted agreements would need a model of who
+  is agreeing, and this is a correction path, not a verification tier (C-M5 is Phase 2, DECISIONS
+  §2.4).
+- **No correction of a city row's species.** `claimSpecies` already refuses one with `.forbidden`
+  and `correctSpecies` refuses it the same way. A community counter-claim over an inventory row is
+  what D16 actually wants — the community layered on the merged national inventory — but reading it
+  back needs a species-override path parallel to `tree_status_overrides`, touching the map, the
+  profile, the almanac and the export. That is a ticket, not a clause. **Raising `wrong_species` on
+  a city row is refused too, and refused deliberately**: a report nothing can resolve is the E170
+  defect, and shipping the raise ahead of the read path would be shipping it.
+- **Nothing goes through the outbox.** `claimSpecies` never did; assertions follow it. When
+  `POST /trees/{id}/species-assertions` exists, the chain is already the right shape to send.
+
+---
+
+#### The seam, and why it is beside E170's rather than inside it
+
+`ReviewFlag.Kind` now answers `resolution` — `.status(TreeStatus)`, `.speciesAssertion`, or
+`.byHand` — and `confirmedStatus` is derived from it instead of switching a second time.
+`statusReviewKinds` is unchanged and still derived from `confirmedStatus != nil`, so the lead queue
+does not gain a species report, and `speciesReviewKinds` is derived from the same switch for the
+seam that does serve it.
+
+E170's property is preserved exactly: one exhaustive switch that both the raise and the resolve
+read, so a kind that can be raised and not resolved is a compile error. What is *not* done is the
+tempting one-liner — pointing `wrongSpecies.confirmedStatus` at some status to make it resolvable.
+Confirming a wrong-species report must never write `trees.status`. A species correction that quietly
+marked a tree removed would not be a repeat of E170; it would be the worse version of it, because
+the queue would look right while the trees moved.
+
+### R46 — "This tree does not exist at all" is its own review kind, not a removal (task #125, decision only)
+
+*Decided by the writable-v14 migration author, 2026-08-02, because a new `review_flags.kind` value is nearly free inside a migration being written and a whole schema version afterwards. Only the CHECK value landed; #125 still owns what the kind means and what raises it.*
+
+Decided for task **#125**, which asked only for the decision this round; #125's surface and its
+resolution path land later. Nothing was built here beyond one string in a CHECK constraint that
+AppSchema v14 was rebuilding anyway.
+
+**Decided: a new `review_flags.kind` value, `never_existed`. It does not reuse `.appearsRemoved`.**
+
+#### Why not reuse it
+
+Because of what confirming `.appearsRemoved` *writes*. `ReviewFlag.Kind.confirmedStatus` maps it to
+`TreeStatus.removed`, and this product has settled what that means: `acceptsNewContributions` goes
+false, the profile becomes a memorial record (screen 19), and the map pin is spoken as "Removed
+tree, memorial" (E170, R19). A record that never had a tree behind it would get a memorial page for
+a tree that never lived.
+
+That is the map asserting something untrue, which is the argument R7 made when it refused to let the
+vacant site borrow `.removed`'s drawing, and the argument R19 restated for the standing dead tree.
+The same argument decides this one; it would be strange to make it twice and then not make it a
+third time in the case where the assertion is not merely imprecise but false.
+
+The second reason is downstream. D16 makes the merged national inventory the product rather than a
+seed-building convenience, and `removed` and `never_existed` are different facts to publish into it:
+one is a lifecycle event that happened on a date, the other is a row that should not be in the
+inventory. A consumer that cannot tell them apart mis-states a city's history, and the whole point of
+the merged table is that it does not.
+
+#### The argument against, and why it loses
+
+A reporter standing at the site often cannot tell "the tree is gone" from "there was never a tree
+here", and asking people to distinguish what they cannot observe is the mistake D3 was written about.
+
+It loses because the cases that motivate #125 are the ones where the reporter *can* tell: a record in
+the middle of a building, a duplicate two metres from another pin, a community add that was a
+mis-tap. A stump, an empty basin, fresh cut — that is a removal, and screen 05 already offers it. The
+two are distinguishable exactly where it matters, and where they are not, a reporter picks "removed"
+and is right often enough that nothing is lost.
+
+#### What landed, and what did not
+
+Only the CHECK value, in AppSchema v14's rebuild of `review_flags`. SQLite cannot widen a CHECK in
+place, so the alternative was an entire migration of its own for one string.
+
+`ReviewFlag.Kind` gains **no case**. #125 owns what the kind means, what raises it, and what
+confirming it writes — which is a real open question, since `TreeStatus.vacantSite` already exists
+and may be the truthful confirmed state, in which case the kind belongs on the status seam and the
+existing queue rather than beside it. Until #125 lands, nothing can write `never_existed`: the store
+binds `Kind.rawValue` and there is no case to bind. The widened CHECK is a reservation, not a
+reachable state, and `ReviewFlagKindTests` asserts both halves — that the column accepts the value
+and that the enum does not yet offer it.
+
+### R47 — The species suggestion list offers only names a reader can read (task #103, delegated)
+
+*Written under the delegated design authority for #103. R25 specified six things about the suggestion list and none of them is what it does with a row whose name is not a name; this is that gap.*
+
+*Unnumbered. Written from a branch; the orchestrator splices it under the real next number at merge
+and rewrites the citations in `Cypress/Data/Store/SpeciesQueries.swift` and
+`CypressTests/SeedStubNamingTests.swift`.*
+
+---
+
+**What was delegated.** Task #103 raised half of itself in priority: not "canonicalise the species
+name in the builder", which is a corpus repair with an obvious right answer, but "decide what the
+suggestion list does with a stub row at all", which is a design question about a screen. R25 (task
+#109) put a species list under screen 01's search field and specified six things about it; none of
+them is what the list should do with a row whose name is not a name. This is that gap, answered
+under the standing delegation.
+
+**The measurement, taken from the shipped corpus rather than from the ticket.** A species the ingest
+could not read keeps the raw source string as its scientific name. Before #103 the seed carried
+fifteen of them, standing under sixty-five trees out of 198,625. Every one had the same shape — an
+empty scientific half in front of DataSF's `::` separator — so every one rendered in the list with a
+visible `:: ` prefix:
+
+| what the reader saw | line 1 | line 2 |
+| --- | --- | --- |
+| the stub | `Arbutus 'Marina'` | `:: Arbutus 'Marina'` |
+| the real species, in the same list | `Hybrid Strawberry Tree` | `Arbutus 'Marina'` |
+
+Two rows, one plant, and the reader has no way to tell which to press. The second line is labelled
+by position as the scientific name; `:: Arbutus 'Marina'` is not a scientific name, it is our
+parser's failure quoted back at someone looking for a tree.
+
+**The builder half went first, and it changed the size of this question.** `Tools/build_seed.py`'s
+BOTANICAL/COMMON swap now reads a miscased genus and a quoted cultivar, so fifty-eight of those
+sixty-five trees merged into the species they were always naming and seven duplicate rows left the
+catalogue. **Five stub species and seven trees remain**, and they are the residue that cannot be
+merged on form alone: `:: Magnolia`, `:: 9662`, `:: Chitalpatashkentensis`, `:: Magnolia Little Gem`,
+`:: Podocarpus Gracilor`. Two of those five still shadow a real species (`Magnolia` and
+`Podocarpus gracilor`). So canonicalisation alone does not close this, exactly as the ticket said.
+
+---
+
+#### The ruling
+
+**1 · The list does not offer a species whose name the ingest could not read.** Not a merge, not an
+honest rendering — the row is not there.
+
+**Merging is not the list's to do.** Where a merge is safe it has already happened, in the builder,
+on evidence: the city wrote a name and the only thing wrong with it was case, or a cultivar in
+quotes. The five that remain are unmergeable *because nothing in them says what they are* —
+`Podocarpus Gracilor` is probably `Podocarpus gracilor` and `:: 9662` is probably a work-order
+number, and "probably" is the word that disqualifies it. Asserting either from the client would be a
+synonymy no source states, which is the judgment `QSPECIES_NAME_CORRECTIONS` already refuses to make
+in the one place that has the whole corpus in front of it. A screen that has one query's worth of
+rows is not better placed to make it.
+
+**Rendering them honestly fails for E126's reason.** E126's principle is that a state a reader
+cannot interpret is worse than one that is not drawn: a failed read that drew the cold-start screen
+was "invisible by construction rather than ugly". A `:: ` prefix is the same defect facing the other
+way — it is not invisible, it is *unreadable*, and it is unreadable in the one field a reader uses
+to decide whether this is the tree they meant. There is no copy that fixes it, because the honest
+sentence is "the city's record of this tree does not say what it is", and that is a sentence about
+the seven trees, not about the species the reader was searching for.
+
+**2 · The rule is applied in `SpeciesQueries.searchSQL()`, so it holds on both surfaces.** The same
+read feeds the map's suggestion list and the add-tree species picker
+(`SpeciesPickModel`). Filtering in `MapSuggestions.init(matches:)` would fix the dropdown and leave
+the picker offering `:: 9662` as something to record a tree as — which is worse, because that one
+writes. `MapSuggestionTests.typingDropsAList` asserts the one-read-two-surfaces invariant; this
+ruling keeps it.
+
+**3 · The predicate is the name's shape, and the fact it stands for is asserted beside the seed.**
+The exact statement of "the ingest could not read this" is `species_map.is_stub`. It is not what the
+query asks, and the reason is measured: `species_map` carries no index on `species_id`, so a
+correlated `EXISTS` over it is a scan per candidate row, and it fails
+`SpeciesSearchTests.searchStaysOnItsCoveringIndexes`. Adding that index would change
+`Fixtures/seed/schema.sql`, and the per-city files already published at seed schema 14 would not
+have it — the gate would pass against the bundled seed and the scan would happen against a
+downloaded city.
+
+So the query filters on `scientific_name NOT LIKE ':: %'`, and
+`SeedStubNamingTests.theMarkerAndTheProvenanceFlagAgree` proves that the marker and `is_stub` select
+the same rows in the seed as built. That is what makes the cheap predicate a statement rather than a
+guess about the shape of the data, and it is what will fail — loudly, next to the seed — if a future
+ingest ever mints a stub that does not carry the marker.
+
+**4 · The seven trees keep their pins.** This is a rule about a *name list*, not about the map. The
+trees are still on screen 01, still tappable, still openable; what a reader cannot do is arrive at
+them by typing a name, and there was never a name to type.
+
+---
+
+#### What this does not settle
+
+**The corpus holds the same plant under several spellings, and #103 does not touch it.** `Arbutus
+'Marina'`, `Arbutus marina` and `Arbutus ‘Marina’` — straight quotes, no quotes, typographic quotes
+— are three species rows for one plant, and there are more like them (`Platanus acerifolia
+'Columbia'`, `Platanus x acerifolia 'Columbia'`, `Platanus x hispanica 'Columbia'`, `Platanus
+hispanica 'columbia'`). The suggestion list shows them all, and a reader typing `marina` still sees
+duplicates. That is the ticket's "one species appears twice" complaint in its general form; the
+stub half of it is fixed here, and the rest is a synonymy question with no source behind it.
+Recorded in `ERRATA E208`, not fixed.
+
+**The species page is out of scope and still renders the raw name.** A tree whose species is
+`:: Magnolia` shows that string wherever the species name is drawn. It is seven trees, and the fix
+is not a filter — you cannot omit a tree's own species from its own page — so it wants its own
+ticket and probably its own sentence of copy.
+
+### R48 — Screen 07's count card names the population it counted, and that population is not a city (task #181, delegated)
+
+*Written under the delegated design authority for #181. The first member of the San-Francisco-assumption family where R28's per-row mechanism is structurally unavailable — screen 07 has no tree to ask.*
+
+*Written under the delegated design authority for #181, which covers the copy on this card and
+nothing wider. UNNUMBERED — the orchestrator splices the number at merge.*
+
+---
+
+#### The reported defect is the smaller half of the real one
+
+#181 reads: the species page hardcodes `In San Francisco` on its citywide count card, so it says San
+Francisco to a reader standing in San Jose. That is true. It is also not the worst of it.
+
+**The number under that label was never San Francisco's.** `SpeciesQueries.cityTreeCount` carries no
+id-space predicate — it is `COUNT(*)` over every standing tree of the species in the attached
+inventory — and the shipped bundle is fused across two id spaces (`sf`, 145,837 trees; `us-ca-sj`,
+52,788). Measured on the shipped seed, on species that stand in both:
+
+| species | San Francisco | San Jose | the card printed |
+|---|---:|---:|---:|
+| Crape Myrtle | 97 | 3,649 | `In San Francisco · 3,746` |
+| Chinese Pistache | 431 | 2,026 | `In San Francisco · 2,457` |
+| Ornamental Pear | 2,160 | 1,344 | `In San Francisco · 3,504` |
+| Southern Magnolia | 5,115 | 983 | `In San Francisco · 6,098` |
+
+A San Francisco reader looking up Crape Myrtle was told their city holds 3,746 of them. It holds 97.
+So the card was wrong for **every** reader, not only for the one standing in the second city.
+
+#### Why the obvious fix is refused
+
+The naive repair — resolve the tree's city and say `In San Jose` to a San Jose reader — fails twice.
+
+1. **It would put one city's name over a two-city number.** The count is not scoped by id space, so
+   any single city name is a mislabel; swapping which city is mislabelled is not a fix. Scoping the
+   count instead would be a different change with its own consequences, and it is not what the
+   ticket asked for.
+2. **There is no tree on this screen to ask.** `SpeciesModel` is constructed from a species id
+   alone, entered from a grove tile, the search list or the map legend. R28's mechanism — the row
+   states its own inventory through `LocalAPI.provenance(of:in:)` — has no row to run against here.
+   This is the first member of the family where R28's answer is structurally unavailable, which is
+   worth stating because the family's habit is to be fixed the same way each time.
+
+#### The ruling
+
+**The label names the population that was actually counted: `In this inventory`.**
+
+Under R43 exactly one inventory is attached at a time — the built-in fused bundle or one downloaded
+city file — and every read on the screen is qualified against it. `inventory` is R43's own word for
+that unit (`Built-in inventory`, "one inventory is attached at a time", `In use`), so this borrows
+vocabulary the reader has already met in Cities rather than coining any.
+
+The card is now exactly true in both configurations R43 permits:
+
+- **built-in bundle** — the count spans San Francisco and San Jose, and the label claims neither;
+- **a downloaded city file** — the count is that city's, and the label is still true of it.
+
+**R28 §3 is the precedent and it is followed rather than extended.** Faced with a label too small to
+carry an inventory's published name, R28 made the section header state the *category* — `What the
+city has on file` — and let the provenance line inside the section name which one. Its reasoning
+transfers unchanged: *"A constant that is true everywhere is not the same defect as a constant that
+is true in one city."* `In this inventory` is that constant for this card.
+
+#### What this ruling does not do
+
+- **It does not scope the count.** Adding `AND t.id_space = :space` would make the card a per-city
+  number and is a different product question — which city, resolved how, on a screen with no row.
+  If it is ever wanted, the honest shape is a scoped count *and* a label naming the scope, decided
+  together. Noted, not taken.
+- **It does not touch `Near you`.** That card was fixed by #141 and is scoped through
+  `AlmanacScope`; its label is already city-neutral and its number already honest.
+- **It does not rename the inventory anywhere else.** No shared identifier changed.
+
+#### The mock pin this overrules
+
+ARCHITECTURE §5 rule 8 makes departing from a drawn mock a decision rather than a commit.
+
+| pinned where | drawn | now | why |
+|---|---|---|---|
+| SCREENS.md 07 §5 | `In San Francisco` → `1,204` | `In this inventory` → `1,204` | the mock was drawn when the seed held one city, and the number it labels has never been one city's since |
+
+`mocks/cypress-mocks.html` is not edited — it is the drawing, and a drawing is a record of what was
+drawn (R28's rule).
+
+#### What holds it
+
+`CypressTests/SecondCityGeographyTests.theCountCardNamesThePopulationItCounted` — the family's own
+seed-backed suite. It resolves at runtime a species the seed holds in **both** id spaces, asserts
+`cityTreeCount` equals the sum of the two (so the count provably spans two cities, which is what
+makes any city name a lie), and then asserts the label contains none of `San Francisco`, `San Jose`,
+`SF`, `DataSF`. Markers rather than a fixed string, so swapping one hardcoded city for another
+cannot satisfy it.
+
+Red-proofed by restoring `In San Francisco`:
+
+> `Expectation failed: !((SpeciesCopy.cityCountLabel → "In San Francisco").contains(marker → "San Francisco") → true)`
+
+### R49 — `This season` is a heading over three clocks, and the note says so (task #177, delegated)
+
+*Written under the delegated design authority for #177, from the three queries that actually feed the block. Checked against R41 and E205 first: the heading is a static micro-label over a content block, not a filter, so R41's categorical ban does not reach it.*
+
+*Written under the delegated design authority for #177, which covers this tooltip's wording and
+where it lives. UNNUMBERED — the orchestrator splices the number at merge.*
+
+---
+
+#### First: R41 does not reach this, and that was checked before anything was written
+
+R41 forbids any message accompanying a **filter**, categorically, with three sanctioned channels
+(R23.1: chip fill, a count on the chip, the spoken value) and no fourth. The brief was right to make
+this a gate, so it is answered first.
+
+**`This season` is not a filter.** It is a static micro-label — `AlmanacCopy.seasonLabel`, drawn by
+`AlmanacView.seasonBlock` — over a block of up to three C10 rows on screen 12. There is no chip, no
+selection, no toggle, no state, and nothing the reader can set. R41's own test is *"does text appear
+because a filter did something?"*; nothing on this block responds to a filter, because the almanac
+has none. E205 confirms the scope by showing what R41 actually reached: `MapFilterStatus`, a capsule
+on the map glass under the chip row, which rendered *only* when `filter.isActive` or
+`filter.decade != nil`.
+
+The almanac already carries two permanent explanatory sentences that nobody has read R41 against —
+`areaNote` (R29) and `outOfRangeBody` (E182) — because they explain a *surface*, not a narrowing.
+This note is the third of that kind.
+
+If a future reader disagrees: the test to apply is not "is there explanatory text on screen" but
+"did a filter cause it". Nothing here did.
+
+#### What the heading is actually over
+
+Read from the code that computes the rows, not from the heading and not from the ticket:
+
+| row | what bounds it | is it "this season"? |
+|---|---|---|
+| **First bloom of the year** | `visits.captured_at >= AlmanacWindow.yearStart` — January 1 of the current calendar year | **No — year-to-date.** In December it is still March's sighting. Its own drawn title already says `of the year`. |
+| **The elder** | `ORDER BY t.planted_on LIMIT 1` — **no window at all** | **No — nothing.** The same tree in January as in July, every year, until an older record arrives. |
+| **Newest neighbors** | `t.planted_on BETWEEN` `AlmanacWindow.currentSpring` — March 1 to May 31 of the current year | **No — a fixed window.** It does not draw before March, and from June to December it keeps saying `planted this spring` about trees planted in the spring that ended. |
+
+**So none of the three is scoped to the current season, and one of them is not scoped to time at
+all.** The heading is the only thing on the block claiming a season.
+
+That is the unflattering finding the brief anticipated, and the note says it rather than papering
+over it.
+
+#### The ruling
+
+**A one-line note under the micro-label, assembled from the rows that actually drew, naming each
+row's own window and stating plainly that they differ.**
+
+With all three rows present it reads:
+
+> Each row keeps its own window: the first bloom is this year's earliest, the elder is the oldest on
+> file in any season, and the newest neighbors were planted March to May.
+
+##### Why a line under the heading rather than a tap-to-reveal tooltip
+
+The ticket said "tooltip"; where it lives was delegated. Three reasons for the line:
+
+1. **The app has no tooltip idiom.** There is no popover, no info button, no disclosure control
+   anywhere in `Cypress/DesignSystem/Components/`. Building one for this would be inventing UI for a
+   screen whose states are already over-specified, and R43's discipline — build from the app's
+   existing vocabulary — points the other way.
+2. **The screen already does this exact job in this exact form.** `areaNote` is a muted sentence
+   directly under the header saying which promise a pill is making, because "the pill alone is too
+   quiet" (R29). This note is that argument applied one heading down, and it is drawn in `areaNote`'s
+   type and colour (`CypressFont.body125`, `CypressColor.textMuted`) for that reason.
+3. **The fact reframes rows the reader is looking at now.** A reader who believes `The elder` is a
+   seasonal pick has already misread the block; hiding the correction behind a tap serves the reader
+   who already suspected something was off, which is not the reader who needs it.
+
+##### Why it is assembled rather than written whole
+
+`AlmanacCopy`'s own header rule: *"Every sentence with a number in it is assembled rather than
+templated wholesale, so that the parts which are not true can be left out."* The note obeys it. A
+clause about the bloom is never written when no bloom drew, and with one row the note states that
+row's window and makes no claim about windows differing. It is `nil` exactly when `seasonRows` is
+empty — the block does not draw then, and a note explaining three absent rows is the
+heading-over-nothing defect with a sentence attached.
+
+##### The months come from the constant
+
+`March to May` is read from `AlmanacWindow.springMonths` through the reader's calendar and locale,
+not written out, so moving the window moves the sentence. The read and its description cannot drift.
+
+#### What this ruling does not do
+
+- **It does not rename the heading.** `This season` is drawn verbatim in SCREENS.md 12 §2. Renaming
+  a drawn micro-label is a mock departure, and #177's delegation covers the explanatory text, not
+  the heading. **This is flagged deliberately: the honest conclusion of the analysis above is that
+  the heading is a poor name for its contents, and a note is a smaller repair than a rename.** If
+  the owner wants the heading itself reconsidered, the material is here and the change is one string.
+- **It does not change any window.** Not the elder's absence of one, not the bloom's year-to-date
+  bound, and not the March–May span that keeps drawing until December. Each is arguably worth its
+  own ticket; none is copy, and #177 is a copy ticket.
+- **It does not mention that the bloom row is computed from this device's contributions alone.**
+  True, and material, but the `Almanac` type has a standing decision about it — the almanac "is
+  honest but small until there is a server, and it says so by rendering nothing rather than by
+  apologising." Adding an apology here would reverse that decision on one block. Considered and
+  excluded, recorded so it is not re-opened by accident.
+
+#### What holds it
+
+Four tests in `CypressTests/AlmanacPresentationTests`, plus the note joining `renderedStrings` so
+the suite's existing sweeps (no zeroes, nothing counting contributions) now cover it:
+
+- `theSeasonNoteDrawsOnlyWithItsRows` — nil with no area and with no rows; present when a row drew.
+- `theElderAloneIsNotDescribedAsSeasonal` — with only the elder, the note names neither spring month
+  and does not mention the bloom. Asserted as *absence of the other rows' windows*, so a blanket
+  "this season" claim cannot satisfy it.
+- `theNoteAccountsForEveryDrawnRow` — all three subjects named, and the note states the windows differ.
+- `thePlantingClauseTracksTheWindowConstant` — the clause names the months `AlmanacWindow.springMonths`
+  actually bounds the read by.
+
+Each was red-proofed, and one of the red-proofs found a real defect: read off a `Calendar` built by
+identifier, `standaloneMonthSymbols` produced `M03 to M05`, because it reads the *calendar's* locale
+and such a calendar carries none. The note now takes the reader's locale as its own parameter, as
+every other sentence in `AlmanacCopy` already did.

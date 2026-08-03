@@ -35,7 +35,7 @@ public typealias ContributionOwner = PhotoOwner
 /// null — is reachable and means what it means everywhere else: this row belongs to no one.
 ///
 /// Which matters here more than anywhere, because supersession authority is read off it. See
-/// `docs/rulings-pending/species-supersession.md`.
+/// `RULINGS R45`.
 public struct SpeciesAssertion: CoreEntity {
     public let id: UUID
     public let treeID: UUID

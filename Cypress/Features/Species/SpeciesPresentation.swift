@@ -227,7 +227,7 @@ enum SpeciesCopy {
     static let nearbyLabel = "Nearby individuals"
 
     /// 07 §5's two stat-card labels. `nearYouLabel` is verbatim; the other one is not, and the
-    /// departure is `docs/rulings-pending/species-count-names-the-inventory.md`.
+    /// departure is `RULINGS R48`.
     ///
     /// ── It used to read `In San Francisco`, over a number that was never San Francisco's ──────
     /// The card's number is `SpeciesQueries.cityTreeCount`, a `COUNT(*)` over **the whole attached

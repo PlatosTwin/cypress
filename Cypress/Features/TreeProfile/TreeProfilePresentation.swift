@@ -407,7 +407,7 @@ struct TreeProfilePresentation {
     ///
     /// **NOT SPECIFIED**, for `offersSpeciesClaim`'s reason and one more: SCREENS.md has no control
     /// here because until AppSchema v14 there was no chain for a correction to go into. The ruling
-    /// `docs/rulings-pending/species-supersession.md` is the mock for what this draws.
+    /// `RULINGS R45` is the mock for what this draws.
     ///
     /// Read straight off the payload rather than re-derived. Which of the three things a viewer may
     /// do turns on whether the claim in force is theirs and whether a report is already open — an

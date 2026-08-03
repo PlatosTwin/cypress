@@ -530,7 +530,7 @@ public actor LocalAPI: CypressAPI {
     /// without its source is a cache that can disagree with it.
     ///
     /// ── Who may do it ───────────────────────────────────────────────────────────────────────────
-    /// `docs/rulings-pending/species-supersession.md` carries the argument; the rule is two arms:
+    /// `RULINGS R45` carries the argument; the rule is two arms:
     ///
     /// 1. **The author of the claim in force, always.** D15's "first namer wins" exists to stop one
     ///    contributor discarding another's statement; where the two are the same person there is no

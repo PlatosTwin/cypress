@@ -66,7 +66,7 @@ public protocol CypressAPI: Sendable {
     /// `claimSpecies` stays as the *first* claim, which is a different act with a different guard.
     ///
     /// - Throws: `.forbidden` when the claim in force is not this contributor's to supersede — see
-    ///   `docs/rulings-pending/species-supersession.md` — or when the tree is a city row;
+    ///   `RULINGS R45` — or when the tree is a city row;
     ///   `.validationFailed` when there is no claim to correct; `.conflict` when somebody corrected
     ///   it first; `.notFound` when there is no such tree.
     func correctSpecies(treeID: UUID, speciesID: UUID) async throws -> Tree

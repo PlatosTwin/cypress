@@ -4,7 +4,7 @@ import Testing
 
 /// **A row a reader cannot interpret is worse than a row that is not there** (the principle ERRATA
 /// E126 states for a screen, applied to a list row) — task #103, ruled in
-/// `docs/rulings-pending/species-suggestion-stubs.md`.
+/// `RULINGS R47`.
 ///
 /// A species the ingest could not read keeps the raw source string as its scientific name, so the
 /// name still carries DataSF's `::` separator with an empty scientific half. Those rows reached the
@@ -135,7 +135,7 @@ struct SeedStubNamingTests {
     /// (`Arbutus 'Marina'`, `Arbutus marina`, and `Arbutus ‘Marina’` with typographic quotes), and it
     /// had them before #103 and still does. Collapsing those is a synonymy the sources do not state,
     /// which is the judgment `QSPECIES_NAME_CORRECTIONS` refuses to make; it is recorded in
-    /// `docs/errata-pending/seed-rebuild-drift.md` rather than fixed here. What #103 removed is the
+    /// `ERRATA E208` rather than fixed here. What #103 removed is the
     /// row that was not a name at all, and that is what is asserted.
     /// **This asks the catalogue, not the search, and the difference is the whole point.** Written
     /// first against `search("Marina")`, it passed with the builder's swap reverted and the stub back
