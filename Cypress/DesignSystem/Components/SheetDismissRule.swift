@@ -16,7 +16,8 @@
 //  *going*: `predictedEndTranslation` already folds the gesture's velocity into a distance, so
 //  "fast" needs no second unit — a flick is a drag whose predicted end crosses half the card.
 //  Both numbers are **NOT SPECIFIED** anywhere; the mocks are static HTML and draw no gesture.
-//  They are chosen against the system sheet's feel and recorded in the pending ruling.
+//  They are chosen against the system sheet's feel and recorded in RULINGS R42 §1, which states
+//  both fractions in the same terms this file implements them in.
 //
 
 import Foundation
