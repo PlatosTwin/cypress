@@ -7,22 +7,22 @@ import Foundation
 /// BUILD-PLAN §9 lists none, and DECISIONS constraint 21 says that when a screen or state is not in
 /// the mocks, stop and ask rather than invent it. R3 is nevertheless explicit that the copy is
 /// load-bearing — "deleting more than someone expected is the failure mode this ruling creates, and
-/// copy is the whole defence against it" — and copy that does not exist cannot be reviewed by the
+/// copy is the whole defense against it" — and copy that does not exist cannot be reviewed by the
 /// person who will draw the screen. It exists here to be reviewed as prose and arranged by
 /// `AccountDeletionSheet`, which adds no strings of its own.
 ///
 /// ── R3's one sentence, and why it is now three strings ────────────────────────────────────────
 /// R3 required that the two halves of a deletion — what the forest keeps, and what goes with the
 /// person — be told *in the same sentence*, and `whatHappens` was that sentence, with a note saying
-/// it must not be split. That rule existed because there was one behaviour: told only that their
+/// it must not be split. That rule existed because there was one behavior: told only that their
 /// observations stay, a person would reasonably expect everything else to stay too, and the reminders
-/// and favourites would go without warning.
+/// and favorites would go without warning.
 ///
-/// There are now two behaviours, and welding the shared half onto each of them would print the same
+/// There are now two behaviors, and welding the shared half onto each of them would print the same
 /// clause twice and bury the thing the reader most needs to see, which is the *difference* between
 /// the doors. So the shared half is hoisted out into `personalRecords`, which opens with "Either
 /// way" and sits above both doors, unconditionally, on screen before anything is chosen. R3's actual
-/// defence is stronger under that arrangement than under the welded sentence: the clause can no
+/// defense is stronger under that arrangement than under the welded sentence: the clause can no
 /// longer be missed by picking the reassuring door, because it is not inside a door at all.
 ///
 /// ── Which door the words are written to flatter ───────────────────────────────────────────────
@@ -34,7 +34,7 @@ import Foundation
 /// does not scold. A warning that sounds like a scolding is a warning people stop reading.
 ///
 /// House style, per ARCHITECTURE §5.7: prose is sentence case, and there are no spaces around em
-/// dashes. The app's own control is labelled `Favorite` (C8, screen 03), so the copy says favorites
+/// dashes. The app's own control is labeled `Favorite` (C8, screen 03), so the copy says favorites
 /// rather than the British spelling this project's prose uses elsewhere — a person should read back
 /// the word they tapped.
 ///
@@ -63,7 +63,7 @@ public enum AccountDeletionCopy {
     /// is written in its place.
     ///
     /// **The last clause was added because the sentence before it was not true** (ERRATA — see
-    /// E157). Anonymising nulls the account and leaves the
+    /// E157). Anonymizing nulls the account and leaves the
     /// installation id the row has always carried, and `claimDevice` read that as *this phone's
     /// unclaimed work* — so the records were adopted by the next account signed in here, and
     /// "nothing left on them saying they were yours" lasted until somebody signed in. `AppSchema`
@@ -124,10 +124,10 @@ public enum AccountDeletionCopy {
 
     // MARK: - Actions
 
-    /// The destructive action, labelled with **the door it will take** (R2: a verb naming what the
+    /// The destructive action, labeled with **the door it will take** (R2: a verb naming what the
     /// next tap does).
     ///
-    /// This is the whole of the defence against reaching the destructive door by momentum. The two
+    /// This is the whole of the defense against reaching the destructive door by momentum. The two
     /// labels differ in their last three words, so the final tap cannot be made without the word
     /// "erase" being on the button under the thumb. A single "Delete account" label on both would
     /// have made the two doors a setting somebody could forget they had changed.

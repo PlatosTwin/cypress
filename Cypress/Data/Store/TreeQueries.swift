@@ -273,8 +273,8 @@ public struct TreeQueries {
         }
 
         if let treeIDs = viewport.treeIDs {
-            // Empty means "narrowed to nothing", never "not narrowed" — a reader with no favourites
-            // who taps `Favourites` has asked a question, and the whole city is not its answer.
+            // Empty means "narrowed to nothing", never "not narrowed" — a reader with no favorites
+            // who taps `Favorites` has asked a question, and the whole city is not its answer.
             guard !treeIDs.isEmpty else { return .matchesNothing }
             // Lower-cased because the seed writes uuids in lower case and `UUID.uuidString` produces
             // upper; sorted so the same set always spells the same statement text and reuses its
@@ -436,7 +436,7 @@ public struct TreeQueries {
     /// that the grid is absolute rather than relative to the viewport's corner (the `+90`/`+180`
     /// offsets, as in `clusters`), so the same tree keeps winning the same cell as the user pans and
     /// no pin flickers or re-animates under the drag. Preferring a status — drawing the amber
-    /// needs-care pin over its neighbours — would mean reading `t.status`, which is the table probe
+    /// needs-care pin over its neighbors — would mean reading `t.status`, which is the table probe
     /// this query exists to avoid. The shipped seed carries no `declining` tree at all, so there is
     /// no amber pin to lose today; when the curated pipeline gives it one, the honest fix is a second
     /// query for just those trees, not a column added here.
@@ -453,8 +453,8 @@ public struct TreeQueries {
         narrowing: Narrowing = .none,
         connection: SQLiteConnection
     ) throws -> [(rowID: Int64, memberCount: Int)] {
-        let centreLatitude = (viewport.bounds.minLatitude + viewport.bounds.maxLatitude) / 2
-        let cell = Self.cellSize(zoom: viewport.zoom, centreLatitude: centreLatitude, points: cellPoints)
+        let centerLatitude = (viewport.bounds.minLatitude + viewport.bounds.maxLatitude) / 2
+        let cell = Self.cellSize(zoom: viewport.zoom, centerLatitude: centerLatitude, points: cellPoints)
 
         let statement = try connection.cachedStatement(markerCellsSQL(strategy, narrowing: narrowing))
         _ = try statement.bind(bindings(for: viewport.bounds))
@@ -532,8 +532,8 @@ public struct TreeQueries {
         SELECT CAST((t.lat + 90.0) / :latCell AS INTEGER) AS cell_y,
                CAST((t.lon + 180.0) / :lonCell AS INTEGER) AS cell_x,
                COUNT(*) AS member_count,
-               AVG(t.lat) AS centre_lat,
-               AVG(t.lon) AS centre_lon
+               AVG(t.lat) AS center_lat,
+               AVG(t.lon) AS center_lon
         \(bboxSource(strategy, joins: "", extraPredicates: "\(softDeleted) \(narrowing.predicate)"))
          GROUP BY cell_y, cell_x
         """
@@ -575,8 +575,8 @@ public struct TreeQueries {
         let narrowing = try narrowing(for: viewport, connection: connection)
         guard !narrowing.matchesNothing else { return [] }
 
-        let centreLatitude = (viewport.bounds.minLatitude + viewport.bounds.maxLatitude) / 2
-        let cell = Self.cellSize(zoom: viewport.zoom, centreLatitude: centreLatitude)
+        let centerLatitude = (viewport.bounds.minLatitude + viewport.bounds.maxLatitude) / 2
+        let cell = Self.cellSize(zoom: viewport.zoom, centerLatitude: centerLatitude)
         let statement = try connection.cachedStatement(clustersSQL(strategy, narrowing: narrowing))
         _ = try statement.bind(bindings(for: viewport.bounds))
         _ = try statement.bind([":latCell": cell.latitude, ":lonCell": cell.longitude])
@@ -587,8 +587,8 @@ public struct TreeQueries {
             return TreeCluster(
                 id: "z\(viewport.zoom):\(cellY):\(cellX)",
                 coordinate: Coordinate(
-                    latitude: try row.double("centre_lat"),
-                    longitude: try row.double("centre_lon")
+                    latitude: try row.double("center_lat"),
+                    longitude: try row.double("center_lon")
                 ),
                 count: try row.int("member_count")
             )
@@ -604,13 +604,13 @@ public struct TreeQueries {
     /// ── Why the latitude is snapped to its degree band, which is not a rounding convenience ────
     /// The callers grid with `CAST((lat + 90) / latCell AS INTEGER)`: the origin is the **south
     /// pole**, so at San Francisco a cell index is around 171,000. Feed this the viewport's own
-    /// centre and `latCell` moves a little with every pan — `cos` is continuous — and a relative
+    /// center and `latCell` moves a little with every pan — `cos` is continuous — and a relative
     /// change of one part in five thousand slides an index of 171,000 by more than thirty whole
     /// cells. The grid is then not absolute at all: it re-lays itself under the camera, and every
     /// cell hands its pin to a different tree.
     ///
     /// It is measurable. `CypressTests/MapQueryPlanTests` pans the box by a quarter of its height and
-    /// compares the interior pin for pin: with the raw centre latitude, **67 of about 190** changed
+    /// compares the interior pin for pin: with the raw center latitude, **67 of about 190** changed
     /// identity — a third of the map picking a new tree per refetch, which is the flicker
     /// `TreeCluster.id`'s own comment promises does not happen. That comment was written about the
     /// `+90`/`+180` offsets, which do make the grid independent of the *box's corner*; nobody noticed
@@ -624,13 +624,13 @@ public struct TreeQueries {
     /// across a whole degree of latitude, which this app cannot do.
     static func cellSize(
         zoom: Int,
-        centreLatitude: Double,
+        centerLatitude: Double,
         points: Double = clusterCellPoints
     ) -> (latitude: Double, longitude: Double) {
         let clampedZoom = max(0, min(zoom, 22))
         let degreesPerPoint = 360.0 / (256.0 * pow(2.0, Double(clampedZoom)))
         let longitude = degreesPerPoint * points
-        let band = centreLatitude.rounded(.down) + 0.5
+        let band = centerLatitude.rounded(.down) + 0.5
         let latitude = longitude * max(cos(band * .pi / 180), 0.05)
         return (latitude: latitude, longitude: longitude)
     }
@@ -646,7 +646,7 @@ public struct TreeQueries {
     ///
     /// Ordering is by *squared* distance with a `cos(latitude)` correction on the longitude term —
     /// no `sqrt`, no trigonometry per row, and monotonically identical to true distance over a
-    /// neighbourhood-sized box. The metres each row reports are then computed exactly, once per
+    /// neighborhood-sized box. The meters each row reports are then computed exactly, once per
     /// returned row, by `Coordinate.distance(to:)`, so the number the UI renders is the real one
     /// and the list is re-sorted on it.
     ///
@@ -729,7 +729,7 @@ public struct TreeQueries {
 
     // MARK: - Profile
 
-    /// One inventory row plus its species, neighbourhood, and site lineage.
+    /// One inventory row plus its species, neighborhood, and site lineage.
     public struct TreeRecord: Sendable {
         public let tree: Tree
         public let species: Species?
@@ -907,7 +907,7 @@ public struct TreeQueries {
             address: try row.stringIfPresent("address"),
             siteType: try row.stringIfPresent("site_type"),
             // The seed keys neighborhoods by `name`, not by a uuid, so there is no id to carry.
-            // `TreeProfile.neighborhoodName` is where the neighbourhood actually surfaces.
+            // `TreeProfile.neighborhoodName` is where the neighborhood actually surfaces.
             neighborhoodID: nil,
             status: try row.value("status", TreeStatus.self),
             speciesCurrentID: row.optionalUUID("species_uuid"),

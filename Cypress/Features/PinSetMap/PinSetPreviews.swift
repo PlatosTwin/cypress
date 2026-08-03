@@ -6,7 +6,7 @@
 //
 //  - **the whole group** — nine young trees, all of them on the map, and the sentence says `All nine
 //    are on this map.`;
-//  - **a page of it** — 1,474 basins in the neighbourhood and 20 on the map, and the sentence says
+//  - **a page of it** — 1,474 basins in the neighborhood and 20 on the map, and the sentence says
 //    which twenty. The count above it is still 1,474, because that number is a `COUNT(*)`.
 //
 //  Previewed rather than described, because the whole argument of this screen is what a reader can
@@ -56,7 +56,7 @@ private enum PinSetPreviewFixtures {
         neighborhoodName: "Sunset/Parkside"
     )
 
-    /// One basin. E115 found no neighbourhood like this, but §5.6 is a rule about the general case and
+    /// One basin. E115 found no neighborhood like this, but §5.6 is a rule about the general case and
     /// `It is on this map.` has to be a sentence somebody can read.
     static let single = PinSet(
         subject: .vacantSites,

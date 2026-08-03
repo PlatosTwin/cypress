@@ -234,7 +234,7 @@ struct SpeciesClaimTests {
         let speciesAt = try #require(named.range(of: "London Plane")).lowerBound
         #expect(claimAt < speciesAt, "the species is named before the attribution: \(named)")
 
-        // And the empty form does not apologise for being empty.
+        // And the empty form does not apologize for being empty.
         let unnamed = VisitAddTreeCopy.species(nil)
         for word in ["missing", "required", "should", "incomplete", "please"] {
             let sentence = unnamed
@@ -303,7 +303,7 @@ struct SpeciesClaimTests {
 
     // MARK: - "After", not only "at the same time"
 
-    /// A store with the real catalogue attached. `claimSpecies` resolves the species before it writes
+    /// A store with the real catalog attached. `claimSpecies` resolves the species before it writes
     /// it — `community_trees.species_current` can carry no foreign key, because the `species` table is
     /// in an ATTACHed database — so these cases need the seed the add-flow cases do not.
     private static func seededStore() async throws -> CypressStore {
@@ -314,7 +314,7 @@ struct SpeciesClaimTests {
     /// Where the seeded cases stand.
     ///
     /// **Not `fix`.** The other tests here run against a store with no seed attached, so the Mission
-    /// corner is empty and anything may be added there. With the real catalogue attached the seed's
+    /// corner is empty and anything may be added there. With the real catalog attached the seed's
     /// 195,309 street trees come with it, and that corner has several inside the 10 m dedupe —
     /// `addTree` correctly refuses, and the first version of these tests failed with `add() → nil`,
     /// which is the API doing its job rather than a defect. This is a point in the Pacific west of
@@ -335,7 +335,7 @@ struct SpeciesClaimTests {
     }
 
     /// **The "after" half of the request, end to end**, and it goes through the same species search
-    /// the picker uses rather than a hand-written uuid — so a catalogue that stopped answering would
+    /// the picker uses rather than a hand-written uuid — so a catalog that stopped answering would
     /// fail this test rather than leaving it green against a constant.
     @MainActor
     @Test("a species named after the tree was added lands on the row and reads as a claim")
@@ -346,7 +346,7 @@ struct SpeciesClaimTests {
         #expect(try await Self.storedSpecies(of: id, in: store) == nil, "the tree was added with a species")
 
         let matches = try await api.searchSpecies(query: "Platanus", limit: SpeciesPickModel.resultLimit)
-        let chosen = try #require(matches.first, "the catalogue answered no Platanus")
+        let chosen = try #require(matches.first, "the catalog answered no Platanus")
 
         let updated = try await api.claimSpecies(treeID: id, speciesID: chosen.id)
         #expect(updated.speciesCurrentID == chosen.id)
@@ -378,7 +378,7 @@ struct SpeciesClaimTests {
         let plane = try #require(await api.searchSpecies(query: "Platanus", limit: 5).first)
         let oak = try #require(
             await api.searchSpecies(query: "Quercus", limit: 5).first { $0.id != plane.id },
-            "the catalogue answered no second species"
+            "the catalog answered no second species"
         )
 
         _ = try await api.claimSpecies(treeID: id, speciesID: plane.id)

@@ -98,7 +98,7 @@ struct BottomTabBar: View {
     private func icon(_ tab: Tab, tint: Color) -> some View {
         switch tab {
         case .map:
-            // 22×22 rounded square, 2px border, centred 6×6 dot.
+            // 22×22 rounded square, 2px border, centered 6×6 dot.
             RoundedRectangle(cornerRadius: CypressRadius.badge, style: .continuous)
                 .strokeBorder(tint, lineWidth: CypressSpacing.Component.tabIconStroke)
                 .overlay {

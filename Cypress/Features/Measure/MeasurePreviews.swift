@@ -32,7 +32,7 @@ enum MeasurePreviewFixtures {
 
     /// 16 §3's drawn sanity pill: `Last recorded 62 cm, Jun 2024`.
     static func previousDBH(
-        _ centimetres: Double = 62,
+        _ centimeters: Double = 62,
         method: MeasurementMethod = .tape,
         at capturedAt: Date = date(2024, 6, 14)
     ) -> TreeMeasurement {
@@ -41,7 +41,7 @@ enum MeasurePreviewFixtures {
             attribution: .anonymous(deviceID: deviceID),
             capturedAt: capturedAt,
             gpsAccuracyM: 7,
-            quantity: Quantity(value: centimetres, unit: .centimetres, method: method)
+            quantity: Quantity(value: centimeters, unit: .centimeters, method: method)
         )
     }
 

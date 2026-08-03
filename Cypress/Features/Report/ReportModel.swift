@@ -158,7 +158,7 @@ final class ReportModel {
     /// does.
     ///
     /// Failures are swallowed on purpose and this is the important half. A thrown read leaves
-    /// `landContext` nil, nil is `.city`, and `.city` is the behaviour every build before this one
+    /// `landContext` nil, nil is `.city`, and `.city` is the behavior every build before this one
     /// had. There is no error path on which this screen becomes *less* able to route a safety
     /// report than it was — the same rule `logHazardRedirect` keeps one method down, for the same
     /// reason: nothing may stand between a contributor and a safety call.
@@ -185,7 +185,7 @@ final class ReportModel {
     // There is no `select(note:)` any more, and its absence is the point (ERRATA E131). Screen 06's
     // neighborly chips are drawn and not tappable, because a `.note` selection had no reader
     // anywhere: no outbox kind, no submit CTA (ERRATA E22), and a `community_notes` row that account
-    // deletion could not honour (RULINGS R3, ERRATA E109). `ReportView.notePicker` carries the whole
+    // deletion could not honor (RULINGS R3, ERRATA E109). `ReportView.notePicker` carries the whole
     // argument. A mutator with no caller is the same shape as the control it used to serve — from
     // the outside it still looks like a write path — so it is gone rather than left behind a
     // comment.

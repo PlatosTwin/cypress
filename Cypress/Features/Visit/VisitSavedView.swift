@@ -321,7 +321,7 @@ struct VisitRouteMap: View {
 
         let width = max(size.width - inset * 2, 1)
         let height = max(size.height - inset * 2, 1)
-        // A degenerate span (one tree, or a perfectly straight row) centres rather than dividing
+        // A degenerate span (one tree, or a perfectly straight row) centers rather than dividing
         // by zero.
         let x = maxLon > minLon
             ? inset + (candidate.tree.coordinate.longitude - minLon) / (maxLon - minLon) * width

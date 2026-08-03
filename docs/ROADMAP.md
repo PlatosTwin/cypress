@@ -22,7 +22,7 @@ later should start.
 Three things learned along the way that outrank anything in the sequencing below.
 
 **Confident comments are where bugs live.** Four defects survived because documentation asserted the
-behaviour: `SQLiteError.code` described as a primary result code when the connection returns extended
+behavior: `SQLiteError.code` described as a primary result code when the connection returns extended
 ones, `Photo` documented as EXIF-stripped when nothing stripped it, `awaitingWifiCount` describing a
 predicate it did not implement, and `RootView` explaining that the location provider carried no
 accuracy an hour after it started to. Each read as verified. None was. **When auditing, start with
@@ -79,19 +79,19 @@ Ahead of new screens because both defects corrupt data that cannot be recovered 
 
 - **Unknown leaf retention** (ERRATA E9). `leafRetention` becomes optional so the app stops asserting
   evergreen-or-deciduous for species nobody established. Carries through to the seed, the SQLite
-  round trip, and every phenology and autumn-colour surface. Loads `Fixtures/species/*.yaml` into the
+  round trip, and every phenology and autumn-color surface. Loads `Fixtures/species/*.yaml` into the
   seed at the same time, and fixes two `sf_species_map.csv` defects: six non-taxa (`Shrub`, `Privet`,
   `To Be Determine`, …) mapped to real species ids, and `patanus racemosa ::` holding one species as
   two under different ids.
 - **Outbox drops shot type.** The payload carries `photoPaths: [String]` with no shot type, so every
-  synced photo is labelled `full_tree`. Fixed at the payload level, with migration for outbox rows
+  synced photo is labeled `full_tree`. Fixed at the payload level, with migration for outbox rows
   already persisted on disk.
 
 ---
 
 ## M1 — finish the core loop (screens 05, 06)
 
-**05 · Light check-in.** The five anchor rows, each a vitality judgement bound to its rubric
+**05 · Light check-in.** The five anchor rows, each a vitality judgment bound to its rubric
 sentence verbatim (D3). This is the highest-frequency contribution in the app and the one most
 exposed to the unresolved rubric question below, so it is built with the rubric text as data rather
 than as string literals in a view.
@@ -151,7 +151,7 @@ app, which turns out to be short.
 | 3 | **Account deletion** — §3.12 and the exclusive-ownership CHECK could not both hold | R3 → **E109** |
 | 4 | **Screen 01's navigation bar** — an opaque 91pt band on the one screen the spec calls full-bleed | **E110** |
 | 5 | **Screen 15 gated** behind `BetaCapability.accountsAvailable` | R4 → **E111** |
-| 6 | **The favourite comes off** — a tap that could be made and not taken back | R2 → **E112** |
+| 6 | **The favorite comes off** — a tap that could be made and not taken back | R2 → **E112** |
 | 7 | **A vacant site cannot open the tree profile** from any entrance | **E113** |
 | 8 | **Icon, accent, launch screen** | — |
 
@@ -192,7 +192,7 @@ Screen 14 currently offers "be the first to photograph this tree," which asserts
 there.
 
 **Decision: a distinct planting-site state, not a variant of the tree profile.** A site is not a
-tree with missing fields; it is a different kind of thing, and modelling it as a degraded tree is
+tree with missing fields; it is a different kind of thing, and modeling it as a degraded tree is
 what produced the wrong copy in the first place. It shows what the city recorded about the site,
 and its actions are *"report what's here"* and *"flag this as planted"* — both of which are claims
 about the site, not about a tree.
@@ -206,11 +206,11 @@ than a design.
 ### 2. Clustering versus SF's actual density (A1)
 
 A1 says individual pins at zoom ≥ 16. At zoom 16 the median screen holds **1,899 trees and 98.6% of
-pins overlap a neighbour**. 18 pt pins only separate at zoom 18.63 — a non-integer, so **no zoom
+pins overlap a neighbor**. 18 pt pins only separate at zoom 18.63 — a non-integer, so **no zoom
 level satisfies both A1 and the city**.
 
 **Decision: cluster until pins genuinely separate, and treat A1's threshold as an erratum.** A1 was
-written without SF's density in front of it; honouring it literally produces an unreadable screen,
+written without SF's density in front of it; honoring it literally produces an unreadable screen,
 which cannot be what it was for. The map opens closer than the spec implies and transitions to
 individual pins where they actually resolve.
 
@@ -227,7 +227,7 @@ derived.** The 78 specified pairs are a sample of a transform the designer appli
 fitting that transform and applying it to the remaining 59 is a far better guess than either
 per-token invention or leaving the app broken in the dark.
 
-The critical part is the second half: derived tokens are **labelled as derived in TokenGallery**, so
+The critical part is the second half: derived tokens are **labeled as derived in TokenGallery**, so
 review is one screen showing exactly the 59 values that were guessed, rather than an audit of the
 whole palette. Any token a designer corrects stops being derived and becomes specified.
 
@@ -239,9 +239,9 @@ badge, where the dark pair was documented in prose and initially transcribed as 
 
 ## Also outstanding
 
-**iNaturalist licensing.** Content is CC BY-NC and Cypress has a paid organisational tier. We store
+**iNaturalist licensing.** Content is CC BY-NC and Cypress has a paid organizational tier. We store
 aggregate integers, which is defensible, but it is a position rather than a permission. The
-dependency is kept removable: dropping it costs 11 bloom arrays, 8 fruit arrays and one fall-colour
+dependency is kept removable: dropping it costs 11 bloom arrays, 8 fruit arrays and one fall-color
 array, and should remain a configuration change rather than a refactor. **Needs a human answer
 before launch, not before the next screen.**
 
@@ -249,15 +249,15 @@ before launch, not before the next screen.**
 question. Screen 05 is built with rubric text as data specifically so that answering it later is a
 content change.
 
-**The MapKit road-colour inversion.** The mock draws streets lighter than blocks; MapKit renders
-roads darker and exposes no way to recolour them independently. `MapCanvas(basemap:overlay:)` is
+**The MapKit road-color inversion.** The mock draws streets lighter than blocks; MapKit renders
+roads darker and exposes no way to recolor them independently. `MapCanvas(basemap:overlay:)` is
 kept as the seam for a vector basemap. Not scheduled — it is a real visual departure from the mock,
 and worth doing only if the map's look is judged to matter more than the work.
 
 *(The "structural VoiceOver is not machine-checked" entry that stood here is resolved. `CypressUITests`
 is a black-box XCUITest target (E116), and `DebugDeepLink`'s `CYPRESS_SCREEN` environment variable
 opens any screen for it (E117), so fifteen structural tests now read the accessibility tree of the map
-plus fourteen screens behind it. Every one of the 188 interactive elements found was labelled; the
+plus fourteen screens behind it. Every one of the 188 interactive elements found was labeled; the
 suite additionally pins that no modal leaks the screen behind it to assistive technology, and that
 every pushed screen has a reachable Back. **Screen 19 remains unread, and the reason is the data**: the
 seed holds only `alive` and `vacant_site`, so no `removed` tree exists to open a memorial with, and

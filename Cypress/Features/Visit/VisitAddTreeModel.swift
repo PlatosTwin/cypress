@@ -13,7 +13,7 @@
 //
 //  ── Why this is not an invented screen ────────────────────────────────────────────────────
 //  BUILD-PLAN §9's M2 list names "**duplicate-proximity warning on add-a-tree**" as a required,
-//  unmocked state, and §7's endpoint table specifies the behaviour it warns about: "`POST /trees` —
+//  unmocked state, and §7's endpoint table specifies the behavior it warns about: "`POST /trees` —
 //  Community add: requires photo, species optional; runs the proximity dedupe check (10 m, any
 //  species) and returns conflict with the candidate list when it trips". So the *flow* is required
 //  and its one hard state is named; what is missing is a mock of it. Per ARCHITECTURE rule 8 the
@@ -55,7 +55,7 @@
 //  *"When adding a tree need option to mark it as a tree on private property vs city park vs street
 //  tree"*, and later, from real use: *"I don't see option to select city or park or private yard when
 //  adding tree. still being built?"*. It is three chips on this screen — **not a fourth phase**. The
-//  pin map and the species catalogue are phases because each is a whole screen with its own
+//  pin map and the species catalog are phases because each is a whole screen with its own
 //  interaction; three chips are not, and a step between the photograph and the CTA that exists to
 //  hold three chips would be the second separate step this flow was told not to grow.
 //
@@ -88,13 +88,13 @@ final class VisitAddTreeModel {
         case placingPin
         /// The species picker is up. A phase for exactly the reason `placingPin` is one — the flow
         /// rebuilds this model per step, so a step would throw the photograph away on the way to the
-        /// catalogue and back.
+        /// catalog and back.
         case pickingSpecies
         /// `addTree` is running.
         case adding
         /// BUILD-PLAN §9 M2's "duplicate-proximity warning on add-a-tree". The candidates are the
         /// API's, and every one of them is inside 10 m of the spot — `LocalAPI.addTree` re-checks the
-        /// exact metres before it refuses (ERRATA E35).
+        /// exact meters before it refuses (ERRATA E35).
         case duplicate([NearbyTree])
         /// The add failed for a reason that is not a duplicate.
         case failed(String)
@@ -186,7 +186,7 @@ final class VisitAddTreeModel {
     ///    its own boundary is a screen inventing a rule — E141's opening move, which does carry.
     ///
     /// **Optional is not the same as hidden, and that is where this differs from the species row.**
-    /// Naming a species costs a trip to a 569-row catalogue, so that row is a sentence and a link.
+    /// Naming a species costs a trip to a 569-row catalog, so that row is a sentence and a link.
     /// This is three chips, on the composer, always visible, one tap to answer and no taps to skip.
     /// The question is asked as plainly as a required field would ask it; only the refusal is free.
     private(set) var landContext: LandContext?
@@ -246,7 +246,7 @@ final class VisitAddTreeModel {
     /// Derived from `placement` rather than tracked beside it, so the sentence on screen and the value
     /// in the column cannot drift apart. In particular a pin nudged back onto the fix has already
     /// become `.gps` in `confirmPin`, and it is `.gps` here too, because a reader who moved nothing
-    /// made no judgement to record.
+    /// made no judgment to record.
     var treePlacement: TreePlacement {
         isReaderPlaced ? .contributorPlaced : .gps
     }
@@ -260,7 +260,7 @@ final class VisitAddTreeModel {
     /// Gate 2, on its own: there has to be a fix before there is anything to move the pin away from.
     ///
     /// This is what keeps the pin from becoming a way to add a tree with no GPS at all. A reader with
-    /// a refused or pending fix gets no map, because a map with no anchor has no centre, no bound and
+    /// a refused or pending fix gets no map, because a map with no anchor has no center, no bound and
     /// nothing to measure a displacement against — and a coordinate typed onto a map from a sofa is
     /// exactly the record `VisitAddTreeModel`'s rule 2 exists to refuse.
     var canAdjustPin: Bool {
@@ -353,7 +353,7 @@ final class VisitAddTreeModel {
     /// The fix the map is anchored on, frozen for as long as the pin screen is up.
     ///
     /// Set when the map opens and kept afterwards, so re-opening the screen puts the reader back on
-    /// the same circle rather than on a new one centred wherever they have since wandered. See
+    /// the same circle rather than on a new one centered wherever they have since wandered. See
     /// `VisitPinAdjustView.anchor` for why a live anchor would be wrong.
     private(set) var pinAnchor: Coordinate?
 
@@ -384,7 +384,7 @@ final class VisitAddTreeModel {
     ///
     /// **A pin left at the fix is the fix.** A reader who opens the map, looks around and confirms
     /// without moving anything has not placed a coordinate, and recording that as reader-placed would
-    /// claim a judgement nobody made. Below `VisitPinAdjust.fixToleranceM` the placement goes back to
+    /// claim a judgment nobody made. Below `VisitPinAdjust.fixToleranceM` the placement goes back to
     /// `.gps`, which also puts the coordinate back on the live fix — the honest state for somebody
     /// who is standing at the tree after all.
     func confirmPin(_ coordinate: Coordinate) {
@@ -397,7 +397,7 @@ final class VisitAddTreeModel {
 
     // MARK: - The species
 
-    /// Opens the catalogue. Unlike `beginPlacingPin` there is no gate: naming a species needs neither
+    /// Opens the catalog. Unlike `beginPlacingPin` there is no gate: naming a species needs neither
     /// a fix nor a photograph, and a reader who is waiting for one may as well spend the wait saying
     /// what the tree is. The CTA still refuses for its own two reasons.
     func beginPickingSpecies() {
@@ -412,7 +412,7 @@ final class VisitAddTreeModel {
     }
 
     /// "I'm not sure" — and note that this *clears* rather than merely closing. Somebody who opens
-    /// the catalogue over a species they had already named and comes back out saying they are not
+    /// the catalog over a species they had already named and comes back out saying they are not
     /// sure has retracted the claim, and leaving the old one on the draft would keep a statement its
     /// author has just withdrawn.
     func skipSpecies() {
@@ -469,7 +469,7 @@ final class VisitAddTreeModel {
     ///
     /// The coordinate is `coordinate`, which is the fix unless the reader placed a pin — and the 10 m
     /// dedupe therefore runs against wherever the pin ended up, not against the phone. That is the
-    /// behaviour the row-of-trees case needs in both directions: five trees photographed from one spot
+    /// behavior the row-of-trees case needs in both directions: five trees photographed from one spot
     /// no longer collide with each other, and a pin dragged onto a tree that is already on record is
     /// still refused, by the same rule, with the same candidate list.
     func add() async -> UUID? {

@@ -180,7 +180,7 @@ final class TreeProfileModel {
         isNamingSpecies = true
     }
 
-    /// Cancelling the picker leaves neither flag set, so the next open starts from whatever the
+    /// Canceling the picker leaves neither flag set, so the next open starts from whatever the
     /// screen offers then.
     func cancelNamingSpecies() {
         isNamingSpecies = false

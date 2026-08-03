@@ -187,7 +187,7 @@ struct DynamicTypeScreenshotTests {
         // Every capture is one device viewport, which is the frame a person actually holds — so
         // there is no size to assert and the images are the output. ARCHITECTURE §7 is explicit
         // that snapshot testing against the mocks is not set up, and a baseline-free snapshot
-        // suite passes on a blank image; this renders, prints the paths, and leaves the judgement
+        // suite passes on a blank image; this renders, prints the paths, and leaves the judgment
         // to a reviewer.
         _ = heights
     }

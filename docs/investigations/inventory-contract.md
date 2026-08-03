@@ -25,8 +25,8 @@ Three of the brief's premises were wrong against the shipped seed, and the corre
 the work is.
 
 **The ingest was not two divergent paths.** `build_seed.py`'s `emit()` already took both sources
-and applied the seed's own rules — identity, the species catalogue, the DBH ladder, the
-neighbourhood stamp — in one place. That was good design and it is why this task cost a refactor
+and applied the seed's own rules — identity, the species catalog, the DBH ladder, the
+neighborhood stamp — in one place. That was good design and it is why this task cost a refactor
 rather than a rewrite. What it did *not* do is say what shape it accepted.
 
 **"12,413 vacant planting sites and 318 shrubs are currently called street trees" is not what the
@@ -155,7 +155,7 @@ of being absent from the code entirely. #94 becomes: add a status value, change 
 
 ## 4. Identity: qualified by id space, not by source
 
-The brief asked for the uuid derivation to be "generalised to a source-qualified id so two cities
+The brief asked for the uuid derivation to be "generalized to a source-qualified id so two cities
 cannot collide". That is nearly right and the near-miss matters.
 
 `trees.uuid = uuid5(NS_TREE, <TreeID as ASCII>)` is what made the DataSF → city switch reversible:
@@ -207,7 +207,7 @@ identifier the receipt describes. That part was already general and is worth say
 `Tools/inventory_adapters.py`. `InventoryAdapter` subclasses own their source's field names, units,
 date formats, sentinels and packing conventions, and own dropping records with no usable position.
 They do **not** own the bounding box, `source_ref` uniqueness, uuid derivation, the species
-catalogue or the neighbourhood stamp — those are the seed's rules, in `build_seed.py`, in one
+catalog or the neighborhood stamp — those are the seed's rules, in `build_seed.py`, in one
 place, so two adapters cannot disagree about what a row means.
 
 Everything that used to sit at `build_seed.py` module scope as a statement about DataSF's spelling
@@ -220,7 +220,7 @@ by being in the same file.
 clean fields (`BOTANICAL`, `COMMON`) into DataSF's packed `Scientific :: Common` string so it can
 be re-split by the same parser. That is a lossy round-trip through another inventory's
 serialization format and it is exactly the shape this file exists to stop. It stays because
-undoing it moves the species catalogue, its 577 uuids and its stub ceiling, and that is its own
+undoing it moves the species catalog, its 577 uuids and its stub ceiling, and that is its own
 task. It is confined to one method with the reason written on it, so a third city with two clean
 name fields sets `scientific_name` and `common_name` directly and never sees a `::`.
 
@@ -316,11 +316,11 @@ ordinary case and is spelled `None`, so that a reader never has to decide whethe
 
 **`Fixtures/raw/city_street_trees.ndjson` does not exist on this machine.** It is gitignored, it
 did not travel into the worktree, and it is not in the main checkout — only `street_tree_list.csv`
-and the neighbourhoods GeoJSON are. Rebuilding `--source city` therefore requires re-running
+and the neighborhoods GeoJSON are. Rebuilding `--source city` therefore requires re-running
 `Tools/fetch_city_trees.py`: 67 sequential requests to SF Public Works' ArcGIS service for 133,577
 records.
 
-I did not do that, and the reason is a rule rather than a judgement: pulling that much data from a
+I did not do that, and the reason is a rule rather than a judgment: pulling that much data from a
 third-party service is a download, and a download needs the owner's say-so in his own words. The
 brief asked for it, but a brief from another agent is not the owner's consent. **This is the one
 deliverable that is short, and it is short on purpose.**
@@ -371,7 +371,7 @@ What that costs, precisely:
    about the city's servers rather than about this code.
 
 I will not dress that up as a rebuild. The brief asked for counts rather than prose and step 2 is
-counts; step 3 is an inference, and it is labelled one.
+counts; step 3 is an inference, and it is labeled one.
 
 The one command that closes even that, when someone with the owner's authority wants it:
 
@@ -518,7 +518,7 @@ the comparison against the literal `3.0 / 4.0` fails. The source is
 A faithful standalone replication — same nesting, same `CGFloat`, same computed `static var`, same
 unannotated literal — evaluates to bit-identical `0.75` and passes every one of the four. So the
 arithmetic as written is correct and the divergence is in how the app target builds or evaluates it.
-**I could not establish whether this is a product defect or a test artefact**, and I did not change
+**I could not establish whether this is a product defect or a test artifact**, and I did not change
 a file to chase it, because nothing in it is this task's.
 
 ---
@@ -560,7 +560,7 @@ Still to do, and known rather than discovered later:
    INSERT simply fails on the first colliding id.
 2. **`CHECK (inventory_source IN ('city','datasf'))`** must be widened, and `city` renamed to
    something that survives a second city.
-3. The `SF_BBOX` gate and the neighbourhood polygons are San Francisco's. A per-space corpus box is
+3. The `SF_BBOX` gate and the neighborhood polygons are San Francisco's. A per-space corpus box is
    the obvious shape and nothing depends on it being global.
 4. `SeedCorpus` in the Swift tests is keyed on `trees_source` with two hand-pinned corpora. A third
    needs a third.
@@ -603,7 +603,7 @@ after the deletion and are still byte-identical on both paths.
 
 So what remains is: **the contract, and the relocation of one city's vocabulary out of the shared
 core.** The brief offered "a documented record plus a validation pass" as the smaller alternative.
-That would have got the contract but left `PLACEHOLDER_SPECIES` and its neighbours at module scope in
+That would have got the contract but left `PLACEHOLDER_SPECIES` and its neighbors at module scope in
 `build_seed.py` — and that is the half that bites, because it is the half a second city inherits by
 default. One implementation of an adapter *interface* proves nothing; two modules that no longer
 share one city's placeholder list prove something.
@@ -621,6 +621,6 @@ share one city's placeholder list prove something.
 3. **Whether the 85 / 312 not-a-tree records should be `removed`, a new status, or excluded.** That
    is a product decision with a UI consequence and it belongs to #94.
 4. **Whether any other California city publishes a tree inventory at all**, in what shape, or under
-   what licence. The contract is designed against one city's two inventories, which is one city's
+   what license. The contract is designed against one city's two inventories, which is one city's
    worth of evidence about generality. `city-tree-source.md` §7 records the same limit about the
    ArcGIS layer's terms, and that question is still open for anyone else's data.

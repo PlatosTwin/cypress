@@ -23,7 +23,7 @@ import Foundation
 
 enum SheetDismissRule {
 
-    /// A slow drag dismisses once the finger has travelled this fraction of the card's height.
+    /// A slow drag dismisses once the finger has traveled this fraction of the card's height.
     static let dragFraction: CGFloat = 0.25
 
     /// A flick dismisses once the *predicted* end of the gesture — translation with velocity

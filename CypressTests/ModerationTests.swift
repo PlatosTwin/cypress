@@ -226,7 +226,7 @@ struct ModerationTests {
         #expect(presentation.quadActions.contains(.care))
     }
 
-    /// A confirmed removal still becomes a memorial. The generalisation must not have flattened the
+    /// A confirmed removal still becomes a memorial. The generalization must not have flattened the
     /// two outcomes into one.
     @Test("the two confirmed statuses stay different — removal is still a memorial")
     func theTwoOutcomesDiffer() async throws {
@@ -251,7 +251,7 @@ struct ModerationTests {
         #expect(try await api.treeProfile(id: tree.id).tree.status == .alive)
     }
 
-    @Test("a confirmed-dead tree draws a grey pin that does not call itself a memorial")
+    @Test("a confirmed-dead tree draws a gray pin that does not call itself a memorial")
     func deadPinDoesNotSayMemorial() async throws {
         let (api, outbox) = try await Self.harness(role: .coordinator)
         let tree = try await Self.makeTree(api: api)
@@ -284,7 +284,7 @@ struct ModerationTests {
             verificationState: .cityRecord,
             speciesID: nil
         )
-        #expect(MapPinKind.kind(for: cityPin) == .removed, "grey is right — there is no living tree here")
+        #expect(MapPinKind.kind(for: cityPin) == .removed, "gray is right — there is no living tree here")
         let spoken = MapPinKind.accessibilityLabel(for: cityPin)
         #expect(!spoken.lowercased().contains("memorial"), "a standing dead tree is not a memorial: \(spoken)")
         #expect(!spoken.lowercased().contains("removed"), "it has not been removed: \(spoken)")

@@ -142,7 +142,7 @@ struct ContrastTests {
 
     // MARK: - The four species slots, on every ground screen 01 draws
 
-    /// **The grounds a map pin actually sits on, which is not one colour.**
+    /// **The grounds a map pin actually sits on, which is not one color.**
     ///
     /// `body` above measures the city pin and the amber pin against `surface.map.paper` and stops
     /// there, and that is the easiest of the seven: the paper is the lightest thing on the map in
@@ -216,10 +216,10 @@ struct ContrastTests {
     /// **The residual class must not be one of the four**, because Canopy green means "a street tree
     /// whose species is not being asserted" and the four slots mean "this species". A palette that
     /// drifted a slot toward the house green would turn the residual into a fifth group and make the
-    /// encoding's one claim — same colour, same species — false.
+    /// encoding's one claim — same color, same species — false.
     ///
     /// **Measured in OKLab ΔE, not in WCAG contrast**, and the distinction is the point. WCAG
-    /// contrast is a luminance ratio, so two colours of the same lightness and opposite hue read as
+    /// contrast is a luminance ratio, so two colors of the same lightness and opposite hue read as
     /// 1.0:1 — it is the right tool for "can I see this mark against that ground" and the wrong one
     /// for "can I tell these two marks apart". Every separation claim the palette makes is a ΔE, and
     /// the floor is 0.09: four and a half times the ~0.02 just-noticeable difference, and just under
@@ -231,17 +231,17 @@ struct ContrastTests {
             ("the amber pin (\"this tree needs something\")", CypressColor.accentAmber),
             ("a cluster badge", CypressColor.ctaFill),
             ("the reader's own GPS dot", CypressColor.gpsDot),
-            ("a memorial's grey", CypressColor.pinRemovedFill),
+            ("a memorial's gray", CypressColor.pinRemovedFill),
         ]
         for (appearance, traits) in [("light", Self.light), ("dark", Self.dark)] {
             for slot in Self.speciesSlots {
-                for (what, colour) in reserved {
-                    let separation = Self.deltaE(slot.fill, colour, traits)
+                for (what, color) in reserved {
+                    let separation = Self.deltaE(slot.fill, color, traits)
                     #expect(
                         separation >= 0.09,
                         """
                         \(slot.name) is ΔE \(String(format: "%.3f", separation)) from \(what) in \
-                        \(appearance). A species colour that can be taken for one of the map's \
+                        \(appearance). A species color that can be taken for one of the map's \
                         existing fills lets a reader read a wrong answer off the map, which is the one \
                         thing the species palette search was constrained to prevent.
                         """
@@ -251,7 +251,7 @@ struct ContrastTests {
         }
     }
 
-    /// …and the four are that far apart from **each other**, which is the claim "same colour, same
+    /// …and the four are that far apart from **each other**, which is the claim "same color, same
     /// species" rests on. A pair below the floor would mean two species a reader merges.
     @Test("the four species slots are pairwise distinguishable in both appearances")
     func slotsAreDistinguishableFromEachOther() {
@@ -262,7 +262,7 @@ struct ContrastTests {
                     separation >= 0.09,
                     """
                     \(first.name) and \(second.name) are ΔE \(String(format: "%.3f", separation)) apart \
-                    in \(appearance). Two slots a reader cannot tell apart are one colour with two \
+                    in \(appearance). Two slots a reader cannot tell apart are one color with two \
                     meanings, and the map would be asserting that two species are the same tree.
                     """
                 )
@@ -278,7 +278,7 @@ struct ContrastTests {
 
     /// Euclidean distance in OKLab — the space ERRATA E8's derivation and the species palette search both
     /// work in. Written out here for the same reason `contrast` is: the design system carries no
-    /// colour maths at runtime and does not need any.
+    /// color maths at runtime and does not need any.
     static func deltaE(_ a: Color, _ b: Color, _ traits: UITraitCollection) -> Double {
         func oklab(_ color: Color) -> (Double, Double, Double) {
             var r: CGFloat = 0, g: CGFloat = 0, bl: CGFloat = 0, alpha: CGFloat = 0
@@ -305,7 +305,7 @@ struct ContrastTests {
     // MARK: - Everything else that is text on a surface
 
     /// The rest of the palette, pair by pair as the screens draw them. Each row is a place a
-    /// sentence sits on a fill; nothing here is a colour pair invented to be measured.
+    /// sentence sits on a fill; nothing here is a color pair invented to be measured.
     static let body: [Pair] = [
         // Screen and card grounds — the four text ramps against the two surfaces they sit on.
         Pair(what: "text.ink on the screen", foreground: CypressColor.textInk, background: CypressColor.surfaceScreen, floor: 4.5),
@@ -423,7 +423,7 @@ struct ContrastTests {
     @Test("the grounds R1 was written without clear AA in dark")
     func offSurfaceInDark() { assertAll(Self.offSurface, Self.dark, "dark") }
 
-    /// `text.faintAlt` is not a rung — it is a second footnote colour that sits between `faint`
+    /// `text.faintAlt` is not a rung — it is a second footnote color that sits between `faint`
     /// and `muted` — but it is text on the same grounds and takes the same floor.
     @Test("text.faintAlt clears AA on every ground, in both appearances")
     func faintAltClearsAA() {
@@ -442,7 +442,7 @@ struct ContrastTests {
     }
 
     /// **The ramp is a ramp.** Four rungs that each clear 4.5 are not yet a ramp — four rungs at
-    /// 4.6, 4.7, 4.8 and 4.9 would pass every assertion above and be one colour with four names.
+    /// 4.6, 4.7, 4.8 and 4.9 would pass every assertion above and be one color with four names.
     /// So the ordering is pinned as well as the floors: contrast strictly increases from `faint`
     /// to `ink` on every ground in both appearances, which is what makes it impossible for a
     /// future edit to collapse two rungs into each other quietly. R1 re-spaced the ramp precisely
@@ -461,7 +461,7 @@ struct ContrastTests {
                         \(lower.0) is \(String(format: "%.2f", lower.1)):1 and \(upper.0) is \
                         \(String(format: "%.2f", upper.1)):1 on the \(appearance) \(ground.name). \
                         The rung above must read as above: two adjacent rungs at the same contrast \
-                        are one colour with two names, which is what RULINGS R1 re-spaced the ramp \
+                        are one color with two names, which is what RULINGS R1 re-spaced the ramp \
                         to prevent.
                         """
                     )
@@ -470,7 +470,7 @@ struct ContrastTests {
         }
         // …and `faintAlt` keeps the place between the two bottom rungs that §1.2 gave it. Not
         // strict at both ends: D3 documents one dark faint, so `faint` and `faintAlt` are the same
-        // colour after dark and were before R1 too.
+        // color after dark and were before R1 too.
         for (appearance, traits) in [("light", Self.light), ("dark", Self.dark)] {
             for ground in Self.grounds {
                 let value = { (color: Color) in
@@ -484,7 +484,7 @@ struct ContrastTests {
                     """
                     text.faintAlt is \(String(format: "%.2f", alt)):1 on the \(appearance) \
                     \(ground.name), outside faint \(String(format: "%.2f", faint)) … muted \
-                    \(String(format: "%.2f", muted)). The footnote colour sits between the two \
+                    \(String(format: "%.2f", muted)). The footnote color sits between the two \
                     bottom rungs; a footnote that reads as a caption or as a micro-label is a rung \
                     the ramp does not have.
                     """
@@ -550,7 +550,7 @@ struct ContrastTests {
             foreground: CypressColor.chartSeriesPrimary, background: CypressColor.surfaceCard,
             light: 6.29, dark: 3.05,
             because: "R8/E122: dark lifted lightness-only #2F6B4F→#3C785B; no dash — 13's series are "
-                + "text-labelled strips, already distinct without hue"
+                + "text-labeled strips, already distinct without hue"
         ),
         Pin(
             what: "C23 series 3 (Bark) on a dark card",
@@ -689,9 +689,9 @@ struct ContrastTests {
     ///    one place a border *was* required is C24, and that one is fixed above.
     /// 2. **C23 and C10 both left this list** and are in `retinted`. R8 deferred C23 on a
     ///    measurement — the lightness move costs 38% of series 1's separation from series 2 — but
-    ///    E122 found the premise wrong: `ActivityView` draws the three series as *text-labelled,
+    ///    E122 found the premise wrong: `ActivityView` draws the three series as *text-labeled,
     ///    spatially separate strips* (`ChartSeriesLegend` names each, plus a VoiceOver label), so
-    ///    they were never "separated by hue alone" and the pre-authorised dash solves a problem that
+    ///    they were never "separated by hue alone" and the pre-authorized dash solves a problem that
     ///    does not exist. C23 is therefore a plain lightness-only fix like C10, and both now pass at
     ///    3:1. C10's own story: E8 exempted the `?` as decorative — "the tile's meaning is in its
     ///    label" — and that was wrong, because `SpeciesTile`'s locked case draws the `?` and nothing

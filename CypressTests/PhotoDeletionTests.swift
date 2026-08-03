@@ -286,7 +286,7 @@ struct PhotoDeletionTests {
         #expect(try await api.treeProfile(id: tree.id).photos.items.isEmpty)
     }
 
-    /// Everybody's votes, not only the deleter's: they were judgements about a thing that no longer
+    /// Everybody's votes, not only the deleter's: they were judgments about a thing that no longer
     /// exists, which is `AccountDeletion`'s argument for the same deletion under the erasing door.
     @Test("every vote on a deleted photograph goes, including a stranger's")
     func votesDoNotOutliveThePhotograph() async throws {
@@ -328,7 +328,7 @@ struct PhotoDeletionTests {
     // MARK: - The last photograph of a community add
 
     /// BUILD-PLAN §6: "Community add: requires photo". Deleting the only photograph of a tree that
-    /// exists because of it is a real conflict, settled in favour of the person: allowed, named in
+    /// exists because of it is a real conflict, settled in favor of the person: allowed, named in
     /// the copy before the tap, and reported by the call.
     @Test("the last photograph of an added tree can be deleted, and the tree stays")
     func theLastPhotographOfACommunityAddIsDeletable() async throws {

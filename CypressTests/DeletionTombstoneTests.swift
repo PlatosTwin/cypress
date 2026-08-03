@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import Cypress
 
-/// "Anonymised means anonymous, permanently" — the project owner's ruling on #74, made checkable
+/// "Anonymized means anonymous, permanently" — the project owner's ruling on #74, made checkable
 /// (RULINGS, "the owner's own decisions", 2026-07-26; ERRATA — see
 /// E157).
 ///
@@ -17,7 +17,7 @@ import Testing
 /// worth anything. The sentences below, in the order they can go wrong:
 ///
 /// 1. **the claim skips them** — all four contribution kinds, not the one that is easiest to test;
-/// 2. **the device's own work is still claimed** — the tombstone distinguishes *anonymised by a
+/// 2. **the device's own work is still claimed** — the tombstone distinguishes *anonymized by a
 ///    deletion* from *never had an account*, and if it did not, the fix would have broken D9;
 /// 3. **the queue cannot smuggle one back** — a contribution written before the deletion and
 ///    applied after it is born unattributed, and is the one case a tombstone written as a column on
@@ -25,7 +25,7 @@ import Testing
 /// 4. **nothing on screen shows them** — the journal, the grove, and the count screen 15 states;
 /// 5. **the copy says what it costs**, because the accepted price of a permanent tombstone falls on
 ///    the person themselves as much as on a stranger.
-@Suite("A deletion's anonymised records stay nobody's")
+@Suite("A deletion's anonymized records stay nobody's")
 struct DeletionTombstoneTests {
 
     // MARK: - Fixtures
@@ -75,7 +75,7 @@ struct DeletionTombstoneTests {
                     treeID: treeID,
                     attribution: attribution,
                     capturedAt: moment,
-                    quantity: Quantity(value: 31, unit: .centimetres, method: .tape)
+                    quantity: Quantity(value: 31, unit: .centimeters, method: .tape)
                 ),
                 connection: connection
             )
@@ -106,7 +106,7 @@ struct DeletionTombstoneTests {
 
     // MARK: - 1. The claim skips them
 
-    @Test("a record the leaving door anonymised is not adopted by the next account on the phone")
+    @Test("a record the leaving door anonymized is not adopted by the next account on the phone")
     func theNextAccountDoesNotInheritAnonymizedRecords() async throws {
         let (store, api) = try await Self.signedIn()
         let tree = try await Self.makeTree(api: api)
@@ -117,7 +117,7 @@ struct DeletionTombstoneTests {
         )
 
         let outcome = try await api.deleteAccount(.leaveRecords)
-        #expect(outcome.anonymizedContributions == 4, "fixture: all four kinds were anonymised")
+        #expect(outcome.anonymizedContributions == 4, "fixture: all four kinds were anonymized")
 
         // Every one of them still carries the installation id, which is the state that made this a
         // defect: `device_id` is NOT NULL and is deliberately not cleared, because clearing it would
@@ -141,7 +141,7 @@ struct DeletionTombstoneTests {
         }
     }
 
-    @Test("the tombstone names every table the leaving door anonymises")
+    @Test("the tombstone names every table the leaving door anonymizes")
     func everyAnonymizedTableIsTombstoned() async throws {
         let (store, api) = try await Self.signedIn()
         let tree = try await Self.makeTree(api: api)
@@ -168,7 +168,7 @@ struct DeletionTombstoneTests {
                 """,
                 in: store
             )
-            #expect(marked == 1, "\(table)'s anonymised row carries no tombstone")
+            #expect(marked == 1, "\(table)'s anonymized row carries no tombstone")
         }
     }
 
@@ -181,7 +181,7 @@ struct DeletionTombstoneTests {
         let tree = try await Self.makeTree(api: api)
 
         // Never signed in, never deleted: D9's ordinary contributor, whose rows look identical to an
-        // anonymised one in every column. The tombstone is the only thing that tells them apart, and
+        // anonymized one in every column. The tombstone is the only thing that tells them apart, and
         // this is the test that fails if the fix had cleared `device_id` instead.
         try await Self.writeContributions(
             treeID: tree.id,
@@ -268,7 +268,7 @@ struct DeletionTombstoneTests {
         #expect(try await Self.scalar("SELECT COUNT(*) AS n FROM visits", in: store) == 0)
 
         let outcome = try await api.deleteAccount(.leaveRecords)
-        #expect(outcome.anonymizedOutboxItems == 1, "fixture: the queued visit was anonymised in place")
+        #expect(outcome.anonymizedOutboxItems == 1, "fixture: the queued visit was anonymized in place")
 
         // The phone finds wifi.
         _ = try await outbox.drain()
@@ -284,7 +284,7 @@ struct DeletionTombstoneTests {
 
     // MARK: - 4. Nothing on screen shows them
 
-    @Test("the anonymised records are gone from every device-scoped surface")
+    @Test("the anonymized records are gone from every device-scoped surface")
     func noDeviceScopedSurfaceShowsThem() async throws {
         let (store, api) = try await Self.signedIn()
         let tree = try await Self.makeTree(api: api)

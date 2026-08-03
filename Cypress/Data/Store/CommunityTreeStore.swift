@@ -205,7 +205,7 @@ public struct CommunityTreeStore {
     /// `ORDER BY`, so a `LIMIT` inside it drops rows in storage order rather than by distance — the
     /// row it discards can be the one 3 m away, and a dedupe that misses its own duplicate admits a
     /// second record of the same tree. The box is a pre-filter; the circle and the limit are the
-    /// answer, and they are applied to exact metres. This table holds tens of rows within any
+    /// answer, and they are applied to exact meters. This table holds tens of rows within any
     /// dedupe radius, so reading it whole costs nothing.
     public func near(_ coordinate: Coordinate, radiusM: Double, limit: Int, connection: SQLiteConnection) throws -> [Tree] {
         let bounds = BoundingBox(around: coordinate, radiusM: radiusM)

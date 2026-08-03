@@ -89,7 +89,7 @@ final class VisitSavedModel {
 
     func load() async {
         // The ledger answers D9's question — has the ask earned its interruption. `mayAsk` answers a
-        // different one the ledger has no business knowing: whether this build could honour it.
+        // different one the ledger has no business knowing: whether this build could honor it.
         // Screen 15 is built and cannot sign anyone in until a server exists to send a magic link
         // (RULINGS R4), so it is not presented, and no presentation is spent refusing.
         shouldPresentAccountAsk = ledger.recordSave(mayAsk: BetaCapability.accountsAvailable)
@@ -103,7 +103,7 @@ final class VisitSavedModel {
         else { return }
 
         var ordered = rows.sorted { $0.distanceM < $1.distanceM }.map(VisitCandidate.init(nearby:))
-        // The tree just saved leads the list even if the phone has drifted a few metres since.
+        // The tree just saved leads the list even if the phone has drifted a few meters since.
         if let index = ordered.firstIndex(where: { $0.id == receipt.visit.treeID }) {
             let current = ordered.remove(at: index)
             ordered.insert(current, at: 0)

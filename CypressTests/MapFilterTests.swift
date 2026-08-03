@@ -183,7 +183,7 @@ struct MapFilterTests {
     /// **An empty membership set narrows the map to nothing — it does not widen it to everything.**
     ///
     /// This is the failure mode that would be invisible in use and catastrophic in meaning: a reader
-    /// with no favourites taps `Favourites` and is shown the entire city as though all of it were
+    /// with no favorites taps `Favorites` and is shown the entire city as though all of it were
     /// theirs. `nil` means "not narrowed"; `[]` means "narrowed to nothing", and the two must not
     /// collapse anywhere between `MapModel` and the SQL.
     @Test("an empty membership set empties the map rather than showing every tree")
@@ -201,15 +201,15 @@ struct MapFilterTests {
         #expect(answer.items.isEmpty, "an empty membership set drew \(answer.items.count) pins")
     }
 
-    // MARK: - 2. Favourites
+    // MARK: - 2. Favorites
 
-    /// **A favourite is held; an un-favourite is not.**
+    /// **A favorite is held; an un-favorite is not.**
     ///
-    /// The tombstone is the whole test. A favourite toggle keeps its row and sets `deleted_at`
+    /// The tombstone is the whole test. A favorite toggle keeps its row and sets `deleted_at`
     /// (BUILD-PLAN §4), so a query that forgot the clause would report every tree the reader had
     /// *ever* hearted as one they still hold.
-    @Test("Favourites excludes a tree whose favourite was turned back off")
-    func favouritesExcludesTombstones() async throws {
+    @Test("Favorites excludes a tree whose favorite was turned back off")
+    func favoritesExcludesTombstones() async throws {
         let store = try await Self.store()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
         let trees = try await Self.seedTrees(limit: 3, store: store)
@@ -233,16 +233,16 @@ struct MapFilterTests {
             )
         }
 
-        let favourites = try await api.mapMembership(.favorites)
-        #expect(favourites == [kept], "expected only the tree still hearted, got \(favourites)")
-        #expect(!favourites.contains(dropped), "an un-favourited tree came back as a favourite")
+        let favorites = try await api.mapMembership(.favorites)
+        #expect(favorites == [kept], "expected only the tree still hearted, got \(favorites)")
+        #expect(!favorites.contains(dropped), "an un-favorited tree came back as a favorite")
     }
 
-    /// A favourite is not a contribution, and a contribution is not a favourite. The owner asked for
+    /// A favorite is not a contribution, and a contribution is not a favorite. The owner asked for
     /// two chips because they are two questions; if either set answered the other, one chip would be
     /// dead weight and the reader would be told something false about the trees it drew.
-    @Test("Yours and Favourites are different sets")
-    func yoursAndFavouritesDisagree() async throws {
+    @Test("Yours and Favorites are different sets")
+    func yoursAndFavoritesDisagree() async throws {
         let store = try await Self.store()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
         let trees = try await Self.seedTrees(limit: 3, store: store)
@@ -266,9 +266,9 @@ struct MapFilterTests {
         }
 
         let yours = try await api.mapMembership(.yours)
-        let favourites = try await api.mapMembership(.favorites)
+        let favorites = try await api.mapMembership(.favorites)
         #expect(yours == [visited], "Yours answered \(yours)")
-        #expect(favourites == [hearted], "Favourites answered \(favourites)")
+        #expect(favorites == [hearted], "Favorites answered \(favorites)")
     }
 
     // MARK: - 3. Year (ERRATA E175)
@@ -544,16 +544,16 @@ struct MapFilterTests {
     // NEVER display a message box in place of an empty filter … if nothing matches, fine"), the
     // copy is deleted, and a filter that matches nothing renders the empty map itself. What
     // survives of the section is the one fact that is still load-bearing: the way out exists and
-    // is labelled, because the `Clear filters` chip is the only exit left.
-    @Test("the way out of any filter is a labelled control")
-    func clearFiltersIsStillLabelled() {
+    // is labeled, because the `Clear filters` chip is the only exit left.
+    @Test("the way out of any filter is a labeled control")
+    func clearFiltersIsStillLabeled() {
         #expect(!MapFilterCopy.clearLabel.isEmpty)
     }
 
     // MARK: - 6. The filter value itself
 
     /// The filters compose. The owner's four are independent questions, and a row that dropped one
-    /// when the reader asked another would be the single-select behaviour the design replaced.
+    /// when the reader asked another would be the single-select behavior the design replaced.
     @Test("the four dimensions combine rather than replacing each other")
     func dimensionsCompose() {
         var filter = MapFilter()

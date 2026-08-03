@@ -9,7 +9,7 @@
 //
 //  Composed from C1 (header + trailing pill), C23 (the chart card, its bar variant, its month axis
 //  and its per-series legend line) and C10 (the moments rows). §4's photo strip has no C-number —
-//  SCREENS.md §2's catalogue does not carry it and §4 describes it inline — so it is built here from
+//  SCREENS.md §2's catalog does not carry it and §4 describes it inline — so it is built here from
 //  tokens, the same way 12's composition card was.
 //
 //  **C26 · AvatarStack is not on this screen, and its absence is the finding rather than an
@@ -168,7 +168,7 @@ struct ActivityScreen: View {
         return "\(row.name) by month. " + months.joined(separator: ", ") + "."
     }
 
-    /// Never a colour of its own (ARCHITECTURE §6) — the three C23 series tokens, in SCREENS.md's
+    /// Never a color of its own (ARCHITECTURE §6) — the three C23 series tokens, in SCREENS.md's
     /// own order: Canopy, New Growth, Bark.
     private func tint(for kind: ActivitySeriesKind) -> Color {
         switch kind {

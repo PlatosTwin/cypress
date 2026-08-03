@@ -10,10 +10,10 @@
 //
 //  That is the same sentence E129 answered for the two counted rows, one record smaller, so it gets
 //  the same screen rather than a second one. Three things differ and all three are argued where they
-//  are made: the camera is the 120 m floor centred on the record rather than a box around a group;
+//  are made: the camera is the 120 m floor centered on the record rather than a box around a group;
 //  the record is drawn **selected**, because a group of one is invisible in a street of thirty; and
 //  the rest of the block is drawn behind it as context, which is the one thing this screen reads for
-//  itself (`PinSetNeighbours`).
+//  itself (`PinSetNeighbors`).
 //
 //  ── What this screen is, and what it is allowed to be ─────────────────────────────────────
 //  `docs/ARCHITECTURE.md` rule 8: a screen or state that is in neither SCREENS.md nor BUILD-PLAN §9
@@ -91,17 +91,17 @@ struct PinSetPresentation: Equatable {
         // The set's own records first, and a context pin the set already holds is dropped rather
         // than drawn twice. The order is load-bearing on the way in as well as out: the record the
         // reader asked about must be in the array from the first frame, because the read that
-        // fetches its neighbours has not returned yet and a map that flies somewhere and shows
+        // fetches its neighbors has not returned yet and a map that flies somewhere and shows
         // nothing for a beat is exactly the failure this screen exists to avoid.
         let known = Set(set.pins.map(\.id))
         self.pins = set.pins + context.filter { !known.contains($0.id) }
         self.focusPinID = set.focusPinID
         // **Around the set, never around the context.** For a group this is the whole group, as it
-        // always was. For one record it is `frame(around:)`'s floor — `MapLayout.defaultSpanMetres`,
+        // always was. For one record it is `frame(around:)`'s floor — `MapLayout.defaultSpanMeters`,
         // the 120 m ERRATA E12 measured as the scale where San Francisco's street trees stop fusing
-        // into a mat — centred on the record itself. Framing the neighbours instead would pull the
+        // into a mat — centered on the record itself. Framing the neighbors instead would pull the
         // camera out to whatever the read happened to return and put the subject somewhere off
-        // centre, which is the opposite of the ask.
+        // center, which is the opposite of the ask.
         self.frame = Self.frame(around: set.pins)
         self.neighborhoodName = set.neighborhoodName
     }
@@ -113,12 +113,12 @@ struct PinSetPresentation: Equatable {
     /// Two rules, and the second is the one that matters. **It holds every pin**, because the whole
     /// promise of this screen is that the group is on it — a camera that framed the nearest three
     /// would reproduce the defect at one remove. And it is **never tighter than screen 01's own
-    /// opening view**, `MapLayout.defaultSpanMetres`: below that scale ERRATA E12 measured pins
+    /// opening view**, `MapLayout.defaultSpanMeters`: below that scale ERRATA E12 measured pins
     /// beginning to fuse into each other, and a group of one would otherwise open at a zoom where
     /// there is nothing on screen but a single pin and no street to place it against.
     ///
     /// The padding is a fraction of the group's own extent rather than a fixed distance, so a group
-    /// spread over a neighbourhood and a group on one block both get the same visual margin. It
+    /// spread over a neighborhood and a group on one block both get the same visual margin. It
     /// reuses `BoundingBox.expanded(by:)`, which the map already uses to fetch a little more than the
     /// screen.
     static func frame(around pins: [TreePin]) -> BoundingBox {
@@ -126,7 +126,7 @@ struct PinSetPresentation: Equatable {
         guard let first = coordinates.first else {
             // No pins means no group, and the almanac does not build one — but a box has to exist, so
             // it is the city's own default view rather than the null island off the coast of Africa.
-            return BoundingBox(around: MapLayout.defaultCentre, radiusM: MapLayout.defaultSpanMetres / 2)
+            return BoundingBox(around: MapLayout.defaultCenter, radiusM: MapLayout.defaultSpanMeters / 2)
         }
 
         let enclosing = coordinates.dropFirst().reduce(
@@ -150,7 +150,7 @@ struct PinSetPresentation: Equatable {
                 latitude: (enclosing.minLatitude + enclosing.maxLatitude) / 2,
                 longitude: (enclosing.minLongitude + enclosing.maxLongitude) / 2
             ),
-            radiusM: MapLayout.defaultSpanMetres / 2
+            radiusM: MapLayout.defaultSpanMeters / 2
         )
 
         return BoundingBox(
@@ -200,7 +200,7 @@ enum PinSetCopy {
         // **The street, because the reader is on foot.** A person holding this screen is trying to
         // walk to the thing, and the address is the one fact that gets them onto the right block
         // without reading the map at all. 8,943 of the seed's rows carry no address; that is said
-        // plainly rather than papered over with the neighbourhood, which is already in the pill
+        // plainly rather than papered over with the neighborhood, which is already in the pill
         // beside the title and would answer a question nobody asked.
         case let .oneRecord(name, address):
             guard let address, !address.isEmpty else { return noAddress }
@@ -233,34 +233,34 @@ enum PinSetCopy {
 
     // MARK: The control that goes back to the subject
 
-    /// It names what it centres on rather than what it looks like, for `MapRecentreCopy.label`'s
+    /// It names what it centers on rather than what it looks like, for `MapRecenterCopy.label`'s
     /// reason: a reader who cannot see the crosshair learns nothing from the word "locate".
-    static func recentreLabel(_ name: String) -> String { "Centre the map on \(name)" }
+    static func recenterLabel(_ name: String) -> String { "Center the map on \(name)" }
 
-    static let recentreHint = "Returns to the larger pin at street level"
+    static let recenterHint = "Returns to the larger pin at street level"
 
     /// Said out loud after the press. The map has moved under a VoiceOver reader's finger and
-    /// nothing else reports it — `MapRecentreCopy.spokenCentred`'s argument, on the screen next door.
-    static let spokenRecentred = "The map is back on it, at street level."
+    /// nothing else reports it — `MapRecenterCopy.spokenCentered`'s argument, on the screen next door.
+    static let spokenRecentered = "The map is back on it, at street level."
 
     /// How much of the group is on the map (ERRATA E38).
     ///
     /// Three forms and no fourth. `All nine are on this map.` when the map holds the whole group —
     /// spelled out, because §4's own body already writes `All nine are within a 15-minute walk` and
     /// this is the same number in the same register. `It is on this map.` for a group of one, because
-    /// "all one" is not a sentence, the same judgement `AlmanacCopy.coverageCTA` makes about "walk
+    /// "all one" is not a sentence, the same judgment `AlmanacCopy.coverageCTA` makes about "walk
     /// the one". And `The 20 nearest are on this map.` for a page — *nearest* rather than *first*,
     /// which is a fact about the read: both queries behind a `PinSet` order by distance from the
     /// reader's fix, and the sentence would be false if either ever stopped.
     ///
-    /// It says what is on the map and stops (ARCHITECTURE §5.7). It does not apologise for the ones
+    /// It says what is on the map and stops (ARCHITECTURE §5.7). It does not apologize for the ones
     /// that are not, does not offer to load more, and does not tell anybody to pan.
     static func coverage(for set: PinSet, context: [TreePin], locale: Locale) -> String {
         guard case let .oneRecord(name, _) = set.subject else {
             return coverage(shown: set.pins.count, of: set.count, locale: locale)
         }
         // **It names the mark, and it names it by the name at the top of the screen.** A selected
-        // pin is 1.25× its neighbours (`MapLayout.selectedPinScale`) and that is the app's whole
+        // pin is 1.25× its neighbors (`MapLayout.selectedPinScale`) and that is the app's whole
         // vocabulary for "this one" — a second, louder highlight invented here would be a second
         // vocabulary. What the sentence adds is the thing a size cannot say on its own: which of the
         // pins is the larger one, in words, for a reader who is comparing thirty green dots on one

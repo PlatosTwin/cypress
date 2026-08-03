@@ -37,7 +37,7 @@ public actor LocalAPI: CypressAPI {
     /// The table is read on every `mapContent` — a whole-table `SELECT` with no predicate, because a
     /// row is keyed by a tree uuid and the map has a box, not a list of ids. That is a cheap query on
     /// a table that is usually empty, and the map asks it every time the camera moves, which made it
-    /// one of the fifteen serialised round-trips per pan (ERRATA E130).
+    /// one of the fifteen serialized round-trips per pan (ERRATA E130).
     ///
     /// **The invalidation is the whole safety of this.** `nil` means "ask", and exactly one thing
     /// writes the table — `ContributionStore.setStatusOverride`, reached only through this actor's
@@ -90,7 +90,7 @@ public actor LocalAPI: CypressAPI {
     /// It used to be three: the seed query, the community layer, and the status overrides, each its
     /// own `queue.read` and so each its own hop onto and off the store's serial queue. `MapModel`
     /// then called this five times per camera change, one per latitude band — fifteen round-trips
-    /// where the map needed one, ten of them returning results already in hand, all of it serialised
+    /// where the map needed one, ten of them returning results already in hand, all of it serialized
     /// on a single connection while the user's thumb was still on the glass (ERRATA E130).
     ///
     /// The bands are gone and the three reads are one closure. Nothing about *what* is read changed;
@@ -121,7 +121,7 @@ public actor LocalAPI: CypressAPI {
             )
             //
             // **Every narrowing, not just the species one (#116).** Each is the same leak in a
-            // different colour: a `Favourites` map that drew every community tree in the box would
+            // different color: a `Favorites` map that drew every community tree in the box would
             // be claiming the reader had hearted them, and a `2010s` map that drew a community tree
             // with no planting year would be claiming the city planted it in a decade nobody
             // recorded. The year clause is deliberately `false` for a nil year, matching the SQL's
@@ -221,8 +221,8 @@ public actor LocalAPI: CypressAPI {
             )))
 
         case var .clusters(clusters):
-            let centreLatitude = (viewport.bounds.minLatitude + viewport.bounds.maxLatitude) / 2
-            let cell = TreeQueries.cellSize(zoom: viewport.zoom, centreLatitude: centreLatitude)
+            let centerLatitude = (viewport.bounds.minLatitude + viewport.bounds.maxLatitude) / 2
+            let cell = TreeQueries.cellSize(zoom: viewport.zoom, centerLatitude: centerLatitude)
             var byCell = Dictionary(uniqueKeysWithValues: clusters.map { ($0.id, $0) })
             for tree in added {
                 let cellY = Int((tree.coordinate.latitude + 90.0) / cell.latitude)
@@ -284,7 +284,7 @@ public actor LocalAPI: CypressAPI {
             // is the one read in that file which does *not* filter `deleted_at`, deliberately, so a
             // withdrawal can be read back; every other read already skips the row, so the pin is
             // already gone. This is the screen that would otherwise still draw the whole profile —
-            // reachable from a favourite, a deep link or a back stack — with every contribution
+            // reachable from a favorite, a deep link or a back stack — with every contribution
             // control on it, which is exactly the state the confirmation exists to end. Scoped to
             // community rows: the seed's own soft deletes are `seedHasSoftDeletedTrees`' question
             // and are answered a layer down, in `TreeQueries`.
@@ -412,7 +412,7 @@ public actor LocalAPI: CypressAPI {
         )
         if !candidates.isEmpty {
             // Every candidate here is inside the circle, not merely inside the box `treesNear`
-            // searched: both halves re-check the exact metres (`TreeQueries.nearest`,
+            // searched: both halves re-check the exact meters (`TreeQueries.nearest`,
             // `CommunityTreeStore.near`). That is load-bearing — this line turns a candidate into a
             // permanent refusal, and it used to fire out to 14.1 m on the diagonal (ERRATA E35).
             //
@@ -488,7 +488,7 @@ public actor LocalAPI: CypressAPI {
     /// Names the species on a community tree that has none. `SpeciesClaim` carries the argument for
     /// why this is the only species write on device and why it refuses the other two cases.
     ///
-    /// The species id is checked against the catalogue **first**. `community_trees.species_current`
+    /// The species id is checked against the catalog **first**. `community_trees.species_current`
     /// is a bare TEXT column with no foreign key — it cannot have one, because the `species` table it
     /// would point at is in an ATTACHed database and SQLite does not do cross-database references —
     /// so nothing but this line stops a caller from writing a uuid that resolves to no species at
@@ -558,7 +558,7 @@ public actor LocalAPI: CypressAPI {
     ///    statement to protect, and refusing is only a refusal to admit a mistake. Identity is
     ///    `Attribution` — the account when signed in, this device otherwise (D9) — through
     ///    `ContributionOwner.isOwned(by:)`.
-    /// 2. **A lead, but only in answer to a report.** `canConfirmReviewFlag` is not a licence to
+    /// 2. **A lead, but only in answer to a report.** `canConfirmReviewFlag` is not a license to
     ///    rewrite anybody's species at will: it is the authority to resolve a `wrong_species` flag
     ///    somebody actually raised, which is why the second arm requires one to be open. A lead with
     ///    an opinion and no report in front of them is a contributor, and takes arm 1's route.
@@ -573,7 +573,7 @@ public actor LocalAPI: CypressAPI {
     /// and `ReviewFlag.Kind.Resolution` keeps the two seams apart so this cannot drift into the one
     /// that moves `trees.status` (ERRATA E170).
     public func correctSpecies(treeID: UUID, speciesID: UUID) async throws -> Tree {
-        // The catalogue check first, for `claimSpecies`' reason: `species_current` and
+        // The catalog check first, for `claimSpecies`' reason: `species_current` and
         // `species_uuid` are bare TEXT with no foreign key available to them, so nothing but this
         // line stops a uuid that resolves to no species from being written and rendering as a tree
         // whose species nobody can look up.
@@ -805,7 +805,7 @@ public actor LocalAPI: CypressAPI {
     /// withdrawn — the `community_trees` row is soft-deleted — in one transaction.
     ///
     /// **`trees.status` is not touched, and this is the whole of R46.** Confirming `appears_removed`
-    /// writes `TreeStatus.removed`, which is a memorial (screen 19, grey pin, no new
+    /// writes `TreeStatus.removed`, which is a memorial (screen 19, gray pin, no new
     /// contributions); a record that never had a tree behind it must not get a memorial for a tree
     /// that never lived. `TreeStatus.vacantSite` is the other tempting answer and is refused for
     /// R7's reason — a vacant site is a planting site with its tree missing, and a duplicate pin or
@@ -906,7 +906,7 @@ public actor LocalAPI: CypressAPI {
     /// Screen 07's payload: the field-guide entry, plus how common the species is nearby.
     ///
     /// Read in one `readConsistently` block for the same reason `treeProfile` is — the counts, the
-    /// neighbourhood they are scoped to and the individuals listed under them are one statement
+    /// neighborhood they are scoped to and the individuals listed under them are one statement
     /// about the inventory, and three separate reads could straddle a write and disagree.
     ///
     /// **Every population fact here is a whole read.** `cityTreeCount` is a `COUNT(*)`, not the size
@@ -915,7 +915,7 @@ public actor LocalAPI: CypressAPI {
     /// itself *is* limited, and says so — it is the one series on this screen nothing counts.
     ///
     /// Without a fix there is no "your area" and no distance to draw, so `nearYou` and `nearby` are
-    /// simply absent. That is not a degraded state to apologise for on screen; it is two surfaces
+    /// simply absent. That is not a degraded state to apologize for on screen; it is two surfaces
     /// whose subject does not exist.
     public func speciesGuide(id: UUID, near coordinate: Coordinate?) async throws -> SpeciesGuide {
         try await store.queue.readConsistently { connection -> SpeciesGuide in
@@ -943,8 +943,8 @@ public actor LocalAPI: CypressAPI {
                 scope = .neighborhood(id: polygon.id, name: polygon.name)
             } else if let almanacQueries {
                 let fallback = AlmanacScope.radius(
-                    centre: coordinate,
-                    metres: AlmanacLimits.fallbackRadiusM
+                    center: coordinate,
+                    meters: AlmanacLimits.fallbackRadiusM
                 )
                 scope = try almanacQueries.holdsAnyRecord(scope: fallback, connection: connection)
                     ? fallback : nil
@@ -1005,7 +1005,7 @@ public actor LocalAPI: CypressAPI {
 
     // MARK: - Almanac
 
-    /// Screen 12's payload: what is happening to the trees in one neighbourhood.
+    /// Screen 12's payload: what is happening to the trees in one neighborhood.
     ///
     /// **A4, for this screen.** The area is resolved through the nearest inventoried tree — the same
     /// derivation screen 07 uses and the same one line of SQL, `SpeciesQueries.resolveNeighborhood`,
@@ -1017,11 +1017,11 @@ public actor LocalAPI: CypressAPI {
     /// standing now, not about where they usually go.
     ///
     /// Read in one `readConsistently` block for the reason `speciesGuide` is: the elder, the mix,
-    /// the bloom and the coverage list are one statement about one neighbourhood, and five separate
+    /// the bloom and the coverage list are one statement about one neighborhood, and five separate
     /// reads could straddle a write and disagree about it.
     ///
     /// Without a fix there is no area and the whole payload is empty. That is not a degraded state
-    /// to apologise for; it is a screen whose subject does not exist.
+    /// to apologize for; it is a screen whose subject does not exist.
     public func almanac(near coordinate: Coordinate?) async throws -> Almanac {
         guard let coordinate, let speciesQueries, let almanacQueries else { return .empty }
         let moment = now()
@@ -1048,8 +1048,8 @@ public actor LocalAPI: CypressAPI {
                 scope = .neighborhood(id: polygon.id, name: polygon.name)
             } else {
                 let fallback = AlmanacScope.radius(
-                    centre: coordinate,
-                    metres: AlmanacLimits.fallbackRadiusM
+                    center: coordinate,
+                    meters: AlmanacLimits.fallbackRadiusM
                 )
                 guard try almanacQueries.holdsAnyRecord(scope: fallback, connection: connection) else {
                     return .empty
@@ -1085,7 +1085,7 @@ public actor LocalAPI: CypressAPI {
                     )
                 }
 
-            // --- Newest neighbours. Absent outside spring, because the drawn copy has a word for
+            // --- Newest neighbors. Absent outside spring, because the drawn copy has a word for
             // exactly one season and inventing the others is inventing (DECISIONS constraint 21).
             var newestNeighbors: RecentPlanting?
             if let spring = AlmanacWindow.currentSpring(now: moment, calendar: calendar) {
@@ -1300,12 +1300,12 @@ public actor LocalAPI: CypressAPI {
 
             case let .favoriteToggle(toggle):
                 // Not gated on `TreeStatus.acceptsNewContributions`, unlike a visit or a check-in: a
-                // favourite asserts nothing about the tree, and gating it would make the toggle
-                // one-way for anyone whose favourite tree is later removed — they could no longer
+                // favorite asserts nothing about the tree, and gating it would make the toggle
+                // one-way for anyone whose favorite tree is later removed — they could no longer
                 // take the heart off. See ERRATA E89.
                 try requireTree(toggle.treeID, connection: connection)
                 // The owner arrives on the payload and is written as it stands. Nothing here
-                // upgrades a device-owned favourite to a user: that happens only at
+                // upgrades a device-owned favorite to a user: that happens only at
                 // `POST /devices/claim` (D9, E23's mechanism).
                 return try contributions.applyFavoriteToggle(
                     owner: toggle.owner,
@@ -1442,13 +1442,13 @@ public actor LocalAPI: CypressAPI {
     /// owner's explicit ruling, and the reasoning is good: a person leaving is making a statement
     /// about their identity, and the check-ins, measurements and votes they leave behind are worth
     /// something to the forest whoever made them. None of that transfers to one photograph deleted
-    /// on purpose. A photograph is deleted **because of what is in it** — a face, a licence plate,
+    /// on purpose. A photograph is deleted **because of what is in it** — a face, a license plate,
     /// the inside of somebody's front garden, a house number — and anonymizing it addresses none of
     /// that. It would leave the picture on the tree and take the name off the picture, which is
     /// answering a question nobody asked. That is E136's own test for a door worth offering, applied
-    /// here and failed: it refuses to offer "keep my favourites" because a favourite nobody owns is
+    /// here and failed: it refuses to offer "keep my favorites" because a favorite nobody owns is
     /// a row no query returns and no person can remove — a decorative control. "Keep this
-    /// photograph, unnamed" is the same control in the other direction: it looks like it honours the
+    /// photograph, unnamed" is the same control in the other direction: it looks like it honors the
     /// request and does not.
     ///
     /// So there is one outcome and it is destructive, and what the design owes instead is **intent**:
@@ -1482,15 +1482,15 @@ public actor LocalAPI: CypressAPI {
     ///
     /// ── The last photograph on a community-added tree ────────────────────────────────────────
     /// BUILD-PLAN §6 says "Community add: requires photo", so deleting the only photograph of a tree
-    /// that exists *because* of that photograph is a genuine conflict, and it is settled in favour of
+    /// that exists *because* of that photograph is a genuine conflict, and it is settled in favor of
     /// the person: **allowed, named, and recorded**.
     ///
     /// Refusing was the other candidate and it is the wrong answer. "Requires photo" is a rule about
     /// *making* a record — evidence at the point of creation, and the anti-spam gate on a table any
     /// phone can write to — not an invariant the row must satisfy forever. Enforcing it afterwards
-    /// would mean the app telling somebody it will not remove a photograph of their neighbour's
+    /// would mean the app telling somebody it will not remove a photograph of their neighbor's
     /// window because the tree's paperwork needs it, which subordinates the exact request this
-    /// feature exists to honour to a data-completeness rule. It would also be trivially defeated:
+    /// feature exists to honor to a data-completeness rule. It would also be trivially defeated:
     /// photograph the pavement, then delete the first one.
     ///
     /// What the record means afterwards is stated rather than left to be discovered. The tree stays
@@ -1503,7 +1503,7 @@ public actor LocalAPI: CypressAPI {
     /// screen 20 says it in words *before* the tap, not after.
     ///
     /// ── Votes and queued uploads ─────────────────────────────────────────────────────────────
-    /// Every vote on the photograph goes, whoever cast it: they were judgements about a thing that
+    /// Every vote on the photograph goes, whoever cast it: they were judgments about a thing that
     /// no longer exists, which is `AccountDeletion`'s argument for the same deletion. The at-most-one
     /// owner CHECK v9 gave `photo_votes` means an anonymized vote is deleted by photo id like any
     /// other, with no owner arm to strand. And any queued mutation still carrying the staged binary
@@ -1578,7 +1578,7 @@ public actor LocalAPI: CypressAPI {
     /// A thumb up or down on a photograph, or `nil` to take it back (ERRATA E125, `AppSchema` v8).
     ///
     /// The owner is `attribution`'s — the account when there is one, this device otherwise — so a
-    /// vote cast before sign-in is adopted by `claimDevice` exactly as a favourite is, and never
+    /// vote cast before sign-in is adopted by `claimDevice` exactly as a favorite is, and never
     /// counted twice.
     public func setPhotoVote(photoID: UUID, vote: PhotoVote?) async throws {
         let moment = now()
@@ -1652,16 +1652,16 @@ public actor LocalAPI: CypressAPI {
                     coordinate: profileTree.coordinate,
                     lastVisitedAt: row.lastVisitedAt,
                     isFavorite: row.isFavorite,
-                    // A tree with no key in the map has no contributions against it — a favourite
+                    // A tree with no key in the map has no contributions against it — a favorite
                     // nobody has visited. An empty record and not nil: the read *did* answer for
                     // this tree, and the answer is that there is nothing yet. Nil is reserved for an
                     // implementation that could not answer at all.
                     //
                     // **Spelled `GroveRecord.none`, and it has to be.** Written `?? .none` against a
-                    // `GroveRecord?` the leading dot resolves to `Optional.none`, so every favourite
+                    // `GroveRecord?` the leading dot resolves to `Optional.none`, so every favorite
                     // nobody had visited came back as "could not answer" and drew nothing — the same
                     // picture as an unproven read, which is the one distinction this field exists to
-                    // keep. It compiled, and `aFavouriteWithNoContributionsIsEmptyNotUnknown` is what
+                    // keep. It compiled, and `aFavoriteWithNoContributionsIsEmptyNotUnknown` is what
                     // caught it.
                     record: records[row.treeID] ?? GroveRecord.none,
                     heroPhotoID: heroPhotoIDs[row.treeID]
@@ -1694,12 +1694,12 @@ public actor LocalAPI: CypressAPI {
             //
             // A4's inference reads the same contributions, so a contributor with none has no
             // area at all and the ring has nothing to be a fraction of. The polygon first — the
-            // most-visited neighbourhood, the exact query this screen has always run, so San
+            // most-visited neighborhood, the exact query this screen has always run, so San
             // Francisco cannot move. Where no touched tree carries a polygon (every contribution
             // in San Jose, whose 52,788 rows hold `neighborhood_id IS NULL`), the same inference
             // still names a most-visited *tree*, and R29's stated radius around it is the area.
             // No coverage guard is needed the way `almanac` and `speciesGuide` need one: the
-            // centre is itself an inventoried tree, so the circle covers record by construction.
+            // center is itself an inventoried tree, so the circle covers record by construction.
             let scope: AlmanacScope
             if let resident = try groveQueries.residentNeighborhood(
                 userID: userID,
@@ -1707,12 +1707,12 @@ public actor LocalAPI: CypressAPI {
                 connection: connection
             ) {
                 scope = .neighborhood(id: resident.id, name: resident.name)
-            } else if let centre = try groveQueries.mostVisitedTree(
+            } else if let center = try groveQueries.mostVisitedTree(
                 userID: userID,
                 deviceID: deviceID,
                 connection: connection
             ) {
-                scope = .radius(centre: centre, metres: AlmanacLimits.fallbackRadiusM)
+                scope = .radius(center: center, meters: AlmanacLimits.fallbackRadiusM)
             } else {
                 return GroveSpecies(neighborhood: nil, known: known)
             }
@@ -1858,13 +1858,13 @@ public actor LocalAPI: CypressAPI {
     /// **Nothing is deleted here and that is the entire distinction from `deleteAccount`.** The rows
     /// stay exactly as they are, still carrying the account's id; what changes is that this
     /// installation stops presenting itself as that account, so `attribution` goes back to the
-    /// device and the reads that ask for "my" reminders and favourites stop returning the account's.
+    /// device and the reads that ask for "my" reminders and favorites stop returning the account's.
     ///
     /// The id is remembered under `AppStateKey.signedOutUserID` so signing in again resumes it. A
     /// local account has no credential to sign back in *with* — `accountLink` mints a `UUID` when it
     /// finds none — so forgetting the id would leave every account-owned row unreadable by any query
     /// and unremovable by any deletion, which is the litter RULINGS R3 spent its length refusing to
-    /// create. Sign-out is not a quiet, unlabelled deletion.
+    /// create. Sign-out is not a quiet, unlabeled deletion.
     ///
     /// The role goes with it for `deleteAccount`'s reason: a lead's authority is the account's, and
     /// a device with nobody signed in is not a lead. The consent record stays put — it is the
@@ -2231,7 +2231,7 @@ public actor LocalAPI: CypressAPI {
     /// the same line). A `#if DEBUG` seam is not a reason to cross a layer boundary.
     /// ── And since the crop fix, it is shaped like its subject ────────────────────────────────
     /// The band alone proved *that* bytes arrived. It could not prove *which part of them* did, and
-    /// that is the question the crop anchor turns on: a centred crop of a portrait tree keeps the
+    /// that is the question the crop anchor turns on: a centered crop of a portrait tree keeps the
     /// trunk and throws the canopy away, and against a flat rectangle with one stripe on it both
     /// crops look identical. A screenshot of this screen was the evidence, and it was evidence of
     /// nothing.
@@ -2271,7 +2271,7 @@ public actor LocalAPI: CypressAPI {
         let (red, green, blue) = Self.saturatedRGB(hue: (hue + 0.85).truncatingRemainder(dividingBy: 1))
         context.setFillColor(CGColor(red: red, green: green, blue: blue, alpha: 1))
         // Canopy: an ellipse over the top half, inset from the sides, with headroom above it —
-        // where a photographer standing at the kerb puts the crown of a street tree.
+        // where a photographer standing at the curb puts the crown of a street tree.
         context.fillEllipse(in: CGRect(
             x: w * 0.08, y: h * (1 - 0.60), width: w * 0.84, height: h * 0.52
         ))
@@ -2283,7 +2283,7 @@ public actor LocalAPI: CypressAPI {
 
         // The white bar stays, and stays in the middle, because it is still the "bytes arrived"
         // signal and nothing else in Cypress draws one. It now doubles as the marker for *where the
-        // middle is*: a centred crop keeps it dead centre, a crown-anchored crop pushes it low.
+        // middle is*: a centered crop keeps it dead center, a crown-anchored crop pushes it low.
         context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
         context.fill(band(fromTop: 0.48, toTop: 0.52))
 
@@ -2411,7 +2411,7 @@ public actor LocalAPI: CypressAPI {
         }
     }
 
-    /// Screen 01's `Yours` and `Favourites` sets (#116, RULINGS R23).
+    /// Screen 01's `Yours` and `Favorites` sets (#116, RULINGS R23).
     ///
     /// One read per press of the chip, not one per pan: `MapModel` holds the answer for as long as
     /// the chip is on, and the map refetches *through* it. The sets are bounded by what one person

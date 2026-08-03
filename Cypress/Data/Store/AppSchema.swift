@@ -34,7 +34,7 @@ public enum AppSchema {
         Migration(version: 2, name: "outbox photos carry their shot type", sql: v2),
         Migration(version: 3, name: "a private reminder can be owned by a device", migrate: applyV3),
         Migration(version: 4, name: "the outbox carries private reminders", migrate: applyV4),
-        Migration(version: 5, name: "a favourite can be owned by a device", migrate: applyV5),
+        Migration(version: 5, name: "a favorite can be owned by a device", migrate: applyV5),
         Migration(version: 6, name: "an account's own rows go with the account", migrate: applyV6),
         Migration(version: 7, name: "a lead can locally mark a tree removed", sql: v7),
         Migration(version: 8, name: "a photo can be voted up or down", sql: v8),
@@ -42,7 +42,7 @@ public enum AppSchema {
         Migration(version: 10, name: "a coordinate says how it was arrived at", migrate: applyV10),
         Migration(version: 11, name: "a new tree says what ground it stands on", migrate: applyV11),
         Migration(version: 12, name: "a photograph says whose it is", migrate: applyV12),
-        Migration(version: 13, name: "anonymised means anonymous, permanently", sql: v13),
+        Migration(version: 13, name: "anonymized means anonymous, permanently", sql: v13),
         Migration(version: 14, name: "a species claim can be corrected, and the correction keeps it", migrate: applyV14)
     ]
 
@@ -233,8 +233,8 @@ public enum AppSchema {
 
     -- -------------------------------------------------------------- favorites --
     -- Tombstone toggles: sync needs the tombstone, not a hard delete (BUILD-PLAN
-    -- §4). The unique pair is (user_id, tree_uuid); un-favouriting sets
-    -- `deleted_at` and re-favouriting clears it, so one row carries the whole
+    -- §4). The unique pair is (user_id, tree_uuid); un-favoriting sets
+    -- `deleted_at` and re-favoriting clears it, so one row carries the whole
     -- history of the toggle and `client_uuid` moves with each flip.
     CREATE TABLE IF NOT EXISTS favorites (
         id          TEXT PRIMARY KEY,
@@ -248,7 +248,7 @@ public enum AppSchema {
     );
 
     -- The tombstone rule, enforced rather than documented. Without this a stray
-    -- DELETE loses the un-favourite event and the row silently comes back on the
+    -- DELETE loses the un-favorite event and the row silently comes back on the
     -- next sync from another device.
     CREATE TRIGGER IF NOT EXISTS favorites_are_tombstoned
     BEFORE DELETE ON favorites
@@ -390,7 +390,7 @@ public enum AppSchema {
 
     /// `outbox.photo_paths` goes from a list of paths to a list of `{path, shotType}` objects.
     ///
-    /// v1 stored the path alone, so the upload had nothing to send and labelled every binary
+    /// v1 stored the path alone, so the upload had nothing to send and labeled every binary
     /// `full_tree`. Whichever chip the contributor tapped on screen 04, the photo record came out a
     /// full-tree shot, which is what the ghost overlay lines the next visit up against and what A3
     /// picks as a tree's best photo. `photos.shot_type` is append-only: nothing recovers the truth
@@ -602,7 +602,7 @@ public enum AppSchema {
     /// CREATE UNIQUE INDEX … ON favorites(device_id, tree_uuid) WHERE device_id IS NOT NULL;
     /// ```
     ///
-    /// One owner cannot favourite a tree twice; two different owners can each favourite it. A single
+    /// One owner cannot favorite a tree twice; two different owners can each favorite it. A single
     /// `UNIQUE (user_id, device_id, tree_uuid)` would have enforced *nothing* for device rows: SQL
     /// treats NULLs as distinct inside a unique index, so `(NULL, this device, this tree)` would be
     /// storable any number of times. A single expression index over `COALESCE(user_id, device_id)`
@@ -610,7 +610,7 @@ public enum AppSchema {
     /// v3 refused; two indexes say the two sentences separately.
     ///
     /// **The trigger keeps its job and gains one exception.** Its reason is stated in v1: a stray
-    /// `DELETE` loses the un-favourite *event*, so the row comes back on the next sync from another
+    /// `DELETE` loses the un-favorite *event*, so the row comes back on the next sync from another
     /// device. Adoption is the one delete that loses no event, because the event has already been
     /// folded onto the surviving row for the same tree in the same transaction (see
     /// `ContributionStore.claimDevice`). The `WHEN` clause permits exactly that case — a device-owned
@@ -637,7 +637,7 @@ public enum AppSchema {
                 created_at  TEXT NOT NULL,
                 updated_at  TEXT NOT NULL,
                 deleted_at  TEXT,
-                -- Exactly one owner, always. A favourite nobody owns is in nobody's grove, and one
+                -- Exactly one owner, always. A favorite nobody owns is in nobody's grove, and one
                 -- owned twice needs a precedence rule somewhere a query can get wrong.
                 CHECK ((user_id IS NULL) <> (device_id IS NULL))
             );
@@ -696,7 +696,7 @@ public enum AppSchema {
     /// The comparison is written as `EXISTS`, deliberately. `OLD.user_id = (SELECT value …)` reads
     /// naturally and is **wrong**: with no sentinel row the subquery is NULL, the comparison is NULL,
     /// `NOT (0 OR NULL)` is NULL, and a `WHEN` clause that evaluates to NULL does not fire — so the
-    /// trigger would permit every hard delete of a user-owned favourite on a database where nobody
+    /// trigger would permit every hard delete of a user-owned favorite on a database where nobody
     /// is being deleted at all. `EXISTS` is 0 or 1 and never NULL. `DataGates` asserts the
     /// no-sentinel case for exactly this reason.
     ///
@@ -769,10 +769,10 @@ public enum AppSchema {
     /// A thumbs up or down on one photograph — the mechanism that decides which photo is a tree's
     /// hero (ERRATA E125).
     ///
-    /// **Why a vote and not a favourite.** D1 removed the version of `favorites` that was a public
-    /// vote, and `ContributionStore.isFavorite` says why: a favourite is a private bookmark, and
-    /// there is deliberately no "is anybody's favourite" query. This is the opposite kind of thing.
-    /// A vote here is a *contribution* in DECISIONS §3.12's sense — a judgement about the record
+    /// **Why a vote and not a favorite.** D1 removed the version of `favorites` that was a public
+    /// vote, and `ContributionStore.isFavorite` says why: a favorite is a private bookmark, and
+    /// there is deliberately no "is anybody's favorite" query. This is the opposite kind of thing.
+    /// A vote here is a *contribution* in DECISIONS §3.12's sense — a judgment about the record
     /// that the forest keeps and that other people read off — because what it decides, the hero, is
     /// the photograph everybody looking at that tree sees. So it aggregates: `PhotoHero` sums the
     /// column across contributors rather than reading one person's row.
@@ -782,12 +782,12 @@ public enum AppSchema {
     /// device, enforced by the same `CHECK` and the same pair of partial unique indexes. One vote
     /// per owner per photo; changing your mind is an upsert, and taking it back is a `DELETE`.
     ///
-    /// **No tombstone trigger, unlike `favorites`.** A withdrawn favourite has to leave a trace,
+    /// **No tombstone trigger, unlike `favorites`.** A withdrawn favorite has to leave a trace,
     /// because v5's adoption merge and R3's erasure both need to find the row. A withdrawn vote does
-    /// not: an un-vote is the absence of a judgement, and a zero score and no row are the same fact.
+    /// not: an un-vote is the absence of a judgment, and a zero score and no row are the same fact.
     /// Account erasure therefore just deletes, with no sentinel to open the gate.
     ///
-    /// `tree_uuid` is denormalised out of `photos` so the profile can read a whole tree's tally in
+    /// `tree_uuid` is denormalized out of `photos` so the profile can read a whole tree's tally in
     /// one indexed scan; it is written from the photo's own row and never from a caller's argument.
     private static let v8 = """
     CREATE TABLE IF NOT EXISTS photo_votes (
@@ -822,7 +822,7 @@ public enum AppSchema {
     /// about live votes. It has one consequence nobody costed at the time: an account's vote cannot
     /// be anonymized. Nulling `user_id` leaves a row the engine refuses, and re-homing it onto
     /// `device_id` would hand one person's ballot to whoever picks the phone up next — and worse
-    /// here than for a favourite, because the next person could then *change* it. So R3's deletion
+    /// here than for a favorite, because the next person could then *change* it. So R3's deletion
     /// deleted votes, and `AccountDeletion` documented that as a ruling ("it goes with the account")
     /// when it was really a constraint wearing a ruling's clothes.
     ///
@@ -848,7 +848,7 @@ public enum AppSchema {
     /// is unchanged, and its `own` column is guarded by `:user IS NOT NULL AND user_id = :user`, so
     /// an ownerless row contributes zero to everybody's own-vote and never lights up somebody else's
     /// thumb. The row is, exactly, frozen: it counts, it cannot be changed, and it cannot be
-    /// withdrawn. That is the correct set of powers for a judgement whose author is gone — you do
+    /// withdrawn. That is the correct set of powers for a judgment whose author is gone — you do
     /// not get to change your mind after you have left.
     ///
     /// **Why not a sentinel owner instead.** A "deleted account" id would satisfy v8's CHECK with no
@@ -947,10 +947,10 @@ public enum AppSchema {
     ///
     /// **The default is `'gps'`, and it is a true statement about every row it touches.** Every
     /// community tree written before this column existed was written at `location.fix.coordinate`
-    /// verbatim — the add screen had no other behaviour — so backfilling them as `gps` records what
+    /// verbatim — the add screen had no other behavior — so backfilling them as `gps` records what
     /// actually happened rather than guessing. This is the opposite of v2's situation, where the old
     /// rows' real value was unrecorded and the plausible guess was the harmful one; here the history
-    /// is known. It is also the direction that fails safe if it is ever wrong: a row mislabelled `gps`
+    /// is known. It is also the direction that fails safe if it is ever wrong: a row mislabeled `gps`
     /// under-claims, and the failure this column must never have is a coordinate silently claiming to
     /// have been placed by somebody who never touched it.
     ///
@@ -958,7 +958,7 @@ public enum AppSchema {
     /// and one dropped 74 m away are different claims, and storing the offset was on the table. Three
     /// things decided against it. It is measured from an anchor whose own error is the reason the pin
     /// exists — a 40 m street-canyon fix — so "74 m" is 74 ± 40, and `community_trees` is the one
-    /// contribution table with no `gps_accuracy_m` column to say so; storing a REAL to millimetres
+    /// contribution table with no `gps_accuracy_m` column to say so; storing a REAL to millimeters
     /// against an anchor that vague dresses an estimate as a measurement, which is precisely what D7
     /// refuses for the city's DBH buckets. It would be the only continuous quantity in a provenance
     /// vocabulary that is otherwise categorical, and a number invites ranking in a way a category does
@@ -1021,11 +1021,11 @@ public enum AppSchema {
     /// against the DAO. The same promise is deliberately *not* extended to the six seed columns, for
     /// reasons `Tools/build_seed.py` carries in full: those hold San Francisco's vocabulary rather
     /// than Cypress's, the city may add to it any week, and a CHECK over 27 department names is a
-    /// build failure waiting for a reorganisation.
+    /// build failure waiting for a reorganization.
     ///
     /// **NULL is a value here, and it is "not stated".** The column is nullable with no default,
     /// unlike v10's `placement`, and the two situations are genuinely different. Every community tree
-    /// written before v10 *had* a placement — `gps`, because the screen had no other behaviour — so
+    /// written before v10 *had* a placement — `gps`, because the screen had no other behavior — so
     /// backfilling it recorded what actually happened. No tree written before v11 has ever been asked
     /// what ground it stands on, so there is no true value to backfill and any default would be
     /// Cypress putting words in a contributor's mouth. `'street'` would be the plausible guess and
@@ -1094,7 +1094,7 @@ public enum AppSchema {
     /// default door's entire promise is that the work stays and the name comes off, so an ownerless
     /// photograph is not a hole in the rule, it is the rule's terminal state — exactly the argument
     /// v9 had to make for `photo_votes` after v8 forbade it. Ask what a constraint forbids, not only
-    /// what it permits: exactly-one-owner would have forbidden anonymisation, so the anonymising
+    /// what it permits: exactly-one-owner would have forbidden anonymization, so the anonymizing
     /// door would have had to choose between deleting the photograph (breaking its own promise) and
     /// re-homing it onto the device (handing one person's photograph to whoever picks the phone up
     /// next). Both are worse than the constraint being one clause weaker.
@@ -1178,11 +1178,11 @@ public enum AppSchema {
     /// nothing on screen said it could happen.
     ///
     /// The project owner ruled for a tombstone (RULINGS, "the owner's own decisions", 2026-07-26):
-    /// rows anonymised by a deletion are marked and are skipped for ever.
+    /// rows anonymized by a deletion are marked and are skipped for ever.
     ///
     /// **Why not clear `device_id` instead.** It is one `UPDATE` and it is wrong. `device_id IS NULL
     /// AND user_id IS NULL` is not a state those tables can hold (`device_id` is `NOT NULL`), and
-    /// even if it were, it destroys the distinction the whole fix rests on: *anonymised by a
+    /// even if it were, it destroys the distinction the whole fix rests on: *anonymized by a
     /// deletion* and *never had an account* look identical afterwards, so the legitimate D9 case —
     /// an unsigned-in contributor keeping their own work on their own phone — becomes
     /// indistinguishable from a stranger's withdrawn records. The tombstone is the only thing that
@@ -1302,7 +1302,7 @@ public enum AppSchema {
     /// **`review_flags` is rebuilt to widen one CHECK, for #125.** "This tree does not exist at all"
     /// is a *record defect*, not a lifecycle event, and it must not be reported as `appears_removed`:
     /// confirming that writes `TreeStatus.removed`, which this product has settled as a memorial —
-    /// grey pin spoken as "Removed tree, memorial", screen 19, `acceptsNewContributions == false`
+    /// gray pin spoken as "Removed tree, memorial", screen 19, `acceptsNewContributions == false`
     /// (E170, R19). A record that never had a tree would get a memorial for a tree that never lived,
     /// which is the map asserting something untrue: R7's argument for the vacant-site pin, verbatim.
     /// The two also mean different things to the merged national inventory the product is being

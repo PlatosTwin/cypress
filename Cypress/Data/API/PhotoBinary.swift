@@ -52,7 +52,7 @@ enum PhotoBinary {
     /// So: strip everything, then put that one value back. A file that was already upright skips
     /// the second pass.
     ///
-    /// What survives is what ImageIO synthesises for any JPEG it writes — pixel dimensions, colour
+    /// What survives is what ImageIO synthesises for any JPEG it writes — pixel dimensions, color
     /// space, Exif version — plus the orientation. Nothing in it says where, when, or on what.
     /// `carriesIdentifyingMetadata(atPath:)` is the postcondition, and it names that difference.
     ///
@@ -66,7 +66,7 @@ enum PhotoBinary {
 
         // `kCFNull` against a container is ImageIO's "remove this one"; an absent key means "carry
         // it across unchanged". The two `ShouldExclude` flags are what ImageIO requires before it
-        // will honour any of it, and they take XMP and GPS with them.
+        // will honor any of it, and they take XMP and GPS with them.
         let removed: Any = kCFNull as Any
         let stripping: [CFString: Any] = [
             kCGImagePropertyExifDictionary: removed,
@@ -192,7 +192,7 @@ enum PhotoBinary {
     ///
     /// It asks about the fields that identify a person or a place rather than about the presence of
     /// a container, because ImageIO writes an Exif block into every JPEG it produces whether or not
-    /// it was given one — dimensions, colour space, a version number. Failing on that would be a
+    /// it was given one — dimensions, color space, a version number. Failing on that would be a
     /// check nothing could ever pass, which is how a privacy check stops being run.
     static func carriesIdentifyingMetadata(atPath path: String) -> Bool {
         guard let source = CGImageSourceCreateWithURL(URL(fileURLWithPath: path) as CFURL, nil),

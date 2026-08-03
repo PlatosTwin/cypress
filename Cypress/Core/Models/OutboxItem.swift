@@ -18,17 +18,17 @@ public struct OutboxPhoto: Codable, Hashable, Sendable {
     }
 
     /// Decodes both the current object form and the bare-string form this column held before shot
-    /// types travelled with paths.
+    /// types traveled with paths.
     ///
     /// The outbox is durable across launches, so an upgrade can meet rows written by the previous
     /// build. `AppSchema` v2 rewrites those rows, but this decoder handles the shape too: a decode
-    /// failure here would drop a contributor's pending visit, which is worse than any labelling
+    /// failure here would drop a contributor's pending visit, which is worse than any labeling
     /// mistake. Old rows become `.other` for the reason given on that migration.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.singleValueContainer()
         if let path = try? container.decode(String.self) {
             self.path = path
-            self.shotType = OutboxPhoto.shotTypeForRowsWrittenBeforeShotTypesTravelled
+            self.shotType = OutboxPhoto.shotTypeForRowsWrittenBeforeShotTypesTraveled
             return
         }
         let keyed = try decoder.container(keyedBy: CodingKeys.self)
@@ -38,14 +38,14 @@ public struct OutboxPhoto: Codable, Hashable, Sendable {
 
     /// What a photo queued by a build that did not record shot types is called.
     ///
-    /// `.other` rather than `.fullTree`. The old code labelled every upload `full_tree`, and that is
-    /// exactly the labelling this change exists to stop: a full-tree label is what makes a photo
+    /// `.other` rather than `.fullTree`. The old code labeled every upload `full_tree`, and that is
+    /// exactly the labeling this change exists to stop: a full-tree label is what makes a photo
     /// eligible to be a ghost-overlay reference and the tree's best photo (A3, `supportsGhostOverlay`
     /// and `Photo.isBestPhotoShot`). Carrying that guess forward would keep offering a leaf
     /// close-up as the framing reference for a whole tree, permanently, with no way to tell which
     /// records were guesses. `.other` is the stored vocabulary's "unclassified" (BUILD-PLAN §4): the
     /// photo still reaches the timeline, it just does not get promoted on a label nobody chose.
-    public static let shotTypeForRowsWrittenBeforeShotTypesTravelled: ShotType = .other
+    public static let shotTypeForRowsWrittenBeforeShotTypesTraveled: ShotType = .other
 }
 
 /// The client-side outbox row (BUILD-PLAN §4, "Client-side outbox (SQLite on device)").
@@ -147,7 +147,7 @@ public enum OutboxRetryPolicy {
         now.timeIntervalSince(createdAt) >= cap
     }
 
-    /// The next state for an item that just failed, honouring both the taxonomy and the cap.
+    /// The next state for an item that just failed, honoring both the taxonomy and the cap.
     /// A non-retryable code (`validation_failed`, `conflict`, …) fails immediately rather than
     /// burning 48 h of backoff on an answer that will not change (BUILD-PLAN §6).
     public static func nextState(

@@ -38,7 +38,7 @@ public final class CypressStore: Sendable {
     // `seedUndatedShare` stood here, measured at open under RULINGS R43 §5 so that the map's
     // year-filter caveat could quote the *attached* inventory rather than the fused bundle's
     // 0.8078. **RULINGS R41 removed the caveat** (task #180), and this measurement had exactly one
-    // consumer. Keeping it would leave an unread property whose only defence is that it might be
+    // consumer. Keeping it would leave an unread property whose only defense is that it might be
     // wanted again — the #62/E126 shape. The fact it measured is not lost: it is pinned against the
     // seed by `MapFilterTests`, where it guards the year control's design rather than a sentence.
     /// Where `main` lives, for diagnostics and for the "delete my data" path.
@@ -235,7 +235,7 @@ public enum AppStateKey: String, CaseIterable, Sendable {
     /// **Why signing out has to remember anything at all.** A local account has no credential: there
     /// is no server, no magic link and nothing to prove you are the same person on the way back in,
     /// so `accountLink` mints a fresh `UUID` when it finds no account. Sign-out that forgot the id
-    /// would therefore be irreversible in the one way that matters — every reminder, favourite and
+    /// would therefore be irreversible in the one way that matters — every reminder, favorite and
     /// photo vote written under the old id stays in the tables, readable by no query
     /// (`privateReminders` asks for the *current* user or this device) and removable by no deletion,
     /// because `deleteAccount` can only delete the account it is signed in as. That is precisely the
@@ -247,7 +247,7 @@ public enum AppStateKey: String, CaseIterable, Sendable {
     /// so a deleted account is never resumable.
     case signedOutUserID = "signed_out_user_id"
 
-    /// Which of screen 15's three routes was tapped, and the license consent that travelled with it
+    /// Which of screen 15's three routes was tapped, and the license consent that traveled with it
     /// (ERRATA **E131**). `AccountAskProvider`'s raw value and `User.licenseVersion`'s shape
     /// respectively; see `AccountLinkRecord` for why absence is meaningful in both.
     case accountProvider = "account_provider"

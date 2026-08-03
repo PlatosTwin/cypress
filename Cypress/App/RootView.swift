@@ -59,7 +59,7 @@ struct RootView: View {
     ///
     /// It is never `start()`ed here, and that is deliberate: starting is what shows the system
     /// sheet, and screen 01 is the one screen the design gives a reason to ask on. Once the map has
-    /// asked and been allowed, this provider receives the authorisation callback like any other and
+    /// asked and been allowed, this provider receives the authorization callback like any other and
     /// begins reporting fixes; until then it stays `.notAsked` and the screens that read it draw
     /// without a location.
     ///
@@ -317,7 +317,7 @@ struct RootView: View {
         switch router.tab {
         case .map:
             // The provider is handed over rather than made there. Screen 01 used to declare its own
-            // `@State` one, which SwiftUI re-initialises on every pass through this body — see
+            // `@State` one, which SwiftUI re-initializes on every pass through this body — see
             // `MapHomeView.location`.
             MapHomeView(api: data.api, location: location)
         case .grove:
@@ -427,17 +427,17 @@ struct RootView: View {
     /// `Sendable` `data`, so it carries nothing of the view across the boundary it will be called on.
     /// **What the request carries, and why discarding it was a defect (ERRATA E131).** This closure
     /// read `_ = request` and threw away both fields screen 15 collects. `AccountAskModel` justifies
-    /// leaving the licence checkbox ungated on the grounds that "the answer travels on the request
+    /// leaving the license checkbox ungated on the grounds that "the answer travels on the request
     /// instead, so the account records what was actually agreed to and `User.licenseVersion` stays
     /// honestly nil when nothing was" — a sentence the shipping handler made false. Unchecking the
     /// box changed nothing anywhere, and an account created by somebody who declined the open
-    /// database licence was indistinguishable from one created by somebody who accepted it. Both
+    /// database license was indistinguishable from one created by somebody who accepted it. Both
     /// fields now land in `app_state` through `LocalAPI.linkAccount`, where `accountLink()` reads
     /// them back and the You tab renders which answer was given.
     ///
     /// **The account resumed rather than re-minted.** `resumableUserID()` is the account this device
     /// signed out of. Without it, signing back in would mint a rival id and leave the first
-    /// account's reminders, favourites and votes owned by an id no query asks for and no deletion
+    /// account's reminders, favorites and votes owned by an id no query asks for and no deletion
     /// can reach — see `LocalAPI.signOut()`.
     nonisolated func accountLink() -> AccountAskLink {
         let api = data.api
@@ -470,11 +470,11 @@ struct RootView: View {
                 // camera for it rather than on the shortlist that asks which tree this is. The id
                 // used to be discarded here, which is the whole of ERRATA E127's third defect.
                 onVisit: { id in router.present(.identify(id)) },
-                // Screen 03's quad row. The favourite is device-owned until an account exists, so
+                // Screen 03's quad row. The favorite is device-owned until an account exists, so
                 // the heart works on a device that has never seen the account sheet — which is every
                 // device the app currently runs on (D9, ERRATA E89). The owner comes from
                 // `LocalAPI.attribution` and never from the screen. When screen 15 lands,
-                // `claimDevice` moves these favourites onto the account and this line does not
+                // `claimDevice` moves these favorites onto the account and this line does not
                 // change.
                 //
                 // It now writes both states. C8's first cell has a selected appearance under
@@ -585,7 +585,7 @@ struct RootView: View {
             // the visit flow's open-tree — and they still do after E113, which redirects a vacant
             // site from the profile and deliberately leaves a memorial on it. Screen 19 has nothing
             // to press, so redirecting there would take away the last surface that can lift a
-            // favourite off a felled tree, which is the one-way toggle E89 refused to create. The
+            // favorite off a felled tree, which is the one-way toggle E89 refused to create. The
             // profile withholds every write from it instead (`acceptsContributions`, `quadActions`).
             // See ERRATA (E95, E112, E113).
             MemorialView(
@@ -648,15 +648,15 @@ struct RootView: View {
             // one of them comes to be right and the other stale.
             //
             // Since E144 the same route also carries a group of one — "show me where this is", from
-            // the profile of any record. The neighbours closure is resolved here for the reason
+            // the profile of any record. The neighbors closure is resolved here for the reason
             // every other boundary call is: the feature gets the one operation it needs, not the
-            // API. It is `PinSetNeighbours.around`, and the screen only calls it for a group of one.
+            // API. It is `PinSetNeighbors.around`, and the screen only calls it for a group of one.
             PinSetMapView(
                 set: group,
                 userCoordinate: location.availability.coordinate,
                 onBack: { router.pop() },
                 onOpenPin: { pin in router.push(MapHomeView.route(for: pin)) },
-                neighbours: .around(data.api)
+                neighbors: .around(data.api)
             )
 
         case .measure(let id, let kind):
@@ -680,7 +680,7 @@ struct RootView: View {
                 // empty `Height` card used to open a DBH form, because the route carried a tree and
                 // nothing else and `MeasureDraft.kind` defaults to `.dbh`. A contributor who typed
                 // the number off the tape without re-reading a segmented control further up the
-                // screen wrote a trunk diameter in metres, and the sanity pill could not catch it:
+                // screen wrote a trunk diameter in meters, and the sanity pill could not catch it:
                 // it compares against previous readings *of the drafted kind*, of which there were
                 // none.
                 kind: kind,
@@ -724,7 +724,7 @@ struct RootView: View {
         case .cityDownloads:
             // The Cities screen (#157). The library and downloader are constructed here — the
             // feature gets the operations it needs, never the app's storage layout — and the
-            // model is rebuilt per push, because its catalogue is deliberately never persisted
+            // model is rebuilt per push, because its catalog is deliberately never persisted
             // (RULINGS R43 §3). A library that cannot construct (Application Support
             // missing) has no screen to show; the row stays a door to a screen that says so via
             // the offline line, so the fallback is an empty-library screen, not a crash.
@@ -757,17 +757,17 @@ struct RootView: View {
     }
 }
 
-/// The composition root's favourite write — screen 03's heart, made durable (E89, E112).
+/// The composition root's favorite write — screen 03's heart, made durable (E89, E112).
 ///
 /// A named type rather than a method on `RootView` because the rule it carries is a rule, and a rule
 /// held privately by a view is a rule no test can state. That rule is **one tap, one key**:
 ///
 /// E101 recorded the opposite as forced. `RootView` kept the client UUID it had minted for each tree
 /// and replayed it, so an impatient double tap on a control with no visible on-state stored one
-/// favourite instead of two identical ones — the trick screen 06 plays with
+/// favorite instead of two identical ones — the trick screen 06 plays with
 /// `PrivateReminderDraft.reminderID`. With an on-state that trick becomes the bug: the second tap is
 /// a *different statement*, `applyFavoriteToggle`'s replay guard is `WHERE client_uuid <> excluded
-/// .client_uuid`, and a reused key therefore makes un-favouriting a silent no-op. So every call
+/// .client_uuid`, and a reused key therefore makes un-favoriting a silent no-op. So every call
 /// mints its own (`FavoriteOutboxWriter.save`'s default), and idempotency stays where ARCHITECTURE
 /// §4 puts it: on the mutation, not on the control.
 ///
@@ -780,7 +780,7 @@ struct ProfileFavoriteWriter: Sendable {
     let api: LocalAPI
     let outbox: OutboxQueue
 
-    /// - Parameter isFavorite: the resulting state, not a verb. A favourite syncs as a toggle event
+    /// - Parameter isFavorite: the resulting state, not a verb. A favorite syncs as a toggle event
     ///   with a tombstone (BUILD-PLAN §4), so the payload carries where the heart ended up.
     func callAsFunction(treeID: UUID, isFavorite: Bool) async {
         // `_ =` rather than a bare `try?`: `save` is `@discardableResult`, but `try?` wraps its

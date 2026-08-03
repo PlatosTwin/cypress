@@ -130,7 +130,7 @@ final class AccountModel {
     /// Delete the account, through the door the person chose (`AccountDeletionChoice`).
     ///
     /// **Only ever called from behind the confirmation.** The copy `AccountDeletionCopy` holds is,
-    /// in R3's own words, "the whole defence" against deleting more than somebody expected, so there
+    /// in R3's own words, "the whole defense" against deleting more than somebody expected, so there
     /// is no path from a single tap to this method and no default-styled button that reaches it.
     ///
     /// **The choice is a required argument with no default**, unlike `LocalAPI.deleteAccount`, which

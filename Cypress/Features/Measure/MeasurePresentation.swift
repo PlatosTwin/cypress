@@ -54,8 +54,8 @@ struct MeasureDraft: Equatable {
     /// A draft opened on a given measurement, with the unit that measurement is entered in.
     ///
     /// The pair is the point. `kind` and `unit` are two stored properties that must agree, and the
-    /// memberwise initialiser will happily let a caller set one and not the other — a height draft
-    /// in centimetres, which is exactly the silent error `select(kind:)` exists to prevent once the
+    /// memberwise initializer will happily let a caller set one and not the other — a height draft
+    /// in centimeters, which is exactly the silent error `select(kind:)` exists to prevent once the
     /// screen is open. This is that rule applied to the moment the screen *opens* (RULINGS R15).
     init(kind: MeasurementKind = .dbh) {
         self.kind = kind
@@ -277,10 +277,10 @@ struct MeasurePresentation {
         else { return nil }
 
         // Rounded to a tenth before it is formatted. Both values reached SI through a multiply, so
-        // 64 cm minus 62 cm is 2.0000000000000018 metres-worth of centimetres and `MeasuredValue
+        // 64 cm minus 62 cm is 2.0000000000000018 meters-worth of centimeters and `MeasuredValue
         // .number` — which decides "whole number" by exact equality — would print `+2.0 cm` for a
-        // difference the contributor entered as two whole centimetres.
-        let delta = ((deltaSI / draft.unit.metresPerUnit) * 10).rounded() / 10
+        // difference the contributor entered as two whole centimeters.
+        let delta = ((deltaSI / draft.unit.metersPerUnit) * 10).rounded() / 10
         return MeasureCopy.verdict(delta: delta, unit: draft.unit, span: span)
     }
 
@@ -290,7 +290,7 @@ struct MeasurePresentation {
     /// **line above the CTA rather than a dialog that gates the save**, because a gate would
     /// contradict the rule that submission is never blocked for lack of rigor (DECISIONS §2.5,
     /// §3.5) — and because the anomaly is a question for the person holding the tape, not a
-    /// judgement the app is entitled to make. See ERRATA.
+    /// judgment the app is entitled to make. See ERRATA.
     var anomaly: String? {
         guard let quantity = draft.quantity else { return nil }
         if !quantity.isPlausible(within: draft.kind.plausibleSIRange) {
@@ -383,9 +383,9 @@ enum MeasureCopy {
     /// three follow from the pairs in `MeasureMetrics.alternateUnit`.
     static func unitName(_ unit: LengthUnit) -> String {
         switch unit {
-        case .millimetres: return "millimetres"
-        case .centimetres: return "centimetres"
-        case .metres: return "metres"
+        case .millimeters: return "millimeters"
+        case .centimeters: return "centimeters"
+        case .meters: return "meters"
         case .inches: return "inches"
         case .feet: return "feet"
         }
@@ -437,7 +437,7 @@ enum MeasureCopy {
     // MARK: D6's notice
 
     /// **NOT SPECIFIED.** D6 excludes this reading from growth charting and nothing in SCREENS.md 16
-    /// says so. Screen 11 already settled the principle in the contributor's favour — the reading is
+    /// says so. Screen 11 already settled the principle in the contributor's favor — the reading is
     /// recorded, it is only the chart it stays off (`GrowthLogRow`, ERRATA E63) — and saying which
     /// is what stops an empty chart from looking like the charting bug E65 describes.
     static func chartNoticeTooImprecise(accuracyM: Double) -> String {
@@ -493,18 +493,18 @@ enum MeasureMetrics {
     /// Six characters is `123.45`, well past any street tree in either unit, and short enough that a
     /// stuck key cannot fill the readout.
     static let maxEntryLength = 6
-    /// The keypad's `.`. Not localised: it is a glyph on a drawn key, and `Double(_:)` parses this
+    /// The keypad's `.`. Not localized: it is a glyph on a drawn key, and `Double(_:)` parses this
     /// one. A locale-aware keypad is a decision nobody has taken.
     static let decimalSeparator = "."
 
     // MARK: Units
 
-    /// What the keypad opens in. Centimetres for a trunk and metres for a height are the units the
+    /// What the keypad opens in. Centimeters for a trunk and meters for a height are the units the
     /// mock draws and the units `MeasuredValue` prints everywhere else in the app.
     static func defaultUnit(for kind: MeasurementKind) -> LengthUnit {
         switch kind {
-        case .dbh: return .centimetres
-        case .height: return .metres
+        case .dbh: return .centimeters
+        case .height: return .meters
         }
     }
 
@@ -512,8 +512,8 @@ enum MeasureMetrics {
     /// trunk's `cm ⇄ in`, and `m ⇄ ft` is the same pair one size up. See ERRATA.
     static func alternateUnit(for kind: MeasurementKind, from unit: LengthUnit) -> LengthUnit {
         switch kind {
-        case .dbh: return unit == .centimetres ? .inches : .centimetres
-        case .height: return unit == .metres ? .feet : .metres
+        case .dbh: return unit == .centimeters ? .inches : .centimeters
+        case .height: return unit == .meters ? .feet : .meters
         }
     }
 

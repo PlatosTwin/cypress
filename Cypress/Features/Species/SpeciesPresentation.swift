@@ -4,7 +4,7 @@
 //
 //  Screen 07 · Species page. SCREENS.md lines 886–917.
 //
-//  The field-guide entry: what this kind of tree is, how to recognise it, what it does through the
+//  The field-guide entry: what this kind of tree is, how to recognize it, what it does through the
 //  year, and how common it is nearby.
 //
 //  ── The rule this screen exists to obey ───────────────────────────────────────────────────
@@ -12,7 +12,7 @@
 //  absences run through it and none of them has a placeholder:
 //
 //  1. `Species.leafRetention` is optional. 59 of the 569 seeded species have no sourced habit, and
-//     a species with `nil` gets **no** phenology surface — not a neutral chip, not a grey one,
+//     a species with `nil` gets **no** phenology surface — not a neutral chip, not a gray one,
 //     nothing (D5, ERRATA E9, ARCHITECTURE §5.5). Nowhere in this folder is there a `?? .deciduous`
 //     or any other default, because a default is the bug.
 //  2. Only 40 of the 569 carry curated content. The other 529 render a hero, a family chip, a habit
@@ -85,8 +85,8 @@ struct SpeciesIDTipRow: Hashable, Identifiable {
 
     /// The glyph tint.
     ///
-    /// **By position, not by icon.** SCREENS.md gives three colours against three bullets whose
-    /// icons happen to be leaf, leaf and bark; reading a colour off `IDTip.icon` would mean
+    /// **By position, not by icon.** SCREENS.md gives three colors against three bullets whose
+    /// icons happen to be leaf, leaf and bark; reading a color off `IDTip.icon` would mean
     /// inventing tints for `flower`, `fruit`, `cone`, `form` and `trunk`, which the spec never
     /// draws. Cycling the drawn three keeps a four-tip species (there are several) inside the
     /// palette that was actually specified.
@@ -105,7 +105,7 @@ struct SpeciesIDTipRow: Hashable, Identifiable {
 /// about July that no source makes.
 ///
 /// The seasonal calendar is deliberately *not* a second source for this. `fall_color_months` says
-/// that a Ginkgo colours in November; it does not say what to look for, and writing that sentence
+/// that a Ginkgo colors in November; it does not say what to look for, and writing that sentence
 /// would be writing botany (DECISIONS constraint 15).
 struct SpeciesSeasonalNote: Hashable {
     /// The month the note is being shown in, 1…12.
@@ -193,7 +193,7 @@ struct SpeciesPresentation: Equatable {
     /// Whether this species has any phenology surface at all.
     ///
     /// Exposed so a test can assert the absence directly rather than by counting chips: an
-    /// unsourced habit means no habit chip *and* no autumn colour anywhere on the page, and the two
+    /// unsourced habit means no habit chip *and* no autumn color anywhere on the page, and the two
     /// have to move together (D5, ERRATA E9).
     var showsPhenology: Bool { species.leafRetention != nil }
 
@@ -229,7 +229,7 @@ struct SpeciesPresentation: Equatable {
         cityTreeCount.map(SpeciesCopy.groupedNumber)
     }
 
-    /// `61`, and the neighbourhood it counts inside.
+    /// `61`, and the neighborhood it counts inside.
     var nearYouCountText: String? {
         nearYou.map { SpeciesCopy.groupedNumber($0.count) }
     }
@@ -333,8 +333,8 @@ enum SpeciesCopy {
     static let loadRetry = "Try again"
 
     /// `220 m` — mono, as §1.3's `mono.12` row and every other distance in the app.
-    static func distance(_ metres: Double) -> String {
-        "\(Int(metres.rounded())) m"
+    static func distance(_ meters: Double) -> String {
+        "\(Int(meters.rounded())) m"
     }
 
     /// `1,204`. Grouping is the formatter's, so a reader in a locale that groups differently sees
@@ -364,7 +364,7 @@ enum LeafRetentionLabel {
 /// The geometry SCREENS.md gives screen 07 that `CypressSpacing` does not already name.
 ///
 /// Same arrangement as `ReportMetrics` and `CheckInMetrics`: screen-specific numbers are named once
-/// here so the view body carries no loose values, while every colour, font and radius stays a
+/// here so the view body carries no loose values, while every color, font and radius stays a
 /// `DesignSystem` token (ARCHITECTURE §6).
 enum SpeciesMetrics {
     /// 07 §1: the hero's text block sits at `left:18px; bottom:14px` — 2pt further in and 2pt

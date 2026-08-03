@@ -11,16 +11,16 @@ import Testing
 /// `:: 9662`. `RULINGS R47` took them out of the suggestion list and out of the species picker on
 /// E126's principle, and recorded in the same breath what that fix could not reach: a filter over
 /// `SpeciesQueries.searchSQL()` cannot omit a tree's own species from its own page. So seven trees
-/// went on drawing `:: Magnolia` in the slot labelled by position as the Latin name, and this is the
+/// went on drawing `:: Magnolia` in the slot labeled by position as the Latin name, and this is the
 /// suite for the copy that replaced it.
 ///
 /// **These read the shipped seed rather than a fixture**, for `SeedStubNamingTests`' reason: a
-/// `Species` written for a test cannot catch a disagreement between the screens and the catalogue,
-/// and the whole subject here is a value the catalogue produced.
+/// `Species` written for a test cannot catch a disagreement between the screens and the catalog,
+/// and the whole subject here is a value the catalog produced.
 @Suite("Unread species names")
 struct UnreadSpeciesNameTests {
 
-    // MARK: - Reading the catalogue
+    // MARK: - Reading the catalog
 
     private static func store() async throws -> CypressStore {
         let seedURL = try #require(SeedContractTests.seedURL, "no seed database; set CYPRESS_SEED_PATH")
@@ -110,8 +110,8 @@ struct UnreadSpeciesNameTests {
     /// The counts are the ones stated in `RULINGS R54`; the shape
     /// assertion is the one the copy depends on and is not in R47: on every one of these rows the
     /// *common* half parsed and is the city's own word, which is what there is to quote.
-    @Test("the catalogue still carries names the ingest could not read, each with a city wording")
-    func theCatalogueStillCarriesUnreadNames() async throws {
+    @Test("the catalog still carries names the ingest could not read, each with a city wording")
+    func theCatalogStillCarriesUnreadNames() async throws {
         let species = try await Self.unreadSpecies()
         let counts = try await Self.treeCounts()
 

@@ -1,5 +1,5 @@
 //
-//  PinSetNeighbours.swift
+//  PinSetNeighbors.swift
 //  Cypress — Features/PinSetMap
 //
 //  **NOT SPECIFIED.** ERRATA E144. The one read this screen performs, and the argument for why a
@@ -10,7 +10,7 @@
 //  A map with one pin on it answers "which street" and stops. The reader is standing on that street
 //  looking at a row of trees, and the question they still have is *which one* — the third from the
 //  corner, or the one outside number 2576. A pin drawn alone cannot be counted along a block,
-//  because there is nothing to count. So the neighbours are drawn, and the subject is drawn 1.25×
+//  because there is nothing to count. So the neighbors are drawn, and the subject is drawn 1.25×
 //  (`MapLayout.selectedPinScale`, through `selectedPinID` — the app's existing and only vocabulary
 //  for "this one") in the middle of them.
 //
@@ -25,7 +25,7 @@
 //  ── Why a closure and not the API ─────────────────────────────────────────────────────────
 //  The composition root resolves the boundary call and hands the feature the one operation it needs,
 //  which is the pattern `RootView` already uses for the journal export (`JournalExportBytes`). It
-//  also keeps the two counted groups honest by construction: they are pushed with no neighbours at
+//  also keeps the two counted groups honest by construction: they are pushed with no neighbors at
 //  all, so there is no path by which E129's screen can acquire a query it is documented not to have.
 //
 
@@ -36,7 +36,7 @@ import Foundation
 /// A `Sendable` box around one async call, so the view can hold it, previews can hand it a constant,
 /// and tests can hand it a spy. It is deliberately not `any CypressAPI`: the whole surface this
 /// screen is allowed to touch is one read of one box.
-struct PinSetNeighbours: Sendable {
+struct PinSetNeighbors: Sendable {
 
     let read: @Sendable (Coordinate) async -> [TreePin]
 
@@ -44,12 +44,12 @@ struct PinSetNeighbours: Sendable {
         self.read = read
     }
 
-    /// The screen with no neighbours to draw — the two counted groups, and every preview.
-    static let none = PinSetNeighbours { _ in [] }
+    /// The screen with no neighbors to draw — the two counted groups, and every preview.
+    static let none = PinSetNeighbors { _ in [] }
 
     /// The real read, over the app's one boundary (ARCHITECTURE §4).
     ///
-    /// **The box is the camera's own**, `MapLayout.defaultSpanMetres` across and centred on the
+    /// **The box is the camera's own**, `MapLayout.defaultSpanMeters` across and centered on the
     /// record, so the pins that come back are the pins the reader can see and nothing is fetched to
     /// be drawn off screen. The zoom is stated rather than derived because it is not a camera: it is
     /// the assertion that this read wants *individual pins*, which `MapViewport` decides from the
@@ -62,11 +62,11 @@ struct PinSetNeighbours: Sendable {
     ///
     /// A failure is an empty array and not an error. There is nothing for this screen to say about a
     /// read that only ever added context to a map that is already correct without it, and a banner
-    /// over a working map would be the app apologising for something the reader did not ask for.
-    static func around(_ api: any CypressAPI) -> PinSetNeighbours {
-        PinSetNeighbours { coordinate in
+    /// over a working map would be the app apologizing for something the reader did not ask for.
+    static func around(_ api: any CypressAPI) -> PinSetNeighbors {
+        PinSetNeighbors { coordinate in
             let viewport = MapViewport(
-                bounds: BoundingBox(around: coordinate, radiusM: MapLayout.defaultSpanMetres / 2),
+                bounds: BoundingBox(around: coordinate, radiusM: MapLayout.defaultSpanMeters / 2),
                 zoom: MapViewport.highestClusteringZoom + 1
             )
             guard case let .pins(answer)? = try? await api.mapContent(in: viewport) else { return [] }

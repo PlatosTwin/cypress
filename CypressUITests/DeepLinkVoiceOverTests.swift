@@ -19,7 +19,7 @@ import XCTest
 /// **What each test proves, in order:**
 /// 1. The screen *arrived* — the deep link is not a no-op that quietly leaves the app on screen 01
 ///    while fourteen tests report the names of screens they never visited.
-/// 2. Nothing interactive on it is unlabelled — the E103 failure mode.
+/// 2. Nothing interactive on it is unlabeled — the E103 failure mode.
 /// 3. It can be left again — a pushed screen with no reachable Back is a trap.
 final class DeepLinkVoiceOverTests: XCTestCase {
 
@@ -78,7 +78,7 @@ final class DeepLinkVoiceOverTests: XCTestCase {
 
     /// The community add's pin step: a map with a movable pin.
     ///
-    /// **A pan is a gesture the screen reader owns.** There is no labelling that turns "drag the world
+    /// **A pan is a gesture the screen reader owns.** There is no labeling that turns "drag the world
     /// 30 m north-east" into something a swipe-and-double-tap can perform, so a draggable pin with
     /// nothing beside it is a control that simply does not exist for a VoiceOver user. The answer is
     /// four nudge buttons and a pin that says where it is, and this is the test that the answer is
@@ -91,7 +91,7 @@ final class DeepLinkVoiceOverTests: XCTestCase {
         let app = launch("pinAdjust")
         guard arrive(app, screen: "pinAdjust", anchor: "Move the pin") else { return }
 
-        assertEveryControlIsLabelled(app, screen: "pinAdjust")
+        assertEveryControlIsLabeled(app, screen: "pinAdjust")
 
         for direction in ["north", "east", "south", "west"] {
             let nudge = app.buttons["Move the pin \(direction)"]
@@ -122,7 +122,7 @@ final class DeepLinkVoiceOverTests: XCTestCase {
     /// The nudge controls have to *move the pin*, and the pin has to *say so*.
     ///
     /// Asserted on the pin's own accessibility value rather than on the existence of the buttons,
-    /// which is this suite's standing lesson (E118, E125): a labelled, hittable control that does
+    /// which is this suite's standing lesson (E118, E125): a labeled, hittable control that does
     /// nothing passes every test written about its presence. Three presses of a 5 m step is 15 m, and
     /// the pin has to announce exactly that — a value that stayed at "Right where you are standing"
     /// means the taps reached a button that moves nothing, and a value reading anything other than
@@ -210,7 +210,7 @@ final class DeepLinkVoiceOverTests: XCTestCase {
             .firstMatch
     }
 
-    // MARK: - A control that is in the tree, labelled, hittable — and dead
+    // MARK: - A control that is in the tree, labeled, hittable — and dead
 
     /// Tapping a thumb on screen 20 has to *do* something (ERRATA E125).
     ///
@@ -534,7 +534,7 @@ final class DeepLinkVoiceOverTests: XCTestCase {
 
     /// A stat is one thing, so it is one stop.
     ///
-    /// The last of the three structural questions. E116 and E117 asked whether elements are *labelled*;
+    /// The last of the three structural questions. E116 and E117 asked whether elements are *labeled*;
     /// E118's duplication check asked whether anything is said *twice*; this asks whether things that
     /// belong together arrive together. A caption and the number it describes, split into two stops,
     /// hands a VoiceOver user "DBH", a swipe, and then "30–35 cm" — a value severed from the word that
@@ -587,7 +587,7 @@ final class DeepLinkVoiceOverTests: XCTestCase {
     /// The E104 failure mode as a rule rather than a component: a container that carries a label *and*
     /// exposes a child carrying the same one is two stops on the same words, and a screen full of them
     /// is a screen that takes twice as long to hear. Checked as containment rather than adjacency,
-    /// because that is the shape the defect actually takes — a labelled wrapper around a labelled leaf.
+    /// because that is the shape the defect actually takes — a labeled wrapper around a labeled leaf.
     ///
     /// **`allElementsBoundByIndex` is used here as a set, never as an order, and that restriction is
     /// load-bearing (ERRATA E118).** Its sequence is the query engine's match order, which is neither
@@ -689,7 +689,7 @@ final class DeepLinkVoiceOverTests: XCTestCase {
         let app = launch(screen)
         guard arrive(app, screen: screen, anchor: anchor, file: file, line: line) else { return }
 
-        assertEveryControlIsLabelled(app, screen: screen, file: file, line: line)
+        assertEveryControlIsLabeled(app, screen: screen, file: file, line: line)
 
         if pushed {
             // A pushed screen covers the tab root, so the bottom bar is gone. Its absence is a second,
@@ -719,12 +719,12 @@ final class DeepLinkVoiceOverTests: XCTestCase {
         app.terminate()
     }
 
-    /// No interactive element anywhere in the tree may be unlabelled.
+    /// No interactive element anywhere in the tree may be unlabeled.
     ///
     /// Scoped to what is *hittable*, for the same reason E116's version is: an element behind a cover
     /// or scrolled off the bottom is in the hierarchy without being reachable, and holding it to the
     /// same standard would report failures a user cannot encounter.
-    private func assertEveryControlIsLabelled(
+    private func assertEveryControlIsLabeled(
         _ app: XCUIApplication,
         screen: String,
         file: StaticString = #filePath,

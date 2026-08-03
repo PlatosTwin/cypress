@@ -66,7 +66,7 @@ struct MapTreeCard: View {
 
                 // §14 gives the chevron `#B4BCA9` (dark: `#4A5A4C`), which §1.2 had no row for.
                 // It is a real gap rather than a one-card special case — every tappable card in the
-                // app wants the same disclosure grey — so it is now `chevronDisclosure`, named for
+                // app wants the same disclosure gray — so it is now `chevronDisclosure`, named for
                 // the role, and this feature reads it like any other token (ARCHITECTURE §6).
                 CypressChevron(direction: .trailing)
                     .stroke(
@@ -107,9 +107,9 @@ struct MapTreeCard: View {
         if subject.isVacantSite { clauses.append(SiteCopy.cardMeta) }
         if let latin = subject.scientificName { clauses.append(latin) }
         if let userCoordinate {
-            let metres = userCoordinate.distance(to: subject.pin.coordinate)
+            let meters = userCoordinate.distance(to: subject.pin.coordinate)
             let bearing = CompassPoint.from(userCoordinate, to: subject.pin.coordinate)
-            clauses.append("\(Int(metres.rounded())) m \(bearing)")
+            clauses.append("\(Int(meters.rounded())) m \(bearing)")
         }
         if let visited = subject.lastVisitedAt {
             clauses.append("visited \(MapRelativeTime.string(from: visited, to: now))")

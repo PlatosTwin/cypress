@@ -25,7 +25,7 @@ final class VisitIdentifyModel {
     /// what commits. `nil` means nothing is chosen yet.
     var selectedID: UUID?
 
-    /// The fix the currently-displayed shortlist was built from. Re-querying on every one-metre
+    /// The fix the currently-displayed shortlist was built from. Re-querying on every one-meter
     /// update would re-sort the list under the user's thumb.
     private var lastQueriedCoordinate: Coordinate?
     /// Far enough that the ranking can genuinely change; short enough that stepping to the next

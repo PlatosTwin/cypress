@@ -14,7 +14,7 @@ import SwiftUI
 /// Screen 12's two counted rows, answered (ERRATA E129).
 ///
 /// One screen for both, which is the point. `Where eyes are needed` and `Where a tree could go` are
-/// the same shape of statement — a number of records in this neighbourhood — and each of them used to
+/// the same shape of statement — a number of records in this neighborhood — and each of them used to
 /// open a single record. Two screens would be two chances to answer the question differently.
 struct PinSetMapView: View {
 
@@ -35,16 +35,16 @@ struct PinSetMapView: View {
     var onOpenPin: ((TreePin) -> Void)?
 
     /// The rest of the block, for a map about one record. `.none` for the two counted groups, which
-    /// carry everything they draw — see `PinSetNeighbours` for why this read exists and why it
+    /// carry everything they draw — see `PinSetNeighbors` for why this read exists and why it
     /// cannot contradict the sentence above the map.
-    var neighbours: PinSetNeighbours = .none
+    var neighbors: PinSetNeighbors = .none
 
     @Environment(\.locale) private var locale
 
     @State private var position: MapCameraRequest?
     @State private var region = MKCoordinateRegion()
     @State private var selectedPinID: UUID?
-    /// What `neighbours` returned, or empty. Never counted, never part of `set`.
+    /// What `neighbors` returned, or empty. Never counted, never part of `set`.
     @State private var context: [TreePin] = []
 
     var body: some View {
@@ -64,7 +64,7 @@ struct PinSetMapView: View {
         // not moved, and the map is already correct without it.
         .task {
             guard context.isEmpty, let focus = set.pins.first, set.focusPinID != nil else { return }
-            context = await neighbours.read(focus.coordinate)
+            context = await neighbors.read(focus.coordinate)
         }
     }
 
@@ -138,7 +138,7 @@ struct PinSetMapView: View {
             userCoordinate: userCoordinate,
             // **The record the reader asked about is selected before they touch anything.** That is
             // the whole of E144's "which of these thirty is it": `MapAnnotationLayer.applySelection`
-            // draws a selected pin 1.25× its neighbours, and this screen has one candidate rather
+            // draws a selected pin 1.25× its neighbors, and this screen has one candidate rather
             // than needing a tap to produce one. No new highlight was invented — a second way to
             // say "this one" is a second thing to keep in step with C19.
             //
@@ -159,9 +159,9 @@ struct PinSetMapView: View {
             onSelectCluster: { _ in }
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .overlay(alignment: .bottomTrailing) { recentre(presentation) }
+        .overlay(alignment: .bottomTrailing) { recenter(presentation) }
         // No `accessibilityLabel` on the map itself. Every pin under it already speaks — a city tree
-        // says C19's words and a basin says `SiteCopy`'s (ERRATA E107, RULINGS R7) — and labelling the
+        // says C19's words and a basin says `SiteCopy`'s (ERRATA E107, RULINGS R7) — and labeling the
         // container is how a container stops being a container and starts being one element with the
         // pins hidden inside it. What the map holds is said by the two lines above it, in reading
         // order, before anything on the map is reached.
@@ -174,19 +174,19 @@ struct PinSetMapView: View {
     /// A screen whose entire promise is "here is where this one is" must survive a pan. Without this
     /// control, the reader who drags the map two blocks to read a street name has lost the thing
     /// they came for and has to go back and press the control again — the same dead end
-    /// `MapRecentre` exists to close on screen 01, one screen over. The two counted groups do not
-    /// get it: there is no single subject to go back to, and a control that centred on "the nine"
+    /// `MapRecenter` exists to close on screen 01, one screen over. The two counted groups do not
+    /// get it: there is no single subject to go back to, and a control that centered on "the nine"
     /// would be answering a question nobody asked.
     ///
-    /// It is `MapLocateGlyph`, the crosshair screen 01's recentre control already uses, because it
-    /// already means *centre on the thing*. Its own `MapRecentreButton` is not reused: that button's
+    /// It is `MapLocateGlyph`, the crosshair screen 01's recenter control already uses, because it
+    /// already means *center on the thing*. Its own `MapRecenterButton` is not reused: that button's
     /// three states are about the reader's GPS fix — granted, refused, waiting — and this one has no
     /// states at all. There is always a record and it is always somewhere.
     @ViewBuilder
-    private func recentre(_ presentation: PinSetPresentation) -> some View {
+    private func recenter(_ presentation: PinSetPresentation) -> some View {
         if presentation.focusPinID != nil, let pin = set.pins.first {
             Button {
-                // **A ticket, exactly as the recentre press mints one** (ERRATA E140). A press is an
+                // **A ticket, exactly as the recenter press mints one** (ERRATA E140). A press is an
                 // explicit user action on the main thread, which is the only thing
                 // `MapCameraRequest.move(to:)`'s counter is safe under, and it is a new request even
                 // when it names the camera the screen opened on — which is the point: pressing this
@@ -195,11 +195,11 @@ struct PinSetMapView: View {
                 // Nothing else on this screen ever writes the camera. There is no state change
                 // anywhere in this file that drives it, which is the property E140 paid for.
                 position = .move(
-                    to: MapLayout.region(around: pin.coordinate, metres: MapLayout.defaultSpanMetres)
+                    to: MapLayout.region(around: pin.coordinate, meters: MapLayout.defaultSpanMeters)
                 )
-                // Back to the subject, in case a tap on a neighbour took the selection away.
+                // Back to the subject, in case a tap on a neighbor took the selection away.
                 selectedPinID = nil
-                AccessibilityNotification.Announcement(PinSetCopy.spokenRecentred).post()
+                AccessibilityNotification.Announcement(PinSetCopy.spokenRecentered).post()
             } label: {
                 ZStack {
                     Circle().fill(CypressColor.surfaceCard)
@@ -216,8 +216,8 @@ struct PinSetMapView: View {
             }
             .buttonStyle(.plain)
             .padding(CypressSpacing.gutter)
-            .accessibilityLabel(PinSetCopy.recentreLabel(presentation.title))
-            .accessibilityHint(PinSetCopy.recentreHint)
+            .accessibilityLabel(PinSetCopy.recenterLabel(presentation.title))
+            .accessibilityHint(PinSetCopy.recenterHint)
         }
     }
 

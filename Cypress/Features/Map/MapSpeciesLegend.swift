@@ -3,7 +3,7 @@
 //  Cypress — Features/Map
 //
 //  ── Why there is a legend at all, when the encoding does not need one ─────────────────────────
-//  The colouring answers "which of these are the same tree?" on its own: matching hue and matching
+//  The coloring answers "which of these are the same tree?" on its own: matching hue and matching
 //  glyph mean matching species, and that is readable off the glass with nothing to consult. The
 //  legend answers the *next* question, which is the one the owner is actually walking around with —
 //  "same as each other, yes, but same as **what**?" A map that groups without naming turns a street
@@ -23,14 +23,14 @@
 //  ── When it draws nothing ────────────────────────────────────────────────────────────────────
 //  Whenever `MapSpeciesPalette` is empty, which is a real and common state rather than an edge case:
 //  a clustered viewport has no pins to rank, a viewport whose species are all singletons earns no
-//  slots (`minimumPinsForASlot`), and the map is showing no colours in either case. It also draws
+//  slots (`minimumPinsForASlot`), and the map is showing no colors in either case. It also draws
 //  nothing for a slot whose species name has not arrived — a chip with a swatch and no word is a
 //  legend entry that explains nothing.
 //
 
 import SwiftUI
 
-/// The four coloured species, named — **and, since #116, the map's species filter.**
+/// The four colored species, named — **and, since #116, the map's species filter.**
 ///
 /// ── Why the legend is the filter ─────────────────────────────────────────────────────────────
 /// The owner asked for a species narrowing, and attached two constraints to it: the filter and the
@@ -91,7 +91,7 @@ struct MapSpeciesLegend: View {
         .padding(.horizontal, CypressSpacing.Component.chipPaddingHFilter)
         .background { Capsule().fill(isSelected ? CypressColor.ctaFill : CypressColor.searchFill) }
         .cypressPillBorder(isSelected ? CypressColor.ctaFill : CypressColor.searchBorder)
-        // One stop per species, and it says the mark as well as the colour. A reader who cannot see
+        // One stop per species, and it says the mark as well as the color. A reader who cannot see
         // either still gets the pairing from the pins, which speak the same name
         // (`MapPinKind.accessibilityLabel(for:palette:)`) — this is the key to that, not a substitute
         // for it.
@@ -134,17 +134,17 @@ struct MapSpeciesLegend: View {
 // MARK: - Copy
 
 enum MapSpeciesLegendCopy {
-    static let rowLabel = "Species shown in colour on this map"
+    static let rowLabel = "Species shown in color on this map"
 
-    /// "London Plane, plum pins marked dot". The colour is named as well as the mark, because a
-    /// reader with partial colour vision may be able to use one and not the other.
+    /// "London Plane, plum pins marked dot". The color is named as well as the mark, because a
+    /// reader with partial color vision may be able to use one and not the other.
     static func chipLabel(name: String, slot: MapSpeciesSlot) -> String {
-        "\(name), \(colourName(slot)) pins marked \(slot.glyphName)"
+        "\(name), \(colorName(slot)) pins marked \(slot.glyphName)"
     }
 
     /// Plain words for the four hues. They are *descriptions*, not token names: a listener has no
     /// use for "slot B".
-    static func colourName(_ slot: MapSpeciesSlot) -> String {
+    static func colorName(_ slot: MapSpeciesSlot) -> String {
         switch slot {
         case .a: return "plum"
         case .b: return "lagoon"
@@ -157,7 +157,7 @@ enum MapSpeciesLegendCopy {
 // MARK: - Layout
 
 /// A row that wraps. Four chips of unpredictable width in a 361 pt column do not fit on one line at
-/// AX5 and would not fit on one line at default size either for the longest names in the catalogue.
+/// AX5 and would not fit on one line at default size either for the longest names in the catalog.
 ///
 /// SwiftUI has no wrapping stack before iOS 16's `Layout`, which this uses: measuring subviews and
 /// placing them is a dozen lines here, against a `ScrollView` that would fight the map's pan or a

@@ -67,30 +67,30 @@ public struct CareEvent: FieldCaptured {
     public var attribution: Attribution { Attribution(userID: userID, deviceID: deviceID) }
 }
 
-/// Who a favourite belongs to: an account, or the device that saved it.
+/// Who a favorite belongs to: an account, or the device that saved it.
 ///
 /// **Exactly one of the two, never neither** — the same rule, and the same reason, as
-/// `ReminderOwner` (ERRATA E23). An ownerless favourite is in nobody's grove, and a doubly-owned one
+/// `ReminderOwner` (ERRATA E23). An ownerless favorite is in nobody's grove, and a doubly-owned one
 /// has to be resolved by precedence somewhere a query can get it wrong. Neither state is
 /// representable here, and `favorites`' CHECK says the same thing to SQLite (`AppSchema` v5).
 ///
 /// Device ownership exists because D9 keeps the device anonymous until the account ask at the third
 /// save, and screen 15 is where that ask lives — so until it does, *every* device is anonymous and a
-/// favourite that required an account could not be saved at all (ERRATA E89).
+/// favorite that required an account could not be saved at all (ERRATA E89).
 ///
 /// **Why this is not `ReminderOwner` under a wider name.** The two enums have the same shape and
 /// carry different invariants. A reminder's owner is a privacy boundary: D4 says the record is never
-/// public, and the owner is what keeps it that way. A favourite's owner is half of a uniqueness key,
+/// public, and the owner is what keeps it that way. A favorite's owner is half of a uniqueness key,
 /// and it has a merge rule at sign-in that a reminder does not have (see
 /// `ContributionStore.claimDevice`). One type carrying both stories would have to document a rule
 /// that is true of one of its users and not the other. If a third owner-bearing record appears, that
-/// is the moment to generalise all three rather than the moment to have generalised two.
+/// is the moment to generalize all three rather than the moment to have generalized two.
 public enum FavoriteOwner: Hashable, Sendable, Codable {
     case user(UUID)
     case device(UUID)
 
     /// The D9 rule in one place: a contribution belongs to the signed-in user when there is one and
-    /// to this device otherwise. Every favourite written anywhere in the app resolves its owner
+    /// to this device otherwise. Every favorite written anywhere in the app resolves its owner
     /// here, so the answer cannot differ between two call sites.
     public init(_ attribution: Attribution) {
         if let userID = attribution.userID {
@@ -110,7 +110,7 @@ public enum FavoriteOwner: Hashable, Sendable, Codable {
         return nil
     }
 
-    /// What `POST /devices/claim` does to a favourite (D9). One already owned by a user is left
+    /// What `POST /devices/claim` does to a favorite (D9). One already owned by a user is left
     /// alone: adoption happens once, and claiming twice must not move an account's record onto a
     /// different account.
     public func adopted(by userID: UUID) -> FavoriteOwner {
@@ -140,7 +140,7 @@ public enum FavoriteOwner: Hashable, Sendable, Codable {
             throw DecodingError.dataCorruptedError(
                 forKey: .user,
                 in: container,
-                debugDescription: "a favourite carries exactly one owner, and this one carries none"
+                debugDescription: "a favorite carries exactly one owner, and this one carries none"
             )
         }
     }

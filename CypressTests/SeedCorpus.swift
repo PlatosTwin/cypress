@@ -23,7 +23,7 @@ import Testing
 /// Rebuilding either seed and getting different numbers still fails.
 ///
 /// ── The harder half: controls that cannot fire ────────────────────────────────────────────
-/// Some of these suites do not merely count. They assert a *control* — "this neighbourhood does
+/// Some of these suites do not merely count. They assert a *control* — "this neighborhood does
 /// have dated plantings", "a row with all six columns set decodes to a city record" — and the
 /// control is what proves the assertion above it measured something. The city's layer publishes
 /// seven fewer columns than the export, and a first build of `--source city` that took only the
@@ -67,12 +67,12 @@ struct SeedCorpus: Sendable {
     /// land in `landContextUnplaced`, and they are different facts: a change that turned one into
     /// the other would balance a single total without anybody noticing.
     let landContextDeclinedForeignVocabulary: Int
-    /// Neighbourhoods that hold trees but no vacant planting site.
+    /// Neighborhoods that hold trees but no vacant planting site.
     let neighborhoodsWithNoVacantSite: Int
-    /// Vacant sites in no neighbourhood at all, and therefore invisible to every neighbourhood
+    /// Vacant sites in no neighborhood at all, and therefore invisible to every neighborhood
     /// surface in the app. Zero for a San Francisco-only seed; a whole city's worth once a second
-    /// city ships without a neighbourhood layer of its own (ERRATA E176).
-    let vacantSitesWithNoNeighbourhood: Int
+    /// city ships without a neighborhood layer of its own (ERRATA E176).
+    let vacantSitesWithNoNeighborhood: Int
     /// Rows that are `alive` with no species because their **source said a tree is there and did not
     /// say which** — R18's answer for San Jose's `NAMESCIENTIFIC = 'Unknown'`. Distinct from
     /// `records_not_a_tree`, which is a source saying the thing growing there is not a tree. Neither
@@ -82,7 +82,7 @@ struct SeedCorpus: Sendable {
     /// almanac's season rows and coverage card may show.
     let datedVacantSites: Int
 
-    // ── Sunset/Parkside, the neighbourhood the almanac suites read ───────────────────────────
+    // ── Sunset/Parkside, the neighborhood the almanac suites read ───────────────────────────
     let sunsetVacantSites: Int
     /// Standing trees that join a species (the inner join) and that do not (the left join).
     let sunsetTreesWithSpecies: Int
@@ -177,7 +177,7 @@ struct SeedCorpus: Sendable {
             landContextUnplaced: 3_506,
             landContextDeclinedForeignVocabulary: 0,
             neighborhoodsWithNoVacantSite: 0,
-            vacantSitesWithNoNeighbourhood: 0,
+            vacantSitesWithNoNeighborhood: 0,
             treesOfUnknownSpecies: 0,
             datedVacantSites: 9_237,
             sunsetVacantSites: 1_436,
@@ -210,7 +210,7 @@ struct SeedCorpus: Sendable {
     /// **`sunset*` and `neighborhoodsWithNoVacantSite` do not move either**, for a related reason
     /// worth stating: the seed's `neighborhoods` table is San Francisco's 41 Analysis Neighborhoods
     /// and nothing else, so every San Jose row carries `neighborhood_id IS NULL` and is invisible to
-    /// every neighbourhood-scoped surface in the app, the almanac included.
+    /// every neighborhood-scoped surface in the app, the almanac included.
     static func cityWithSanJose(absentColumns: Set<String>) -> SeedCorpus {
         SeedCorpus(
             source: "sf_city",
@@ -229,7 +229,7 @@ struct SeedCorpus: Sendable {
                 // 78_095 until task #103 rebuilt the seed, and NOT a consequence of that task: the
                 // shipped file predates a refresh of `Fixtures/raw/street_tree_list.csv`, in which
                 // SF TreeID 234040 now publishes an empty `PermitNotes`. The SF-only variant above
-                // reads 27_046 before and after, which is what localises the drift to the shipped
+                // reads 27_046 before and after, which is what localizes the drift to the shipped
                 // artifact rather than to the ingest. See ERRATA E208.
                 "permit_notes": 78_094
             ],
@@ -250,7 +250,7 @@ struct SeedCorpus: Sendable {
             landContextUnplaced: 56_294,
             landContextDeclinedForeignVocabulary: 52_788,
             neighborhoodsWithNoVacantSite: 0,
-            vacantSitesWithNoNeighbourhood: 11_787,
+            vacantSitesWithNoNeighborhood: 11_787,
             treesOfUnknownSpecies: 705,
             datedVacantSites: 9_237,
             sunsetVacantSites: 1_436,
@@ -292,7 +292,7 @@ struct SeedCorpus: Sendable {
             landContextUnplaced: 0,
             landContextDeclinedForeignVocabulary: 0,
             neighborhoodsWithNoVacantSite: 0,
-            vacantSitesWithNoNeighbourhood: 0,
+            vacantSitesWithNoNeighborhood: 0,
             treesOfUnknownSpecies: 0,
             datedVacantSites: 9_294,
             sunsetVacantSites: 1_474,

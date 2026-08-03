@@ -5,18 +5,18 @@ import Testing
 /// The heart on screen 03's quad row, on a device that has no account (ERRATA E89).
 ///
 /// E23 proved this shape once for private reminders and this suite proves the same sentences for
-/// favourites, plus the two it has that a reminder does not:
+/// favorites, plus the two it has that a reminder does not:
 ///
-/// 1. a favourite saves with no user present, and is owned by the device;
+/// 1. a favorite saves with no user present, and is owned by the device;
 /// 2. the migration that made that possible did not drop the rows already stored;
-/// 3. `claimDevice` moves device-owned favourites onto the account, and claiming twice changes
-///    nothing — no duplicate, no orphan, and nobody else's favourite moved;
+/// 3. `claimDevice` moves device-owned favorites onto the account, and claiming twice changes
+///    nothing — no duplicate, no orphan, and nobody else's favorite moved;
 /// 4. **the uniqueness pair survived becoming an ownership pair**: one owner may hold a tree once,
-///    two owners may each hold it, and a sign-in where both had already favourited the same tree
+///    two owners may each hold it, and a sign-in where both had already favorited the same tree
 ///    merges rather than aborting the claim;
-/// 5. **the tombstone and the replay guard still work**, which they must, because a favourite is the
+/// 5. **the tombstone and the replay guard still work**, which they must, because a favorite is the
 ///    one contribution the model allows to be taken back.
-@Suite("Favourites")
+@Suite("Favorites")
 struct FavoriteTests {
 
     // MARK: - Fixtures
@@ -25,7 +25,7 @@ struct FavoriteTests {
     private static let userID = UUID(uuidString: "0E000000-0000-4000-8000-0000000000B2")!
     private static let strangerID = UUID(uuidString: "0E000000-0000-4000-8000-0000000000B3")!
 
-    /// A tree to favourite. There is no seed in these tests, so it is a community add — which
+    /// A tree to favorite. There is no seed in these tests, so it is a community add — which
     /// `LocalAPI.requireTree` accepts and an invented UUID does not.
     private static func makeTree(api: LocalAPI, at longitude: Double = -122.44) async throws -> Tree {
         try await api.addTree(
@@ -37,7 +37,7 @@ struct FavoriteTests {
         )
     }
 
-    /// One favourite row, read straight from SQL. The store has no "read a favourite" API — it
+    /// One favorite row, read straight from SQL. The store has no "read a favorite" API — it
     /// answers `isFavorite` for one owner and one tree — and these assertions are about the row's
     /// owner, timestamp and client uuid, which is more than the boolean carries.
     private struct Row: Equatable {
@@ -100,7 +100,7 @@ struct FavoriteTests {
 
     // MARK: - 1. It saves with no user
 
-    @Test("a favourite saves with no user present, owned by the device")
+    @Test("a favorite saves with no user present, owned by the device")
     func savesWithoutAnAccount() async throws {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
@@ -135,15 +135,15 @@ struct FavoriteTests {
         #expect(records.count == 1)
         #expect(records.first?.item.state == .done)
 
-        // And the two reads that a device-owned favourite has to reach: the grove, which used to
-        // read favourites only when a user was present, and screen 15's holdings.
+        // And the two reads that a device-owned favorite has to reach: the grove, which used to
+        // read favorites only when a user was present, and screen 15's holdings.
         let grove = try await api.grove()
         #expect(grove.map(\.treeID) == [tree.id])
         #expect(grove.first?.isFavorite == true)
         #expect(try await api.deviceContributions().favorites == 1)
     }
 
-    @Test("two taps on one heart save one favourite")
+    @Test("two taps on one heart save one favorite")
     func doubleTapIsOneFavorite() async throws {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
@@ -167,7 +167,7 @@ struct FavoriteTests {
         #expect(try await outbox.records().count == 1)
     }
 
-    @Test("a favourite of a tree that does not exist is not stored")
+    @Test("a favorite of a tree that does not exist is not stored")
     func unknownTreeIsRejected() async throws {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
@@ -182,13 +182,13 @@ struct FavoriteTests {
 
     // MARK: - 2. The migration keeps what was already there
 
-    @Test("migrating a v4 database preserves the favourites already in it")
+    @Test("migrating a v4 database preserves the favorites already in it")
     func migrationPreservesExistingRows() throws {
         let connection = try SQLiteConnection(path: ":memory:")
         try connection.configureForWriting()
         _ = try SchemaMigrator.migrate(AppSchema.migrations.filter { $0.version <= 4 }, on: connection)
 
-        // Two favourites written by a build where `user_id` was NOT NULL: one live, one already
+        // Two favorites written by a build where `user_id` was NOT NULL: one live, one already
         // tombstoned, because the tombstone is the state a rebuild is most likely to flatten.
         let liveTree = UUID()
         let offTree = UUID()
@@ -222,7 +222,7 @@ struct FavoriteTests {
         #expect(survivors.allSatisfy { $0.userID == Self.userID && $0.deviceID == nil })
         #expect(survivors.first { $0.treeID == liveTree }?.clientUUID == liveClient)
 
-        // The new shape is in force: a device-owned favourite is now storable…
+        // The new shape is in force: a device-owned favorite is now storable…
         try store.applyFavoriteToggle(
             owner: .device(Self.deviceID),
             treeID: liveTree,
@@ -274,7 +274,7 @@ struct FavoriteTests {
 
     // MARK: - 3. Adoption
 
-    @Test("claimDevice adopts device-owned favourites, and claiming twice changes nothing")
+    @Test("claimDevice adopts device-owned favorites, and claiming twice changes nothing")
     func claimDeviceAdoptsIdempotently() async throws {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
@@ -318,7 +318,7 @@ struct FavoriteTests {
         // And the device is holding nothing any more, which is screen 15's promise.
         #expect(try await api.deviceContributions().favorites == 0)
 
-        // A favourite made after sign-in is the account's from the start, and a later claim by a
+        // A favorite made after sign-in is the account's from the start, and a later claim by a
         // different account does not take it.
         await api.setUserID(Self.userID)
         let third = try await Self.makeTree(api: api, at: -122.32)
@@ -347,13 +347,13 @@ struct FavoriteTests {
         let january = Date(timeIntervalSince1970: 1_800_000_000)
         let june = january.addingTimeInterval(60 * 60 * 24 * 150)
 
-        // The account favourited this tree in January, from somewhere else…
+        // The account favorited this tree in January, from somewhere else…
         let accountToggle = UUID()
         try await Self.toggle(
             store, owner: .user(Self.userID), treeID: shared.id,
             isFavorite: true, clientUUID: accountToggle, at: january
         )
-        // …and this device favourited the same tree in June, before signing in. Both rows exist:
+        // …and this device favorited the same tree in June, before signing in. Both rows exist:
         // that is the state the ownership pair has to allow.
         let deviceToggle = UUID()
         try await Self.toggle(
@@ -398,7 +398,7 @@ struct FavoriteTests {
         let january = Date(timeIntervalSince1970: 1_800_000_000)
         let june = january.addingTimeInterval(60 * 60 * 24 * 150)
 
-        // The device favourited it in January; the account took the heart off in June.
+        // The device favorited it in January; the account took the heart off in June.
         try await Self.toggle(
             store, owner: .device(Self.deviceID), treeID: tree.id,
             isFavorite: true, clientUUID: UUID(), at: january
@@ -414,7 +414,7 @@ struct FavoriteTests {
         let stored = try await Self.rows(in: store)
         #expect(stored.count == 1)
         #expect(stored.first?.userID == Self.userID)
-        #expect(stored.first?.isActive == false, "the later un-favourite is what the person meant")
+        #expect(stored.first?.isActive == false, "the later un-favorite is what the person meant")
         #expect(stored.first?.clientUUID == accountToggle)
     }
 
@@ -450,7 +450,7 @@ struct FavoriteTests {
 
     // MARK: - 5. The tombstone and the replay guard
 
-    @Test("an un-favourite is a tombstone, and a replayed toggle does not flip it back")
+    @Test("an un-favorite is a tombstone, and a replayed toggle does not flip it back")
     func tombstoneAndReplayGuardSurvive() async throws {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
@@ -472,14 +472,14 @@ struct FavoriteTests {
         #expect(stored.first?.isActive == true, "a replay of the same client uuid flipped the state")
         #expect(stored.first?.updatedAt == SQLiteTimestamp.string(from: moment))
 
-        // A real un-favourite is a different event, and it tombstones rather than deleting.
+        // A real un-favorite is a different event, and it tombstones rather than deleting.
         let off = UUID()
         try await Self.toggle(
             store, owner: .device(Self.deviceID), treeID: tree.id,
             isFavorite: false, clientUUID: off, at: moment.addingTimeInterval(20)
         )
         stored = try await Self.rows(in: store)
-        #expect(stored.count == 1, "the un-favourite removed the row instead of tombstoning it")
+        #expect(stored.count == 1, "the un-favorite removed the row instead of tombstoning it")
         #expect(stored.first?.isActive == false)
         #expect(try await api.deviceContributions().favorites == 0)
         // The grove drops it, because the grove lists what you hold.
@@ -488,16 +488,16 @@ struct FavoriteTests {
 
     // MARK: - What a memorial may be
 
-    /// **A memorial and a vacant site can be favourited, and that is deliberate.**
+    /// **A memorial and a vacant site can be favorited, and that is deliberate.**
     ///
     /// `TreeStatus.acceptsNewContributions` gates the visit, the photo, the check-in and the measure
     /// sheet, and its reason is stated on the property: those are all observations of a tree that has
-    /// to exist. A favourite observes nothing. It writes to the person's grove, not to the tree's
+    /// to exist. A favorite observes nothing. It writes to the person's grove, not to the tree's
     /// record — which is exactly why it is the one non-append-only row in the model (DECISIONS §3.7)
     /// and why D1 had to kill the version of it that was a public vote.
     ///
     /// The deciding argument is the second assertion below: gating the write would make the toggle
-    /// one-way for anyone whose favourite tree is later removed. They could no longer take the heart
+    /// one-way for anyone whose favorite tree is later removed. They could no longer take the heart
     /// off a record they can still see. A rule that turns a reversible thing into an irreversible one
     /// is worse than the state it was trying to prevent.
     ///
@@ -505,14 +505,14 @@ struct FavoriteTests {
     /// only on the warm variant, so a vacant site never shows it, and the map sends a removed pin to
     /// screen 19 (E95). A photographed removed tree reached from the almanac still draws the row —
     /// E95's own open residual — and the heart is the one cell in it that costs nothing there.
-    @Test("a removed tree can be favourited, and un-favourited afterwards")
+    @Test("a removed tree can be favorited, and un-favorited afterwards")
     func aMemorialMayBeFavorited() async throws {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
         let outbox = OutboxQueue(queue: store.queue, transport: APIOutboxTransport(api: api))
         let tree = try await Self.makeTree(api: api)
 
-        // Favourited while it was standing.
+        // Favorited while it was standing.
         let clientUUID = UUID()
         _ = try await FavoriteOutboxWriter.save(
             treeID: tree.id,
@@ -544,7 +544,7 @@ struct FavoriteTests {
 
     // MARK: - The shapes that must stay unrepresentable
 
-    @Test("a favourite's owner round-trips through the outbox payload as exactly one owner")
+    @Test("a favorite's owner round-trips through the outbox payload as exactly one owner")
     func ownerEncodesAsOneKey() throws {
         for owner in [FavoriteOwner.user(Self.userID), .device(Self.deviceID)] {
             let toggle = FavoriteToggle(owner: owner, treeID: UUID(), isFavorite: true)
@@ -555,7 +555,7 @@ struct FavoriteTests {
 
             let decoded = try OutboxPayload.decode(kind: .favoriteToggle, from: data)
             guard case let .favoriteToggle(round) = decoded else {
-                Issue.record("a favourite payload decoded as \(decoded)")
+                Issue.record("a favorite payload decoded as \(decoded)")
                 return
             }
             #expect(round.owner == owner)
@@ -563,7 +563,7 @@ struct FavoriteTests {
         }
     }
 
-    @Test("an ownerless favourite payload does not decode into an ownerless favourite")
+    @Test("an ownerless favorite payload does not decode into an ownerless favorite")
     func ownerlessPayloadIsRefused() throws {
         let toggle = FavoriteToggle(owner: .device(Self.deviceID), treeID: UUID(), isFavorite: true)
         let encoded = try OutboxPayload.favoriteToggle(toggle).encoded()
@@ -577,12 +577,12 @@ struct FavoriteTests {
         }
     }
 
-    @Test("the favourite owner follows D9: the account when there is one, the device otherwise")
+    @Test("the favorite owner follows D9: the account when there is one, the device otherwise")
     func ownerFollowsAttribution() {
         #expect(FavoriteOwner(Attribution.anonymous(deviceID: Self.deviceID)) == .device(Self.deviceID))
         #expect(FavoriteOwner(Attribution(userID: Self.userID, deviceID: Self.deviceID)) == .user(Self.userID))
         #expect(FavoriteOwner.device(Self.deviceID).adopted(by: Self.userID) == .user(Self.userID))
-        // Adoption never re-homes an account's favourite onto another account.
+        // Adoption never re-homes an account's favorite onto another account.
         #expect(FavoriteOwner.user(Self.userID).adopted(by: Self.strangerID) == .user(Self.userID))
     }
 }

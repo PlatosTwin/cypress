@@ -26,7 +26,7 @@ struct MeasurePresentationTests {
 
     private static func previous(
         _ value: Double,
-        unit: LengthUnit = .centimetres,
+        unit: LengthUnit = .centimeters,
         method: MeasurementMethod = .tape,
         at capturedAt: Date = Calendar.current.date(from: DateComponents(year: 2024, month: 6, day: 14))!
     ) -> TreeMeasurement {
@@ -80,8 +80,8 @@ struct MeasurePresentationTests {
     @Test("the entered unit and the SI value are both stored, and agree")
     func unitsAreCaptured() {
         var draft = Self.draft(entry: "64")
-        draft.unit = .centimetres
-        #expect(draft.quantity?.unitEntered == .centimetres)
+        draft.unit = .centimeters
+        #expect(draft.quantity?.unitEntered == .centimeters)
         #expect(draft.quantity?.siValue == 0.64)
 
         draft.unit = .inches
@@ -143,10 +143,10 @@ struct MeasurePresentationTests {
 
     // MARK: - Units
 
-    @Test("switching the unit clears the entry rather than relabelling it")
+    @Test("switching the unit clears the entry rather than relabeling it")
     func switchingUnitsClearsTheEntry() {
         var draft = Self.draft(entry: "64")
-        #expect(draft.unit == .centimetres)
+        #expect(draft.unit == .centimeters)
 
         draft.switchUnit()
         // The dangerous outcome is `64 in` written where 64 cm was measured — a 2.5× error on an
@@ -156,18 +156,18 @@ struct MeasurePresentationTests {
         #expect(draft.quantity == nil)
 
         draft.switchUnit()
-        #expect(draft.unit == .centimetres)
+        #expect(draft.unit == .centimeters)
     }
 
     @Test("each kind opens in its own unit, and changing kind resets the entry")
     func kindOwnsItsUnit() {
         var draft = MeasureDraft()
         #expect(draft.kind == .dbh)
-        #expect(draft.unit == .centimetres)
+        #expect(draft.unit == .centimeters)
 
         draft.entry = "64"
         draft.select(kind: .height)
-        #expect(draft.unit == .metres)
+        #expect(draft.unit == .meters)
         #expect(draft.entry.isEmpty)
 
         draft.switchUnit()
@@ -179,7 +179,7 @@ struct MeasurePresentationTests {
         #expect(Self.presentation(Self.draft(entry: "64")).unitSwitchLabel == "switch to inches")
         var inches = Self.draft(entry: "")
         inches.unit = .inches
-        #expect(Self.presentation(inches).unitSwitchLabel == "switch to centimetres")
+        #expect(Self.presentation(inches).unitSwitchLabel == "switch to centimeters")
         #expect(Self.presentation(Self.draft(kind: .height, entry: "")).unitSwitchLabel == "switch to feet")
     }
 
@@ -251,7 +251,7 @@ struct MeasurePresentationTests {
         let presentation = Self.presentation(Self.draft(entry: "900"))
         #expect(presentation.anomaly == MeasureCopy.anomalyOutOfRange)
         #expect(presentation.canSave)
-        #expect(Quantity(value: 900, unit: .centimetres, method: .tape)
+        #expect(Quantity(value: 900, unit: .centimeters, method: .tape)
             .isPlausible(within: MeasurementKind.dbh.plausibleSIRange) == false)
     }
 
@@ -307,7 +307,7 @@ struct MeasurePresentationTests {
             attribution: .anonymous(deviceID: Self.deviceID),
             capturedAt: Self.now,
             gpsAccuracyM: VisitShortlist.assumedAccuracyM,
-            quantity: Quantity(value: 64, unit: .centimetres, method: .tape)
+            quantity: Quantity(value: 64, unit: .centimeters, method: .tape)
         )
         #expect(measurement.isChartable == false)
         #expect(

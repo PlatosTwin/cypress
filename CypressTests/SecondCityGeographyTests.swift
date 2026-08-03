@@ -108,7 +108,7 @@ struct SecondCityGeographyTests {
         return try #require(found, "no species stands in \(neighborhood); the probe cannot fire")
     }
 
-    /// A San Jose tree that has a species, with its coordinate — the fallback centre for screen 08
+    /// A San Jose tree that has a species, with its coordinate — the fallback center for screen 08
     /// and the species whose membership in the denominator is asserted.
     private static func sanJoseTree(
         on store: CypressStore
@@ -152,7 +152,7 @@ struct SecondCityGeographyTests {
             """,
             on: store
         )
-        #expect(direct > 0, "the probe species is not in the neighbourhood; the control cannot fire")
+        #expect(direct > 0, "the probe species is not in the neighborhood; the control cannot fire")
         #expect(nearYou.count == direct, "the polygon-scoped count moved")
     }
 
@@ -167,7 +167,7 @@ struct SecondCityGeographyTests {
         let guide = try await Self.api(store).speciesGuide(id: sanJose.speciesID, near: Self.downtownSanJose)
 
         let nearYou = try #require(guide.nearYou, "San Jose still has no Near you card at all")
-        #expect(nearYou.area == .radius(metres: AlmanacLimits.fallbackRadiusM))
+        #expect(nearYou.area == .radius(meters: AlmanacLimits.fallbackRadiusM))
         #expect(nearYou.count > 0, "a species the city records downtown counted to nothing")
 
         // And the whole-city card beside it still counts the whole merged inventory.
@@ -194,7 +194,7 @@ struct SecondCityGeographyTests {
     ///
     /// `SpeciesQueries.cityTreeCount` carries no id-space predicate: it is `COUNT(*)` over the
     /// whole attached inventory, and the built-in bundle is fused across `sf` and `us-ca-sj`. So
-    /// the card labelled `In San Francisco` was printing a two-city number — for Crape Myrtle, 97
+    /// the card labeled `In San Francisco` was printing a two-city number — for Crape Myrtle, 97
     /// San Francisco trees and 3,649 San Jose ones under San Francisco's name alone.
     ///
     /// The test asserts the fact first and the copy second, in that order deliberately: **because
@@ -247,7 +247,7 @@ struct SecondCityGeographyTests {
     // MARK: - Screen 08 · the recognition ring
 
     /// One visit to a Sunset/Parkside tree, and the ring's denominator is the polygon's own species
-    /// list — equal to a direct SQL read, so the resident-neighbourhood path provably did not move.
+    /// list — equal to a direct SQL read, so the resident-neighborhood path provably did not move.
     @Test("a San Francisco contributor's ring is the polygon's, unchanged")
     func sanFranciscoRingIsUnchanged() async throws {
         let store = try await Self.store()
@@ -293,7 +293,7 @@ struct SecondCityGeographyTests {
 
     /// The hole itself: `residentNeighborhood` joins through `seed.neighborhoods`, so every San
     /// Jose contribution was dropped and the ring never rendered in that city. Now the same
-    /// inference — most-visited — centres R29's radius, and the ring renders.
+    /// inference — most-visited — centers R29's radius, and the ring renders.
     @Test("a San Jose contributor gets a ring, drawn around their most-visited tree")
     func sanJoseContributorGetsARing() async throws {
         let store = try await Self.store()
@@ -310,7 +310,7 @@ struct SecondCityGeographyTests {
 
         let grove = try await Self.api(store).groveSpecies()
         let neighborhood = try #require(grove.neighborhood, "a San Jose contributor still has no area")
-        #expect(neighborhood.area == .radius(metres: AlmanacLimits.fallbackRadiusM))
+        #expect(neighborhood.area == .radius(meters: AlmanacLimits.fallbackRadiusM))
 
         // The denominator holds the species standing around the visited tree — including, by
         // construction, the visited tree's own.
@@ -318,7 +318,7 @@ struct SecondCityGeographyTests {
         #expect(denominator > 0)
         #expect(
             neighborhood.species.items.contains(sanJose.speciesID),
-            "the visited tree's own species is missing from the area it centres"
+            "the visited tree's own species is missing from the area it centers"
         )
 
         // And the ring actually renders: the visit is a meeting, the meeting is in the area, so

@@ -18,8 +18,8 @@
 //
 //  Neither is a small gap to close. A street search wants `trees.address`, which carries no index —
 //  every keystroke would be a scan of 195,309 rows on the map's critical path, which is the one
-//  thing `TreeQueries` forbids outright. A neighbourhood search wants the boundary geometry the seed
-//  does not ship; `TreeProfile.neighborhoodName` exists precisely because a neighbourhood has no
+//  thing `TreeQueries` forbids outright. A neighborhood search wants the boundary geometry the seed
+//  does not ship; `TreeProfile.neighborhoodName` exists precisely because a neighborhood has no
 //  identity in this database beyond a name hanging off a tree. Both are `Tools/build_seed.py`'s work
 //  before they can be the client's, exactly as `SpeciesQueries` already rules for the substring
 //  matching an FTS5 index would take.
@@ -39,7 +39,7 @@
 //  measured on the simulator against this component exactly as it shipped — no `FocusState`, no
 //  `submitLabel`, no `onSubmit` — pressing return already resigned focus, because that is SwiftUI's
 //  default for a single-line `TextField` and always was. So there was a way out. What there was not
-//  was a way out anybody could *see*: the key is labelled `return`, which reads as "insert a
+//  was a way out anybody could *see*: the key is labeled `return`, which reads as "insert a
 //  newline" rather than "I am finished", and nothing else on screen 01 dismisses the keyboard —
 //  tapping the map does not, because an `MKMapView` does not resign anyone's first responder, and
 //  covering it with a tap-catcher that would takes the pan and the pinch with it. Meanwhile the
@@ -56,7 +56,7 @@
 //      the keyboard rather than on screen 01, so nothing the mock positions moves.
 //
 //  There is deliberately **no** `onSubmit` resigning focus. It was written, and then removed once the
-//  measurement above showed it changed nothing: a line that appears to cause the behaviour it merely
+//  measurement above showed it changed nothing: a line that appears to cause the behavior it merely
 //  coincides with is how a comment ends up ratifying a defect on this project.
 //
 //  The ✕ is drawn where the owner asked for it — hard against the trailing edge, on the bar's own
@@ -75,7 +75,7 @@ struct SearchBar: View {
 
     /// A caller's own focus, for the one caller that has to *read* it.
     ///
-    /// R16 owned the `FocusState` here on the grounds that "every caller wants the same behaviour
+    /// R16 owned the `FocusState` here on the grounds that "every caller wants the same behavior
     /// from it, and a binding threaded through two screens would be two chances to forget it". That
     /// stays true and stays the default — this is `nil` at three of the four call sites and they are
     /// unchanged. What changed is that screen 01 now drops a list of species under this bar (task
@@ -84,7 +84,7 @@ struct SearchBar: View {
     /// asked. `Done` and the return key keep working through whichever binding is in play.
     var focus: FocusState<Bool>.Binding?
 
-    /// The focus when no caller supplied one, so the default behaviour needs no caller at all.
+    /// The focus when no caller supplied one, so the default behavior needs no caller at all.
     @FocusState private var ownFocus: Bool
 
     private var isFocused: FocusState<Bool>.Binding { focus ?? $ownFocus }

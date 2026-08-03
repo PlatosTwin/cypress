@@ -122,7 +122,7 @@ final class SiteModel {
 
     /// **Judgment call, not a spec value.** 150 m is roughly two SF blocks — far enough that a site
     /// in the middle of a bare stretch still finds something, near enough that the row means "that
-    /// one, over there" rather than "somewhere in this neighbourhood".
+    /// one, over there" rather than "somewhere in this neighborhood".
     static let nearestSearchRadiusM: Double = 150
 
     /// Enough rows that a run of vacant sites around this one does not exhaust the read before a

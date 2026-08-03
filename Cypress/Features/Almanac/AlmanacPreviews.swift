@@ -6,8 +6,8 @@
 //  here than the drawn one:
 //
 //  - **the fresh install**, where no seeded tree has a visit or a photo, so the bloom row has
-//    nothing behind it and the coverage list is every young tree in the neighbourhood;
-//  - **no location fix**, where there is no neighbourhood and therefore no almanac at all.
+//    nothing behind it and the coverage list is every young tree in the neighborhood;
+//  - **no location fix**, where there is no neighborhood and therefore no almanac at all.
 //
 //  Both are what a real device shows, and neither is in the mock set. They are previewed rather
 //  than described so that what was chosen for them is visible (ARCHITECTURE §5.6, ERRATA).
@@ -56,7 +56,7 @@ struct AlmanacPreviewAPI: CypressAPI {
 /// | | SCREENS.md 12 | the seed |
 /// |---|---|---|
 /// | pill | `Outer Sunset` | `Sunset/Parkside` — SF's polygon set has no Outer Sunset (E47) |
-/// | elder | `since 1898` | `since 1956`, the oldest recorded planting in the neighbourhood |
+/// | elder | `since 1898` | `since 1956`, the oldest recorded planting in the neighborhood |
 /// | species | `64 species` | `215 species` |
 /// | shares | 18 / 11 / 9 / 62 | 14 / 8 / 7 / 71 — SF's street-tree tail is very long |
 /// | coverage | `9 young trees` | `17`, the young trees the city planted here since 2024 |
@@ -140,7 +140,7 @@ private enum AlmanacFixtures {
         )
     }
 
-    /// The block as a real device draws it: 1,474 basins in the neighbourhood, the nearest 20 of them
+    /// The block as a real device draws it: 1,474 basins in the neighborhood, the nearest 20 of them
     /// carried to the map (ERRATA E129, E38).
     static func vacantSites(count: Int = 1_474) -> VacantSites {
         VacantSites(
@@ -172,10 +172,10 @@ private enum AlmanacFixtures {
     )
 
     /// **The fresh install.** No seeded tree carries a visit or a photo, so: no bloom (A9's floor of
-    /// one sighting is not met), and nothing was planted in this neighbourhood this spring. The
+    /// one sighting is not met), and nothing was planted in this neighborhood this spring. The
     /// elder and the mix are city data and draw in full. The coverage card counts every young tree
     /// here, because nobody has visited any of them — and they are spread across the whole
-    /// neighbourhood, so §4's walking sentence is withheld.
+    /// neighborhood, so §4's walking sentence is withheld.
     static let freshInstall = Almanac(
         neighborhood: AlmanacNeighborhood(
             area: .named("Sunset/Parkside"),
@@ -208,7 +208,7 @@ private enum AlmanacFixtures {
     /// boundaries for. The pill is a distance, and the sentence under the header says so.
     static let radiusArea = Almanac(
         neighborhood: AlmanacNeighborhood(
-            area: .radius(metres: AlmanacLimits.fallbackRadiusM),
+            area: .radius(meters: AlmanacLimits.fallbackRadiusM),
             firstBloom: nil,
             elder: elder,
             newestNeighbors: RecentPlanting(

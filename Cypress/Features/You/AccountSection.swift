@@ -69,11 +69,11 @@ struct AccountSection: View {
         // ══════════════════════════════════════════════════════════════════════════════════════
         // RULINGS R3's confirmation, now two doors wide (the project owner's ruling). **The copy is
         // the feature**, in R3's own words: "deleting more than someone expected is the failure
-        // mode this ruling creates, and copy is the whole defence against it". `AccountDeletionCopy`
+        // mode this ruling creates, and copy is the whole defense against it". `AccountDeletionCopy`
         // holds every string; `AccountDeletionSheet` arranges them and adds none of its own.
         //
         // A sheet rather than the `confirmationDialog` this used to be, and rather than a pushed
-        // screen. The dialog was the right shape while there was one behaviour and is the wrong
+        // screen. The dialog was the right shape while there was one behavior and is the wrong
         // shape for two — see the header of `AccountDeletionSheet` for the argument, which is that
         // a dialog cannot make both doors readable before either is chosen. Still **NOT SPECIFIED**:
         // SCREENS.md draws no deletion surface and BUILD-PLAN §9 lists none.

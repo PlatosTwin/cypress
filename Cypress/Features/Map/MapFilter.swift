@@ -8,7 +8,7 @@
 //
 //  ── What replaced what ────────────────────────────────────────────────────────────────────────
 //  SCREENS.md 01 §12 draws three chips — `All`, `In bloom`, `Needs care` — "single-select with `All`
-//  default". The owner asked for four narrowings in priority order: **Yours, Favourites, species,
+//  default". The owner asked for four narrowings in priority order: **Yours, Favorites, species,
 //  year**. Those are not three more entries in a single-select list, because they are not
 //  alternatives: "my trees" and "planted in the 2010s" are questions a reader can sensibly ask at
 //  once, and a single-select row would silently drop the first when they asked the second.
@@ -22,7 +22,7 @@
 //  **It is the legend (#96), made tappable, and there is no species chip at all.** The owner's own
 //  constraint was that the filter and the legend "must agree with each other and must not fight for
 //  the same screen space". The strongest available guarantee that two controls agree is that they
-//  are one control: the legend already names the ≤4 species the map has coloured (`MapSpeciesPalette`),
+//  are one control: the legend already names the ≤4 species the map has colored (`MapSpeciesPalette`),
 //  already sits in the chrome, and already costs the space it costs. Tapping an entry narrows to that
 //  species; tapping it again clears. A species that is not one of the four is reached the way it
 //  always was — by typing it into C20, which writes the same narrowing (`MapSearch`).
@@ -65,7 +65,7 @@ import Foundation
 ///
 /// **A conjunction.** Every dimension that is set must be satisfied; a dimension that is nil asks
 /// nothing. That makes the empty value — `.all` — the un-narrowed map, which is what the mock's
-/// `All` chip selected, so the default behaviour is unchanged.
+/// `All` chip selected, so the default behavior is unchanged.
 struct MapFilter: Equatable, Sendable {
 
     /// `Yours` / `Favorites`, or neither. Single-select **within this dimension only**: a tree is
@@ -284,7 +284,7 @@ enum MapExtraFilter: String, CaseIterable, Identifiable, Sendable {
 
 /// What the filter row and its result line say.
 ///
-/// The words live here rather than inside the views for the reason `MapRecentreCopy` and
+/// The words live here rather than inside the views for the reason `MapRecenterCopy` and
 /// `MapLocationCopy` do: they are the part that has to be asserted without rendering anything, and
 /// the result line's two forms are the *only* thing keeping this feature inside D1 and E38.
 enum MapFilterCopy {

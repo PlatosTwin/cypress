@@ -9,7 +9,7 @@
 //  Both models already distinguished a failed read from an empty one, and both views drew the two
 //  identically: `presentation` is nil for `.loading` and for `.failed` alike, and a single
 //  `if let presentation` with no else left the column blank. A blank column is *also* what an empty
-//  grove and a quiet neighbourhood look like — those are legitimate, common states with legitimate,
+//  grove and a quiet neighborhood look like — those are legitimate, common states with legitimate,
 //  designed layouts — so the failure was invisible by construction.
 //
 //  A test that asserts `model.hasFailed == true` would have passed on the broken app: the property
@@ -64,7 +64,7 @@ struct FailedReadTests {
 
     /// Both screens' reads, each failing exactly once. Every access is from a `@MainActor` model, so
     /// the counter is only ever touched on one thread; `@unchecked` records that rather than assumes
-    /// it, the same way `FavoriteToggleTests.Favourites` does.
+    /// it, the same way `FavoriteToggleTests.Favorites` does.
     private struct FailsOnce: CypressAPI {
         let attempts: Attempts
 
@@ -114,7 +114,7 @@ struct FailedReadTests {
         #expect(empty.presentation != nil)
     }
 
-    @Test("An almanac that could not be read is not a quiet neighbourhood")
+    @Test("An almanac that could not be read is not a quiet neighborhood")
     func almanacFailureIsItsOwnState() async {
         let failed = AlmanacModel(
             api: AlmanacPreviewAPI(fails: true),

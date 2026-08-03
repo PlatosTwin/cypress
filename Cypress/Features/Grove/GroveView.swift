@@ -160,7 +160,7 @@ struct GroveView: View {
     /// §3: `padding:2px 18px 0`, `HStack(spacing:16)` — the ring, then two lines of text.
     ///
     /// Absent entirely when the two reads behind it could not both be proved complete, or when
-    /// nothing is recognised yet. See `GrovePresentation.progress` for why each of those is a
+    /// nothing is recognized yet. See `GrovePresentation.progress` for why each of those is a
     /// removal rather than a zero.
     @ViewBuilder
     private func progressBlock(_ presentation: GrovePresentation) -> some View {
@@ -283,7 +283,7 @@ struct GroveView: View {
 
     // MARK: - Footnote
 
-    /// §6: 12px, `text.faintAlt`, centred, `padding:14px 18px`.
+    /// §6: 12px, `text.faintAlt`, centered, `padding:14px 18px`.
     private var footnote: some View {
         Text(GroveCopy.footnote)
             .font(CypressFont.body12)

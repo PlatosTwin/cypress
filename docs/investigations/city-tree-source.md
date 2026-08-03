@@ -157,12 +157,12 @@ prove the record is old. Grid 211 was pruned in June 2021; a tree added to the i
 
 The two sources are not nested. ArcGIS adds five useful fields and drops nine.
 
-### Licence and terms — partially unestablished
+### License and terms — partially unestablished
 
 - `tkzw-k3nq` is unambiguous: `licenseId` `PDDL`, *Open Data Commons Public Domain Dedication
   and License*, attribution "San Francisco Public Works", publishing frequency Daily, and its
   `rowsUpdatedAt` is 2026-07-23.
-- **The ArcGIS service publishes no licence.** The item's `licenseInfo`, `accessInformation`,
+- **The ArcGIS service publishes no license.** The item's `licenseInfo`, `accessInformation`,
   `description` and `snippet` are all `null`; the layer's `copyrightText` is empty. It is
   shared publicly and advertises the `Extract` capability, which is the ArcGIS-level permission
   to download, but that is a server capability flag, not a grant of terms. **I could not find
@@ -205,7 +205,7 @@ present in both sources**. Attribute agreement over those 17,793:
 
 | Check | Agreement |
 |---|---|
-| Address identical (case-normalised) | 88.01% |
+| Address identical (case-normalized) | 88.01% |
 | Address same street + same/near number | **99.36%** |
 | Coordinates within 1 m | **98.65%** |
 | Coordinates within 3 m | 98.66% |
@@ -216,18 +216,18 @@ present in both sources**. Attribute agreement over those 17,793:
 | `DBH` agrees exactly | 98.57% |
 | Botanical name agrees | 98.44% |
 
-A median offset of **four centimetres** across 17,793 independently keyed records is not
+A median offset of **four centimeters** across 17,793 independently keyed records is not
 something two unrelated id spaces can produce. The two sources are the same survey.
 
 **The residual disagreements are attribute drift, not identity drift.** In a fresh 30-window
 sample (5,698 comparable pairs, seed 5150): 98.51% of botanical names agree, 0.21% are the same
 genus with a different epithet or cultivar, and 1.28% differ at genus level. Of those 73
-genus-level disagreements, **95.9% still share the same address and sit within 3 metres of each
+genus-level disagreements, **95.9% still share the same address and sit within 3 meters of each
 other**. That is the signature of a site that was re-surveyed or replanted — the record is the
 same site, one source has newer species information — not of a key collision.
 
 The address mismatches are almost entirely cosmetic: ArcGIS uppercases, and DataSF writes an `X`
-suffix on some numbers (`3995X Alemany Blvd` vs `3995 ALEMANY BLVD`). Normalising street and
+suffix on some numbers (`3995X Alemany Blvd` vs `3995 ALEMANY BLVD`). Normalizing street and
 number takes agreement from 88.01% to 99.36%.
 
 **Systematic disagreement found: none.** No constant id offset, no block shift, no duplicate
@@ -336,7 +336,7 @@ Two direct citations, both from the city:
 - The Street Tree Map's own **About** panel, at <https://bsm.sfdpw.org/urbanforestry/>:
   *"The Bureau of Urban Forestry (BUF) gathers and maintains a database of approximately 125,000
   public trees on sidewalks, medians, and other public rights-of-way."*
-- The StreetTreeSF programme page, <https://sfpublicworks.org/streettreesf>: *"StreetTreeSF is a
+- The StreetTreeSF program page, <https://sfpublicworks.org/streettreesf>: *"StreetTreeSF is a
   voter-approved initiative managed by San Francisco Public Works to professionally maintain and
   care for the 125,000-plus street trees growing throughout all neighborhoods in the City."*
 
@@ -346,7 +346,7 @@ them from property owners to Public Works. Contemporary descriptions of the meas
 "124,000-plus" and "125,000-plus" interchangeably.
 
 **So 125,000 counts living street trees in the public right-of-way that Public Works maintains
-under StreetTreeSF.** It is a rounded programme figure from 2016, still quoted in 2026, and it is
+under StreetTreeSF.** It is a rounded program figure from 2016, still quoted in 2026, and it is
 not a count of rows in any dataset.
 
 How our numbers relate to it:
@@ -391,7 +391,7 @@ layer and 1.6% of the union of the two sources.
 `qCaretaker`, `PlantDate`, `PlotSize` and `PermitNotes` outright, and drop ~68,800 records —
 including every `Permitted Site` and most `Undocumented` trees. The seed would shrink from
 195,309 to ~133,577 and every feature keyed off site type or legal status would need rebuilding.
-We would also be depending on a service with no published licence, no documented download, and
+We would also be depending on a service with no published license, no documented download, and
 no stated availability guarantee, in exchange for grid-level pruning dates.
 
 ### Option C — merge: keep `tkzw-k3nq` as the spine, enrich from ArcGIS
@@ -411,10 +411,10 @@ no stated availability guarantee, in exchange for grid-level pruning dates.
   editorial decision and should not be resolved by a silent last-writer-wins.
 - Cost: one new fetch stage in `Tools/build_seed.py` (133,577 records at 2,000 per page ≈ 67
   paged requests), a schema addition, a reproducibility story for a second upstream that has no
-  snapshot date, and the licence question answered by email first.
+  snapshot date, and the license question answered by email first.
 
 **Impact on the ~195,309 existing uuids under any option: none.** That is the finding that
-matters. Because ArcGIS `TREEID` *is* DataSF `TreeID`, no photograph, favourite, measurement,
+matters. Because ArcGIS `TREEID` *is* DataSF `TreeID`, no photograph, favorite, measurement,
 care log or site lineage is at risk from any of these three choices.
 
 ---
@@ -432,7 +432,7 @@ Stated plainly, because a guess here is worth less than a gap.
    277733, despite the dataset being flagged Daily and refreshed 2026-07-23. This looks like a
    pipeline ceiling, but I have no evidence for the mechanism and did not find any DataSF errata
    describing it. **Unresolved.**
-3. **The licence and terms of the ArcGIS service.** There are none published — `licenseInfo`,
+3. **The license and terms of the ArcGIS service.** There are none published — `licenseInfo`,
    `accessInformation` and `copyrightText` are all empty. Whether bulk extraction is *permitted*
    as opposed to *technically enabled* is genuinely unknown. I did not contact the city.
 4. **Whether the service is rate limited.** Nothing is documented. My ~200 requests over roughly
@@ -470,9 +470,9 @@ read-only `query` requests to the public feature service.
 
 ---
 
-## Addendum, 2026-07-25: the licence question, answered
+## Addendum, 2026-07-25: the license question, answered
 
-The report above left the licence "partially unestablished" and made it the blocker on #91. It is
+The report above left the license "partially unestablished" and made it the blocker on #91. It is
 now established, and the answer is no.
 
 **The PDDL grant stops at the hostname.** DataSF's terms of use define their own scope: *Data*
@@ -494,13 +494,13 @@ clause of their own. That is a clean grant, and it covers what we already ship.
 
 `capabilities` is `Query,Extract`. **`Extract` is a server capability flag, not a grant of terms** —
 it says the software is willing, not that the city is. So there is no published permission for bulk
-extraction of this layer, and the licence that makes our current pipeline safe does not reach it.
+extraction of this layer, and the license that makes our current pipeline safe does not reach it.
 
 **Ruling: do not ingest the ArcGIS layer.** Not because it is forbidden — nobody has said either
-way — but because "no licence published" is not the same as permission, and a beta that ships
+way — but because "no license published" is not the same as permission, and a beta that ships
 132,000 records taken from an unlicensed endpoint has made a claim on the city's behalf that the
 city never made. That is the same error as the `Owner of Tree` field (E143) and the permit notes
-(E145): reading an absence as a licence to assert. If the owner wants this data, the route is an
+(E145): reading an absence as a license to assert. If the owner wants this data, the route is an
 email to SF Public Works, and the answer goes in this file.
 
 ## What the honesty problem actually is, and that it needs no permission
@@ -515,7 +515,7 @@ Confirmed against the live API on 2026-07-25:
   dataset returns no record for it, while the city's own map shows it with a 2021 pruning date. The
   gap is the source's, exactly as the report concluded.
 - **TreeIDs 266901 and 223762 are both present**, both `DPW Maintained`, both on Twin Peaks Blvd,
-  and both with `qSiteInfo` ending `: Yard`. They are real records; the neighbours the owner saw are
+  and both with `qSiteInfo` ending `: Yard`. They are real records; the neighbors the owner saw are
   not phantoms.
 
 What our 195,309 rows are:
@@ -534,7 +534,7 @@ So the "125,000" figure is not evidence of a defect: it is Proposition E's round
 4%. What *is* a defect is calling all 195,309 "San Francisco's street trees" on a screen, when
 12,518 of them are empty holes in the pavement and 318 are shrubs.
 
-**Follow-up worth its own item:** `plant_type` is not normalised — 194,988 `Tree`, 318
+**Follow-up worth its own item:** `plant_type` is not normalized — 194,988 `Tree`, 318
 `Landscaping`, and **3 rows spelled `tree`** (TreeIDs 253212, 253634, 96598). Any filter written as
 `plant_type = 'Tree'` silently drops those three. That one is ours, not the city's.
 
@@ -550,9 +550,9 @@ a shelf life of about a day, and row-count equality was never the test it was us
 
 # Addendum, 2026-07-26: the switch, built
 
-The licence ruling above has been **overridden by the project owner**, who has seen it and said:
+The license ruling above has been **overridden by the project owner**, who has seen it and said:
 *"Just use the official city data. It's fine."* He has accepted the risk of ingesting a service that
-publishes no licence, for a local beta on his own phone. That settles it; the ruling in the previous
+publishes no license, for a local beta on his own phone. That settles it; the ruling in the previous
 addendum stands as a record of the reasoning and is no longer a blocker, and the question is not to
 be re-opened. Nothing about it goes in the app's UI.
 
@@ -636,7 +636,7 @@ category — `PlantType` is `Tree` on all 133,577 records — and the only empty
 the 136 whose `BOTANICAL` reads literally `Potential Site` plus a handful with no species at all.
 Features #11 (the vacant-site state), #31 (the redirect off the tree profile) and #32 (the almanac's
 empty-site count) still work and are still tested, but they now describe 153 sites, and **17 of the
-41 neighbourhoods have none**, so screen 12's empty-site row is absent across a third of the city.
+41 neighborhoods have none**, so screen 12's empty-site row is absent across a third of the city.
 This is the one loss the join cannot repair: a vacant site is a *row*, and rows come from the spine.
 If that surface matters more than agreeing with the city's map, `--source datasf` is one command
 away.
@@ -693,7 +693,7 @@ Both paths derive `trees.uuid` as `uuid5(NS_TREE, <TreeID as ASCII>)` and both i
 same `TreeID` space, so every shared record kept its identity byte for byte — in both directions.
 `266901` is `62b2911f-c0f1-5876-9922-c92a69e94bcc` and `223762` is
 `69a3c876-d64a-51da-8575-54e1f47bc146` in both files. Species uuids likewise: 503 species are in both
-seeds and none moved. No grove entry, journal note, favourite, photograph or check-in on a tree both
+seeds and none moved. No grove entry, journal note, favorite, photograph or check-in on a tree both
 inventories list is touched by the switch, or by switching back.
 
 ## Contributions orphaned
@@ -817,7 +817,7 @@ takes this branch must rebuild or copy it.
    are 3,507 / 65,239. The intersection estimate of ≈130,000 was very good: 130,070.
 2. **Section 6's "Option B — do not"** is superseded by the owner's ruling, and what shipped is
    nearer Option C inverted: the city's layer as the spine, the export as enrichment, rather than the
-   other way round. Its costs are all itemised above; the owner has read them and chosen it anyway.
+   other way round. Its costs are all itemized above; the owner has read them and chosen it anyway.
 3. **475 city records put the botanical name in `COMMON` and leave `BOTANICAL` null**
    (`Laurus nobilis 'Saratoga'`, `Lophostemon confertus`, `Pistacia chinensis`). Not noted in the
    report. `build_seed.py` swaps the halves when `BOTANICAL` is empty and `COMMON` reads as a
@@ -883,12 +883,12 @@ are resolved the same way the tree row set is: the city's layer decides. The tes
 rather than merely unlikely. Nothing in the second pass can add a *tree*: `parse_qspecies` has already
 called the row a placeholder, and every placeholder gets `status = 'vacant_site'` and no species.
 
-## Neighbourhood coverage: 17 of 41 empty, now 0 of 41
+## Neighborhood coverage: 17 of 41 empty, now 0 of 41
 
 The number that made this worth doing. Under `--source city` before this round, 17 of the city's 41
-analysis neighbourhoods held no vacant planting site at all, so screen 12's empty-site row was absent
+analysis neighborhoods held no vacant planting site at all, so screen 12's empty-site row was absent
 across a third of the city and #11's state was unreachable there. **All 41 hold at least one now**,
-which is what the DataSF export gave. Sunset/Parkside, the neighbourhood the almanac suites read,
+which is what the DataSF export gave. Sunset/Parkside, the neighborhood the almanac suites read,
 goes from 7 sites to 1,436 (1,474 under the export).
 
 ## Dropped vacant-site uuids: none, and it was checked rather than reasoned about
@@ -955,7 +955,7 @@ about which rows exist.
 
 ## Corrections to the addendum above
 
-1. **"12,518 → 153, with 17 of 41 neighbourhoods holding none"** described one round of the switch and
+1. **"12,518 → 153, with 17 of 41 neighborhoods holding none"** described one round of the switch and
    no longer describes what ships. 12,413 sites, 0 of 41 empty.
 2. **"This is the one loss the join cannot repair: a vacant site is a *row*, and rows come from the
    spine."** True of a build with one spine, and it framed the sites as unrecoverable without

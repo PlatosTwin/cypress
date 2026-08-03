@@ -9,8 +9,8 @@ Nothing here builds, runs a simulator, or edits a `.swift` file. The deliverable
 `Tools/inventory_contract.py`, `SanJoseStreetTreeAdapter` in `Tools/inventory_adapters.py`, and
 `Tools/test_ca_inventory_adapter.py`.
 
-**Verdict up front: San Jose.** It is the only candidate found that states its licence in its own
-catalogue (CC-BY), publishes a scientific name in a field of its own, publishes trunk diameter as a
+**Verdict up front: San Jose.** It is the only candidate found that states its license in its own
+catalog (CC-BY), publishes a scientific name in a field of its own, publishes trunk diameter as a
 number of inches rather than a range, and — the thing E169 says no source had — publishes a field
 whose only job is to say whether a site holds a tree. It is also the only candidate where the
 `inferred_from_absent_species` basis is reached by a rounding error of the corpus rather than by
@@ -53,7 +53,7 @@ last-updated date, that date is given instead and is the one that matters.
 
 ### 1.1 What was actually found
 
-| City | Inventory | Platform | Rows | Licence, as the publisher states it | Verified |
+| City | Inventory | Platform | Rows | License, as the publisher states it | Verified |
 |---|---|---|---|---:|---|
 | **San Jose** | `Street Tree` | ArcGIS MapServer 510, also CSV/GeoJSON | **344,879** | **CC-BY**, `license_id: cc-by`, `license_url: opendefinition.org/licenses/cc-by`, in the city's own CKAN package `street-tree` | observed |
 | Los Angeles | `Trees (Bureau of Street Services)` | ArcGIS FeatureServer | **635,558** | **none stated** — `licenseInfo` empty, `copyrightText` empty | observed |
@@ -61,7 +61,7 @@ last-updated date, that date is given instead and is the one that matters.
 | Santa Monica | `Trees Inventory` | CKAN datastore | **40,966** | **ODC-BY-1.0**, `license_id: odc-by-1-0` | observed |
 | Oakland | `Oakland Street Trees` | Socrata `4jcx-enxf` | **38,613** | **CC0 1.0** (Public Domain Dedication) | observed |
 | San Mateo | `Street Trees` | ArcGIS FeatureServer | **24,045** | **none stated** | observed |
-| Long Beach | `Tree Inventory` | Opendatasoft | **1,728** | **CC BY 4.0**, with the licence URL | observed |
+| Long Beach | `Tree Inventory` | Opendatasoft | **1,728** | **CC BY 4.0**, with the license URL | observed |
 | Berkeley | `City Trees` (`9t35-jmin`) | Socrata | — | **could not verify** | see §1.3 |
 | San Diego | — | — | — | — | **no tree dataset published**, see §1.3 |
 
@@ -87,8 +87,8 @@ endpoint, the sample endpoint, and a plain fetch of the dataset landing page. Be
 copy is widely quoted as permitting download, reuse and redistribution without restriction, and the
 `City Trees` dataset is described as covering *trees, planting sites and stumps* — which is exactly
 the three-way distinction the contract's `kind` field wants. **On the evidence available here that
-is a promising source whose licence and contents could not be confirmed, and it is written down as
-unverified rather than summarised as permissive.** Whoever revisits it should try the portal in a
+is a promising source whose license and contents could not be confirmed, and it is written down as
+unverified rather than summarized as permissive.** Whoever revisits it should try the portal in a
 browser; the block looks like a WAF rejecting a scripted user agent, not a paywall.
 
 **San Diego publishes no tree inventory.** The city's open-data portal lists 115 datasets and none
@@ -106,14 +106,14 @@ exists to stop: a number that was true when somebody wrote it down.
 
 ### 1.4 Sources deliberately not pursued
 
-Discovery ran the Socrata federated catalogue (5 term queries plus 24 per-domain queries), ArcGIS
+Discovery ran the Socrata federated catalog (5 term queries plus 24 per-domain queries), ArcGIS
 Online's item search (4 queries), the ArcGIS Hub dataset search (3 queries) and `data.ca.gov`'s CKAN
 (1 query). Most California cities are no longer on Socrata; Los Angeles and Oakland are the
 survivors, and the rest have moved to ArcGIS Hub. The searches also surfaced Redlands (54,150 rows)
 and Hayward, which were not probed — the recommendation was already settled by then and probing them
 would have spent somebody else's bandwidth to change nothing.
 
-**Nothing was downloaded from behind a login or a click-through licence, because nothing found
+**Nothing was downloaded from behind a login or a click-through license, because nothing found
 required one.** Had one, the rule would have been to stop and write it down.
 
 ---
@@ -204,14 +204,14 @@ it turned up in California.
 
 ## 4. The recommendation: San Jose, first
 
-Ranked on licence clarity, field coverage and id stability — not on size or name recognition.
+Ranked on license clarity, field coverage and id stability — not on size or name recognition.
 
-**Licence.** San Jose is the only large candidate whose licence is a grant rather than a disclaimer
+**License.** San Jose is the only large candidate whose license is a grant rather than a disclaimer
 and is stated by the publisher in machine-readable form: `license_id: cc-by`,
 `license_title: Creative Commons Attribution`, `license_url:
-http://www.opendefinition.org/licenses/cc-by`, on the CKAN package `street-tree`, organisation
+http://www.opendefinition.org/licenses/cc-by`, on the CKAN package `street-tree`, organization
 *Enterprise GIS*, `metadata_modified` 2026-07-24. Los Angeles and San Mateo state nothing;
-Sacramento states a disclaimer, which is not a licence. Oakland's CC0 is cleaner still, but see
+Sacramento states a disclaimer, which is not a license. Oakland's CC0 is cleaner still, but see
 below. No login, no click-through, no no-redistribution term.
 
 **Field coverage — and one field in particular.** `VACANTSITE` is a `Yes`/`No` column whose only
@@ -245,14 +245,14 @@ rather than assumed. Oakland's only id is a row number in a thirteen-year-old ex
     species** to a corpus of 145,837. It publishes no species, no DBH and no planting date in the
     open layer, and states no licence. The species exist behind per-tree NavigateLA report pages,
     which is 635,558 requests against someone else's server — not a thing to do.
-  * **Oakland** has the best licence found (CC0) and the worst everything else: 8 fields, no id but
+  * **Oakland** has the best license found (CC0) and the worst everything else: 8 fields, no id but
     a row number, no DBH, no date, and `rowsUpdatedAt` of **2013-01-22**. Worth revisiting only if a
     newer Oakland extract appears; the ArcGIS search did surface an *Oakland Public Tree Inventory*
     under a non-city owner that was not pursued.
   * **Sacramento** is the strongest runner-up on field count and the weakest on what those fields
     contain: DBH is a range spelled two ways, there is no planting date, no vacancy concept, and the
     licence is a disclaimer.
-  * **Long Beach** has a clean CC-BY-4.0 licence and a real `date_planted`, and covers **1,728**
+  * **Long Beach** has a clean CC-BY-4.0 license and a real `date_planted`, and covers **1,728**
     trees planted since September 2018 under one CAL FIRE grant. It is a grant deliverable, not a
     city inventory, and it is the right *second* source precisely because it is small and clean.
   * **Berkeley** may be the best fit in the state on paper — trees, planting sites *and* stumps, all
@@ -406,5 +406,5 @@ lines of `str.replace` and `subprocess.run` and is reproducible from this paragr
     map draws and it is not this note's to answer.
   * **The migration.** Section 5 says what the constraints must become. It does not write them, and
     the numbers in it have not been run against a database, because building was out of scope.
-  * **Whether the seed's species catalogue survives 618 new scientific names.** The stub ceiling and
+  * **Whether the seed's species catalog survives 618 new scientific names.** The stub ceiling and
     `Fixtures/species/*.yaml` are keyed to San Francisco's 577. Nothing here touched them.

@@ -79,7 +79,7 @@ struct SeasonalWindowTests {
     }
 
     /// The regression itself. Before the fix this window ended in December and January was leaf-off.
-    @Test("a fall colour that wraps the year keeps its January")
+    @Test("a fall color that wraps the year keeps its January")
     func leafOnWrapsTheYear() throws {
         let species = try Self.deciduous(newGrowth: [3, 4], fallColor: [11, 12, 1])
         let months = try #require(species.leafOnMonths)

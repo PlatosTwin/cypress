@@ -9,14 +9,14 @@
 //  `Appearance`.
 //
 //  ── The first cell has two states (RULINGS R2, ERRATA E112) ───────────────────────────────
-//  R2 rules that `Favorite` gets a selected appearance and that a second tap takes the favourite
+//  R2 rules that `Favorite` gets a selected appearance and that a second tap takes the favorite
 //  off. The two things R2 fixes about it, restated where they are built:
 //
 //  - **The label does not change.** `Favorite` in both states, because it is a noun naming the
 //    thing rather than a verb naming the next tap. `Unfavorite` under the same cell is how a
 //    control starts lying about what it is.
-//  - **The state is not carried by colour alone.** The selected cell inverts to the accent fill
-//    under the accent's own label colour (task #153) *and* takes a heavier border *and* a heavier
+//  - **The state is not carried by color alone.** The selected cell inverts to the accent fill
+//    under the accent's own label color (task #153) *and* takes a heavier border *and* a heavier
 //    weight, and it announces itself through `.isSelected` and a spoken value. A toggle whose
 //    on-state is a hue fails for anyone who cannot see the hue, and ERRATA E103 is this app's own
 //    record of a state that reached nobody.
@@ -50,9 +50,9 @@ struct QuadActionRow: View {
 
         /// Whether this cell is a control with an on-state at all.
         ///
-        /// Only the favourite is. `Care`, `Share` and `Report` open something and come back, so a
+        /// Only the favorite is. `Care`, `Share` and `Report` open something and come back, so a
         /// cell that changed nothing on the screen is the right drawing for them (ERRATA E101); a
-        /// favourite changes only itself, which is why it is the one that needed a state.
+        /// favorite changes only itself, which is why it is the one that needed a state.
         ///
         /// Exhaustive, so a fifth action cannot be added without answering the question.
         var hasOnState: Bool {
@@ -191,7 +191,7 @@ struct QuadActionRow: View {
     ///
     /// - **fill and label** — `cta.fill` under `cta.label`, the selected-filter-chip pair, which
     ///   inverts the cell's luminance in both schemes. That inversion is itself a channel that
-    ///   survives greyscale, which the old tinted surface was not.
+    ///   survives grayscale, which the old tinted surface was not.
     /// - **border width and weight** — `hairlineStrong` and 12/800 against `hairline` and 12/600,
     ///   unchanged from E112. These are why this state does not fail the way E103's did.
     static func appearance(isSelected: Bool) -> Appearance {

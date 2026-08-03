@@ -195,7 +195,7 @@ struct SecondaryOutlineButton: View {
 ///
 /// The shape is the inline action screen 03 already draws under its subtitle for the species claim:
 /// bold 13 in the CTA green, left-aligned, with `cypressHitArea` under it because the text is 17pt
-/// tall and a control is 44 (ARCHITECTURE §6 — no size, colour or weight is a literal here).
+/// tall and a control is 44 (ARCHITECTURE §6 — no size, color or weight is a literal here).
 struct ShowWhereButton: View {
 
     let action: () -> Void

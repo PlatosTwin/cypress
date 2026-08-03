@@ -23,7 +23,7 @@ export) and cross-checked against `_unzipped/design_handoff_cypress/README.md` a
 
 ### 1.1 Palette — as declared on the spec's own swatch board
 
-The spec page opens with a swatch panel labelled `Palette · from the tree itself`. These are the six
+The spec page opens with a swatch panel labeled `Palette · from the tree itself`. These are the six
 named brand colors, verbatim from the file (name + hex + swatch text color):
 
 | Name | Hex | Swatch text color | Role |
@@ -836,7 +836,7 @@ height, so they always sum to it.
 - The two elements that lose a property in the move: the camera-denied sentence drops its capsule and
   material (that treatment exists to make it legible *over a photograph*; on the tray it takes the
   tray's own primary ink), and the ghost caption drops its `max-width:80px` while keeping its mono
-  face and colour. That cap is the one part of it the type ramp cannot survive — at AX5 it is a
+  face and color. That cap is the one part of it the type ramp cannot survive — at AX5 it is a
   column of single stacked syllables running the height of the viewfinder.
 - Chip rows here are **flow** rows, not `HStack`s, at every size: a chip row given less width than it
   asks for is compressed until its labels break mid-word rather than wrapping onto a second line.

@@ -8,7 +8,7 @@ import Observation
 /// sentence a volunteer standing on a pavement can act on.
 ///
 /// Copy rules (ARCHITECTURE §5.7): prose is sentence case, and there are no spaces around em
-/// dashes — which is easiest to honour by not reaching for one.
+/// dashes — which is easiest to honor by not reaching for one.
 public enum OutboxFailureReason {
     /// The 48 h cap, reached (BUILD-PLAN §4).
     public static let expired = "Tried for 48 hours without getting through. Tap retry when you have a connection."
@@ -224,7 +224,7 @@ public struct OutboxSnapshot: Sendable, Equatable {
 /// There is no import that fixes this — a type in the current module always wins over a module of
 /// the same name. Renaming `Core.TreeObservation` would be worse: it is the correct domain word and it
 /// is what §4 calls the table. So the three lines the macro would have written are written here
-/// instead. The observable behaviour is identical; `@State`, `@Bindable`, and SwiftUI's dependency
+/// instead. The observable behavior is identical; `@State`, `@Bindable`, and SwiftUI's dependency
 /// tracking all work exactly as they would have.
 ///
 /// **This applies to every `@Observable` in the app, not just this one.** Any feature model in this
@@ -364,7 +364,7 @@ public final class OutboxViewState: Observable {
         _ = try? await queue.retryAllFailed()
     }
 
-    /// Drains, honouring the wi-fi toggle.
+    /// Drains, honoring the wi-fi toggle.
     ///
     /// - Parameter isOnWifi: whether the current connection is unmetered. The toggle only bites
     ///   when it is off.

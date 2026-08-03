@@ -56,7 +56,7 @@ struct PinAdjustTests {
         let north = VisitPinAdjust.offset(Self.fix, northM: 40, eastM: 0)
         let east = VisitPinAdjust.offset(Self.fix, northM: 0, eastM: 40)
 
-        // A millimetre, not a tolerance — `VisitPinAdjust.metresPerDegreeLatitude` is derived from the
+        // A millimeter, not a tolerance — `VisitPinAdjust.metersPerDegreeLatitude` is derived from the
         // same sphere `Coordinate.distance` measures on, and this is the assertion that says so. On
         // the 111,320 that the bounding boxes use, 40 m comes back as 39.955 and fifteen nudges land
         // 84 mm inside a limit the screen is printing as reached.
@@ -168,7 +168,7 @@ struct PinAdjustTests {
 
         for fix in [VisitLocationProvider.Fix.pending, .denied] {
             let subject = Self.model(api: api, fix: fix)
-            #expect(!subject.canAdjustPin, "\(fix) was offered a map with no centre")
+            #expect(!subject.canAdjustPin, "\(fix) was offered a map with no center")
             subject.beginPlacingPin()
             #expect(subject.phase == .composing, "\(fix) opened the pin screen anyway")
             #expect(subject.coordinate == nil)
@@ -220,13 +220,13 @@ struct PinAdjustTests {
         #expect(!subject.isReaderPlaced)
         #expect(subject.coordinate == Self.fix)
 
-        // And cancelling a second visit does not undo the first one's placement.
+        // And canceling a second visit does not undo the first one's placement.
         let spot = VisitPinAdjust.offset(Self.fix, northM: 12, eastM: 0)
         subject.beginPlacingPin()
         subject.confirmPin(spot)
         subject.beginPlacingPin()
         subject.cancelPlacingPin()
-        #expect(subject.coordinate == spot, "cancelling threw away a placement it never touched")
+        #expect(subject.coordinate == spot, "canceling threw away a placement it never touched")
     }
 
     @MainActor
@@ -304,7 +304,7 @@ struct PinAdjustTests {
             let subject = Self.model(api: api)
             subject.useLibraryImage(try Self.jpeg())
             // Street trees sit 6–10 m apart (D6); this is a row at 12 m along one block face, all of
-            // it photographed from the same kerb.
+            // it photographed from the same curb.
             let spot = VisitPinAdjust.offset(Self.fix, northM: 0, eastM: Double(index) * 12)
             subject.beginPlacingPin()
             subject.confirmPin(spot)

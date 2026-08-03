@@ -384,7 +384,7 @@ enum ShareThumbnail {
         if latin.hasPrefix("cupressus") || latin.hasPrefix("hesperocyparis") { return .cypress }
         let choices: [CypressGradient.Thumbnail] = [.cypress, .ginkgo, .londonPlane, .victorianBox]
         // The name's own bytes, not `hashValue`: Swift's String hashing is seeded per process, so a
-        // relaunch would repaint the card a different colour.
+        // relaunch would repaint the card a different color.
         let bucket = abs(latin.utf8.reduce(0) { ($0 &* 31 &+ Int($1)) % 9_973 })
         return choices[bucket % choices.count]
     }

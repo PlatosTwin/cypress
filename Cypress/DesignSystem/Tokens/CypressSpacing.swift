@@ -115,7 +115,7 @@ extension View {
 
 // MARK: - §2 component metrics
 //
-// The fixed geometry of the C1–C30 catalogue: the sizes and paddings SCREENS.md §2 states in px.
+// The fixed geometry of the C1–C30 catalog: the sizes and paddings SCREENS.md §2 states in px.
 // They live here for the same reason the hexes live in `CypressColor` — so a component file
 // contains no unexplained number, and so a spec change has one place to land.
 //
@@ -338,7 +338,7 @@ extension CypressSpacing {
         static let pinRouteDone: CGFloat = 20
         static let pinRouteActive: CGFloat = 24
         static let pinRouteActiveHalo: CGFloat = 7
-        /// Removed pin's centred bar — 8×2, radius 1.
+        /// Removed pin's centered bar — 8×2, radius 1.
         static let pinRemovedBarWidth: CGFloat = 8
         static let pinRemovedBarHeight: CGFloat = 2
 
@@ -358,8 +358,8 @@ extension CypressSpacing {
         /// The dot is drawn smaller than the glyph box it shares with the other three, because a
         /// filled circle at the full extent reads as "the pin has a hole in it" rather than as a mark.
         static let pinSpeciesDotRatio: CGFloat = 0.72
-        /// An equilateral triangle is shorter than it is wide; 0.88 keeps its optical centre on the
-        /// pin's centre instead of sitting a hair high the way a square-framed one does.
+        /// An equilateral triangle is shorter than it is wide; 0.88 keeps its optical center on the
+        /// pin's center instead of sitting a hair high the way a square-framed one does.
         static let pinSpeciesTriangleRatio: CGFloat = 0.88
         /// The legend chip's swatch — a pin, drawn small enough to sit inside a chip beside a name.
         static let chipSpeciesSwatch: CGFloat = 14

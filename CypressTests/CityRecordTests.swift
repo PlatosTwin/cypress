@@ -121,7 +121,7 @@ struct CityRecordTests {
     ///
     /// Recorded as a test rather than only as a comment so that the day DataSF adds such a column and
     /// somebody ingests it, this fails and the owner's question gets reopened deliberately. The two
-    /// `legal_status` values that mention pruning are opt-outs from the city's maintenance programme
+    /// `legal_status` values that mention pruning are opt-outs from the city's maintenance program
     /// — a standing policy, not an event — and this asserts they are the only mention, so nothing
     /// downstream can mistake one for a date.
     @Test("no column in the seed records a pruning event, and the two that say 'prune' are opt-outs")
@@ -324,7 +324,7 @@ struct CityRecordTests {
     /// Nothing may show the second with the confidence of the first, which is why the answer carries
     /// its own provenance rather than leaving a screen to remember to ask.
     @Test("a contributor's own answer wins over the reading of the city's record, and names itself")
-    func statedWinsAndIsLabelled() throws {
+    func statedWinsAndIsLabeled() throws {
         let city = CityRecord(legalStatus: "DPW Maintained", caretaker: "Private")
 
         // `try`, not `try?`: under `try?` the macro binds its generic parameter to

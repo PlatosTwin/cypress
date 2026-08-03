@@ -1,6 +1,6 @@
 import Foundation
 
-/// The payload behind screen 12 — the neighbourhood almanac.
+/// The payload behind screen 12 — the neighborhood almanac.
 ///
 /// **This is the screen D1 exists for.** The leaderboard was killed because "every ranked metric is
 /// farmable in under 30 seconds", and the almanac is what replaced it: it "notices trees instead of
@@ -13,7 +13,7 @@ import Foundation
 ///   A8 explicitly sanctions, under A8's own floor of three. There is no ordering of contributors
 ///   anywhere and no query that could produce one.
 /// - **An aggregate with no data behind it is absent, not zero** (ARCHITECTURE §5.6, A9). Every
-///   field below except the neighbourhood's name is optional, and each `nil` means "there is nothing
+///   field below except the neighborhood's name is optional, and each `nil` means "there is nothing
 ///   to say", which is what a fresh install has to say about almost all of them.
 /// - **Nothing here identifies a contributor** (D11, DECISIONS §3.11). The bloom sighting carries a
 ///   tree, a date and a headcount; it does not carry who, and no method on `CypressAPI` can turn it
@@ -23,14 +23,14 @@ import Foundation
 /// surfaces (the bloom sighting and the coverage gap) are computed over the contributions this
 /// installation holds, which today is the ones it made itself, because no sync brings anybody
 /// else's down. The almanac is therefore honest but small until there is a server, and it says so
-/// by rendering nothing rather than by apologising.
+/// by rendering nothing rather than by apologizing.
 public struct Almanac: Hashable, Sendable {
 
     /// The area the almanac is about, or `nil` when there is no area to be about.
     ///
     /// A4 fixes the *unit* — an SF Analysis Neighborhood — and its stated mechanism does not exist
     /// (ERRATA E44). Screen 12 resolves the unit through the nearest inventoried tree, the same seam
-    /// screen 07 uses, and without a location fix there is no answer: no neighbourhood, no elder, no
+    /// screen 07 uses, and without a location fix there is no answer: no neighborhood, no elder, no
     /// species mix, no coverage list. "We could not tell where you are" and "nothing is happening
     /// here" are different facts and only one of them is ever true.
     public let neighborhood: AlmanacNeighborhood?
@@ -61,9 +61,9 @@ public enum AlmanacArea: Hashable, Sendable {
     /// not carry (ERRATA E47).
     case named(String)
 
-    /// Everything within this many metres of the reader, because no boundary in the record covers
+    /// Everything within this many meters of the reader, because no boundary in the record covers
     /// where they are standing.
-    case radius(metres: Double)
+    case radius(meters: Double)
 }
 
 // MARK: - The neighborhood
@@ -82,7 +82,7 @@ public struct AlmanacNeighborhood: Hashable, Sendable {
         return name
     }
 
-    /// SCREENS.md 12 §2 row 1 — the year's first recorded flowering in this neighbourhood.
+    /// SCREENS.md 12 §2 row 1 — the year's first recorded flowering in this neighborhood.
     /// `nil` below A9's floor of one sighting.
     public let firstBloom: BloomFirst?
 
@@ -99,7 +99,7 @@ public struct AlmanacNeighborhood: Hashable, Sendable {
     public let coverage: CoverageGap?
 
     /// The vacant planting sites (RULINGS R10). A statement, not an ask — see `VacantSites`. `nil`
-    /// only where the neighbourhood holds none, which E115 measured as nowhere in the city.
+    /// only where the neighborhood holds none, which E115 measured as nowhere in the city.
     public let vacantSites: VacantSites?
 
     public init(
@@ -130,7 +130,7 @@ public struct AlmanacNeighborhood: Hashable, Sendable {
 /// bare pavement, the same defect as "sent to the city". This block only says how many there are and
 /// offers to show the nearest, which is the one honest sentence available.
 public struct VacantSites: Hashable, Sendable {
-    /// How many planting sites in the neighbourhood have no tree in them. Counts city records, not
+    /// How many planting sites in the neighborhood have no tree in them. Counts city records, not
     /// user actions, so it carries no A8 floor (ARCHITECTURE §5.1).
     public let count: Int
 
@@ -158,7 +158,7 @@ public struct VacantSites: Hashable, Sendable {
 
 // MARK: - This season
 
-/// The first flowering anybody recorded in this neighbourhood this calendar year.
+/// The first flowering anybody recorded in this neighborhood this calendar year.
 ///
 /// SCREENS.md 12 §2: `Red flowering gum on 44th Ave · Jan 22, three neighbors saw it`.
 ///
@@ -182,7 +182,7 @@ public struct BloomFirst: Hashable, Sendable {
     public let observerCount: Int
     /// This tree's own photograph, chosen by `PhotoHero` — the same rule the profile hero and the
     /// personal lists use (#176). `nil` on `RemoteAPI`, where nothing computes it yet, and for any
-    /// tree this device has never itself photographed: the almanac is neighbourhood-wide, and a
+    /// tree this device has never itself photographed: the almanac is neighborhood-wide, and a
     /// tree nobody on this device photographed truthfully has no photograph to show here.
     public let heroPhotoID: UUID?
 
@@ -203,7 +203,7 @@ public struct BloomFirst: Hashable, Sendable {
     }
 }
 
-/// The oldest planting date the city record holds inside the neighbourhood.
+/// The oldest planting date the city record holds inside the neighborhood.
 ///
 /// SCREENS.md 12 §2: `Grandmother Cypress · in the city record since 1898`.
 ///
@@ -240,7 +240,7 @@ public struct ElderTree: Hashable, Sendable {
     }
 }
 
-/// What the city planted in this neighbourhood in the current spring.
+/// What the city planted in this neighborhood in the current spring.
 ///
 /// SCREENS.md 12 §2: `23 trees planted this spring, mostly ginkgo and tea tree`.
 public struct RecentPlanting: Hashable, Sendable {
@@ -273,7 +273,7 @@ public struct RecentPlanting: Hashable, Sendable {
 
 // MARK: - Who lives here
 
-/// The neighbourhood's species mix, from the city inventory alone.
+/// The neighborhood's species mix, from the city inventory alone.
 ///
 /// A9: "species mix always renders from city data" — which is why this is the one block on the
 /// screen that a fresh install still draws in full.
@@ -317,7 +317,7 @@ public struct SpeciesShare: Hashable, Sendable, Identifiable {
 
 // MARK: - Where eyes are needed
 
-/// The young trees in this neighbourhood that nobody has visited since they were planted.
+/// The young trees in this neighborhood that nobody has visited since they were planted.
 ///
 /// SCREENS.md 12 §4, and the only directed ask in the app (D1): "coverage gaps are the only directed
 /// incentive (chasing coverage produces exactly the data you want)".
@@ -357,7 +357,7 @@ public struct CoverageTree: Hashable, Sendable, Identifiable {
     /// those three invented for it.
     public let pin: TreePin
 
-    /// Great-circle metres from the fix the almanac was resolved against. Present because §4's body
+    /// Great-circle meters from the fix the almanac was resolved against. Present because §4's body
     /// makes a claim about walking distance, and a claim gets checked rather than printed.
     public let distanceM: Double
 
@@ -372,9 +372,9 @@ public struct CoverageTree: Hashable, Sendable, Identifiable {
 public enum AlmanacLimits {
     /// How many coverage-gap trees are read.
     ///
-    /// A cap rather than an unbounded read, because a neighbourhood with a large planting programme
+    /// A cap rather than an unbounded read, because a neighborhood with a large planting program
     /// and no contributions would otherwise pull every one of them into memory to print one number.
-    /// It is set well clear of the real distribution — the busiest neighbourhood in the seed holds
+    /// It is set well clear of the real distribution — the busiest neighborhood in the seed holds
     /// 21 young trees — so that in practice the read is whole and the card can print its count.
     /// When it does trip, the count disappears rather than shrinking (ERRATA E38).
     public static let coverageRowLimit = 200
@@ -383,17 +383,17 @@ public enum AlmanacLimits {
     /// (ERRATA E129).
     ///
     /// **This one really is a page, and the destination says so**, which is the whole of E38 applied
-    /// to a group that cannot be shown whole: E115 measured every neighbourhood in the city at
+    /// to a group that cannot be shown whole: E115 measured every neighborhood in the city at
     /// between 4 and 1,474 sites, so a map of all of them is not available at any zoom a person can
     /// read. The count on screen stays the `COUNT(*)`; the map shows this many and the sentence over
     /// it says how many that is.
     ///
     /// **NOT SPECIFIED** — no source names a number here — so it is chosen against two things that
-    /// are measured. The busiest neighbourhood in the seed holds 21 coverage-gap trees (see
+    /// are measured. The busiest neighborhood in the seed holds 21 coverage-gap trees (see
     /// `coverageRowLimit`), so 20 puts the two maps at the same density and neither is a density this
     /// app has not already reasoned about. And the 20 nearest basins to a fix inside Sunset/Parkside
     /// span 197 m × 212 m — about two blocks, close to screen 01's own opening view of 120 m, which
-    /// `MapLayout.defaultSpanMetres` picked as the scale at which 18 pt pins stop fusing (ERRATA
+    /// `MapLayout.defaultSpanMeters` picked as the scale at which 18 pt pins stop fusing (ERRATA
     /// E12). A larger cap buys pins the camera would have to pull back to hold, and pulling back is
     /// exactly what E12 measured as the point where the pin layer starts lying about how many
     /// records there are.
@@ -403,7 +403,7 @@ public enum AlmanacLimits {
     /// (ERRATA E182).
     ///
     /// The same number as `vacantSiteRowLimit`, for the same measured reason and stated once more
-    /// rather than shared: 20 pins is about the density `MapLayout.defaultSpanMetres` was chosen for,
+    /// rather than shared: 20 pins is about the density `MapLayout.defaultSpanMeters` was chosen for,
     /// and above it E12's finding is that the pin layer starts lying about how many records there
     /// are. It is a much looser cap here — the busiest neighborhood in the shipped seed holds five
     /// spring plantings — which is why it is a cap and not a page size anybody has to think about.
@@ -435,12 +435,12 @@ public enum AlmanacLimits {
 // MARK: - Default
 
 public extension CypressAPI {
-    /// An implementation with no city inventory behind it has no neighbourhood, and therefore no
+    /// An implementation with no city inventory behind it has no neighborhood, and therefore no
     /// almanac.
     ///
     /// The same shape as `groveSpecies()`'s default and for the same reason: it is a true statement
     /// about such an implementation rather than a placeholder, and it means a preview double or a
-    /// second client does not have to invent a neighbourhood to compile. `LocalAPI` overrides it
+    /// second client does not have to invent a neighborhood to compile. `LocalAPI` overrides it
     /// with the real read; `RemoteAPI` overrides it to throw, because a server that does not exist
     /// has no answer at all, which is a different thing from an empty one.
     func almanac(near coordinate: Coordinate?) async throws -> Almanac { .empty }

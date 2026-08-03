@@ -20,7 +20,7 @@ import XCTest
 /// **A test states its own preconditions or it does not have any.** That file was red on one machine
 /// and green on the next because it assumed the opening viewport held London Planes, which depends on
 /// wherever `xcrun simctl location` last left the device. Nothing here depends on the viewport at
-/// all: the *catalogue* is bundled with the app and is the same 577 rows on every machine, so a query
+/// all: the *catalog* is bundled with the app and is the same 577 rows on every machine, so a query
 /// typed into the field resolves to the same suggestions regardless of where the map is pointed. The
 /// queries below are chosen for that property — they are claims about the seed's species list, never
 /// about what is on screen.
@@ -43,12 +43,12 @@ final class MapSuggestionUITests: XCTestCase {
         return field
     }
 
-    /// The bundled catalogue holds six species whose name contains `cypress` and the genus ranks
+    /// The bundled catalog holds six species whose name contains `cypress` and the genus ranks
     /// first (E165, and `SpeciesSearchTests` pins it). Every assertion below rests on the seed rather
     /// than on the viewport, which is what makes this file machine-independent.
     private static let query = "cypress"
 
-    /// The common name of a species the catalogue certainly holds for that query.
+    /// The common name of a species the catalog certainly holds for that query.
     private static let expectedName = "Monterey Cypress"
 
     /// **The scientific name is deliberately not written down, and the first draft of this file
@@ -148,7 +148,7 @@ final class MapSuggestionUITests: XCTestCase {
         XCTAssertTrue(wait { !row.exists }, "the suggestion list stayed open after a row was chosen")
     }
 
-    /// **E38 on the screen.** One letter matches a full page of the catalogue — `a` contains-matches
+    /// **E38 on the screen.** One letter matches a full page of the catalog — `a` contains-matches
     /// 555 of 577 species since task #108 — so the six rows on offer are six of *at least* a hundred,
     /// and the list must say so in words a reader and an assistive technology both get.
     ///
@@ -166,7 +166,7 @@ final class MapSuggestionUITests: XCTestCase {
         ]
         XCTAssertTrue(
             sentence.waitForExistence(timeout: 20),
-            "a query matching a full page of the catalogue drew six rows and said nothing about the "
+            "a query matching a full page of the catalog drew six rows and said nothing about the "
                 + "other ninety-four"
         )
     }

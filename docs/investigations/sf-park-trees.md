@@ -24,7 +24,7 @@ with the UI half of the same log reading `Executed 68 tests, with 8 tests skippe
 The ticket says: *"Those trees are maintained by Rec & Park, a different dataset entirely."* The
 first half is true. The second half is not. **The San Francisco Recreation and Parks Department
 publishes no tree inventory — not on the city's open-data portal, not on the city's ArcGIS Online
-organisation, and not anywhere else this survey could reach.** It publishes benches, lamp posts,
+organization, and not anywhere else this survey could reach.** It publishes benches, lamp posts,
 trash cans, picnic tables, fences, gates, property boundaries, functional areas and park-evaluation
 scores. It does not publish trees.
 
@@ -62,7 +62,7 @@ which is that layer in its entirety.
 | `agol_search` | 10 | ArcGIS Online item search (discovery) |
 | `buf_agol` | 8 | SF Public Works urban-forestry layers |
 | `ccsf_agol` | 8 | the CCSF service directory (2,075 services) |
-| `datasf_catalog` | 8 | Socrata catalogue search over `data.sfgov.org` |
+| `datasf_catalog` | 8 | Socrata catalog search over `data.sfgov.org` |
 | `sfo` | 6 | SFO's tree inventory (§4) |
 | `sf_city_maintained_tree` | 4 | 311's City-Maintained Tree layer |
 | `arcgis_hub` | 3 | ArcGIS Hub dataset search (discovery) |
@@ -148,7 +148,7 @@ exactly what its name says.
 
 `Assets Maintained by the Recreation and Parks Department` (`e3jj-mbb3`) is the closest thing to a
 park-asset inventory the department publishes. Its own description: *"The locations of assets like
-trash cans, picnic tables, benches, etc, operated and maintained by Rec and Park."* Licence is
+trash cans, picnic tables, benches, etc, operated and maintained by Rec and Park."* License is
 stated and clean — **Open Data Commons PDDL**, `licenseId: PDDL`.
 
 Its `asset_type` histogram, measured both through Socrata and directly against the ArcGIS layer
@@ -171,7 +171,7 @@ Its `asset_type` histogram, measured both through Socrata and directly against t
 bollards and its one arbor to the unit does not have an unpublished tree layer sitting beside them
 by accident; trees are simply not in this asset system.
 
-### 2.2 On the city's ArcGIS Online organisation
+### 2.2 On the city's ArcGIS Online organization
 
 `services.arcgis.com/Zs2aNLFN00jrS4gG` is the City and County of San Francisco's org — the same one
 that hosts `BUF_Street_Trees`, which is the `sf_city` inventory the seed is built from. Its public
@@ -190,7 +190,7 @@ or `ggp` was enumerated, and each plausible one opened:
 | `City_Maintained_Tree_DEV_20230516` | an operational layer for 311 call-takers. 11,255 points and **three fields**: `OBJECTID`, `X`, `Y`. No species, no id of its own, 1 point in the GGP interior. Under R24 it could not be a seed row even if it were park trees, because it publishes no stable identity. |
 | `MuniCorridorTrees` (3,960), `Street_Tree_List_View` (144,294), `Confirmed_Landmark_tree_data_table` (25) | Public Works / SF Environment, all street trees; **0 rows inside the GGP interior** for each |
 
-A full-text search of the org's item catalogue (`orgid:Zs2aNLFN00jrS4gG AND tree`) returns **68
+A full-text search of the org's item catalog (`orgid:Zs2aNLFN00jrS4gG AND tree`) returns **68
 items** — this catches items whose *service* is named opaquely, which the directory scan would miss.
 Every one belongs to Public Works, SF Environment, SF Planning, 311 or SFO. The four Rec & Park
 staff accounts that appear (`sstasio`, `bwan_rec`, `mdurana_rec`, `pebomcc_rec`) own park-evaluation
@@ -244,7 +244,7 @@ domain now resolves to an unrelated commercial site with a mismatched TLS certif
 - **ArcGIS Online**, global search for a Rec & Park tree layer: 5 results, all Los Angeles.
 - **ArcGIS Hub** dataset search (`san francisco park trees`, `san francisco recreation park tree
   inventory`, `golden gate park trees`): university coursework and story maps.
-- **DataSF catalogue** for `urban forest`, `vegetation`, `planting`, `arborist`, `canopy`, `shrub`,
+- **DataSF catalog** for `urban forest`, `vegetation`, `planting`, `arborist`, `canopy`, `shrub`,
   `forestry`: canopy rasters, the Street Tree List, and a plant-community polygon layer.
 - **catalog.data.gov**: the API path returned 404; data.gov mirrors DataSF, which §2.3 covers
   exhaustively.
@@ -259,8 +259,8 @@ plants anywhere inside the park.
 
 **It is still not this ticket's source, on three counts.** It is operated by the **San Francisco
 Botanical Garden Society**, a 501(c)(3), in partnership with Rec & Park — so it is not a municipal
-inventory, which is the scope the owner's data-fetching authorisation names. It asserts copyright
-(`Content © 2026`, platform © Compositae AS) and states **no licence and no terms of use**, and it
+inventory, which is the scope the owner's data-fetching authorization names. It asserts copyright
+(`Content © 2026`, platform © Compositae AS) and states **no license and no terms of use**, and it
 offers **no export or bulk-download path** — under this ticket's rule 1 that is a stop-and-ask, not
 a cleared source. And substantively it is a *garden accession list*: a curated living collection of
 8,000 kinds of plant, most of them not trees, covering 5% of the park's area. It describes what was
@@ -278,7 +278,7 @@ condition, native flag, owner, maintenance and a prune cycle. It is the richest 
 city's whole ArcGIS org, richer than the street list, and it names its surveyors in `copyrightText`.
 
 It is not #106's. San Francisco International Airport is in San Mateo County, twelve miles outside
-the city, outside all 41 analysis neighbourhoods, and its trees are not in Golden Gate Park or in any
+the city, outside all 41 analysis neighborhoods, and its trees are not in Golden Gate Park or in any
 park. Ingesting it would populate a corner of the map no reader of this app is standing in, and it is
 not what this ticket asked for (and DECISIONS constraint 21 puts a screen full of airport trees
 squarely in stop-and-ask territory). It is recorded here because it is the obvious "what about…?" and
@@ -318,7 +318,7 @@ The ticket's warning here was right and is worth keeping even though the decisio
 `LandContext.inferred(from:idSpace:)` reads DataSF's `qLegalStatus` and `qCaretaker` **by literal
 string**, and R24's rule is that a derivation over one publisher's vocabulary must decline outside
 the id space it was written for. A park inventory would publish neither column, so the function
-would fall through to `nil` — which is the correct behaviour, not a gap to patch.
+would fall through to `nil` — which is the correct behavior, not a gap to patch.
 
 The ticket asked whether a park tree needs "a fourth answer rather than a wrong one of the three".
 **It does not: the fourth answer already exists.** `LandContext` has four cases, and `.cityPark` —
@@ -352,7 +352,7 @@ Three options, in the order this investigation would rank them:
    rather than a gap. The community layer is the only route to a populated Golden Gate Park that
    exists today.
 3. **Ask Rec & Park.** The department plainly holds tree records internally — it has arborists, a
-   pruning programme and a CMMS. They are not published. A records request is an owner decision, not
+   pruning program and a CMMS. They are not published. A records request is an owner decision, not
    an agent's, and it is not a data-fetching question.
 
 What #106 should **not** become is an ingest of the nearest available thing. SFO's trees, the 311

@@ -28,8 +28,8 @@
 //  the whole palette. Promoting a derived token to specified is one line: `derived` -> `dynamic`.
 //  `DerivedTokenTests` fails if the registry and the live tokens disagree.
 //
-//  `lightOnly` is now reserved for tokens that genuinely have no second appearance: colour that
-//  rides on imagery, colour on a screen that is dark regardless of the system setting (04),
+//  `lightOnly` is now reserved for tokens that genuinely have no second appearance: color that
+//  rides on imagery, color on a screen that is dark regardless of the system setting (04),
 //  the spec document's own page chrome, W1 web-only surfaces, and the six brand hues (whose
 //  scheme-dependent roles are carried by the paired role tokens further down).
 //
@@ -37,10 +37,10 @@
 //  `CypressColor.Dark.*`, which is the flat, non-resolving dark palette.
 //
 //  How the derived values were obtained is documented in ERRATA E8. In one paragraph: the 55
-//  documented pairs were analysed in OKLCh, which separates the three things a designer actually
+//  documented pairs were analyzed in OKLCh, which separates the three things a designer actually
 //  moves — lightness, chroma, hue. Lightness is repositioned per *role* (a border does not
 //  invert like a background); chroma is kept where there is chroma to keep and floored at
-//  ~0.025 where there is not, because the dark palette is green-tinted black rather than grey
+//  ~0.025 where there is not, because the dark palette is green-tinted black rather than gray
 //  (D2's own caption says so); hue is preserved above C≈0.06 and pulled to the house green
 //  ~150° below C≈0.02. The transform is a function of role AND value, never of value alone:
 //  `#FFFFFF` has three documented dark counterparts and `#77836F` has two.
@@ -99,7 +99,7 @@ enum CypressColor {
     }
 
     /// A pair whose dark half was **derived** from the documented pairs, not transcribed
-    /// (ERRATA E8, ROADMAP §3). Identical in behaviour to `dynamic` — the difference is the
+    /// (ERRATA E8, ROADMAP §3). Identical in behavior to `dynamic` — the difference is the
     /// claim being made, and that claim is what `reviewTokens` collects for design review.
     ///
     /// When a designer corrects one of these, change `derived` to `dynamic` and drop its line
@@ -121,7 +121,7 @@ enum CypressColor {
     }
 
     /// A value that was **transcribed from SCREENS.md and is changed anyway**, under the written
-    /// delegation recorded in `docs/RULINGS.md`. Behaviourally identical to `dynamic`; the claim
+    /// delegation recorded in `docs/RULINGS.md`. Behaviorally identical to `dynamic`; the claim
     /// is the difference, and it is the strongest claim in this file.
     ///
     /// E8 drew the line between a *transcribed* value, which may not be changed, and a *derived*
@@ -397,7 +397,7 @@ enum CypressColor {
     ///
     /// **RULINGS R1** (ERRATA E108). Measured **3.67 → 5.40** on the screen and 3.99 → 5.87 on a
     /// card in light; the dark half follows `textFaint` to `#7E8F80` and reads 5.33 / 4.64, so the
-    /// two remain one colour after dark exactly as D3 wrote them.
+    /// two remain one color after dark exactly as D3 wrote them.
     ///
     /// Its light value is not solved against the 4.5 floor. Solved that way it lands 0.03 from
     /// `textFaint` — R1's own objection to E106's fix, reappearing one rung lower — so instead it
@@ -485,7 +485,7 @@ enum CypressColor {
     /// no family hue, so it takes the house green and lands on `#27352B`, within 0.013 of the fit.
     static let removedBadgeFill = derived(light: 0xE4E6DC, dark: 0x27352B)
     /// `REMOVED` badge text `#5C6555` ↔ **derived** `dark.text.muted` `#94A496`.
-    /// A muted grey label: the documented dark ladder has a rung for exactly that.
+    /// A muted gray label: the documented dark ladder has a rung for exactly that.
     static let removedBadgeText = derived(light: 0x5C6555, dark: 0x94A496)
 
     /// Green callout fill `#EFF3E3` ↔ `dark.surface.callout` `#1A241A` (03, 14, 16, 19; D2).
@@ -621,7 +621,7 @@ enum CypressColor {
     /// Label riding on `accountPrimaryFill` — `#FFFFFF` ↔ **derived** `dark.bg.screen` `#0E1712`.
     ///
     /// `ctaLabel`'s documented move, for the same reason: the fill inverts, so the label inverts
-    /// with it and lands on the ground colour. `#FFFFFF` has three documented dark counterparts
+    /// with it and lands on the ground color. `#FFFFFF` has three documented dark counterparts
     /// (see `textOnDark`); this is the one that applies when the fill beneath goes light.
     static let accountPrimaryLabel = derived(light: 0xFFFFFF, dark: 0x0E1712)
 
@@ -634,7 +634,7 @@ enum CypressColor {
     //
     // ── These are the only tokens in this file whose *light* half is ours too ──────────────────
     // Every other `derived` token below is a documented light value with a computed dark
-    // counterpart. SCREENS.md draws no species colouring at all, so both halves of these four are
+    // counterpart. SCREENS.md draws no species coloring at all, so both halves of these four are
     // computed, and they are declared `derived` for exactly the reason that constructor exists: it
     // is the claim that puts a value in `reviewTokens`, which `TokenGallery` renders first, so a
     // designer answers four swatches on one screen instead of auditing a palette. Promoting one is
@@ -643,7 +643,7 @@ enum CypressColor {
     // ── What they are ─────────────────────────────────────────────────────────────────────────
     // Four **slots**, handed to the four commonest species in the current viewport by
     // `MapSpeciesPalette`. Not four species: the seed has 569 and a screenful has 6–64 of them, so
-    // a species-to-hue function is not a thing four colours can be. See `MapSpeciesSlot`.
+    // a species-to-hue function is not a thing four colors can be. See `MapSpeciesSlot`.
     //
     // ── Where the numbers come from ───────────────────────────────────────────────────────────
     // Chosen in OKLCh by search, the same space E8's derivation works in, against five hard
@@ -656,15 +656,15 @@ enum CypressColor {
     //    park ring in dark; the paper everyone would have measured against is the easiest of the
     //    seven, which is how a palette passes on paper and vanishes over Golden Gate Park.
     // 2. **≥ 0.10 apart from each other in OKLab ΔE**, five times the ~0.02 just-noticeable
-    //    difference, in both appearances. This is what makes "same colour ⇒ same species" a claim a
+    //    difference, in both appearances. This is what makes "same color ⇒ same species" a claim a
     //    reader can act on.
     // 3. **≥ 0.099 from every mark on the map whose hue already means something**: Canopy
     //    (`pinFill`, the residual class), Signal Amber (`accentAmber`, "this tree needs something",
     //    the one urgent meaning in the palette), the GPS dot, the cluster badge, and the memorial
-    //    grey. No slot sits in the amber band (OKLCh hue 20–115°), the Canopy band (125–200°) or
+    //    gray. No slot sits in the amber band (OKLCh hue 20–115°), the Canopy band (125–200°) or
     //    the GPS band (232–272°) at all — the separation above is what is left after those three
     //    arcs are removed from the wheel, which is also why there are four slots and not six.
-    // 4. **The ring colour reads on every fill**: `pinRingStroke` against each of the eight values
+    // 4. **The ring color reads on every fill**: `pinRingStroke` against each of the eight values
     //    is 5.4:1 or better, so the 3 pt ring and the glyph inside the dot both hold.
     // 5. **Lightness descends A→D in light and ascends A→D in dark**, which keeps the four separated
     //    in luminance as well as in hue, so no pair collapses for a reader whose deficiency is
@@ -908,7 +908,7 @@ enum CypressColor {
         /// tray **3.23 → 5.03**, the shell **3.44 → 5.36**.
         ///
         /// The value is `textFaint`'s retinted dark half exactly, so it mints nothing and the two
-        /// halves of the ramp are one colour again. One ground is deliberately excluded from the
+        /// halves of the ramp are one color again. One ground is deliberately excluded from the
         /// solve: the disabled `Log visit` label rides this token on `surfaceThumb` and reads
         /// 4.16, because WCAG 1.4.3 exempts text that is part of an inactive component and
         /// solving against it would make a disabled control read exactly as strongly as an
@@ -976,7 +976,7 @@ enum CypressColor {
 
 // MARK: - §2 component tokens
 //
-// Values that appear in SCREENS.md §2 (the C1–C30 catalogue) but not in the §1 token tables.
+// Values that appear in SCREENS.md §2 (the C1–C30 catalog) but not in the §1 token tables.
 // They are transcribed here rather than inlined in `Components/`, so the "no raw hex in a
 // component" rule holds. Same conventions as above: `dynamic` where §2 or the D1–D3 delta tables
 // give a dark counterpart, `lightOnly` + TODO where they do not.
@@ -1035,7 +1035,7 @@ extension CypressColor {
     /// SCREENS.md §5 gap 2 lists the disabled button state as unspecified, and `Buttons.swift` says
     /// so. It is specified elsewhere: PROTOTYPE-FLOW §1.4 gives `careBtnStyle` as
     /// `disabled → background:#E9ECDE;color:#8B9482` for screen 09's `Done`, which §1.3's `logCare`
-    /// guard ("no-op if no care chip is on") is the behaviour behind. So the value is the
+    /// guard ("no-op if no care chip is on") is the behavior behind. So the value is the
     /// prototype's, not an invention — it is transcribed here rather than left to the one screen
     /// that needs it.
     ///
@@ -1088,7 +1088,7 @@ extension CypressColor {
         /// (R7's discipline). Its ground is `surfaceEmptyThumb`, the empty photo well's fill, and its
         /// mark is `borderDashedStrong`, the dashed ring R7 gave the map pin and the site screen and
         /// the well all speak. Reusing `elder` or `newGrowth` would paint a hole in the pavement in a
-        /// living tree's colour, which is the exact category error R7 removed from the map (E119).
+        /// living tree's color, which is the exact category error R7 removed from the map (E119).
         case vacantSite
 
         var id: String { rawValue }
@@ -1131,8 +1131,8 @@ extension CypressColor {
 
     // MARK: Screen 12 §3 · composition card
     //
-    // The species-mix card has no C-number: SCREENS.md §2's catalogue does not carry it and screen
-    // 12 §3 describes it inline. Its colours live here anyway, because a feature may not write a
+    // The species-mix card has no C-number: SCREENS.md §2's catalog does not carry it and screen
+    // 12 §3 describes it inline. Its colors live here anyway, because a feature may not write a
     // hex (ARCHITECTURE §6) and because two of the four swatches are values the palette did not
     // already carry.
 
@@ -1141,10 +1141,10 @@ extension CypressColor {
     /// **Escalated as a set, for the reason the C23 series palette is.** Three of the four are brand
     /// hues, which §1.1 says have no single dark answer, and the fourth is the neutral that means
     /// "everyone else". A series palette is chosen for separation between its members rather than
-    /// per colour, so deriving them one at a time is the one operation guaranteed to break the thing
+    /// per color, so deriving them one at a time is the one operation guaranteed to break the thing
     /// they are for — `chartSeriesPrimary`'s note records the same transform collapsing Canopy and
     /// New Growth to 0.011 apart in dark. The four want deciding together, by a designer, with the
-    /// track colour below in front of them.
+    /// track color below in front of them.
     static let compositionSwatches: [Color] = [
         escalated(0x1D4634),
         escalated(0x4E8F6A),
@@ -1152,7 +1152,7 @@ extension CypressColor {
         compositionOther
     ]
 
-    /// The `Everyone else` swatch — `#C2CAB4`. Also the colour its own share of the track is drawn
+    /// The `Everyone else` swatch — `#C2CAB4`. Also the color its own share of the track is drawn
     /// in. **Escalated** with the other three.
     static let compositionOther = escalated(0xC2CAB4)
 
@@ -1170,7 +1170,7 @@ extension CypressColor {
     /// light-only; D2 gives the dark counterpart in its delta list, so §2 pairs them here.
     static let calloutGreenBody = dynamic(light: 0x41522F, dark: 0xB9C7B2)
     /// Green callout lead-in — `#41522F` ↔ D2 `#D6E0CE`. In light the weight alone separates the
-    /// lead-in from the body; in dark it also lifts in colour.
+    /// lead-in from the body; in dark it also lifts in color.
     static let calloutGreenLeadIn = dynamic(light: 0x41522F, dark: 0xD6E0CE)
 
     /// Gradient callout ink — the literal `#1C2A21` of §1.2's `text.ink`, deliberately **not** the
@@ -1230,7 +1230,7 @@ extension CypressColor {
     /// with the live pins it is supposed to recede behind, and the text rule drops it to L≈0.41,
     /// where it stops reading against `dark.bg.map` at all.
     static let pinRemovedFill = escalated(0xC4C8B8)
-    /// Removed pin's centred 8×2 bar — `#7A8272`. **Escalated** with the pin it sits in.
+    /// Removed pin's centered 8×2 bar — `#7A8272`. **Escalated** with the pin it sits in.
     static let pinRemovedBar = escalated(0x7A8272)
     /// Route "done" pin (18) — `#AEBFA1`. **Escalated**: the same muted-pin family, same problem.
     static let pinRouteDone = escalated(0xAEBFA1)
@@ -1271,7 +1271,7 @@ extension CypressColor {
     // The accent rule reproduces every documented accent to within 0.043 in OKLab, and it is
     // still wrong here: it anchors lightness, so Canopy and New Growth — 0.117 apart in light —
     // land 0.011 apart in dark and C23's three series become two. A series palette is chosen for
-    // separation, not per colour, and the dark palette has no third green to separate them with.
+    // separation, not per color, and the dark palette has no third green to separate them with.
     // Left light, which is a stated contrast failure rather than a hidden one: Canopy on
     // `dark.surface.card` is 2.5:1 and Bark is 2.3:1.
 
@@ -1287,7 +1287,7 @@ extension CypressColor {
     /// The year chip on a strip photo — `rgba(255,255,255,.85)` (SCREENS.md 13 §4).
     ///
     /// **Light-only by definition, not by omission.** It is a scrim punched into a photograph so a
-    /// date can be read off it, which is the case `lightOnly` names ("colour that rides on
+    /// date can be read off it, which is the case `lightOnly` names ("color that rides on
     /// imagery"); `heroMetaPillFill` is the same idea from the other end of the value scale. A
     /// photograph does not get darker because the phone did, so neither does the plate on it.
     static let photoStripChipFill = lightOnly(0xFFFFFF, alpha: 0.85)
@@ -1297,7 +1297,7 @@ extension CypressColor {
     /// Avatar ring — `2px solid #fff` ↔ **derived** `dark.surface.card` `#18251D`.
     ///
     /// The ring is white because the card behind it is white — it is a gap punched in the stack,
-    /// not a colour. `pinRingStroke` is the documented instance of the same idea and goes
+    /// not a color. `pinRingStroke` is the documented instance of the same idea and goes
     /// `#FFFFFF` → `#0E1712`, the ground *it* sits on; an avatar stack sits on a card.
     static let avatarRing = derived(light: 0xFFFFFF, dark: 0x18251D)
     /// Avatar fills in the drawn order: `#2F6B4F`, `#7A4F33`, `#4E8F6A`, `#66735F`.
@@ -1351,7 +1351,7 @@ extension CypressColor {
     /// locked tile from an empty plane.
     ///
     /// Both halves move by **lightness only**, holding chroma and hue in OKLCh — R1's method, so the
-    /// glyph stays the same grey-green it always was. Light darkens to 3.06:1, dark lightens to
+    /// glyph stays the same gray-green it always was. Light darkens to 3.06:1, dark lightens to
     /// 3.05:1. Nothing else in C10 moves, and the tile fill is untouched.
     static let speciesTileLockedGlyph = overruled(light: 0x7F8974, dark: 0x647062)
     /// Species tile label shadow — `0 1px 3px rgba(10,22,15,.5)`.
@@ -1472,7 +1472,7 @@ extension CypressColor {
               basis: "OKLCh 335° · outside the amber, Canopy and GPS arcs · worst map ground 5.34:1 light / 5.69:1 dark",
               color: pinSpeciesA),
         .init("pinSpeciesB", .derived, light: 0x085570, dark: 0x74D1FC,
-              basis: "OKLCh 230° · worst map ground 4.81:1 light / 6.19:1 dark · ΔE 0.110 from the GPS dot after dark, its tightest neighbour",
+              basis: "OKLCh 230° · worst map ground 4.81:1 light / 6.19:1 dark · ΔE 0.110 from the GPS dot after dark, its tightest neighbor",
               color: pinSpeciesB),
         .init("pinSpeciesC", .derived, light: 0x5A43A4, dark: 0xC3BAFC,
               basis: "OKLCh 290° · worst map ground 4.41:1 light / 5.93:1 dark",
@@ -1597,7 +1597,7 @@ extension CypressColor {
     /// AA failure in ERRATA E106, so the reversal wants an answer to that in the same pass.
     static let overruledTokens: [CypressReviewToken] = [
         .init("chartSeriesPrimary", .overruled, light: 0x2F6B4F, dark: 0x3C785B,
-              basis: "R8/E122: dark lifted lightness-only to 3.05:1; series are text-labelled strips",
+              basis: "R8/E122: dark lifted lightness-only to 3.05:1; series are text-labeled strips",
               color: chartSeriesPrimary),
         .init("chartSeriesTertiary", .overruled, light: 0x7A4F33, dark: 0x8F6346,
               basis: "R8/E122: dark lifted lightness-only to 3.06:1", color: chartSeriesTertiary),
@@ -1642,7 +1642,7 @@ extension CypressColor {
         .init("pinRemovedFill", .escalated, light: 0xC4C8B8,
               basis: "D1 draws every pin but this one, and says so", color: pinRemovedFill),
         .init("compositionSwatch1", .escalated, light: 0x1D4634,
-              basis: "12 §3's four swatches are a series; separation is between them, not per colour",
+              basis: "12 §3's four swatches are a series; separation is between them, not per color",
               color: compositionSwatches[0]),
         .init("compositionSwatch2", .escalated, light: 0x4E8F6A,
               basis: "12 §3's four swatches are a series", color: compositionSwatches[1]),

@@ -110,7 +110,7 @@ accident while writing UI code. The full list is binding; these are the ones tha
 5. Evergreen species never get fall-color chips or autumn strip colors — the chip set derives from
    `species.leafRetention` (D5). That attribute is **optional**: 59 of the 569 seeded species have
    no sourced habit, and a species with `leafRetention == nil` gets *no* phenology surface at all —
-   not a neutral chip, not a grey one, nothing (ERRATA E9). Never write `?? .deciduous` or any other
+   not a neutral chip, not a gray one, nothing (ERRATA E9). Never write `?? .deciduous` or any other
    default; a default is the bug.
 6. Aggregate surfaces below their cold-start threshold do not render at all. "Caretakers" needs ≥3.
 7. Copy: **no spaces around em dashes** (`trees—memorials`). Micro-labels are uppercase mono with
@@ -119,7 +119,7 @@ accident while writing UI code. The full list is binding; these are the ones tha
 
 ## 6. Design system
 
-`SCREENS.md` §1 is the token source and §2 is the component catalogue (C1–C30). Rules:
+`SCREENS.md` §1 is the token source and §2 is the component catalog (C1–C30). Rules:
 
 - Never write a raw hex or a raw font size inside a feature. Use `CypressColor.*`, `CypressFont.*`,
   `CypressRadius.*`, `CypressShadow.*`. A literal in `Features/` is a bug.

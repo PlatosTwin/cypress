@@ -8,7 +8,7 @@ import Testing
 /// The rule this suite holds down is the one the ticket said would be easiest to break: **confirming
 /// a `never_existed` report must never move `trees.status`.** `TreeStatus.vacantSite` exists and
 /// reads like the truthful confirmed state, and pointing `confirmedStatus` at it would make the kind
-/// resolvable in one line — and would enrol record defects in the lead's *status* queue, where a
+/// resolvable in one line — and would enroll record defects in the lead's *status* queue, where a
 /// confirmation writes `tree_status_overrides`. That is ERRATA **E170**'s defect in its worse form:
 /// the queue would look right while the trees moved. So the seam is asserted as a property, and the
 /// absence of a status row is asserted after a real confirmation rather than reasoned about.

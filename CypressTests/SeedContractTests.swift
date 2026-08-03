@@ -58,8 +58,8 @@ struct SeedContractTests {
 
     @Test("cluster cells shrink by a factor of two per zoom step")
     func clusterCellScaling() {
-        let coarse = TreeQueries.cellSize(zoom: 12, centreLatitude: 37.77)
-        let fine = TreeQueries.cellSize(zoom: 13, centreLatitude: 37.77)
+        let coarse = TreeQueries.cellSize(zoom: 12, centerLatitude: 37.77)
+        let fine = TreeQueries.cellSize(zoom: 13, centerLatitude: 37.77)
         #expect(abs(coarse.longitude / fine.longitude - 2) < 0.000_001)
         // Latitude degrees are shorter than longitude degrees on a mercator screen by cos(lat).
         #expect(coarse.latitude < coarse.longitude)
@@ -67,12 +67,12 @@ struct SeedContractTests {
 
     @Test("a bounding box around a point covers the requested radius")
     func boundingBoxAroundPoint() {
-        let centre = Coordinate(latitude: 37.7761, longitude: -122.4464)
-        let bounds = BoundingBox(around: centre, radiusM: 50)
-        #expect(bounds.contains(centre))
+        let center = Coordinate(latitude: 37.7761, longitude: -122.4464)
+        let bounds = BoundingBox(around: center, radiusM: 50)
+        #expect(bounds.contains(center))
         // Due north at exactly the radius must be inside; well beyond it must not.
-        let north = Coordinate(latitude: centre.latitude + 49 / 111_320.0, longitude: centre.longitude)
-        let farNorth = Coordinate(latitude: centre.latitude + 500 / 111_320.0, longitude: centre.longitude)
+        let north = Coordinate(latitude: center.latitude + 49 / 111_320.0, longitude: center.longitude)
+        let farNorth = Coordinate(latitude: center.latitude + 500 / 111_320.0, longitude: center.longitude)
         #expect(bounds.contains(north))
         #expect(!bounds.contains(farNorth))
     }
@@ -97,7 +97,7 @@ struct SeedContractTests {
         // The APP still asserts nothing for an unknown habit — no habit chip, no season strip
         // (checked in `VisitGates` and `SpeciesPresentationTests`). But the OBSERVER's vocabulary
         // is no longer emptied by the gap (#151, R35):
-        // excluding fall colour would itself claim "evergreen", which nobody sourced.
+        // excluding fall color would itself claim "evergreen", which nobody sourced.
         #expect(unknown.availablePhenologyTags == Set(PhenologyTag.allCases))
         #expect(PhenologyTag.validated(PhenologyTag.allCases, for: unknown) == PhenologyTag.allCases)
 

@@ -58,10 +58,10 @@ enum TreeProfileDestination: Equatable {
             // RULINGS R2 in the place R2 says matters most.
             //
             // The argument is E89's, and it survives the redirect being available: gating a
-            // favourite on `acceptsNewContributions` makes the toggle one-way for anyone whose
-            // favourite tree is later removed, because the gate that refuses the heart also refuses
+            // favorite on `acceptsNewContributions` makes the toggle one-way for anyone whose
+            // favorite tree is later removed, because the gate that refuses the heart also refuses
             // *removing* it. Screen 19 has nothing to press, by design. So a redirect to 19 is that
-            // same gate wearing a router: the person who favourited this tree while it stood would
+            // same gate wearing a router: the person who favorited this tree while it stood would
             // have no surface anywhere in the app that could take the heart off.
             //
             // What the profile owes a removed tree instead is to offer nothing that writes to it,

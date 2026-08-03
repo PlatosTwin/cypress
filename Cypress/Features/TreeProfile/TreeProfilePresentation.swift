@@ -68,7 +68,7 @@ struct TreeProfilePresentation {
         case growthHistory
         /// Screen 16, **on the measurement this card is a card for**.
         ///
-        /// The kind is the card's own, not a default. An empty slot is drawn inside a box labelled
+        /// The kind is the card's own, not a default. An empty slot is drawn inside a box labeled
         /// `Height` or `DBH` and its entire meaning is that *that* measurement is missing, so the
         /// form it opens is that measurement's form. It carried no kind until RULINGS R15, and
         /// every entrance therefore opened on `MeasureDraft`'s default of DBH — including the
@@ -206,9 +206,9 @@ struct TreeProfilePresentation {
     ///   uprooting, a vehicle strike, a blocked sightline. All four are statements about a standing
     ///   tree; E107 makes the same observation about a site from the other direction.
     ///
-    /// **`Favorite` and `Share` stay, and the first of them is the point.** A favourite observes
+    /// **`Favorite` and `Share` stay, and the first of them is the point.** A favorite observes
     /// nothing — it writes to the person's grove, not to the tree's record — and E89's deciding
-    /// argument is that gating it makes the toggle one-way for anyone whose favourite tree is later
+    /// argument is that gating it makes the toggle one-way for anyone whose favorite tree is later
     /// removed. R2 restates it: the gate that refuses the heart also refuses taking it off. Share
     /// is a read of a record that still exists. `SiteView` reaches the same answer from the other
     /// side, in its own words: "no quad action row, because three of its four cells act on a tree".
@@ -222,7 +222,7 @@ struct TreeProfilePresentation {
     /// variant.
     ///
     /// **This overrides SCREENS.md 14, on the project owner's ruling.** 14 lists "no quad-action row"
-    /// among its deltas from 03, and the build honoured it literally: the row was inside the view's
+    /// among its deltas from 03, and the build honored it literally: the row was inside the view's
     /// `if !isCold`. Per D8 every tree in the shipped city inventory renders the cold variant on
     /// launch day, so what that delta actually shipped was a tree nobody had touched offering *no
     /// action of any kind* — no way to report a hanging limb, no way to log the watering somebody
@@ -242,7 +242,7 @@ struct TreeProfilePresentation {
     ///   well-photographed tree's share card are the same picture, so there is nothing about a cold
     ///   tree for Share to render badly.
     ///
-    /// The two things 14's delta list is still honoured on are the regulars row and the activity
+    /// The two things 14's delta list is still honored on are the regulars row and the activity
     /// feed, which the view keeps behind `isCold` — and those are the two that would draw *nothing*
     /// on a cold record anyway, because there are no caretakers and no activity to draw.
     ///
@@ -340,7 +340,7 @@ struct TreeProfilePresentation {
     ///
     /// DataSF publishes species in one column as `Scientific name :: Common name`. On these rows the
     /// scientific half is empty, and the ingest kept the whole raw string as `scientific_name` — so
-    /// the subtitle above printed `:: Magnolia` in the slot labelled by position as the Latin name.
+    /// the subtitle above printed `:: Magnolia` in the slot labeled by position as the Latin name.
     /// `RULINGS R47` took those rows out of the suggestion list on E126's principle, and said in as
     /// many words that the principle cannot be applied here: you cannot omit a tree's own species
     /// from its own page. So the fix is copy, and this is the copy.
@@ -382,11 +382,11 @@ struct TreeProfilePresentation {
     /// `contributor_placed` are two provenances of one fact, and marking one of them ranks it against
     /// the other. A species does not always exist. The alternative to "species named by a
     /// contributor" is not a second way of arriving at a species — the client has no other way; there
-    /// is no organisation confirming botany in this app and no photograph being classified by one —
+    /// is no organization confirming botany in this app and no photograph being classified by one —
     /// it is **no species at all**, which prints nothing here because there is nothing to attribute.
     /// A symmetric second arm would have to be a sentence about a species that does not exist.
     ///
-    /// The symmetry the placement rule is really about is honoured, one level up and already: a city
+    /// The symmetry the placement rule is really about is honored, one level up and already: a city
     /// row's species reads its inventory's name and a community row's reads `community-added,
     /// unverified`, both on this same line, and neither is the marked case. This element only says
     /// *which part* of a community record the contributor authored — and it is not evaluative, in
@@ -478,7 +478,7 @@ struct TreeProfilePresentation {
     /// is where `source` and `verification_state` are already read out. A second, parallel vocabulary
     /// somewhere else on the screen would be the app describing the same kind of fact twice.
     ///
-    /// ── Both values are stated, and that is the whole defence against it reading as a demerit ──
+    /// ── Both values are stated, and that is the whole defense against it reading as a demerit ──
     /// It would have been cheaper to print something only for the placed case. That is exactly what
     /// makes a label a warning: the marked case is the exceptional one, and an exceptional coordinate
     /// is a suspect coordinate. It would also be untrue to the record — a hand-placed pin is not the
@@ -578,7 +578,7 @@ struct TreeProfilePresentation {
     ///
     /// The hint, not the label: the label is the well's own sentence, which states the fact, and R2's
     /// argument about `Favorite` applies to it too — a control should be named for what it is rather
-    /// than relabelled with the next tap.
+    /// than relabeled with the next tap.
     static let emptyPhotoWellHint = "Opens the camera for this tree"
 
     /// The hero as a control, and what pressing it does. **NOT SPECIFIED** — neither screen 20
@@ -1054,7 +1054,7 @@ struct TreeProfilePresentation {
     /// record, and stamping `city record` on it would be the app attributing its own reading to San
     /// Francisco — the single failure this whole round is written to avoid. Adding a third and fourth
     /// case to C12 would put "how a number was measured" and "who said where a tree stands" in one
-    /// vocabulary, and would need a colour ramp saying which of the two ways of knowing is better.
+    /// vocabulary, and would need a color ramp saying which of the two ways of knowing is better.
     /// There is no such ranking: a contributor who was standing there beats the seed, and the seed
     /// covers 195,309 trees a contributor has never visited.
     ///
@@ -1104,7 +1104,7 @@ struct TreeProfilePresentation {
     /// inventory and `Tree.cityRecord` is `nil` for it. There is no empty state and no "the city has
     /// no record of this tree" copy: the subtitle already reads `community-added, unverified`, which
     /// says the same thing in the place the screen already says it, and a second sentence saying the
-    /// city has nothing would be the app apologising for a tree somebody added on purpose.
+    /// city has nothing would be the app apologizing for a tree somebody added on purpose.
     ///
     /// Also `nil` when the record produces no card — see `CityRecordPresentation.isEmpty`.
     var cityRecord: CityRecordPresentation? {
@@ -1313,7 +1313,7 @@ enum TreeProfileCopy {
     /// **The claim is exactly the one the data supports and no larger.** The record does carry a
     /// word for the tree; what it does not carry is the botanical half of DataSF's species column.
     /// So the sentence states both halves in the order a reader needs them — here is where that
-    /// word came from, and here is what the record stops short of — and it neither apologises for
+    /// word came from, and here is what the record stops short of — and it neither apologizes for
     /// the city nor implies the tree is unidentifiable. Somebody standing in front of it can see
     /// perfectly well what it is; the *record* cannot.
     ///

@@ -114,7 +114,7 @@ private enum GroveFixtures {
         species(7, "Lophostemon confertus", "Brisbane Box", daysAgo: 40, address: "2500 Vicente St")
     ]
 
-    /// Forty species in the neighbourhood — §3's denominator. The first seven are the ones known,
+    /// Forty species in the neighborhood — §3's denominator. The first seven are the ones known,
     /// so the intersection is the whole known set.
     static let neighborhoodSpeciesIDs: [UUID] =
         known.map(\.speciesID)
@@ -138,7 +138,7 @@ private enum GroveFixtures {
         known: Series(items: known, isComplete: false)
     )
 
-    /// A device that has contributed nothing. There is no neighbourhood to infer and nothing to
+    /// A device that has contributed nothing. There is no neighborhood to infer and nothing to
     /// count, so the screen is its title, its tabs and its footnote.
     static let empty = GroveSpecies.empty
 }

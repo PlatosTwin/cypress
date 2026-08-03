@@ -128,7 +128,7 @@ struct MemorialPresentation: Equatable {
     ///
     /// **A memorial gets it too, and the record is what makes it honest.** The tree is gone; the
     /// place is not, and the coordinate is one of the few things about a removed tree that is still
-    /// exactly true. C19 draws the record as the grey dash-marked pin screen 01's own caption calls
+    /// exactly true. C19 draws the record as the gray dash-marked pin screen 01's own caption calls
     /// a memorial (RULINGS R7), so the map states what kind of record it is without this screen
     /// having to add a sentence about it — and a reader who came here from My Grove or the journal
     /// can go and stand where it stood.
@@ -502,7 +502,7 @@ enum MemorialCopy {
     /// ` · vitality 2 · a steward confirmed the decline`.
     ///
     /// The second clause is a provenance claim and renders only when `verification_state` supports
-    /// it. "the decline" is kept from the mock rather than generalised: a check-in that an org
+    /// it. "the decline" is kept from the mock rather than generalized: a check-in that an org
     /// confirmed on a tree that was later removed is a decline, and rewriting it into something
     /// vaguer would be writing new copy for this screen.
     static func checkInDetail(vitality: Vitality, isOrgVerified: Bool) -> String {

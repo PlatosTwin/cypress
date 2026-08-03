@@ -16,7 +16,7 @@
 //  once recorded that a correction could not be written at all. **AppSchema v14 put a writable copy
 //  in `main`**, and `correctSpecies` is the correction; tickets #86 and #124, ruled in
 //  `RULINGS R45`. What follows is still true, and is now a division
-//  of labour between two verbs rather than a limit:
+//  of labor between two verbs rather than a limit:
 //
 //  1. **Community rows only.** `main` has no writable `trees`; a city row's species is the city's,
 //     sitting in an ATTACHed read-only database. Letting a contributor overwrite the inventory would

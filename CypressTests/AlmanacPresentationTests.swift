@@ -175,7 +175,7 @@ struct AlmanacPresentationTests {
 
     // MARK: - The whole sweep
 
-    /// The one that matters: a neighbourhood with nothing behind any of its aggregates prints no
+    /// The one that matters: a neighborhood with nothing behind any of its aggregates prints no
     /// number anywhere, and no card frames an absence.
     @Test("every aggregate below its floor is absent, and nothing prints a zero")
     func belowThresholdEverywhere() {
@@ -199,7 +199,7 @@ struct AlmanacPresentationTests {
 
         let strings = Self.renderedStrings(presentation)
         #expect(!Self.containsAZero(strings), "a zero reached the screen: \(strings)")
-        // The neighbourhood is known, so its name is still the header's — that is a fact, not an
+        // The neighborhood is known, so its name is still the header's — that is a fact, not an
         // aggregate, and §5.6 does not reach it.
         #expect(strings == [AlmanacCopy.footnote, "Sunset/Parkside"])
     }
@@ -257,7 +257,7 @@ struct AlmanacPresentationTests {
         #expect(AlmanacThresholds.minimumObservers == 3)
     }
 
-    // MARK: - §2 · the elder and the newest neighbours
+    // MARK: - §2 · the elder and the newest neighbors
 
     @Test("the elder says what the record says, not what the tree is")
     func elderCitesTheRecord() {
@@ -340,7 +340,7 @@ struct AlmanacPresentationTests {
         let many = AlmanacCopy.newestSubtitle(
             treeCount: 23, leadingSpecies: ["Ginkgo", "NZ tea tree", "Monterey Pine"], locale: Self.locale
         )
-        // The seed's own capitalisation, kept: lower-casing a name to fit the mock's sentence turns
+        // The seed's own capitalization, kept: lower-casing a name to fit the mock's sentence turns
         // `NZ tea tree` into `nz tea tree`.
         #expect(many == "23 trees planted this spring, mostly Ginkgo and NZ tea tree")
     }
@@ -382,7 +382,7 @@ struct AlmanacPresentationTests {
         }
     }
 
-    @Test("a neighbourhood with no remainder draws no `Everyone else` at 0%")
+    @Test("a neighborhood with no remainder draws no `Everyone else` at 0%")
     func noRemainderRowWhenNothingRemains() {
         let whole = NeighborhoodComposition(
             distinctSpeciesCount: 2,

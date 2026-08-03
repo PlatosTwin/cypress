@@ -113,7 +113,7 @@ struct AccountAskSheetTests {
         }
     }
 
-    /// How age can matter without a birthdate ever being stored, pinned as behaviour rather than as
+    /// How age can matter without a birthdate ever being stored, pinned as behavior rather than as
     /// a comment.
     ///
     /// The bucket is a one-bit answer to a single over-or-under-18 question (DECISIONS §3.9, D11),

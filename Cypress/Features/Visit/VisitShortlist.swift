@@ -69,7 +69,7 @@ struct VisitShortlist: Equatable {
 
     let state: State
     let candidates: [VisitCandidate]
-    /// The reported horizontal accuracy of the fix that produced this list, in metres. Stored on
+    /// The reported horizontal accuracy of the fix that produced this list, in meters. Stored on
     /// every contribution the flow writes (D6).
     let accuracyM: Double?
     /// D6: the two nearest sit inside GPS error of each other, so an explicit confirmation tap is
@@ -204,7 +204,7 @@ enum VisitPhenologyVocabulary {
     ///   say "flowering".
     /// - **The unknown-habit gate is gone** with it (`Species.availablePhenologyTags`). D5's
     ///   evergreen exclusion survives one layer down, because it is a sourced fact rather than a
-    ///   gap in one: a known evergreen is still never asked about fall colour or bare.
+    ///   gap in one: a known evergreen is still never asked about fall color or bare.
     static func tags(for species: Species?) -> [PhenologyTag] {
         guard let species else { return [] }
         return order.filter { $0.isAvailable(for: species) }
@@ -236,11 +236,11 @@ enum VisitBearing {
 
     /// `6 m NE`, or just `6 m` when there is no fix to take a bearing from.
     ///
-    /// Metres are whole numbers: the mock draws `3 m N` / `17 m S`, and a decimal on a number whose
+    /// Meters are whole numbers: the mock draws `3 m N` / `17 m S`, and a decimal on a number whose
     /// error bar is ±9 m would be false precision.
     static func label(distanceM: Double, from origin: Coordinate?, to destination: Coordinate) -> String {
-        let metres = Int(distanceM.rounded())
-        guard let origin, metres > 0 else { return "\(metres) m" }
-        return "\(metres) m \(compass(from: origin, to: destination))"
+        let meters = Int(distanceM.rounded())
+        guard let origin, meters > 0 else { return "\(meters) m" }
+        return "\(meters) m \(compass(from: origin, to: destination))"
     }
 }

@@ -72,7 +72,7 @@ struct AlmanacVacantSiteTests {
     /// If a seed rebuild ever stops producing these rows — BUILD-PLAN §7 makes them out of the
     /// `qSpecies` placeholder strings, which is exactly the kind of mapping that gets "cleaned up" —
     /// screen 12, screen 01's site card and the whole of E107 go quiet with nothing failing.
-    @Test("the seed holds every vacant planting site inside a neighbourhood")
+    @Test("the seed holds every vacant planting site inside a neighborhood")
     func population() async throws {
         let store = try await Self.store()
         let corpus = try await SeedCorpus.current(store)
@@ -84,12 +84,12 @@ struct AlmanacVacantSiteTests {
         #expect(total == corpus.vacantSites)
 
         // The almanac reads `neighborhood_id = ? AND deleted_at IS NULL`, so a site outside that
-        // scope is a site no neighbourhood surface could ever count.
+        // scope is a site no neighborhood surface could ever count.
         //
         // ── The hole a second city opened, asserted rather than left to be discovered ──────────
         // `seed.neighborhoods` is San Francisco's 41 Analysis Neighborhoods and nothing else, so
         // every San Jose row carries `neighborhood_id IS NULL` and is invisible to the almanac, the
-        // coverage panel and the neighbourhood species mix. Nothing renders wrongly — a whole city's
+        // coverage panel and the neighborhood species mix. Nothing renders wrongly — a whole city's
         // rows simply never appear. That is a known hole in the shipped build (ERRATA E176), and it
         // is pinned here as an exact number so that fixing it, or making it worse, is a red test
         // rather than a thing somebody notices in the field.
@@ -101,8 +101,8 @@ struct AlmanacVacantSiteTests {
             on: store
         )
         #expect(
-            outOfScope == corpus.vacantSitesWithNoNeighbourhood,
-            "\(outOfScope) vacant sites sit outside every neighbourhood, expected \(corpus.vacantSitesWithNoNeighbourhood); a neighbourhood layer for the second city would change this"
+            outOfScope == corpus.vacantSitesWithNoNeighborhood,
+            "\(outOfScope) vacant sites sit outside every neighborhood, expected \(corpus.vacantSitesWithNoNeighborhood); a neighborhood layer for the second city would change this"
         )
 
         let inScope = try await Self.count(
@@ -112,7 +112,7 @@ struct AlmanacVacantSiteTests {
             """,
             on: store
         )
-        #expect(inScope == corpus.vacantSites - corpus.vacantSitesWithNoNeighbourhood)
+        #expect(inScope == corpus.vacantSites - corpus.vacantSitesWithNoNeighborhood)
 
         // A site has no species. This is the fact the inner join is wrongly credited with acting on.
         let withSpecies = try await Self.count(
@@ -125,10 +125,10 @@ struct AlmanacVacantSiteTests {
         #expect(withSpecies == 0)
 
         // **This is the number the switch cost most.** Under the DataSF export every one of the 41
-        // neighbourhoods held vacant sites, so the block E115 proposes cleared a cold-start floor
+        // neighborhoods held vacant sites, so the block E115 proposes cleared a cold-start floor
         // everywhere in the city (ARCHITECTURE §5.6). SF Public Works' own layer has no vacant-site
         // category at all — `PlantType` is `Tree` on all 133,577 of its records — so 12,518 sites
-        // become 153 and **17 neighbourhoods now have none**. Screen 12's empty-site row will be
+        // become 153 and **17 neighborhoods now have none**. Screen 12's empty-site row will be
         // absent or tiny across most of the city. Pinned rather than relaxed, so the day the number
         // moves again somebody has to say why.
         let neighborhoodsWithNone = try await Self.count(
@@ -217,7 +217,7 @@ struct AlmanacVacantSiteTests {
             leftTrees - innerTrees == corpus.sunsetTreesLeftJoined - corpus.sunsetTreesWithSpecies,
             "the widened join gains non-taxon trees, never sites"
         )
-        #expect(leftTrees > innerTrees, "the control: this neighbourhood does hold non-taxon trees")
+        #expect(leftTrees > innerTrees, "the control: this neighborhood does hold non-taxon trees")
 
         // And the group it would add cannot name itself: `SpeciesShare.name` is not optional and
         // `row.uuid("species_uuid")` on this row raises `unexpectedNull`, so `speciesMix` throws,
@@ -317,8 +317,8 @@ struct AlmanacVacantSiteTests {
         let elder = try await store.queue.read { connection in
             try queries.elder(scope: .neighborhood(id: sunset, name: "Sunset/Parkside"), connection: connection)
         }
-        // `elder` is `MIN(planted_on)` within the neighbourhood, so it is nil for every
-        // neighbourhood in a seed with no planting dates. Where the source has them, its being
+        // `elder` is `MIN(planted_on)` within the neighborhood, so it is nil for every
+        // neighborhood in a seed with no planting dates. Where the source has them, its being
         // non-nil is the control that makes the exclusion below mean something.
         #expect(
             (elder != nil) == hasPlantingDates,
@@ -365,7 +365,7 @@ struct AlmanacVacantSiteTests {
     /// vacant site therefore produced `First bloom of the year` over a planting basin — on the one
     /// row of screen 12 that names a specific record by its street and is tappable.
     ///
-    /// That the app cannot currently write such a visit is not a defence: it cannot only because
+    /// That the app cannot currently write such a visit is not a defense: it cannot only because
     /// E113 redirects a site away from the tree profile the camera opens from, which is the
     /// almanac's own rule being enforced in another feature's router.
     @Test("a flowering visit on a vacant site is not the first bloom")
@@ -397,7 +397,7 @@ struct AlmanacVacantSiteTests {
     }
 
     /// The control that keeps the assertion above from passing for the wrong reason: the same visit
-    /// on a standing tree in the same neighbourhood is still the first bloom, and it wins even
+    /// on a standing tree in the same neighborhood is still the first bloom, and it wins even
     /// though the site's sighting is the earlier of the two.
     @Test("a flowering visit on a standing tree is still the first bloom")
     func standingTreeStillBlooms() async throws {
@@ -440,9 +440,9 @@ struct AlmanacVacantSiteTests {
     ///
     /// 1,474 is the Sunset/Parkside site count E115 recorded, and the block reports exactly that — no
     /// A8 floor, because it counts city records rather than user actions. The nearest is scoped to the
-    /// same neighbourhood, so the tap can never send the reader from one basin to a basin in the next
-    /// neighbourhood over: subject and destination are one set.
-    @Test("the vacant-sites read counts the neighbourhood's basins and its nearest is one of them")
+    /// same neighborhood, so the tap can never send the reader from one basin to a basin in the next
+    /// neighborhood over: subject and destination are one set.
+    @Test("the vacant-sites read counts the neighborhood's basins and its nearest is one of them")
     func vacantSitesQuery() async throws {
         let store = try await Self.store()
         let corpus = try await SeedCorpus.current(store)
@@ -465,13 +465,13 @@ struct AlmanacVacantSiteTests {
         // needs and ERRATA E38 governs: 1,474 is a `COUNT(*)`, 20 is what a map can hold.
         #expect(result.count == corpus.sunsetVacantSites)
         // A page of the whole set, or the whole set when it is smaller than a page. Under
-        // `--source city` this neighbourhood holds 7 basins, fewer than the 20-row limit, so the
+        // `--source city` this neighborhood holds 7 basins, fewer than the 20-row limit, so the
         // page *is* everything — the shape E129 needs either way.
         #expect(result.nearest.count == min(corpus.sunsetVacantSites, AlmanacLimits.vacantSiteRowLimit))
         #expect(result.nearest.allSatisfy { $0.status == .vacantSite })
         let nearest = try #require(result.nearest.first?.id)
 
-        // The nearest is a vacant site, and it is in this neighbourhood — not merely the nearest
+        // The nearest is a vacant site, and it is in this neighborhood — not merely the nearest
         // basin in the city.
         let ownStatusAndArea = try await store.queue.read { connection -> (String, Int) in
             let statement = try connection.prepare(
@@ -514,7 +514,7 @@ struct AlmanacVacantSiteTests {
         ))
         #expect(noDestination.vacantSites == nil)
 
-        // A neighbourhood with no basins draws nothing, even though E115 found none like it today.
+        // A neighborhood with no basins draws nothing, even though E115 found none like it today.
         let none = AlmanacPresentation(almanac: Almanac(
             neighborhood: AlmanacNeighborhood(area: .named("X"), vacantSites: nil)
         ))

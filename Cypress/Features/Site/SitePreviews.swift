@@ -82,7 +82,7 @@ enum SiteFixtures {
         )
     }
 
-    static let neighbourSpecies = try! Species(
+    static let neighborSpecies = try! Species(
         id: id(2),
         scientificName: "Platanus × acerifolia",
         commonName: "London Plane",
@@ -114,8 +114,8 @@ enum SiteFixtures {
                     status: .alive
                 ),
                 distanceM: 24,
-                speciesScientificName: neighbourSpecies.scientificName,
-                speciesCommonName: neighbourSpecies.commonName,
+                speciesScientificName: neighborSpecies.scientificName,
+                speciesCommonName: neighborSpecies.commonName,
                 tell: nil
             )
         ]

@@ -12,12 +12,12 @@ import UIKit
 ///
 /// 1. **A token is left light-only by accident.** The E8 gap was 59 tokens with no dark value and
 ///    a `// TODO` comment, which is invisible at runtime — the app simply glared. Every token that
-///    claims to be derived is checked here to actually resolve to two different colours.
+///    claims to be derived is checked here to actually resolve to two different colors.
 /// 2. **The review sheet drifts from the tokens.** `CypressColor.reviewTokens` is what TokenGallery
 ///    shows a designer, and it restates hexes that also live on the tokens. If someone promotes a
 ///    derived token to specified and forgets the registry line, review shows the old value. Every
 ///    entry is resolved against the live token here, in both appearances.
-/// 3. **A derived colour is unreadable.** The amber family is the palette most likely to fail on a
+/// 3. **A derived color is unreadable.** The amber family is the palette most likely to fail on a
 ///    dark surface, so its contrast floor is pinned rather than eyeballed.
 @Suite("Derived dark-mode tokens (ERRATA E8)")
 struct DerivedTokenTests {
@@ -35,7 +35,7 @@ struct DerivedTokenTests {
         return byte(r) << 16 | byte(g) << 8 | byte(b)
     }
 
-    /// WCAG 2.1 relative luminance contrast. Written out because the design system has no colour
+    /// WCAG 2.1 relative luminance contrast. Written out because the design system has no color
     /// maths of its own and does not need any at runtime — only the test asks this question.
     private static func contrast(_ a: UInt32, _ b: UInt32) -> Double {
         func luminance(_ hex: UInt32) -> Double {
@@ -80,7 +80,7 @@ struct DerivedTokenTests {
             #expect(
                 Self.hex(token.color, Self.light) != Self.hex(token.color, Self.dark),
                 """
-                \(token.name) is listed as derived but resolves to the same colour in both \
+                \(token.name) is listed as derived but resolves to the same color in both \
                 appearances. That is the E8 failure exactly: a token that reads as answered and \
                 still glares after dark.
                 """

@@ -20,7 +20,7 @@
 
 import Foundation
 
-/// One side of a comparison: what to show under a candidate so it can be told from its neighbour.
+/// One side of a comparison: what to show under a candidate so it can be told from its neighbor.
 struct VisitDistinguishingTrait: Equatable {
     /// The micro-label above the pair, e.g. `TELL THEM APART BY STREET NUMBER`.
     let dimension: String
@@ -63,7 +63,7 @@ enum VisitDistinguisher {
     }
 
     /// In priority order: the botanical tell first, then the facts a volunteer can check from the
-    /// kerb without knowing anything about trees.
+    /// curb without knowing anything about trees.
     enum Dimension: CaseIterable {
         /// The curated `id_tip`. First, and today never available.
         case tell

@@ -14,7 +14,7 @@ import Testing
 ///   engine — not a comment — refuses a second unsuperseded head.
 /// - **the seams stay apart.** Confirming a wrong-species report must never write `trees.status`.
 ///   `ReviewFlag.Kind.statusReviewKinds` is derived from `confirmedStatus != nil`, so a one-line
-///   "fix" pointing `wrongSpecies` at a status would silently enrol species reports in the removal
+///   "fix" pointing `wrongSpecies` at a status would silently enroll species reports in the removal
 ///   queue (ERRATA E170).
 ///
 /// Every load-bearing assertion reads the database or the boundary's own refusal, never the object
@@ -47,10 +47,10 @@ struct SpeciesCorrectionTests {
 
     private static func twoSpecies(_ api: LocalAPI) async throws -> (Species, Species) {
         let plane = try #require(await api.searchSpecies(query: "Platanus", limit: 5).first,
-                                 "the catalogue answered no Platanus")
+                                 "the catalog answered no Platanus")
         let oak = try #require(
             await api.searchSpecies(query: "Quercus", limit: 5).first { $0.id != plane.id },
-            "the catalogue answered no second species"
+            "the catalog answered no second species"
         )
         return (plane, oak)
     }
@@ -374,7 +374,7 @@ struct SpeciesCorrectionTests {
     /// to **nobody**. That is the ruling's third arm, and it is asserted as a refusal at the
     /// boundary rather than only as a column value, because "the column is null" and "the claim is
     /// therefore not correctable by this phone" are two different things and only the second is the
-    /// behaviour anybody experiences.
+    /// behavior anybody experiences.
     @Test("a species claimed before v14 survives the upgrade and belongs to nobody")
     func theUpgradePreservesClaimsAndAttributesThemToNobody() async throws {
         let connection = try SQLiteConnection(path: ":memory:")

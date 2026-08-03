@@ -96,7 +96,7 @@ enum MapInventoryCopy {
     /// **Three things, in the order a reader needs them.**
     ///
     /// 1. *What the map is drawing* — a city street-tree inventory. That is the inventory's own
-    ///    published name rather than a characterisation invented here: all three inventories the
+    ///    published name rather than a characterization invented here: all three inventories the
     ///    ingest contract registers are named one (`SF Public Works street tree inventory`,
     ///    `DataSF Street Tree List`, `City of San Jose Street Tree inventory`), which is also why
     ///    the sentence does not name *which* — it is true of whichever file is attached, and

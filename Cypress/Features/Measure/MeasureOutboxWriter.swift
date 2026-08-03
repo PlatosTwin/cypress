@@ -72,7 +72,7 @@ enum MeasureOutboxWriter {
     /// enqueue and the drain.
     ///
     /// - Throws: `APIError.validationFailed` when the draft holds no readable number. That is not
-    ///   the "never block submission" rule being bent (DECISIONS §2.5): the rule is about rigour,
+    ///   the "never block submission" rule being bent (DECISIONS §2.5): the rule is about rigor,
     ///   and an empty keypad is not an imprecise reading, it is no reading. The screen's CTA is
     ///   already disabled there; this is the boundary saying the same thing.
     static func enqueue(

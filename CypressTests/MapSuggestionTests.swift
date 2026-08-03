@@ -9,12 +9,12 @@ import Testing
 /// presents its own six rows as the whole of what matched.
 ///
 /// ERRATA E38 is the entry: a page's size is not a total. It became the ordinary case here rather
-/// than an edge one when task #108 made the catalogue match a word anywhere in either name, so the
+/// than an edge one when task #108 made the catalog match a word anywhere in either name, so the
 /// 100-species cap that used to need a genus to reach now falls out of a single letter — `a`
 /// prefix-matched 97 species and *contains* in 555. Every assertion about `Remainder` below is that
 /// sentence, made into something that can fail.
 ///
-/// The seed-backed tests are last and are the ones that would catch a change in the catalogue itself;
+/// The seed-backed tests are last and are the ones that would catch a change in the catalog itself;
 /// the value tests above them need no database and pin the arithmetic.
 @Suite("Map search suggestions")
 struct MapSuggestionTests {
@@ -44,7 +44,7 @@ struct MapSuggestionTests {
 
     // MARK: - What the list is
 
-    @Test("a query the catalogue has nothing for offers no rows")
+    @Test("a query the catalog has nothing for offers no rows")
     func noMatchesIsNoList() throws {
         #expect(MapSuggestions(matches: []) == .off)
         #expect(MapSuggestions(matches: []).rows.isEmpty)
@@ -74,10 +74,10 @@ struct MapSuggestionTests {
         #expect(listing.remainder == .none, "a list that showed everything claimed a remainder")
     }
 
-    /// **E38, the countable half.** More matched than fits, but the catalogue counted them all, so the
+    /// **E38, the countable half.** More matched than fits, but the catalog counted them all, so the
     /// total is a fact and the sentence may print it.
-    @Test("more matches than rows are counted, and the count is exact when the catalogue counted it")
-    func aRemainderTheCatalogueCounted() throws {
+    @Test("more matches than rows are counted, and the count is exact when the catalog counted it")
+    func aRemainderTheCatalogCounted() throws {
         let suggestions = MapSuggestions(matches: try Self.many(21))
         guard case let .listing(listing) = suggestions else {
             Issue.record("21 matches produced \(suggestions)")
@@ -93,11 +93,11 @@ struct MapSuggestionTests {
 
     /// **E38, the half this ticket was most likely to get wrong.**
     ///
-    /// The catalogue's own answer was a page, so the app does not know the total and may not print
+    /// The catalog's own answer was a page, so the app does not know the total and may not print
     /// one. `atLeast` is the weaker claim and the only true one: "at least 100" is true when exactly
     /// 100 matched *and* when 555 did, which is the property `MapSearch.Narrowed.isTruncated` already
     /// picks for the same reason one level up.
-    @Test("a full page from the catalogue is reported as a floor, never as a total")
+    @Test("a full page from the catalog is reported as a floor, never as a total")
     func aRemainderNobodyCounted() throws {
         let suggestions = MapSuggestions(matches: try Self.many(MapSearch.speciesLimit))
         guard case let .listing(listing) = suggestions else {
@@ -118,7 +118,7 @@ struct MapSuggestionTests {
         // whoever rewrites the copy; this is the *rule*, and it must survive that edit.
         #expect(
             sentence.contains("at least"),
-            "a page of the catalogue was described without saying it was a page: “\(sentence)”"
+            "a page of the catalog was described without saying it was a page: “\(sentence)”"
         )
     }
 
@@ -219,12 +219,12 @@ struct MapSuggestionTests {
         )
     }
 
-    /// **The cap, reached the way a person reaches it.** One letter, against the real catalogue.
+    /// **The cap, reached the way a person reaches it.** One letter, against the real catalog.
     ///
     /// E165 measured this: `a` prefix-matched 97 species and contains-matched 555. So the dropdown's
     /// six rows are six of at least a hundred, and the only defensible thing it can say is so.
     @MainActor
-    @Test("one letter against the real catalogue is a page, and the list says it is")
+    @Test("one letter against the real catalog is a page, and the list says it is")
     func oneLetterIsAPage() async throws {
         let store = try await Self.store()
         let model = MapModel(api: LocalAPI(store: store, deviceID: Self.deviceID))
@@ -240,7 +240,7 @@ struct MapSuggestionTests {
         #expect(listing.rows.count == MapSuggestions.rowLimit)
         #expect(
             listing.remainder == .atLeast(MapSearch.speciesLimit - MapSuggestions.rowLimit),
-            "“a” matched a full page of the catalogue and the list called it \(listing.remainder)"
+            "“a” matched a full page of the catalog and the list called it \(listing.remainder)"
         )
         let sentence = try #require(
             MapSuggestionCopy.remainder(listing.remainder, shown: listing.rows.count)

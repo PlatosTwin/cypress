@@ -222,7 +222,7 @@ struct MapQueryPlanTests {
         )
         let cell = TreeQueries.cellSize(
             zoom: 16,
-            centreLatitude: (Self.bounds.minLatitude + Self.bounds.maxLatitude) / 2,
+            centerLatitude: (Self.bounds.minLatitude + Self.bounds.maxLatitude) / 2,
             points: MapModel.markerCellPoints
         )
         // The overlap, less one cell at each end where partial membership is expected.
@@ -263,7 +263,7 @@ struct MapQueryPlanTests {
     /// rather than relative to the viewport's corner — the same cell keeps the same id as the user
     /// drags, so the badge does not flicker and re-animate". The `+90`/`+180` offsets do make the
     /// grid independent of the corner. They do not make it independent of the *box*, because
-    /// `cellSize` took the viewport's own centre latitude and `cos` moved with it — see that method
+    /// `cellSize` took the viewport's own center latitude and `cos` moved with it — see that method
     /// for the arithmetic and for how far thirty-odd cells of slide goes. The badge has been
     /// re-keying on every pan since it was written; this is the assertion that says it does not
     /// (ERRATA E130).
@@ -286,7 +286,7 @@ struct MapQueryPlanTests {
             try #require(!before.isEmpty && !after.isEmpty, "one of the two boxes produced no badges")
 
             // Any cell both boxes reached must be *the same cell* — same id — and not merely a badge
-            // at a similar place. Counts and centres are allowed to differ at the box edges, where
+            // at a similar place. Counts and centers are allowed to differ at the box edges, where
             // each box sees only part of the cell.
             let shared = Set(before.map(\.id)).intersection(after.map(\.id))
             #expect(

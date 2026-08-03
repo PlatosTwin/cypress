@@ -2,10 +2,10 @@ import Foundation
 
 /// `species.leaf_retention` (BUILD-PLAN §4). Drives phenology chips and season strip rendering (D5).
 ///
-/// Every phenology surface derives from this attribute — an evergreen never shows a fall-colour
-/// chip or an autumn strip colour (D5, DECISIONS §3.14).
+/// Every phenology surface derives from this attribute — an evergreen never shows a fall-color
+/// chip or an autumn strip color (D5, DECISIONS §3.14).
 ///
-/// **Absence is modelled by `Optional`, never by a case.** 59 of the 569 seeded species have no
+/// **Absence is modeled by `Optional`, never by a case.** 59 of the 569 seeded species have no
 /// authoritative source for their habit, and the seed column is NULL for them (ERRATA E9). An
 /// `unknown` case here would be a fourth value every `switch` could quietly treat as a fact; an
 /// optional forces each call site to say what it does when nobody has established the answer.
@@ -14,7 +14,7 @@ public enum LeafRetention: String, Codable, Sendable, Hashable, CaseIterable {
     case deciduous = "deciduous"
     case semiDeciduous = "semi_deciduous"
 
-    /// Whether fall colour is a possible phenological event for this species at all (D5).
+    /// Whether fall color is a possible phenological event for this species at all (D5).
     public var canShowFallColor: Bool {
         switch self {
         case .evergreen: return false
@@ -197,7 +197,7 @@ public struct Species: CoreEntity {
         if let bad = seasonal.allMonths.first(where: { !(1...12).contains($0) }) {
             throw SpeciesValidationError.monthOutOfRange(bad)
         }
-        // D5 binds only when the habit is known. An unknown species carrying fall-colour months is
+        // D5 binds only when the habit is known. An unknown species carrying fall-color months is
         // not a contradiction — it is a species somebody sourced a calendar for and a habit for
         // nobody has (ERRATA E9).
         if leafRetention == .evergreen, !seasonal.fallColorMonths.isEmpty {
@@ -255,7 +255,7 @@ extension Species {
     /// species record — its calendar, its curation, its habit — may order or hint, but it never
     /// gates what a person standing at the tree is allowed to say they see. The one exclusion is
     /// D5's, and it stands because it is a *sourced fact*: a species known to be evergreen is
-    /// never asked about fall colour or bare, since either tag would contradict the record rather
+    /// never asked about fall color or bare, since either tag would contradict the record rather
     /// than inform it (DECISIONS §3.14, and the schema CHECK behind it).
     ///
     /// An **unknown habit therefore yields the full set**, not the empty one it used to (the old
@@ -281,7 +281,7 @@ extension Species {
     /// distinction buys.
     ///
     /// Evergreen and semi-deciduous species are in leaf year-round. For deciduous species the
-    /// window runs from the opening of the new-growth season to the close of the fall-colour
+    /// window runs from the opening of the new-growth season to the close of the fall-color
     /// season, wrapping the year if needed. When either season is absent — or is not one
     /// contiguous run of months, and so states no season at all — the northern-hemisphere default
     /// April–October applies; that fallback is a derivation, not authored botany, and is the one
@@ -312,7 +312,7 @@ extension Species {
     }
 
     /// April through October. Applies only when a deciduous species has no authored new-growth or
-    /// fall-colour months. See `leafOnMonths`.
+    /// fall-color months. See `leafOnMonths`.
     public static let defaultDeciduousLeafOnMonths: Set<Int> = Set(4...10)
 }
 
@@ -352,7 +352,7 @@ extension Species {
 
     /// The same test against a bare string, for the reads that carry a species name without a
     /// `Species` — `NearbyTree.speciesScientificName`, which the shortlist and a vacant site's
-    /// neighbour line both draw. A static function rather than a `String` extension: this is a
+    /// neighbor line both draw. A static function rather than a `String` extension: this is a
     /// statement about one column of one table, not about strings.
     public static func isUnreadScientificName(_ name: String) -> Bool {
         name.hasPrefix(Species.unreadScientificNameMarker)

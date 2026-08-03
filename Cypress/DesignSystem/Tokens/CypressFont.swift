@@ -32,7 +32,7 @@
 //
 //  ── Skipped ───────────────────────────────────────────────────────────────────────────────
 //  These rows of §1.3 are chrome for the design document / the public web page, not the iOS app,
-//  and are deliberately NOT modelled here:
+//  and are deliberately NOT modeled here:
 //      web.h1, web.wordmark, latin.name @18px (W1 only), spec.h2, spec.eyebrow, spec.backToTop,
 //      caption.title (its only documented use is the spec page's `<figcaption><b>`).
 //  W1 is out of scope per ARCHITECTURE §8.
@@ -502,7 +502,7 @@ extension View {
 
 // MARK: - §2 component styles
 //
-// Weight/size combinations that SCREENS.md §2 (the C1–C30 catalogue) asks for but §1.3's ramp table
+// Weight/size combinations that SCREENS.md §2 (the C1–C30 catalog) asks for but §1.3's ramp table
 // does not enumerate as their own row. Every one names the §2 line it comes from. Same family
 // mapping as the header: Alegreya Sans 600 → Bold, Spline Sans Mono 700 → SemiBold (the face tops
 // out at 600).

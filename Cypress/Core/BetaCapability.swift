@@ -27,7 +27,7 @@ public enum BetaCapability {
     ///
     /// `true`: sign-in completes locally through `claimDevice` (ERRATA E124). It was `false` while
     /// the only path to an account ran through a magic-link server this build does not have.
-    /// Everything device-scoped — favourites (ERRATA E89), private reminders (E23) — keeps working
+    /// Everything device-scoped — favorites (ERRATA E89), private reminders (E23) — keeps working
     /// exactly as before; a local account simply gives those contributions a `userID` to hang from
     /// instead of the device id, which is the move `claimDevice` was written for.
     public static let accountsAvailable = true

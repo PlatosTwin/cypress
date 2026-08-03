@@ -44,7 +44,7 @@ struct SitePresentation: Equatable {
     /// **The only affordance on the screen, and it is a read.** It states a fact about the site's
     /// surroundings — which is a thing that is true about the site — and it hands the reader
     /// somewhere real to go, which is what keeps this from being the dead end a degraded profile was.
-    struct Neighbour: Equatable, Identifiable {
+    struct Neighbor: Equatable, Identifiable {
         let id: UUID
         /// The tree's display name, by the same precedence every other surface uses.
         let title: String
@@ -81,7 +81,7 @@ struct SitePresentation: Equatable {
 
     /// The nearest standing tree, or nil when none is within reach — in which case the row is
     /// absent rather than reworded.
-    let neighbour: Neighbour?
+    let neighbor: Neighbor?
 
     /// The closing line, in the place screen 14 puts its own footnote.
     let footnote: String
@@ -112,7 +112,7 @@ struct SitePresentation: Equatable {
 
         self.stats = Self.stats(profile: profile)
         self.provenanceNote = Self.provenanceNote(profile: profile)
-        self.neighbour = nearest.map(Neighbour.init(nearby:))
+        self.neighbor = nearest.map(Neighbor.init(nearby:))
         self.footnote = SiteCopy.footnote
         // Named with this screen's own H1 — the address — because that is the only thing that
         // identifies a site, and the map's title should be what the reader just read.
@@ -181,12 +181,12 @@ struct SitePresentation: Equatable {
 
 // MARK: - The nearest standing tree
 
-extension SitePresentation.Neighbour {
+extension SitePresentation.Neighbor {
     init(nearby: NearbyTree) {
         self.init(
             id: nearby.id,
-            title: SiteCopy.neighbourTitle(nearby),
-            detail: SiteCopy.neighbourDetail(metres: nearby.distanceM)
+            title: SiteCopy.neighborTitle(nearby),
+            detail: SiteCopy.neighborDetail(meters: nearby.distanceM)
         )
     }
 }
@@ -264,7 +264,7 @@ enum SiteCopy {
     ///
     /// The species common name is the fallback display everywhere (D15); a city row the species map
     /// could not resolve has neither name, and says so rather than borrowing one.
-    static func neighbourTitle(_ nearby: NearbyTree) -> String {
+    static func neighborTitle(_ nearby: NearbyTree) -> String {
         if let common = nearby.speciesCommonName, !common.isEmpty { return common }
         if let latin = nearby.speciesScientificName, !latin.isEmpty { return latin }
         if let address = nearby.tree.address, !address.isEmpty { return address }
@@ -279,8 +279,8 @@ enum SiteCopy {
     /// `nearest` is a claim, and it holds: `TreeQueries.nearest` returns rows in ascending distance,
     /// so a standing tree its `LIMIT` dropped is farther than every row it kept. The separator is
     /// the app's spaced middle dot; the no-spaces rule is about em dashes (ARCHITECTURE §5.7).
-    static func neighbourDetail(metres: Double) -> String {
-        "\(Int(metres.rounded())) m away · the nearest tree to this site"
+    static func neighborDetail(meters: Double) -> String {
+        "\(Int(meters.rounded())) m away · the nearest tree to this site"
     }
 
     // MARK: The footnote
@@ -306,7 +306,7 @@ enum SiteCopy {
     static let cardMeta = "no tree at this site"
 
     /// The pin's VoiceOver label. C19 has no pin for a site, so 12,518 pins announced themselves as
-    /// `Removed tree, memorial`; the drawn pin is still the grey one (ERRATA E107) and this is the
+    /// `Removed tree, memorial`; the drawn pin is still the gray one (ERRATA E107) and this is the
     /// half of the distinction that could be made without inventing a component.
     static let pinAccessibilityLabel = "Planting site, no tree"
 

@@ -18,7 +18,7 @@ final class AlmanacModel {
     ///
     /// A failed read is its own case rather than an empty almanac, for the reason `GroveModel` keeps
     /// the same distinction: the two look identical on screen and mean opposite things. "Nothing is
-    /// happening in your neighbourhood" and "we could not ask" are different sentences, and this
+    /// happening in your neighborhood" and "we could not ask" are different sentences, and this
     /// screen — whose entire subject is what is and is not there — is the last place to conflate
     /// them.
     enum Phase: Equatable {
@@ -36,7 +36,7 @@ final class AlmanacModel {
     ///
     /// **It is a `var` now, and that is the whole of this defect's fix**
     /// (ERRATA E155). It used to be a `let` set once, from a
-    /// view whose `@State` initialiser runs exactly once — so an almanac built before CoreLocation
+    /// view whose `@State` initializer runs exactly once — so an almanac built before CoreLocation
     /// answered read `almanac(near: nil)`, got `.empty` by contract, and stayed empty for the life
     /// of the view.
     private(set) var coordinate: Coordinate?
@@ -46,7 +46,7 @@ final class AlmanacModel {
     ///
     /// The two differ for exactly as long as a re-read is in flight, and that gap is the reason this
     /// property exists rather than the view asking `coordinate == nil`. The prompt has to be
-    /// withdrawn at the moment the neighbourhood appears, not at the moment the fix arrives; those
+    /// withdrawn at the moment the neighborhood appears, not at the moment the fix arrives; those
     /// are one database read apart, and in between the screen has nothing on it and would be saying
     /// nothing about why (E126's invariant).
     private(set) var displayedCoordinate: Coordinate?
@@ -98,7 +98,7 @@ final class AlmanacModel {
     /// Called from `AlmanacView`'s `.task(id:)`, so it runs once on mount and again on every change
     /// — including the one that matters, `nil` → a coordinate, a second or so after a cold launch.
     /// The phase is deliberately **not** reset to `.loading` here: the almanac already on screen
-    /// (empty, with the prompt over it, or a previous neighbourhood) stays until the replacement has
+    /// (empty, with the prompt over it, or a previous neighborhood) stays until the replacement has
     /// actually been read, so the re-read costs the reader no blank frame.
     func update(coordinate newValue: Coordinate?) async {
         guard newValue != coordinate || phase == .loading else { return }

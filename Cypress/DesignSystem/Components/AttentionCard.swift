@@ -6,7 +6,7 @@
 //  planting") and the failed outbox row on 17.
 //
 //  Signal Amber is reserved: §1.1 says it is used "solely for 'this tree needs something'". The
-//  card's own micro-label therefore takes `accentAmber` instead of `text.faint` — that colour swap
+//  card's own micro-label therefore takes `accentAmber` instead of `text.faint` — that color swap
 //  is the whole point of the component, so it is exposed as `AttentionCard.sectionLabel`.
 //
 

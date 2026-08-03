@@ -13,12 +13,12 @@
 //
 //  ── CSS → SwiftUI conversion ──────────────────────────────────────────────────────────────
 //  `radial-gradient(circle at X% Y%, C 0%, transparent N%)` with no size keyword defaults to
-//  `farthest-corner`: the gradient ray runs from the centre point to the corner furthest from it,
+//  `farthest-corner`: the gradient ray runs from the center point to the corner furthest from it,
 //  and N% is a percentage of *that* length. `CypressRadialStop` stores X, Y and N as fractions and
 //  `CypressGradientField` resolves the pixel radius per layout, so a recipe is size-independent.
 //
 //  `transparent` is transcribed as `color.opacity(0)` rather than `Color.clear`. They are the same
-//  colour in CSS, but SwiftUI interpolates toward `Color.clear`'s black, which greys the falloff.
+//  color in CSS, but SwiftUI interpolates toward `Color.clear`'s black, which grays the falloff.
 //
 
 import SwiftUI
@@ -27,9 +27,9 @@ import SwiftUI
 
 /// One `radial-gradient(circle at x% y%, color 0%, transparent extent%)` layer.
 struct CypressRadialStop {
-    /// Centre, as a fraction of the box width.
+    /// Center, as a fraction of the box width.
     let x: Double
-    /// Centre, as a fraction of the box height.
+    /// Center, as a fraction of the box height.
     let y: Double
     let color: Color
     /// The `transparent N%` stop, as a fraction of the farthest-corner distance.
@@ -80,7 +80,7 @@ struct CypressGradientField: View {
         }
     }
 
-    /// CSS `farthest-corner`: the distance from the gradient centre to the furthest box corner.
+    /// CSS `farthest-corner`: the distance from the gradient center to the furthest box corner.
     static func farthestCorner(from stop: CypressRadialStop, in size: CGSize) -> CGFloat {
         let cx = stop.x * size.width
         let cy = stop.y * size.height

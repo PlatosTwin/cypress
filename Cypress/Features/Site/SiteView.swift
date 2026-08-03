@@ -116,7 +116,7 @@ struct SiteView: View {
 /// Split from `SiteView` for the reason `MemorialScreen` and `AlmanacScreen` are: a layout whose
 /// content only arrives after an `async` read cannot be photographed offscreen, because `.task`
 /// never runs in a detached window. With the split, a site with no address, a site with no
-/// neighbouring tree and the fully furnished record can each be handed straight in.
+/// neighboring tree and the fully furnished record can each be handed straight in.
 struct SiteScreen: View {
 
     let presentation: SitePresentation
@@ -134,7 +134,7 @@ struct SiteScreen: View {
                 statement
                 stats
                 provenance
-                neighbour
+                neighbor
                 footnote
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -165,7 +165,7 @@ struct SiteScreen: View {
                 .fixedSize(horizontal: false, vertical: true)
             // ERRATA E144, and see `SitePresentation.locateSet` for why a basin gets this control.
             // Drawn only where the composition root gave it somewhere to go, exactly as the
-            // neighbour row below is: a control with no closure would be a control that does nothing
+            // neighbor row below is: a control with no closure would be a control that does nothing
             // in the previews and in the shot harness.
             if let onShowWhere {
                 ShowWhereButton { onShowWhere(presentation.locateSet) }
@@ -226,13 +226,13 @@ struct SiteScreen: View {
     /// The screen's only affordance, and it is a read. Absent when there is no standing tree within
     /// reach, rather than reworded into a row that says nothing.
     @ViewBuilder
-    private var neighbour: some View {
-        if let neighbour = presentation.neighbour {
+    private var neighbor: some View {
+        if let neighbor = presentation.neighbor {
             IconTextRow(
                 accent: .elder,
-                title: neighbour.title,
-                subtitle: neighbour.detail,
-                action: onOpenTree.map { open in { open(neighbour.id) } }
+                title: neighbor.title,
+                subtitle: neighbor.detail,
+                action: onOpenTree.map { open in { open(neighbor.id) } }
             )
             .padding(.horizontal, CypressSpacing.gutter)
             .padding(.top, SiteMetrics.calloutTop)

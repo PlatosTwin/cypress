@@ -31,7 +31,7 @@
 //
 //  ── Reduce Motion ──────────────────────────────────────────────────────────────────────────
 //  Every animation in this app is decoration over a state change that has already happened, so
-//  removing it removes nothing but the decoration. `accessibilityReduceMotion` is honoured by
+//  removing it removes nothing but the decoration. `accessibilityReduceMotion` is honored by
 //  `resolved(_:reduceMotion:)` and by the `cypress*` view modifiers below, which return `nil`
 //  rather than a shorter curve: a fast animation is still an animation, and the setting is a
 //  request for none. An animation that cannot be turned off is an accessibility defect.
@@ -39,7 +39,7 @@
 //  The one thing Reduce Motion does *not* switch off is the final state. A pin that drops into
 //  place is at rest in the same position either way, and a pulse that does not pulse still draws
 //  its ring at the resting radius — the amber pin means "this tree needs something" through its
-//  colour, and the motion is emphasis on top of a meaning that is already carried.
+//  color, and the motion is emphasis on top of a meaning that is already carried.
 //
 
 import SwiftUI
@@ -136,7 +136,7 @@ enum CypressMotion {
 
     /// The map camera. **NOT SPECIFIED** anywhere — the prototype's map is a static image, so it
     /// has no camera to move and names no curve for one. Two literals existed before this pass
-    /// (`easeInOut(0.4)` recentring on the user's fix, `easeInOut(0.35)` zooming into a cluster)
+    /// (`easeInOut(0.4)` recentering on the user's fix, `easeInOut(0.35)` zooming into a cluster)
     /// and a third (`snappy(0.18)`) on the selected-pin scale.
     ///
     /// They are folded into two tokens on the house easing, because a camera move is the same
@@ -182,7 +182,7 @@ enum CypressMotionOffset {
     /// `czFlash` `opacity:.9`.
     static let flashOpacity: Double = 0.9
     /// `czPulse` — the ring's outer spread at the far end of the breath, and its alpha at the near
-    /// end. `box-shadow:0 0 0 10px rgba(180,113,31,.4)`; the colour is `CypressColor.accentAmber`.
+    /// end. `box-shadow:0 0 0 10px rgba(180,113,31,.4)`; the color is `CypressColor.accentAmber`.
     static let pulseSpread: CGFloat = 10
     static let pulseOpacity: Double = 0.4
 }
@@ -191,7 +191,7 @@ enum CypressMotionOffset {
 
 extension View {
 
-    /// `.animation(_:value:)` that honours Reduce Motion.
+    /// `.animation(_:value:)` that honors Reduce Motion.
     ///
     /// Use this rather than `.animation(...)` directly anywhere in `Features/` or `DesignSystem/`:
     /// the plain modifier has no way to see the setting, and a view that animates through it is
@@ -216,7 +216,7 @@ extension View {
     /// **czPulse** — the amber ring around a pin that needs something.
     ///
     /// Under Reduce Motion the ring is drawn at its resting radius and does not breathe. It is not
-    /// removed: it is part of what the amber pin looks like, and the meaning is in the colour.
+    /// removed: it is part of what the amber pin looks like, and the meaning is in the color.
     func cypressPulse(_ color: Color, isActive: Bool = true) -> some View {
         modifier(CypressPulseModifier(color: color, isActive: isActive))
     }

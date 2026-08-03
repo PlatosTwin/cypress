@@ -13,7 +13,7 @@
 //  their tree read by anything.
 //
 //  So the test says which screen it wants and the app opens it. What is then asserted is the same
-//  thing E116 asserts — that the elements a VoiceOver user needs are in the tree, labelled, and
+//  thing E116 asserts — that the elements a VoiceOver user needs are in the tree, labeled, and
 //  reachable — on screens that could not otherwise be reached at all.
 //
 //  ── What it deliberately is not ───────────────────────────────────────────────────────────
@@ -28,7 +28,7 @@
 //  **Not compiled into Release.** The whole file is `#if DEBUG`, and `RootView`'s call site is too.
 //
 //  ── The one thing it must never do quietly ────────────────────────────────────────────────
-//  Fail. If resolution finds no record, the obvious behaviour is to leave the app on screen 01 — and
+//  Fail. If resolution finds no record, the obvious behavior is to leave the app on screen 01 — and
 //  then every test in the suite passes while asserting nothing, because screen 01 is accessible and
 //  the assertions never noticed they were on it. So a failure draws itself, in words, on top of the
 //  app. See `DebugDeepLink.Failure`.
@@ -135,20 +135,20 @@ enum DebugDeepLink {
     /// the test host has no phone. `VisitLocationProvider(pinnedFix:)` is already this codebase's
     /// answer to that exact problem, for the same reason, on the screen next door — an offscreen
     /// renderer reports `notDetermined` and stays there. So the fix is pinned to the map's own
-    /// opening centre, which is a real place with real streets under it.
+    /// opening center, which is a real place with real streets under it.
     ///
     /// **It writes nothing**, which is the other half of the rule `photographedTree(_:)` encodes: a
     /// case that writes persistent state must not write it onto a tree another case reads. This case
     /// touches no tree, no photograph and no row — it presents a view and takes a coordinate back.
-    /// There is nothing for a later run, or a neighbouring case, to find.
+    /// There is nothing for a later run, or a neighboring case, to find.
     enum Standalone: Equatable {
         case pinAdjust(anchor: Coordinate, accuracyM: Double)
     }
 
     /// The fix the pin screen opens on, and a plausible street-canyon accuracy to draw beside it.
-    /// The centre is `MapLayout.defaultCentre` for `centre`'s own reason: what the tests see is what a
+    /// The center is `MapLayout.defaultCenter` for `center`'s own reason: what the tests see is what a
     /// tester sees on launch.
-    static let pinAdjustFix = Standalone.pinAdjust(anchor: centre, accuracyM: 24)
+    static let pinAdjustFix = Standalone.pinAdjust(anchor: center, accuracyM: 24)
 
     /// Why a requested screen did not open. Rendered on top of the app, in words, by `RootView` —
     /// never swallowed. A silent failure here turns the whole suite into a suite that passes on
@@ -162,7 +162,7 @@ enum DebugDeepLink {
 
     /// What the launching process asked for, if anything.
     ///
-    /// An unrecognised value is deliberately distinguishable from no value at all: `.some(.failure)`
+    /// An unrecognized value is deliberately distinguishable from no value at all: `.some(.failure)`
     /// so a typo in a test's screen name fails loudly instead of silently testing the map.
     static func requested(
         _ environment: [String: String] = ProcessInfo.processInfo.environment
@@ -178,14 +178,14 @@ enum DebugDeepLink {
 
     /// Where records are looked for: the map's own opening camera, so the trees these tests read are
     /// the trees a tester sees on launch.
-    private static let centre = MapLayout.defaultCentre
+    private static let center = MapLayout.defaultCenter
     /// Wide enough to hold every status the cases below ask for, and narrow enough to stay one index
     /// scan.
     ///
     /// **500, and it went to 4,000 and back — the round trip is the useful part of this comment.**
     /// #91's first round took the row set from SF Public Works' own layer, which has no vacant-site
     /// category at all, so the city's 12,518 basins became 153 and the nearest one to the map's
-    /// opening centre was the 1,181st record by distance. `site` stopped resolving, and it failed
+    /// opening center was the 1,181st record by distance. `site` stopped resolving, and it failed
     /// exactly as E117 designed it to: `none among the 500 records nearest 37.7596, -122.4269`,
     /// rather than quietly opening some other screen. Widening the window to 4,000 made the harness
     /// green while the product surface behind it stayed vestigial, which is the wrong repair —
@@ -406,7 +406,7 @@ enum DebugDeepLink {
     /// city's is out here and neither case can trip the 10 m dedupe against a record it did not
     /// write. They are ~200 m apart, which is well outside each other's circle, so running one case
     /// after the other on one simulator does not refuse the second tree. A re-run of the *same* case
-    /// does refuse — the first tree is still there, 0 m away — which is correct behaviour and shows
+    /// does refuse — the first tree is still there, 0 m away — which is correct behavior and shows
     /// as the deep link reporting a failure rather than as a screen quietly showing the wrong tree.
     /// Its own coordinate, well outside the other two's 10 m dedupe circles, for the reason
     /// `.speciesClaim` gives: a case that writes persistent state must not write it onto a record
@@ -417,7 +417,7 @@ enum DebugDeepLink {
     /// The fourth, ~200 m off the third, under the same rule (task #125).
     private static let recordDefectSpot = Coordinate(latitude: 37.7654, longitude: -122.5300)
 
-    /// The nearest tree to the map's opening centre that is actually standing.
+    /// The nearest tree to the map's opening center that is actually standing.
     ///
     /// `acceptsNewContributions` rather than `status == .alive`, because that is the property the
     /// screens behind this actually require: 05, 06, 09 and 16 all write, and `TreeStatus` already
@@ -444,11 +444,11 @@ enum DebugDeepLink {
     /// The rule this encodes, for whoever adds the next case: **a case that writes persistent state
     /// must not write it onto a tree another case reads.**
     private static func photographedTree(_ api: LocalAPI) async throws -> UUID {
-        let candidates = try await api.treesNear(centre, radiusM: radiusM, limit: candidateLimit)
+        let candidates = try await api.treesNear(center, radiusM: radiusM, limit: candidateLimit)
         guard let match = candidates.last(where: { $0.tree.status.acceptsNewContributions }) else {
             throw Failure(
                 screen: "a standing tree to photograph",
-                reason: "none among the \(candidates.count) records nearest \(centre.latitude), \(centre.longitude)"
+                reason: "none among the \(candidates.count) records nearest \(center.latitude), \(center.longitude)"
             )
         }
         return match.tree.id
@@ -468,12 +468,12 @@ enum DebugDeepLink {
     /// is `.memorial`'s outward march reaching a quarter of the way out, which takes as many runs as
     /// there are records in between — the same exposure `.measure` has carried since E133.
     private static func anonymizedPhotoTree(_ api: LocalAPI) async throws -> UUID {
-        let candidates = try await api.treesNear(centre, radiusM: radiusM, limit: candidateLimit)
+        let candidates = try await api.treesNear(center, radiusM: radiusM, limit: candidateLimit)
         let standing = candidates.filter { $0.tree.status.acceptsNewContributions }
         guard !standing.isEmpty else {
             throw Failure(
                 screen: "a standing tree to photograph anonymously",
-                reason: "none among the \(candidates.count) records nearest \(centre.latitude), \(centre.longitude)"
+                reason: "none among the \(candidates.count) records nearest \(center.latitude), \(center.longitude)"
             )
         }
         return standing[standing.count / 4].tree.id
@@ -502,12 +502,12 @@ enum DebugDeepLink {
     /// The rule, restated because it needed restating: **a case that writes persistent state must not
     /// write it onto a tree another case reads** — and "the case" includes the test driving it.
     private static func measuredTree(_ api: LocalAPI) async throws -> UUID {
-        let candidates = try await api.treesNear(centre, radiusM: radiusM, limit: candidateLimit)
+        let candidates = try await api.treesNear(center, radiusM: radiusM, limit: candidateLimit)
         let standing = candidates.filter { $0.tree.status.acceptsNewContributions }
         guard !standing.isEmpty else {
             throw Failure(
                 screen: "a standing tree to measure",
-                reason: "none among the \(candidates.count) records nearest \(centre.latitude), \(centre.longitude)"
+                reason: "none among the \(candidates.count) records nearest \(center.latitude), \(center.longitude)"
             )
         }
         return standing[standing.count / 2].tree.id
@@ -531,9 +531,9 @@ enum DebugDeepLink {
     /// between `.measure`'s middle and the photo cases' far end with hundreds of records either side.
     ///
     /// Re-running is idempotent rather than marching: this returns the same tree and re-writes the
-    /// same override, which is the correct behaviour for a case whose whole subject is a status.
+    /// same override, which is the correct behavior for a case whose whole subject is a status.
     private static func deadCandidateTree(_ api: LocalAPI) async throws -> UUID {
-        let candidates = try await api.treesNear(centre, radiusM: radiusM, limit: candidateLimit)
+        let candidates = try await api.treesNear(center, radiusM: radiusM, limit: candidateLimit)
         // `.alive` here rather than `acceptsNewContributions`, precisely because a tree this case has
         // already marked dead would pass the latter and re-anchoring on it is fine — but a tree the
         // *photo* cases have warmed must not be picked up as this slot drifts.
@@ -541,7 +541,7 @@ enum DebugDeepLink {
         guard !standing.isEmpty else {
             throw Failure(
                 screen: "a standing tree to report dead",
-                reason: "none among the \(candidates.count) records nearest \(centre.latitude), \(centre.longitude)"
+                reason: "none among the \(candidates.count) records nearest \(center.latitude), \(center.longitude)"
             )
         }
         return standing[standing.count * 3 / 4].tree.id
@@ -558,11 +558,11 @@ enum DebugDeepLink {
         api: LocalAPI,
         wanted: String
     ) async throws -> UUID {
-        let candidates = try await api.treesNear(centre, radiusM: radiusM, limit: candidateLimit)
+        let candidates = try await api.treesNear(center, radiusM: radiusM, limit: candidateLimit)
         guard let match = candidates.first(where: { predicate($0.tree) }) else {
             throw Failure(
                 screen: wanted,
-                reason: "none among the \(candidates.count) records nearest \(centre.latitude), \(centre.longitude)"
+                reason: "none among the \(candidates.count) records nearest \(center.latitude), \(center.longitude)"
             )
         }
         return match.tree.id

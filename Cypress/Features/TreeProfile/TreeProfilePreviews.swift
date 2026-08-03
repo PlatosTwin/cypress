@@ -30,7 +30,7 @@ import SwiftUI
 /// Serves one prepared `TreeProfile` and refuses everything else. Previews only.
 struct TreeProfilePreviewAPI: CypressAPI {
     let profile: TreeProfile
-    /// Whether this device already holds the tree as a favourite — the on-state of C8's first cell
+    /// Whether this device already holds the tree as a favorite — the on-state of C8's first cell
     /// (RULINGS R2). Read through `grove()`, which is where `TreeProfileModel` asks.
     var isFavorite = false
 
@@ -476,14 +476,14 @@ enum TreeProfileSeedFixtures {
             attribution: Attribution(userID: caretakerN, deviceID: device),
             capturedAt: date(2025, 10, 12),
             gpsAccuracyM: 6,
-            quantity: Quantity(value: 18, unit: .metres, method: .estimate)
+            quantity: Quantity(value: 18, unit: .meters, method: .estimate)
         ),
         .dbh(
             treeID: montereyCypressID,
             attribution: Attribution(userID: caretakerN, deviceID: device),
             capturedAt: date(2025, 10, 12),
             gpsAccuracyM: 6,
-            quantity: Quantity(value: 64, unit: .centimetres, method: .tape)
+            quantity: Quantity(value: 64, unit: .centimeters, method: .tape)
         ),
     ]
 
@@ -602,7 +602,7 @@ func treeProfilePreview(
 
 /// C8's first cell in its selected state (RULINGS R2). The same profile as the 03 preview above,
 /// on a device that already holds this tree — which is a read of `grove()`, not a flag on the view.
-#Preview("03 · Tree profile, favourited") {
+#Preview("03 · Tree profile, favorited") {
     treeProfilePreview(
         TreeProfileSeedFixtures.populated,
         caretakerInitials: ["N", "M", "J"],

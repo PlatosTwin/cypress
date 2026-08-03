@@ -64,7 +64,7 @@ struct MapProbeOverlay: View {
     }
 }
 
-/// The four numbers this overlay needs that no component owns. Colours, fonts and radii are tokens
+/// The four numbers this overlay needs that no component owns. Colors, fonts and radii are tokens
 /// (ARCHITECTURE §6); these are the geometry of a corner badge that is not in any mock because it
 /// is not part of the product.
 enum MapProbeLayout {

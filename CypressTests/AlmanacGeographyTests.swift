@@ -89,7 +89,7 @@ struct AlmanacGeographyTests {
     /// This asserts the identity in the numbers rather than in the SQL text, against the corpus
     /// figures R5 fixed and E115 measured — because a denominator that quietly moves is exactly the
     /// failure R5 exists to prevent, and it would move silently.
-    @Test("a named neighbourhood reads exactly what it read before the scope existed")
+    @Test("a named neighborhood reads exactly what it read before the scope existed")
     func namedAreaIsUnchanged() async throws {
         let store = try await Self.store()
         let corpus = try await SeedCorpus.current(store)
@@ -126,7 +126,7 @@ struct AlmanacGeographyTests {
     static let locale = Locale(identifier: "en_US")
 
     /// Screen 12, end to end, in the city it was designed for.
-    @Test("an almanac read in San Francisco still resolves a named neighbourhood")
+    @Test("an almanac read in San Francisco still resolves a named neighborhood")
     func sanFranciscoResolvesAPolygon() async throws {
         let store = try await Self.store()
         let almanac = try await Self.api(store).almanac(near: Self.outerSunset)
@@ -142,7 +142,7 @@ struct AlmanacGeographyTests {
 
     /// The hole E176 recorded and declined to fix, asserted from the other side.
     ///
-    /// The precondition is checked first and it is not decoration: if a San Jose neighbourhood layer
+    /// The precondition is checked first and it is not decoration: if a San Jose neighborhood layer
     /// ever does land in the seed, this test would otherwise go on passing while measuring the
     /// polygon path, and the fallback would be untested by a suite that claims to test it.
     @Test("downtown San Jose has no polygon, and gets a radius almanac instead")
@@ -150,7 +150,7 @@ struct AlmanacGeographyTests {
         let store = try await Self.store()
         let schema = try #require(store.seed)
 
-        // The precondition: San Jose rows carry no neighbourhood, so no polygon can resolve here.
+        // The precondition: San Jose rows carry no neighborhood, so no polygon can resolve here.
         let assigned = try await Self.scalar(
             """
             SELECT COUNT(*) AS n FROM \(Self.seed).trees
@@ -171,7 +171,7 @@ struct AlmanacGeographyTests {
         // And the almanac a reader standing there actually gets.
         let almanac = try await Self.api(store).almanac(near: Self.downtownSanJose)
         let area = try #require(almanac.neighborhood, "San Jose still has no almanac at all")
-        #expect(area.area == .radius(metres: AlmanacLimits.fallbackRadiusM))
+        #expect(area.area == .radius(meters: AlmanacLimits.fallbackRadiusM))
         #expect(area.name == nil, "a distance is not a name")
 
         // Four of the five blocks have something behind them. The bloom row does not, and cannot on
@@ -227,15 +227,23 @@ struct AlmanacGeographyTests {
         // D16(b): an honest empty-ish state says what *would* change it, or it reads as a dead end.
         #expect(note.contains("join the record"))
 
-        // American spellings, at the owner's instruction. Checked over every string this screen can
-        // put in front of a reader in this state, not only the ones written today.
+        // American spellings, at the owner's instruction (#140). E182 checked four words by hand
+        // here; the list now lives in `BritishSpelling.forms`, so this screen and the app-wide
+        // literal sweep in `BritishSpellingGuardTests` cannot disagree about what British means.
+        //
+        // This check is kept rather than folded into that sweep because it reaches somewhere the
+        // sweep cannot: these three strings are *composed at runtime* — a neighborhood name, an
+        // area note built from a radius, a prompt title — and a scan of source literals is blind
+        // to a British spelling that only exists once the pieces are joined.
         for string in [presentation.neighborhoodName, note, AlmanacCopy.locationPromptTitle].compactMap({ $0 }) {
-            for british in ["neighbourhood", "colour", "centre", "metres"] {
-                #expect(
-                    string.lowercased().contains(british) == false,
-                    "\(string) carries the British spelling '\(british)'"
-                )
-            }
+            let offenses = BritishSpelling.offenses(in: string)
+            #expect(
+                offenses.isEmpty,
+                """
+                screen 12 rendered “\(string)”, which carries \
+                \(offenses.map { "“\($0.matched)” (should be “\($0.form.american)”)" }.joined(separator: ", "))
+                """
+            )
         }
     }
 

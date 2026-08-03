@@ -52,7 +52,7 @@ public struct GroveQueries {
                 OR (:user IS NOT NULL AND user_id = :user COLLATE NOCASE))
         """
 
-    // MARK: - Resident neighbourhood
+    // MARK: - Resident neighborhood
 
     /// A4, verbatim: "'your area' and neighborhood names: SF Analysis Neighborhoods polygons,
     /// **resident neighborhood inferred from most-visited**, overridable in settings."
@@ -68,11 +68,11 @@ public struct GroveQueries {
     /// history, and a grove with none renders nothing anyway (E48) — so here the mechanism A4
     /// actually names is the one that applies.
     ///
-    /// Ties break on name so the answer does not flicker between two neighbourhoods a contributor
+    /// Ties break on name so the answer does not flicker between two neighborhoods a contributor
     /// splits their walking between.
     ///
     /// Returns `nil` when the contributor has contributed nothing, or has only contributed to trees
-    /// the city has not placed in a neighbourhood. Both are "there is no answer", which is a
+    /// the city has not placed in a neighborhood. Both are "there is no answer", which is a
     /// different thing from zero — and since R29 reached this screen the second case is no longer
     /// terminal: the caller falls back to `mostVisitedTree(userID:deviceID:)` and a stated radius,
     /// so a contributor whose whole record is in a city without polygons still has an area. The
@@ -99,14 +99,14 @@ public struct GroveQueries {
         }
     }
 
-    /// The single city-inventory tree this contributor has been at most — R29's fallback centre
+    /// The single city-inventory tree this contributor has been at most — R29's fallback center
     /// for screen 08.
     ///
     /// A4's inference is "resident neighborhood inferred from most-visited", and where every
     /// contribution lands on a tree the city placed in no polygon (all 52,788 San Jose rows), the
     /// same inference still has a most-visited *tree* even though it has no most-visited
-    /// *neighbourhood*. The radius the caller draws around this coordinate is the same inference
-    /// with R29's geometry, and it still needs no location permission — the centre is where the
+    /// *neighborhood*. The radius the caller draws around this coordinate is the same inference
+    /// with R29's geometry, and it still needs no location permission — the center is where the
     /// contributor's own record says they go, not where they are standing.
     ///
     /// Called only after `residentNeighborhood` returned `nil`, so the polygon path is preferred

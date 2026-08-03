@@ -374,7 +374,7 @@ struct OutboxQueueRow: View {
 
     /// §2: leading tile 38×38, radius 10. The measurement row draws its reading in mono inside the
     /// tile, as the mock does; every other kind takes C21's leaf, which is the only mark the
-    /// catalogue carries. §2's camera and ring glyphs are not in C1–C30 and are not invented here.
+    /// catalog carries. §2's camera and ring glyphs are not in C1–C30 and are not invented here.
     private var tile: some View {
         RoundedRectangle(cornerRadius: CypressRadius.thumbSmAlt, style: .continuous)
             .fill(row.isTerminal ? CypressColor.amberPillFill : CypressColor.cityRecordBadgeFill)

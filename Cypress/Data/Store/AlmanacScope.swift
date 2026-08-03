@@ -13,7 +13,7 @@ import Foundation
 /// it does not.** The two cases below are that ruling, and they are deliberately not
 /// interchangeable:
 ///
-/// - `.neighborhood` is a *place*. Its boundary is the city's, it has a name a reader recognises,
+/// - `.neighborhood` is a *place*. Its boundary is the city's, it has a name a reader recognizes,
 ///   and — the property a radius cannot have — it is the **same area for everybody standing in
 ///   it**, so "the elder" and "nine young trees" are statements about a place rather than about
 ///   where one person happens to be.
@@ -27,7 +27,7 @@ import Foundation
 /// the *unit* would differ city by city — San Francisco publishes 41 statistical Analysis
 /// Neighborhoods, San Jose publishes council districts that are redrawn every ten years, most cities
 /// publish nothing — and presenting all of them under one word would reintroduce at the polygon
-/// level exactly the seam D16's normalised format removes at the tree level.
+/// level exactly the seam D16's normalized format removes at the tree level.
 ///
 /// The bindings are prefixed `:area…` so a scope can be dropped into a query that already binds
 /// `:lat`, `:lon` or `:limit` of its own without colliding — `vacantSites` does exactly that.
@@ -36,20 +36,20 @@ public enum AlmanacScope: Hashable, Sendable {
     /// A polygon the seed carries, keyed by `trees.neighborhood_id`.
     case neighborhood(id: Int, name: String)
 
-    /// Everything within `metres` of the reader.
+    /// Everything within `meters` of the reader.
     ///
     /// The predicate is a bounding box (which uses `idx_trees_lat_lon`) narrowed by the same
     /// squared-distance test `TreeQueries.nearest` and `SpeciesQueries.resolveNeighborhood` use:
     /// no `sqrt`, no per-row trigonometry, and monotonically identical to true distance at this
     /// size. The box alone would make the area a *square*, and a square whose corners reach 1.41×
     /// the stated distance is a different claim from the one the pill makes.
-    case radius(centre: Coordinate, metres: Double)
+    case radius(center: Coordinate, meters: Double)
 
     /// How the area describes itself to the screen.
     public var area: AlmanacArea {
         switch self {
         case let .neighborhood(_, name): .named(name)
-        case let .radius(_, metres): .radius(metres: metres)
+        case let .radius(_, meters): .radius(meters: meters)
         }
     }
 
@@ -75,18 +75,18 @@ public enum AlmanacScope: Hashable, Sendable {
         switch self {
         case let .neighborhood(id, _):
             return [":areaNeighborhood": id]
-        case let .radius(centre, metres):
-            let box = BoundingBox(around: centre, radiusM: metres)
+        case let .radius(center, meters):
+            let box = BoundingBox(around: center, radiusM: meters)
             // Degrees of latitude, so the comparison happens in the same units the columns are in.
-            let radiusDegrees = metres / Self.metresPerDegreeLatitude
+            let radiusDegrees = meters / Self.metersPerDegreeLatitude
             return [
                 ":areaMinLat": box.minLatitude,
                 ":areaMaxLat": box.maxLatitude,
                 ":areaMinLon": box.minLongitude,
                 ":areaMaxLon": box.maxLongitude,
-                ":areaLat": centre.latitude,
-                ":areaLon": centre.longitude,
-                ":areaLonWeight": pow(cos(centre.latitude * .pi / 180), 2),
+                ":areaLat": center.latitude,
+                ":areaLon": center.longitude,
+                ":areaLonWeight": pow(cos(center.latitude * .pi / 180), 2),
                 ":areaRadiusSquared": radiusDegrees * radiusDegrees
             ]
         }
@@ -94,5 +94,5 @@ public enum AlmanacScope: Hashable, Sendable {
 
     /// `BoundingBox(around:radiusM:)`'s own constant, repeated here because the squared-distance
     /// bound has to be expressed in the same degrees the box is.
-    private static let metresPerDegreeLatitude = 111_320.0
+    private static let metersPerDegreeLatitude = 111_320.0
 }

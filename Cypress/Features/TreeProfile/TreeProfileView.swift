@@ -24,7 +24,7 @@
 //  - **A record with no tree in it.** A vacant planting site leaves for `Route.site` before anything
 //    is derived; the decision is `TreeProfileDestination`, asked once under every entrance rather
 //    than at any of them. See ERRATA (E113).
-//  - **A favourite it cannot confirm.** C8's first cell has an on-state (RULINGS R2), and the state
+//  - **A favorite it cannot confirm.** C8's first cell has an on-state (RULINGS R2), and the state
 //    is what the store holds rather than what the last tap said. See ERRATA (E112).
 //
 //  Not a raw hex or a raw font size in the file (ARCHITECTURE §6: "A literal in `Features/` is a
@@ -50,7 +50,7 @@ struct TreeProfileView: View {
     /// model owns its own reference; this one exists because `SpeciesPickView` builds its own model.
     private let api: any CypressAPI
 
-    /// - Parameter onFavorite: writes the *resulting state* of the heart — `true` for a favourite,
+    /// - Parameter onFavorite: writes the *resulting state* of the heart — `true` for a favorite,
     ///   `false` for taking it off (RULINGS R2). Favoriting is a mutation through the outbox rather
     ///   than a navigation, and its owner is the composition root's to resolve (D9), so it is handed
     ///   in for the same reason the visit is. The screen does not read its result: what the cell
@@ -355,7 +355,7 @@ struct TreeProfileView: View {
         ScreenHeader(title: TreeProfilePresentation.fallbackTitle, onBack: { router?.pop() })
     }
 
-    /// 14 §2 — the dashed well, `height:170px`, radius 18, `2px dashed`, centred `VStack(spacing:8)`.
+    /// 14 §2 — the dashed well, `height:170px`, radius 18, `2px dashed`, centered `VStack(spacing:8)`.
     ///
     /// **And a control, since ERRATA E127.** `LocationPrompt` (E123) established that a dashed-ring
     /// card in this vocabulary is tappable when a user action would fill it, and this is the app's
@@ -722,10 +722,10 @@ struct TreeProfileView: View {
 
     /// The activity entrance (screen 13). See `TreeProfilePresentation.activityLinkTitle`.
     ///
-    /// A text link rather than a C-component: C1–C30 is a closed catalogue and none of it is a link.
+    /// A text link rather than a C-component: C1–C30 is a closed catalog and none of it is a link.
     /// Building a small screen-local control from tokens is what this codebase already does where
-    /// the catalogue has no entry — screen 08's three-pill row and screen 13's photo strip are both
-    /// built that way (ERRATA E46). It takes its colour and weight from the tokens C7 uses, so it
+    /// the catalog has no entry — screen 08's three-pill row and screen 13's photo strip are both
+    /// built that way (ERRATA E46). It takes its color and weight from the tokens C7 uses, so it
     /// reads as the same family of control at a quieter volume, and `.cypressHitArea()` gives a
     /// one-line label the 44pt target ARCHITECTURE §6 requires.
     private var activityLink: some View {
@@ -767,7 +767,7 @@ struct TreeProfileView: View {
                     } label: {
                         // The city's site vocabulary is free text (BUILD-PLAN §7) and can run to
                         // three lines; `maxHeight` keeps the two cards of a row the same height
-                        // rather than letting one card float short beside a tall neighbour.
+                        // rather than letting one card float short beside a tall neighbor.
                         StatCard(label: stat.label, value: stat.value)
                             .frame(maxHeight: .infinity)
                     }
@@ -796,9 +796,9 @@ struct TreeProfileView: View {
     /// Screen 11's entrance, said out loud. See `TreeProfilePresentation.offersGrowthLink` for why a
     /// stat card carrying a reading was not enough of one (ERRATA E127).
     ///
-    /// Built exactly like `activityLink`, and for the same reason: C1–C30 is a closed catalogue with
+    /// Built exactly like `activityLink`, and for the same reason: C1–C30 is a closed catalog with
     /// no link in it, and a screen-local control from tokens is what this codebase does where the
-    /// catalogue has no entry (ERRATA E46). Same font, same colour, same 44pt hit area — it is the
+    /// catalog has no entry (ERRATA E46). Same font, same color, same 44pt hit area — it is the
     /// same kind of thing one block further down the screen, so it reads as one.
     private func growthLink(_ presentation: TreeProfilePresentation) -> some View {
         Button {
@@ -834,8 +834,8 @@ struct TreeProfileView: View {
     ///    `city record` by C12.
     ///
     /// No new component. The grid is `StatGrid`/`StatCard` — C11, which is what already renders
-    /// labelled facts on this screen — and the header is `.cypressMicroLabel()` over it, which is how
-    /// the You tab labels its sections. C1–C30 is a closed catalogue and this needed nothing added to
+    /// labeled facts on this screen — and the header is `.cypressMicroLabel()` over it, which is how
+    /// the You tab labels its sections. C1–C30 is a closed catalog and this needed nothing added to
     /// it (ERRATA E46).
     @ViewBuilder
     private func cityDetails(_ presentation: TreeProfilePresentation) -> some View {
@@ -932,10 +932,10 @@ struct TreeProfileView: View {
     ///
     /// That mattered here immediately. Rewrite the case below as
     /// `case .measure: return .measure(treeID, .dbh)` and the owner's original defect is back —
-    /// tap `HEIGHT · Add a reading`, get a trunk-diameter sheet in metres — with **the whole suite
+    /// tap `HEIGHT · Add a reading`, get a trunk-diameter sheet in meters — with **the whole suite
     /// green**, which is exactly what happened when this was a private instance method and the R15
     /// tests stopped at `StatDestination`. The comment on that case says which layer owns the
-    /// decision; nothing made this layer honour it. `MeasureEntranceKindTests` now does.
+    /// decision; nothing made this layer honor it. `MeasureEntranceKindTests` now does.
     static func route(for destination: TreeProfilePresentation.StatDestination, treeID: UUID) -> Route {
         switch destination {
         case .growthHistory: return .growthHistory(treeID)
@@ -998,7 +998,7 @@ enum TreeProfileMetrics {
 /// `rect 7,1 8×4 rx1.5`, in a 22×18 box, stroke width 1.8.
 ///
 /// Local to this folder rather than in `DesignSystem/Components`: no other screen in SCREENS.md
-/// uses it, and C1–C30 is a closed catalogue.
+/// uses it, and C1–C30 is a closed catalog.
 struct TreeProfileCameraGlyph: View {
     var body: some View {
         ZStack {

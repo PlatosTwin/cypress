@@ -89,7 +89,7 @@ struct Callout: View {
     /// The rest, verbatim including its leading space.
     let text: String
     /// The bold run *inside* the sentence, with everything that follows it. 06's dashed disclosure
-    /// emphasises `the city has not been notified` in the middle of its third clause, which
+    /// emphasizes `the city has not been notified` in the middle of its third clause, which
     /// `leadIn` cannot express because it only bolds the front. Both are `nil` everywhere else.
     var emphasis: String?
     var continuation: String?
@@ -160,7 +160,7 @@ struct Callout: View {
     }
 
     /// D2 lifts the lead-in to `#D6E0CE` against the `#B9C7B2` body; in light both are the same
-    /// colour and only the weight separates them.
+    /// color and only the weight separates them.
     private var leadInColor: Color {
         style == .green ? CypressColor.calloutGreenLeadIn : style.text
     }

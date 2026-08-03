@@ -5,7 +5,7 @@ import UIKit
 
 /// `community_trees.placement` — the record's own answer to "where did this coordinate come from".
 ///
-/// The movable pin shipped without it: the screen modelled the distinction and stated it, and the row
+/// The movable pin shipped without it: the screen modeled the distinction and stated it, and the row
 /// kept only `lat` and `lon`, so a coordinate somebody had placed by hand was indistinguishable on
 /// disk from one the phone had guessed. AppSchema v10 gives it a column and this suite is what holds
 /// the whole path down.
@@ -88,7 +88,7 @@ struct TreePlacementTests {
     }
 
     /// The other direction, and the one a `DEFAULT` makes easy to get backwards: stand-shoot-save
-    /// writes `gps`, and must never be recorded as a judgement nobody made.
+    /// writes `gps`, and must never be recorded as a judgment nobody made.
     @MainActor
     @Test("a tree added without touching the map does not claim to have been placed by hand")
     func theFastPathIsStoredAsGPS() async throws {
@@ -265,14 +265,14 @@ struct TreePlacementTests {
     /// later edit that "clarifies" it into a warning — which is the one thing the owner's ruling and
     /// `TreePlacement` both refuse.
     @Test("neither placement line evaluates the coordinate it describes")
-    func thePlacementCopyPassesNoJudgement() {
-        let judgements = [
+    func thePlacementCopyPassesNoJudgment() {
+        let judgments = [
             "approx", "unverified position", "estimate", "estimated", "inaccurate", "accuracy",
             "warning", "caution", "may be", "might be", "unreliable", "unconfirmed", "rough"
         ]
         for line in [TreeProfilePresentation.placementFromGPS, TreeProfilePresentation.placementByHand] {
             let lowered = line.lowercased()
-            for word in judgements {
+            for word in judgments {
                 #expect(!lowered.contains(word), "\"\(line)\" reads as a verdict on the coordinate")
             }
             // Both name the instrument and nothing else, in the same shape, so neither is the

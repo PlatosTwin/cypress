@@ -65,7 +65,7 @@ struct AccountSurfaceTests {
     /// composition root's handler read `_ = request`, and `claimDevice` was called with an id and
     /// nothing else. Watching the request arrive at the closure would have passed. This drives the
     /// same closure the visit flow is handed and then asks the *store* what it knows.
-    @Test("the licence answer travels all the way to the account and can be read back")
+    @Test("the license answer travels all the way to the account and can be read back")
     func consentSurvivesToTheAccount() async throws {
         let data = try await Self.bootInMemory()
         let link = RootView(data: data).accountLink()
@@ -76,7 +76,7 @@ struct AccountSurfaceTests {
 
         let declined = try #require(await data.api.accountLink())
         #expect(declined.provider == AccountAskProvider.email.rawValue, "the provider was discarded")
-        #expect(declined.licenseVersion == nil, "a declined licence was recorded as agreed to")
+        #expect(declined.licenseVersion == nil, "a declined license was recorded as agreed to")
         #expect(declined.acceptsLicense == false)
 
         // Accepted, on a second link by the same person. The record must move, not accumulate.
@@ -84,7 +84,7 @@ struct AccountSurfaceTests {
 
         let accepted = try #require(await data.api.accountLink())
         #expect(accepted.provider == AccountAskProvider.apple.rawValue)
-        #expect(accepted.licenseVersion == LicenseConsent.currentVersion, "the licence consent was discarded")
+        #expect(accepted.licenseVersion == LicenseConsent.currentVersion, "the license consent was discarded")
         #expect(accepted.acceptsLicense)
 
         // And it is on disk, not in the actor: `DataLayer.boot` reads `app_state` at launch, so a
@@ -111,7 +111,7 @@ struct AccountSurfaceTests {
 
     /// **The defect this guards is the one sign-out invites.** A local account has no credential:
     /// `accountLink` mints a `UUID` when it finds none. A sign-out that forgot the id would hand the
-    /// next sign-in a *different* account, leaving every reminder and favourite the first one owned
+    /// next sign-in a *different* account, leaving every reminder and favorite the first one owned
     /// readable by no query and removable by no deletion — the unreachable litter RULINGS R3 refuses
     /// to create. So the assertion is not "signing out worked"; it is that the same person gets
     /// their own records back.
@@ -206,18 +206,18 @@ struct AccountSurfaceTests {
         #expect(await data.api.userID != deleted, "signing in after a deletion resumed the deleted account")
     }
 
-    // MARK: - 4. R3's copy, which is the defence
+    // MARK: - 4. R3's copy, which is the defense
 
     /// R3: "deleting more than someone expected is the failure mode this ruling creates, and copy is
-    /// the whole defence against it". With two doors the defence moves but does not weaken: each
-    /// door states its own behaviour, and the clause about the records that go **either way** is
+    /// the whole defense against it". With two doors the defense moves but does not weaken: each
+    /// door states its own behavior, and the clause about the records that go **either way** is
     /// hoisted out of both so it cannot be escaped by choosing.
     ///
     /// This test used to assert that `whatHappens` arrived whole inside one dialog message. That
     /// constant no longer exists and the assertion is deliberately not being reconstructed against
     /// its replacement — see `AccountDeletionCopy` for why welding the shared clause onto each door
     /// would bury the difference between them, which is now the thing a reader most needs.
-    @Test("both doors state their own behaviour and the shared clause escapes neither")
+    @Test("both doors state their own behavior and the shared clause escapes neither")
     func bothDoorsAreStatedBeforeEitherIsChosen() {
         // What each door does to the contributions, in its own paragraph.
         #expect(AccountDeletionCopy.leaveRecordsBody.contains("stay on the trees"))
@@ -238,7 +238,7 @@ struct AccountSurfaceTests {
         #expect(AccountDeletionCopy.leaveRecordsTitle != AccountDeletionCopy.eraseEverythingTitle)
     }
 
-    /// The last tap names the door it takes. This is the whole of the defence against reaching the
+    /// The last tap names the door it takes. This is the whole of the defense against reaching the
     /// destructive door by momentum, so it is asserted rather than left to a reading of the view.
     @Test("the confirming button's label differs by door and names erasure on the destructive one")
     func theConfirmingLabelNamesItsDoor() {

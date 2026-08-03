@@ -7,7 +7,7 @@
 //  and what the map does with each answer.
 //
 //  BUILD-PLAN §9 lists three of the four states as required work, not as a happy path:
-//  the ask, the **denied** state, and **map without location**. They are modelled here as
+//  the ask, the **denied** state, and **map without location**. They are modeled here as
 //  `Availability` so the view switches on one value rather than on a pile of booleans.
 //
 
@@ -63,7 +63,7 @@ final class MapLocationProvider {
     ///
     /// **It exists because `init` used to start a GPS session on its own**, through
     /// `apply(authorization:)`, and a SwiftUI `@State` default expression is re-evaluated on every
-    /// initialisation of the view that declares it — so screen 01 was constructing a fresh
+    /// initialization of the view that declares it — so screen 01 was constructing a fresh
     /// `CLLocationManager` and starting it around fifty times a second (measured: 336 instances in
     /// seven seconds). `RootView`'s own comment says of its provider "it is never `start()`ed here,
     /// and that is deliberate", and that sentence has been false since it was written: on a device
@@ -134,15 +134,15 @@ final class MapLocationProvider {
     /// How far the reader has to have actually moved before `availability` is rewritten.
     ///
     /// **This is `distanceFilter`'s own promise, kept.** `manager.distanceFilter = 5` says "do not
-    /// tell me until I have moved five metres", and on a device driving a simulated route it is
-    /// simply not honoured: measured at a walking 4 m/s, CoreLocation delivered **24 to 42 fixes a
-    /// second**, one every fifteen centimetres. Every one of them wrote `availability`; every write
+    /// tell me until I have moved five meters", and on a device driving a simulated route it is
+    /// simply not honored: measured at a walking 4 m/s, CoreLocation delivered **24 to 42 fixes a
+    /// second**, one every fifteen centimeters. Every one of them wrote `availability`; every write
     /// re-ran screen 01's whole basemap body; and the map sat at under 2 fps with nobody touching it.
     /// A static `simctl location` fires the delegate once and never again, which is exactly why two
     /// rounds of simulator measurement never saw this.
     ///
-    /// Five metres rather than some smaller number that would also have fixed the frame rate,
-    /// because five metres is a *decision this file already made* and the point is to make it true
+    /// Five meters rather than some smaller number that would also have fixed the frame rate,
+    /// because five meters is a *decision this file already made* and the point is to make it true
     /// rather than to make a new one. Nothing downstream can tell the difference: the fix that
     /// arrives is the same fix, at the same `kCLLocationAccuracyBest`, and the reader's dot on a
     /// 120 m-wide camera moves about sixteen points between publishes.
@@ -154,7 +154,7 @@ final class MapLocationProvider {
     /// The coordinate is not the only thing on `availability` that matters. `RootView` hands
     /// `accuracyM` to every check-in, measurement and visit it records, and D6 excludes a reading
     /// worse than 15 m from growth charting — so a provider that froze the accuracy at whatever the
-    /// first fix happened to say would be feeding that gate a stale number. One metre is finer than
+    /// first fix happened to say would be feeding that gate a stale number. One meter is finer than
     /// any decision made anywhere on top of it and far coarser than the jitter.
     static let publishAccuracyM: Double = 1
 
@@ -200,7 +200,7 @@ final class MapLocationProvider {
             availability = status == .restricted ? .servicesOff : .denied
         case .authorizedAlways, .authorizedWhenInUse:
             if availability.coordinate == nil { availability = .waitingForFix }
-            // Only if somebody asked. This is the authorisation *callback* as well as the
+            // Only if somebody asked. This is the authorization *callback* as well as the
             // constructor's own call, and answering "you are allowed" with "then I shall start"
             // is right in the first case and is the fifty-sessions-a-second defect in the second.
             if hasStarted { manager.startUpdatingLocation() }

@@ -20,7 +20,7 @@
 //  ── Why a second component and not a flag on `PhotoFill` ─────────────────────────────────
 //  `PhotoFill`'s whole documented promise is that the photograph *fills* the box and is *cropped* to
 //  it; ERRATA E125 is two separate bugs that came from that promise being only half kept. A boolean
-//  that turns the promise off leaves one type whose header argues for a behaviour it may not have,
+//  that turns the promise off leaves one type whose header argues for a behavior it may not have,
 //  and leaves every reader of a call site to work out which one they are looking at. Two types, each
 //  named for what it does, cost one file.
 //
@@ -28,7 +28,7 @@
 //  The `Color.clear` base. `scaledToFit` cannot overflow, so there is nothing here to clip — but it
 //  can still report a size *smaller* than the proposal along one axis, and a letterbox that shrinks
 //  to the picture is not a letterbox. Sizing from `Color.clear` means the backdrop is the box, the
-//  photograph is centred in it, and the bars are wherever the shape says they are.
+//  photograph is centered in it, and the bars are wherever the shape says they are.
 //
 //  The `contentShape`. A viewer wants its whole backdrop to answer a tap, not just the lit part.
 //

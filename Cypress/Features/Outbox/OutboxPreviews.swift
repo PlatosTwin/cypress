@@ -123,7 +123,7 @@ enum OutboxPreviewFixtures {
                 attribution: attribution,
                 capturedAt: at(11, 3),
                 gpsAccuracyM: 7,
-                quantity: Quantity(value: 31, unit: .centimetres, method: .tape)
+                quantity: Quantity(value: 31, unit: .centimeters, method: .tape)
             )),
             state: .failed,
             failCount: 12,

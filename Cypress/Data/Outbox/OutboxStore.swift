@@ -210,7 +210,7 @@ public struct OutboxStore {
     ///
     /// Restarts the 48 h cap window and clears the fail count. Without the window reset the item
     /// would move straight back to `failed` on its next attempt, and the button would do nothing —
-    /// which is exactly the "silently stuck" behaviour the outbox screen exists to prevent.
+    /// which is exactly the "silently stuck" behavior the outbox screen exists to prevent.
     @discardableResult
     public func retry(_ id: UUID, at date: Date, connection: SQLiteConnection) throws -> Bool {
         let statement = try connection.cachedStatement("""
@@ -316,7 +316,7 @@ public struct OutboxStore {
     ///
     /// The two kinds of row get the two answers R3 gives, for the same reasons:
     ///
-    /// 1. **A queued favourite or private reminder is discarded.** It is a mutation whose only
+    /// 1. **A queued favorite or private reminder is discarded.** It is a mutation whose only
     ///    possible destination is a row that no longer exists and may not be re-created: an
     ///    ownerless one fails the `CHECK`, and a device-owned one is the re-homing R3 refused. There
     ///    is nothing left for it to mean, so the row goes rather than failing forever in the queue
@@ -342,7 +342,7 @@ public struct OutboxStore {
     ///
     /// **Every state, not just the pending ones.** A `done` row is screen 17's receipt, and its
     /// payload is a second copy of the attribution sitting on disk — anonymizing the table and
-    /// leaving the receipt would leave the account's id on the device. A `done` favourite's receipt
+    /// leaving the receipt would leave the account's id on the device. A `done` favorite's receipt
     /// is worse still: it describes, by name, a tree this person kept, which is precisely the record
     /// R3 says nobody but they could read.
     ///

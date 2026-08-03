@@ -5,7 +5,7 @@
 //  Screen 12 opened before CoreLocation has answered. ERRATA E155.
 //
 //  ── The defect these tests are the assertion form of ──────────────────────────────────────
-//  `AlmanacView` built its model in a `@State` initialiser, which runs exactly once, so the almanac
+//  `AlmanacView` built its model in a `@State` initializer, which runs exactly once, so the almanac
 //  was derived from whatever coordinate existed in the first frame and from no other — `nil`, on a
 //  cold launch, because the composition root's provider has not published anything yet. The read
 //  returned `.empty` by contract and stayed. Meanwhile `showsLocationPrompt` was a plain `let`
@@ -53,9 +53,9 @@ struct AlmanacLateFixTests {
         UUID(uuidString: String(format: "12000000-0000-4000-8000-%012d", index))!
     }
 
-    /// Enough of a neighbourhood to be unmistakably *not* the empty one: a name for the header pill
+    /// Enough of a neighborhood to be unmistakably *not* the empty one: a name for the header pill
     /// and a composition card under it. The numbers are not the subject and are not asserted on.
-    static let neighbourhood = Almanac(
+    static let neighborhood = Almanac(
         neighborhood: AlmanacNeighborhood(
             area: .named("Sunset/Parkside"),
             composition: NeighborhoodComposition(
@@ -111,7 +111,7 @@ struct AlmanacLateFixTests {
     /// A one-shot rendezvous: `arrive()` suspends until somebody calls `release()`, and everybody who
     /// arrives after the release passes straight through.
     ///
-    /// Two of them make the read observable from outside while it is in flight — one signalling that
+    /// Two of them make the read observable from outside while it is in flight — one signaling that
     /// the read has begun, one holding it there. Sleeping for a guessed interval instead would make
     /// the test's subject a timing assumption rather than the ordering it is about.
     private actor Latch {
@@ -172,13 +172,13 @@ struct AlmanacLateFixTests {
 
     @Test("An almanac built without a fix re-reads when the fix arrives")
     func lateFixIsRead() async {
-        let api = FixSensitive(payload: Self.neighbourhood)
+        let api = FixSensitive(payload: Self.neighborhood)
         let model = AlmanacModel(api: api, coordinate: nil, now: { Self.now })
 
         // Mount, exactly as `AlmanacView`'s `.task(id:)` does it: the first call carries the same
         // coordinate the model was constructed with.
         await model.update(coordinate: nil)
-        #expect(model.presentation?.neighborhoodName == nil, "a nil fix has no neighbourhood to name")
+        #expect(model.presentation?.neighborhoodName == nil, "a nil fix has no neighborhood to name")
         #expect(model.needsLocation, "and the screen has to say why it is empty")
 
         // CoreLocation answers.
@@ -191,7 +191,7 @@ struct AlmanacLateFixTests {
 
     @Test("The same coordinate arriving again does not re-read")
     func unchangedFixIsNotReRead() async {
-        let api = FixSensitive(payload: Self.neighbourhood)
+        let api = FixSensitive(payload: Self.neighborhood)
         let model = AlmanacModel(api: api, coordinate: Self.fix, now: { Self.now })
 
         await model.update(coordinate: Self.fix)
@@ -205,7 +205,7 @@ struct AlmanacLateFixTests {
     /// The window this test is about is one database read wide, and it is the whole defect.
     ///
     /// E123 computed the prompt from the coordinate the *parent* was holding. The moment the fix
-    /// arrives that condition goes false, and it goes false one read before there is a neighbourhood
+    /// arrives that condition goes false, and it goes false one read before there is a neighborhood
     /// to draw. So there was an interval — brief on paper, permanent in practice, because the read
     /// that would end it was never started — in which screen 12 had nothing on it and nothing to say
     /// about that. E126's invariant is that this interval must not exist.
@@ -218,11 +218,11 @@ struct AlmanacLateFixTests {
     /// a load average of 300 with three agents on it, and a limit that a busy machine can trip is a
     /// flake wearing a failure's clothes.
     @Test(
-        "The location prompt is not withdrawn until the neighbourhood is there to replace it",
+        "The location prompt is not withdrawn until the neighborhood is there to replace it",
         .timeLimit(.minutes(3))
     )
     func promptSurvivesUntilContentArrives() async {
-        let api = Held(payload: Self.neighbourhood)
+        let api = Held(payload: Self.neighborhood)
         let model = AlmanacModel(api: api, coordinate: nil, now: { Self.now })
 
         await model.update(coordinate: nil)
@@ -235,7 +235,7 @@ struct AlmanacLateFixTests {
         // sentence explaining it is still standing.
         #expect(model.coordinate == Self.fix, "the model did not take the new fix")
         #expect(model.presentation?.neighborhoodName == nil, "the read has not answered yet")
-        #expect(model.needsLocation, "the prompt left before the neighbourhood arrived — E126's blank")
+        #expect(model.needsLocation, "the prompt left before the neighborhood arrived — E126's blank")
         #expect(model.hasFailed == false, "nothing failed; the wrong sentence would be worse than none")
 
         await api.mayFinish.release()
@@ -252,7 +252,7 @@ struct AlmanacLateFixTests {
     /// computed from a read the reader is not looking at.
     @Test("A superseded read does not overwrite the fix that replaced it", .timeLimit(.minutes(3)))
     func supersededReadIsDropped() async {
-        let api = Held(payload: Self.neighbourhood)
+        let api = Held(payload: Self.neighborhood)
         let model = AlmanacModel(api: api, coordinate: nil, now: { Self.now })
 
         let first = Task { await model.update(coordinate: Self.fix) }
@@ -358,7 +358,7 @@ struct AlmanacLateFixTests {
     private static func render(late: Bool) async -> Data? {
         let host = UIHostingController(
             rootView: AnyView(
-                LateFixHost(api: FixSensitive(payload: neighbourhood), late: late)
+                LateFixHost(api: FixSensitive(payload: neighborhood), late: late)
                     .frame(width: width, height: height)
                     .background(CypressColor.surfaceScreen)
             )

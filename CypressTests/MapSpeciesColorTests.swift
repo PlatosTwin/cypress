@@ -5,25 +5,25 @@ import Testing
 import UIKit
 @testable import Cypress
 
-/// **The species colouring on screen 01 (task #80), and the selected pin (task #89).**
+/// **The species coloring on screen 01 (task #80), and the selected pin (task #89).**
 ///
 /// Tasks #80 and #89. What these two changes can get wrong is not "the wrong hue" — a screenshot
 /// finds that. It is the four things a screenshot cannot see:
 ///
 /// 1. **The bitmap count going unbounded.** The marker cache is keyed on `MapPin.Kind`, and the whole
-///    reason `MapSpeciesSlot` exists — rather than a colour per species — is that 569 species would
+///    reason `MapSpeciesSlot` exists — rather than a color per species — is that 569 species would
 ///    make the key unbounded and put the map back where E130 and the MapKit swap found it. The bound
 ///    is asserted here as a number, so widening the enum without thinking fails a test.
-/// 2. **Two species sharing a colour.** The claim the encoding makes is "same colour ⇒ same species".
+/// 2. **Two species sharing a color.** The claim the encoding makes is "same color ⇒ same species".
 ///    It is only true if slots are unique per viewport and the residual class carries no slot at all.
-/// 3. **A species colour eating a reserved meaning.** Amber means "this tree needs something", dashes
-///    mean unverified, grey and hollow mean no living tree. None of them may become a species colour,
+/// 3. **A species color eating a reserved meaning.** Amber means "this tree needs something", dashes
+///    mean unverified, gray and hollow mean no living tree. None of them may become a species color,
 ///    and none of those pins may even be *counted* toward a slot.
-/// 4. **Colours reshuffling on a pan.** A palette recomputed from scratch permutes on every fetch,
+/// 4. **Colors reshuffling on a pan.** A palette recomputed from scratch permutes on every fetch,
 ///    which is E130's badge re-keying in another costume.
 @MainActor
-@Suite("Map species colouring and selection")
-struct MapSpeciesColourTests {
+@Suite("Map species coloring and selection")
+struct MapSpeciesColorTests {
 
     // MARK: - Fixtures
 
@@ -73,7 +73,7 @@ struct MapSpeciesColourTests {
     }
 
     @Test("a species with one pin in view is not worth a slot")
-    func singletonsAreNotColoured() {
+    func singletonsAreNotColored() {
         let id = Self.ids(4)
         let palette = MapSpeciesPalette.assign(
             pins: Self.pins(id[0], 4) + Self.pins(id[1], 1) + Self.pins(id[2], 1) + Self.pins(id[3], 1)
@@ -113,7 +113,7 @@ struct MapSpeciesColourTests {
 
     // MARK: - The reserved meanings
 
-    @Test("only a pin that would already be a plain city tree can take a species colour")
+    @Test("only a pin that would already be a plain city tree can take a species color")
     func reservedPinsKeepTheirFills() {
         let id = UUID()
         let cases: [(String, TreePin)] = [
@@ -133,14 +133,14 @@ struct MapSpeciesColourTests {
             let plain = MapPinKind.kind(for: pin)
             #expect(
                 MapPinKind.kind(for: pin, palette: palette) == plain,
-                "\(what): the species colouring replaced a fill that already means something else"
+                "\(what): the species coloring replaced a fill that already means something else"
             )
         }
         // And the live one does take it.
         #expect(MapPinKind.kind(for: Self.pin(species: id), palette: palette) == .cityTreeSpecies(.a))
     }
 
-    @Test("pins that cannot be coloured are not counted toward a slot either")
+    @Test("pins that cannot be colored are not counted toward a slot either")
     func reservedPinsDoNotVote() {
         let id = Self.ids(2)
         // Nine memorials of one species against two live trees of another: the memorials must not
@@ -173,13 +173,13 @@ struct MapSpeciesColourTests {
             #expect(
                 after.slot(for: species) == before.slot(for: species),
                 """
-                a species changed colour because the camera moved. Colours that permute on a pan are \
-                E130's cluster badges re-keying, and a reader who has learnt "the purple ones" loses \
+                a species changed color because the camera moved. Colors that permute on a pan are \
+                E130's cluster badges re-keying, and a reader who has learned "the purple ones" loses \
                 that with every gesture.
                 """
             )
         }
-        // The ranking still reports the new order — it is only the *colour* that is held.
+        // The ranking still reports the new order — it is only the *color* that is held.
         #expect(after.entries.map(\.speciesID) == [id[2], id[1], id[0]])
     }
 
@@ -202,7 +202,7 @@ struct MapSpeciesColourTests {
         #expect(after.slot(for: id[4]) == .b, "the newcomer took the freed slot rather than a fifth one")
     }
 
-    @Test("no two species in one viewport ever share a colour")
+    @Test("no two species in one viewport ever share a color")
     func slotsAreUniquePerViewport() {
         let id = Self.ids(4)
         var palette = MapSpeciesPalette.assign(pins: Self.pins(id[0], 5) + Self.pins(id[1], 4))
@@ -228,7 +228,7 @@ struct MapSpeciesColourTests {
     /// `MapPinImage` caches one bitmap per `MapPin.Kind` per appearance. Cluster badges are keyed on
     /// their count and are therefore unbounded in principle — that is why the cache has a ceiling —
     /// but the *pin* vocabulary is a closed enum and must stay countable. Four slots is what four
-    /// colours cost: twelve kinds, twenty-four bitmaps.
+    /// colors cost: twelve kinds, twenty-four bitmaps.
     // `Cypress.MapPin`, spelled out: MapKit ships a deprecated `MapPin` of its own and this file
     // imports MapKit for `MKAnnotationView`.
     private static let everyFixedKind: [Cypress.MapPin.Kind] =
@@ -304,30 +304,30 @@ struct MapSpeciesColourTests {
 
     // MARK: - The annotation layer notices
 
-    @Test("an annotation's kind carries the palette, so the diff can see a colour change")
+    @Test("an annotation's kind carries the palette, so the diff can see a color change")
     func annotationKindTracksThePalette() {
         let id = UUID()
         let pin = Self.pin(species: id)
-        let coloured = MapSpeciesPalette.assign(pins: Self.pins(id, 4))
-        let uncoloured = MapSpeciesPalette.empty
+        let colored = MapSpeciesPalette.assign(pins: Self.pins(id, 4))
+        let uncolored = MapSpeciesPalette.empty
 
-        let hot = TreePinAnnotation(pin: pin, palette: coloured)
-        let cold = TreePinAnnotation(pin: pin, palette: uncoloured)
+        let hot = TreePinAnnotation(pin: pin, palette: colored)
+        let cold = TreePinAnnotation(pin: pin, palette: uncolored)
         #expect(hot.kind == .cityTreeSpecies(.a))
         #expect(cold.kind == .cityTree)
         #expect(
             hot.kind != cold.kind,
             """
-            the same tree coloured and uncoloured produced the same marker kind, so \
+            the same tree colored and uncolored produced the same marker kind, so \
             `Coordinator.sync` cannot notice that the palette moved and the map would keep drawing \
-            last viewport's colours.
+            last viewport's colors.
             """
         )
     }
 
     /// One `MKMapView` and the coordinator that syncs annotations into it, with the delegate left
     /// off — every callback this test needs it invokes itself, in the order `updateUIView` does.
-    /// Modelled on `MapCameraOwnershipTests.Screen` for the same reason: MapKit's own callbacks would
+    /// Modeled on `MapCameraOwnershipTests.Screen` for the same reason: MapKit's own callbacks would
     /// turn an assertion into a race.
     private static func layerAndMap() -> (MapAnnotationLayer.Coordinator, MKMapView) {
         let opening = MKCoordinateRegion(
@@ -376,7 +376,7 @@ struct MapSpeciesColourTests {
         let pins = Self.pins(id, 4)
         let (coordinator, mapView) = Self.layerAndMap()
 
-        // Pass one: the palette has ranked this species and has not yet learnt its name.
+        // Pass one: the palette has ranked this species and has not yet learned its name.
         var palette = MapSpeciesPalette.assign(pins: pins)
         #expect(palette.slot(for: id) == .a)
         #expect(palette.unnamedSpeciesIDs == [id])
@@ -402,7 +402,7 @@ struct MapSpeciesColourTests {
                 annotation.spokenLabel == "City tree, London Plane",
                 """
                 a pin that was already drawn when its species' name arrived still says \
-                "\(annotation.spokenLabel)". Every coloured pin in the running app is in exactly this \
+                "\(annotation.spokenLabel)". Every colored pin in the running app is in exactly this \
                 position — the palette always ranks before it can name — so the spoken channel would \
                 have named nothing, ever.
                 """
@@ -410,7 +410,7 @@ struct MapSpeciesColourTests {
         }
     }
 
-    // MARK: - The channels that are not colour
+    // MARK: - The channels that are not color
 
     @Test("the four slots carry four different glyphs")
     func glyphsAreDistinct() {
@@ -420,7 +420,7 @@ struct MapSpeciesColourTests {
         #expect(Set(names).count == names.count)
     }
 
-    @Test("a coloured pin speaks its species, and an uncoloured one says exactly what it always said")
+    @Test("a colored pin speaks its species, and an uncolored one says exactly what it always said")
     func voiceOverNamesTheSpecies() {
         let id = UUID()
         let pin = Self.pin(species: id)
@@ -440,7 +440,7 @@ struct MapSpeciesColourTests {
         #expect(MapPinKind.accessibilityLabel(for: site, palette: palette) == SiteCopy.pinAccessibilityLabel)
     }
 
-    @Test("the legend names every colour it shows, and shows no colour it cannot name")
+    @Test("the legend names every color it shows, and shows no color it cannot name")
     func theLegendOnlyDrawsWhatItCanName() {
         let id = Self.ids(2)
         var palette = MapSpeciesPalette.assign(pins: Self.pins(id[0], 5) + Self.pins(id[1], 3))
@@ -455,14 +455,14 @@ struct MapSpeciesColourTests {
         )
     }
 
-    // MARK: - The selection mark cannot be read as a species colour
+    // MARK: - The selection mark cannot be read as a species color
 
     /// **The reticle is achromatic and the slots are not**, and that is the whole of why one cannot be
     /// mistaken for the other. Asserted in OKLCh chroma rather than by eye: every slot fill carries
-    /// chroma ≥ 0.07 in both appearances, and both reticle colours carry ≤ 0.04. There is no overlap
+    /// chroma ≥ 0.07 in both appearances, and both reticle colors carry ≤ 0.04. There is no overlap
     /// and no near miss.
-    @Test("the selection reticle is achromatic and every species colour is not")
-    func theReticleCannotBeASpeciesColour() {
+    @Test("the selection reticle is achromatic and every species color is not")
+    func theReticleCannotBeASpeciesColor() {
         for traits in [UITraitCollection(userInterfaceStyle: .light), UITraitCollection(userInterfaceStyle: .dark)] {
             for reticle in [CypressColor.textInk, CypressColor.pinRingStroke] {
                 #expect(
@@ -473,7 +473,7 @@ struct MapSpeciesColourTests {
             for slot in MapSpeciesSlot.allCases {
                 #expect(
                     Self.chroma(slot.fill, traits) >= 0.07,
-                    "slot \(slot.rawValue) is nearly grey at chroma \(Self.chroma(slot.fill, traits)), which puts it in the reticle's range"
+                    "slot \(slot.rawValue) is nearly gray at chroma \(Self.chroma(slot.fill, traits)), which puts it in the reticle's range"
                 )
             }
         }
@@ -536,12 +536,12 @@ struct MapSpeciesColourTests {
         )
         view.setSelectedAppearance(true)
         // The relationship, not the raw constant: selection must outrank every unselected
-        // neighbour — a reticle half-covered by the pin it distinguishes is not a mark — and it
+        // neighbor — a reticle half-covered by the pin it distinguishes is not a mark — and it
         // sits *below* the reader's dot, which task #150 made the topmost thing on the map.
         // `.max` belongs to the dot now; `MapLayout`'s z-order block is the one ladder, and
         // `MapMarkerRenderingTests.userDotIsTopmost` holds the dot's end of it.
         #expect(view.zPriority.rawValue > MapLayout.pinZPriority.rawValue,
-                "a reticle half-covered by the neighbour it distinguishes is not a mark")
+                "a reticle half-covered by the neighbor it distinguishes is not a mark")
         #expect(view.zPriority.rawValue < MapLayout.userDotZPriority.rawValue,
                 "a selected pin above the reader's dot hides the one mark every other mark is relative to (#150)")
         view.setSelectedAppearance(false)

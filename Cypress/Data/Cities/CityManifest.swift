@@ -1,6 +1,6 @@
 import Foundation
 
-/// The published city catalogue — `manifest.json` at the bucket root, decoded.
+/// The published city catalog — `manifest.json` at the bucket root, decoded.
 ///
 /// The contract is R37's (see RULINGS R43 for the app side): versioned
 /// per-city SQLite files at immutable paths `cities/<id>/<version>/<id>.sqlite`, described by one

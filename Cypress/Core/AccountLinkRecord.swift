@@ -4,13 +4,13 @@ import Foundation
 ///
 /// **The defect this closes.** Screen 15 collects two things and exactly two — which of three
 /// routes was tapped, and whether the open-database-license row was checked — and
-/// `AccountAskModel` justifies its unchecked-box behaviour on the strength of the second one
-/// travelling somewhere: "the answer travels on the request instead, so the account records what
+/// `AccountAskModel` justifies its unchecked-box behavior on the strength of the second one
+/// traveling somewhere: "the answer travels on the request instead, so the account records what
 /// was actually agreed to and `User.licenseVersion` stays honestly nil when nothing was". The
 /// composition root's sign-in handler discarded the whole request (`_ = request`), so that sentence
 /// was false: unchecking the box changed nothing anywhere, and an account created by a person who
 /// declined the license was indistinguishable from one created by a person who accepted it. A
-/// consent nobody can read back is not a consent, and D12 and BUILD-PLAN §5 make the licence a data
+/// consent nobody can read back is not a consent, and D12 and BUILD-PLAN §5 make the license a data
 /// governance question rather than a cosmetic one.
 ///
 /// **Why this is a record and not a `User` row.** There is no `users` table on device (ERRATA E86)

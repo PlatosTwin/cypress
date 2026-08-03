@@ -21,12 +21,12 @@ import UIKit
 /// image. What it asserts is that an image was produced; the images are the output, and the paths
 /// are printed for a reviewer.
 @MainActor
-@Suite("Screen 03 · the favourite cell, photographed")
+@Suite("Screen 03 · the favorite cell, photographed")
 struct FavoriteAppearanceShots {
 
     @Test("the quad row renders in both states, light and dark")
     func bothStates() async {
-        let shots: [(name: String, favourite: Bool, scheme: ColorScheme)] = [
+        let shots: [(name: String, favorite: Bool, scheme: ColorScheme)] = [
             ("03-favorite-off-light", false, .light),
             ("03-favorite-on-light", true, .light),
             ("03-favorite-off-dark", false, .dark),
@@ -39,7 +39,7 @@ struct FavoriteAppearanceShots {
                     treeID: TreeProfileSeedFixtures.populated.tree.id,
                     api: TreeProfilePreviewAPI(
                         profile: TreeProfileSeedFixtures.populated,
-                        isFavorite: shot.favourite
+                        isFavorite: shot.favorite
                     ),
                     caretakerInitials: ["N", "M", "J"]
                 )

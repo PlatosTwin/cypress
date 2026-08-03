@@ -326,7 +326,7 @@ extension Chip {
     /// A phenology chip for screen 04.
     ///
     /// Takes a `PhenologyTag` and the `Species` it is being offered for, and renders nothing when
-    /// the tag is not in that species' vocabulary — an evergreen is never asked about fall colour
+    /// the tag is not in that species' vocabulary — an evergreen is never asked about fall color
     /// (D5). The check cannot be skipped by a caller because there is no `String` initializer here.
     @ViewBuilder
     static func phenology(

@@ -82,7 +82,7 @@ struct HeroPhotoHeader<Background: View, BottomLeading: View>: View {
     var metaPill: String?
     /// Makes the pill a control rather than a caption.
     ///
-    /// **NOT SPECIFIED.** §2 C2 draws the pill and gives it no behaviour. It gets one on screen 03
+    /// **NOT SPECIFIED.** §2 C2 draws the pill and gives it no behavior. It gets one on screen 03
     /// because that hero now has *two* things a tap could mean and they are not the same thing: the
     /// photograph opens the photograph, and the words `3 photos` open the three photographs. Giving
     /// both to the whole header — which is what it did before — meant the picture could not be
@@ -253,7 +253,7 @@ struct HeroPhotoHeader<Background: View, BottomLeading: View>: View {
     }
 }
 
-// MARK: - Convenience initialisers
+// MARK: - Convenience initializers
 
 extension HeroPhotoHeader where Background == CypressGradientField, BottomLeading == EmptyView {
     /// The placeholder hero: §2's gradient stack, no custom bottom-left block.

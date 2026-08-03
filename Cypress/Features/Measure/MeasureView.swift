@@ -10,7 +10,7 @@
 //  Composed from C1 (header + trailing pill), C5 (both segmented controls — `SegmentedControl
 //  .method` was already written against `MeasurementMethod` for this screen), C4's sanity-check
 //  pill, C12 (the previous reading's method badge) and C6. The keypad has no C-number: SCREENS.md
-//  §2's catalogue does not carry one and §5 describes it inline, so it is built here from tokens,
+//  §2's catalog does not carry one and §5 describes it inline, so it is built here from tokens,
 //  the same way 13's photo strip was.
 //
 //  Not a raw hex or a raw font size in the file (ARCHITECTURE §6). The numbers that remain are
@@ -37,7 +37,7 @@ struct MeasureView: View {
         api: any CypressAPI,
         outbox: OutboxQueue,
         attribution: Attribution,
-        // A closure, because `@State` runs its initialiser exactly once and a `Double?` passed
+        // A closure, because `@State` runs its initializer exactly once and a `Double?` passed
         // through it is frozen at the first frame — on a cold launch, `nil`, which D6 treats as
         // unusable (ERRATA E158). The model asks
         // this at the moment it needs an answer; see `MeasureModel.gpsAccuracyM`.
@@ -54,7 +54,7 @@ struct MeasureView: View {
                 attribution: attribution,
                 gpsAccuracyM: gpsAccuracyM,
                 // Through `MeasureDraft(kind:)` rather than by setting `kind` alone, because the
-                // unit under the keypad is a function of the kind — a height drafted in centimetres
+                // unit under the keypad is a function of the kind — a height drafted in centimeters
                 // is the same class of silent error this parameter exists to close.
                 initialDraft: MeasureDraft(kind: kind),
                 now: now,

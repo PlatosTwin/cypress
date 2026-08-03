@@ -67,7 +67,7 @@ struct JournalListView: View {
     /// and 17 already use — with that day's acts under it.
     ///
     /// This is the structural half of telling a chronology from a collection. My Grove's list has no
-    /// headers and no dates at all; this one is organised by nothing else. A reader who has just come
+    /// headers and no dates at all; this one is organized by nothing else. A reader who has just come
     /// from the other screen can see which he is on before reading a word of either.
     ///
     /// `.cypressMicroLabel()` carries `.cypressTypographicFurniture()`, which clamps at AX1 — so the
@@ -103,7 +103,7 @@ struct JournalListView: View {
     /// The sentence about there being older entries, and the control that fetches them.
     ///
     /// Both are absent when the read reached the end, which is the honest drawing of a finished
-    /// list: nothing here apologises for rows that do not exist, and nothing states or implies how
+    /// list: nothing here apologizes for rows that do not exist, and nothing states or implies how
     /// many there are.
     @ViewBuilder
     private func olderBlock(_ presentation: JournalPresentation) -> some View {

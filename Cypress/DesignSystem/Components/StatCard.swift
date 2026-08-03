@@ -59,7 +59,7 @@ struct StatCard: View {
         /// and screen 16 already answered the same question the same way: its empty readout draws
         /// `MeasureCopy.readoutPlaceholder` in `text.faint` rather than `text.ink`, because a plain
         /// `0` in ink reads as a measurement of zero (ERRATA E77). Same geometry, same mono ramp,
-        /// the faint colour carrying the difference. See ERRATA (E98).
+        /// the faint color carrying the difference. See ERRATA (E98).
         case placeholder(String)
     }
 

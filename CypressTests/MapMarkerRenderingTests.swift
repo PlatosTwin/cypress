@@ -15,7 +15,7 @@ import UIKit
 ///    memorials, and look plausible while doing it.
 /// 2. **A pin the diff cannot tell apart.** The layer adds and removes only what changed, keyed by
 ///    id, and a tree whose *kind* changes under a stable id — a lead confirming a removal turns a
-///    green pin grey without moving it — has to be noticed by that comparison.
+///    green pin gray without moving it — has to be noticed by that comparison.
 @MainActor
 @Suite("Map marker rendering")
 struct MapMarkerRenderingTests {
@@ -133,7 +133,7 @@ struct MapMarkerRenderingTests {
             reuseIdentifier: MapMarkerView.reuseIdentifier
         )
         view.bounds = CGRect(x: 0, y: 0, width: 18, height: 18)
-        // 20 pt out from the centre of an 18 pt pin: outside the drawn dot, inside the 44 pt target.
+        // 20 pt out from the center of an 18 pt pin: outside the drawn dot, inside the 44 pt target.
         #expect(view.point(inside: CGPoint(x: 9, y: -11), with: nil))
         // And well outside it.
         #expect(!view.point(inside: CGPoint(x: 9, y: -40), with: nil))
@@ -177,7 +177,7 @@ struct MapMarkerRenderingTests {
         )
         #expect(
             pinView.zPriority.rawValue > MapLayout.pinZPriority.rawValue,
-            "the selected pin does not outrank its unselected neighbours, so the reticle can be half-covered by the pin it is distinguishing (task #89)"
+            "the selected pin does not outrank its unselected neighbors, so the reticle can be half-covered by the pin it is distinguishing (task #89)"
         )
 
         pinView.prepareForReuse()

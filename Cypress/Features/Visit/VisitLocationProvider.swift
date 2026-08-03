@@ -54,7 +54,7 @@ final class VisitLocationProvider {
         // Street trees sit 6–10 m apart (D6). Anything coarser than "best" is asking the ranking to
         // fail; anything finer does not exist.
         manager.desiredAccuracy = kCLLocationAccuracyBest
-        // A volunteer standing at a kerb moves a metre at a time. Updating on every metre keeps the
+        // A volunteer standing at a curb moves a meter at a time. Updating on every meter keeps the
         // shortlist honest as they step around the trunk, without a continuous stream.
         manager.distanceFilter = 1
     }

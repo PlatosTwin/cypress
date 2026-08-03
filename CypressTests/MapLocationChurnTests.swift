@@ -54,8 +54,8 @@ struct MapLocationChurnTests {
 
     /// **The one that cost the most.** `MapHomeView` declared
     /// `@State private var location = MapLocationProvider()`, and a SwiftUI `@State` default
-    /// expression is re-evaluated on every initialisation of the view struct — `RootView.body`
-    /// initialises this one on every pass. Construction called `startUpdatingLocation()` by way of
+    /// expression is re-evaluated on every initialization of the view struct — `RootView.body`
+    /// initializes this one on every pass. Construction called `startUpdatingLocation()` by way of
     /// `apply(authorization:)`, so the app stood up and threw away roughly fifty `CLLocationManager`
     /// sessions a second: 336 provider instances in seven measured seconds, each delivering a cached
     /// fix on its way out.
@@ -70,7 +70,7 @@ struct MapLocationChurnTests {
             manager.startCount == 0,
             """
             Constructing a MapLocationProvider started \(manager.startCount) location session(s). \
-            A SwiftUI @State default expression runs on every initialisation of its view, so a \
+            A SwiftUI @State default expression runs on every initialization of its view, so a \
             provider that opens a session in init opens one per body pass of whatever declares it.
             """
         )
@@ -84,7 +84,7 @@ struct MapLocationChurnTests {
         #expect(manager.startCount == 1)
     }
 
-    /// The authorisation callback is the *other* caller of the same private path, and it is the one
+    /// The authorization callback is the *other* caller of the same private path, and it is the one
     /// that must still work: the map calls `start()` while the status is `notDetermined`, the sheet
     /// is answered later, and the grant has to open the session that `start()` could not.
     @Test("a grant that arrives after start() still opens the session")
@@ -118,8 +118,8 @@ struct MapLocationChurnTests {
 
     /// `availability` is `@Observable` and screen 01's whole view tree reads it, so a write is a
     /// rebuild. `distanceFilter = 5` is supposed to mean the delegate is not called until the
-    /// reader has moved five metres, and on a simulated route it is simply not honoured — measured
-    /// at a walking 4 m/s, **24 to 42 fixes a second**, one every fifteen centimetres.
+    /// reader has moved five meters, and on a simulated route it is simply not honored — measured
+    /// at a walking 4 m/s, **24 to 42 fixes a second**, one every fifteen centimeters.
     ///
     /// Asserted through `availability` rather than through the predicate, so a rule that is right
     /// and not wired up fails here.
@@ -133,7 +133,7 @@ struct MapLocationChurnTests {
         let first = provider.availability
         #expect(first.coordinate != nil, "the first fix always publishes")
 
-        // Roughly a metre and a half north — well inside the five the manager was told to filter at.
+        // Roughly a meter and a half north — well inside the five the manager was told to filter at.
         Self.deliver(Self.fix(37.778_763, -122.424_66), to: manager)
         #expect(
             provider.availability == first,
@@ -144,7 +144,7 @@ struct MapLocationChurnTests {
         )
     }
 
-    @Test("a fix five metres away is published")
+    @Test("a fix five meters away is published")
     func realMovementIsPublished() {
         let manager = RecordingManager()
         let provider = MapLocationProvider(manager: manager)
@@ -187,7 +187,7 @@ struct MapLocationChurnTests {
         #expect(MapLocationProvider.publishAccuracyM == 1)
     }
 
-    /// Boundary behaviour of the rule itself, stated once where it can be read.
+    /// Boundary behavior of the rule itself, stated once where it can be read.
     @Test("the rule publishes anything when there is no previous fix")
     func thereIsAlwaysAFirstFix() {
         for previous: MapLocationProvider.Availability in [.notAsked, .waitingForFix, .denied, .servicesOff] {

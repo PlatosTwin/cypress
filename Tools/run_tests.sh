@@ -147,7 +147,7 @@ read_device_state() {
 # exactly like a defect in whatever you just changed. The coordinate was already stamped in every
 # header; nothing read it against the seed.
 #
-# Counted over a fixed ±250 m box around the camera's CENTRE, not over the camera's own rectangle.
+# Counted over a fixed ±250 m box around the camera's CENTER, not over the camera's own rectangle.
 # The first draft used the rectangle, on the reasoning that it is what the map draws — and it
 # refused a device that runs the full suite green, which is a worse failure than the one it
 # prevents. Measured on the healthy 16 Pro at [37.759602,-122.426903]:

@@ -81,7 +81,7 @@ struct MeasurementAccuracyTests {
         #expect(profile.measurements.count == 1)
         #expect(stored.gpsAccuracyM == 7)
         #expect(stored.quantity.value == 64)
-        #expect(stored.quantity.unitEntered == .centimetres)
+        #expect(stored.quantity.unitEntered == .centimeters)
         #expect(stored.quantity.siValue == 0.64)
         #expect(stored.quantity.method == .tape)
         #expect(stored.isChartable)

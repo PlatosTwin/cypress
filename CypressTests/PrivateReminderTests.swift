@@ -220,7 +220,7 @@ struct PrivateReminderTests {
 
         // Every step above v2, not literally `[3, 4]`: this test is about a v2 database reaching the
         // current schema with its rows intact, and it must not fail the day an unrelated migration
-        // is added — which is what happened when v5 gave favourites a device owner (ERRATA E89).
+        // is added — which is what happened when v5 gave favorites a device owner (ERRATA E89).
         // `DataGates.outboxPhotoShotTypes` states the same rule for the same reason.
         let expected = AppSchema.migrations.map(\.version).filter { $0 > 2 }
         let applied = try SchemaMigrator.migrate(AppSchema.migrations, on: connection)

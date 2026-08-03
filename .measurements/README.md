@@ -12,7 +12,7 @@ left is every window in which the map dropped a frame.
   effective fps, p50 / p95 / worst frame interval, and the annotation count on screen. Armed only by
   `CYPRESS_MAP_PROBE=1`, `#if DEBUG`.
 - Launched with `SIMCTL_CHILD_CYPRESS_MAP_PROBE=1 xcrun simctl launch --console-pty …`.
-- Location permission declined both times, so the camera opens at the fixed fallback centre (Mission
+- Location permission declined both times, so the camera opens at the fixed fallback center (Mission
   Dolores Park) and the two runs start from the same picture: zoom 18, 10 markers, a flat 60 fps.
 - Gesture: one two-finger pinch, sixteen steps of 60 ms, separation 240 pt → 60 pt (two zoom levels
   out), followed by one 0.9 s drag from (310, 520) to (90, 260). Identical coordinates and timings in
@@ -100,7 +100,7 @@ is ~1 ms instead of ~77 ms, and it is the next thing to go after.
 ## What none of this is
 
 Still a simulator. The *rate* of location callbacks in particular is a simulator artifact — 24–42 a
-second at 4 m/s is one fix every fifteen centimetres, which no GNSS receiver produces; a phone
+second at 4 m/s is one fix every fifteen centimeters, which no GNSS receiver produces; a phone
 delivers about one a second. What transfers is the **per-publish cost** and the **mechanism**, not
 the absolute frame numbers. The instrument for the absolute numbers is now the on-screen overlay, on
 the owner's own phone.

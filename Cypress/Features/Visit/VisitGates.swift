@@ -405,7 +405,7 @@ public enum VisitGates {
             into: &failures
         )
 
-        // --- D5, the headline: an evergreen is never offered fall colour or bare.
+        // --- D5, the headline: an evergreen is never offered fall color or bare.
         let evergreen = try species("Hesperocyparis macrocarpa", .evergreen, curated: true)
         let evergreenTags = VisitPhenologyVocabulary.tags(for: evergreen)
         expect(!evergreenTags.contains(.fallColor), "D5: an evergreen is never asked about fall color", into: &failures)
@@ -422,7 +422,7 @@ public enum VisitGates {
             into: &failures
         )
 
-        // --- Habit unknown: the full list (#151). Withholding fall colour from an unsourced
+        // --- Habit unknown: the full list (#151). Withholding fall color from an unsourced
         // species would itself assert "this is an evergreen" — the unsourced claim E9 forbids.
         // E9 still governs the APP's own surfaces (the season strip below, screen 07's section);
         // it no longer governs what the observer may report.
@@ -494,7 +494,7 @@ public enum VisitGates {
             phenologyTags: [],
             gpsAccuracyM: 9,
             // A trunk shot, because the bug this gate now guards was that every shot arrived
-            // labelled `full_tree`, and the default would have passed either way.
+            // labeled `full_tree`, and the default would have passed either way.
             photos: [OutboxPhoto(path: photo.path, shotType: .trunk)],
             capturedAt: Date(timeIntervalSince1970: 1_800_000_000)
         )

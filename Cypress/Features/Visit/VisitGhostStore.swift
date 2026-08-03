@@ -7,7 +7,7 @@
 //
 //  ── Why this is the product ──────────────────────────────────────────────────────────────
 //  "The camera opens straight to a ghost overlay of the last photo so the timeline stays
-//  comparable" (SCREENS 04 caption). It is the one artefact the official city app will never have,
+//  comparable" (SCREENS 04 caption). It is the one artifact the official city app will never have,
 //  and it is what turns a pile of photos into a time series a person can actually read. Everything
 //  else on screen 04 is a form.
 //

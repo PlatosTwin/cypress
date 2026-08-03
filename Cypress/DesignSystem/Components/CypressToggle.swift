@@ -8,7 +8,7 @@
 //  **NOT SPECIFIED** (§2 C25, §5 gap 4): the off state. The mock draws only the on switch. The
 //  choice made here: the track becomes `border.cool` — the same inactive hairline every other idle
 //  control in the system uses — and the knob slides to the leading edge. Nothing else changes, so
-//  the off state is a colour and a position, not a different control.
+//  the off state is a color and a position, not a different control.
 //
 //  Tap target: the track is 44×26 as drawn. The width already meets the minimum; the height does
 //  not, so the switch keeps its drawn size and takes a 44pt hit area.

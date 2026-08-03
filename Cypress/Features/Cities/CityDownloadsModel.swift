@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-/// The Cities screen's state: the fetched catalogue, the disk facts, one download at a time, and
+/// The Cities screen's state: the fetched catalog, the disk facts, one download at a time, and
 /// the switch that re-boots the data layer (RULINGS R43 §§1–4).
 ///
 /// Owned by the screen (`@State`), constructed by the composition root — it needs the library,
@@ -77,8 +77,8 @@ final class CityDownloadsModel {
 
     // MARK: - Actions
 
-    /// Fetches the catalogue and re-reads the disk. Runs on every appearance; a re-fetch that
-    /// fails falls back to disk facts rather than keeping a catalogue it can no longer vouch for.
+    /// Fetches the catalog and re-reads the disk. Runs on every appearance; a re-fetch that
+    /// fails falls back to disk facts rather than keeping a catalog it can no longer vouch for.
     func load() async {
         refreshDiskFacts()
         failedCityID = nil
@@ -113,7 +113,7 @@ final class CityDownloadsModel {
                     onInventoryChange()
                 }
             } catch is CancellationError {
-                // Cancelled by the reader: the temp file is already gone, nothing to say.
+                // Canceled by the reader: the temp file is already gone, nothing to say.
             } catch {
                 // Partial or impostor bytes never reached the library (`CityDownloader`'s
                 // contract); the row reverts and says so.

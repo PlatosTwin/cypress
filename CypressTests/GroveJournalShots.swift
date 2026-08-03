@@ -14,7 +14,7 @@
 //  ── The fixture is the whole argument ─────────────────────────────────────────────────────
 //  The two lists are only confusable while every tree has one record against it. `GroveTreesShotData`
 //  is deliberately not that: one tree carries six contributions, one carries two, and one is a
-//  favourite nobody has visited. So `Trees` draws three rows and `Journal` draws eight over the same
+//  favorite nobody has visited. So `Trees` draws three rows and `Journal` draws eight over the same
 //  history, which is the difference the drawing has to make visible. A fixture of five trees with one
 //  event each would have photographed the two screens agreeing, which proves nothing.
 //
@@ -175,7 +175,7 @@ enum GroveJournalShotFixtures {
         entry(4, .visit, cypress, "Grandmother Cypress", daysAgo: 16, ""),
         entry(5, .measurement, ginkgo, "Ginkgo on Judah", daysAgo: 21, "dbh 31 cm, taped"),
         entry(6, .visit, ginkgo, "Ginkgo on Judah", daysAgo: 21, "First leaves turning"),
-        entry(7, .visit, cypress, "Grandmother Cypress", daysAgo: 96, "Winter, bare branches on the neighbours"),
+        entry(7, .visit, cypress, "Grandmother Cypress", daysAgo: 96, "Winter, bare branches on the neighbors"),
         entry(8, .careEvent, cypress, "Grandmother Cypress", daysAgo: 400, "watering")
     ]
 

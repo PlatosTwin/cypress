@@ -221,9 +221,9 @@ struct GrowthHistoryView: View {
     // MARK: - 5b · Add a reading (screen 16's general entrance, RULINGS R15)
 
     /// Built exactly like `TreeProfileView.growthLink`, which is the control this one answers: same
-    /// font, same colour, same 44pt hit area, a quiet text link under the block it belongs to. The
+    /// font, same color, same 44pt hit area, a quiet text link under the block it belongs to. The
     /// two are a pair — one reads the series back, one adds to it — and a reader who has used either
-    /// should recognise the other. C1–C30 is a closed catalogue with no link in it, so a screen-local
+    /// should recognize the other. C1–C30 is a closed catalog with no link in it, so a screen-local
     /// control from tokens is what this codebase does here (ERRATA E46).
     ///
     /// It opens 16 on `MeasurementKind.dbh`, SCREENS.md 16 §2's drawn selection. This is the one
