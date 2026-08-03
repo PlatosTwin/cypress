@@ -385,6 +385,31 @@ def main() -> None:
     if total_split != fused_total:
         fail(f"per-city counts sum to {total_split}, fused seed holds {fused_total}")
 
+    # ── The fused seed itself, published as a build input (task #196) ──────────────────
+    # The per-city files above are what the APP downloads at runtime. This is what a
+    # BUILD needs: the ~103 MB fused seed that ships inside the bundle, which is
+    # git-ignored (it is a reproducible build product) and therefore absent from a fresh
+    # CI checkout -- without it 13 tests fail on `seedURL -> nil` and the app ships empty.
+    #
+    # Published under the build_id rather than a fixed name, for R60's reason: two seeds
+    # that declare the same generated_at can still differ byte for byte, so a fixed
+    # "latest" path would be the same trap this ticket's parent (#197) was.
+    # CI resolves it from this manifest and verifies sha256 before trusting the bytes.
+    seed_rel = f"seed/{build_id}/cypress-seed.sqlite"
+    seed_dest = os.path.join(args.out, seed_rel)
+    os.makedirs(os.path.dirname(seed_dest), exist_ok=True)
+    print(f"copying {seed_rel} ...")
+    shutil.copyfile(args.db, seed_dest)
+    seed_bytes = os.path.getsize(seed_dest)
+    # Re-hash the COPY, not the source: this asserts the bytes that will be uploaded,
+    # which is the whole point of publishing a hash beside a file.
+    seed_copy_sha = sha256_of(seed_dest)
+    if seed_copy_sha != source_seed_sha:
+        fail(f"the seed copy hashes {seed_copy_sha[:16]} but the source hashed "
+             f"{source_seed_sha[:16]}; refusing to publish a hash that does not "
+             "describe the file beside it")
+    print(f"          {seed_bytes / 1e6:7.1f} MB  sha256 {seed_copy_sha[:16]}...")
+
     manifest = {
         "manifest_format": MANIFEST_FORMAT,
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -395,6 +420,8 @@ def main() -> None:
             "tree_count": fused_total,
             "sha256": source_seed_sha,
             "build_id": build_id,
+            "path": seed_rel,
+            "bytes": seed_bytes,
         },
         "cities": entries,
     }
@@ -427,6 +454,8 @@ def main() -> None:
         for entry in entries:
             f.write(f'aws s3 cp "{entry["path"]}" "$BUCKET/{entry["path"]}" '
                     f'--endpoint-url "$ENDPOINT"\n')
+        f.write(f'aws s3 cp "{seed_rel}" "$BUCKET/{seed_rel}" '
+                f'--endpoint-url "$ENDPOINT"\n')
         f.write('aws s3 cp manifest.json "$BUCKET/manifest.json" '
                 '--endpoint-url "$ENDPOINT" --content-type application/json\n')
         f.write("# Verify anonymous READ (GET, not HEAD: Tigris has returned\n")
@@ -434,6 +463,7 @@ def main() -> None:
         f.write("# public domain; -f fails the script on any non-2xx.\n")
         for entry in entries:
             f.write(f'curl -fsS -r 0-0 -o /dev/null "$PUBLIC/{entry["path"]}"\n')
+        f.write(f'curl -fsS -r 0-0 -o /dev/null "$PUBLIC/{seed_rel}"\n')
         f.write('curl -fsS "$PUBLIC/manifest.json" | cmp - manifest.json\n')
         f.write('echo "anonymous GET verified on $PUBLIC"\n')
     os.chmod(upload_sh, 0o755)

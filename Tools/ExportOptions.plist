@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Export options for the TestFlight workflow (#196). Read .github/workflows/testflight.yml
+	  beside this; neither is much use alone.
+
+	  `app-store-connect` is the destination for both TestFlight and the App Store — they are
+	  the same upload, and which testers see it is decided in App Store Connect, not here. The
+	  beta is INTERNAL (owner's decision, 2026-08-03), so no Beta App Review runs and a build
+	  is testable minutes after processing.
+
+	  `destination = upload` means the export step uploads directly rather than writing an
+	  .ipa for someone to hand to Transporter. That is the whole point of doing this in CI.
+
+	  Signing is left automatic and resolved by the App Store Connect API key the workflow
+	  passes to xcodebuild, which is why no distribution certificate or provisioning profile
+	  has to live in a GitHub secret. Fewer secrets is fewer things to leak.
+	-->
+	<key>method</key>
+	<string>app-store-connect</string>
+	<key>destination</key>
+	<string>upload</string>
+	<key>signingStyle</key>
+	<string>automatic</string>
+	<key>teamID</key>
+	<string>G44ZKP35ZH</string>
+	<!--
+	  Symbols go up so a crash report from a tester names a function instead of an address.
+	  Five people walking around SF will find crashes; an unsymbolicated one wastes the trip.
+	-->
+	<key>uploadSymbols</key>
+	<true/>
+	<!--
+	  Bitcode has been dead since Xcode 14; stating it false rather than omitting it keeps
+	  the export from depending on whatever the runner's Xcode defaults to.
+	-->
+	<key>uploadBitcode</key>
+	<false/>
+	<!--
+	  Answered once here rather than per-upload in App Store Connect. It matches
+	  Info.plist's ITSAppUsesNonExemptEncryption = false: the app's only network traffic is
+	  standard HTTPS, which is exempt.
+	-->
+	<key>manageAppVersionAndBuildNumber</key>
+	<false/>
+</dict>
+</plist>
