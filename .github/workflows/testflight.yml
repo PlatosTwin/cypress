@@ -97,8 +97,13 @@ jobs:
           ASC_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
         run: |
           set -euo pipefail
-          python3 -m pip install --quiet --disable-pip-version-check pyjwt cryptography
-          n="$(python3 Tools/appstore_connect.py next-build-number)"
+          # A venv, not `pip install` into the system Python: the runner's Homebrew Python
+          # is externally managed and refuses under PEP 668. --break-system-packages would
+          # also "work" and is the wrong trade — it risks the runner's own toolchain to
+          # save one command.
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet --disable-pip-version-check pyjwt cryptography
+          n="$("$RUNNER_TEMP/venv/bin/python" Tools/appstore_connect.py next-build-number)"
           echo "next build number: $n"
           echo "n=$n" >> "$GITHUB_OUTPUT"
 
@@ -166,7 +171,7 @@ jobs:
           set -euo pipefail
           n=${{ steps.build_number.outputs.n }}
           for i in $(seq 1 40); do
-            if python3 Tools/appstore_connect.py expire-others "$n"; then exit 0; fi
+            if "$RUNNER_TEMP/venv/bin/python" Tools/appstore_connect.py expire-others "$n"; then exit 0; fi
             echo "build $n not visible yet (attempt $i/40); waiting 30s"
             sleep 30
           done
