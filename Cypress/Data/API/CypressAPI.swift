@@ -45,12 +45,10 @@ public protocol CypressAPI: Sendable {
     /// after/at same time as adding a custom tree".
     ///
     /// **Not a BUILD-PLAN §6 endpoint.** §6's species write is `POST /trees/{id}/species-assertions`,
-    /// which appends to the versioned chain `SpeciesAssertion` models. That table lives in the
-    /// read-only seed database and `main` has no copy of it, so the chain cannot be appended to on
-    /// device. What *is* writable is `community_trees.species_current`, and this is the one transition
-    /// over it that needs no chain: **nothing to nothing-in-particular**. See `SpeciesClaim` for the
-    /// two refusals that fall out of that, both of which this method enforces rather than merely
-    /// documenting.
+    /// which is `correctSpecies` below. This is the one transition that needs no supersession —
+    /// **nothing to nothing-in-particular** — and it keeps its own name and its own guard because
+    /// the two acts refuse different things: a first claim is refused when one already exists, a
+    /// correction is refused when the claim is not yours. See `SpeciesClaim`.
     ///
     /// - Returns: the tree as it now stands.
     /// - Throws: `.notFound` when there is no such tree, `.forbidden` for a city-import row, and
@@ -757,7 +755,7 @@ public struct TreeProfile: Hashable, Sendable {
         deletablePhotoIDs: Set<UUID> = [],
         photoTallies: [UUID: PhotoTally] = [:],
         inventorySource: InventorySource? = nil,
-        speciesCorrection: SpeciesCorrectionOffer = .none
+        speciesCorrection: SpeciesCorrectionOffer = .unavailable
     ) {
         self.tree = tree
         self.activeName = activeName

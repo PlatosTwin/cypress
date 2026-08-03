@@ -12,27 +12,23 @@
 //  silently overwrites the thing it corrects. `trees.species_current` is explicitly "denormalized
 //  from the latest accepted assertion … a read cache" (`Tree.speciesCurrentID`).
 //
-//  That table is in the **read-only seed database**. `AppSchema` does not create a copy of it in
-//  `main`, and this round did not add one: a supersession chain is a moderation surface — who
-//  asserted, with what confidence, which claim replaced which — and standing one up on the strength
-//  of a two-clause feature request would be inventing a product.
-//
-//  So the only species write available on device is over `community_trees.species_current`, and the
-//  only edit to it that does not need a chain is the one where **there is nothing to supersede**.
-//  Hence two refusals, both enforced in `LocalAPI.claimSpecies` and both asserted in
-//  `SpeciesClaimTests`:
+//  That table used to be in the **read-only seed database** and nowhere else, which is why this file
+//  once recorded that a correction could not be written at all. **AppSchema v14 put a writable copy
+//  in `main`**, and `correctSpecies` is the correction; tickets #86 and #124, ruled in
+//  `docs/rulings-pending/species-supersession.md`. What follows is still true, and is now a division
+//  of labour between two verbs rather than a limit:
 //
 //  1. **Community rows only.** `main` has no writable `trees`; a city row's species is the city's,
 //     sitting in an ATTACHed read-only database. Letting a contributor overwrite the inventory would
 //     need an override table and a policy about what the export then says, which is a larger
-//     decision than this. `.forbidden` says so rather than failing silently.
+//     decision than this. `.forbidden` says so rather than failing silently — and the same refusal
+//     covers `correctSpecies` and `flagWrongSpecies`, for the same reason.
 //
-//  2. **First claim wins; a second is `.conflict`, not an overwrite.** Replacing an existing claim is
-//     a correction, and a correction with no history is precisely what `species_assertions` was
-//     designed to prevent. `tree_names` already keeps this rule for the same reason and in the same
-//     words — "one active name per tree; first namer wins" (D15). A contributor who thinks the
-//     species is wrong needs the moderation route, and that route does not exist yet; saying so is
-//     honest, and quietly discarding somebody else's statement is not.
+//  2. **First claim wins; a second `claimSpecies` is `.conflict`, not an overwrite.** Replacing an
+//     existing claim is a *correction*, and it goes through the verb that keeps a history and asks
+//     who is making it. `tree_names` keeps the same rule in the same words — "one active name per
+//     tree; first namer wins" (D15) — and the ruling records where that rule stops: it protects one
+//     contributor's statement from another's, not a contributor from their own mistake.
 //
 //  The `WHERE species_current IS NULL` in the UPDATE is rule 2 in SQL rather than in Swift. A
 //  read-then-write would leave a window in which two callers both see NULL and the second one wins,
@@ -87,7 +83,10 @@ public extension CypressAPI {
 /// payload rather than deriving it in `TreeProfilePresentation`.
 public enum SpeciesCorrectionOffer: Hashable, Sendable {
     /// Nothing to correct: a city row, an unnamed tree, or a claim with no chain behind it.
-    case none
+    ///
+    /// Not spelled `none`. A case by that name shadows `Optional.none` at every call site that
+    /// compares against a leading dot, and the compiler resolves the ambiguity silently.
+    case unavailable
     /// The claim in force is this contributor's own. `correctSpecies` (#86).
     case correctable
     /// The claim is somebody else's — or nobody's, which the ruling treats the same way.

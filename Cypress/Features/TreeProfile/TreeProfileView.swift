@@ -530,7 +530,7 @@ struct TreeProfileView: View {
     @ViewBuilder
     private func speciesCorrection(_ presentation: TreeProfilePresentation) -> some View {
         switch presentation.speciesCorrection {
-        case .none:
+        case .unavailable:
             EmptyView()
         case .correctable:
             speciesAction(TreeProfileCopy.correctSpeciesAction) { model.beginCorrectingSpecies() }

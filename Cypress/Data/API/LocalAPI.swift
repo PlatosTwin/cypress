@@ -712,7 +712,7 @@ public actor LocalAPI: CypressAPI {
         tree: Tree,
         connection: SQLiteConnection
     ) throws -> SpeciesCorrectionOffer {
-        guard tree.source == .community, tree.speciesCurrentID != nil else { return .none }
+        guard tree.source == .community, tree.speciesCurrentID != nil else { return .unavailable }
         let head = try assertions.current(treeID: tree.id, connection: connection)
         let isMine = head?.isSupersedable(by: attribution) ?? false
         let reported = try Self.openSpeciesReviews(
@@ -724,7 +724,7 @@ public actor LocalAPI: CypressAPI {
                 canResolve: isMine || userRole.canConfirmReviewFlag
             )
         }
-        guard head != nil else { return .none }
+        guard head != nil else { return .unavailable }
         return isMine ? .correctable : .reportable
     }
 
