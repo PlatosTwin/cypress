@@ -20,6 +20,11 @@ concurrency:
   group: testflight
   cancel-in-progress: false
 
+# The tag step pushes, and the default GITHUB_TOKEN is read-only. Scoped to the one
+# permission that needs raising rather than left at the workflow default.
+permissions:
+  contents: write
+
 env:
   SCHEME: Cypress
   PROJECT: Cypress.xcodeproj
