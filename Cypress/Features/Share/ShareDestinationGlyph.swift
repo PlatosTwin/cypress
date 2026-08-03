@@ -15,9 +15,25 @@
 //  Local to this folder rather than in `DesignSystem/Components`: no other screen in SCREENS.md
 //  uses them, and C1–C30 is a closed catalog. Same arrangement as 14's camera glyph.
 //
-//  No SF Symbols. The design system is explicit that every icon in the app is hand-drawn and there
-//  is no icon font (SCREENS.md §2 C16), and the Apple glyphs would put three vendors' marks on one
-//  row of a screen that draws its own.
+//  ── THE POLICY, for the whole app ───────────────────────────────────────────────────────────────
+//  **Every glyph in Cypress is a `Shape` drawn in this repo. No SF Symbols, no icon font, no
+//  exceptions — not for close, not for trash, not for a thumb.** Here specifically, the Apple
+//  glyphs would also put three vendors' marks on one row of a screen that draws its own.
+//
+//  This paragraph is the statement of the policy, and other files cite it as such. It is a
+//  **rule about the codebase, so it is enforced by a test** — `DrawnGlyphGuardTests` — and not by
+//  this comment. Ticket #130 is why: for months the app shipped five `Image(systemName:)` calls
+//  while this file said there were none, and a comment in `MapChrome` shrugged that there were two.
+//  The ruling that drew those five and put the rule under test is
+//  `docs/rulings-pending/drawn-glyphs.md`, which also records what it costs and why it was still
+//  the answer.
+//
+//  **Do not cite SCREENS.md §2 C16 for this.** C16 is the `BottomTabBar` component, and its "all
+//  hand-drawn, no icon font" is a bullet about that bar's own four icons. This file used to cite it
+//  for an app-wide rule and `RULINGS` R16 then cited this file, so the app-wide policy rested on a
+//  loop that bottomed out in one component's spec. The rule is a real and deliberate one — the
+//  record of it is R16, R39, R2's refusal to add a heart, and E163 paying its price without
+//  flinching — but until #130 it had never actually been written down at app scope. It is now, here.
 //
 
 import SwiftUI

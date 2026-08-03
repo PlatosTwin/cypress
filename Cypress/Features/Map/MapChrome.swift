@@ -653,9 +653,14 @@ struct MapRecenterButton: View {
     }
 }
 
-/// The crosshair. Drawn rather than borrowed from SF Symbols, for the reason `LeafGlyph` exists: the
-/// app has two `Image(systemName:)` calls in it and both are inside a photo picker, so a system glyph
-/// on the map's own chrome would be the one place the drawing came from somewhere else.
+/// The crosshair. Drawn rather than borrowed from SF Symbols, for the reason `LeafGlyph` exists:
+/// every mark in this app is drawn here, so a system glyph on the map's own chrome would be the
+/// one place the drawing came from somewhere else.
+///
+/// This comment used to say the app had "two `Image(systemName:)` calls, both inside a photo
+/// picker". It had five, in three files, and not one of them was in a picker. Ticket #130 drew
+/// those five and put the count under a test — `DrawnGlyphGuardTests` — rather than in a sentence,
+/// because a sentence cannot go red. The policy itself is stated in `ShareDestinationGlyph`.
 ///
 /// A ring, a dot, and four ticks on the axes — the mark every map in the world uses for this, which
 /// is the entire argument for it. It is `accessibilityHidden`; the button around it does the talking.

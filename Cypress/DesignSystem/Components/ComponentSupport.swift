@@ -179,7 +179,8 @@ struct CypressSearchGlyph: Shape {
 /// **NOT SPECIFIED.** SCREENS.md §2 draws C20 with one glyph, the leading magnifier, and screen 01
 /// lists nothing else in the bar; `docs/RULINGS.md` R16 is where the decision to add this one is
 /// recorded and reasoned. Hand-drawn like every other mark in the app — there are no SF Symbols and
-/// no icon font here (§2 C16, and `ShareDestinationGlyph` for the statement of the policy).
+/// no icon font here. `ShareDestinationGlyph` states the policy and `DrawnGlyphGuardTests` enforces
+/// it; R16's own citation of "§2 C16" for the rule was wrong, and #130 records why.
 ///
 /// The ring is what makes it read as a control rather than as punctuation: an unringed ✕ at 16 pt
 /// beside a 14.5 pt field is the same weight as a letter.
