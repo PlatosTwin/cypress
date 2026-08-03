@@ -24,10 +24,11 @@ conflicts with convenience, the rule wins.
   its content. Stale DerivedData, stale logs at a reused path, an uncommitted asset, an empty
   console capture, blank screenshots, and a location-declined simulator have each produced a
   false conclusion here.
-- **A warning count only counts if the build compiled something.** A green test line survives an
-  incremental build; a warning line does not. Before claiming "clean" or "zero warnings", confirm
-  the log holds `SwiftCompile` tasks for the files claimed about — a reused DerivedData recompiles
-  nothing and reports nothing (E203). Build into a fresh directory to measure warnings.
+- **A warning count only counts if the build compiled something.** Claim warnings only through
+  `Tools/verify_test_log.sh --warnings <log> [files…]`, which refuses to certify a count from a
+  build with zero `SwiftCompile` tasks, or one that did not compile the files named (E203). Build
+  into a fresh DerivedData directory to measure — a reused one recompiles nothing and reports
+  nothing, while a green test line survives it unchanged.
 - Never write a conclusion before reading the output that supports it.
 - Prove every new test can fail: break the code, watch red, restore. Assert presence, not
   absence; assert facts, not phrasing.
@@ -48,14 +49,23 @@ conflicts with convenience, the rule wins.
   16 Plus `24D1629F-9FA8-4E3D-812E-F6BC85C9E668`.
 - One simulator per agent, explicitly assigned. Cap **three** concurrent `xcodebuild`s
   machine-wide — orchestrator verification runs count against the cap.
-- **A dead agent's `xcodebuild` keeps running.** Before starting a run, `ps -eo pid,lstart,command
-  | grep [x]codebuild` and confirm nothing is already building against that simulator or worktree.
-  Two runs on one device fake `Application … is not running`, `'X' never appeared`, and
-  `Test run with 0 tests` — with no crash report and no fd-storm signature.
-- **The UI suite inherits the device's state, and a leftover reads as a broken app (E202).** Before
-  believing any red UI run, check the two that have lied: an `active-city` marker (it survives
-  reinstall — `xcodebuild test` replaces the bundle, not the data container) and a `map.lastCamera`
-  wider than the screen a test is about. E202 has the two commands.
+- **A dead agent's `xcodebuild` keeps running**, and **the UI suite inherits the device's state**
+  (E202). `Tools/run_tests.sh` now refuses on all three: another `xcodebuild` live against the same
+  simulator or worktree, a leftover `active-city` marker, and a `map.lastCamera` too wide for that
+  device's own screen. Do **not** hand-roll the collision check — `grep [x]codebuild` glob-expands
+  under zsh, matches nothing, and passes vacuously; use `grep -F xcodebuild` if you inspect by hand.
+  Keep reading E202 to interpret a red run: two runs on one device fake `Application … is not
+  running`, `'X' never appeared` and `Test run with 0 tests` with no crash report, and a wide
+  camera draws cluster badges where a test waits for pins.
+- **Every log carries its own provenance** — `run_tests.sh` stamps `CYPRESS-RUN:` lines with the
+  device, `screen-width-pt`, worktree, HEAD and both E202 states. Judge a width-sensitive UI result
+  only from a log whose width you have read. A log with no `CYPRESS-RUN` header did not come from
+  this script and its provenance is unknown.
+- **A simulator can degrade silently, and its first symptom looks like a real defect** — a specific,
+  plausible assertion failure in a test unrelated to your change, on a device whose E202 state is
+  clean. The tell is only visible in aggregate: later runs on that device get worse, and a control
+  at a known-green commit fails too. `xcrun simctl erase` fixes it. #183 records a case where two
+  such failures were filed as a width defect that did not exist.
 - Boot and wait for `Booted` before any `simctl` call; `simctl` against a Shutdown device fails
   quietly inside `&&` chains.
 - Grant camera once per install (`xcrun simctl privacy <udid> grant camera app.cypress.Cypress`);
