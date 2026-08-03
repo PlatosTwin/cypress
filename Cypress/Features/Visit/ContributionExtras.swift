@@ -6,7 +6,7 @@
 //  #169) both carry. One component so the two screens are one design: the same note field, the
 //  same two photo sources, the same removable thumbnails, in both places.
 //
-//  ── The pattern (pending ruling, task #168) ──────────────────────────────────────────────
+//  ── The pattern (RULINGS R40, task #168) ─────────────────────────────────────────────────
 //  **The extras are the fields.** No reveal step: the note field and the photo affordances are
 //  directly visible where the C15 well used to sit. Tapping "Photo or note" to be shown a text
 //  box was the owner-reported awkwardness (#168); the well survives only as the block's caption,
@@ -188,7 +188,8 @@ struct ContributionExtras: View {
 // MARK: - Copy
 
 /// **NOT SPECIFIED** — the mocks draw the C15 well closed on both screens, so these strings are
-/// designed here (pending ruling, task #168). Each names exactly what the control does and stops.
+/// designed here (RULINGS R40, *Copy designed here*, task #168). Each names exactly what the
+/// control does and stops.
 enum ContributionExtrasCopy {
     /// Screen 04's own prompt, verbatim — one vocabulary on every contribution surface.
     static let notePrompt = "Anything worth remembering?"

@@ -198,9 +198,13 @@ public struct TreeQueries {
                 // SQLite's three-valued logic already excludes NULL here, so this clause changes no
                 // row. It is in the text so that a reader of the query plan, or of this file, sees
                 // the decision that ERRATA E175 is about rather than having to infer it from the
-                // absence of a clause: **160,440 of the seed's 198,625 rows** have no planting date
-                // and every one of them is being set aside here. (The 107,875 / 145,837 previously
-                // written here was the San-Francisco-only seed's and had been stale since E176.)
+                // absence of a clause: **about four rows in five** have no planting date and every
+                // one of them is being set aside here. The count is deliberately not written out
+                // (#122) — it has been wrong twice here, first as the San-Francisco-only
+                // 107,875 / 145,837 after E176 and then as E206's 160,440, one row past what the
+                // seed holds. `SeedCorpus.datedTrees` pins it per corpus and `MapFilterTests`
+                // counts it against the attached seed; under D16 it is a weighted average over
+                // the installed cities rather than a constant of this app.
                 // No surface says so any more — R41 removed the sentence that did (task #180) — so
                 // this comment is now the only place the decision is written down.
                 //

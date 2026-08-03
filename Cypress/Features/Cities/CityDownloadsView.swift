@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// The Cities screen — the app side of R36's base layer, drawn exactly as the pending
-/// RULINGS R43 specifies (§§2–3): one card for the built-in inventory, one per
-/// published city, and nothing that would make it a store.
+/// The Cities screen — the app side of R36's base layer, drawn exactly as RULINGS R43
+/// specifies (§§2–3): one card for the built-in inventory, one per published city, and
+/// nothing that would make it a store.
 ///
 /// Card chrome is the You tab's setting-card idiom (screen 17's row metrics, `surfaceCard` on
 /// `borderCool`), because the You tab is where this screen's door lives and the two should read

@@ -309,6 +309,25 @@ struct MapFilterTests {
         let (total, dated, vacant, datedVacant) = counts
         try #require(total > 0, "the seed holds no trees at all")
 
+        // 0 · **The exact count, pinned per corpus (task #122).** Sections 1–3 below are ranges,
+        // deliberately, so a new city does not false-red them — and that is exactly what let an
+        // arithmetic slip ride: ERRATA E206 wrote 38,185 dated / 160,440 undated where the seed
+        // holds 38,184 / 160,441, and three shipped comments copied the wrong pair forward. A
+        // range cannot see a one-row error; a keyed constant can, and it does not false-red on a
+        // new city because a new city is a new `SeedCorpus` entry. `nil` where nobody has counted
+        // it — see the field's doc comment.
+        let corpus = try await SeedCorpus.current(store)
+        if let expected = corpus.datedTrees {
+            #expect(
+                dated == expected,
+                """
+                \(dated) rows carry a planting year; the \(corpus.source) corpus is pinned at \
+                \(expected). Count it before repinning — do not carry the figure across from a \
+                document, which is how E206's 38,185 reached three comments (E175, E176, #122).
+                """
+            )
+        }
+
         // 1 · Most rows carry no planting date, which is why the control is bucketed by decade and
         // why its blind spot was worth a sentence until R41 ruled the sentence out.
         let undatedShare = Double(total - dated) / Double(total)

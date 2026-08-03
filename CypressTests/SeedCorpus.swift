@@ -2,25 +2,41 @@ import Foundation
 import Testing
 @testable import Cypress
 
-/// The numbers that are properties of **San Francisco's inventory**, not of our code.
+/// The numbers that are properties of **the inventory**, not of our code.
 ///
 /// ── Why this exists ───────────────────────────────────────────────────────────────────────
-/// A dozen suites pin exact counts against the shipped seed — 12,518 vacant sites, 588 distinct
-/// plot sizes, 195,309 rows — and they are right to. Those literals are what catch a `.strip()`
-/// that starts eating values or a join that quietly widens; "greater than zero" would catch none of
-/// it. But they were written when there was one possible seed, and since #91 there are two:
+/// A dozen suites pin exact counts against the seed and they are right to. Those literals are what
+/// catch a `.strip()` that starts eating values or a join that quietly widens; "greater than zero"
+/// would catch none of it. But they were written when there was one possible seed, and there are
+/// now three corpora, named by `seed_meta.trees_source` and by whether San Jose's rows are in the
+/// file:
 ///
-/// - `city`   — SF Public Works' own operational layer for the trees, 133,577 records, plus the
-///              export's 12,260 vacant planting sites, which that layer has no category for.
-///              145,837 records. What ships.
-/// - `datasf` — the open-data export `tkzw-k3nq`, 195,309 records. Still buildable with
-///              `Tools/build_seed.py --source datasf`, and still required to work, because the
-///              owner may default back to it.
+/// - `sf_datasf` — the open-data export `tkzw-k3nq`, 195,309 records. What shipped before #91,
+///                 still buildable with `Tools/build_seed.py --source datasf`, and still required
+///                 to work, because the owner may default back to it.
+/// - `sf_city`   — SF Public Works' own operational layer for the trees, 133,577 records, plus the
+///                 export's 12,260 vacant planting sites, which that layer has no category for.
+///                 145,837 records. What shipped between #91 and #129.
+/// - `sf_city` **with `us-ca-sj` in `id_spaces_in_file`** — the same, fused with central San Jose.
+///                 198,625 records. **What ships.**
 ///
-/// A literal in a test body can only be right about one of them. So the literals move here, keyed
+/// **`sf_city` / `sf_datasf` are the v14 vocabulary.** The column values were bare `city` and
+/// `datasf` before that pass renamed them (`InventoryContractTests` documents the rename), and
+/// `current(_:)` below still accepts both so a seed built before v14 resolves. A comment naming
+/// the bare forms as what the column holds is describing a file that no longer ships.
+///
+/// A literal in a test body can only be right about one corpus. So the literals move here, keyed
 /// by the source the seed's own build receipt names, and each suite asks for the corpus it is
-/// actually running against. **Both sets stay pinned to exact numbers** — this is not a loosening.
-/// Rebuilding either seed and getting different numbers still fails.
+/// actually running against. **Every set stays pinned to exact numbers** — this is not a loosening.
+/// Rebuilding any of these seeds and getting different numbers still fails.
+///
+/// ── What none of these numbers is ─────────────────────────────────────────────────────────
+/// **A property of this app.** Under D16 the seed is a *merged* inventory on the way to a national
+/// one, so every count and every share below is a weighted average over whichever cities happen to
+/// be in the file, and it moves whenever one is added. #129 moved all of them at once. That is the
+/// argument for pinning them here rather than stating them in prose: a constant plus a test turns
+/// the next city into a red build, and a sentence in a comment turns it into a lie nobody reads
+/// (ERRATA E175, the worked example; ERRATA E206 for the figures that rotted in prose instead).
 ///
 /// ── The harder half: controls that cannot fire ────────────────────────────────────────────
 /// Some of these suites do not merely count. They assert a *control* — "this neighborhood does
@@ -38,7 +54,9 @@ import Testing
 /// makes the affected tests say so instead of quietly asserting nothing.
 struct SeedCorpus: Sendable {
 
-    /// `city` or `datasf`, from `seed_meta.trees_source`.
+    /// `seed_meta.trees_source` verbatim: `sf_city` or `sf_datasf` on any seed built since the v14
+    /// pass, bare `city` or `datasf` on one built before it. Both spellings are resolved by
+    /// `current(_:)`; this field carries whichever the file actually said.
     let source: String
 
     /// Columns the source does not publish, from `seed_meta.columns_absent_from_source`. The DataSF
@@ -81,6 +99,23 @@ struct SeedCorpus: Sendable {
     /// Vacant sites carrying a planting date — the reason `planted_on` alone cannot decide what the
     /// almanac's season rows and coverage card may show.
     let datedVacantSites: Int
+    /// Rows carrying a `planted_year` at all — the figure the whole year control is designed
+    /// around (E175), and the one that has rotted in prose more often than any other here.
+    ///
+    /// **Pinned exactly rather than as a share, and this is the #122 correction.** E206 chose a
+    /// loose range for it on the argument that a tight pin measured on one branch would false-red
+    /// one city later. The range did its job — it is why `MapFilterTests` still passes — but it
+    /// could not catch an arithmetic slip, and one happened: E206 stated **38,185 dated / 160,440
+    /// undated**, three shipped comments copied it, and the seed says **38,184 / 160,441**
+    /// (37,962 San Francisco + 222 San Jose, E175 + E176's own figures, which sum to 38,184).
+    /// Keyed by corpus, an exact pin does not false-red on a new city: a new city is a new corpus
+    /// entry, and the red is the reminder to write one.
+    ///
+    /// `nil` where nobody has measured it. The DataSF export is still buildable and still required
+    /// to work, but this repo ships no copy of it, so a number here would be remembered rather
+    /// than counted — and the suite falls back to the share for that corpus rather than asserting
+    /// a figure whose provenance is a document.
+    let datedTrees: Int?
 
     // ── Sunset/Parkside, the neighborhood the almanac suites read ───────────────────────────
     let sunsetVacantSites: Int
@@ -103,6 +138,8 @@ struct SeedCorpus: Sendable {
         let meta = try await store.queue.read { connection in
             CypressStore.readSeedMeta(connection: connection)
         }
+        // The default is the pre-v14 spelling on purpose: a file old enough to be missing this key
+        // is old enough to have been built before the rename.
         let source = meta["trees_source"] ?? "datasf"
         let absent = Set((meta["columns_absent_from_source"] ?? "")
             .split(separator: ",")
@@ -127,7 +164,9 @@ struct SeedCorpus: Sendable {
     }
 
     /// **SF Public Works' own street tree inventory for the trees, the DataSF export for the
-    /// sites.** What ships, extracted 2026-07-26.
+    /// sites.** San Francisco alone, extracted 2026-07-26. What shipped between #91 and #129, and
+    /// what a San-Francisco-only city file still narrows to (R37 §3) — **not what ships**, which is
+    /// `cityWithSanJose` below.
     ///
     /// The *tree* row set is the city's: 133,577 records, exactly what its public map draws. The
     /// seven columns its layer does not publish are carried across from the DataSF export for the
@@ -180,6 +219,9 @@ struct SeedCorpus: Sendable {
             vacantSitesWithNoNeighborhood: 0,
             treesOfUnknownSpecies: 0,
             datedVacantSites: 9_237,
+            // 37,962 of the 145,837 `sf` rows, counted off the shipped fused file's San
+            // Francisco half (E175's own figure, re-counted rather than copied).
+            datedTrees: 37_962,
             sunsetVacantSites: 1_436,
             sunsetTreesWithSpecies: 9_504,
             sunsetTreesLeftJoined: 9_512,
@@ -253,6 +295,9 @@ struct SeedCorpus: Sendable {
             vacantSitesWithNoNeighborhood: 11_787,
             treesOfUnknownSpecies: 705,
             datedVacantSites: 9_237,
+            // 38,184 = 37,962 (`sf`) + 222 (`us-ca-sj`), which are E175's and E176's own per-city
+            // figures. NOT E206's 38,185; see this field's doc comment for the slip.
+            datedTrees: 38_184,
             sunsetVacantSites: 1_436,
             sunsetTreesWithSpecies: 9_504,
             sunsetTreesLeftJoined: 9_512,
@@ -295,6 +340,8 @@ struct SeedCorpus: Sendable {
             vacantSitesWithNoNeighborhood: 0,
             treesOfUnknownSpecies: 0,
             datedVacantSites: 9_294,
+            // Never measured: this repo ships no DataSF-built seed to count. See the field.
+            datedTrees: nil,
             sunsetVacantSites: 1_474,
             sunsetTreesWithSpecies: 11_026,
             sunsetTreesLeftJoined: 11_078,

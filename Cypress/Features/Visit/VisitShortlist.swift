@@ -197,7 +197,7 @@ enum VisitPhenologyVocabulary {
     ///
     /// - **No species record → nothing, still.** `VisitPhenologyChips` and `Chip.phenology(_:for:)`
     ///   are built over a non-optional `Species`; whether this last gate should also fall is
-    ///   proposed, not done, in the pending ruling.
+    ///   proposed, not done, in RULINGS R35 (*Left standing, proposed for a follow-up decision*).
     /// - **The curated gate is gone.** It offered the row "for the curated 40 and nobody else",
     ///   and it is what left the owner of #151 in front of a flowering Cassia leptophylla —
     ///   mapped, sourced habit, `curated = 0` like 529 of the seed's 569 species — with no way to

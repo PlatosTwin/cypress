@@ -16,7 +16,7 @@ public struct CityManifest: Equatable, Sendable {
     public static let knownFormat = 1
 
     public let format: Int
-    /// Cities in manifest order — the publisher's order is the display order (pending ruling §2).
+    /// Cities in manifest order — the publisher's order is the display order (RULINGS R43 §2).
     public let cities: [City]
 
     /// One published city file, as the manifest describes it.

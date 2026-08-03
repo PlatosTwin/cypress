@@ -1,10 +1,9 @@
 import Foundation
 
-/// Which of San Francisco's street-tree inventories the shipped seed was built from, and **when it
-/// was taken**.
+/// Which street-tree inventory a seed row came from, and **when it was taken**.
 ///
 /// ── Why this type exists ──────────────────────────────────────────────────────────────────
-/// The seed is a ~63 MB file inside the app bundle. Nothing in the app could previously say where
+/// The seed is a large file inside the app bundle. Nothing in the app could previously say where
 /// its contents came from or how old they were, and that is precisely what made "is our data
 /// stale?" unanswerable the last time it was asked: the file could have been a day old or a year
 /// old and no screen, no log line and no reader of the database could tell the difference. A
@@ -15,28 +14,38 @@ import Foundation
 /// `Tools/build_seed.py` writes from the extraction's own record rather than from a clock at build
 /// time. Rebuilding the same seed in 2030 still reports 2026.
 ///
-/// ── The two inventories ───────────────────────────────────────────────────────────────────
-/// San Francisco publishes its street trees twice and the two do not agree:
+/// ── The inventories, and their identifiers ────────────────────────────────────────────────
+/// **The vocabulary is `trees.inventory_source`, and it is a foreign key into the seed's own
+/// `inventories` table — read it there, never from this comment.** The shipped seed registers
+/// three, across two cities:
 ///
-/// - **`city`** — SF Public Works' own operational layer, the one its public map at
-///   <https://bsm.sfdpw.org/urbanforestry/> draws. 133,577 records, every one of them a tree.
-/// - **`datasf`** — the open-data export `tkzw-k3nq`. 195,309 records, nine more columns, and
-///   ~65,000 rows the city's own map does not show. What shipped before #91, still buildable with
-///   `Tools/build_seed.py --source datasf`.
+/// - **`sf_city`** — SF Public Works' own operational layer, the one its public map at
+///   <https://bsm.sfdpw.org/urbanforestry/> draws. Every record in it is a tree.
+/// - **`sf_datasf`** — San Francisco's open-data export `tkzw-k3nq`: more columns, and tens of
+///   thousands of rows the city's own map does not show. What shipped alone before #91.
+/// - **`sj_street_tree`** — the City of San José Street Tree inventory (#129, ERRATA E176).
 ///
-/// Both are the city's; neither is a superset of the other. `name` is the phrase the app puts on
-/// screen and it names the *inventory*, never "San Francisco" alone — the distinction between the
-/// two lists is the whole reason this type exists.
+/// The two San Francisco lists are both the city's, and neither is a superset of the other. `name`
+/// is the phrase the app puts on screen and it names the *inventory*, never a city alone — that
+/// distinction is the whole reason this type exists, and it got sharper rather than softer when a
+/// second city landed (RULINGS R28).
 ///
-/// **The shipped seed holds rows from both**, which is why `init(id:seedMeta:)` exists beside
-/// `init(seedMeta:)`. The city's layer decides which *trees* exist; it has no vacant-site category
-/// at all, so the 12,260 empty planting sites are the export's rows and say so. A row's own source
-/// is `trees.inventory_source`, and the seed-wide value is only the right answer for a seed built
-/// from one inventory.
+/// **These identifiers were renamed by the v14 seed pass**, from a bare `city` / `datasf` that
+/// could not survive a second city's `city`. A comment or a test naming the bare forms as the
+/// current column values is describing a file that no longer ships; `InventoryContractTests`
+/// documents the rename and `SeedCorpus.current(_:)` still accepts both so a pre-v14 seed resolves.
+///
+/// **The shipped seed holds rows from all three**, which is why `init(id:seedMeta:)` exists beside
+/// `init(seedMeta:)`. San Francisco's city layer decides which SF *trees* exist; it has no
+/// vacant-site category at all, so the empty planting sites among the SF rows are the export's and
+/// say so. A row's own source is `trees.inventory_source`, and the seed-wide value is only the
+/// right answer for a seed built from one inventory — which, under **D16**, is the case that is
+/// going away rather than the norm.
 public struct InventorySource: Hashable, Sendable {
 
-    /// The identifier `Tools/build_seed.py` was invoked with — `city` or `datasf`. Not shown to
-    /// anyone; it exists so a log, a test or a support answer can name the build exactly.
+    /// An `inventories.id` — `sf_city`, `sf_datasf`, `sj_street_tree` on the seed that ships, and
+    /// whatever the `inventories` table holds on one that does not. Not shown to anyone; it exists
+    /// so a log, a test or a support answer can name the build exactly.
     public let id: String
 
     /// The inventory's name, as the app says it: `SF Public Works street tree inventory`.
@@ -77,10 +86,10 @@ public struct InventorySource: Hashable, Sendable {
 
     /// **The inventory a single row came from**, by the identifier `trees.inventory_source` stores.
     ///
-    /// The seed is no longer one inventory's file. Its living trees are SF Public Works' operational
-    /// layer, and its 12,260 vacant planting sites are the DataSF export's, because the layer
-    /// publishes no vacant-site category and so has nothing to say about them. Two inventories in
-    /// one file means the seed-wide answer above is the wrong answer for some of its rows, and a
+    /// The seed is no longer one inventory's file. Its San Francisco trees are SF Public Works'
+    /// operational layer, the SF vacant planting sites among them are the DataSF export's because
+    /// that layer publishes no vacant-site category, and since #129 the rest is San José's. Several
+    /// inventories in one file means the seed-wide answer above is wrong for some of its rows, and a
     /// provenance line is a claim about **this record** — putting the city's name and the city's
     /// snapshot date over a row the city has never listed is exactly the kind of quiet falsehood
     /// this type was added to end.

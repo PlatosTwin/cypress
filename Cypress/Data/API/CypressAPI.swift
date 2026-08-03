@@ -386,12 +386,19 @@ public struct MapViewport: Hashable, Sendable {
     /// The planting years the map has been narrowed to, or `nil` for every year (#116, RULINGS R23).
     ///
     /// **A row with no recorded planting date is never in this range, and that is the whole design
-    /// problem this field carries.** Re-measured against the shipped two-city seed rather than
-    /// inherited: **198,625 rows, of which 38,185 (19.22 %) carry `planted_year` at all.** So a year
-    /// narrowing does not thin the map, it empties it: roughly four rows in five can never satisfy
-    /// any range a reader picks, not because they were planted outside it but because the city never
-    /// wrote the date down. (The figures previously stated here — 145,837 rows, 26.03 % — were the
-    /// San-Francisco-only seed's and had been stale since E176.)
+    /// problem this field carries.** Only about one row in five carries a `planted_year` at all, so
+    /// a year narrowing does not thin the map, it empties it: roughly four rows in five can never
+    /// satisfy any range a reader picks, not because they were planted outside it but because the
+    /// city never wrote the date down.
+    ///
+    /// **The count is not written here on purpose (#122).** It has now been wrong twice in this
+    /// comment — first as the San-Francisco-only 145,837 / 26.03 % after E176, then as E206's
+    /// 38,185, which is one more row than the seed holds. It is counted against whatever seed is
+    /// attached by `MapFilterTests.plantingDateCoverageIsWhatTheDecadeBucketsWereBuiltFor` and
+    /// pinned per corpus in `SeedCorpus.datedTrees`, where a re-ingest turns it red instead of
+    /// leaving a sentence lying here. Under **D16** it could not be a fixed number anyway: the
+    /// seed is a merged inventory and this share is a weighted average over whichever cities are
+    /// installed.
     ///
     /// Silently dropping those rows is the defect ERRATA E175 records, and a sentence on the map
     /// used to carry the rest. **RULINGS R41 removed it** (task #180): no message accompanies a
