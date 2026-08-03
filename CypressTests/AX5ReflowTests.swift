@@ -32,7 +32,10 @@ import UIKit
 struct AX5ReflowTests {
 
     /// The phone the sweep photographs: 393 pt.
-    static let phoneWidth: CGFloat = 393
+    ///
+    /// `nonisolated` because it is `ax5Size`'s default argument, and a default argument is evaluated
+    /// at the call site rather than inside the isolated body.
+    nonisolated static let phoneWidth: CGFloat = 393
     static let phoneHeight: CGFloat = 852
 
     /// Hosts `content` at AX5 in an off-screen window and returns what it says it needs when

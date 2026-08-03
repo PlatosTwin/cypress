@@ -225,7 +225,11 @@ final class MapModel {
     ///
     /// The pins do not fuse at that spacing either: C19 draws an 18 pt pin, so a full grid covers
     /// 15 % of the screen in pins, against the unbroken mat of green 1,300 of them drew.
-    static let markerCellPoints: Double = 44
+    ///
+    /// `nonisolated`: an immutable `Double` constant, not model state. It took `MapModel`'s
+    /// `@MainActor` only by living on the type, and it is read to *build* a `MapViewport` — including
+    /// from the off-actor query-plan suites — rather than to describe any one instance.
+    nonisolated static let markerCellPoints: Double = 44
 
     /// How many individual pins one screenful may draw before the grid takes over.
     ///
@@ -240,7 +244,10 @@ final class MapModel {
     /// It is the same `pinLimit` the API always took, doing the job its own comment claimed: "hard
     /// cap on individual pins returned in one response". What changed is that exceeding it now costs
     /// the densest pins rather than the northern half of the screen.
-    static let pinLimit = 400
+    ///
+    /// `nonisolated` for the same reason as `markerCellPoints`: an immutable `Int` constant that
+    /// belongs to the budget, not to an instance's state.
+    nonisolated static let pinLimit = 400
 
     // MARK: - Derived content
 

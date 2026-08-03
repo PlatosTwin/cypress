@@ -40,7 +40,9 @@ struct AlmanacLateFixTests {
 
     // MARK: - Fixtures
 
-    static let now = Date(timeIntervalSince1970: 1_784_505_600) // 2026-07-20
+    /// `nonisolated` so the `@Sendable () -> Date` the models take can read it: an immutable `Date`
+    /// carries no isolation of its own.
+    nonisolated static let now = Date(timeIntervalSince1970: 1_784_505_600) // 2026-07-20
 
     /// A fix inside Sunset/Parkside.
     static let fix = Coordinate(latitude: 37.7530, longitude: -122.4850)

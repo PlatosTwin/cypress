@@ -72,14 +72,16 @@ struct PinAdjustTests {
     /// The one place a floating-point slip would be invisible and wrong: fifteen nudges is exactly the
     /// radius, and every one of them has to be accepted.
     @Test("fifteen nudges reach the limit and the sixteenth is refused")
-    func theNudgeStopsAtTheBoundary() {
+    func theNudgeStopsAtTheBoundary() throws {
         var pin = Self.fix
         for step in 1...15 {
-            let moved = try? #require(
+            // `try`, not `try?`: under `try?` the macro binds its generic parameter to `Coordinate?`
+            // itself, so the requirement can never fail and a refused nudge fell through to
+            // `moved ?? pin` without ever printing the message below.
+            pin = try #require(
                 VisitPinAdjust.nudge(pin, towards: .north, from: Self.fix),
                 "nudge \(step) of 15 was refused inside the circle"
             )
-            pin = moved ?? pin
         }
 
         #expect(abs(pin.distance(to: Self.fix) - VisitPinAdjust.radiusM) < 0.05)

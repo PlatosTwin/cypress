@@ -46,7 +46,9 @@ struct CheckInExtrasTests {
             ),
         ]
 
-        let (observation, item) = try await CheckInOutboxWriter.enqueue(
+        // The returned item is deliberately dropped: this test reads the row back out of the store
+        // below, which is the only copy the sync path will ever see.
+        let (observation, _) = try await CheckInOutboxWriter.enqueue(
             draft,
             treeID: Self.treeID,
             attribution: .anonymous(deviceID: Self.deviceID),
