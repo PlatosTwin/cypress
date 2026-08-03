@@ -54,8 +54,18 @@ struct CityRecordPresentation {
 
     let record: CityRecord
 
-    init(_ record: CityRecord) {
+    /// The numbering this record was published under — `sf`, `us-ca-sj`, or nil for a seed built
+    /// before the column existed.
+    ///
+    /// Held because two of this file's rules are **readings of one publisher's vocabulary** and R24
+    /// requires those to decline outside the id space they were written from. `pruningNote` already
+    /// took it as an argument; `listedAsText` needs it for the same reason and could not ask for it,
+    /// so the value moves onto the type. See `listedAsText`.
+    let idSpace: String?
+
+    init(_ record: CityRecord, idSpace: String?) {
         self.record = record
+        self.idSpace = idSpace
     }
 
     // MARK: - The cards
@@ -71,7 +81,7 @@ struct CityRecordPresentation {
         if let listedAs = listedAsText {
             facts.append(Fact(id: "plantType", label: CityRecordCopy.plantTypeLabel, value: listedAs))
         }
-        if let status = record.legalStatus, !status.isEmpty {
+        if let status = record.legalStatus.flatMap(Self.statedValue) {
             // Verbatim, including `Section 806 (d)` and `Planning Code 138.1 required`. Those are
             // ordinance references, and glossing one would mean this file stating what a section of
             // San Francisco's Public Works Code says — which is authoring law, not reading a column.
@@ -102,13 +112,44 @@ struct CityRecordPresentation {
 
     // MARK: - `plantType` — the column that only speaks when it disagrees with the screen
 
-    /// `Landscaping`, or nothing at all.
+    /// `Landscaping`, or nothing at all — **and nothing at all outside San Francisco** (R24).
     ///
-    /// The column is 100% populated and says `Tree` on 194,988 rows, `tree` on 3 and `Landscaping`
-    /// on 318 (E143). A card reading `City lists this as — Tree`, on a tree page, reached from a tree
-    /// map, under a photograph of a tree, is a row of the panel spent saying nothing. The 318 rows are
-    /// the only place the city's inventory says a record on the tree map is **not** a tree, and that
-    /// is worth a card.
+    /// In DataSF's export the column says `Tree` on 194,988 rows, `tree` on 3 and `Landscaping` on
+    /// 318 (E143); in the shipped `--source city` seed it is `Tree` on 145,671 and `Landscaping` on
+    /// 166. A card reading `City lists this as — Tree`, on a tree page, reached from a tree map,
+    /// under a photograph of a tree, is a row of the panel spent saying nothing. The `Landscaping`
+    /// rows are the only place the city's inventory says a record on the tree map is **not** a tree,
+    /// and that is worth a card.
+    ///
+    /// ── Why it declines outside `sf`, and what it was doing before ────────────────────────────
+    /// Everything in the paragraph above is a reading of **DataSF's `PlantType`** — a column whose
+    /// vocabulary is `Tree` plus a rare disagreement, which is what makes "suppress the agreement,
+    /// draw the disagreement" the right rule. San Jose's `plant_type` is not that column. It is
+    /// `GROWSPACE` (`SanJoseStreetTreeAdapter.CITY_RECORD_COLUMNS`), a growing-space category, and
+    /// the rule read against it produced a card on **51,689 of 52,788 San Jose rows, 25,032 of them
+    /// reading `N/A`** — the app telling a reader, under a photograph of a tree, that the city's
+    /// record says this is not a tree. San Jose's record says no such thing; it says nothing at all,
+    /// in the string a form writes when nobody filled the field in.
+    ///
+    /// This is R24 exactly: *a derivation over a publisher's own vocabulary is qualified by the id
+    /// space it was written for, and must decline outside it.* The test R24 sets is not "does it
+    /// return something sensible for the new source" but "was this rule written from **this**
+    /// publisher's documentation" — and for `GROWSPACE` it was not. So it declines, in the same
+    /// shape and for the same reason as `pruningNote(idSpace:)` and
+    /// `LandContext.inferred(from:idSpace:)`.
+    ///
+    /// **It declines rather than being taught San Jose's vocabulary**, because teaching it would
+    /// mean this file stating what `Park Strip`, `Well/Pit` and `Tree Lawn` mean in San Jose's
+    /// asset system, on the strength of one adapter's column list rather than the city's published
+    /// metadata — the invention DECISIONS constraint 15 forbids. What a San Jose reader loses is a
+    /// card that was never about their tree; `Legal status` and `Cared for by` both still draw on
+    /// every one of their rows, so the section is not emptied and E126's "a surface with nothing on
+    /// it must say why" is not engaged. That is `pruningNote`'s argument, and it is checked rather
+    /// than assumed by `everySurfaceDrawsOnlyColumnsItsIdSpaceCanSpeakFor`.
+    ///
+    /// **Nil `idSpace` keeps the rule**, matching `pruningNote(idSpace:)` and
+    /// `LandContext.inferred(from:idSpace:)` exactly: a seed built before the column existed is San
+    /// Francisco's alone, and the reading is true of it.
     ///
     /// ── This is not `placementNote`'s "only the unusual case" mistake ─────────────────────────
     /// `placementNote` prints both of its values and argues that printing only the exceptional one
@@ -121,10 +162,69 @@ struct CityRecordPresentation {
     /// Case-folded, because the city typed `tree` three times and E143 rules that the builder does not
     /// correct the city's case — "readers compare case-folded". This is a reader.
     var listedAsText: String? {
+        guard idSpace == nil || idSpace == CityRecordCopy.sanFranciscoIDSpace else { return nil }
         guard let raw = record.plantType?.trimmingCharacters(in: .whitespaces), !raw.isEmpty else { return nil }
         guard raw.lowercased() != CityRecordCopy.plantTypeTree else { return nil }
         return raw
     }
+
+    // MARK: - The string a form writes when nobody filled the field in
+
+    /// The city's value, or `nil` when the "value" is the source's own way of writing *blank*.
+    ///
+    /// ── The problem this exists for ───────────────────────────────────────────────────────────
+    /// A column can be populated and still say nothing. San Jose's `GROWSPACE` reaches the seed as
+    /// both `plant_type` and `site_type`, and on **25,032 rows it is the literal `N/A`** with a
+    /// further **805 reading `Unassigned`**; San Francisco's `qSiteInfo` is a composite of two
+    /// halves joined by a colon, and on **4,608 rows both halves are empty and the string is the
+    /// bare separator `:`**. All three are `NOT NULL` as far as SQLite is concerned and all three
+    /// used to reach the screen, so a reader got `Site — N/A` and `Site — :` under a label
+    /// asserting the city had recorded a placement.
+    ///
+    /// ── Why they are refused rather than shown, and why that is not editing the record ─────────
+    /// This is the argument `plotSizeText` already makes about `Width 0ft` on 17,254 rows: a basin
+    /// zero feet wide is not a measurement of a basin, it is the shape "not measured" takes in a
+    /// form that wanted a number. `N/A` is that shape in a form that wanted a word. Drawing it is
+    /// not transparency about the city's record — it is Cypress asserting that the city recorded
+    /// something, when what the city recorded was the absence.
+    ///
+    /// Nothing here corrects a spelling, merges two values, ranks one above another or fills a
+    /// blank. It recognises **the absence of a value** and renders it the way this screen renders
+    /// every absence — by drawing nothing (E9, and `recognitionTip`/`watchForText`/`badge`). It is
+    /// deliberately *not* a judgment about what any real value means: `Park Strip` and
+    /// `Sidewalk: Curb side : Cutout` pass through untouched, because reading them would be the
+    /// invention DECISIONS constraint 15 forbids and is not needed to know that `N/A` is not a place.
+    ///
+    /// ── The two arms ──────────────────────────────────────────────────────────────────────────
+    /// 1. **No letter and no digit anywhere.** `:`, `-`, `--`, `?`. A string with nothing to read in
+    ///    it cannot be a fact about a tree whatever the column meant. This arm is what catches
+    ///    San Francisco's 4,608 bare separators, and it needs no vocabulary at all.
+    /// 2. **A source-neutral null placeholder**, case-folded. Of the list below, only `n/a` and
+    ///    `unassigned` occur in the shipped seed (25,032 and 805 rows, both `us-ca-sj`); the rest
+    ///    are the same idiom spelled the other common ways and are carried against the weekly
+    ///    refresh, not against a measurement. These are **not** city vocabulary — they are what a
+    ///    data-entry form emits for "no answer", in any city, which is exactly why matching them is
+    ///    not a reading of one publisher's dialect and does not need R24's id-space guard.
+    ///
+    /// Applied to every card in the section and to the `Site` card on 03/14 and 19, so a column that
+    /// starts emitting a placeholder tomorrow cannot reach a label. Re-derived over every row of
+    /// every id space by `everySurfaceDrawsOnlyColumnsItsIdSpaceCanSpeakFor`.
+    static func statedValue(_ raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return nil }
+        guard trimmed.contains(where: { $0.isLetter || $0.isNumber }) else { return nil }
+        guard !CityRecordCopy.noValueMarkers.contains(trimmed.lowercased()) else { return nil }
+        return trimmed
+    }
+
+    /// The `Site` card's value on screens 03/14 and 19, or nothing.
+    ///
+    /// One function for both screens because they draw the same column under the same label and had
+    /// drifted into two copies of the same comment; E209-B2 is what a second copy costs. The value
+    /// is still the city's string verbatim — an open vocabulary kept as free text (BUILD-PLAN §7),
+    /// so `Sidewalk: Curb side : Cutout` and `Park Strip` are both printed as the city wrote them.
+    /// The only thing removed is the string that is not a value at all; see `statedValue`.
+    static func siteTypeText(_ raw: String) -> String? { statedValue(raw) }
 
     // MARK: - `plotSize` — 588 values in three notations, and what happens to each
 
@@ -242,11 +342,12 @@ struct CityRecordPresentation {
     /// exactly this reason and the reader has to hold the same shape.
     ///
     /// `nil` for an empty string, so `""` cannot become a card labelled `Cared for by` with nothing
-    /// after it.
+    /// after it — and `nil` for the placeholders `statedValue` refuses, so `N/A` cannot become one
+    /// either. Neither column holds one in the shipped seed; the gate is here so that the section's
+    /// every card obeys one rule rather than four, which is the property the sweep asserts.
     static func agencyName(_ raw: String) -> String? {
-        let trimmed = raw.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return nil }
-        return CityRecordCopy.agencyGlossary[trimmed] ?? trimmed
+        guard let stated = statedValue(raw) else { return nil }
+        return CityRecordCopy.agencyGlossary[stated] ?? stated
     }
 
     // MARK: - Pruning, and the two statuses that are the nearest thing to it
@@ -408,6 +509,17 @@ enum CityRecordCopy {
 
     /// The city's word for a record that is a tree, case-folded. See `listedAsText`.
     static let plantTypeTree = "tree"
+
+    /// What a data-entry form writes when nobody answered, case-folded. See
+    /// `CityRecordPresentation.statedValue` for why matching these is not reading a city's dialect.
+    ///
+    /// Only `n/a` and `unassigned` occur in the shipped seed. The others are the same idiom spelled
+    /// the other common ways, kept against the weekly refresh rather than against a measurement —
+    /// which is why this set must never grow a value that could be somebody's real answer.
+    static let noValueMarkers: Set<String> = [
+        "n/a", "n.a.", "na", "none", "null", "nil", "unassigned", "unknown", "tbd",
+        "not applicable", "not available", "not recorded", "no data",
+    ]
 
     // ── `plotSize` notation ──────────────────────────────────────────────────────────────────
 

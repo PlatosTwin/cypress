@@ -141,7 +141,7 @@ struct CityRecordSectionTests {
 
     @Test("the city calling this a tree adds nothing, and is not drawn", arguments: ["Tree", "tree", "TREE"])
     func aRecordThatSaysTreeDrawsNoCard(raw: String) {
-        let presentation = CityRecordPresentation(CityRecord(plantType: raw))
+        let presentation = CityRecordPresentation(CityRecord(plantType: raw), idSpace: "sf")
         #expect(presentation.listedAsText == nil)
         #expect(presentation.facts.isEmpty)
     }
@@ -151,7 +151,8 @@ struct CityRecordSectionTests {
     @Test("the city calling this something other than a tree leads the section")
     func aRecordThatSaysLandscapingLeadsTheSection() {
         let presentation = CityRecordPresentation(
-            CityRecord(legalStatus: "DPW Maintained", caretaker: "Private", plantType: "Landscaping", plotSize: "3X3")
+            CityRecord(legalStatus: "DPW Maintained", caretaker: "Private", plantType: "Landscaping", plotSize: "3X3"),
+            idSpace: "sf"
         )
         #expect(presentation.listedAsText == "Landscaping")
         #expect(presentation.facts.first?.label == CityRecordCopy.plantTypeLabel)
@@ -215,7 +216,8 @@ struct CityRecordSectionTests {
     ])
     func aPermitNoteNeverReachesTheScreen(note: String) {
         let presentation = CityRecordPresentation(
-            CityRecord(legalStatus: "DPW Maintained", caretaker: "DPW", plantType: "Tree", permitNotes: note)
+            CityRecord(legalStatus: "DPW Maintained", caretaker: "DPW", plantType: "Tree", permitNotes: note),
+            idSpace: "sf"
         )
         let rendered = presentation.facts.map(\.value) + presentation.facts.map(\.label)
         #expect(rendered.contains(note) == false, "the permit note was drawn")
@@ -228,7 +230,7 @@ struct CityRecordSectionTests {
     func aRecordOfOnlyAPermitNoteDrawsNoSection() {
         let record = CityRecord(permitNotes: "Permit Number 771729")
         #expect(record.isEmpty == false, "the record is not empty; the section is")
-        #expect(CityRecordPresentation(record).isEmpty)
+        #expect(CityRecordPresentation(record, idSpace: "sf").isEmpty)
 
         var tree = Self.cityTree(record)
         tree.plantedYear = nil
@@ -325,7 +327,7 @@ struct CityRecordSectionTests {
         }
 
         let withSentence = statuses.filter {
-            CityRecordPresentation(CityRecord(legalStatus: $0)).maintenanceOptOutNote() != nil
+            CityRecordPresentation(CityRecord(legalStatus: $0), idSpace: "sf").maintenanceOptOutNote() != nil
         }
         // No `qLegalStatus` in the source means no statuses to filter, so the expected set is empty
         // and the *reason* is the absent column rather than a rule that stopped firing. The rule

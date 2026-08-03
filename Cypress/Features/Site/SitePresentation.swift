@@ -130,11 +130,17 @@ struct SitePresentation: Equatable {
         let tree = profile.tree
         var stats: [Stat] = []
 
-        // The DataSF `qSiteInfo` string verbatim — an open vocabulary kept as free text
-        // (BUILD-PLAN §7), so `Sidewalk: Curb side : Cutout` is printed as the city wrote it. This
-        // is the one fact on the screen that is *about* a site rather than about the absence of a
-        // tree, which is why it leads.
-        if let siteType = tree.siteType, !siteType.isEmpty {
+        // The publisher's own string verbatim — an open vocabulary kept as free text (BUILD-PLAN
+        // §7), so `Sidewalk: Curb side : Cutout` is printed as the city wrote it. This is the one
+        // fact on the screen that is *about* a site rather than about the absence of a tree, which
+        // is why it leads.
+        //
+        // Through the same `siteTypeText` screens 03 and 14 use, which is the point of it being a
+        // function rather than a condition written twice: this screen is not hypothetical for the
+        // city whose column holds the non-values — 5,393 of San Jose's 11,787 vacant planting sites
+        // in the shipped seed read `N/A`, and every one of them drew `Site — N/A` here, on a screen
+        // whose whole subject is a hole in the ground with nothing in it.
+        if let siteType = tree.siteType.flatMap(CityRecordPresentation.siteTypeText) {
             stats.append(Stat(id: "site", label: SiteCopy.siteLabel, value: siteType))
         }
 
