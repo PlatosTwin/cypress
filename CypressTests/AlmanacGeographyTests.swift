@@ -227,15 +227,23 @@ struct AlmanacGeographyTests {
         // D16(b): an honest empty-ish state says what *would* change it, or it reads as a dead end.
         #expect(note.contains("join the record"))
 
-        // American spellings, at the owner's instruction. Checked over every string this screen can
-        // put in front of a reader in this state, not only the ones written today.
+        // American spellings, at the owner's instruction (#140). E182 checked four words by hand
+        // here; the list now lives in `BritishSpelling.forms`, so this screen and the app-wide
+        // literal sweep in `BritishSpellingGuardTests` cannot disagree about what British means.
+        //
+        // This check is kept rather than folded into that sweep because it reaches somewhere the
+        // sweep cannot: these three strings are *composed at runtime* — a neighborhood name, an
+        // area note built from a radius, a prompt title — and a scan of source literals is blind
+        // to a British spelling that only exists once the pieces are joined.
         for string in [presentation.neighborhoodName, note, AlmanacCopy.locationPromptTitle].compactMap({ $0 }) {
-            for british in ["neighbourhood", "colour", "centre", "metres"] {
-                #expect(
-                    string.lowercased().contains(british) == false,
-                    "\(string) carries the British spelling '\(british)'"
-                )
-            }
+            let offenses = BritishSpelling.offenses(in: string)
+            #expect(
+                offenses.isEmpty,
+                """
+                screen 12 rendered “\(string)”, which carries \
+                \(offenses.map { "“\($0.matched)” (should be “\($0.form.american)”)" }.joined(separator: ", "))
+                """
+            )
         }
     }
 

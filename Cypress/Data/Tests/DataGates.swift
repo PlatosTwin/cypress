@@ -1310,13 +1310,18 @@ public enum DataGates {
         let treeColumnNames = try await store.queue.read { connection in
             Set(try connection.columnNames(ofTable: "trees", in: SeedDatabase.schemaName))
         }
-        let normalizedColumns = (meta["case_normalised_columns"] ?? "")
+        // The key is British because the *published seed file* spells it that way: it is written by
+        // `Tools/build_seed.py` and is already shipped, so it is not this repo's to correct (#140,
+        // and the allowlist in `BritishSpellingGuardTests`). Named once and interpolated wherever it
+        // is spoken about, so there is one British spelling here rather than one per sentence.
+        let normalizedColumnsKey = "case_normalised_columns"
+        let normalizedColumns = (meta[normalizedColumnsKey] ?? "")
             .split(separator: ",")
             .map { String($0).trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
         expect(
             !normalizedColumns.isEmpty,
-            "seed contract: seed_meta.case_normalised_columns is absent, so #95's assertion would "
+            "seed contract: seed_meta.\(normalizedColumnsKey) is absent, so #95's assertion would "
                 + "silently check nothing",
             into: &failures
         )
