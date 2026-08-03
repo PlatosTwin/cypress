@@ -388,6 +388,17 @@ struct SpeciesCorrectionTests {
         let unnamed = UUID()
         let speciesID = UUID()
         let stamp = SQLiteTimestamp.string(from: Self.moment)
+
+        // This installation's own identity is on the record, and it is here so that "the migration
+        // declines to guess an author" is a claim with something to refuse. Without this row the
+        // obvious wrong migration — copy `app_state.device_uuid` onto every backfilled assertion,
+        // which is exactly what AppSchema v12 does for photographs — reads NULL and passes the
+        // assertion below by accident. Watched failing with that migration in place; watched *not*
+        // failing before this row was added, which is why the row is here.
+        try connection.execute(
+            "INSERT INTO app_state (key, value) VALUES ('device_uuid','\(Self.deviceID.uuidString)')"
+        )
+
         for (id, species) in [(named, "'\(speciesID.uuidString)'"), (unnamed, "NULL")] {
             try connection.execute("""
                 INSERT INTO community_trees
