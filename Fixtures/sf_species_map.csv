@@ -219,6 +219,7 @@ Pyrus spp :: Pear Tree,8c1290d5-0584-50e0-85c3-21af00648063,0.75
 Prunus caroliniana :: Carolina Cherry Laurel,9745b980-4fcd-57d4-b908-d30433639476,1.00
 Acer macrophyllum :: Big Leaf Maple,8378be99-d842-55f7-9a60-61e0838f52a8,1.00
 Acer palmatum 'Bloodgood' :: Bloodgood Japanese Maple,f5528dc7-9767-5538-bc21-d0609badecb4,0.90
+Lophostemon confertus ::,ea4f4595-b255-56a6-bfe9-b57d41267457,1.00
 Pyracantha 'Santa Cruz' :: Firethorn Tree 'Santa Cruz',3dfaa762-f644-52e6-9f49-b88356ff5812,0.60
 Ficus rubiginosa :: Port Jackson Fig,8ceb330e-4fa1-5990-afca-50147d93c453,1.00
 Magnolia spp :: Magnolia,355164a6-1a56-5fd1-9d61-96d10eef1273,0.75
@@ -232,9 +233,9 @@ Archontophoenix cunninghamiana :: King Palm,9f9a2234-bf08-5d13-9697-5dc1baf35c33
 Cotinus coggygria 'Royal Purple' :: Smoke tree,1c047997-2fc6-544f-b1e9-f1c77c90cfa1,0.90
 Liquidambar orientalis :: Oriental Sweet Gum,11216a3e-7569-5304-a7d4-48878794b427,1.00
 Picea Spp :: Spruce Spp,2c8ffefb-1433-5eae-9363-337dff81abae,0.75
-:: Zelkova 'Village Green',e3784890-3792-571b-be52-f9056be92a9d,0.30
 Prunus armeniaca :: Apricot,d7d1c47f-e27f-501e-aad4-dc61f1e8db5b,1.00
 Pseudotsuga menziesii :: Douglas Fir,3ee32509-22e6-55dc-9f06-a4745247108c,1.00
+Zelkova 'Village Green' ::,f4b6157d-3445-5420-abcf-9525c64e47a3,0.60
 Acacia cognata :: River Wattle,28c38cbf-1353-5680-b7c0-3ef7a469f65c,1.00
 Eucalyptus lehmanni :: Bushy Yate,16ea9ce5-8034-53c7-8ba7-30fe618d3fe1,1.00
 Eucalyptus viminalis :: Manna Gum,9cb594ee-1d27-5ec3-9c62-5ddc7570403a,1.00
@@ -249,7 +250,7 @@ Rhus lancea :: African Sumac,236b3bb6-a0d1-56ed-b29b-2b0d09fcf0e3,1.00
 Fremontodendron spp :: Flannel Bush Tree,bfb0130c-3e7c-50ad-b161-38d7669ae995,0.75
 Alnus cordata :: Italian Alder,7e949e47-d042-5ffb-8134-fcbeb210a7a2,1.00
 Dicksonia antarctica :: Soft Tree Fern,8d3bfaa6-e79e-5767-8a3e-f84dce9b25b0,1.00
-Lophostemon confertus ::,ea4f4595-b255-56a6-bfe9-b57d41267457,1.00
+Platanus hispanica 'columbia' ::,2beb3a96-234f-58e5-8ce0-5088dd44579f,0.90
 Cussonia spicata :: Cabbage tree,a8596ff0-3fb1-5109-9bf0-49c6dfa642fd,1.00
 Eucalyptus pulverulenta :: Silver Mountain Gum Tree,c288ed98-7ad9-5978-b5e2-a18eff9452b2,1.00
 Photinia fraseri :: Photinia Tree,9bcffe56-c7bc-5d0c-a5f3-e95a30dd2e8d,1.00
@@ -306,11 +307,9 @@ Albizia distachya :: Plume Albizia Tree,b2567684-a08b-5732-84d4-4ad22d9bbe58,1.0
 Corymbia calophylla ::,ffcc0970-65b9-5c23-80c1-9653c71dbe11,1.00
 Cryptomeria japonica :: Japanese Cryptomeria,6e2f27b0-c4d6-5471-a15d-a76a06905fbd,1.00
 Dypsis cabadae :: Cabada palm,e9e9468d-10e3-5676-96db-fb49a75f4fd1,1.00
-Platanus hispanica 'columbia' ::,2beb3a96-234f-58e5-8ce0-5088dd44579f,0.90
 Quercus engelmannii :: Engelmann oak,392bfe3d-5511-5fdf-9906-25e5e82f5ff3,1.00
 Salix babylonica :: Weeping Willow,1fd5fc2f-f539-5c9a-a02c-19b6c0459199,1.00
 Zelkova serrata 'Musashino’ ::,bdbfa1c9-90a4-5233-bcf3-3cb5ac6e9676,0.90
-:: lophostemon confertus,f9b3e1c4-00cb-5697-8cfc-1932dd75942f,0.30
 Cornus florida :: Eastern Dogwood,68cf86fe-1217-550b-b651-04a870463229,1.00
 "Eucalyptus rudis :: Swamp Gum, Flooded Gum",f12b911a-5831-571a-8e08-eb55a96a0250,1.00
 Fraxinus ornus :: Flowering Ash,4a5ed675-6077-50af-ae10-d79f1b01a3fc,1.00
@@ -319,6 +318,7 @@ Psidium guajava :: Guava tree,2e98fad1-db46-5d26-b145-efcce32ff95c,1.00
 Washingtonia filifera :: California Fan Palm,01c6d686-ec44-51cb-b8ed-3bb04bb7e298,1.00
 Zelkova serrata 'Musashino' :: Musashino Sawleaf Zelkova,b0dbb2f0-1f3e-5560-90a1-2ea5f5b3557a,0.90
 Zelkova serrata ‘JFS-KW1’ ::,7eb28c5c-6cdc-55e8-8389-ad2b768322d6,0.90
+Agonis flexuosa ::,351ad4ed-24ad-5245-bd9b-3f3a2d100d1a,1.00
 Aloe barberae :: Tree aloe,3bafa63f-ef39-582f-92fe-2bca0b28abda,1.00
 Gleditsia triacanthos 'Shademaster' :: Honey Locust 'Shademaster',a632d4b9-6b76-50fc-bdcf-584509cc5420,0.90
 "Juglans regia :: Walnut, English",9ed1fe2e-6690-5c55-a100-a8e3029a62c3,1.00
@@ -328,7 +328,6 @@ Lyonothamnus floribundus ssp. Aspleniifolius ::,a13328f6-ff63-5f09-ac62-f7503b00
 Metrosideros excelsa 'Aurea' ::,553a8723-d753-58b4-aa43-a56840f97979,0.90
 Quercus robur :: English Oak,5c33d272-9bd0-51ca-9544-d019635ddac2,1.00
 Acer negundo :: Box Elder,d348f8b4-f4f2-5ae6-945d-0b29372307f9,1.00
-Agonis flexuosa ::,351ad4ed-24ad-5245-bd9b-3f3a2d100d1a,1.00
 Cassia leptophylla ::,5015a315-2e5d-5499-a225-36f802fdf310,1.00
 Chionanthus retusus ::,235bfca9-b40a-5491-b5dd-f25ece4649f0,1.00
 Citrus aurantifolia 'Bearss' :: Seedless Lime,f4d58f40-3f79-5dd7-9579-002bf808c642,0.90
@@ -339,7 +338,6 @@ Koelreuteria paniculata ::,74a57c4a-235f-59c0-b636-6f4178b18506,1.00
 Leptospermum scoparium 'Ruby Glow' :: New Zealand Ruby Glow Tea Tree,5b50e05a-ae23-5523-9186-769fede897fe,0.90
 Quercus lobata :: Valley Oak,15f2a9a3-39c5-5d6a-a591-d33fbae72ec7,1.00
 Tilia americana :: Basswood Linden,d3fc96d6-1c66-53ec-b3ff-15b9ecf1abd3,1.00
-:: platanus hispanica 'columbia',a54550d1-5f0e-5596-96cc-3fa68f0d31f5,0.30
 Ailanthus altissima :: Tree Of Heaven,35faf581-4855-569b-8698-d28ff7df11f8,1.00
 Arctostaphylos manzanita 'Dr Hurd' :: Dr. Hurd Manzanita,79165103-d071-5e1e-b242-8151565465bf,0.90
 Celtis australis :: European Hackberry,419930ce-7120-53ec-bcb7-e4485fdd812a,1.00
@@ -401,11 +399,11 @@ Sapium sebiferum :: Chinese Tallow,e09c7f6a-b0aa-5ef2-95b7-137a08ba569f,1.00
 Sophora japonica :: Japanese Pagoda,a256c3e2-fbf5-5212-957e-fc39fe9d4aa3,1.00
 Ulmus 'Frontier' :: Frontier Elm,41a04727-984c-5c4d-9516-e88a42a29111,0.60
 Ulmus propinqua 'Emerald Sunshine' :: Emerald Sunshine Elm,cb0dae10-c6d1-5dfc-982d-3ab87978d19c,0.90
-:: Ceanothus 'Ray Hartman',043ee387-4711-56b8-909b-81dfe65819f2,0.30
 Acacia dealbata :: Silver Wattle,272a18d2-5ce7-5493-813b-01f299be9383,1.00
 Butia capitata :: Pindo Palm,979e5946-214d-5ebe-8da3-20497a87b921,1.00
 Callistemon 'Jeffers' :: Purple bottlebrush,5eb12fd0-eb3a-5cb8-be15-46401931ddfd,0.60
 Caryota maxima 'Himalaya' :: Himalayan Fishtail Palm,eb1320f0-459d-502c-8118-afe304fff77b,0.90
+Ceanothus 'Ray Hartman' ::,8dd11200-8bd6-580d-8542-e1de1a6c8ea2,0.60
 Chamaecyparis obtusa :: Hinoki cypress,b2ffee94-6989-57bd-b2c3-cd2fb68b7a5f,1.00
 Chionanthus retusa :: Chinese Fringe Tree,5212771f-8da8-5949-8b9d-4b5bc6ff0ccb,1.00
 Cupressus spp :: Cypress species,04e62989-14b0-5d47-a116-703c2e48f290,0.75
@@ -475,21 +473,19 @@ Tilia spp :: Linden,93d50c18-c904-5682-819c-492b2ac48da9,0.75
 Ulmus davidiana var. japonica 'Emerald Sunshine' ::,ecd9f09b-f331-5cf5-a375-e01c04cd11db,0.90
 Ulmus parvifolia 'Drake' :: Drake's Chine,5195c33e-e753-58f8-8299-32fe90ac683a,0.90
 Ziziphus jujuba :: Jujube,43168510-fbe6-57ad-abd2-f1b0303f1796,1.00
-:: Arbutus 'Marina',9d9d5807-d869-5468-a299-5166f579de5a,0.30
-:: Magnolia 'Samuel Sommer',ac9af754-f1e4-5891-80d2-7fc0da0221a6,0.30
-:: Platanus 'Colombia',67d5c882-c663-5dd9-9bba-acf1b23d610d,0.30
-:: Ulmus 'Frontier',14cd0f01-0d34-5e4b-bf0d-990ba156eed5,0.30
 Acacia iteaphylla :: Willow wattle,cd32521d-0df6-5172-ab20-65935d10505e,1.00
 Aesculus californica ::,d0b6328d-68fc-518e-80f6-991c1f64d237,1.00
 Afrocarpus gracilor ::,f41c3cdf-907a-5999-8aa9-64e67345e326,1.00
 Agonis flexuosa 'Burgundy' ::,b41f3204-5e35-57ba-bf02-e793d171d1cb,0.90
 Angohpora spp. :: Angophora species,b4a149be-0c7f-582c-acea-b4c25dc227f5,0.75
+Arbutus 'Marina' ::,4bc73093-9727-559f-aed1-ad5731d8fb19,0.60
 Brahea armata :: Blue hesper palm,43d57894-4a68-5c09-aa78-a26be31fb387,1.00
 Carpinus betulus ' Fastigiata' ::,59739597-dae7-546b-8227-980c3a781f0d,0.90
 Cedrus atlantica Glauca :: Blue Atlas Cedar,880803bb-c1cf-53b3-84ec-f32ee179f0f1,0.90
 Citrus × meyeri 'Improved' :: Improved Meyer Lemon,3d8583e3-200e-5101-bcbc-de3d57506b23,0.60
 "Corylus colurna :: Hazel, Turkish",1ac4d91a-0d17-5b7d-87f9-243c8ede71c7,1.00
 Corynocarpus laevigata :: New Zealand Laurel,fffc6085-1546-5094-a579-057c46e45d72,1.00
+Eriobotrya deflexa ::,a99e44cc-fdd9-5147-9ef1-e6566de12c8e,1.00
 Erythrina caffra :: Coral tree,28d38d4f-5f2f-5783-98c8-a1755cd404d9,1.00
 Eucalyptus melliodora :: Yellow Box,58221f1c-b57c-59cf-bf0f-e3ab433e1f1f,1.00
 Fraxinus uhdei 'Tomlinson' :: Tomlinson Ash,de213889-9dee-51cd-a1f9-20647d2cb7a2,0.90
@@ -501,6 +497,7 @@ Griselinia lucida :: Griselinia,624cb3f2-62a1-5773-b314-1bca318f0001,1.00
 Juglans 'Paradox' :: Paradox Walnut Tree 'Paradox',d0cd5491-e0a5-578e-84af-dd4e8b5310ef,0.60
 Lagerstroemia spp :: Crape myrtle species,06fa556a-7cc3-5dc1-bbd9-729d247619fe,0.75
 Lagunaria patersonia ::,7dd7a360-864f-5750-a234-3903174a6d6b,1.00
+Magnolia 'Samuel Sommer' ::,4de870e2-90ab-58de-a599-6b00db3b89d5,0.60
 "Magnolia grandiflora ""Little Gem"" ::",49b2bcc8-5f3e-55f5-ab9f-3b4d10816f8a,0.90
 Magnolia grandiflora 'D.D. Blanchard' ::,e33aaf91-9c3a-5737-bc3a-f147d7ef7ac6,0.90
 "Magnolia grandiflora 'Samuel Sommer"" ::",59620c1b-ac39-5a2f-8597-9f7d5c441708,0.90
@@ -510,6 +507,7 @@ Meryta sinclairii :: Puka or puke tree,4e47c4bf-e587-5ed3-a19d-927a3805c35d,1.00
 Metrosideros spp ::,3d5bfb22-d5c4-57c6-929d-f8d931a91c72,0.75
 Paulownia tomentosa :: Empress Tree,3141c682-e63c-5ca8-8d78-fbf173daa91e,1.00
 Pinus contorta :: Shore Pine,d85cc8b7-4973-534b-bfb8-c5d884e50501,1.00
+Platanus 'Colombia' ::,ba6c618d-bd54-5843-b183-14fee9f47388,0.60
 Podocarpus gracilior ::,93a86c4b-c3c2-56f6-9eef-a46d372c5ea5,1.00
 Prunus campanulata :: Taiwan Flowering Cherry,92fcd1a4-9546-5fb2-94c3-387a23198dbe,1.00
 Prunus serrulata 'Mt. Fuji' :: Mt. Fuji Cherry Tree,6b13b587-07d8-5fe4-8b99-9eabad87c27e,0.90
@@ -519,14 +517,13 @@ Radermachera sinica :: China Doll Tree,a1f84dbd-e722-5d0e-a3d6-55a3180f012c,1.00
 Rhus typhina :: Staghorn sumac,a961753a-b6cf-5856-b73b-b52db885c509,1.00
 Styrax japonicus :: Japanese Snowdrop Tree,b64d2848-20e9-57d6-b947-24d4dafb49b1,1.00
 Tecoma stans :: Trumpet bush,9cee272f-4780-50bb-816f-b552c07f86f9,1.00
+Ulmus 'Frontier' ::,41a04727-984c-5c4d-9516-e88a42a29111,0.60
 Xylosma congestum :: Brush holly,8cbd8f4a-f5fe-56af-9abe-d69eb3016f43,1.00
 :: 9662,d6585f1d-5eb4-567c-8729-a58819dfba98,0.30
 :: Chitalpatashkentensis,4252ec18-4112-55e3-acf9-f779dbc1dfd9,0.30
 :: Magnolia Little Gem,b4e5ee74-46a9-5500-9475-9e19bc432594,0.30
 :: Podocarpus Gracilor,877e5469-c589-5693-bdf3-2430284f8ffb,0.30
 :: Tree,,0.00
-:: agonis flexuosa,4925d6ec-4900-5257-9f93-7e589d988161,0.30
-:: eriobotrya deflexa,37e97555-e5d2-598a-a018-22c36161ee74,0.30
 Acer campestre :: Hedge Maple,4113058e-62f3-56fe-a34c-d728254892b3,1.00
 Acer negundo ::,d348f8b4-f4f2-5ae6-945d-0b29372307f9,1.00
 Acer paxii :: Evergreen Maple,b59feb56-2e71-56fe-af96-ba7143547024,1.00
@@ -562,7 +559,6 @@ Crataegus phaenopyrum ::,abeacb77-f5ea-598b-b815-af18f3353a04,1.00
 Crateagus x lavallei :: Carriere Hawthorn,4717bdcf-5bb3-561b-964f-421bf646db77,0.75
 Dypsis decaryi :: Triangle palm,d46e3418-d7e4-5689-a1ed-b118748acbfb,1.00
 Elaeagnus angustifolia :: Russian Olive,d0d24967-1f33-5aed-82d9-f259bbb464c4,1.00
-Eriobotrya deflexa ::,a99e44cc-fdd9-5147-9ef1-e6566de12c8e,1.00
 Eucalyptus conferruminata ::,ac17e1da-120e-512d-b43b-5786b99bdbd2,1.00
 Eucalyptus torquata :: Coral Gum,ccf93054-bfde-58cb-ae07-7f9d033cfd07,1.00
 Euphorbia ingens :: Candelabra tree,77274e7a-d0f2-5cef-830e-cfe596d528ad,1.00

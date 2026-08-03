@@ -154,7 +154,10 @@ struct SeedCorpus: Sendable {
             source: "city",
             absentColumns: absentColumns,
             trees: 145_837,
-            species: 577,
+            // 577 before task #103, which merged seven species the ingest had minted twice — once
+            // properly and once as a stub named `:: <the city's own string>`. Measured, not
+            // predicted: `--source city --sj-extent none` reports 570.
+            species: 570,
             vacantSites: 12_413,
             cityColumnRows: [
                 "legal_status": 142_282,
@@ -180,7 +183,10 @@ struct SeedCorpus: Sendable {
             sunsetVacantSites: 1_436,
             sunsetTreesWithSpecies: 9_504,
             sunsetTreesLeftJoined: 9_512,
-            sunsetSpeciesInMix: 201,
+            // 201 before task #103. The species that left is `:: lophostemon confertus`, the stub
+            // the ingest minted beside `Lophostemon confertus`, which was already in this mix — so
+            // the mix lost a name for a plant it still carries, not a plant.
+            sunsetSpeciesInMix: 200,
             densestScreenfulFloor: 4_000
         )
     }
@@ -210,7 +216,9 @@ struct SeedCorpus: Sendable {
             source: "sf_city",
             absentColumns: absentColumns,
             trees: 198_625,
-            species: 738,
+            // 738 before task #103. The same seven merges as the SF-only variant above; San Jose
+            // contributes none, because its adapter never packed a name into DataSF's convention.
+            species: 731,
             vacantSites: 24_200,
             cityColumnRows: [
                 "legal_status": 192_912,
@@ -218,7 +226,12 @@ struct SeedCorpus: Sendable {
                 "care_assistant": 10_595,
                 "plant_type": 197_526,
                 "plot_size": 166_746,
-                "permit_notes": 78_095
+                // 78_095 until task #103 rebuilt the seed, and NOT a consequence of that task: the
+                // shipped file predates a refresh of `Fixtures/raw/street_tree_list.csv`, in which
+                // SF TreeID 234040 now publishes an empty `PermitNotes`. The SF-only variant above
+                // reads 27_046 before and after, which is what localises the drift to the shipped
+                // artifact rather than to the ingest. See docs/errata-pending/seed-rebuild-drift.md.
+                "permit_notes": 78_094
             ],
             distinctPlotSizes: 411,
             // UNCHANGED from `city`, and that is a finding. San Jose's SPACEWIDTH is a bare
@@ -243,7 +256,10 @@ struct SeedCorpus: Sendable {
             sunsetVacantSites: 1_436,
             sunsetTreesWithSpecies: 9_504,
             sunsetTreesLeftJoined: 9_512,
-            sunsetSpeciesInMix: 201,
+            // 201 before task #103. The species that left is `:: lophostemon confertus`, the stub
+            // the ingest minted beside `Lophostemon confertus`, which was already in this mix — so
+            // the mix lost a name for a plant it still carries, not a plant.
+            sunsetSpeciesInMix: 200,
             densestScreenfulFloor: 4_000
         )
     }
