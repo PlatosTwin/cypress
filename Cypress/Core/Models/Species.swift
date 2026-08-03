@@ -337,7 +337,7 @@ extension Species {
     /// ingest's raw source string instead of a name.
     ///
     /// The ruling that decides what the app does about it is
-    /// `docs/rulings-pending/unread-species-name.md`.
+    /// `RULINGS R54`.
     ///
     /// **The same parse can produce a stub without the marker** — a source string carrying no `::`
     /// at all is also classified `stub`, and its scientific name is that string verbatim, which

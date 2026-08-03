@@ -160,7 +160,7 @@ public struct SpeciesQueries {
     /// **Read from `Core` rather than restated here.** The same marker now decides what two screens
     /// draw on the trees this filter cannot reach — a tree's own species is not omittable from its
     /// own page — so the query and the screens have to be filtering on one string. See
-    /// `Species.unreadScientificNameMarker` and `docs/rulings-pending/unread-species-name.md`.
+    /// `Species.unreadScientificNameMarker` and `RULINGS R54`.
     static let stubNameMarker = Species.unreadScientificNameMarker
 
     /// The three-band rank of `search(query:limit:connection:)`, over one name column.

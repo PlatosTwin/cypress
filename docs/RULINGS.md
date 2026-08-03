@@ -3990,3 +3990,378 @@ The two numbers are not in conflict: they are two different polygons, and E214 s
 used. It is recorded here only so that the next reader who queries the seed and gets 90 does not
 conclude that E214 is wrong. **Neither number is reachable by the app at runtime**, which is §2.1's
 whole point.
+
+### R54 — A name the ingest could not read is not drawn as a name, and one sentence says whose word it is (task #185, delegated)
+
+*Written under the delegated design authority for #185. `RULINGS R47` named this ticket as what it
+deliberately left open, so this is the half of #103 that a filter could not reach.*
+
+*Unnumbered. Written from a branch; the orchestrator splices it under the real next number at merge
+and rewrites the citations in `Cypress/Core/Models/Species.swift`,
+`Cypress/Data/Store/SpeciesQueries.swift`, `Cypress/Features/Species/SpeciesPresentation.swift`,
+`Cypress/Features/Species/SpeciesView.swift`,
+`Cypress/Features/TreeProfile/TreeProfilePresentation.swift`,
+`Cypress/Features/TreeProfile/TreeProfileView.swift`,
+`Cypress/Features/Memorial/MemorialPresentation.swift`, `Cypress/Features/Map/MapModel.swift`,
+`Cypress/Features/Visit/VisitShortlist.swift` and `CypressTests/UnreadSpeciesNameTests.swift`.*
+
+---
+
+**What was delegated.** R47 removed the five unreadable species from the suggestion list and the
+add-tree picker, on E126's principle that a row a reader cannot interpret is worse than a row that
+is not there, and it said in its own closing section what that fix could not do: *"you cannot omit a
+tree's own species from its own page."* So seven trees went on drawing `:: Magnolia` where their
+species name is drawn. The fix is copy, and the delegation is where the copy goes and what it says.
+
+---
+
+#### The measurement, taken from the shipped seed and not from the ticket
+
+Five species rows carry the marker, standing under seven trees out of 198,625. Every count below was
+re-read from `Cypress/Resources/cypress-seed.sqlite` and is asserted in
+`UnreadSpeciesNameTests.theCatalogueStillCarriesUnreadNames`, so a rebuild that moves them fails a
+test rather than leaving this copy addressed to nobody.
+
+| `scientific_name` | `common_name` | trees | where they stand |
+| --- | --- | ---: | --- |
+| `:: Magnolia` | `Magnolia` | 3 | 3555 20th St · 365 Bartlett St · 3310 25th St |
+| `:: 9662` | `9662` | 1 | 110 GOUGH ST |
+| `:: Chitalpatashkentensis` | `Chitalpatashkentensis` | 1 | 200 OCTAVIA ST |
+| `:: Magnolia Little Gem` | `Magnolia Little Gem` | 1 | 446 Bartlett St |
+| `:: Podocarpus Gracilor` | `Podocarpus Gracilor` | 1 | 36 REY ST |
+
+All seven are `sf`, all `alive`, all `city_import`. `seed_meta.stub_rows` is `7`; every one has
+`species_map.confidence = 0.3`.
+
+#### The fact the ticket does not state, and it is the one the answer turns on
+
+**`common_name` on these rows is sound. `scientific_name` is not.**
+
+`Tools/inventory_adapters.py::parse_qspecies` reads DataSF's one-column convention
+`Scientific name :: Common name`. When the scientific half is empty it returns
+`("stub", s, common, 0.3)` — where `s` is **the whole raw string, separator and all**, and `common`
+is the common half, unaltered. So on all five rows:
+
+- `scientific_name` = `:: Magnolia` — the parser's leftovers, stored in a column that says "name".
+- `common_name` = `Magnolia` — **what the city actually wrote**, verbatim.
+
+That asymmetry is why this is not "hide the species". There is exactly one field to withhold and one
+field to quote, and the sentence is what turns the second into a quotation instead of a claim.
+
+It also survives the ugly case. `:: 9662`'s wording is `9662` — and the tree it stands over is
+DataSF `TreeID` 9662, which the profile draws two blocks lower as `CITY RECORD #9662`. The city
+pasted a record number into a species cell. A reader can see that for themselves once the screen
+says where the word came from; they could not before.
+
+---
+
+#### The ruling
+
+**1 · No surface in the app prints a scientific name the ingest never read.**
+
+`Species.scientificNameIsUnread` in `Core`, off `Species.unreadScientificNameMarker`, which
+`SpeciesQueries.stubNameMarker` now reads rather than restating — the SQL filter R47 installed and
+the screens this ruling changes must be filtering on one string or they will drift. Applied at every
+site that draws the value **as** a scientific name: 07's hero Latin line, 03/14's subtitle, the
+memorial subtitle, the map card's meta line, and the visit shortlist's second line.
+
+Not applied to the three fallback chains that would print it as a *display name of last resort*
+(`VisitCandidate.displayName`, `SitePresentation.neighbourTitle`, `VisitAddTreeCopy.candidateName`).
+Those are unreachable for a stub: `parse_qspecies` classifies `:: <nothing>` as a placeholder rather
+than a stub, so a stub always has a common half to reach first. Left alone deliberately — a guard on
+an unreachable branch is a guard nothing can red-proof.
+
+**2 · Where the line was, one sentence says whose word the name above it is. Both screens.**
+
+The ticket asks where the copy goes and offers three answers. It goes on **both**, and the reason is
+that the two screens have different subjects, not that hedging is safer.
+
+- **03/14 · the tree profile.** `The city files this tree as “Magnolia” and its record gives no
+  scientific name.` This is the screen a reader hits: a map pin, a card, a profile. It sits in the
+  identity block directly under the subtitle, which is `speciesClaim`'s placement argument unchanged
+  — the subtitle is where a species is *stated*, so the account of why its Latin half is missing
+  belongs against it. In the app's own voice, not as a `city record` card: it is a sentence *about*
+  the record, and the badge would attribute Cypress's reading of the column to San Francisco
+  (`landContextNote`'s argument, one block up).
+- **07 · the species page.** `“Magnolia” is the city's own wording. The record it comes from gives
+  no scientific name.` Reachable from a grove tile once somebody has met one of the seven trees.
+  It draws immediately under the hero, in the reading order the missing Latin line held.
+
+**Two strings and not one shared constant.** 03 has a tree in front of it and can say *this tree*.
+07 has a wording standing over one record or three, and can say neither *this tree* nor *these
+trees* without counting — so its sentence is written about the wording, which is number-neutral and
+is what the reader is looking at anyway.
+
+**`files … as` and not `calls` or `names`.** One of the five wordings is a work-order number. A verb
+of naming would make the sentence assert that `9662` is this tree's name; a verb of filing describes
+what a municipal inventory did with a cell, which is all that is known, and it holds for `9662` and
+for `Magnolia` alike. It borrows the grammar of `CityRecordCopy.plantTypeLabel` — `City lists this
+as` — because the app already has one voice for reading a city column out without adopting it. The
+typographic quotes are load-bearing rather than decorative: they are what marks the word as somebody
+else's.
+
+**3 · Dropping the line in silence was considered and refused.** Every other species draws three
+hero lines and these would draw two, with nothing saying which fact went missing. That is E126's own
+defect wearing better manners — an unreadable state replaced by an uninterpretable one — and it
+leaves `9662` standing as the least readable string on the screen with no account of where it came
+from. E126 requires an emptied surface to say why.
+
+**4 · Nothing here guesses at the taxon.** `:: Podocarpus Gracilor` is probably *Podocarpus
+gracilor* and `:: Chitalpatashkentensis` is probably *Chitalpa tashkentensis* — the seed carries
+`Chitalpa tashkentensis 'Pink Dawn'` two rows away — and neither screen says so. That is the
+synonymy R47 refused, from a client holding one query's worth of rows, and DECISIONS constraint 15
+forbids it outright.
+
+**5 · Two preview surfaces withhold the name and get no sentence, and that is the same ruling and
+not an exception to it.** `MapTreeCard.meta` and the visit shortlist's second line are `·`-joined
+previews that already drop any clause they have no fact for — no species, no fix, no visit. A
+dropped clause there reads as every other absence on the same line, and the profile each opens is
+one tap away carrying the whole account. E126 governs a *surface that has been emptied*; a preview
+line that is one clause shorter has not been emptied.
+
+**6 · The seven trees keep everything else.** Pins, profiles, photographs, check-ins, the count card
+on 07 (`In this inventory · 3`) and the nearby list. This ruling withholds one string and adds one
+sentence. R47 kept the pins and this keeps the rest.
+
+---
+
+#### What was looked at, running
+
+Both screens on iPhone 16e `3A1F212D-…`, deep-linked through a temporary `DebugDeepLink` case that
+was **removed before commit** (E126's own method).
+
+- 03 over `8b95154d-…` (3555 20th St): `Magnolia` / *SF Public Works street tree inventory* / *The
+  city files this tree as “Magnolia” and its record gives no scientific name.* / `Show me where this
+  is`. The subtitle used to read `:: Magnolia · SF Public Works street tree inventory`.
+- 03 over `98bc455f-…` (110 GOUGH ST): `9662`, the same sentence quoting `9662`, with `CITY RECORD
+  #9662` in the grid below it.
+- 07 over `31f44959-…`: `FIELD GUIDE` / `Magnolia`, no Latin line, the sentence under the hero, and
+  `IN THIS INVENTORY · 3`.
+
+---
+
+#### What this does not settle
+
+**The `Field guide` eyebrow still sits over a page that is not a field-guide entry.** Left as it is:
+it is equally true of the 529 uncurated species that carry a name, a family and nothing else, and
+changing it would be a decision about screen 07's identity rather than about these five rows.
+
+**A stub with no `::` in it would slip the predicate.** `parse_qspecies` also mints a stub from a
+source string carrying no separator at all, and that name has no prefix to test. None ship, and
+`SeedStubNamingTests.theMarkerAndTheProvenanceFlagAgree` is what says so — it proves the marker and
+`species_map.is_stub` select the same rows in the seed as built, and it is the test that will go red
+if a future ingest ever mints one. The predicate is deliberately not widened to guess: a rule for
+"does this string look like a name" is exactly what the ingest already tried and got wrong.
+
+**The corpus still carries one plant under several spellings.** `Arbutus 'Marina'`, `Arbutus marina`
+and `Arbutus ‘Marina’` are three rows for one tree, `ERRATA E208` records it, and the survey and the
+ruling on it are `RULINGS R55` (task #184). Nothing here touches
+it: those rows are readable names, and this is about a row that is not a name at all.
+
+### R55 — One plant under several spellings is a corpus repair, not a list behaviour — and only its last tier is a synonymy claim (task #184, delegated)
+
+*Written under the delegated design authority for #184, which covers the (a)/(b) call and the copy
+that would follow it. `RULINGS R47` named this ticket as what #103 left open and `ERRATA E208 §2`
+records the defect.*
+
+*Unnumbered. Written from a branch; the orchestrator splices it under the real next number at merge.*
+
+**Status: decided and surveyed, NOT implemented.** No code and no seed in this branch changes because
+of it. §6 says exactly why, and what the implementing branch has to be given.
+
+---
+
+#### What was delegated
+
+#184 asks for one of two answers: **(a)** an explicit synonymy table with a stated source, extending
+the existing corrections mechanism, or **(b)** a decision that the suggestion list groups visually
+without asserting the rows are the same species.
+
+**The answer is (a)** — and the survey below is why the question as posed is one question too few.
+The duplicates are not one problem needing one table. They are **three tiers**, and only the third
+is a synonymy claim at all. Tiers 1 and 2 are one string spelled several ways, which no source needs
+to adjudicate; tier 3 is two names for one taxon, which no amount of string handling can reach.
+
+---
+
+#### 1 · The survey, measured against the shipped seed
+
+All figures from `Cypress/Resources/cypress-seed.sqlite` (198,625 trees; 731 species rows, 726 once
+R47's five unreadable rows are set aside), computed by normalising `scientific_name` and grouping.
+The seed's own key is `normalise_species_key` — lowercase, collapse whitespace — which is why none of
+these merged at build time.
+
+| tier | the rule that would merge them | families | rows | rows that would go | trees under them |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1 | quote **glyph**, letter case, internal whitespace | 10 | 20 | 10 | 4,935 |
+| 1+2 | …and quote **presence**, including unbalanced quotes | 15 | 34 | 19 | 5,646 |
+| 1+2+3a | …and the hybrid marker `x` / `×` | 25 | 55 | 30 | 16,601 |
+| 3b | two epithets, one taxon | *not reachable by any rule over the string* | | | |
+
+**Tier 1 — the same characters, different Unicode.** `Acer rubrum 'October Glory'` ·
+`Acer rubrum ‘October Glory’`. Also `Zelkova serrata 'Musashino'` against
+`Zelkova serrata 'Musashino’`, which opens with a straight quote and closes with a typographic one —
+one keystroke, in one cell, in one city's spreadsheet.
+
+**Tier 2 — the quotes themselves, and the damage around them.**
+`Arbutus 'Marina'` · `Arbutus marina` · `Arbutus ‘Marina’`.
+`Magnolia grandiflora 'Little Gem'` · `‘Little Gem’` · `"Little Gem"` · `'Little Gem"`.
+`Carpinus betulus 'Fastigiata'` against `Carpinus betulus ' Fastigiata'` — a leading space *inside*
+the quotes. `Cedrus atlantica Glauca` against `Cedrus atlantica 'Glauca'`.
+`Robinia pseudoacacia 'Umbraculifera'` against the same with no closing quote.
+
+**Tier 3a — the hybrid marker.** `Platanus x hispanica` · `Platanus hispanica`;
+`Acer x freemanii` · `Acer freemanii`; `Aesculus x carnea` · `Aesculus carnea`;
+`Ulmus 'Frontier'` · `Ulmus x 'Frontier'`. Ten more families like them.
+
+**Tier 3b — the one the ticket named, and the only true synonymy in the corpus.**
+`Platanus × acerifolia` and `Platanus × hispanica` are two names for the London plane. Nothing in
+either string says so. In the seed that costs `Columbia` **five rows**:
+
+| row | trees | common name |
+| --- | ---: | --- |
+| `Platanus acerifolia 'Columbia'` | 1,075 | — |
+| `Platanus x hispanica 'Columbia'` | 234 | `Columbia Hybrid Plane Tree` |
+| `Platanus hispanica 'columbia'` | 20 | — |
+| `Platanus x acerifolia ‘Columbia’` | 2 | — |
+| `Platanus x acerifolia 'Columbia'` | 1 | — |
+
+Tiers 1–3a collapse those five to **two**. Only a synonymy claim collapses the two to one.
+
+---
+
+#### 2 · Why (b) is refused, and the refusal is measured rather than argued
+
+(b) would fix the dropdown and leave everything else. But **the split is not a list defect; it is a
+corpus defect that the list happens to expose**, and three other surfaces are already wrong because
+of it:
+
+- **Screen 07's count card is understated on every family.** `In this inventory · 3,824` for
+  `Arbutus 'Marina'`; the corpus holds 3,835. `Columbia Hybrid Plane Tree` says **234**; the London
+  planes named Columbia number **1,332**. That is `RULINGS R48`'s defect exactly — a label over a
+  population it does not name — reappearing from a different cause, and (b) does not touch it.
+- **Curated content follows one row and abandons the rest.** In 22 of the 25 families some rows
+  carry a common name and others carry none, and it is not always the big one:
+  `Platanus acerifolia 'Columbia'` holds 1,075 trees and has no common name at all, while the row
+  with the name holds 234. A reader who lands on the larger row gets a page headed with a Latin
+  string; the smaller row gets `Columbia Hybrid Plane Tree`.
+- **The map legend and the species-narrowed map split too.** `MapSpeciesPalette` colours by species
+  id, so one plant takes two swatches and two legend entries, and tapping one narrows the map to a
+  fraction of its own trees.
+
+A grouping that renders rows together while the ids stay apart would have to be re-derived on each
+of those surfaces, in four places, from four different values — and each would be free to disagree.
+The one place the corpus's own identity is decided is `Tools/build_seed.py`, which is where R47 sent
+the safe half of #103 for the same reason.
+
+---
+
+#### 3 · The ruling
+
+**Tiers 1 and 2 are a key change in the builder, and they are not synonymy.** The claim being made
+is "these strings are one string" — that a straight apostrophe and U+2019 are the same character for
+indexing, that `Little Gem"` is `'Little Gem'` with a typo, that a space inside quotes is not part
+of a cultivar epithet. No outside source is needed to say so and none could: this is the *same
+assertion the seed already makes* when `normalise_species_key` lowercases and collapses whitespace,
+extended by three more classes of the same kind of noise. It is stated as a rule in one function
+with its own doc comment, and it is testable by listing what it merges.
+
+**Tier 3a — the hybrid marker — is admitted, and it is the boundary case.** The `×` in
+`Platanus × hispanica` denotes a hybrid and is conventionally disregarded when names are indexed or
+alphabetised; `Acer freemanii` is not a second taxon, it is `Acer × freemanii` written without the
+sign. This is one step further than tiers 1–2 because it appeals to a nomenclatural convention
+rather than to a keyboard. It is still not a synonymy: it merges two spellings of *one* name, not two
+names. **If the implementing branch wants to be conservative, this is the tier to drop** — it is 10
+families and 11 rows, and dropping it costs nothing that tiers 1–2 buy.
+
+**Tier 3b requires an explicit table with a per-entry citation, and it is the only tier that does.**
+The mechanism already exists in shape: `QSPECIES_NAME_CORRECTIONS` in `Tools/inventory_adapters.py`
+is a hand-written table whose one entry carries its source in the comment above it (SelecTree
+tree-detail/1107, `match_method fuzzy_name_edit_distance_1_to_"platanus racemosa"`), and whose
+header states the rule this ruling is bound by: *"Only entries an outside source already resolved
+belong here … What must NOT go here: a vernacular-only string merged onto a binomial by judgment."*
+A synonymy table is a sibling of it, not an extension: the corrections table maps a raw qSpecies
+string to a name, and this maps an accepted name to a name it supersedes. One entry today:
+
+    Platanus × acerifolia  →  Platanus × hispanica     [source required]
+
+**The source must be named per entry, and this ruling does not name it.** POWO (Kew) and the GBIF
+Backbone both state the relationship, and neither has been read by anybody on this branch. Writing
+the citation from memory is precisely the failure the corrections table's own header refuses, and it
+is what `Fixtures/species/leaf_retention.yaml` already avoids by carrying `match_method` and a source
+id beside each row. **An implementing branch that cannot produce a citation must ship tiers 1–3a and
+leave the two Columbia rows apart** — that is a smaller and honest result, and it still takes the
+`Columbia` family from five rows to two.
+
+**The direction of a merge is by tree count, not by which name is "better".** The row with the most
+trees wins its family and keeps its `scientific_name` verbatim; the losers' trees are re-pointed and
+their rows do not enter the file. Any common name or curated content present on exactly one row of a
+family travels with the winner, which is what fixes the `Columbia` split above.
+
+---
+
+#### 4 · The trap, restated so it cannot be walked into
+
+**No dedupe here strips a cultivar.** `Arbutus 'Marina'`, `Ceanothus 'Ray Hartman'` and
+`Ulmus 'Frontier'` are real, wanted rows and stay distinct from `Arbutus unedo`, `Ceanothus
+thyrsiflorus` and `Ulmus parvifolia`. Every rule above normalises how a cultivar epithet is
+*punctuated*; none removes one. A rule that merged `Arbutus 'Marina'` into `Arbutus` was explicitly
+refuted as a fix for #103 and is not reintroduced by any tier.
+
+**A premise in the #184 brief is wrong and is corrected here.** The brief states that R47 records
+"175 cultivars kept as distinct species on purpose". R47 records no such number — the word
+*cultivars* appears in it twice, both times in the singular, describing what the builder's swap
+reads. The measured figure is **194** species rows carrying a quoted cultivar epithet (`SELECT
+count(*) FROM species WHERE scientific_name NOT LIKE ':: %' AND scientific_name LIKE any quote`).
+The substance of the warning is right and unchanged; the citation and the number are not.
+
+---
+
+#### 5 · What a merge moves, and what it must not
+
+`species.uuid = uuid5(NS_SPECIES, normalise_species_key(scientific_name))` — E208 closes by warning
+that a merge changes species uuids, "the thing the seed is careful never to move". That warning is
+about the wrong half of the change and it is worth being exact, because taken at face value it would
+stop tiers 1–2 for no reason.
+
+**Mint each surviving row's uuid from its own verbatim name, exactly as today, and use the normalised
+key only to decide which rows share a family.** Then no surviving uuid moves: `Arbutus 'Marina'`
+keeps `uuid5(NS_SPECIES, "arbutus 'marina'")` and the 194 cultivar rows keep theirs. What
+disappears is 19 to 30 loser uuids, which is unavoidable and is the point of the ticket. A design
+that normalised the *minting* input instead would move all 194 — including every row a grove entry,
+a favourite or a `species_assertions` chain already points at — and there is no reason to.
+
+---
+
+#### 6 · Why this branch stops here, stated plainly
+
+Tiers 1–3a are a rebuild: `python3 Tools/build_seed.py --source city --sj-extent downtown`, a new
+103 MB artifact into `Fixtures/seed/` and `Cypress/Resources/`, a new sha256 replacing
+`d3e3d229…`, and new values for `seed_meta.species_count` (731 today), `distinct_qspecies` and the
+per-family counts. `CypressTests/SeedCorpus.swift` pins several of those constants, `SeedCorpus`
+comments cite the pre-#103 figures, and every live branch reading the seed inherits the new file at
+merge. That is an announced, scheduled corpus change with a rebuild verification of its own — not
+something to land beside a copy fix, and #184's own ticket says the same.
+
+**What the implementing branch needs, and this ruling supplies:** the tier boundaries, the exact 25
+families and 55 rows (reproducible from the query in §1), the merge direction, the uuid rule in §5,
+the cultivar trap in §4, and the one synonymy entry that needs a citation before it can be written.
+What it still owes: that citation, or the decision to ship without tier 3b.
+
+---
+
+#### What this does not settle
+
+**`Magnolia grandiflora 'Sam Sommers'` (4 trees) beside `Magnolia grandiflora 'Samuel Sommer'`
+(260).** E208 lists it with the quote variants and it does not belong there: `Sam Sommers` and
+`Samuel Sommer` are different words, not different punctuation, and merging them is an edit-distance
+judgment about a person's name. It is the same class as `patanus racemosa` — which the corrections
+table admits only because an outside source already resolved it — and it needs the same treatment,
+one row at a time, with a citation. No tier above touches it. `Magnolia 'Samuel Sommer'` (2 trees,
+no `grandiflora`) is a third case again: a cultivar attached to a bare genus, which may or may not be
+the same plant, and which nothing in the string settles.
+
+**Whether the app should say anything about a merge having happened.** It should not, and no copy is
+specified: a corpus that holds one row per plant is the state every other species on screen 07 is
+already in, and a sentence explaining an absence nobody can see would be the fabricated state
+DECISIONS constraint 21 forbids.

@@ -165,7 +165,7 @@ struct SpeciesView: View {
     /// anyway (no family, no sourced habit).
     ///
     /// See `SpeciesPresentation.unreadNameNote` and
-    /// `docs/rulings-pending/unread-species-name.md`.
+    /// `RULINGS R54`.
     @ViewBuilder
     private func unreadNameNote(_ presentation: SpeciesPresentation) -> some View {
         if let note = presentation.unreadNameNote {

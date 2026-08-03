@@ -144,7 +144,7 @@ struct SpeciesPresentation: Equatable {
     /// `Hesperocyparis macrocarpa` — set in serif italic, per §1.3's `latin.name` row.
     ///
     /// **`nil` on the five rows whose scientific name the ingest never read** (task #185, ruled in
-    /// `docs/rulings-pending/unread-species-name.md`). Those hold DataSF's raw source string —
+    /// `RULINGS R54`). Those hold DataSF's raw source string —
     /// `:: Magnolia` — and this is the slot §1.3 labels by position as the Latin name, so drawing it
     /// puts the parser's leftovers under a heading that says "scientific name". `unreadNameNote`
     /// takes the line's place; the two are a pair and exactly one of them is ever non-nil.

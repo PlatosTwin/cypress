@@ -862,7 +862,7 @@ struct MapCardSubject: Identifiable, Equatable {
 
     /// `nil` where there is no species, and also where the ingest never read a scientific name and
     /// `species.scientificName` holds DataSF's raw source string instead
-    /// (`docs/rulings-pending/unread-species-name.md`).
+    /// (`RULINGS R54`).
     ///
     /// The card carries no sentence in the missing clause's place, and that is the one surface where
     /// the ruling's second half deliberately does not apply. `MapTreeCard.meta` is a `·`-joined line

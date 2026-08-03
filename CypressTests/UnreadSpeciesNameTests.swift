@@ -3,7 +3,7 @@ import Testing
 @testable import Cypress
 
 /// **The seven trees that quoted the parser at a reader** — task #185, ruled in
-/// `docs/rulings-pending/unread-species-name.md`.
+/// `RULINGS R54`.
 ///
 /// DataSF publishes species in one column as `Scientific name :: Common name`. On five rows of the
 /// shipped seed the scientific half is empty, and `Tools/inventory_adapters.py`'s `parse_qspecies`
@@ -107,7 +107,7 @@ struct UnreadSpeciesNameTests {
     /// **Asserts presence.** Every number in the ruling is re-measured here, so a rebuild that
     /// changes the corpus fails a test rather than quietly leaving the copy addressed to nobody.
     ///
-    /// The counts are the ones stated in `docs/rulings-pending/unread-species-name.md`; the shape
+    /// The counts are the ones stated in `RULINGS R54`; the shape
     /// assertion is the one the copy depends on and is not in R47: on every one of these rows the
     /// *common* half parsed and is the city's own word, which is what there is to quote.
     @Test("the catalogue still carries names the ingest could not read, each with a city wording")

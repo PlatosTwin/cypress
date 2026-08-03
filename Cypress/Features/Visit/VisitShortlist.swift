@@ -26,7 +26,7 @@ struct VisitCandidate: Identifiable, Hashable {
     }
 
     /// Rendered only when it is a real second name — never a duplicate of the line above it, and
-    /// never a name the ingest failed to read (`docs/rulings-pending/unread-species-name.md`). This
+    /// never a name the ingest failed to read (`RULINGS R54`). This
     /// is the "what tree is this?" list: a row of it reading `:: Magnolia` under the city's own word
     /// for the same tree is exactly the defect that ruling is about, one screen over.
     ///

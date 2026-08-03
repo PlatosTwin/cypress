@@ -459,7 +459,7 @@ enum MemorialCopy {
                 parts.append(species.commonName)
             }
             // The same refusal 03 makes: a scientific name the ingest never read is not printed as
-            // one (`docs/rulings-pending/unread-species-name.md`). No sentence follows it here —
+            // one (`RULINGS R54`). No sentence follows it here —
             // a memorial is not a page anybody arrives at asking what species this is, and all
             // seven affected trees are `alive`, so nothing in the shipped seed reaches this line.
             // Written anyway, because a screen exempted from a rule on the grounds that today's

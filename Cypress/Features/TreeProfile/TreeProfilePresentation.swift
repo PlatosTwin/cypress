@@ -312,7 +312,7 @@ struct TreeProfilePresentation {
             }
             // A name the ingest never read is not a scientific name and is never printed as one;
             // `unreadSpeciesNote` says so in a sentence instead. See
-            // `docs/rulings-pending/unread-species-name.md`.
+            // `RULINGS R54`.
             if species.scientificName != title, !species.scientificNameIsUnread {
                 parts.append(species.scientificName)
             }
@@ -336,7 +336,7 @@ struct TreeProfilePresentation {
     }
 
     /// **The sentence for a tree whose species the city's record never named** — task #185, ruled in
-    /// `docs/rulings-pending/unread-species-name.md`. Seven trees in the shipped seed.
+    /// `RULINGS R54`. Seven trees in the shipped seed.
     ///
     /// DataSF publishes species in one column as `Scientific name :: Common name`. On these rows the
     /// scientific half is empty, and the ingest kept the whole raw string as `scientific_name` — so
