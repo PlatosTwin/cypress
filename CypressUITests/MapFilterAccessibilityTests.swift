@@ -512,21 +512,11 @@ final class MapFilterAccessibilityTests: XCTestCase {
     /// `1458 trees—showing 151`. Nothing may match this any more.
     private static let countGrammar = "^[0-9]+ tree(s)?(—showing [0-9]+)?$"
 
-    /// The year caveat R41 removed, matched on its content rather than its wording — a rewritten
-    /// sentence that still said this would be the same defect (assert facts, not phrasing).
-    private static let caveatGrammar = ".*planting date.*"
-
-    private func countLines(_ app: XCUIApplication) -> [XCUIElement] {
-        app.staticTexts
-            .matching(NSPredicate(format: "label MATCHES %@", Self.countGrammar))
-            .allElementsBoundByIndex
-    }
-
-    private func caveatLines(_ app: XCUIApplication) -> [XCUIElement] {
-        app.staticTexts
-            .matching(NSPredicate(format: "label MATCHES[c] %@", Self.caveatGrammar))
-            .allElementsBoundByIndex
-    }
+    /// The year caveat R41 removed, matched on the *fact* it stated rather than its wording — a
+    /// rewritten sentence that still said this would be the same defect (assert facts, not
+    /// phrasing). Note it is a substring of the removed message and not of any chip: #179's
+    /// `Empty planting site` says planting *site*, never planting *date*.
+    private static let caveatSubstring = "planting date"
 
     /// Every static text on the glass right now.
     private func texts(_ app: XCUIApplication) -> Set<String> {
@@ -554,22 +544,23 @@ final class MapFilterAccessibilityTests: XCTestCase {
     /// deleted test testifies to nothing.
     ///
     /// ── Why it is a diff and not a list of forbidden strings ──────────────────────────────────
-    /// R41's own test is "**does text appear because a filter did something?**", and that is
-    /// literally a difference of two sets. A test that banned today's two sentences by name would
-    /// be the thing R41 was written against: this is the third filter-adjacent message to be ruled
-    /// out and the first two "survived under a different mechanism", so a guard that only knows the
-    /// current mechanism is a guard that will be walked around. Anything new that appears when a
-    /// narrowing goes on fails here, whatever it says and whichever view drew it.
+    /// R41's own test is "**does text appear because a filter did something?**", and that is a
+    /// difference of sets. A test that banned today's two sentences by name would be the thing R41
+    /// was written against: this is the third filter-adjacent message to be ruled out and the first
+    /// two "survived under a different mechanism", so a guard that only knows the current mechanism
+    /// is a guard that will be walked around. Anything that appears with a narrowing fails here,
+    /// whatever it says and whichever view drew it.
     ///
     /// **The one thing that may appear is a control's own label.** R23.1's three channels are the
     /// sanctioned way for a narrowing to speak — the chip's fill, a count *on the chip*
     /// (`More filters (1)`), and its spoken value — and R41 keeps them explicitly: "on the chip is
-    /// the chip's voice, not a companion message". So new text is a violation exactly when nothing
-    /// on screen answers to it as a control. `Clear filters` appearing is fine; a capsule saying
+    /// the chip's voice, not a companion message". So text is a violation exactly when nothing on
+    /// screen answers to it as a control. `Clear filters` appearing is fine; a capsule saying
     /// `31 trees` is not.
     ///
-    /// The two named checks below are redundant with the diff by construction and are kept anyway,
-    /// because they name the two specimens and would survive a refactor of the diff.
+    /// Each of the three narrowings below is applied and then **cleared**, and the reading with it
+    /// on is compared against the readings either side of it. `assertNoCompanionText` explains why
+    /// that is the whole of the fix for a false red this test produced on the merged tree.
     func testNoTextAccompaniesAFilter() throws {
         let app = launch()
         _ = requireField(app)
@@ -592,79 +583,135 @@ final class MapFilterAccessibilityTests: XCTestCase {
             announceSkip(message, test: "testNoTextAccompaniesAFilter")
             throw XCTSkip(message)
         }
-
-        // The un-narrowed map, which is the baseline R41 measures against.
-        let before = texts(app)
-
         let entry = legend.element(boundBy: 0)
-        let name = entry.label
-        entry.tap()
-        XCTAssertTrue(
-            wait { (entry.value as? String) == Self.on },
-            "tapping the legend entry “\(name)” did not turn the species filter on; it announces "
-                + "“\(entry.value as? String ?? "nothing")”, so nothing below is a statement about "
-                + "a narrowed map"
-        )
+        let species = entry.label
 
-        // Let the fetch land, so this is not a race that passes because the map is still working.
-        XCTAssertTrue(
-            wait { !self.clearControls(app).isEmpty },
-            "no “\(Self.clear)” chip appeared, so the filter never took"
-        )
+        // One narrowing, from the row's own surface.
+        assertNoCompanionText(app, narrowing: "the species “\(species)”") {
+            entry.tap()
+            XCTAssertTrue(
+                self.wait { (entry.value as? String) == Self.on },
+                "tapping the legend entry “\(species)” did not turn the species filter on; it "
+                    + "announces “\(entry.value as? String ?? "nothing")”, so nothing that follows "
+                    + "is a statement about a narrowed map"
+            )
+        }
 
-        assertNoCompanionText(app, after: before, narrowing: "the species “\(name)”")
+        // Two at once, because R41 is about *any* filter state and a conjunction is the state most
+        // likely to grow a summarising sentence.
+        assertNoCompanionText(
+            app, narrowing: "the species “\(species)” and “\(Self.conditionChips[1])”"
+        ) {
+            entry.tap()
+            self.chip(Self.conditionChips[1], app).tap()
+            XCTAssertTrue(
+                self.wait { (self.chip(Self.conditionChips[1], app).value as? String) == Self.on },
+                "“\(Self.conditionChips[1])” did not turn on"
+            )
+        }
 
-        // A second narrowing on top, because R41 is about *any* filter state and a conjunction is
-        // the state most likely to grow a summarising sentence.
-        chip(Self.conditionChips[1], app).tap()
-        XCTAssertTrue(
-            wait { (self.chip(Self.conditionChips[1], app).value as? String) == Self.on },
-            "“\(Self.conditionChips[1])” did not turn on"
-        )
-        assertNoCompanionText(app, after: before, narrowing: "a species and “\(Self.conditionChips[1])”")
-
-        // And a narrowing set from *inside* the drawer, which is the surface #179 adds a control to
-        // and the one R23.1 warns can narrow the map with nothing visible saying so.
-        turnFavoritesOn(app)
-        assertNoCompanionText(app, after: before, narrowing: "a filter set inside “\(Self.moreChip)”")
+        // And a narrowing set from *inside* the drawer — the surface #179 adds a control to, and
+        // the one R23.1 warns can narrow the map with nothing visible saying so.
+        assertNoCompanionText(app, narrowing: "a filter set inside “\(Self.moreChip)”") {
+            self.turnFavoritesOn(app)
+        }
     }
 
-    /// The assertion itself, so the three states above make the identical claim.
+    /// **The assertion, and it asks R41's question the way R41 asks it.**
+    ///
+    /// ── Why this turns the filter back off instead of trusting a baseline ────────────────────
+    /// This began as a straight before/after diff: record the text on the un-narrowed map, narrow,
+    /// and fail on anything new. That is a *temporal* test, and R41's question is a **causal** one —
+    /// "does text appear because a filter did something?" On a device where the two coincide the
+    /// difference does not show. On one where they do not, the test lies.
+    ///
+    /// It lied on the merged tree. Screen 01 posts a location notice `MapOpening.patience` — three
+    /// seconds — after launch when permission is granted and no fix has arrived
+    /// (`MapHomeView.standingNotice`). That is after the baseline is taken and before the assertion
+    /// runs, so the notice was attributed to the filter and the guard failed with
+    /// `"Finding you"` in its message. The rule was right and the instrument was wrong: a
+    /// location-denied simulator (which is what this was first proved on) never posts it, and a
+    /// granted-but-fixless one posts it every run. **R41 explicitly permits it** — "E126's carve-out
+    /// (location notices and search status) survives for *location* and *search* — those are not
+    /// filters."
+    ///
+    /// So the narrowing is applied, read, and then **cleared**, and text is a violation only when it
+    /// is present with the filter on and absent from *both* readings with it off. Anything that
+    /// arrived on its own schedule is still there after `Clear filters` and cancels itself out,
+    /// whenever it happened to appear. Nothing here knows what the location notice says, and
+    /// nothing here knows how long the app waits before saying it — which is the point. Excluding
+    /// the notice's sentences by name was the obvious alternative and is the one thing this must
+    /// not do: CLAUDE.md says assert facts, not phrasing, and a guard that hard-codes the copy it
+    /// tolerates rots the moment that copy changes.
+    ///
+    /// ── Why the whole screen, and not just the filter row's subtree ──────────────────────────
+    /// Scoping the diff to the top chrome would also have fixed the false red, and was rejected:
+    /// the E126-shaped card that task #165 struck lived in `MapHomeView.bottomSlot`, at the other
+    /// end of the screen, and a guard that cannot see that end cannot see the most recently
+    /// deleted filter message coming back. R41 exists because filter messages keep returning
+    /// "under a different mechanism"; narrowing where the guard can look invites the next one.
+    ///
+    /// The permanent fix is a launch environment key that pins the location state, which is #121's
+    /// remedy and what ERRATA E202 says the harness owes. That is a change to shared UI-test setup
+    /// and belongs to that ticket, not to this one.
     private func assertNoCompanionText(
         _ app: XCUIApplication,
-        after baseline: Set<String>,
-        narrowing: String
+        narrowing description: String,
+        turnOn: () -> Void
     ) {
-        // **The general form goes first, and the order is load-bearing** — this class sets
-        // `continueAfterFailure = false`, so whichever assertion fires first is the only one that
-        // reports. The two named checks below are specimens; this is the rule. Putting them first
-        // cost a red-proof cycle that proved only the specimen and left the rule unexercised.
-        //
-        // Anything the un-narrowed map did not say, that no control on screen answers to.
+        let quietBefore = texts(app)
+
+        turnOn()
+        XCTAssertTrue(
+            wait { !self.clearControls(app).isEmpty },
+            "no “\(Self.clear)” chip appeared after narrowing by \(description), so the filter "
+                + "never took and nothing below is a statement about a narrowed map"
+        )
+        let narrowed = texts(app)
         let controls = controlLabels(app)
-        let appeared = texts(app).subtracting(baseline).subtracting(controls)
+
+        // The same screen with the narrowing taken away. `Clear filters` clears every dimension,
+        // drawn or hidden (R23.1 §3), so one tap returns the map to the un-narrowed state whichever
+        // of the three cases above ran.
+        revealedChip(Self.clear, app).tap()
+        XCTAssertTrue(
+            wait { self.clearControls(app).isEmpty },
+            "“\(Self.clear)” did not clear the filter set by \(description), so the reading below "
+                + "is not of an un-narrowed map"
+        )
+        let quietAfter = texts(app)
+
+        // **The general form.** Text that is there with the filter on, gone with it off, and that
+        // no control on screen answers to.
+        let appeared = narrowed
+            .subtracting(quietBefore)
+            .subtracting(quietAfter)
+            .subtracting(controls)
         XCTAssertEqual(
             appeared.sorted(), [],
-            "narrowing by \(narrowing) made text appear that was not on the un-narrowed map and "
-                + "that no control on screen answers to: \(appeared.sorted()). RULINGS R41 is "
-                + "categorical — “does text appear because a filter did something?” — and the only "
-                + "sanctioned channels are the chip's fill, a count on the chip, and its spoken "
-                + "value (R23.1). If this is a new legitimate *chip*, it should be reachable as a "
-                + "control and this test will pass once it is."
+            "narrowing by \(description) made text appear that is not on the un-narrowed map "
+                + "either side of it, and that no control on screen answers to: \(appeared.sorted()). "
+                + "RULINGS R41 is categorical — “does text appear because a filter did something?” — "
+                + "and the only sanctioned channels are the chip's fill, a count on the chip, and "
+                + "its spoken value (R23.1). If this is a new legitimate *chip*, it should be "
+                + "reachable as a control and this test will pass once it is."
         )
 
         // The two specimens, redundant with the diff by construction and kept anyway: they name
         // the exact surfaces task #180 removed, so a regression reports in the words of the ticket
         // rather than as an anonymous set difference. They would also survive a refactor that
-        // weakened the diff — which is not hypothetical, see `controlLabels`.
+        // weakened the diff — which is not hypothetical, see `controlLabels`. Read off `narrowed`,
+        // the state with the filter on.
         XCTAssertEqual(
-            countLines(app).map(\.label), [],
-            "narrowing by \(narrowing) put a result count over the map. RULINGS R41: a filter's "
+            narrowed.filter { $0.range(of: Self.countGrammar, options: .regularExpression) != nil },
+            [],
+            "narrowing by \(description) put a result count over the map. RULINGS R41: a filter's "
                 + "entire voice is its chip, and a count belongs on the chip or nowhere."
         )
         XCTAssertEqual(
-            caveatLines(app).map(\.label), [],
-            "narrowing by \(narrowing) put a sentence about planting dates over the map. That is "
+            narrowed.filter { $0.localizedCaseInsensitiveContains(Self.caveatSubstring) },
+            [],
+            "narrowing by \(description) put a sentence about planting dates over the map. That is "
                 + "the message task #180 removed by name; R41 forbids it returning in any wording."
         )
     }
