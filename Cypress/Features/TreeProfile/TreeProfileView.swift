@@ -475,6 +475,19 @@ struct TreeProfileView: View {
                 .cypressLatinName(presentation.isCold ? CypressFont.latinName145 : CypressFont.latinName)
                 .fixedSize(horizontal: false, vertical: true)
 
+            // **Directly under the line it is about** — `speciesClaim`'s placement argument, for the
+            // same reason. The subtitle is where a species is stated, so the account of why its
+            // Latin half is missing belongs against it rather than in a section further down.
+            // Drawn in the app's own voice and not as a `city record` card: it is a sentence *about*
+            // the record, and the badge would attribute Cypress's reading of the column to the city
+            // (`landContextNote`'s argument, one block up).
+            if let note = presentation.unreadSpeciesNote {
+                Text(note)
+                    .cypressBody135(color: CypressColor.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, TreeProfileMetrics.latinTop)
+            }
+
             showWhere(presentation)
             speciesClaim(presentation)
         }

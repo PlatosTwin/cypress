@@ -315,3 +315,64 @@ extension Species {
     /// fall-colour months. See `leafOnMonths`.
     public static let defaultDeciduousLeafOnMonths: Set<Int> = Set(4...10)
 }
+
+// MARK: - The row whose scientific name is not a name
+
+extension Species {
+
+    /// The prefix a scientific name carries when the ingest never read one.
+    ///
+    /// DataSF publishes one column in the convention `Scientific name :: Common name`. When the
+    /// scientific half is empty, `Tools/inventory_adapters.py`'s `parse_qspecies` classifies the row
+    /// `stub` and stores **the whole raw string, separator and all**, in `scientific_name` — so the
+    /// column holds `:: Magnolia` rather than a binomial. Five such rows ship, standing under seven
+    /// trees, measured against `Cypress/Resources/cypress-seed.sqlite`.
+    ///
+    /// The marker lives in `Core` because it is a fact about a stored value, and both the query
+    /// layer and two screens have to agree on it; `SpeciesQueries.stubNameMarker` reads it from
+    /// here so the SQL filter and the drawn line cannot drift apart.
+    public static let unreadScientificNameMarker = ":: "
+
+    /// True when nobody ever read a scientific name for this row, so `scientificName` holds the
+    /// ingest's raw source string instead of a name.
+    ///
+    /// The ruling that decides what the app does about it is
+    /// `docs/rulings-pending/unread-species-name.md`.
+    ///
+    /// **The same parse can produce a stub without the marker** — a source string carrying no `::`
+    /// at all is also classified `stub`, and its scientific name is that string verbatim, which
+    /// carries no prefix to test. None ship (`SeedStubNamingTests.theMarkerAndTheProvenanceFlagAgree`
+    /// proves the marker and `species_map.is_stub` select the same rows in the seed as built), and
+    /// that test is what will say so if one ever does. This property is deliberately not widened to
+    /// guess at those: a rule for "does this string look like a name" is exactly what the ingest
+    /// already tried and got wrong.
+    public var scientificNameIsUnread: Bool {
+        Species.isUnreadScientificName(scientificName)
+    }
+
+    /// The same test against a bare string, for the reads that carry a species name without a
+    /// `Species` — `NearbyTree.speciesScientificName`, which the shortlist and a vacant site's
+    /// neighbour line both draw. A static function rather than a `String` extension: this is a
+    /// statement about one column of one table, not about strings.
+    public static func isUnreadScientificName(_ name: String) -> Bool {
+        name.hasPrefix(Species.unreadScientificNameMarker)
+    }
+
+    /// The city's own wording for this row, when the scientific name is not a name.
+    ///
+    /// **`commonName` is sound on these rows and `scientificName` is not**, which is the asymmetry
+    /// the ruling turns on. `parse_qspecies` splits `:: Magnolia` and puts the common half —
+    /// `Magnolia`, `Magnolia Little Gem`, `9662` — into `common_name` unaltered. That half is the
+    /// city's, verbatim; the scientific half is empty and what stands in `scientific_name` is the
+    /// parser's leftovers.
+    ///
+    /// `nil` when the common half is missing too, which is when `SpeciesQueries.decodeIfPresent`
+    /// falls `commonName` back to the scientific name and quoting it would print the marker in a
+    /// sentence written to avoid printing the marker.
+    public var cityWordingForUnreadName: String? {
+        guard scientificNameIsUnread else { return nil }
+        let wording = commonName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !wording.isEmpty, !wording.hasPrefix(Species.unreadScientificNameMarker) else { return nil }
+        return wording
+    }
+}

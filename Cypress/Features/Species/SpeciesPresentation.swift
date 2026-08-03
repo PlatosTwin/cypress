@@ -142,7 +142,38 @@ struct SpeciesPresentation: Equatable {
     var commonName: String { species.commonName }
 
     /// `Hesperocyparis macrocarpa` — set in serif italic, per §1.3's `latin.name` row.
-    var scientificName: String { species.scientificName }
+    ///
+    /// **`nil` on the five rows whose scientific name the ingest never read** (task #185, ruled in
+    /// `docs/rulings-pending/unread-species-name.md`). Those hold DataSF's raw source string —
+    /// `:: Magnolia` — and this is the slot §1.3 labels by position as the Latin name, so drawing it
+    /// puts the parser's leftovers under a heading that says "scientific name". `unreadNameNote`
+    /// takes the line's place; the two are a pair and exactly one of them is ever non-nil.
+    var scientificName: String? {
+        species.scientificNameIsUnread ? nil : species.scientificName
+    }
+
+    /// **What stands where the Latin line stood, on a page whose subject is not a species** — the
+    /// other half of task #185.
+    ///
+    /// `RULINGS R47` kept these rows out of the suggestion list and the species picker on E126's
+    /// principle, and recorded the limit of that fix: a filter over `SpeciesQueries.searchSQL()`
+    /// cannot reach the page a tree's own species opens. This screen is what a reader who has met
+    /// one of the seven trees reaches from a grove tile.
+    ///
+    /// **Dropping the line silently was refused.** Every other species on this screen has three hero
+    /// lines and this one would have two, with nothing saying which fact went missing — E126's own
+    /// defect, where an unreadable state was replaced by an uninterpretable one. The sentence also
+    /// does the work the hero cannot: it accounts for the word in the H1. `9662` is the city's
+    /// common half, verbatim, and unexplained it is the least readable string on the screen.
+    ///
+    /// **It says nothing about the species, because there is no species to say anything about.**
+    /// The count cards and the nearby list below are unaffected and stay: they count *trees*, which
+    /// exist and stand somewhere, and they are how a reader gets to the seven records this page is
+    /// really about.
+    var unreadNameNote: String? {
+        guard let wording = species.cityWordingForUnreadName else { return nil }
+        return SpeciesCopy.unreadNameNote(cityWording: wording)
+    }
 
     // MARK: §2 · Taxonomy chips
 
@@ -225,6 +256,22 @@ enum SpeciesCopy {
 
     static let recognizeLabel = "How to recognize it"
     static let nearbyLabel = "Nearby individuals"
+
+    /// `“Magnolia” is the city's own wording. The record it comes from gives no scientific name.`
+    ///
+    /// The tree profile's counterpart sentence (`TreeProfileCopy.unreadSpeciesNote`) says the same
+    /// fact about a different subject, and they are two strings rather than one for that reason: 03
+    /// has a tree in front of it and can say *this tree*, while this page has a string standing over
+    /// one record or three and can say neither *this tree* nor *these trees* without counting. So
+    /// this one is written about the wording itself, which is number-neutral and is what the reader
+    /// is actually looking at.
+    ///
+    /// Nothing here is a botanical statement, in either direction. It does not say the wording is
+    /// wrong, or that the plant is unidentified, or that `Magnolia` is a genus — it says who wrote
+    /// the word and what the record it came from stops short of (DECISIONS constraint 15).
+    static func unreadNameNote(cityWording: String) -> String {
+        "“\(cityWording)” is the city's own wording. The record it comes from gives no scientific name."
+    }
 
     /// 07 §5's two stat-card labels. `nearYouLabel` is verbatim; the other one is not, and the
     /// departure is `RULINGS R48`.

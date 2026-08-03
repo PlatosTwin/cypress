@@ -860,9 +860,18 @@ struct MapCardSubject: Identifiable, Equatable {
         return "Unidentified"
     }
 
+    /// `nil` where there is no species, and also where the ingest never read a scientific name and
+    /// `species.scientificName` holds DataSF's raw source string instead
+    /// (`docs/rulings-pending/unread-species-name.md`).
+    ///
+    /// The card carries no sentence in the missing clause's place, and that is the one surface where
+    /// the ruling's second half deliberately does not apply. `MapTreeCard.meta` is a `·`-joined line
+    /// that already drops any clause it has no fact for — no species, no fix, no visit — so a
+    /// dropped clause here reads as every other absence on it, and the profile the card opens is one
+    /// tap away with the whole sentence on it.
     var scientificName: String? {
-        guard let latin = profile?.species?.scientificName, !latin.isEmpty else { return nil }
-        return latin
+        guard let species = profile?.species, !species.scientificNameIsUnread else { return nil }
+        return species.scientificName.isEmpty ? nil : species.scientificName
     }
 
     /// C13's mapping, except on a site.

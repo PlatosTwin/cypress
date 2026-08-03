@@ -310,7 +310,10 @@ struct TreeProfilePresentation {
             if species.commonName != title, !species.commonName.isEmpty {
                 parts.append(species.commonName)
             }
-            if species.scientificName != title {
+            // A name the ingest never read is not a scientific name and is never printed as one;
+            // `unreadSpeciesNote` says so in a sentence instead. See
+            // `docs/rulings-pending/unread-species-name.md`.
+            if species.scientificName != title, !species.scientificNameIsUnread {
                 parts.append(species.scientificName)
             }
         }
@@ -330,6 +333,34 @@ struct TreeProfilePresentation {
     /// RULINGS R28 for the mock pin this overruled.
     var provenance: String {
         CityRecordCopy.recordSource(tree.source, inventory: profile.inventorySource)
+    }
+
+    /// **The sentence for a tree whose species the city's record never named** — task #185, ruled in
+    /// `docs/rulings-pending/unread-species-name.md`. Seven trees in the shipped seed.
+    ///
+    /// DataSF publishes species in one column as `Scientific name :: Common name`. On these rows the
+    /// scientific half is empty, and the ingest kept the whole raw string as `scientific_name` — so
+    /// the subtitle above printed `:: Magnolia` in the slot labelled by position as the Latin name.
+    /// `RULINGS R47` took those rows out of the suggestion list on E126's principle, and said in as
+    /// many words that the principle cannot be applied here: you cannot omit a tree's own species
+    /// from its own page. So the fix is copy, and this is the copy.
+    ///
+    /// **It quotes the city rather than describing the absence in the abstract.** The common half
+    /// *did* parse and is the city's own word — `Magnolia`, `Magnolia Little Gem`, `9662` — and it
+    /// is already the H1 through `title`'s species fallback. A sentence that only said "the record
+    /// does not say what this tree is" would leave the reader looking at the word `9662` with no
+    /// account of where it came from, which is E126's failure with better manners. Naming the
+    /// wording is what turns the H1 from an assertion into a quotation.
+    ///
+    /// **Nothing here guesses at the taxon.** `:: Podocarpus Gracilor` is probably `Podocarpus
+    /// gracilor` and this screen does not say so, for the reason R47 gives and DECISIONS constraint
+    /// 15 requires: that is a synonymy no source in the pipeline states.
+    ///
+    /// `nil` for every other tree in the app, including a tree with no species at all — that record
+    /// has no wording to quote and no line that went missing, and it renders as it always has.
+    var unreadSpeciesNote: String? {
+        guard let wording = species?.cityWordingForUnreadName else { return nil }
+        return TreeProfileCopy.unreadSpeciesNote(cityWording: wording)
     }
 
     /// Who said what species this is, when the answer is "a contributor did".
@@ -1274,6 +1305,31 @@ enum TreeProfileCopy {
     /// It asks rather than instructs, and it says *you think* rather than *it is*, because the act it
     /// starts records an opinion and the label should not promise more than the column stores.
     static let claimSpeciesAction = "Say what species you think this is"
+
+    // MARK: - The species the record never named (see `TreeProfilePresentation.unreadSpeciesNote`)
+
+    /// `The city files this tree as “Magnolia” and its record gives no scientific name.`
+    ///
+    /// **The claim is exactly the one the data supports and no larger.** The record does carry a
+    /// word for the tree; what it does not carry is the botanical half of DataSF's species column.
+    /// So the sentence states both halves in the order a reader needs them — here is where that
+    /// word came from, and here is what the record stops short of — and it neither apologises for
+    /// the city nor implies the tree is unidentifiable. Somebody standing in front of it can see
+    /// perfectly well what it is; the *record* cannot.
+    ///
+    /// **`files … as` rather than `calls` or `names`.** One of the five wordings is `9662`, and a
+    /// verb of naming would make the sentence read as a claim that `9662` is this tree's name. A
+    /// verb of filing describes what a municipal inventory did with a cell, which is all that is
+    /// known, and it survives a wording that is plainly a work-order number. It borrows the grammar
+    /// of `CityRecordCopy.plantTypeLabel` — `City lists this as` — deliberately: the app already has
+    /// one voice for reading a city column out without adopting it.
+    ///
+    /// Typographic quotes, as `neverExistedNotice`'s apostrophe already uses (ARCHITECTURE §5.7).
+    /// They are load-bearing here rather than decorative: they are what marks the word as somebody
+    /// else's.
+    static func unreadSpeciesNote(cityWording: String) -> String {
+        "The city files this tree as “\(cityWording)” and its record gives no scientific name."
+    }
 
     // MARK: - Where the tree stands (see `TreeProfilePresentation.landContextNote`)
 
