@@ -28,14 +28,34 @@ env:
 
 jobs:
   release:
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
-      - name: Show the toolchain this run actually used
+      # ── Refuse an unusable toolchain in the first ten seconds ──────────────────────
+      # Apple rejects uploads built with an SDK older than iOS 26. The first run of this
+      # workflow discovered that FORTY MINUTES in, at the upload, having already run the
+      # whole suite — the failure was knowable before a single test. So the check moved
+      # here, and it fails loudly rather than leaving a 40-minute run to die at the end.
+      # Selecting the newest installed Xcode rather than a hardcoded path, because a
+      # pinned /Applications/Xcode_X.app vanishes with the next runner image bump.
+      - name: Select the newest Xcode, and refuse an SDK too old to upload
         run: |
+          set -euo pipefail
+          newest="$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)"
+          if [ -n "$newest" ]; then
+            echo "selecting $newest"
+            sudo xcode-select -s "$newest/Contents/Developer"
+          fi
           xcodebuild -version
+          sdk="$(xcodebuild -showsdks | sed -n 's/.*-sdk iphoneos\([0-9][0-9]*\).*/\1/p' | sort -n | tail -1)"
+          echo "newest iOS SDK: $sdk"
+          if [ -z "$sdk" ] || [ "$sdk" -lt 26 ]; then
+            echo "::error::iOS SDK $sdk is too old. App Store Connect requires iOS 26 or"
+            echo "::error::later. Installed Xcodes: $(ls -d /Applications/Xcode*.app | tr '\n' ' ')"
+            exit 1
+          fi
           xcrun simctl --version || true
           swift --version
 
