@@ -141,7 +141,7 @@ struct CityRecordSectionTests {
 
     @Test("the city calling this a tree adds nothing, and is not drawn", arguments: ["Tree", "tree", "TREE"])
     func aRecordThatSaysTreeDrawsNoCard(raw: String) {
-        let presentation = CityRecordPresentation(CityRecord(plantType: raw))
+        let presentation = CityRecordPresentation(CityRecord(plantType: raw), idSpace: "sf")
         #expect(presentation.listedAsText == nil)
         #expect(presentation.facts.isEmpty)
     }
@@ -151,7 +151,8 @@ struct CityRecordSectionTests {
     @Test("the city calling this something other than a tree leads the section")
     func aRecordThatSaysLandscapingLeadsTheSection() {
         let presentation = CityRecordPresentation(
-            CityRecord(legalStatus: "DPW Maintained", caretaker: "Private", plantType: "Landscaping", plotSize: "3X3")
+            CityRecord(legalStatus: "DPW Maintained", caretaker: "Private", plantType: "Landscaping", plotSize: "3X3"),
+            idSpace: "sf"
         )
         #expect(presentation.listedAsText == "Landscaping")
         #expect(presentation.facts.first?.label == CityRecordCopy.plantTypeLabel)
@@ -215,7 +216,8 @@ struct CityRecordSectionTests {
     ])
     func aPermitNoteNeverReachesTheScreen(note: String) {
         let presentation = CityRecordPresentation(
-            CityRecord(legalStatus: "DPW Maintained", caretaker: "DPW", plantType: "Tree", permitNotes: note)
+            CityRecord(legalStatus: "DPW Maintained", caretaker: "DPW", plantType: "Tree", permitNotes: note),
+            idSpace: "sf"
         )
         let rendered = presentation.facts.map(\.value) + presentation.facts.map(\.label)
         #expect(rendered.contains(note) == false, "the permit note was drawn")
@@ -228,7 +230,7 @@ struct CityRecordSectionTests {
     func aRecordOfOnlyAPermitNoteDrawsNoSection() {
         let record = CityRecord(permitNotes: "Permit Number 771729")
         #expect(record.isEmpty == false, "the record is not empty; the section is")
-        #expect(CityRecordPresentation(record).isEmpty)
+        #expect(CityRecordPresentation(record, idSpace: "sf").isEmpty)
 
         var tree = Self.cityTree(record)
         tree.plantedYear = nil
@@ -325,7 +327,7 @@ struct CityRecordSectionTests {
         }
 
         let withSentence = statuses.filter {
-            CityRecordPresentation(CityRecord(legalStatus: $0)).maintenanceOptOutNote() != nil
+            CityRecordPresentation(CityRecord(legalStatus: $0), idSpace: "sf").maintenanceOptOutNote() != nil
         }
         // No `qLegalStatus` in the source means no statuses to filter, so the expected set is empty
         // and the *reason* is the absent column rather than a rule that stopped firing. The rule
@@ -602,6 +604,240 @@ struct CityRecordSectionTests {
         case "us-ca-sj": return ["SF", "San Francisco", "DataSF"]
         case "sf": return ["San Jose"]
         default: return []
+        }
+    }
+
+    // MARK: - Shape B — a column's *meaning* crossing an id space, which no string sweep can see
+
+    /// One row's worth of the seed's card-bearing columns, and how many rows are exactly like it.
+    ///
+    /// The sweep below runs the real presentation code, not a copy of its rules, but it runs it once
+    /// per distinct combination rather than once per row: the shipped seed's 198,625 rows hold
+    /// **2,133** distinct tuples over these six columns, so the sweep is three orders of magnitude
+    /// cheaper while still accounting for every row through `rows`.
+    private struct CardBearingColumns {
+        let idSpace: String
+        let record: CityRecord
+        let siteType: String?
+        let rows: Int
+    }
+
+    private static func cardBearingColumns(_ store: CypressStore) async throws -> [CardBearingColumns] {
+        try await store.queue.read { connection in
+            let statement = try connection.cachedStatement("""
+                SELECT id_space, plant_type, site_type, legal_status, caretaker, care_assistant,
+                       plot_size, count(*) AS n
+                  FROM \(SeedDatabase.schemaName).trees
+                 GROUP BY id_space, plant_type, site_type, legal_status, caretaker, care_assistant,
+                          plot_size
+                """)
+            return try statement.fetchAll { row in
+                CardBearingColumns(
+                    idSpace: try row.string("id_space"),
+                    record: CityRecord(
+                        legalStatus: try row.stringIfPresent("legal_status"),
+                        caretaker: try row.stringIfPresent("caretaker"),
+                        careAssistant: try row.stringIfPresent("care_assistant"),
+                        plantType: try row.stringIfPresent("plant_type"),
+                        plotSize: try row.stringIfPresent("plot_size")
+                    ),
+                    siteType: try row.stringIfPresent("site_type"),
+                    rows: try row.int("n")
+                )
+            }
+        }
+    }
+
+    /// **The guard `everyCitySurfaceNamesTheRowsOwnInventory` is structurally unable to be** (E209).
+    ///
+    /// ── Why a fifth rediscovery happened under a guard built to stop the fourth ────────────────
+    /// #137, #138, #141 and #181 were each one surface assuming San Francisco, and each was a
+    /// hardcoded city *name*. The guard above sweeps drawn strings for another city's name and it is
+    /// why that shape is nearly extinct. But it tests the **symptom the first four happened to
+    /// share**, not the disease. The disease is one publisher's *column meaning* applied to every
+    /// row, and its output contains no city name at all: San Jose's `GROWSPACE` reaching
+    /// `listedAsText`'s DataSF `PlantType` rule drew `City lists this as — N/A` on 25,032 rows, and
+    /// `N/A` matches no marker in any string sweep that will ever be written. A guard that cannot
+    /// fail on the defect in front of it reads as coverage, which is worse than no guard (#101).
+    ///
+    /// ── The property, which is about columns rather than about words ──────────────────────────
+    /// Two assertions, over **every row of every id space in the file**, through the real
+    /// presentation code:
+    ///
+    /// 1. **No card draws a value that states no value.** This is the direct statement of the
+    ///    defect. `N/A`, `Unassigned` and San Francisco's bare separator `:` are all things a column
+    ///    holds *instead of* an answer, and a card is a claim that the city answered. Stated as
+    ///    `statedValue(drawn) == drawn` rather than as a list of bad strings, so a placeholder
+    ///    spelled a way nobody has seen yet is caught by the rule the renderer already applies.
+    /// 2. **No two cards on one row carry the same value under different labels.** This is E209-B2,
+    ///    and it is the assertion that catches a column being read *twice* under two publishers'
+    ///    meanings — `Site — Park Strip` beside `City lists this as — Park Strip`, one San Jose
+    ///    column wearing two San Francisco labels. It needs no vocabulary either: two labels
+    ///    agreeing word for word is a fact about the render, and on a panel whose whole purpose is
+    ///    to list distinct facts it is always wrong.
+    ///
+    /// ── Why it would have gone red before the fix, which is the only thing that makes it a guard ─
+    /// Assertion 1 fires on `plantType`/`N/A` (25,032 rows), `site`/`N/A` (25,032),
+    /// `site`/`Unassigned` (805) and `site`/`:` (4,608 — San Francisco's own, which E209 did not
+    /// find). Assertion 2 fires on all 51,689 San Jose rows that drew both cards off `GROWSPACE`.
+    /// Red-proofed by restoring the old `listedAsText` and the old `Site` conditions; see the
+    /// pending errata for the messages each one produced.
+    ///
+    /// ── The control, because a sweep that visits nothing passes ───────────────────────────────
+    /// The tallies are asserted to account for every row in the file, and the `plantType` card is
+    /// asserted to still draw somewhere — which is what stops "make `facts` return `[]`" from
+    /// being a way to satisfy this test. The card's surviving population is checked against a
+    /// second, independent derivation in SQL rather than a literal, so this runs on any of the
+    /// three corpora without a number nobody has measured.
+    @Test("every surface draws only columns its id space can speak for")
+    func everySurfaceDrawsOnlyColumnsItsIdSpaceCanSpeakFor() async throws {
+        let store = try await Self.store()
+        let corpus = try await SeedCorpus.current(store)
+        let groups = try await Self.cardBearingColumns(store)
+        #expect(!groups.isEmpty, "the seed produced no rows to sweep")
+
+        /// rows drawing each (id space, card id), and rows swept per id space.
+        var drawn: [String: Int] = [:]
+        var sweptPerSpace: [String: Int] = [:]
+        var swept = 0
+
+        for group in groups {
+            swept += group.rows
+            sweptPerSpace[group.idSpace, default: 0] += group.rows
+
+            // Through the real screens, not through the rules they call. A card that bypasses
+            // `siteTypeText` and reads the column straight out of the row is precisely the
+            // regression this guards, and a sweep over the helper alone would not see it. The tree
+            // carries no photograph and no visit, so `isCold` holds and screen 14 draws `Site`.
+            var tree = Tree(
+                externalRef: "1",
+                idSpace: group.idSpace,
+                source: .cityImport,
+                coordinate: Coordinate(latitude: 37.77, longitude: -122.42),
+                siteType: group.siteType,
+                verificationState: .cityRecord,
+                cityRecord: group.record
+            )
+            tree.plantedYear = nil
+            let profile = TreeProfile(tree: tree)
+            let treeProfile = Self.presentation(profile)
+
+            // Per screen, because the duplication in 2 is a fact about one screenful. Only the
+            // cards that read a per-publisher column are swept: `City record` is R18's own id and
+            // the measurement slots are the contributor's, and neither is a publisher's vocabulary.
+            let screens: [(name: String, cards: [(id: String, label: String, value: String)])] = [
+                ("03/14", treeProfile.stats.compactMap { item in
+                    guard case .text(let value) = item.value, Self.publisherColumnCards.contains(item.id) else { return nil }
+                    return (id: item.id, label: item.label, value: value)
+                } + (treeProfile.cityRecord?.facts ?? []).map { (id: $0.id, label: $0.label, value: $0.value) }),
+                // Screen 19 draws the same column under the same label on a vacant site, and had
+                // its own copy of the condition until #186.
+                ("19", SitePresentation(profile: profile).stats
+                    .filter { Self.publisherColumnCards.contains($0.id) }
+                    .map { (id: $0.id, label: $0.label, value: $0.value) }),
+            ]
+
+            for screen in screens {
+                for card in screen.cards {
+                    drawn["\(group.idSpace)/\(card.id)"] = (drawn["\(group.idSpace)/\(card.id)"] ?? 0)
+                    // Counted once per row, not once per screen that draws it.
+                    if screen.name == "03/14" { drawn["\(group.idSpace)/\(card.id)"]! += group.rows }
+
+                    // 1 · a card is a claim that the city answered, so the value must be an answer.
+                    #expect(
+                        !Self.statesNoValue(card.value),
+                        """
+                        \(group.idSpace) screen \(screen.name): the \(card.id) card draws \
+                        '\(card.value)' under '\(card.label)' on \(group.rows) rows, and that is \
+                        what this column holds instead of an answer
+                        """
+                    )
+                }
+
+                // 2 · one column read twice under two publishers' labels (E209-B2).
+                for (first, second) in Self.pairs(screen.cards) where first.value == second.value {
+                    Issue.record(
+                        """
+                        \(group.idSpace) screen \(screen.name): '\(first.value)' is drawn twice on \
+                        \(group.rows) rows — as '\(first.label)' and as '\(second.label)'. One \
+                        column is being read under two meanings.
+                        """
+                    )
+                }
+            }
+        }
+
+        // ── The control ──────────────────────────────────────────────────────────────────────
+        #expect(swept == corpus.trees, "the sweep accounted for \(swept) rows, not \(corpus.trees)")
+        for (space, rows) in sweptPerSpace {
+            #expect(rows > 0, "\(space) contributed no rows")
+        }
+
+        // The `plantType` card must still draw where its rule was written, or the fix above is
+        // indistinguishable from deleting the card. Derived in SQL rather than pinned, so this
+        // holds on all three corpora.
+        let sfPlantTypeCards = try await store.queue.read { connection in
+            let statement = try connection.cachedStatement("""
+                SELECT count(*) AS n
+                  FROM \(SeedDatabase.schemaName).trees
+                 WHERE id_space = 'sf'
+                   AND plant_type IS NOT NULL
+                   AND lower(trim(plant_type)) NOT IN ('tree', '')
+                """)
+            return try statement.fetchOne { try $0.int("n") } ?? 0
+        }
+        #expect(sfPlantTypeCards > 0, "no San Francisco row disagrees with the screen; the control cannot fire")
+        #expect(
+            drawn["sf/plantType"] == sfPlantTypeCards,
+            "San Francisco draws the plant type card on \(drawn["sf/plantType"] ?? 0) rows, not \(sfPlantTypeCards)"
+        )
+
+        // And it must not draw where its rule was not written (R24). Asserted only when the file
+        // actually holds the other city, so a San Francisco-only seed does not pass this vacuously.
+        if sweptPerSpace["us-ca-sj"] != nil {
+            #expect(
+                drawn["us-ca-sj/plantType"] == nil,
+                "San Jose draws the plant type card on \(drawn["us-ca-sj/plantType"] ?? 0) rows; R24 says it declines"
+            )
+        }
+    }
+
+    /// **What a non-value looks like, stated here and deliberately not borrowed from the renderer.**
+    ///
+    /// This began as `CityRecordPresentation.statedValue(v) == v`, and that version was **green on a
+    /// build with the refusal deleted**. Of course it was: it asked the function under test whether
+    /// the function under test had done its job, so removing the rule removed the yardstick with it.
+    /// That is the "exempted the thing it was guarding as its own wrapper" failure, and it was caught
+    /// only by breaking the code and reading the result — the passing red-proof it would otherwise
+    /// have looked like is exactly what #101 shipped.
+    ///
+    /// So the list is written out a second time, on purpose. The duplication is the point: these two
+    /// have to be able to disagree, and if a future change teaches the renderer a new placeholder it
+    /// must teach this one too, in a diff a reviewer can see.
+    private static func statesNoValue(_ value: String) -> Bool {
+        let trimmed = value.trimmingCharacters(in: .whitespaces)
+        if trimmed.isEmpty { return true }
+        if !trimmed.contains(where: { $0.isLetter || $0.isNumber }) { return true }
+        return [
+            "n/a", "n.a.", "na", "none", "null", "nil", "unassigned", "unknown", "tbd",
+            "not applicable", "not available", "not recorded", "no data",
+        ].contains(trimmed.lowercased())
+    }
+
+    /// The cards whose value is one publisher's vocabulary, and therefore the ones R24 governs.
+    ///
+    /// `cityRecord` is deliberately absent: `#167879` is the publisher's own number under R18, the
+    /// one string that means the same thing in every city's asset system. The measurement slots are
+    /// absent because they hold a contributor's reading, not a column.
+    private static let publisherColumnCards: Set<String> = [
+        "site", "plantType", "legalStatus", "caretaker", "careAssistant", "plotSize",
+    ]
+
+    /// Every unordered pair, for the "same value under two labels" check.
+    private static func pairs<T>(_ items: [T]) -> [(T, T)] {
+        guard items.count > 1 else { return [] }
+        return (0..<items.count).flatMap { i in
+            ((i + 1)..<items.count).map { j in (items[i], items[j]) }
         }
     }
 

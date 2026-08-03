@@ -842,10 +842,17 @@ struct TreeProfilePresentation {
         }
 
         // `Site` is a 14 card, not an 03 one: SCREENS.md draws it only where the city record is
-        // all there is to show. Its value is the DataSF `qSiteInfo` string verbatim — an open
-        // vocabulary kept as free text (BUILD-PLAN §7), so `Sidewalk: Curb side : Cutout` is
-        // printed as the city wrote it rather than folded into a tidier phrase nobody published.
-        if isCold, let siteType = tree.siteType, !siteType.isEmpty {
+        // all there is to show. Its value is the publisher's own string verbatim — an open
+        // vocabulary kept as free text (BUILD-PLAN §7), so `Sidewalk: Curb side : Cutout` and
+        // San Jose's `Park Strip` are both printed as the city wrote them rather than folded into a
+        // tidier phrase nobody published.
+        //
+        // Through `siteTypeText` rather than straight out of the row, because the column is
+        // populated with a non-value on 30,445 rows across the two cities — San Jose's `N/A` and
+        // `Unassigned`, San Francisco's bare `:` — and every one of those drew a card claiming the
+        // city had recorded a placement. One function with `SitePresentation`, because both screens
+        // draw this column under this label and two copies is how they came to disagree.
+        if isCold, let siteType = tree.siteType.flatMap(CityRecordPresentation.siteTypeText) {
             items.append(StatItem(id: "site", label: "Site", value: .text(siteType)))
         }
 
@@ -1071,7 +1078,11 @@ struct TreeProfilePresentation {
     /// Also `nil` when the record produces no card — see `CityRecordPresentation.isEmpty`.
     var cityRecord: CityRecordPresentation? {
         guard let record = tree.cityRecord, !record.isEmpty else { return nil }
-        let presentation = CityRecordPresentation(record)
+        // The row's id space travels with the record, because two of the section's readings are of
+        // one publisher's vocabulary and R24 requires those to decline outside it — see
+        // `CityRecordPresentation.listedAsText`, which drew `City lists this as — N/A` on 25,032
+        // San Jose rows until it could ask this question.
+        let presentation = CityRecordPresentation(record, idSpace: tree.idSpace)
         return presentation.isEmpty ? nil : presentation
     }
 
