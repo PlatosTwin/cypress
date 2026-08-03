@@ -539,27 +539,68 @@ class SFCityLayerAdapter:
         `common_name` on the record directly; nothing outside this method needs
         to know what a `::` is.
 
-        ONE CORRECTION IS APPLIED, AND IT MOVES NO INFORMATION. 475 of the
+        ONE CORRECTION IS APPLIED, AND IT MOVES NO INFORMATION. 540 of the
         layer's rows leave `BOTANICAL` null and put the botanical name in
         `COMMON`: `Lophostemon confertus`, `Pistacia chinensis`. Left alone each
         would mint a stub species beside the real species it names. Swapping the
-        halves when `BOTANICAL` is empty and `COMMON` reads as a binomial puts
-        the string the city already wrote on the side of the separator that
-        means what it says.
+        halves when `BOTANICAL` is empty and `COMMON` reads as a botanical name
+        puts the string the city already wrote on the side of the separator that
+        means what it says. `_botanical_shape` is the whole of that test.
         """
         botanical = " ".join((botanical or "").strip().split())
         common = " ".join((common or "").strip().split())
         if not botanical and common:
-            tokens = common.split()
-            if (
-                len(tokens) >= 2
-                and tokens[0][:1].isupper()
-                and tokens[0].replace("-", "").isalpha()
-                and tokens[1][:1].islower()
-                and tokens[1].replace("-", "").isalpha()
-            ):
-                botanical, common = common, ""
+            swapped = SFCityLayerAdapter._botanical_shape(common)
+            if swapped is not None:
+                botanical, common = swapped, ""
         return f"{botanical} :: {common}".strip()
+
+    @staticmethod
+    def _botanical_shape(common: str):
+        """`COMMON` -> the same name with its genus capitalised, or None.
+
+        None means "this does not read as a botanical name", and the caller
+        leaves the string on the common-name side, where it becomes a stub.
+
+        TWO SHAPES QUALIFY, AND BOTH ARE UNAMBIGUOUS ON FORM ALONE. This test is
+        deliberately blind to the species catalogue: consulting it would make the
+        answer depend on ingest order, and asserting a synonymy the city did not
+        write is exactly what `QSPECIES_NAME_CORRECTIONS` refuses to do.
+
+          binomial   `Genus epithet [...]` -- a lowercase second token. The genus
+                     may be miscased (`lophostemon confertus`,
+                     `platanus hispanica 'columbia'`); nothing but the case of
+                     the first letter is touched, and the catalogue key is
+                     lowercased anyway, so the row lands on the species the city
+                     named.
+          cultivar   `Genus 'Cultivar'` -- the remainder wrapped in single
+                     quotes, which is the ICNCP's own marker for a cultivar
+                     epithet and the only thing that distinguishes a capitalised
+                     botanical name from a capitalised common one.
+
+        WHAT MUST KEEP FAILING, AND WHY THE CULTIVAR QUOTES ARE LOAD-BEARING. A
+        rule that accepted any two capitalised words would swap `To Be Determine`
+        -- 65 rows whose whole meaning is that nobody has identified the tree --
+        onto the scientific side, where it would mint a species and escape
+        `NON_TAXON_SPECIES`, which is keyed on the unswapped string. It would do
+        the same to every two-word common name (`Monterey Pine`). So a bare
+        `Magnolia`, a `Magnolia Little Gem` and a `Podocarpus Gracilor` are left
+        as stubs: each may well be botanical, but nothing in the string says so,
+        and a stub is the honest record of a name that could not be read.
+        """
+        tokens = common.split()
+        if len(tokens) < 2:
+            return None
+        genus = tokens[0]
+        if not genus.replace("-", "").isalpha():
+            return None
+        rest = " ".join(tokens[1:])
+        second = tokens[1]
+        binomial = second[:1].islower() and second.replace("-", "").isalpha()
+        cultivar = len(rest) > 2 and rest.startswith("'") and rest.endswith("'")
+        if not (binomial or cultivar):
+            return None
+        return f"{genus[:1].upper()}{genus[1:]} {rest}"
 
     def records(self) -> Iterator[InventoryRecord]:
         for record in self.rows:

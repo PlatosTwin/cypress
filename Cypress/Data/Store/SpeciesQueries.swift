@@ -131,10 +131,32 @@ public struct SpeciesQueries {
                   GROUP BY id
                ) m ON m.id = s.id
          WHERE s.deleted_at IS NULL
+           AND s.scientific_name NOT LIKE ':: %'
          ORDER BY m.match_rank, s.curated DESC, s.scientific_name
          LIMIT :limit
         """
     }
+
+    /// Why the second condition is a `LIKE` on a name and not a join to `species_map.is_stub`.
+    ///
+    /// A species the ingest could not read keeps the raw source string as its scientific name, so its
+    /// name still carries DataSF's `::` separator with an empty scientific half — `:: 9662`,
+    /// `:: Magnolia`. Those are the rows this list must not offer, and the ruling that says so is
+    /// `docs/rulings-pending/species-suggestion-stubs.md`.
+    ///
+    /// The exact statement of "the ingest could not read this" is `species_map.is_stub`, and the
+    /// obvious query asks it directly. It is not asked here for two reasons, both measured rather
+    /// than assumed. `species_map` carries no index on `species_id` — its only index is the primary
+    /// key on `qspecies_string` — so a correlated `EXISTS` over it is a scan per candidate row, and
+    /// `SpeciesSearchTests.searchStaysOnItsCoveringIndexes` fails on the `SCAN species_map` step it
+    /// adds. Adding that index would change `Fixtures/seed/schema.sql`, and the per-city files
+    /// already published at seed schema 14 would not have it, so the plan would differ between the
+    /// bundled seed and a downloaded city — the gate would pass here and the scan would happen there.
+    ///
+    /// So the cheap predicate runs in the hot query and the exact one is asserted beside the seed:
+    /// `SeedStubNamingTests` proves the two select the same rows, which is what makes this `LIKE`
+    /// honest rather than a guess about the shape of the data.
+    static let stubNameMarker = ":: "
 
     /// The three-band rank of `search(query:limit:connection:)`, over one name column.
     ///
