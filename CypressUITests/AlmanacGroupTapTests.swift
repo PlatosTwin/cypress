@@ -35,7 +35,7 @@ final class AlmanacGroupTapTests: XCTestCase {
     /// arrives is the *block's* screen and not a tree's profile, and it says how much of the group is
     /// on it. The profile that used to arrive has neither string on it — it has `A young tree nobody
     /// has visited`, which is asserted absent for exactly that reason.
-    func testWalkTheNineOpensAMapOfThemAll() throws {
+    func testWalkTheNineOpensAMapOfThemAll() {
         let app = launch()
 
         // `Walk `, not `Walk the ` — **the anchor was count-sensitive and the corpus moved under
@@ -55,10 +55,10 @@ final class AlmanacGroupTapTests: XCTestCase {
         let walk = app.buttons
             .matching(NSPredicate(format: "label BEGINSWITH %@", "Walk "))
             .firstMatch
-        try reachAlmanac(app, waitingFor: walk)
+        reachAlmanac(app, waitingFor: walk)
 
-        // `reachAlmanac` has already waited for this and skipped if the screen was showing the
-        // location prompt instead, so a failure here is the real one: the almanac has a
+        // `reachAlmanac` has already waited for this and reported it separately if the screen was
+        // showing the location prompt instead, so a failure here is the real one: the almanac has a
         // neighborhood and §4's CTA is missing from it.
         XCTAssertTrue(walk.exists, "§4's CTA is not on the almanac, which does have a neighborhood")
         let ctaLabel = walk.label
@@ -88,13 +88,13 @@ final class AlmanacGroupTapTests: XCTestCase {
     /// This is the E38 half. The row's own count stays on screen and the map holds a page of it, so the
     /// page has to name its own size in the same breath. A destination that said `All 1,474 are on this
     /// map.` over twenty pins would be the defect E38 exists for, and it is asserted against directly.
-    func testTheVacantRowOpensAMapAndNamesThePage() throws {
+    func testTheVacantRowOpensAMapAndNamesThePage() {
         let app = launch()
 
         let row = app.buttons
             .matching(NSPredicate(format: "label CONTAINS %@", "empty planting site"))
             .firstMatch
-        try reachAlmanac(app, waitingFor: row)
+        reachAlmanac(app, waitingFor: row)
 
         // See the sibling test: past `reachAlmanac` the neighborhood is there and this is R10's row
         // genuinely missing from it.
@@ -145,11 +145,32 @@ final class AlmanacGroupTapTests: XCTestCase {
     /// screen 12 is built from a coordinate that exists. The blank almanac is left as it is, on
     /// purpose: it is a defect in the app rather than in this test, and a test that navigated around it
     /// twice would be the thing that keeps it invisible.
+    ///
+    /// **The fix is pinned rather than inherited (task #121).** This file used to `XCTSkip` when
+    /// screen 12 drew its location prompt instead of a neighborhood — an honest report of an
+    /// environment fact, and invisible in the only line this project judges a run by, so both
+    /// counted rows could go unexercised under a green number. `CYPRESS_LOCATION` now hands the app
+    /// a coordinate directly (`DebugLocationOverride`; ruling
+    /// `docs/rulings-pending/location-state-launch-seam.md`), which makes these two tests
+    /// unconditional on every simulator, fix or no fix.
+    ///
+    /// The coordinate is the one this file's own comments have named since E153 — Western Addition,
+    /// the neighborhood the counted rows were written against. It is not a free choice: screen 01
+    /// flies to the fix and `MapCameraMemory` writes that camera out on the way to the background,
+    /// where the *next* run's E216 preflight reads it back. The seed holds 780 trees within 250 m of
+    /// it, measured over the same box `Tools/run_tests.sh` counts, so a run of these tests leaves the
+    /// device in a state the preflight accepts.
     private func launch() -> XCUIApplication {
         let app = XCUIApplication()
+        app.launchEnvironment[Self.locationKey] = Self.pinnedFix
         app.launch()
         return app
     }
+
+    /// `DebugLocationOverride.environmentKey`, and `DebugLocationFixtures.westernAddition`. Literals
+    /// because this target imports nothing from `Cypress`.
+    private static let locationKey = "CYPRESS_LOCATION"
+    private static let pinnedFix = "37.78485,-122.4215"
 
     /// Screen 12's `AlmanacCopy.locationPromptTitle` — what the screen draws *instead of* its blocks
     /// when there is no fix. Repeated here as a literal because these tests import nothing from
@@ -175,21 +196,28 @@ final class AlmanacGroupTapTests: XCTestCase {
             .count
     }
 
-    /// Gets to a populated almanac the way a person does, and **skips** rather than fails when there is
-    /// no fix for it to be populated from.
+    /// Gets to a populated almanac the way a person does.
     ///
-    /// The location ask belongs to Springboard rather than to Cypress, so it is tapped through
-    /// Springboard's own element tree — an `addUIInterruptionMonitor` fires only on the next
-    /// interaction with the app, which is too late when the thing being waited for is behind the alert.
-    ///
+    /// **It used to skip when there was no fix to populate it from, and does not any more (#121).**
     /// Without a fix there is no neighborhood and therefore neither of the two rows (A4, ERRATA E44):
     /// `AlmanacScreen` draws E123's location prompt in place of all four blocks, so both rows are
-    /// *correctly* absent. That is an environment fact and not a defect, so it is an `XCTSkip` — the
-    /// judgment `MapSearchUITests.requireAMapWithPins` already made for the same missing fix, in the
-    /// same words: a skip says "not checked here", which is true, where a failure says "broken", which
-    /// is not. The first skip is decided on the map, before the almanac is opened at all, because
-    /// arriving on screen 12 before there is a fix is what produces the blank screen described on
-    /// `launch()` — and a blank screen cannot be asked anything.
+    /// *correctly* absent — an environment fact and not a defect, which is why it was an `XCTSkip`,
+    /// in `MapSearchUITests.requireAMapWithPins`' own words: a skip says "not checked here", which is
+    /// true, where a failure says "broken", which is not. That reasoning was never the problem. The
+    /// problem is that the skip made the test's execution a function of the machine, and a skipped
+    /// test is invisible in `Test run with N tests passed`. `launch()` now pins the fix, so the
+    /// environment fact is one this test states rather than one it discovers, and the prompt below is
+    /// a failure.
+    ///
+    /// **The Springboard alert handling is gone with it**, and the reason is worth keeping: the
+    /// location ask belonged to Springboard rather than to Cypress, so it had to be tapped through
+    /// Springboard's own element tree (an `addUIInterruptionMonitor` fires only on the next
+    /// interaction with the app, which is too late when the thing being waited for is behind the
+    /// alert). A pinned provider never calls `requestWhenInUseAuthorization`, so no alert can appear
+    /// — and the eight-second poll that used to look for one was eight seconds every ordinary run
+    /// paid to a window that had already closed. If the seam ever stops reaching the provider the app
+    /// *will* ask, the alert *will* block, and this test will fail on the pin wait below, which is
+    /// the report that state deserves.
     ///
     /// **The map is asked in pins, not in words, and the obvious alternative was measured and
     /// rejected.** `MapRecenterCopy.value` looked like the better witness — `Centered on you` is
@@ -218,16 +246,7 @@ final class AlmanacGroupTapTests: XCTestCase {
     /// the state screen 12 is drawn in until a coordinate turns up, and this file has already been
     /// wrong once about how long that takes; letting it decide only after the row has failed to arrive
     /// costs a machine with a fix nothing and cannot misfire on one without.
-    private func reachAlmanac(_ app: XCUIApplication, waitingFor content: XCUIElement) throws {
-        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
-        let allow = ["Allow While Using App", "Allow Once", "Allow"].map { springboard.buttons[$0] }
-        // Whichever of the three this iOS draws, or none at all when permission is already answered —
-        // polled together rather than waited for one at a time, so the already-answered case costs one
-        // window instead of three.
-        if wait(timeout: 8, for: { allow.contains { $0.exists } }) {
-            allow.first { $0.exists }?.tap()
-        }
-
+    private func reachAlmanac(_ app: XCUIApplication, waitingFor content: XCUIElement) {
         XCTAssertTrue(
             wait(timeout: 30, for: { self.cityTreePins(app) > 0 }),
             "screen 01 drew no tree pins in thirty seconds, which it does with a fix and without one"
@@ -248,12 +267,20 @@ final class AlmanacGroupTapTests: XCTestCase {
 
         if wait(timeout: 30, for: { content.exists }) { return }
 
+        // **A failure now, where it used to be an `XCTSkip` (task #121).** The launch environment
+        // pinned a fix at `pinnedFix`, so `showsLocationPrompt` — which is `displayedCoordinate ==
+        // nil` — cannot legitimately be true. Screen 12 drawing the prompt here means the pinned
+        // availability did not reach `AlmanacView`'s coordinate, which is a defect in the seam or in
+        // the wiring, not a fact about this machine. Reported as its own sentence rather than folded
+        // into the caller's missing-row assertion, for the reason the block below gives: the last
+        // thing this file should do is blame the almanac for something else.
         if app.staticTexts[Self.locationPrompt].exists {
-            throw XCTSkip(
-                "screen 12 drew “\(Self.locationPrompt)” instead of its neighborhood, so neither "
-                    + "counted row exists to tap — this needs a simulated GPS fix over San Francisco: "
-                    + "xcrun simctl location <udid> set 37.78485,-122.4215"
+            XCTFail(
+                "screen 12 drew “\(Self.locationPrompt)” on a launch that pinned a fix at "
+                    + "\(Self.pinnedFix), so the almanac never received a coordinate — "
+                    + "CYPRESS_LOCATION did not reach AlmanacView"
             )
+            return
         }
 
         // Neither the row nor the prompt, and the three states that produces are not one report.
