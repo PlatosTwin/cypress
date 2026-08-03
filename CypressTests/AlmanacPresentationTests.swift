@@ -115,6 +115,8 @@ struct AlmanacPresentationTests {
             strings.append(AlmanacCopy.outOfRangeTitle)
             strings.append(AlmanacCopy.outOfRangeBody)
         }
+        // §2's note, which draws with the rows it describes (task #177).
+        if let note = presentation.seasonNote { strings.append(note) }
         for row in presentation.seasonRows {
             strings.append(row.title)
             strings.append(row.subtitle)
@@ -550,5 +552,97 @@ struct AlmanacPresentationTests {
         }
         // The one permitted headcount, and it is of people rather than of what they did.
         #expect(presentation.seasonRows.first { $0.kind == .bloom }?.subtitle.contains("six neighbors saw it") == true)
+    }
+
+    // MARK: - §2's note · what the heading is actually over (task #177)
+
+    /// The note is `areaNote`'s job on the same screen — saying which promise a heading is making —
+    /// so it obeys the same rule the whole file is about: it draws with the rows it describes and
+    /// is absent when they are. A note under a heading that drew nothing would be the
+    /// heading-over-nothing defect with an extra sentence attached.
+    @Test("the season note draws exactly when the rows it describes do")
+    func theSeasonNoteDrawsOnlyWithItsRows() {
+        #expect(Self.present(nil).seasonNote == nil)
+        #expect(Self.present(AlmanacNeighborhood(area: .named("Sunset/Parkside"))).seasonNote == nil)
+
+        let drawn = Self.present(AlmanacNeighborhood(area: .named("Sunset/Parkside"), elder: Self.elder))
+        #expect(!drawn.seasonRows.isEmpty)
+        #expect(drawn.seasonNote != nil, "§2 drew a heading and rows with no account of what selects them")
+    }
+
+    /// **The defect #177 is about.** `This season` is over three rows on three different clocks, and
+    /// the elder's clock is no clock at all — `ORDER BY planted_on LIMIT 1`, no window, the same
+    /// tree in January as in July. So a note that appears beside the elder alone must not borrow a
+    /// seasonal window from the rows that did not draw.
+    ///
+    /// Asserted as *absence of the other rows' windows* rather than against a fixed sentence, so
+    /// rewording the clause cannot break it and quietly restoring a blanket "this season" claim
+    /// cannot satisfy it.
+    @Test("with only the elder, the note claims no seasonal window")
+    func theElderAloneIsNotDescribedAsSeasonal() throws {
+        let presentation = Self.present(
+            AlmanacNeighborhood(area: .named("Sunset/Parkside"), elder: Self.elder)
+        )
+        #expect(presentation.seasonRows.map(\.kind) == [.elder])
+        let note = try #require(presentation.seasonNote)
+
+        for month in Self.springMonthNames() {
+            #expect(!note.contains(month), "the elder's note borrowed the planting window: \(note)")
+        }
+        #expect(!note.lowercased().contains("bloom"), "the note describes a row that did not draw: \(note)")
+        #expect(
+            note.lowercased().contains("any season"),
+            "the note does not say the elder is unaffected by the season: \(note)"
+        )
+    }
+
+    /// Each drawn row gets its own account, and the note says the windows differ rather than
+    /// implying one. The three subjects are asserted present; nothing here pins a sentence.
+    @Test("with all three rows, the note accounts for each and states that they differ")
+    func theNoteAccountsForEveryDrawnRow() throws {
+        let presentation = Self.present(
+            AlmanacNeighborhood(
+                area: .named("Sunset/Parkside"),
+                firstBloom: Self.bloom(observers: 6),
+                elder: Self.elder,
+                newestNeighbors: RecentPlanting(treeCount: 23, leadingSpecies: ["Ginkgo"])
+            )
+        )
+        #expect(presentation.seasonRows.count == 3)
+        let note = try #require(presentation.seasonNote)
+
+        #expect(note.lowercased().contains("bloom"), "the bloom row is undescribed: \(note)")
+        #expect(note.lowercased().contains("elder"), "the elder row is undescribed: \(note)")
+        #expect(note.lowercased().contains("newest neighbors"), "the planting row is undescribed: \(note)")
+        #expect(
+            note.lowercased().contains("own window"),
+            "the note reads as one window over three clocks: \(note)"
+        )
+    }
+
+    /// The planting clause names the months the read is actually scoped to, taken from
+    /// `AlmanacWindow.springMonths` rather than written out — so moving the window moves the
+    /// sentence and the two cannot drift apart.
+    @Test("the planting clause names the window the read uses")
+    func thePlantingClauseTracksTheWindowConstant() throws {
+        let presentation = Self.present(
+            AlmanacNeighborhood(
+                area: .named("Sunset/Parkside"),
+                newestNeighbors: RecentPlanting(treeCount: 23, leadingSpecies: ["Ginkgo"])
+            )
+        )
+        let note = try #require(presentation.seasonNote)
+        let months = Self.springMonthNames()
+        #expect(months.count == 2)
+        for month in months {
+            #expect(note.contains(month), "the note does not name \(month), which the read bounds on: \(note)")
+        }
+    }
+
+    /// The first and last month of the window the planting read is bounded by, in the suite's
+    /// pinned calendar.
+    private static func springMonthNames() -> [String] {
+        let names = calendar.standaloneMonthSymbols
+        return [names[AlmanacWindow.springMonths.lowerBound - 1], names[AlmanacWindow.springMonths.upperBound - 1]]
     }
 }
