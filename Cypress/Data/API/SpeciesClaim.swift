@@ -61,4 +61,39 @@ public extension CypressAPI {
     func claimSpecies(treeID: UUID, speciesID: UUID) async throws -> Tree {
         throw APIError.notFound
     }
+
+    /// Same answer, for the same reason: a stub with no store has no tree to correct.
+    func correctSpecies(treeID: UUID, speciesID: UUID) async throws -> Tree {
+        throw APIError.notFound
+    }
+
+    func flagWrongSpecies(treeID: UUID) async throws {
+        throw APIError.notFound
+    }
+
+    func dismissSpeciesReview(flagID: UUID) async throws {
+        throw APIError.notFound
+    }
+}
+
+/// What a viewer may do about the species already on a tree — the correction path's whole surface,
+/// decided in `Data` and carried on the profile payload.
+///
+/// It is one value rather than three booleans on purpose. "Yours to correct", "somebody else's to
+/// report" and "already reported" are mutually exclusive states of one record, and a view that
+/// assembled them from separate flags could draw two controls, or none, for a record that has
+/// exactly one thing to offer. The decision needs the viewer's `Attribution` and role, neither of
+/// which a view has any business holding — the same argument that put `deletablePhotoIDs` on the
+/// payload rather than deriving it in `TreeProfilePresentation`.
+public enum SpeciesCorrectionOffer: Hashable, Sendable {
+    /// Nothing to correct: a city row, an unnamed tree, or a claim with no chain behind it.
+    case none
+    /// The claim in force is this contributor's own. `correctSpecies` (#86).
+    case correctable
+    /// The claim is somebody else's — or nobody's, which the ruling treats the same way.
+    /// `flagWrongSpecies` (#124).
+    case reportable
+    /// A report is open. `canResolve` is whether *this* viewer may answer it: the author of the
+    /// disputed claim, or a lead.
+    case underReview(flagID: UUID, canResolve: Bool)
 }

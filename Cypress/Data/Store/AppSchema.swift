@@ -42,7 +42,8 @@ public enum AppSchema {
         Migration(version: 10, name: "a coordinate says how it was arrived at", migrate: applyV10),
         Migration(version: 11, name: "a new tree says what ground it stands on", migrate: applyV11),
         Migration(version: 12, name: "a photograph says whose it is", migrate: applyV12),
-        Migration(version: 13, name: "anonymised means anonymous, permanently", sql: v13)
+        Migration(version: 13, name: "anonymised means anonymous, permanently", sql: v13),
+        Migration(version: 14, name: "a species claim can be corrected, and the correction keeps it", migrate: applyV14)
     ]
 
     /// The version a freshly migrated database reports.
@@ -1232,6 +1233,199 @@ public enum AppSchema {
         client_uuid   TEXT PRIMARY KEY COLLATE NOCASE,
         anonymized_at TEXT NOT NULL
     );
+    """
+
+    // MARK: - v14
+
+    /// `main` gains the species assertion chain, so a species claim can be **corrected** instead of
+    /// only made — tickets #86 and #124, and the table `SpeciesClaim`'s header was waiting for.
+    ///
+    /// **The hole.** `species_assertions` exists only in the read-only bundled seed, holding the
+    /// city's `city_import` row per tree. `main` had no copy, so the only writable species anywhere
+    /// in the app was the bare `community_trees.species_current` column, and the only edit to it
+    /// that needs no history is the one where there is nothing to supersede. Hence the two refusals
+    /// `LocalAPI.claimSpecies` enforces today — community rows only, first claim wins — and hence a
+    /// contributor who names a species wrongly is stuck with it for ever, with no route back and
+    /// nothing on screen offering one. `Tree.speciesCurrentID` has described itself as "denormalized
+    /// from the latest accepted assertion … a read cache" since it was written, and there has been
+    /// no chain for it to be a cache *of*.
+    ///
+    /// **The shape follows the seed's, in `main`'s vocabulary.** Same four `source` values, same
+    /// nullable `confidence`, same forward-pointing `superseded_by`, same append-only rule. Two
+    /// differences, both forced:
+    ///
+    /// 1. **UUID keys, not the seed's INTEGER ones.** `main` has no foreign key onto the inventory
+    ///    at all — SQLite cannot declare `REFERENCES` across an attached database — so contributions
+    ///    carry `tree_uuid TEXT` against `seed.trees.uuid`, exactly as every other table here does.
+    ///    The self-reference `superseded_by` *is* a real foreign key, because both ends are in
+    ///    `main`.
+    /// 2. **Authorship is `user_id`/`device_id`, not the seed's single `asserted_by`.** BUILD-PLAN
+    ///    §4 writes `asserted_by fk users`, which is right for a server where every claim arrives
+    ///    with a session and wrong on a phone whose first saves are anonymous under a device id
+    ///    (D9). The pair is `photos`' (v12), with `photos`' CHECK, so *nobody* is a reachable owner
+    ///    and means what it means everywhere else.
+    ///
+    /// **The partial unique index is the invariant, not decoration.**
+    ///
+    /// ```sql
+    /// CREATE UNIQUE INDEX … ON species_assertions(tree_uuid) WHERE superseded_by IS NULL
+    /// ```
+    ///
+    /// A tree has exactly one *current* claim, and it is the one nothing supersedes — the same
+    /// instrument, for the same reason, as `idx_tree_names_one_active` (D15's "one active name per
+    /// tree"). Without it, an append that forgot to stamp the old head leaves two heads and every
+    /// reader picks one by accident; with it, the engine refuses. It is what lets
+    /// `community_trees.species_current` be an honest read cache rather than a second opinion.
+    ///
+    /// **The backfill records that the author is unknown, and declines to guess one.** Every row in
+    /// `community_trees` with a `species_current` gets an assertion, because a species with no
+    /// assertion behind it is a head-less chain that no correction can append to — the invariant
+    /// above would be false for exactly the rows the feature is about. What it cannot supply is who
+    /// made the claim: `community_trees` has never had an author column, `claimSpecies` recorded
+    /// none, and neither did the add screen. So the row is written `.nobody` — both owner columns
+    /// null — and that is a statement rather than a shrug.
+    ///
+    /// v12's backfill reasoned in the other direction, and the difference is the point. There, "this
+    /// installation wrote every photograph" was checkable from the writers, and the harm of being
+    /// wrong was over-attribution of a JPEG nobody else could see. Here the fact being written is
+    /// *who may overwrite somebody's statement without asking*, and an assertion attributed to this
+    /// device by assumption hands that authority to whoever holds the phone. The honest value is the
+    /// one the database can support. Its consequence is stated rather than hidden: a species claimed
+    /// before v14 is nobody's, so nobody may correct it silently, and it is corrected through the
+    /// review route like a stranger's — see `docs/rulings-pending/species-supersession.md`.
+    ///
+    /// `updated_at` is the assertion's `created_at`, and it is chosen as the tightest *true* bound
+    /// rather than the likeliest guess: the claim was written at or before the row's last write, and
+    /// `created_at` would assert the tree was named when it was added, which is false for every row
+    /// named afterwards through `claimSpecies`.
+    ///
+    /// **`review_flags` is rebuilt to widen one CHECK, for #125.** "This tree does not exist at all"
+    /// is a *record defect*, not a lifecycle event, and it must not be reported as `appears_removed`:
+    /// confirming that writes `TreeStatus.removed`, which this product has settled as a memorial —
+    /// grey pin spoken as "Removed tree, memorial", screen 19, `acceptsNewContributions == false`
+    /// (E170, R19). A record that never had a tree would get a memorial for a tree that never lived,
+    /// which is the map asserting something untrue: R7's argument for the vacant-site pin, verbatim.
+    /// The two also mean different things to the merged national inventory the product is being
+    /// built toward (D16) — a lifecycle event with a date, against a row that should not be there —
+    /// and a consumer that cannot tell them apart mis-states a city's history.
+    ///
+    /// **Only the CHECK value, deliberately.** `ReviewFlag.Kind` gains no case here: #125 owns what
+    /// the kind means, what surface raises it and what confirming it writes, and that lands in a
+    /// later round. Until it does, nothing can write `never_existed` — the store binds
+    /// `Kind.rawValue` and there is no case to bind — so the widened CHECK is a reservation, not a
+    /// reachable state. What it buys is the rebuild: SQLite cannot widen a CHECK in place, so the
+    /// alternative was a whole migration of its own for one string.
+    ///
+    /// **Idempotent by guard, per half**, in v9's shape — read the stored `CREATE TABLE` text, which
+    /// is the only place a CHECK is visible from SQL. A run interrupted between either half and the
+    /// version bump replays cleanly, and the two halves are independent.
+    private static func applyV14(_ connection: SQLiteConnection) throws {
+        if try tableDefinition(named: "species_assertions", connection: connection).isEmpty {
+            try connection.execute(v14Assertions)
+            try backfillSpeciesAssertions(connection)
+        }
+        if try !tableDefinition(named: "review_flags", connection: connection).contains("never_existed") {
+            try connection.execute(v14ReviewFlags)
+        }
+    }
+
+    private static let v14Assertions = """
+    -- --------------------------------------------------- species_assertions --
+    -- The device's half of BUILD-PLAN §4 `species_assertions`. The seed holds the
+    -- city's `city_import` rows in its own copy of this table, keyed by INTEGER;
+    -- this one is keyed by UUID and references the inventory by `tree_uuid`, like
+    -- every other contribution table here.
+    --
+    -- Append-only. A correction inserts a row and stamps the row it replaces with
+    -- `superseded_by`; nothing is ever updated in place and nothing is deleted.
+    -- There is no `deleted_at` for that reason: the history is the point.
+    CREATE TABLE IF NOT EXISTS species_assertions (
+        id            TEXT PRIMARY KEY,
+        tree_uuid     TEXT NOT NULL,
+        -- Nullable: a genus-only or explicitly unknown claim (PRODUCT §3).
+        species_uuid  TEXT,
+        source        TEXT NOT NULL CHECK (source IN
+                          ('city_import','community','org','ai_suggestion')),
+        confidence    REAL CHECK (confidence IS NULL OR (confidence BETWEEN 0 AND 1)),
+        user_id       TEXT,
+        device_id     TEXT,
+        superseded_by TEXT REFERENCES species_assertions(id),
+        created_at    TEXT NOT NULL,
+        updated_at    TEXT NOT NULL,
+        -- At most one owner, and nobody is reachable: `photos`' rule (v12), for
+        -- `photos`' reason. An assertion whose author is unknown belongs to no
+        -- one, which is a fact this table must be able to hold.
+        CHECK (NOT (user_id IS NOT NULL AND device_id IS NOT NULL))
+    );
+    CREATE INDEX IF NOT EXISTS idx_species_assertions_tree
+        ON species_assertions(tree_uuid, created_at DESC);
+    -- One current claim per tree: the head of the chain. D15's instrument for
+    -- `tree_names`, applied to the same kind of invariant.
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_species_assertions_head
+        ON species_assertions(tree_uuid) WHERE superseded_by IS NULL;
+    """
+
+    /// Every already-claimed species gets the chain head it never had, owned by nobody.
+    ///
+    /// Swift rather than one `INSERT … SELECT` because each row needs its own UUID and SQLite has no
+    /// generator for one; `lower(hex(randomblob(16)))` produces a string `UUID(uuidString:)` accepts
+    /// but that is not a UUID, and this file does not write values it would not write from Swift.
+    private static func backfillSpeciesAssertions(_ connection: SQLiteConnection) throws {
+        let read = try connection.prepare("""
+            SELECT id, species_current, updated_at FROM community_trees
+             WHERE species_current IS NOT NULL AND deleted_at IS NULL
+            """)
+        defer { read.finalize() }
+        let claimed = try read.fetchAll { row in
+            (tree: try row.string("id"), species: try row.string("species_current"), moment: try row.string("updated_at"))
+        }
+        guard !claimed.isEmpty else { return }
+
+        let write = try connection.prepare("""
+            INSERT INTO species_assertions
+                (id, tree_uuid, species_uuid, source, user_id, device_id, created_at, updated_at)
+            VALUES (:id, :tree, :species, 'community', NULL, NULL, :moment, :moment)
+            """)
+        defer { write.finalize() }
+        for claim in claimed {
+            _ = try write.bind([
+                ":id": UUID().uuidString,
+                ":tree": claim.tree,
+                ":species": claim.species,
+                ":moment": claim.moment
+            ])
+            try write.run()
+            _ = try write.reset()
+        }
+    }
+
+    private static let v14ReviewFlags = """
+    CREATE TABLE review_flags_widened (
+        id         TEXT PRIMARY KEY,
+        tree_uuid  TEXT NOT NULL,
+        -- `never_existed` is reserved by #125 and unreachable until it lands:
+        -- `ReviewFlag.Kind` has no case for it, and the store binds that enum.
+        -- It is here because SQLite cannot widen a CHECK in place, and this
+        -- rebuild was already being written.
+        kind       TEXT NOT NULL CHECK (kind IN (
+                       'appears_dead','appears_removed','duplicate_suspected',
+                       'wrong_species','removed_but_active','never_existed')),
+        raised_by  TEXT,
+        status     TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','confirmed','dismissed')),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        deleted_at TEXT
+    );
+
+    INSERT INTO review_flags_widened
+        (id, tree_uuid, kind, raised_by, status, created_at, updated_at, deleted_at)
+    SELECT id, tree_uuid, kind, raised_by, status, created_at, updated_at, deleted_at
+      FROM review_flags;
+
+    DROP TABLE review_flags;
+    ALTER TABLE review_flags_widened RENAME TO review_flags;
+
+    CREATE INDEX IF NOT EXISTS idx_review_flags_tree ON review_flags(tree_uuid, status);
     """
 
     /// The `CREATE TABLE` text SQLite holds for `outbox`, which is where the `kind` vocabulary

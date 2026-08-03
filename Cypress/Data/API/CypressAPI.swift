@@ -60,6 +60,30 @@ public protocol CypressAPI: Sendable {
     /// implementation with no store to find the tree in.
     func claimSpecies(treeID: UUID, speciesID: UUID) async throws -> Tree
 
+    /// `POST /trees/{id}/species-assertions` (BUILD-PLAN §6) — corrects a species already claimed,
+    /// by appending to the chain rather than overwriting the column. Tickets **#86** and **#124**.
+    ///
+    /// Available since AppSchema v14 put `species_assertions` in `main`. The sentence above about
+    /// the chain not being writable on device was true when it was written and is not any more;
+    /// `claimSpecies` stays as the *first* claim, which is a different act with a different guard.
+    ///
+    /// - Throws: `.forbidden` when the claim in force is not this contributor's to supersede — see
+    ///   `docs/rulings-pending/species-supersession.md` — or when the tree is a city row;
+    ///   `.validationFailed` when there is no claim to correct; `.conflict` when somebody corrected
+    ///   it first; `.notFound` when there is no such tree.
+    func correctSpecies(treeID: UUID, speciesID: UUID) async throws -> Tree
+
+    /// Reports somebody else's species claim as wrong: raises a `wrong_species` review flag and
+    /// changes nothing about the tree.
+    ///
+    /// - Throws: `.validationFailed` when the claim is this contributor's own — correct it instead —
+    ///   or when there is no claim at all; `.conflict` when a report is already open.
+    func flagWrongSpecies(treeID: UUID) async throws
+
+    /// Closes a species report without changing the species. Nothing is appended and no status is
+    /// written; correcting the species is what confirms a report (`correctSpecies`).
+    func dismissSpeciesReview(flagID: UUID) async throws
+
     // MARK: - Species
 
     /// `GET /species/{id}` — the field guide entry.
@@ -707,6 +731,15 @@ public struct TreeProfile: Hashable, Sendable {
     /// Also nil for a seed built before the receipt carried these keys.
     public let inventorySource: InventorySource?
 
+    /// What this viewer may do about the species already claimed on this tree (tickets #86, #124).
+    ///
+    /// On the payload for `deletablePhotoIDs`' reason: the answer needs the viewer's `Attribution`
+    /// and their role, and a presentation that held either of those would be holding identity it has
+    /// no business with. `.none` is the honest default for every stub that cannot answer it, which
+    /// is the safe direction — a missing answer hides a control rather than offering one that would
+    /// be refused.
+    public let speciesCorrection: SpeciesCorrectionOffer
+
     public init(
         tree: Tree,
         activeName: TreeName? = nil,
@@ -723,7 +756,8 @@ public struct TreeProfile: Hashable, Sendable {
         ownPhotoIDs: Set<UUID> = [],
         deletablePhotoIDs: Set<UUID> = [],
         photoTallies: [UUID: PhotoTally] = [:],
-        inventorySource: InventorySource? = nil
+        inventorySource: InventorySource? = nil,
+        speciesCorrection: SpeciesCorrectionOffer = .none
     ) {
         self.tree = tree
         self.activeName = activeName
@@ -741,6 +775,7 @@ public struct TreeProfile: Hashable, Sendable {
         self.deletablePhotoIDs = deletablePhotoIDs
         self.photoTallies = photoTallies
         self.inventorySource = inventorySource
+        self.speciesCorrection = speciesCorrection
     }
 
     /// Whether this device contributed the photo, and may therefore show it to the person who took
