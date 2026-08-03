@@ -43,7 +43,9 @@ conflicts with convenience, the rule wins.
 - A green re-run proves a failure was intermittent, never why it happened.
 
 ## Simulators
-- iPhone 16 `8085586B-1661-4AD3-B84F-8332F436CDFB` is the owner's — keep it free.
+- **The plain iPhone 16 is the owner's — keep it free.** Its UDID is deliberately not written
+  here. You do not need it: never run against a device you were not assigned, and the four below
+  are the whole set an agent may use.
   Agents use: 16 Pro `EA0AD796-3052-4EE5-A7A8-A1DE807A3653`, 16 Pro Max
   `DE8E11AE-4375-4C3B-A296-9B60A7DF1DB3`, 16e `3A1F212D-8F3A-41F1-AF72-EC95E155A4C9`,
   16 Plus `24D1629F-9FA8-4E3D-812E-F6BC85C9E668`.

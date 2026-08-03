@@ -7,6 +7,7 @@ ends INSIDE a foliage pad, so nothing can float or misconnect.
 Foliage pads are unions of overlapping ellipses (same fill -> one
 organic silhouette mass). Deterministic (no random)."""
 
+import os
 import math
 
 # ---------- palette ----------
@@ -326,7 +327,7 @@ def main():
   <div class="grid">{''.join(cards)}</div>
   <footer>Single ink: Cypress Deep #1D4634 on paper #EEF2E7 · B5 uses the full identity palette. The chosen mark replaces the logo across the identity page and app mocks.</footer>
 </div>"""
-    out = "/Users/nikitabogdanov/PycharmProjects/cypress/mocks/logo-candidates.html"
+    out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logo-candidates.html")
     with open(out, "w") as f:
         f.write(html)
     print(f"wrote {out} ({len(html)} bytes)")

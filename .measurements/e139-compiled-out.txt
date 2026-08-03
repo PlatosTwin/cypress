@@ -1,6 +1,6 @@
-Debug app code : /Users/nikitabogdanov/PycharmProjects/cypress/.claude/worktrees/agent-a40557843e598c9bc/.dd/Build/Products/Debug-iphonesimulator/Cypress.app/Cypress.debug.dylib
-Debug stub     : /Users/nikitabogdanov/PycharmProjects/cypress/.claude/worktrees/agent-a40557843e598c9bc/.dd/Build/Products/Debug-iphonesimulator/Cypress.app/Cypress
-Release binary : /Users/nikitabogdanov/PycharmProjects/cypress/.claude/worktrees/agent-a40557843e598c9bc/.ddrel/Build/Products/Release-iphonesimulator/Cypress.app/Cypress
+Debug app code : <repo>/.claude/worktrees/agent-a40557843e598c9bc/.dd/Build/Products/Debug-iphonesimulator/Cypress.app/Cypress.debug.dylib
+Debug stub     : <repo>/.claude/worktrees/agent-a40557843e598c9bc/.dd/Build/Products/Debug-iphonesimulator/Cypress.app/Cypress
+Release binary : <repo>/.claude/worktrees/agent-a40557843e598c9bc/.ddrel/Build/Products/Release-iphonesimulator/Cypress.app/Cypress
 
                                    DebugDylib  DebugStub    Release
 string: CYPRESS_MAP_PROBE                   1          0          0

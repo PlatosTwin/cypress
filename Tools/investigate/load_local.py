@@ -1,8 +1,10 @@
 # THROWAWAY investigation script -- supports docs/investigations/city-tree-source.md.
 # Not part of the build; safe to delete.
-import csv, json, sys
+import csv, json, sys, os
 
-SRC = "/Users/nikitabogdanov/PycharmProjects/cypress/Fixtures/raw/street_tree_list.csv"
+# Repo-relative, so the script runs in any checkout. Overridable for a copy kept elsewhere.
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+SRC = os.environ.get("STREET_TREE_CSV", os.path.join(REPO, "Fixtures/raw/street_tree_list.csv"))
 out = {}
 n = 0
 with open(SRC, newline="", encoding="utf-8") as fh:
