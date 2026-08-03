@@ -215,25 +215,50 @@ struct DrawnGlyphGuardTests {
     /// `Image(systemName:)` into prose in three files on purpose, to record what was removed. If
     /// the scanner ever stops stripping comments, the gate above goes red on those sentences and
     /// the next reader deletes it. So: the mentions must still be there, and must not be counted.
+    ///
+    /// **It asserts per line, not per file, and that is the whole design of it.** The first draft
+    /// asserted that a file mentioning the token in prose had *no* uses at all. Under #130's own
+    /// red-proof — a sixth symbol added to `MapChrome`, which is one of the files carrying a prose
+    /// mention — that draft went red saying "the scanner read prose as a call", which was false:
+    /// the scanner had read a real call, correctly. A control that misnames the defect it finds is
+    /// worse than no control, because the next person acts on what it says.
+    ///
+    /// Line comments only (`//`, `///`), which is what every mention in this repo is.
     @Test("the token appears in this repo's comments, and the scanner does not count it")
     func commentsMentioningSymbolsAreNotCounted() throws {
         let root = AppSourceLiterals.repositoryRoot()
-        var filesMentioningInProse = 0
+        var proseMentions = 0
+
         for file in AppSourceLiterals.sourceFiles(root: root) {
             let source = try String(contentsOf: file, encoding: .utf8)
-            guard source.contains("Image(systemName:") else { continue }
-            filesMentioningInProse += 1
+            let commentLines = source.components(separatedBy: "\n").enumerated().filter {
+                let trimmed = $0.element.trimmingCharacters(in: .whitespaces)
+                return trimmed.hasPrefix("//")
+                    && BorrowedGlyphAPI.tokens.contains(where: trimmed.contains)
+            }.map { $0.offset + 1 }
+            guard !commentLines.isEmpty else { continue }
+            proseMentions += commentLines.count
+
+            let countedLines = Set(
+                BorrowedGlyphAPI.uses(in: source, path: file.lastPathComponent).map(\.line)
+            )
+            let misread = commentLines.filter(countedLines.contains)
             #expect(
-                BorrowedGlyphAPI.uses(in: source, path: file.lastPathComponent).isEmpty,
-                "\(file.lastPathComponent) mentions the token in prose and the scanner read it as a call"
+                misread.isEmpty,
+                """
+                \(file.lastPathComponent) lines \(misread) are comments mentioning the token and \
+                the scanner counted them as calls. The scanner has stopped stripping comments; \
+                fix `codeOnly`, do not delete the prose.
+                """
             )
         }
+
         #expect(
-            filesMentioningInProse >= 2,
+            proseMentions >= 3,
             """
-            no app file mentions Image(systemName:) in prose any more, so the control above proves \
-            nothing. #130 left those mentions in MapChrome, ShareDestinationGlyph and PhotoGlyphs \
-            deliberately; if they were removed, this control needs rewriting, not deleting.
+            only \(proseMentions) comment line(s) in the app target mention a symbol API, so this \
+            control proves nothing. #130 left those mentions in MapChrome, ShareDestinationGlyph \
+            and PhotoGlyphs deliberately; if they were removed, this control needs rewriting.
             """
         )
     }
