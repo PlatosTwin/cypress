@@ -92,6 +92,33 @@ zsh aborts the command before `grep` runs at all, with a real `xcodebuild` live 
 `Tools/run_tests.sh` therefore uses no pattern at all: it reads `ps -eo pid=,command=` in a `while`
 loop and matches with a `case`, which has nothing to glob and nothing to self-match.
 
+## 4 · Unresolved: on this configuration the data container did **not** survive `xcodebuild test`
+
+E202-A's stated mechanism is that the `active-city` marker *survives reinstall*, "because
+`xcodebuild test` replaces the app bundle and leaves the data container alone". That did not hold
+on the 16e today, and it is worth someone's attention before E202-A is relied on again.
+
+Planted `us-ca-sj` at the marker path, then ran one UI test through the escape hatch (the run's own
+header confirms the state it started from — `active-city=us-ca-sj`). Afterwards:
+
+    container before: …/Application/8DAEBE1D-F91B-4368-9F3F-F7A4099DCEEE
+    container after:  …/Application/ADDE289C-6DED-40B7-BB02-67C1E204A9C0
+    marker still present? No such file or directory
+
+The data container was replaced, not reused, and the marker went with it. The same happened between
+the full-suite run and the run after it — three consecutive runs, three container UUIDs. So on this
+device the leftover state E202-A describes does not reach the run that follows it.
+
+**This is recorded as a discrepancy, not a correction.** E202-A rests on a real incident with real
+evidence — 33 failures, all cured by deleting the marker — so the marker plainly did survive then.
+What differs between that configuration and this one is not established here, and guessing at it is
+how the confident-comment class starts. What can be said is narrow: the E202-A refusal has been
+proven to fire on the state, and has **not** been proven to prevent a failure that would otherwise
+happen on a device that behaves like today's. It is cheap, it never produces a false green, and its
+message carries the one-line fix — so it is worth keeping either way — but if the container is
+replaced on every run in current tooling, then E202-A may no longer be reachable, and that is worth
+confirming before anyone spends another afternoon on it.
+
 ---
 
 **Filed alongside:** `Tools/run_tests.sh` gains a stamped provenance header and three refusals
