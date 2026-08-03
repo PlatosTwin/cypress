@@ -52,9 +52,14 @@ collision_check() {
     [ -n "${pid:-}" ] || continue
     [ "$pid" = "$$" ] && continue
     case "$cmd" in *xcodebuild*) ;; *) continue ;; esac
+    # The worktree test matches the *project path*, not the repo root. `$REPO` alone is a
+    # prefix of every sibling worktree — main is `…/cypress` and the agents' are
+    # `…/cypress-w8b`, `…/cypress-w8c` — so `*"$REPO"*` made a run from main refuse
+    # whenever any agent was building. Verified live against two running agents before the
+    # fix; the guard was blocking the orchestrator, not a collision.
     case "$cmd" in
-      *"$UDID"*)  hits+="  pid $pid — same simulator ($UDID)"$'\n' ;;
-      *"$REPO"*)  hits+="  pid $pid — same worktree ($REPO)"$'\n' ;;
+      *"$UDID"*)                   hits+="  pid $pid — same simulator ($UDID)"$'\n' ;;
+      *"$REPO/Cypress.xcodeproj"*) hits+="  pid $pid — same worktree ($REPO)"$'\n' ;;
     esac
   done < <(ps -eo pid=,command=)
   if [ -n "$hits" ]; then
