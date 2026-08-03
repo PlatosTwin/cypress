@@ -19,9 +19,41 @@ grammar is `DebugLocationOverride.parse`:
 All five of `MapLocationProvider.Availability` are reachable. The named values are spelled exactly
 as the enum's own cases, so there is one vocabulary rather than two.
 
-The two tests that used to skip on ambient simulator state are now unconditional:
-`MapRecenterUITests.testPressingItWithLocationDeniedExplainsRatherThanDoingNothing` launches with
-`denied`; `AlmanacGroupTapTests` launches with `37.78485,-122.4215`.
+Every test that used to skip on ambient simulator state is now unconditional:
+
+| test | launches with |
+|---|---|
+| `MapRecenterUITests.testPressingItWithLocationDeniedExplainsRatherThanDoingNothing` | `denied` |
+| `AlmanacGroupTapTests` (2 cases) | `37.78485,-122.4215` |
+| `MapCenteredStateUITests` (2 cases) | `37.7599,-122.4148` |
+| `MapPanTabSwitchUITests` (2 cases) | `37.7599,-122.4148` |
+
+**`CypressUITests` now reports `0 tests skipped`, where a healthy device previously reported 4.**
+
+#### A refuted premise, and it is the reason the count is 4 and not 2
+
+**The ticket names two `XCTSkip` guards. There are six**, and the four it does not name are the same
+class and the same words:
+
+    MapCenteredStateUITests.testTheMapOpensOnTheReaderWithoutBeingAsked
+    MapCenteredStateUITests.testTheControlSaysCenteredOnceTheMapIsOnYou
+    MapPanTabSwitchUITests.testADeliberatePanSurvivesLeavingForJournalAndBack
+    MapPanTabSwitchUITests.testAnUntouchedCameraStillCentersOnTheReaderAfterTheRoundTrip
+
+    Test skipped - this simulator never gave Cypress a fix (the control reads "Finding you"),
+    so there is nothing the map could have opened on
+
+They were the *only* skips left after the two named ones were fixed, and they are load-bearing:
+`testTheMapOpensOnTheReaderWithoutBeingAsked` is the whole of #115's claim — "opening the app should
+open on where you're located, 100% of the time" — and on every ordinary fixless simulator it had been
+declining to check it, inside a green number, since it was written. Its own doc comment says so:
+"The skip below is honest and it is also a hole." Fixing the two named tests and leaving these would
+have left the ticket's actual subject — a green run that does not say what it did not check — exactly
+where it was.
+
+All four pass with a pinned fix. Their guards are now failures rather than skips: `MissingPinnedFix`,
+which is thrown only when a launch that *stated* a fix reports itself fixless — a defect in the seam
+or the wiring, never a fact about the machine.
 
 #### The problem this fixes, stated narrowly
 
@@ -90,11 +122,13 @@ test that pinned a fix over the ocean would leave the device refusing the follow
 fixtures are inside the inventory's coverage and the counts were measured over the same ±250 m box
 `Tools/run_tests.sh count_camera_trees` uses:
 
-    37.78485, -122.4215   Western Addition                  780 trees
-    37.7596,  -122.4269   Mission Dolores, the map's default 553 trees
+    37.78485, -122.4215   Western Addition                   780 trees
+    37.7596,  -122.4269   Mission Dolores, the map's default  553 trees
+    37.7599,  -122.4148   the map tests' own coordinate       501 trees
 
-`DebugLocationFixtures` carries both, with the measurement. A new coordinate must be measured the
-same way before it is pinned.
+`DebugLocationFixtures` carries the first two, with the measurement; the third is the coordinate
+`MapCenteredStateUITests`' skip message already named and stays a literal in that file. A new
+coordinate must be measured the same way before it is pinned.
 
 #### An invalid value is a banner, never a fallback
 
@@ -134,5 +168,8 @@ what they get.
     **skipped**: `launched with location denied and screen 01 drew no standing notice about it` and
     `screen 12 drew "See your neighborhood" on a launch that pinned a fix … so the almanac never
     received a coordinate`.
-- Before: these four cases contributed skips to every run. After: `Executed 4 tests, with 0
-  failures`, no skips.
+- The four unnamed tests, red-proofed the same way (`pinnedFix` set to `notAsked`): all four failed
+  with `caught error: "screen 01's recenter control reads "Cypress has not been given your location"
+  on a launch that pinned a fix at notAsked … this is not a machine without a fix, it is a fix that
+  did not arrive"`, where they had previously skipped.
+- Before: `Executed 82 tests, with 4 tests skipped and 0 failures`. After: **0 skipped**.
