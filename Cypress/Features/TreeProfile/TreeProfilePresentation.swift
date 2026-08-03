@@ -422,6 +422,22 @@ struct TreeProfilePresentation {
     /// the record can still be put right.
     var speciesCorrection: SpeciesCorrectionOffer { profile.speciesCorrection }
 
+    /// What this screen offers about the **record** rather than about the tree on it — task #125,
+    /// the owner's *"a way to flag that a tree that is listed on the map doesn't appear to exist at
+    /// all"*.
+    ///
+    /// **NOT SPECIFIED.** SCREENS.md has no control here; `RULINGS R46` decided the kind and
+    /// `RULINGS docs/rulings-pending/never-existed-record-defect.md` is the mock for what this
+    /// draws. Read straight off the payload for `speciesCorrection`'s reason — the answer needs the
+    /// viewer's role and an open-flag read, and a presentation holding either would be holding
+    /// something it cannot see.
+    ///
+    /// No `acceptsContributions` gate, and the reason is the sharper version of the species one: a
+    /// claim that the record was never true is *most* worth making about a record the app has
+    /// stopped taking contributions on, and a memorial for a tree that never lived is precisely the
+    /// state R46 exists to prevent.
+    var recordDefect: RecordDefectOffer { profile.recordDefect }
+
     /// How this record's coordinate was arrived at — the fourth element of the subtitle, and the last
     /// one, because it is the finest-grained provenance fact the row carries.
     ///
@@ -1365,6 +1381,93 @@ enum TreeProfileCopy {
             return "This tree comes from the city inventory, and its species is the city's record."
         case .notFound:
             return "This tree could not be found. Nothing was recorded."
+        default:
+            return "That report could not be recorded. Nothing was changed."
+        }
+    }
+
+    // MARK: - The record itself (task #125)
+
+    /// The control. It names the observation a reader can actually make — *there is nothing here* —
+    /// rather than the conclusion the record draws from it.
+    ///
+    /// Not "Report this tree as missing": missing is what a removal is, and the whole of
+    /// `RULINGS R46` is that the two must not be said with one word. A tree that was here and is
+    /// gone is screen 05's `Removed?`, which writes a memorial; this is the claim that the row was
+    /// never true.
+    static let reportNeverExistedAction = "Report that there is no tree here"
+
+    /// Where the report goes — and this sentence is the one that had to be written against the
+    /// build rather than against the architecture.
+    ///
+    /// The obvious sentence was `reportSpeciesNotice`'s, "This goes to a community reviewer. The
+    /// city is not notified." It is not available. During beta there is **no contribution sync**:
+    /// the outbox drains through `APIOutboxTransport` into `LocalAPI`, which writes this phone's own
+    /// tables, and nothing uploads or downloads anybody's rows. A report reaches no other reader, so
+    /// promising a community reviewer is D16(a)'s banned claim with a different noun — a destination
+    /// named that the report does not arrive at. §3 constraint 3 forbids the city version of it
+    /// permanently, and the principle underneath is that the app never says it did a thing it did
+    /// not do.
+    ///
+    /// So the sentence says the two things that are true: the report is kept, and it is kept here.
+    /// E126's rule is why it says the second half out loud instead of falling silent about the
+    /// destination — a surface that cannot do the thing has to say so plainly rather than let the
+    /// reader supply an answer.
+    /// The negation is spelled `The city is not notified` and not `Nothing is sent to the city`,
+    /// which is what this first read. Both sentences mean the same thing to a person and only one of
+    /// them survives the test that guards them: the guard is a substring check for the forbidden
+    /// *claim*, and a claim's negation contains the claim. The sanctioned form is already the app's
+    /// — `CheckInCopy.reviewNotice` and `TreeProfileCopy.reportSpeciesNotice` both use it — so the
+    /// register matches the two surfaces a reader meets this on either side of.
+    static let neverExistedNotice = """
+        This is kept on this phone and shows on this record. The city is not notified, and Cypress \
+        cannot yet carry a report to anybody else’s phone.
+        """
+
+    /// Drawn while a report is open, to everybody including whoever raised it: a record under
+    /// dispute must not render as though nobody had objected. `speciesReported`'s reason.
+    static let recordReported = "This record has been reported as never having held a tree."
+
+    /// The confirming verb. "Withdraw" rather than "delete" or "remove", and each rejected word is
+    /// rejected for a reason:
+    ///
+    /// - *Delete* would promise an erasure that does not happen. The row keeps its place with a
+    ///   `deleted_at` on it, because a confirmed "this was never here" is a fact D16's merged
+    ///   inventory wants and an erased row cannot be published.
+    /// - *Remove* is `TreeStatus.removed`'s word, and lending it to the one act that must never be
+    ///   read as a removal would undo R46 in the label.
+    static let withdrawRecordAction = "Withdraw this record"
+
+    /// What withdrawing does, stated before it is done rather than discovered after.
+    ///
+    /// The act takes a pin off the map and closes this screen, which is more than any other control
+    /// on the profile does, and a reader is owed the sentence. It is a line and not a dialog on
+    /// purpose: #125 is a report path, not a moderation product, and the queue's own confirmation
+    /// alerts belong to the surface that has a queue.
+    static let withdrawRecordNotice = """
+        Withdrawing takes this record off the map. It stays on this phone, marked withdrawn.
+        """
+
+    /// The second verb, for whoever may answer the report. "Keep" rather than "dismiss" because it
+    /// names what the map ends up with, and because nothing is thrown away — the report keeps its
+    /// row, marked answered. `keepSpeciesAction`'s argument, one seam over.
+    static let keepRecordAction = "Keep this record"
+
+    /// `.forbidden` carries two meanings across the three writes — a city row on the raise, a
+    /// non-lead on the resolve — and the city sentence is the one written here because it is the
+    /// only one a reader can reach: the resolve controls are drawn only when `canResolve`, which is
+    /// the same role question the write re-asks.
+    static func recordDefectFailure(_ error: APIError) -> String {
+        switch error {
+        case .conflict:
+            return "This record has already been reported. Nothing was added."
+        case .forbidden:
+            return "This tree comes from the city inventory, and Cypress cannot withdraw a city "
+                + "record."
+        case .validationFailed:
+            return "There is nothing here to report."
+        case .notFound:
+            return "This record could not be found. Nothing was changed."
         default:
             return "That report could not be recorded. Nothing was changed."
         }

@@ -78,6 +78,18 @@ public struct ReviewFlag: CoreEntity, SoftDeletable {
         /// Opened by the weekly city diff when a row leaves the source but the tree has recent
         /// community activity (BUILD-PLAN §7). Not in the §4 list; §7 names it explicitly.
         case removedButActive = "removed_but_active"
+        /// "There is no tree here and there never was" — a defect in the **record**, not an event in
+        /// a tree's life (task #125, ruled in `RULINGS R46`; the surface and the resolution are
+        /// `RULINGS docs/rulings-pending/never-existed-record-defect.md`).
+        ///
+        /// Reserved in the `review_flags` CHECK by AppSchema v14 and unreachable until this case
+        /// existed. It is deliberately **not** `appearsRemoved`: confirming that writes
+        /// `TreeStatus.removed`, which this product has settled as a memorial — grey pin spoken as
+        /// "Removed tree, memorial", screen 19, `acceptsNewContributions == false` (E170, R19) — and
+        /// a record that never had a tree behind it would get a memorial for a tree that never
+        /// lived. That is R7's vacant-site argument, and D16's merged inventory needs the two apart:
+        /// a dated lifecycle event, against a row that should not be in the table at all.
+        case neverExisted = "never_existed"
 
         /// What resolving a flag of this kind is allowed to write.
         ///
@@ -99,6 +111,10 @@ public struct ReviewFlag: CoreEntity, SoftDeletable {
             case status(TreeStatus)
             /// Confirming appends a species assertion (`LocalAPI.resolveSpeciesReview`).
             case speciesAssertion
+            /// Confirming withdraws the **record**: the `community_trees` row is soft-deleted and
+            /// the pin goes (`LocalAPI.withdrawRecord`). `trees.status` is not touched, and that is
+            /// the point rather than an omission — see `neverExisted`.
+            case recordWithdrawal
             /// Nothing is written. `removedButActive` is the weekly diff saying the city and the
             /// community disagree, and the whole point is that a person looks (BUILD-PLAN §7);
             /// `duplicateSuspected` has no resolution route built yet and no surface raises it.
@@ -110,6 +126,7 @@ public struct ReviewFlag: CoreEntity, SoftDeletable {
             case .appearsRemoved: return .status(.removed)
             case .appearsDead: return .status(.deadReported)
             case .wrongSpecies: return .speciesAssertion
+            case .neverExisted: return .recordWithdrawal
             case .duplicateSuspected, .removedButActive: return .byHand
             }
         }
@@ -121,11 +138,22 @@ public struct ReviewFlag: CoreEntity, SoftDeletable {
         /// second time. Two switches over the same enum answering two halves of one question is the
         /// shape E170 was: they agree until somebody edits one of them.
         ///
-        /// `duplicateSuspected` and `wrongSpecies` are nil because neither is a statement about
-        /// whether the tree is alive — they are corrections to the record, and confirming one must
-        /// not move `trees.status`. `removedButActive` is nil for a sharper reason: the weekly diff
-        /// opens it precisely *because* the city and the community disagree, and the whole point is
-        /// that a person looks rather than a status being written (BUILD-PLAN §7).
+        /// `duplicateSuspected`, `wrongSpecies` and `neverExisted` are nil because none of them is a
+        /// statement about whether the tree is alive — they are corrections to the record, and
+        /// confirming one must not move `trees.status`. `removedButActive` is nil for a sharper
+        /// reason: the weekly diff opens it precisely *because* the city and the community disagree,
+        /// and the whole point is that a person looks rather than a status being written
+        /// (BUILD-PLAN §7).
+        ///
+        /// **`neverExisted` is the one this property was most likely to be widened for, and it must
+        /// not be.** `TreeStatus.vacantSite` exists and reads like the truthful confirmed state; it
+        /// is not. A vacant site is a planting site with a tree missing from it, drawn as a hollow
+        /// ring precisely so it does not borrow the removed pin's meaning (R7). A duplicate pin two
+        /// metres from another, or a record standing in the middle of a building, is not a vacant
+        /// planting site, and writing one would leave the map asserting a site where there is
+        /// nothing — R7's own argument, arriving at the case where the assertion is not imprecise
+        /// but false. Pointing this at any status to make the kind resolvable is the E170 defect in
+        /// its worse form: the queue would look right while the trees moved.
         public var confirmedStatus: TreeStatus? {
             guard case let .status(status) = resolution else { return nil }
             return status
@@ -145,6 +173,13 @@ public struct ReviewFlag: CoreEntity, SoftDeletable {
         /// The kinds the species seam resolves. Derived from the same switch, for the same reason.
         public static var speciesReviewKinds: [Kind] {
             allCases.filter { $0.resolution == .speciesAssertion }
+        }
+
+        /// The kinds the record-defect seam resolves (task #125). Derived from the same switch, for
+        /// the same reason: a third list written by hand is a third thing that can disagree with the
+        /// one that decides.
+        public static var recordReviewKinds: [Kind] {
+            allCases.filter { $0.resolution == .recordWithdrawal }
         }
     }
 

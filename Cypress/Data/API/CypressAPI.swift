@@ -82,6 +82,28 @@ public protocol CypressAPI: Sendable {
     /// written; correcting the species is what confirms a report (`correctSpecies`).
     func dismissSpeciesReview(flagID: UUID) async throws
 
+    // MARK: - The record itself (task #125)
+
+    /// Reports a record as never having held a tree: raises a `never_existed` review flag and
+    /// changes nothing about the record. See `RecordDefect.swift` for why this is its own kind and
+    /// not `appears_removed`.
+    ///
+    /// - Throws: `.forbidden` when the record is a city row — the seed is read-only and nothing on
+    ///   this device could resolve such a report; `.conflict` when a report is already open;
+    ///   `.notFound` when there is no such record.
+    func flagNeverExisted(treeID: UUID) async throws
+
+    /// Confirms a `never_existed` report: the record is withdrawn — the `community_trees` row is
+    /// soft-deleted — and `trees.status` is **not** touched.
+    ///
+    /// - Throws: `.forbidden` when the viewer is not a lead; `.validationFailed` when the flag is
+    ///   not a record defect; `.conflict` when it has already been answered.
+    func withdrawRecord(flagID: UUID) async throws
+
+    /// Closes a `never_existed` report leaving the record where it is. Nothing is withdrawn and no
+    /// status is written — the flag row records that somebody looked.
+    func dismissRecordReview(flagID: UUID) async throws
+
     // MARK: - Species
 
     /// `GET /species/{id}` — the field guide entry.
@@ -738,6 +760,14 @@ public struct TreeProfile: Hashable, Sendable {
     /// be refused.
     public let speciesCorrection: SpeciesCorrectionOffer
 
+    /// What this viewer may do about a record they believe never held a tree (task #125).
+    ///
+    /// On the payload for `speciesCorrection`'s reason, and answered by the same kind of read: a
+    /// `review_flags` lookup and the viewer's role. `.unavailable` is the honest default for every
+    /// stub that cannot answer it, which is the safe direction — a missing answer hides a control
+    /// rather than offering one that would be refused.
+    public let recordDefect: RecordDefectOffer
+
     public init(
         tree: Tree,
         activeName: TreeName? = nil,
@@ -755,7 +785,8 @@ public struct TreeProfile: Hashable, Sendable {
         deletablePhotoIDs: Set<UUID> = [],
         photoTallies: [UUID: PhotoTally] = [:],
         inventorySource: InventorySource? = nil,
-        speciesCorrection: SpeciesCorrectionOffer = .unavailable
+        speciesCorrection: SpeciesCorrectionOffer = .unavailable,
+        recordDefect: RecordDefectOffer = .unavailable
     ) {
         self.tree = tree
         self.activeName = activeName
@@ -774,6 +805,7 @@ public struct TreeProfile: Hashable, Sendable {
         self.photoTallies = photoTallies
         self.inventorySource = inventorySource
         self.speciesCorrection = speciesCorrection
+        self.recordDefect = recordDefect
     }
 
     /// Whether this device contributed the photo, and may therefore show it to the person who took

@@ -128,6 +128,34 @@ public struct CommunityTreeStore {
         return changed
     }
 
+    /// Withdraws the record: the row is soft-deleted and stops being a tree anywhere in the app
+    /// (task **#125**, `RULINGS docs/rulings-pending/never-existed-record-defect.md`).
+    ///
+    /// **A soft delete, not a `DELETE`, and the difference is the whole claim being made.** Every
+    /// read in this file already filters `deleted_at IS NULL` — `inBounds`, `near`, `claimSpecies`,
+    /// `setSpecies` — so one column removes the pin, the profile and the correction routes in one
+    /// write, without a single reader learning a new rule. It also leaves the row: a confirmed
+    /// "this was never here" is a fact D16's merged inventory wants to publish, and a row that has
+    /// been erased cannot be published. `tree(id:)` deliberately does **not** filter, so the
+    /// withdrawal is still readable by the one caller that needs to see what it did.
+    ///
+    /// - Returns: whether there was a live row to withdraw. `false` means no such row, or it has
+    ///   already been withdrawn — which is why the caller may treat a second confirmation as a
+    ///   no-op rather than as a failure.
+    public func withdraw(treeID: UUID, at moment: Date, connection: SQLiteConnection) throws -> Bool {
+        let statement = try connection.cachedStatement("""
+            UPDATE community_trees
+               SET deleted_at = :now, updated_at = :now
+             WHERE id = :id COLLATE NOCASE
+               AND deleted_at IS NULL
+            """)
+        _ = try statement.bind([":now": moment, ":id": treeID])
+        try statement.run()
+        let changed = connection.changes > 0
+        _ = try statement.reset()
+        return changed
+    }
+
     // MARK: - Reading
 
     public func tree(id: UUID, connection: SQLiteConnection) throws -> Tree? {

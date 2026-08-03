@@ -213,6 +213,64 @@ final class TreeProfileModel {
         await reload()
     }
 
+    // MARK: - The record itself (task #125)
+
+    /// Why the last record-defect write did not land, or nil.
+    ///
+    /// Its own property rather than a share of `speciesClaimFailure`, because the two controls sit
+    /// in different blocks of the screen and a refusal has to appear under the one it belongs to. A
+    /// shared sentence would print "this tree comes from the city inventory" under the species line
+    /// after a tap two hundred points away.
+    private(set) var recordDefectFailure: String?
+
+    /// Whether the record this screen is about has just been withdrawn.
+    ///
+    /// The view watches it and pops. Not a phase: the read that follows already answers `.notFound`
+    /// — `LocalAPI.treeProfile` refuses a withdrawn community row — so the screen is honest either
+    /// way, and this only decides whether the reader is left looking at a failure sentence for a
+    /// record they themselves just withdrew.
+    private(set) var withdrewRecord = false
+
+    /// Reports that this record never held a tree (#125).
+    func reportNeverExisted() async {
+        recordDefectFailure = nil
+        do {
+            try await api.flagNeverExisted(treeID: treeID)
+        } catch let error as APIError {
+            recordDefectFailure = TreeProfileCopy.recordDefectFailure(error)
+        } catch {
+            recordDefectFailure = TreeProfileCopy.recordDefectFailure(.serverError)
+        }
+        await reload()
+    }
+
+    /// Answers an open report by withdrawing the record. Lead only; the gate is on the write.
+    func withdrawRecord(flagID: UUID) async {
+        recordDefectFailure = nil
+        do {
+            try await api.withdrawRecord(flagID: flagID)
+            withdrewRecord = true
+        } catch let error as APIError {
+            recordDefectFailure = TreeProfileCopy.recordDefectFailure(error)
+        } catch {
+            recordDefectFailure = TreeProfileCopy.recordDefectFailure(.serverError)
+        }
+        await reload()
+    }
+
+    /// Answers an open report by leaving the record where it is.
+    func keepRecord(flagID: UUID) async {
+        recordDefectFailure = nil
+        do {
+            try await api.dismissRecordReview(flagID: flagID)
+        } catch let error as APIError {
+            recordDefectFailure = TreeProfileCopy.recordDefectFailure(error)
+        } catch {
+            recordDefectFailure = TreeProfileCopy.recordDefectFailure(.serverError)
+        }
+        await reload()
+    }
+
     // MARK: - The favorite (RULINGS R2)
 
     /// The taps, in the order they were made.

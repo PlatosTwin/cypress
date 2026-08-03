@@ -280,6 +280,16 @@ public actor LocalAPI: CypressAPI {
             let inventoryTree = try record?.tree ?? communityTrees.tree(id: id, connection: connection)
             guard var tree = inventoryTree else { throw APIError.notFound }
 
+            // A withdrawn community record is not a tree (task **#125**). `CommunityTreeStore.tree`
+            // is the one read in that file which does *not* filter `deleted_at`, deliberately, so a
+            // withdrawal can be read back; every other read already skips the row, so the pin is
+            // already gone. This is the screen that would otherwise still draw the whole profile —
+            // reachable from a favourite, a deep link or a back stack — with every contribution
+            // control on it, which is exactly the state the confirmation exists to end. Scoped to
+            // community rows: the seed's own soft deletes are `seedHasSoftDeletedTrees`' question
+            // and are answered a layer down, in `TreeQueries`.
+            if tree.source == .community, tree.deletedAt != nil { throw APIError.notFound }
+
             // Layer any local status override (ERRATA E124-B): a lead-confirmed removal makes this a
             // memorial record — `status.isMemorial` gates `MemorialModel`, and `acceptsNewContributions`
             // goes false — exactly as the same override makes the map pin a memorial. One row per
@@ -352,7 +362,11 @@ public actor LocalAPI: CypressAPI {
                 // about the chain's head and the reports against it, and a control drawn from one
                 // moment's answer against another moment's species is a control that offers to
                 // correct something that has already been corrected.
-                speciesCorrection: try speciesCorrectionOffer(tree: tree, connection: connection)
+                speciesCorrection: try speciesCorrectionOffer(tree: tree, connection: connection),
+                // Same transaction, same reason (task #125): the offer is a statement about the
+                // open reports against this record, and a control drawn from one moment's answer
+                // over another moment's record offers to withdraw something already withdrawn.
+                recordDefect: try recordDefectOffer(tree: tree, connection: connection)
             )
         }
     }
@@ -726,6 +740,143 @@ public actor LocalAPI: CypressAPI {
         }
         guard head != nil else { return .unavailable }
         return isMine ? .correctable : .reportable
+    }
+
+    // MARK: - The record itself (task #125)
+
+    /// Reports a record as never having held a tree — the owner's *"a way to flag that a tree that
+    /// is listed on the map doesn't appear to exist at all"*.
+    ///
+    /// Raises a `never_existed` flag and **changes nothing else**, exactly as `flagWrongSpecies`
+    /// does: a report is a disagreement on the record, not a decision about it.
+    ///
+    /// **Community rows only, and the refusal is load-bearing rather than a limitation to be lifted
+    /// later without thought.** A city row lives in the ATTACHed read-only seed; nothing on this
+    /// device can withdraw one, and there is no suppression path parallel to `tree_status_overrides`
+    /// for a row that should not be in the inventory. So a report against a city row is a report
+    /// nothing can resolve, which is the E170 defect being shipped deliberately. `RULINGS R45`
+    /// refuses `wrong_species` on a city row in the same words, and the pending ruling names the
+    /// ticket that would lift this one.
+    ///
+    /// Refused when a report is already open (`.conflict`), on `flagWrongSpecies`' reasoning:
+    /// BUILD-PLAN §6's "two offline users flagging the same tree produce two flags on one thread"
+    /// governs the sync merge between devices that could not see each other, and this is a local
+    /// write by somebody looking at the open report on their own screen.
+    public func flagNeverExisted(treeID: UUID) async throws {
+        let moment = now()
+        let raiser = userID
+
+        try await store.queue.read { (connection: SQLiteConnection) -> Void in
+            // `let` and then the `deletedAt` check, not one optional-chained comparison: a missing
+            // row makes `tree(id:)?.deletedAt` nil, and `nil == nil` would have read a record that
+            // is not there as a live one.
+            guard let community = try communityTrees.tree(id: treeID, connection: connection),
+                  community.deletedAt == nil else {
+                // Either there is no community row, or it has already been withdrawn. A seed row
+                // reaching here is the city case and is refused; anything else is simply not there.
+                let record = try treeQueries?.tree(id: treeID, connection: connection)
+                throw record.flatMap { $0 } != nil ? APIError.forbidden : APIError.notFound
+            }
+            guard try Self.openRecordReviews(
+                treeID: treeID, store: contributions, connection: connection
+            ).isEmpty else { throw APIError.conflict }
+        }
+
+        let flag = ReviewFlag(
+            treeID: treeID,
+            kind: .neverExisted,
+            raisedBy: raiser,
+            createdAt: moment,
+            updatedAt: moment
+        )
+        try await store.queue.write { connection in
+            try contributions.insert(flag, connection: connection)
+        }
+    }
+
+    /// A lead confirms a `never_existed` report: the flag moves to `confirmed` and the record is
+    /// withdrawn — the `community_trees` row is soft-deleted — in one transaction.
+    ///
+    /// **`trees.status` is not touched, and this is the whole of R46.** Confirming `appears_removed`
+    /// writes `TreeStatus.removed`, which is a memorial (screen 19, grey pin, no new
+    /// contributions); a record that never had a tree behind it must not get a memorial for a tree
+    /// that never lived. `TreeStatus.vacantSite` is the other tempting answer and is refused for
+    /// R7's reason — a vacant site is a planting site with its tree missing, and a duplicate pin or
+    /// a record inside a building is not one. `ReviewFlag.Kind.confirmedStatus` stays nil here, so
+    /// this flag never enters `openReviews`, and no status can be written by accident.
+    ///
+    /// Gated on `userRole.canConfirmReviewFlag` (DECISIONS §3.7), and the gate is on the write, so a
+    /// surface drawn in error cannot withdraw a record. There is no author's arm the way the species
+    /// seam has one: `community_trees` records no author at all (R45's finding, unchanged), so there
+    /// is nobody whose own record this is to take back.
+    public func withdrawRecord(flagID: UUID) async throws {
+        guard userRole.canConfirmReviewFlag else { throw APIError.forbidden }
+        let moment = now()
+        try await store.queue.write { connection in
+            guard let flag = try contributions.reviewFlag(id: flagID, connection: connection),
+                  flag.deletedAt == nil else {
+                throw APIError.notFound
+            }
+            guard flag.kind.resolution == .recordWithdrawal else { throw APIError.validationFailed }
+            guard flag.status == .open else { throw APIError.conflict }
+
+            try contributions.confirmReviewFlag(id: flagID, at: moment, connection: connection)
+            // `false` means the row was withdrawn between the read and this write. The flag is still
+            // correctly confirmed — the record is gone, which is what the report asked for — so this
+            // is not an error, and raising one would roll back a confirmation of a true report.
+            _ = try communityTrees.withdraw(treeID: flag.treeID, at: moment, connection: connection)
+        }
+    }
+
+    /// A lead closes a `never_existed` report leaving the record where it is.
+    ///
+    /// Nothing is withdrawn and no status is written, on `dismissReview`'s argument: dismissing says
+    /// the reported defect is not there, and the record already says what it says. The flag row
+    /// records who looked. Same gate as the confirm, for the same reason — both are the resolution
+    /// of somebody else's report.
+    public func dismissRecordReview(flagID: UUID) async throws {
+        guard userRole.canConfirmReviewFlag else { throw APIError.forbidden }
+        let moment = now()
+        try await store.queue.write { connection in
+            guard let flag = try contributions.reviewFlag(id: flagID, connection: connection),
+                  flag.deletedAt == nil else {
+                throw APIError.notFound
+            }
+            guard flag.kind.resolution == .recordWithdrawal else { throw APIError.validationFailed }
+            guard flag.status == .open else { throw APIError.conflict }
+
+            try contributions.dismissReviewFlag(id: flagID, at: moment, connection: connection)
+        }
+    }
+
+    /// The open record-defect reports on one tree. Read through `recordReviewKinds` rather than by
+    /// naming `.neverExisted`, so this cannot drift out of step with the seam the way the removal
+    /// queue did before E170.
+    private static func openRecordReviews(
+        treeID: UUID,
+        store: ContributionStore,
+        connection: SQLiteConnection
+    ) throws -> [ReviewFlag] {
+        try store.openReviewFlags(kinds: ReviewFlag.Kind.recordReviewKinds, connection: connection)
+            .filter { $0.treeID == treeID }
+    }
+
+    /// What this viewer may do about the record itself, decided where the role lives rather than in
+    /// a view (`RecordDefectOffer`).
+    ///
+    /// A city row is `.unavailable` rather than `.reportable`, matching what `flagNeverExisted`
+    /// would do with the tap: a control that exists only to be refused is worse than no control.
+    private func recordDefectOffer(
+        tree: Tree,
+        connection: SQLiteConnection
+    ) throws -> RecordDefectOffer {
+        guard tree.source == .community, tree.deletedAt == nil else { return .unavailable }
+        if let reported = try Self.openRecordReviews(
+            treeID: tree.id, store: contributions, connection: connection
+        ).first {
+            return .underReview(flagID: reported.id, canResolve: userRole.canConfirmReviewFlag)
+        }
+        return .reportable
     }
 
     // MARK: - Species
