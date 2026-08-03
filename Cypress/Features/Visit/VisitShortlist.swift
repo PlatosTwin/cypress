@@ -25,9 +25,17 @@ struct VisitCandidate: Identifiable, Hashable {
         nearby.speciesCommonName ?? nearby.speciesScientificName ?? "Unidentified tree"
     }
 
-    /// Rendered only when it is a real second name — never a duplicate of the line above it.
+    /// Rendered only when it is a real second name — never a duplicate of the line above it, and
+    /// never a name the ingest failed to read (`docs/rulings-pending/unread-species-name.md`). This
+    /// is the "what tree is this?" list: a row of it reading `:: Magnolia` under the city's own word
+    /// for the same tree is exactly the defect that ruling is about, one screen over.
+    ///
+    /// No sentence stands in for it here, for `MapTreeCard.meta`'s reason — this row is two lines
+    /// and a distance, its second line is already absent across most of the seed, and the profile
+    /// it opens carries the sentence.
     var latinName: String? {
         guard let scientific = nearby.speciesScientificName else { return nil }
+        guard !Species.isUnreadScientificName(scientific) else { return nil }
         return scientific == displayName ? nil : scientific
     }
 

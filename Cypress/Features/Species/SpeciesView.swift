@@ -82,6 +82,7 @@ struct SpeciesView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 hero(presentation)
+                unreadNameNote(presentation)
                 taxonomyChips(presentation)
 
                 if presentation.showsRecognizeCard {
@@ -139,14 +140,41 @@ struct SpeciesView: View {
                     .lineSpacing(CypressFont.LineSpacing.speciesHero)
                     .foregroundStyle(CypressColor.textOnPhotoSpecies)
 
-                Text(presentation.scientificName)
-                    .font(CypressFont.latinName14)
-                    .foregroundStyle(CypressColor.textOnPhotoSpecies)
-                    .opacity(SpeciesOpacity.heroLatin)
+                // Absent on the five rows whose scientific name the ingest never read; the sentence
+                // under the hero replaces it. It is not moved *into* the hero because this block is
+                // three short lines sized against a 190pt photo, and a sentence that wraps here
+                // pushes the name off the scrim it is legible against.
+                if let latin = presentation.scientificName {
+                    Text(latin)
+                        .font(CypressFont.latinName14)
+                        .foregroundStyle(CypressColor.textOnPhotoSpecies)
+                        .opacity(SpeciesOpacity.heroLatin)
+                }
             }
             // 07 puts its text block 2pt further in and 2pt higher than C2's shared inset.
             .padding(.leading, SpeciesMetrics.heroTextLeading - CypressSpacing.Component.heroEyebrowLeading)
             .padding(.bottom, SpeciesMetrics.heroTextBottom - CypressSpacing.Component.heroBottomInset)
+        }
+    }
+
+    // MARK: - The name the ingest never read (task #185)
+
+    /// The sentence that stands where the Latin line stands on every other species — immediately
+    /// under the hero, in the reading order the missing line held, and above the chips so it is not
+    /// separated from the name it accounts for by a row that is empty on all five of these rows
+    /// anyway (no family, no sourced habit).
+    ///
+    /// See `SpeciesPresentation.unreadNameNote` and
+    /// `docs/rulings-pending/unread-species-name.md`.
+    @ViewBuilder
+    private func unreadNameNote(_ presentation: SpeciesPresentation) -> some View {
+        if let note = presentation.unreadNameNote {
+            Text(note)
+                .cypressBody135(color: CypressColor.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, SpeciesMetrics.chipsTop)
+                .padding(.horizontal, CypressSpacing.gutterLabel)
         }
     }
 
