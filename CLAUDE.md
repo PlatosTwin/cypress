@@ -31,6 +31,10 @@ conflicts with convenience, the rule wins.
 - Never write a conclusion before reading the output that supports it.
 - Prove every new test can fail: break the code, watch red, restore. Assert presence, not
   absence; assert facts, not phrasing.
+- **A red-proof must go red for the reason you expect — read the failure message, not just the
+  colour.** Tests here have gone red on the wrong assertion, exempted the thing they were guarding
+  as its own wrapper, and run their specimens before their rule under
+  `continueAfterFailure = false`. Each looked like a passing red-proof.
 - Look at the running screen; a green suite has ratified real defects here. Map performance and
   camera flows only tell the truth on the physical phone.
 - Verify every merge by running the suite on the **merged** tree; a branch's green proves the
@@ -44,6 +48,14 @@ conflicts with convenience, the rule wins.
   16 Plus `24D1629F-9FA8-4E3D-812E-F6BC85C9E668`.
 - One simulator per agent, explicitly assigned. Cap **three** concurrent `xcodebuild`s
   machine-wide — orchestrator verification runs count against the cap.
+- **A dead agent's `xcodebuild` keeps running.** Before starting a run, `ps -eo pid,lstart,command
+  | grep [x]codebuild` and confirm nothing is already building against that simulator or worktree.
+  Two runs on one device fake `Application … is not running`, `'X' never appeared`, and
+  `Test run with 0 tests` — with no crash report and no fd-storm signature.
+- **The UI suite inherits the device's state, and a leftover reads as a broken app (E202).** Before
+  believing any red UI run, check the two that have lied: an `active-city` marker (it survives
+  reinstall — `xcodebuild test` replaces the bundle, not the data container) and a `map.lastCamera`
+  wider than the screen a test is about. E202 has the two commands.
 - Boot and wait for `Booted` before any `simctl` call; `simctl` against a Shutdown device fails
   quietly inside `&&` chains.
 - Grant camera once per install (`xcrun simctl privacy <udid> grant camera app.cypress.Cypress`);
@@ -67,6 +79,11 @@ conflicts with convenience, the rule wins.
 - A deliberate gap in the E/R sequence is a reservation for a live branch — never fill it.
 - **Schema versions are the opposite: never reserved, never skipped.** One migration author per
   round, named explicitly. If your task turns out to need a migration, STOP and report.
+- **There are two schema-version spaces and they currently collide at 14.** The *writable*
+  database's migration counter is `AppSchema.currentVersion` (13 today; `PRAGMA user_version`).
+  The *published seed/city file* version is `SeedDatabase.newestKnownSchemaVersion` (14 today;
+  R37's `s<schema_version>`). They are unrelated. Say which one you mean, every time — four
+  tickets sat "blocked on v14" for a week because one advanced and the other was assumed to have.
 - Never `git add -A` on main; stage explicit paths — another agent's untracked work may share
   the checkout.
 - A rename of a shared identifier breaks every other live branch even when correctly scoped to
@@ -81,8 +98,11 @@ conflicts with convenience, the rule wins.
 - Use a private DerivedData directory named for yourself (`<scratchpad>/dd-<your-suffix>/`).
   The scratchpad is shared by every agent: never `rm -rf` at its root, and never reuse another
   run's log path — `rm -f` your own log before each run.
-- One watcher per build, bounded (`for i in $(seq 1 40)`, not `until`), print a line each
-  iteration, kill the previous watcher before starting a new build.
+- **Run `Tools/run_tests.sh` in the foreground and wait for it.** Do not background it, and never
+  end your turn "waiting for a monitor" — a monitor is not a process, nothing will wake you, and
+  an agent that stops waiting for one has simply stopped. If you must wait on a pid you already
+  have, use a bounded foreground watcher (`for i in $(seq 1 40)`, not `until`), print a line each
+  iteration, and kill the previous watcher before starting a new build.
 - Never edit `Cypress.xcodeproj/project.pbxproj` — the tree is a
   `PBXFileSystemSynchronizedRootGroup`.
 - **Facts in your brief may be wrong.** Agents have correctly refuted brief premises many times.
