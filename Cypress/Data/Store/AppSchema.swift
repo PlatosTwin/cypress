@@ -1349,7 +1349,13 @@ public enum AppSchema {
         confidence    REAL CHECK (confidence IS NULL OR (confidence BETWEEN 0 AND 1)),
         user_id       TEXT,
         device_id     TEXT,
-        superseded_by TEXT REFERENCES species_assertions(id),
+        -- DEFERRED, and it has to be. A correction stamps the head and inserts its
+        -- successor in one transaction, and the two orders are both refused if the
+        -- constraint is immediate: insert-first breaks the one-head index below,
+        -- stamp-first points at a row that does not exist yet. Deferring to COMMIT
+        -- is the shape the invariant actually has — mid-transaction the chain is
+        -- allowed to be inconsistent, at the end of it never.
+        superseded_by TEXT REFERENCES species_assertions(id) DEFERRABLE INITIALLY DEFERRED,
         created_at    TEXT NOT NULL,
         updated_at    TEXT NOT NULL,
         -- At most one owner, and nobody is reachable: `photos`' rule (v12), for

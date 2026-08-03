@@ -451,8 +451,12 @@ struct SpeciesClaimTests {
         #expect(Set([conflict, forbidden, missing]).count == 3, "two refusals share a sentence")
         #expect(conflict.contains("already"), "\(conflict)")
         #expect(forbidden.contains("city"), "\(forbidden)")
-        // None of them blames the reader for a rule the app has not built yet.
-        #expect(conflict.contains("cannot record yet"), "\(conflict)")
+        // The conflict names whose claim stands rather than the app's own limit. It used to end on
+        // "which this app cannot record yet", which stopped being true at AppSchema v14: a
+        // correction is recordable, and what a second claimant may not do is make one over somebody
+        // else's statement without asking (#86/#124).
+        #expect(conflict.contains("corrected"), "\(conflict)")
+        #expect(!conflict.contains("cannot"), "the refusal still pleads a limit that is gone: \(conflict)")
     }
 
     // MARK: - On real pixels
