@@ -137,17 +137,34 @@ struct SeedStubNamingTests {
     /// which is the judgment `QSPECIES_NAME_CORRECTIONS` refuses to make; it is recorded in
     /// `docs/errata-pending/seed-rebuild-drift.md` rather than fixed here. What #103 removed is the
     /// row that was not a name at all, and that is what is asserted.
-    @Test("the stub that shadowed Arbutus 'Marina' is gone and the real row kept its name")
+    /// **This asks the catalogue, not the search, and the difference is the whole point.** Written
+    /// first against `search("Marina")`, it passed with the builder's swap reverted and the stub back
+    /// in the seed — because the filter ruled on above hides the row from the search, so the
+    /// assertion was guarded by the fix it was not testing. A test cannot red-proof the ingest
+    /// through a query that exists to hide the ingest's mistakes.
+    @Test("the ingest mints no stub beside Arbutus 'Marina', and the real row keeps its name")
     func arbutusMarinaKeptItsName() async throws {
-        let matches = try await Self.search("Marina")
-        let shadowed = matches.filter { $0.scientificName == ":: Arbutus 'Marina'" }
-        #expect(shadowed.isEmpty, "the stub row is still offered: \(shadowed.map(\.commonName))")
-
-        let real = matches.filter { $0.scientificName == "Arbutus 'Marina'" }
-        #expect(real.count == 1, "expected the one real Arbutus 'Marina'; got \(real.map(\.scientificName))")
+        let store = try await Self.store()
+        let (shadows, real) = try await store.queue.read { connection -> ([String], [String]) in
+            let seed = SeedDatabase.schemaName
+            let name: (SQLiteRow) throws -> String = { try $0.stringIfPresent("scientific_name") ?? "" }
+            let common: (SQLiteRow) throws -> String = { try $0.stringIfPresent("common_name") ?? "" }
+            let shadowSQL = """
+            SELECT scientific_name FROM \(seed).species
+             WHERE scientific_name LIKE ':: %Arbutus%' ORDER BY scientific_name
+            """
+            let realSQL = """
+            SELECT common_name FROM \(seed).species WHERE scientific_name = 'Arbutus ''Marina'''
+            """
+            return (
+                try connection.prepare(shadowSQL).fetchAll(name),
+                try connection.prepare(realSQL).fetchAll(common)
+            )
+        }
+        #expect(shadows.isEmpty, "the ingest still mints a stub beside Arbutus 'Marina': \(shadows)")
         #expect(
-            real.first?.commonName == "Hybrid Strawberry Tree",
-            "the surviving row lost the common name the catalogue had for it: \(real.map(\.commonName))"
+            real == ["Hybrid Strawberry Tree"],
+            "the row the stub merged into is not the one the catalogue had: \(real)"
         )
     }
 }
