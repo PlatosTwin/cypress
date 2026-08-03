@@ -429,8 +429,7 @@ enum TreePhotosCopy {
     /// The verb is on the button, so the destructive path cannot be taken without the word *delete*
     /// under your thumb — E136's rule for the account sheet, applied to a smaller thing.
     static let deleteAction = "Delete photo"
-    /// **Why there is no delete on this photograph** (task #131, the pending ruling in
-    /// `docs/rulings-pending/anonymized-photo-has-no-delete.md`).
+    /// **Why there is no delete on this photograph** (task #131, ruled in `RULINGS R52`).
     ///
     /// It is drawn on both surfaces that show a photograph as a subject, in one string, because a
     /// second wording would be a second answer to one question — the argument `PhotoViewerView`

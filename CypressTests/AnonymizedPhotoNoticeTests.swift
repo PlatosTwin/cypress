@@ -6,8 +6,8 @@
 //  has no delete on it.
 //
 //  **What this file does not do is assert the words**, and that is deliberate. The copy is a design
-//  decision recorded in `docs/rulings-pending/anonymized-photo-has-no-delete.md`; a test spelling it
-//  back would pin the phrasing rather than the fact and would go red on every edit that improved it.
+//  decision recorded in `RULINGS R52`; a test spelling it back would pin the phrasing rather than
+//  the fact and would go red on every edit that improved it.
 //  What can be wrong here is *which photograph the sentence lands on*, and that is what is pinned:
 //  a photograph nobody owns gets it, an owned one does not, and a photograph nobody owns that
 //  somehow still carries a delete does not get it either — because a sentence saying a record is
