@@ -20,7 +20,13 @@ PUBLIC="${CYPRESS_CITIES_BASE:-https://cypress-cities.t3.tigrisbucket.io}"
 say() { printf 'fetch_seed: %s\n' "$1"; }
 die() { printf 'fetch_seed: FAIL: %s\n' "$1" >&2; exit 1; }
 
-manifest="$(curl -fsS --max-time 60 "$PUBLIC/manifest.json")" \
+# The public domain caches manifest.json on the plain URL: minutes after a republish, a
+# bare GET still returned the previous manifest while `?cb=` returned the new one. A build
+# that resolves its seed from a stale manifest is self-consistent and wrong -- the hash
+# check below would pass against the OLD seed. So bust the cache and send no-cache, and
+# treat the freshness of this one file as load-bearing.
+manifest="$(curl -fsS --max-time 60 -H 'Cache-Control: no-cache' \
+  "$PUBLIC/manifest.json?cb=$(date +%s)")" \
   || die "could not read $PUBLIC/manifest.json"
 
 # Captured in its own `if`, NOT as `read <<<"$(...)"`: a here-string is built before
