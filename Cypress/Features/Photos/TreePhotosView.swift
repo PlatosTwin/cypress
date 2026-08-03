@@ -214,6 +214,17 @@ struct TreePhotosView: View {
                 Spacer(minLength: 0)
                 thumbs(photo)
             }
+
+            // Why this row has one control fewer than the row above it (task #131). Under the
+            // caption rather than in the thumb row: it is a sentence, and the thumb row is a row of
+            // 44 pt glyphs that a sentence cannot join without becoming a caption to them.
+            if model.isNobodysToRemove(photo) {
+                Text(TreePhotosCopy.nobodysToRemove)
+                    .font(CypressFont.body13)
+                    .foregroundStyle(CypressColor.textFaint)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
     }
 
@@ -418,6 +429,44 @@ enum TreePhotosCopy {
     /// The verb is on the button, so the destructive path cannot be taken without the word *delete*
     /// under your thumb — E136's rule for the account sheet, applied to a smaller thing.
     static let deleteAction = "Delete photo"
+    /// **Why there is no delete on this photograph** (task #131, the pending ruling in
+    /// `docs/rulings-pending/anonymized-photo-has-no-delete.md`).
+    ///
+    /// It is drawn on both surfaces that show a photograph as a subject, in one string, because a
+    /// second wording would be a second answer to one question — the argument `PhotoViewerView`
+    /// already makes for driving this screen's model.
+    ///
+    /// **Written against the running screen**, and every clause is load-bearing:
+    ///
+    /// · *Nothing on this photo says whose it is* — the leaving door's own promise, read back from
+    ///   the other side (`AccountDeletionCopy.leaveRecordsBody`: "with nothing left on them saying
+    ///   they were yours"). It states the fact about the record before the consequence, so the
+    ///   missing control reads as a property of the photograph rather than of the reader.
+    ///
+    /// · *The account that added it was deleted* — passive, and no noun for the person. The reader
+    ///   may well *be* them, and a sentence that says "the contributor left" makes a stranger of
+    ///   somebody who might be looking at their own photograph. Nobody is told they did anything
+    ///   wrong, because nobody did: this is the door working as designed.
+    ///
+    /// · *nobody's to remove* — what is actually true. Not "you cannot delete this", which would be
+    ///   about the reader's permission; the record has no owner, so there is no one for a deletion
+    ///   to be on behalf of.
+    ///
+    /// · *Signing in again does not change that* — the only clause that is not a description, and
+    ///   the one the ticket requires: it forecloses the recovery a reader would otherwise try.
+    ///   Verified against `ContributionStore.claimDevice`, whose `device_id = :device` predicate an
+    ///   anonymized row cannot match, and it is the same fact `leaveRecordsBody` already ships
+    ///   ("if you make a new account here, they do not come back to you").
+    ///
+    /// **What it deliberately does not say.** Nothing about where the photograph goes, who else can
+    /// see it, or the city — ERRATA **E212** records two shipped sentences that promise a reader
+    /// somebody else is at the other end, and there is no contribution sync (#158 unbuilt). This
+    /// photograph is on this phone and the sentence claims nothing beyond that. It also does not
+    /// offer a way to recover it, because there is not one.
+    static let nobodysToRemove = """
+        Nothing on this photo says whose it is. The account that added it was deleted, so it is \
+        nobody's to remove—signing in again does not change that.
+        """
     /// Not "Cancel": the button that does nothing should say what nothing means here.
     static let deleteCancel = "Keep it"
     static let deleteHint = "Removes this photo from this phone"

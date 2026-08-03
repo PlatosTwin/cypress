@@ -36,6 +36,11 @@ final class TreePhotosModel {
     /// forever on an implementation that cannot answer, which hides the control rather than offering
     /// one that would fail.
     private(set) var deletableIDs: Set<UUID> = []
+    /// Which of `photos` nobody owns (`TreeProfile.anonymizedPhotoIDs`). Empty until the first read
+    /// completes and empty forever on an implementation that cannot answer, for `deletableIDs`'
+    /// reason turned around: this one is read to *say* something about a photograph, and a screen
+    /// that does not know had better say nothing.
+    private(set) var anonymizedIDs: Set<UUID> = []
     /// Whether this tree exists because somebody photographed it (`Tree.source == .community`).
     /// Read once with the photographs so the confirmation can name the consequence of removing the
     /// last one — BUILD-PLAN §6, "Community add: requires photo".
@@ -56,6 +61,7 @@ final class TreePhotosModel {
         tallies: [UUID: PhotoTally] = [:],
         treeName: String? = nil,
         deletableIDs: Set<UUID> = [],
+        anonymizedIDs: Set<UUID> = [],
         isCommunityAdded: Bool = false
     ) {
         self.treeID = treeID
@@ -64,6 +70,7 @@ final class TreePhotosModel {
         self.tallies = tallies
         self.treeName = treeName
         self.deletableIDs = deletableIDs
+        self.anonymizedIDs = anonymizedIDs
         self.isCommunityAdded = isCommunityAdded
         self.isLoading = false
     }
@@ -108,10 +115,23 @@ final class TreePhotosModel {
         tallies = profile.photoTallies
         treeName = profile.activeName?.name ?? profile.species?.commonName
         deletableIDs = profile.deletablePhotoIDs
+        anonymizedIDs = profile.anonymizedPhotoIDs
         isCommunityAdded = profile.tree.source == .community
     }
 
     func isDeletable(_ photo: Photo) -> Bool { deletableIDs.contains(photo.id) }
+
+    /// Whether this photograph is shown here and is nobody's to remove — the state both surfaces
+    /// say out loud rather than drawing one fewer control (task #131).
+    ///
+    /// **Both halves are asked, and the second is not redundant.** A row with no owner should of
+    /// course have no delete on it, but the two facts arrive from two different reads and the
+    /// sentence is a claim about the *absence of the control*. If they ever disagree — an ownerless
+    /// row that the deletion gate somehow admits — the honest surface is the control and no
+    /// sentence, not a sentence contradicted by the button beside it.
+    func isNobodysToRemove(_ photo: Photo) -> Bool {
+        anonymizedIDs.contains(photo.id) && !isDeletable(photo)
+    }
 
     /// Whether removing this photograph would leave a community-added tree with none — the one case
     /// where the confirmation says something extra, because it is the one case where the record ends

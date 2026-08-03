@@ -339,6 +339,13 @@ public actor LocalAPI: CypressAPI {
                 deletablePhotoIDs: try contributions.deletablePhotoIDs(
                     treeID: id, attribution: attribution, connection: connection
                 ),
+                // *Why* a row is in the first set and not the second, read off the row itself
+                // rather than worked out from the difference between the two (task #131). Same
+                // transaction again, so the sentence a screen draws about a photograph and the
+                // control it draws beside it cannot come from two different moments.
+                anonymizedPhotoIDs: try contributions.anonymizedPhotoIDs(
+                    treeID: id, connection: connection
+                ),
                 // Read in the same transaction as the photographs, so the hero and the list that
                 // can change it are computed from one consistent picture (ERRATA E125).
                 photoTallies: try contributions.photoTallies(
@@ -2140,6 +2147,32 @@ public actor LocalAPI: CypressAPI {
             ids.append(photo.id)
         }
         return ids
+    }
+
+    /// Test seam (task #131): take one photograph's owner off it, leaving the row the way the
+    /// leaving door leaves it.
+    ///
+    /// The shipping path is `deleteAccount(.leaveRecords)`, and it is the wrong instrument for a
+    /// harness: it anonymizes *every* row of the account at once, so a deep-link case using it
+    /// would reach across into whatever the other cases had contributed on the way past. This
+    /// writes the same end state on one named row — both owner columns null, which is what
+    /// `AccountDeletion.anonymizeContributions` leaves behind on a photograph contributed while
+    /// signed in (`photos` carries at most one owner, so nulling `user_id` leaves nothing).
+    ///
+    /// It does not write the `anonymized_contributions` tombstone, which is deliberate and worth
+    /// stating: that table exists to stop `claimDevice` re-adopting a row, and a photograph with no
+    /// `device_id` is already outside `claimDevice`'s predicate (see `ContributionStore.claimDevice`).
+    /// A harness that wrote it would be asserting a mechanism rather than reproducing a state.
+    public func debugAnonymizePhoto(id: UUID) async throws {
+        try await store.queue.write { connection in
+            let statement = try connection.cachedStatement("""
+                UPDATE photos SET user_id = NULL, device_id = NULL, updated_at = :now
+                 WHERE id = :id COLLATE NOCASE
+                """)
+            _ = try statement.bind([":id": id.uuidString, ":now": now()])
+            try statement.run()
+            _ = try statement.reset()
+        }
     }
 
     /// Takes one tree back to having never been photographed — rows, votes and bytes.

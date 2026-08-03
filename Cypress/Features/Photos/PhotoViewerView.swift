@@ -106,6 +106,12 @@ struct PhotoViewerView: View {
     /// nobody's to take back.
     private var isDeletable: Bool { photo.map(model.isDeletable) ?? false }
 
+    /// Whether to say why there is no control, which is the other half of the same gate and was
+    /// missing from both surfaces until task #131. Not `!isDeletable`: this screen draws nothing
+    /// while the read is in flight and on a photograph this device does not hold, and neither of
+    /// those is a photograph that belongs to nobody.
+    private var isNobodysToRemove: Bool { photo.map(model.isNobodysToRemove) ?? false }
+
     var body: some View {
         ZStack {
             // The backdrop the app already uses when a photograph is the subject and everything
@@ -130,7 +136,7 @@ struct PhotoViewerView: View {
                     .padding(.horizontal, CypressSpacing.gutter)
             }
         }
-        .overlay(alignment: .bottomLeading) { captionLine }
+        .overlay(alignment: .bottomLeading) { captionBlock }
         .overlay(alignment: .topTrailing) { closeButton }
         .overlay(alignment: .bottomTrailing) { if isDeletable { deleteControl } }
         // The photograph is the largest thing `PhotoImageStore` ever holds and it is decoded for
@@ -185,6 +191,41 @@ struct PhotoViewerView: View {
 
     // MARK: - Chrome
 
+    /// The caption, with the reason there is no delete above it when there is no delete (#131).
+    ///
+    /// **Above the caption rather than in the corner the trash vacated**, which is the one place
+    /// this screen's design departs from "say it where the control would have been". Measured on
+    /// the running app, the sentence wraps to two full-width lines on a 440 pt iPhone 16 Pro Max;
+    /// put in the bottom-trailing corner it would either run into the caption pill in the other
+    /// corner or squeeze into a narrow column over the middle of the photograph. Stacked over the
+    /// caption it is a legible block in the place a reader is already looking for words about this
+    /// picture, and it is still diagonally opposite the close button — the geometry the delete had.
+    /// E126 requires the surface to say why; it does not require the sentence to stand exactly
+    /// where the button was.
+    private var captionBlock: some View {
+        VStack(alignment: .leading, spacing: CypressSpacing.gapRows) {
+            if isNobodysToRemove {
+                Text(TreePhotosCopy.nobodysToRemove)
+                    .font(CypressFont.body125)
+                    .foregroundStyle(CypressColor.textOnPhoto)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.vertical, CypressSpacing.Component.heroPillPaddingV)
+                    .padding(.horizontal, CypressSpacing.Component.heroPillPaddingH)
+                    // A rounded rectangle rather than the caption's capsule: a capsule around three
+                    // lines of prose draws a lozenge with empty ears, and the fill is the same
+                    // token either way so the two read as one family.
+                    .background {
+                        RoundedRectangle(cornerRadius: CypressRadius.cardSm, style: .continuous)
+                            .fill(CypressColor.heroMetaPillFill)
+                    }
+                    .padding(.trailing, CypressSpacing.Component.heroEyebrowLeading)
+            }
+            captionLine
+        }
+        .padding(.leading, CypressSpacing.Component.heroEyebrowLeading)
+        .padding(.bottom, CypressSpacing.Component.heroBottomInset)
+    }
+
     /// The same sentence the card under the photograph carried, kept so the reader who tapped a
     /// caption to see the picture can still read the caption while looking at it.
     private var captionLine: some View {
@@ -194,8 +235,8 @@ struct PhotoViewerView: View {
             .padding(.vertical, CypressSpacing.Component.heroPillPaddingV)
             .padding(.horizontal, CypressSpacing.Component.heroPillPaddingH)
             .background { Capsule().fill(CypressColor.heroMetaPillFill) }
-            .padding(.leading, CypressSpacing.Component.heroEyebrowLeading)
-            .padding(.bottom, CypressSpacing.Component.heroBottomInset)
+            // The insets belong to `captionBlock`, which is what is actually positioned — this may
+            // now have a sentence stacked over it and the two have to move as one.
             // The caption is read as part of the image's own label, above. Left in the tree twice it
             // is announced twice, which is the `DeepLinkVoiceOverTests` complaint about doubled
             // labels in a different costume.

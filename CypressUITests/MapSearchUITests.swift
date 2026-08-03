@@ -35,6 +35,15 @@ final class MapSearchUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    /// The slack allowed when a measured hit area is compared against the 44 pt minimum.
+    ///
+    /// A thousandth of a point. It exists to absorb the last bit of a float that came through the
+    /// layout engine, and nothing else — see the assertions in
+    /// `testTheClearControlAppearsOnlyWithTextAndCanBeTapped`, which are the only readers and carry
+    /// the reasoning. Nothing in this app's spacing tokens can produce a size within this of 44
+    /// without being 44, so widening it would start hiding real defects rather than float noise.
+    private static let hitTargetTolerance: CGFloat = 0.001
+
     /// Screen 01's pins, as the accessibility tree exposes them. `MapPin.Kind.accessibilityLabel`
     /// is the catalogue; a city tree is the overwhelming majority of the seed and the only kind the
     /// Mission fixture reliably draws.
@@ -388,8 +397,27 @@ final class MapSearchUITests: XCTestCase {
 
         // A 44 pt target, ARCHITECTURE §6 — measured, because the glyph is 16 pt and the enlargement
         // is the whole reason a thumb can hit it.
-        XCTAssertGreaterThanOrEqual(clear.frame.width, 44, "the clear control's hit area is \(clear.frame.width) pt wide")
-        XCTAssertGreaterThanOrEqual(clear.frame.height, 44, "the clear control's hit area is \(clear.frame.height) pt tall")
+        //
+        // **Compared with a tolerance, and that is the point of the tolerance rather than a
+        // softening of the assertion.** `.cypressTapTarget()` sets `minWidth`/`minHeight` to
+        // `CypressSpacing.minTapTarget`, which is exactly 44, so this control's measured size lands
+        // *on* the constant it is being compared against rather than above it — 44.0 × 44.0 at
+        // (376, 70) on a 440 pt iPhone 16 Pro Max, measured before this line was written. A value
+        // that has come through the layout engine and across the accessibility boundary carries
+        // float noise (the suggestion row in `MapSuggestionUITests` measures 78.33333333333331 pt
+        // on the same device), and an exact `>=` against the number it is supposed to equal is
+        // decided by the last bit: this assertion read 43.99999999999999 once. The tolerance is a
+        // thousandth of a point — some eleven orders of magnitude above that noise and three below
+        // anything this layout can express, so a control that is genuinely short still fails here.
+        // Sub-44 is a real accessibility defect and must stay red; one ulp is not a defect at all.
+        XCTAssertGreaterThanOrEqual(
+            clear.frame.width, 44 - Self.hitTargetTolerance,
+            "the clear control's hit area is \(clear.frame.width) pt wide"
+        )
+        XCTAssertGreaterThanOrEqual(
+            clear.frame.height, 44 - Self.hitTargetTolerance,
+            "the clear control's hit area is \(clear.frame.height) pt tall"
+        )
 
         clear.tap()
         XCTAssertTrue(
