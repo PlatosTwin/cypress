@@ -1413,9 +1413,15 @@ enum TreeProfileCopy {
     /// E126's rule is why it says the second half out loud instead of falling silent about the
     /// destination — a surface that cannot do the thing has to say so plainly rather than let the
     /// reader supply an answer.
+    /// The negation is spelled `The city is not notified` and not `Nothing is sent to the city`,
+    /// which is what this first read. Both sentences mean the same thing to a person and only one of
+    /// them survives the test that guards them: the guard is a substring check for the forbidden
+    /// *claim*, and a claim's negation contains the claim. The sanctioned form is already the app's
+    /// — `CheckInCopy.reviewNotice` and `TreeProfileCopy.reportSpeciesNotice` both use it — so the
+    /// register matches the two surfaces a reader meets this on either side of.
     static let neverExistedNotice = """
-        This is kept on this phone, where a reviewer can act on it. Nothing is sent to the city, \
-        and Cypress cannot yet carry a report to anybody else’s phone.
+        This is kept on this phone and shows on this record. The city is not notified, and Cypress \
+        cannot yet carry a report to anybody else’s phone.
         """
 
     /// Drawn while a report is open, to everybody including whoever raised it: a record under
