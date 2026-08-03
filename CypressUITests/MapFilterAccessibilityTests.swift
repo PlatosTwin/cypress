@@ -983,7 +983,7 @@ final class MapFilterAccessibilityTests: XCTestCase {
     // be E183 §4's mistake — a sentence about XCUITest presented as a sentence about the app —
     // and driving real VoiceOver is not something XCUITest can do. The fix ships on Apple's
     // documented contract for `accessibilitySortPriority`; **verification is owed on the phone
-    // with VoiceOver on**, and the pending erratum for #143 records the debt. What this file
+    // with VoiceOver on**, and ERRATA E192's *The debt* records it. What this file
     // still asserts about the same surface: the chips move rather than being covered, they stay
     // hittable, and the row's own internal order is the owner's (the test above).
 
