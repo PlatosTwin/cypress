@@ -121,6 +121,7 @@ struct DebugLocationOverrideTests {
     /// The composition root asks one question and gets both halves of the answer, so an ordinary
     /// launch cannot accidentally take the pinned path and a junk one cannot accidentally take the
     /// real one.
+    @MainActor
     @Test("resolve hands back a provider, a banner, or neither — never both")
     func resolveIsExclusive() {
         let ordinary = DebugLocationOverride.resolve([:])

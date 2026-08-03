@@ -143,6 +143,10 @@ enum DebugLocationOverride {
     /// The provider the composition root should use, and the banner to draw if the request was junk.
     ///
     /// Returns `nil` for the provider when nothing was asked for, which is every ordinary launch.
+    ///
+    /// `@MainActor` because `MapLocationProvider` is, and the composition root builds it on the main
+    /// actor like the real one.
+    @MainActor
     static func resolve(
         _ environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> (provider: MapLocationProvider?, failure: String?) {

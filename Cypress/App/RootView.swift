@@ -84,6 +84,7 @@ struct RootView: View {
     /// `@State` default is re-evaluated on every initialization of the view struct — the fact that
     /// cost this screen fifty GPS sessions a second — and a named function is a place to say so
     /// once. Constructing a `MapLocationProvider` is inert either way now, pinned or not.
+    @MainActor
     private static func launchLocationProvider() -> MapLocationProvider {
         #if DEBUG
         if let pinned = DebugLocationOverride.resolve().provider { return pinned }
