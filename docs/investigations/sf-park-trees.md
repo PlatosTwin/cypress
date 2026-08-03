@@ -1,8 +1,19 @@
 # San Francisco's park trees: what Rec & Park actually publishes
 
-Investigation, 2026-08-02, written for ticket **#106** ("Add park trees so Golden Gate Park
-populates"). Nothing here builds, runs a simulator or edits a `.swift` file. The seed was queried
-read-only from `Fixtures/seed/cypress-seed.sqlite`; no source was written to.
+Investigation, 2026-08-02/03, written for ticket **#106** ("Add park trees so Golden Gate Park
+populates"). No `.swift` file was edited and no seed was rebuilt. The seed was queried read-only
+from `Fixtures/seed/cypress-seed.sqlite`; no source was written to. The simulator was used once, to
+look at the map (§1.1), and the suite was run once on the finished tree:
+
+```
+VERIFY-NOTE: device iPhone 16e 3A1F212D-8F3A-41F1-AF72-EC95E155A4C9 — screen 390 (1170 px @ 3.000000x)
+VERIFY-NOTE: device-state active-city=none map.lastCamera=[none]
+VERIFY-NOTE: SwiftCompile tasks=397
+VERIFY-OK: ✔ Test run with 1080 tests in 102 suites passed after 117.338 seconds.
+```
+
+with the UI half of the same log reading `Executed 68 tests, with 8 tests skipped and 0 failures
+(0 unexpected)` and `** TEST SUCCEEDED **`.
 
 ---
 
@@ -106,6 +117,22 @@ The same measurement citywide, over all 240 Rec & Park property polygons (5,255 
 
 That 1.3% is the size of the whole overlap between San Francisco's street-tree inventory and San
 Francisco's parks, and it is edge effects.
+
+### 1.1 And on the running map, which is where the ticket said to look
+
+Measured on the phone as well as in the database, because a green suite has ratified real defects
+here. iPhone 16e `3A1F212D-…`, 390 pt, seed unchanged at `d3e3d229…`, simulator location set to
+Stow Lake (37.7694, −122.4862) and the app opened on screen 01 at the reader's own position.
+
+At street zoom the park draws **no pins at all** — only Apple's basemap canopy artwork, which is
+itself the picture of the problem: the basemap knows there are trees there and the inventory does
+not. Pinched out two steps so that Fulton Street and the Richmond come into frame, one screen holds
+the whole finding: **north of Fulton, a pin on every tree down every block; south of Fulton — JFK
+Drive, Middle Drive West, Martin Luther King Jr Drive, the whole visible park — not one.** The
+species legend that appears (Sycamore/London Plane, Olive, Cherry Plum, Blackwood Acacia) is drawn
+entirely from the street rows above the park.
+
+Kept at `shots/106-golden-gate-park-empty.png` (git-ignored, regenerable).
 
 This confirms the number `LandContext.inferred(from:idSpace:)` already carries in its doc comment
 — `.cityPark` resolves for 177 of 195,309 rows — from the opposite direction. That function reached
