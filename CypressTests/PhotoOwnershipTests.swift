@@ -370,13 +370,11 @@ struct PhotoOwnershipTests {
         profile = try await signedIn.treeProfile(id: tree.id)
         #expect(
             profile.anonymizedPhotoIDs == [mine],
-            "the ownerless photograph is \(profile.anonymizedPhotoIDs), which is not exactly the one "
-                + "whose owner was taken off"
+            "the ownerless set is not exactly the photograph whose owner was taken off"
         )
         #expect(
             !profile.isAnonymizedPhoto(try #require(profile.photos.items.first { $0.id == theirs })),
-            "a stranger's photograph was reported as belonging to nobody — the sentence both photo "
-                + "surfaces draw would then be a claim about somebody else's record"
+            "a stranger's photograph was reported as belonging to nobody, so the sentence both photo surfaces draw would be a claim about somebody else's record"
         )
     }
 }
