@@ -853,6 +853,66 @@ struct VisitCloseGlyph: Shape {
     }
 }
 
+/// The library shutter's mark: a framed picture with a second card behind it.
+///
+/// **Was `Image(systemName: "photo.on.rectangle")` until ticket #130**, which is the ruling in
+/// `docs/rulings-pending/drawn-glyphs.md`; `DrawnGlyphGuardTests` goes red if a symbol comes back.
+///
+/// The card behind is what carries the meaning the shutter needs. A single framed picture says
+/// "a photo"; a stack says "*pick* one", which is exactly the distinction this button is drawing
+/// against the camera shutter three points away from it. Authored in a 24×24 box at stroke 1.8,
+/// the same as every other drawn mark in the app, and scaled to the frame it is given.
+///
+/// **NOT SPECIFIED.** SCREENS.md 14 draws no library shutter, so nothing here is transcribed.
+struct VisitLibraryGlyph: Shape {
+    static let box: CGFloat = 24
+    static let strokeInBox: CGFloat = 1.8
+
+    static func style(for side: CGFloat) -> StrokeStyle {
+        StrokeStyle(
+            lineWidth: strokeInBox * side / box,
+            lineCap: .round,
+            lineJoin: .round
+        )
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let s = min(rect.width, rect.height) / Self.box
+        func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+            CGPoint(x: rect.minX + x * s, y: rect.minY + y * s)
+        }
+        var path = Path()
+
+        // The card behind: two edges only, peeking out above and to the right of the front one.
+        path.move(to: p(7.5, 3.5))
+        path.addLine(to: p(20.5, 3.5))
+        path.addCurve(to: p(21.5, 4.6), control1: p(21.3, 3.5), control2: p(21.5, 4))
+        path.addLine(to: p(21.5, 15))
+
+        // The front card.
+        path.addRoundedRect(
+            in: CGRect(x: rect.minX + 2.5 * s, y: rect.minY + 7 * s, width: 16.5 * s, height: 13.5 * s),
+            cornerSize: CGSize(width: 2.6 * s, height: 2.6 * s),
+            style: .continuous
+        )
+
+        // Its sun.
+        path.addEllipse(
+            in: CGRect(x: rect.minX + 5.9 * s, y: rect.minY + 9.9 * s, width: 3 * s, height: 3 * s)
+        )
+
+        // Its ridge. Opened with its own `move(to:)` — see `PhotoTrashGlyph` and E163 for why every
+        // subpath in this app's glyphs starts with one.
+        path.move(to: p(3.4, 18.4))
+        path.addLine(to: p(8.6, 13.6))
+        path.addLine(to: p(12.4, 17))
+        path.addLine(to: p(14.6, 15))
+        path.addLine(to: p(18.6, 18.6))
+
+        return path
+    }
+}
+
 /// 68×68 white circle with a 6pt `rgba(255,255,255,.35)` ring.
 struct VisitShutterButton: View {
     let isLibrary: Bool
@@ -863,9 +923,15 @@ struct VisitShutterButton: View {
                 .fill(VisitColor.shutterFill)
             if isLibrary {
                 // A library shutter has to read as "pick a photo", not "take one".
-                Image(systemName: "photo.on.rectangle")
-                    .font(.system(size: VisitMetrics.Camera.closeGlyph, weight: .semibold))
-                    .foregroundStyle(CypressColor.ctaCameraLabel)
+                VisitLibraryGlyph()
+                    .stroke(
+                        CypressColor.ctaCameraLabel,
+                        style: VisitLibraryGlyph.style(for: VisitMetrics.Camera.closeGlyph)
+                    )
+                    .frame(
+                        width: VisitMetrics.Camera.closeGlyph,
+                        height: VisitMetrics.Camera.closeGlyph
+                    )
             }
         }
         .frame(width: VisitMetrics.Camera.shutterDiameter, height: VisitMetrics.Camera.shutterDiameter)

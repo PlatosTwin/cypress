@@ -272,9 +272,12 @@ struct TreePhotosView: View {
         Button {
             model.pendingDeletion = photo
         } label: {
-            Image(systemName: "trash")
-                .font(.system(size: TreePhotosMetrics.thumbGlyph, weight: .semibold))
-                .foregroundStyle(CypressColor.hazardCTAFill)
+            PhotoTrashGlyph()
+                .stroke(
+                    CypressColor.hazardCTAFill,
+                    style: PhotoGlyphMetrics.style(for: TreePhotosMetrics.thumbGlyph)
+                )
+                .frame(width: TreePhotosMetrics.thumbGlyph, height: TreePhotosMetrics.thumbGlyph)
                 .frame(width: TreePhotosMetrics.thumbTarget, height: TreePhotosMetrics.thumbTarget)
                 .contentShape(Rectangle())
         }
@@ -288,11 +291,13 @@ struct TreePhotosView: View {
         return Button {
             Task { await model.vote(vote, on: photo.id) }
         } label: {
-            Image(systemName: TreePhotosPresentation.glyph(vote, filled: isOn))
-                .font(.system(size: TreePhotosMetrics.thumbGlyph, weight: .semibold))
-                .foregroundStyle(isOn ? CypressColor.ctaFill : CypressColor.textFaint)
-                .frame(width: TreePhotosMetrics.thumbTarget, height: TreePhotosMetrics.thumbTarget)
-                .contentShape(Rectangle())
+            PhotoThumbMark(
+                appearance: TreePhotosPresentation.thumb(vote, filled: isOn),
+                side: TreePhotosMetrics.thumbGlyph,
+                tint: isOn ? CypressColor.ctaFill : CypressColor.textFaint
+            )
+            .frame(width: TreePhotosMetrics.thumbTarget, height: TreePhotosMetrics.thumbTarget)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(TreePhotosPresentation.thumbLabel(vote, photo: photo))
@@ -350,10 +355,21 @@ enum TreePhotosPresentation {
             : TreePhotosCopy.deleteMessage
     }
 
-    static func glyph(_ vote: PhotoVote, filled: Bool) -> String {
+    /// How a vote's thumb is drawn: which way up, and whether it is filled.
+    ///
+    /// One mark serves both votes — `PhotoThumbGlyph` turned a half turn is the downvote — so this
+    /// carries a rotation rather than a second glyph's name. It returns a value instead of setting
+    /// one inside the view because E164's lesson was that a mapping only the renderer can reach is
+    /// a mapping no test can check.
+    struct ThumbAppearance: Equatable {
+        var halfTurn: Bool
+        var isFilled: Bool
+    }
+
+    static func thumb(_ vote: PhotoVote, filled: Bool) -> ThumbAppearance {
         switch vote {
-        case .up: return filled ? "hand.thumbsup.fill" : "hand.thumbsup"
-        case .down: return filled ? "hand.thumbsdown.fill" : "hand.thumbsdown"
+        case .up: return ThumbAppearance(halfTurn: false, isFilled: filled)
+        case .down: return ThumbAppearance(halfTurn: true, isFilled: filled)
         }
     }
 

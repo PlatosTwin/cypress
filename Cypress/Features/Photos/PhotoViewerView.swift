@@ -260,9 +260,15 @@ struct PhotoViewerView: View {
             Circle()
                 .fill(CypressColor.heroBackFill)
                 .overlay {
-                    Image(systemName: "trash")
-                        .font(.system(size: PhotoViewerMetrics.closeGlyph, weight: .semibold))
-                        .foregroundStyle(CypressColor.hazardCTAFill)
+                    PhotoTrashGlyph()
+                        .stroke(
+                            CypressColor.hazardCTAFill,
+                            style: PhotoGlyphMetrics.style(for: PhotoViewerMetrics.closeGlyph)
+                        )
+                        .frame(
+                            width: PhotoViewerMetrics.closeGlyph,
+                            height: PhotoViewerMetrics.closeGlyph
+                        )
                 }
                 .frame(
                     width: CypressSpacing.Component.backCircle,
@@ -287,9 +293,15 @@ struct PhotoViewerView: View {
             Circle()
                 .fill(CypressColor.heroBackFill)
                 .overlay {
-                    Image(systemName: "xmark")
-                        .font(.system(size: PhotoViewerMetrics.closeGlyph, weight: .semibold))
-                        .foregroundStyle(CypressColor.textBody)
+                    PhotoCloseGlyph()
+                        .stroke(
+                            CypressColor.textBody,
+                            style: PhotoGlyphMetrics.style(for: PhotoViewerMetrics.closeGlyph)
+                        )
+                        .frame(
+                            width: PhotoViewerMetrics.closeGlyph,
+                            height: PhotoViewerMetrics.closeGlyph
+                        )
                 }
                 .frame(
                     width: CypressSpacing.Component.backCircle,
