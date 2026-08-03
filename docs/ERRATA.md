@@ -3796,13 +3796,16 @@ never had to answer because SCREENS.md only ever drew the populated screens, and
 to decide whether a beta tester takes a second look. Design's to answer what, if anything, those four
 screens should say when they are empty; not an agent's to draw.
 
-The images are under
-`/private/tmp/claude-501/-Users-nikitabogdanov-PycharmProjects-cypress/0d7c1eed-65e3-4ed3-b24f-b64dc9fb8b1c/scratchpad/sweep`,
-one `*-SHEET.png` per screen. The one surprise worth recording is how little there was to find: the
-defect rate on fifteen never-before-photographed screens was zero, which says the token layer and the
-component catalog are carrying dark and AX5 correctly on their own, and that the two defects that were
-found by eye earlier were failures of *coverage* — screens nobody had looked at — rather than of a
-class of screen that keeps going wrong.
+The images were one `*-SHEET.png` 2×2 light/dark × default/AX5 contact sheet per screen, produced by
+`CypressTests/ScreenSweepShots.swift` and written to the directory named by the `CYPRESS_SHOT_DIR`
+environment variable (a temporary directory if unset — see the test's own `outputDirectory`); the run
+that found these two questions printed its `SWEEP DIR` to the test log at the time and that directory
+was a session-local scratch path that no longer exists. To reproduce, set `CYPRESS_SHOT_DIR` to a
+durable path and run `CypressTests/ScreenSweepShots.swift`. The one surprise worth recording is how
+little there was to find: the defect rate on fifteen never-before-photographed screens was zero, which
+says the token layer and the component catalog are carrying dark and AX5 correctly on their own, and
+that the two defects that were found by eye earlier were failures of *coverage* — screens nobody had
+looked at — rather than of a class of screen that keeps going wrong.
 
 ### E116 — the accessibility tree was never checked as a tree, only one label at a time
 

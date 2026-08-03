@@ -460,13 +460,22 @@ read-only `query` requests to the public feature service.
 | `load_local.py` | indexes `Fixtures/raw/street_tree_list.csv` by `TreeID` |
 | `inventory.py` | field value distributions on the ArcGIS layer |
 | `uniq.py` | `TREEID` uniqueness and the id ceiling |
-| `keycheck.py` | first (overlapping-window) comparison — superseded by `windows.py` |
-| `windows.py` | 80 non-overlapping windows, attribute agreement |
-| `arcsample.py` | uniform sample over ArcGIS `OBJECTID` — the reverse-gap estimator |
-| `localsample.py` | uniform sample over DataSF rows — the forward-gap estimator |
-| `bystatus.py` | presence rate by `qLegalStatus`, site family, `PlantType` |
-| `final.py` | character of the above-ceiling block, caretaker presence, species triage |
-| `drift.py` | address/coordinate agreement among species disagreements |
+
+The seven scripts that did the actual gap analysis — `keycheck.py` (superseded by the
+non-overlapping-window version below), `windows.py` (80 non-overlapping windows, attribute
+agreement), `arcsample.py` (uniform sample over ArcGIS `OBJECTID`, the reverse-gap estimator),
+`localsample.py` (uniform sample over DataSF rows, the forward-gap estimator), `bystatus.py`
+(presence rate by `qLegalStatus`, site family, `PlantType`), `final.py` (character of the
+above-ceiling block, caretaker presence, species triage), and `drift.py` (address/coordinate
+agreement among species disagreements) — have been **deleted** (#133). Every number and table
+they produced is recorded in prose above (sections 2–5), each with its sample size, seed, and
+method stated inline, so the finding does not depend on the script surviving. They also each
+hard-coded a single Claude session's ephemeral scratchpad path as their intermediate-file
+location (`local.json`, the `load_local.py` output), which does not exist outside that session —
+keeping them would have meant parameterizing seven dead scripts rather than reproducing anything.
+To redo this analysis: run `load_local.py <path>` to rebuild the local index, then reissue the
+`arc.py`-style `query` calls described per section above against the same `BUF_Street_Trees`
+feature layer (§1).
 
 ---
 
