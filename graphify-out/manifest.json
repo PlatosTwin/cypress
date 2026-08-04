@@ -1770,9 +1770,9 @@
     "semantic_hash": "574d43a7575e432e3a8deecb477d2b7d"
   },
   "Tools/verify_test_log.sh": {
-    "mtime": 1785804400.9179888,
-    "ast_hash": "7e4ea93452d764f047533adff21c3d9b",
-    "semantic_hash": "7e4ea93452d764f047533adff21c3d9b"
+    "mtime": 1785815834.5352337,
+    "ast_hash": "56523558a112f30c44d47995167a7cc9",
+    "semantic_hash": ""
   },
   "mocks/logo_gen.py": {
     "mtime": 1785775587.5109632,
@@ -2030,9 +2030,9 @@
     "semantic_hash": "16c37e45fa70f637fb3ab040b1120ccd"
   },
   "Cypress/Data/Cities/CityDownloader.swift": {
-    "mtime": 1785697740.7561665,
-    "ast_hash": "72b3a007cbe937ac0c138c96d7f7e1ce",
-    "semantic_hash": "72b3a007cbe937ac0c138c96d7f7e1ce"
+    "mtime": 1785816061.7646132,
+    "ast_hash": "0f5555ea3ada57eaf78e290abdd85dfc",
+    "semantic_hash": ""
   },
   "Cypress/Data/Cities/CityInstallState.swift": {
     "mtime": 1785697740.7566335,
@@ -2125,9 +2125,9 @@
     "semantic_hash": "f0875f104b04aa05bee83f0ab08973e7"
   },
   "CypressTests/CityDownloadTests.swift": {
-    "mtime": 1785715031.4205523,
-    "ast_hash": "71cbdc98efca07c1c119d58fe428381e",
-    "semantic_hash": "71cbdc98efca07c1c119d58fe428381e"
+    "mtime": 1785815790.6579716,
+    "ast_hash": "f7e4dd0ed24aeadd4ba0d3971734d6e1",
+    "semantic_hash": ""
   },
   "CypressTests/DebugLocationOverrideTests.swift": {
     "mtime": 1785767580.6216278,
@@ -2310,8 +2310,8 @@
     "semantic_hash": "29e926ed1eae6f911bf224312d8de037"
   },
   ".github/workflows/testflight.yml": {
-    "mtime": 1785810432.3296745,
-    "ast_hash": "e1d05003db1e83ccd75234935f17b113",
+    "mtime": 1785815857.6992679,
+    "ast_hash": "265f64774a5b4403e9b2a508c9da426c",
     "semantic_hash": ""
   },
   "Tools/ui-test-shards.txt": {

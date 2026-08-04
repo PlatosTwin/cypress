@@ -15,27 +15,35 @@
 # BALANCE, measured on CI run 30846300488 (macos-26-arm64, iPhone 17 Pro, 82 tests, 1701.6s total).
 # Re-measure before trusting these — they are a record of one run, not a property of the tests:
 #
-#   DeepLinkVoiceOverTests           28 tests   851.7s   <- 50% of the whole UI suite, alone
-#   MapFilterAccessibilityTests      10 tests   302.8s
-#   PrimaryCTAReachabilityTests      12 tests   147.1s
-#   MapSearchUITests                  5 tests    76.6s
-#   MapSuggestionUITests              5 tests    60.2s
-#   AccessibilityTreeTests            3 tests    47.0s
-#   SheetExitUITests                  4 tests    44.4s
-#   MapPanTabSwitchUITests            2 tests    34.7s
-#   AlmanacGroupTapTests              2 tests    32.4s
-#   PhotoDeletionReachabilityTests    2 tests    27.2s
-#   SheetHeightUITests                3 tests    23.1s
-#   AnonymizedPhotoNoticeUITests      2 tests    22.0s
-#   MapRecenterUITests                2 tests    19.9s
-#   MapCenteredStateUITests           2 tests    12.5s
+#   DeepLinkVoiceOverTests           26 tests   314.8s
+#   MapFilterAccessibilityTests               272.2s
+#   DeepLinkSweepTests                2 tests   148.0s   <- split out of the above (#204)
+#   PrimaryCTAReachabilityTests               133.6s
+#   SheetExitUITests                           80.0s
+#   MapSearchUITests                           72.3s
+#   MapSuggestionUITests                       64.0s
+#   MapPanTabSwitchUITests                     42.5s
+#   AccessibilityTreeTests                     37.8s
+#   AlmanacGroupTapTests                       34.8s
+#   PhotoDeletionReachabilityTests             30.4s
+#   SheetHeightUITests                         28.4s
+#   AnonymizedPhotoNoticeUITests               26.3s
+#   MapRecenterUITests                         18.4s
+#   MapCenteredStateUITests                    17.8s
 #
-# THE FLOOR IS ONE CLASS. `DeepLinkVoiceOverTests` is 851.7s on its own, so no arrangement of
-# whole classes puts the UI suite under ~14 minutes — splitting it further means splitting it by
-# test method, which is a list that breaks silently on a rename. Sharding stops here on purpose;
-# the real lever on that class is the 30s-per-test relaunch it pays, which would also shorten every
-# local run (ticketed separately).
+# THE FLOOR WAS ONE CLASS, AND #204 MOVED IT. `DeepLinkVoiceOverTests` was 462.8s — 35% of the
+# suite — because two of its 28 tests SWEEP every deep-linked screen, launching once per screen,
+# where the other 26 examine one screen each. Those two are now `DeepLinkSweepTests`, which is a
+# class the shard file and the compiler both understand. The alternative was a per-method shard
+# list, and a list of method names is a list a rename breaks while `UITestShardCoverageTests` can
+# only guard what the file names.
+#
+# DIMINISHING RETURNS ARE NOW REAL, and the honest number is small: the longest shard's TESTS drop
+# from 462.8s to ~345s, about two minutes, on a pipeline whose per-shard BUILD is ~10 minutes.
+# Sharding further would trade complexity for seconds. The next lever is the build each shard
+# repeats, not the tests it runs.
 
-DeepLinkVoiceOverTests
-MapFilterAccessibilityTests PrimaryCTAReachabilityTests MapPanTabSwitchUITests MapRecenterUITests
-MapSearchUITests MapSuggestionUITests AccessibilityTreeTests SheetExitUITests AlmanacGroupTapTests PhotoDeletionReachabilityTests SheetHeightUITests AnonymizedPhotoNoticeUITests MapCenteredStateUITests
+DeepLinkVoiceOverTests MapCenteredStateUITests
+MapFilterAccessibilityTests AnonymizedPhotoNoticeUITests MapRecenterUITests
+DeepLinkSweepTests PrimaryCTAReachabilityTests SheetHeightUITests AlmanacGroupTapTests
+SheetExitUITests MapSearchUITests MapSuggestionUITests MapPanTabSwitchUITests PhotoDeletionReachabilityTests AccessibilityTreeTests
