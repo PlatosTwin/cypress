@@ -87,10 +87,14 @@ final class MapPanTabSwitchUITests: XCTestCase {
 
     /// Drags the middle of the map. Mid-screen, nowhere near an edge (edge swipes are OS
     /// gestures), and short enough to stay a pan.
+    ///
+    /// Through `deliberateDrag` since run 30884912660, where `press(forDuration: 0.1, thenDragTo:)`
+    /// was not read as a pan at all on a CI runner and this test failed on its own precondition —
+    /// the same defect #200 had already been diagnosed and fixed for, one file over.
     private func pan(_ app: XCUIApplication) {
         let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45))
         let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.6))
-        start.press(forDuration: 0.1, thenDragTo: end)
+        deliberateDrag(from: start, to: end)
     }
 
     private func switchTabs(_ app: XCUIApplication, away: String = "Journal", home: String = "Map") {

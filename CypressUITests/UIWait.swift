@@ -100,4 +100,40 @@ extension XCTestCase {
         )
         return previous
     }
+
+    /// A drag a thumb would actually produce, rather than the instantaneous sweep XCUITest defaults
+    /// to.
+    ///
+    /// **Every synthesized drag in this suite goes through here, and that is the point** — #200 was
+    /// diagnosed and fixed at one call site while an identical one sat two files away.
+    /// `SheetExitUITests` got a slowed gesture; `MapPanTabSwitchUITests` kept
+    /// `press(forDuration: 0.1, thenDragTo:)`, and
+    /// `testADeliberatePanSurvivesLeavingForJournalAndBack` failed run 30884912660 on a CI runner
+    /// with *"panning the map did not move the camera off the reader"* — the pan was never read as a
+    /// pan. Two spellings of one gesture is how a fixed defect comes back under a different test's
+    /// name, so there is now one spelling.
+    ///
+    /// The three numbers, none of them arbitrary:
+    ///
+    /// - **0.25 s of touch-down before any movement.** A recognizer needs to see a stationary touch
+    ///   begin; 50–100 ms on a loaded three-core runner can be delivered as a single coalesced event
+    ///   that never becomes a `began`.
+    /// - **~500 pt/s instead of the default 1000.** Half the speed is twice the intermediate touch
+    ///   events, which is what a recognizer actually integrates. A map pan and a sheet dismissal both
+    ///   need the middle of the gesture, not just its endpoints.
+    /// - **0.15 s held at the end.** So the release is unambiguously a release *at that position*
+    ///   rather than the tail of a flick — which for a map is the difference between a pan and a
+    ///   momentum scroll that drifts somewhere else.
+    ///
+    /// Roughly a second per drag. **Nothing asserted is weakened:** the gesture starts and ends at
+    /// exactly the coordinates the caller asked for, and travels the same distance. What changes is
+    /// only how convincingly the touch stream says "a finger did this".
+    func deliberateDrag(from start: XCUICoordinate, to end: XCUICoordinate) {
+        start.press(
+            forDuration: 0.25,
+            thenDragTo: end,
+            withVelocity: XCUIGestureVelocity(rawValue: 500),
+            thenHoldForDuration: 0.15
+        )
+    }
 }

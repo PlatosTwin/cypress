@@ -128,15 +128,11 @@ final class SheetExitUITests: XCTestCase {
     /// **Deliberate, not flicked (#200).** This was `press(forDuration: 0.05, thenDragTo:)` at the
     /// default velocity, and on a shared CI runner it was not reliably read as a drag at all —
     /// `testShareSheetDragDownDismisses` failed run 30868888144 and roughly one CI run in three
-    /// before it. A 50 ms touch-down followed by a default-velocity sweep gives the sheet's
-    /// gesture recognizer very few intermediate events to work with, and a loaded machine
-    /// delivers fewer still.
+    /// before it.
     ///
-    /// So the gesture is slowed to something a thumb would actually produce: a quarter-second
-    /// settle before any movement, ~500 pt/s instead of the default 1000, and a brief hold at the
-    /// bottom so the release is unambiguously a release at that position rather than the tail of
-    /// a flick. Roughly a second per drag, four drags in this file — a few seconds of runtime to
-    /// stop gating every deploy on a coin flip.
+    /// The gesture now lives in `deliberateDrag`, with the reasoning for each of its three numbers,
+    /// because fixing it *here* and nowhere else is what let the same defect come back under
+    /// another test's name in run 30884912660. `DragGestureGateTests` keeps it that way.
     ///
     /// This does NOT weaken what is asserted: the drag still travels the same distance from the
     /// same place, and `assertMapArrived` still demands the map come back.
@@ -144,12 +140,7 @@ final class SheetExitUITests: XCTestCase {
         let origin = app.coordinate(withNormalizedOffset: .zero)
         let start = origin.withOffset(CGVector(dx: app.frame.midX, dy: fromY))
         let end = origin.withOffset(CGVector(dx: app.frame.midX, dy: app.frame.height * 0.85))
-        start.press(
-            forDuration: 0.25,
-            thenDragTo: end,
-            withVelocity: XCUIGestureVelocity(rawValue: 500),
-            thenHoldForDuration: 0.15
-        )
+        deliberateDrag(from: start, to: end)
     }
 
     /// The sheets are deep-linked over the map tab, so the map's own chrome becoming *hittable*

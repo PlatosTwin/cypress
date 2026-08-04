@@ -20,7 +20,7 @@
     "semantic_hash": ""
   },
   "Cypress/App/RootView.swift": {
-    "mtime": 1785767554.0520554,
+    "mtime": 1785826001.0063028,
     "ast_hash": "f277d32d8cdafab70355cc5346335f28",
     "semantic_hash": "f277d32d8cdafab70355cc5346335f28"
   },
@@ -390,7 +390,7 @@
     "semantic_hash": "bfd9777a976ee115a867500ac46233b1"
   },
   "Cypress/DesignSystem/Components/Buttons.swift": {
-    "mtime": 1785756682.4969149,
+    "mtime": 1785826001.0066657,
     "ast_hash": "2899759547f885dd68fc297b38e0bb5c",
     "semantic_hash": "2899759547f885dd68fc297b38e0bb5c"
   },
@@ -680,17 +680,17 @@
     "semantic_hash": "94cb9d6da6acc42f94e135629725c798"
   },
   "Cypress/Features/Grove/GroveModel.swift": {
-    "mtime": 1785108581.083533,
+    "mtime": 1785826001.0068944,
     "ast_hash": "4b3e2c276d2eba79f376755e7bc19cac",
     "semantic_hash": "4b3e2c276d2eba79f376755e7bc19cac"
   },
   "Cypress/Features/Grove/GrovePresentation.swift": {
-    "mtime": 1785756682.5137405,
+    "mtime": 1785826001.0071533,
     "ast_hash": "0b8d8374647de950d8a80a450f08b142",
     "semantic_hash": "0b8d8374647de950d8a80a450f08b142"
   },
   "Cypress/Features/Grove/GrovePreviews.swift": {
-    "mtime": 1785756682.5140078,
+    "mtime": 1785826001.0076277,
     "ast_hash": "cfec362d320e5ee4cd9d64c8bd37add4",
     "semantic_hash": "cfec362d320e5ee4cd9d64c8bd37add4"
   },
@@ -700,7 +700,7 @@
     "semantic_hash": "29e3e8c9e91f0dedd99ac793ace0c2d5"
   },
   "Cypress/Features/Grove/GroveView.swift": {
-    "mtime": 1785756682.5144994,
+    "mtime": 1785826001.007907,
     "ast_hash": "623f1d92e0f23e3ba6dca57776c01e2d",
     "semantic_hash": "623f1d92e0f23e3ba6dca57776c01e2d"
   },
@@ -750,13 +750,13 @@
     "semantic_hash": "5ec924e399f36291b9419b42b077dac5"
   },
   "Cypress/Features/Journal/JournalTabView.swift": {
-    "mtime": 1785824274.199696,
+    "mtime": 1785826001.008221,
     "ast_hash": "9aa991644677782096d18d6d37d4f5e5",
     "semantic_hash": ""
   },
   "Cypress/Features/Map/MapAnnotationLayer.swift": {
-    "mtime": 1785822592.3231678,
-    "ast_hash": "aaa1f48b9ac02d6a365ea942d368a224",
+    "mtime": 1785825184.1701486,
+    "ast_hash": "02cee3f39e809fd7bfb6782efc0b4565",
     "semantic_hash": ""
   },
   "Cypress/Features/Map/MapChrome.swift": {
@@ -785,8 +785,8 @@
     "semantic_hash": ""
   },
   "Cypress/Features/Map/MapKitBasemap.swift": {
-    "mtime": 1785822592.3240285,
-    "ast_hash": "0fb204bce50b5a26ef4e7b8fdfb908c8",
+    "mtime": 1785825138.6580079,
+    "ast_hash": "fbeba92c18571ea73fdbd2a600c2f293",
     "semantic_hash": ""
   },
   "Cypress/Features/Map/MapLocationProvider.swift": {
@@ -1860,8 +1860,8 @@
     "semantic_hash": "c4f48ab0a3d487f5a965e8d683c2ba1b"
   },
   "CLAUDE.md": {
-    "mtime": 1785823981.6309278,
-    "ast_hash": "7afc5f9cfe49c9a0285a7fc5407e7b8d",
+    "mtime": 1785826461.2885282,
+    "ast_hash": "cc321d9511d6add8bfa7cb8c52058975",
     "semantic_hash": ""
   },
   "CRITIQUES.md": {
@@ -2380,13 +2380,13 @@
     "semantic_hash": ""
   },
   "Cypress/Features/Map/MapHeading.swift": {
-    "mtime": 1785822592.3234398,
-    "ast_hash": "1a9e0740e5fcdddbc114267a450f4f5f",
+    "mtime": 1785826419.2410634,
+    "ast_hash": "1beff054dbd26b9f72b9bedc6abf063a",
     "semantic_hash": ""
   },
   "CypressTests/MapHeadingTests.swift": {
-    "mtime": 1785822592.325176,
-    "ast_hash": "d42aec12f35a72423f73a5d7f575018b",
+    "mtime": 1785825210.4270067,
+    "ast_hash": "80dd8319329283e5270261e6a8751eee",
     "semantic_hash": ""
   },
   "docs/CONTRIBUTING.md": {
@@ -2447,6 +2447,11 @@
   "docs/rulings-pending/journal-city-segment.md": {
     "mtime": 1785824274.2009397,
     "ast_hash": "1e0e14b4d8707edce1eb3bdef3a8db52",
+    "semantic_hash": ""
+  },
+  "docs/errata-pending/a-test-that-asserts-the-number-the-code-computed.md": {
+    "mtime": 1785825235.4357176,
+    "ast_hash": "5cd7891f823441541c007e816b49a2d0",
     "semantic_hash": ""
   }
 }
