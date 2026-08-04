@@ -52,9 +52,17 @@ on:
     # A push that touches BOTH docs and code still deploys: the skip needs every changed path to
     # match. And because a docs-only commit produces no run at all, the newest build can be behind
     # main — the `build-N` tag on the commit that shipped is what answers "what is in TestFlight".
+    #
+    # `graphify-out/**` is the knowledge-graph build product (9785d4f), and it is here for a
+    # reason that would otherwise be invisible: its hook refreshes it on EVERY commit. Without
+    # this line a docs-only commit also carries a graphify-out change, the skip needs every
+    # changed path to match, and the docs rule above quietly stops working — a deploy per doc
+    # edit, and nothing anywhere saying why. It is generated output ABOUT the code, read by
+    # nothing in the app, the suite or the build.
     paths-ignore:
       - 'docs/**'
       - '*.md'
+      - 'graphify-out/**'
   workflow_dispatch:
 
 # One release at a time. Two concurrent runs would race for the same build number and the
