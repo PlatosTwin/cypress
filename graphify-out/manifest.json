@@ -1860,8 +1860,8 @@
     "semantic_hash": "c4f48ab0a3d487f5a965e8d683c2ba1b"
   },
   "CLAUDE.md": {
-    "mtime": 1785826461.2885282,
-    "ast_hash": "cc321d9511d6add8bfa7cb8c52058975",
+    "mtime": 1785868986.7079442,
+    "ast_hash": "5b56225db8042560031fe678bc4db506",
     "semantic_hash": ""
   },
   "CRITIQUES.md": {
@@ -1910,8 +1910,8 @@
     "semantic_hash": "c0f1dd67f2cd86ecaadeb440a633739e"
   },
   "docs/ERRATA.md": {
-    "mtime": 1785827548.0760882,
-    "ast_hash": "d79fae333e9b2204305fb435d0519a02",
+    "mtime": 1785865282.4649172,
+    "ast_hash": "3103fb9680a1548be6e8271ec5cdbeba",
     "semantic_hash": ""
   },
   "docs/ROADMAP.md": {
@@ -2310,8 +2310,8 @@
     "semantic_hash": "29e926ed1eae6f911bf224312d8de037"
   },
   ".github/workflows/testflight.yml": {
-    "mtime": 1785815857.6992679,
-    "ast_hash": "265f64774a5b4403e9b2a508c9da426c",
+    "mtime": 1785867467.5093243,
+    "ast_hash": "dcd6dd9f7b9c18a645a559220223eae6",
     "semantic_hash": ""
   },
   "Tools/ui-test-shards.txt": {
@@ -2380,8 +2380,8 @@
     "semantic_hash": ""
   },
   "docs/CONTRIBUTING.md": {
-    "mtime": 1785824042.2721732,
-    "ast_hash": "0c132eaebb5a8fcaaba111cfd9b9ad85",
+    "mtime": 1785858393.2655494,
+    "ast_hash": "61a5c35e5bdb7a740a85a192116d8b88",
     "semantic_hash": ""
   },
   "docs/pull_request_template.md": {
@@ -2432,6 +2432,11 @@
   "CypressUITests/PhotoBrowserReachabilityTests.swift": {
     "mtime": 1785827464.9297795,
     "ast_hash": "b207315fad00ef91de5a0bbd5f3c2ebd",
+    "semantic_hash": ""
+  },
+  "CypressTests/DeployPathsAgreeTests.swift": {
+    "mtime": 1785868986.708346,
+    "ast_hash": "c6eff2d6d0ff01a5c0b18c5a224cc682",
     "semantic_hash": ""
   }
 }

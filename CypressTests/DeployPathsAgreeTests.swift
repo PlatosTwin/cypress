@@ -106,16 +106,33 @@ struct DeployPathsAgreeTests {
             )
         }
 
-        // The predicate covers one path the trigger deliberately does not: `.github/` is outside
-        // paths-ignore on purpose, because a pipeline change must still prove itself by running.
-        // Asserted so that removing it from the predicate — which would restore #212 exactly — is a
-        // red rather than a silent regression.
-        #expect(
-            predicate.contains(".github/"),
-            """
-            the ships predicate no longer mentions `.github/`. That is the whole of #212: a
-            pipeline-only change would mint a build whose app is byte-identical to the last one.
-            """
-        )
+        // Three paths are in the predicate and deliberately NOT in the trigger, because for them
+        // the two questions have different answers: they must RUN and must not SHIP. The check
+        // above only runs trigger → predicate, so nothing there would notice one of these being
+        // deleted. Named individually so that removing one is a decision someone had to make.
+        //
+        // `.github/` is #212 — a pipeline change proves itself by running, and that rule caught the
+        // wrong SDK, the wrong simulator name and the tag permission.
+        //
+        // The two test directories are #215, and their exemption is a fact about the scheme rather
+        // than a judgement: `Cypress.xcscheme` has exactly one `BuildActionEntry`, the app target,
+        // `buildForArchiving="YES"`. Nothing under them is an archive input. **If that stops being
+        // true — a test target becomes an app dependency, a fixture gets bundled — this assertion
+        // is the wrong one and should be deleted along with the tokens.** It is guarding the
+        // predicate, not the scheme.
+        for (token, ticket, change) in [
+            (".github/", "#212", "a pipeline-only change"),
+            ("CypressTests/", "#215", "a unit-test-only change"),
+            ("CypressUITests/", "#215", "a UI-test-only change"),
+        ] {
+            #expect(
+                predicate.contains(token),
+                """
+                the ships predicate no longer mentions `\(token)`. That restores \(ticket) exactly: \
+                \(change) would mint a build whose app is byte-identical to the last one, expiring \
+                the build before it and notifying every tester about nothing.
+                """
+            )
+        }
     }
 }
