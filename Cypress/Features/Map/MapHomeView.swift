@@ -162,6 +162,11 @@ struct MapHomeView: View {
         .toolbar(.hidden, for: .navigationBar)
         .task {
             location.start()
+            // **The magnetometer is this screen's alone, and it is switched off below.** The GPS
+            // session deliberately outlives this view (see the note at the end of this block); the
+            // heading has exactly one consumer — the cone on the dot, drawn here and nowhere else —
+            // so it is scoped to the screen that draws it (task #155).
+            location.startHeading()
             // **The fix may already be here, and `.onChange` cannot see a value that never changes.**
             //
             // `MapLocationProvider` is the composition root's, shared with screens 09, 12, 16 and the
@@ -211,7 +216,13 @@ struct MapHomeView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { rememberCamera() }
         }
-        .onDisappear { rememberCamera() }
+        .onDisappear {
+            rememberCamera()
+            // The other half of `startHeading()`. Nothing off this screen draws a cone, so nothing
+            // off this screen needs the sensor spinning — and `stopHeading()` also forgets the last
+            // bearing, so a return to the map cannot open on a stale one (task #155).
+            location.stopHeading()
+        }
         #if DEBUG
         .onChange(of: model.content) { _, content in
             MapFrameProbe.shared.note(markers: content.markerCount, zoom: model.viewport?.zoom ?? 0)
@@ -249,6 +260,7 @@ struct MapHomeView: View {
             pins: model.pins,
             speciesPalette: model.speciesPalette,
             userCoordinate: location.availability.coordinate,
+            userHeadingDegrees: location.headingDegrees,
             selectedPinID: model.selectedPinID,
             onCameraChange: { bounds, zoom in
                 model.cameraDidChange(bounds: bounds, zoom: zoom)

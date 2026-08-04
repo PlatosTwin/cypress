@@ -56,6 +56,16 @@ final class MapLocationProvider {
     private(set) var availability: Availability = .notAsked
     private(set) var authorization: CLAuthorizationStatus
 
+    /// Which way the reader is facing, in degrees clockwise from **true** north, or `nil` for
+    /// "nobody knows" (task #155).
+    ///
+    /// Separate from `availability` rather than a sixth case or a payload on `.located`, because the
+    /// two answer different questions and change at different rates. `availability` is what the app
+    /// records against a check-in, a measurement and a visit; a bearing is not part of any of those,
+    /// and folding it in would rewrite the fix — and everything watching it — every time the reader
+    /// turned on the spot. `nil` is a state the map draws (the bare dot), not an error.
+    private(set) var headingDegrees: Double?
+
     private let manager: CLLocationManager
     private var delegate: Delegate?
 
@@ -83,6 +93,9 @@ final class MapLocationProvider {
         delegate.onLocation = { [weak self] coordinate, accuracyM in
             self?.publish(coordinate: coordinate, accuracyM: accuracyM)
         }
+        delegate.onHeading = { [weak self] heading in
+            self?.publish(heading: heading)
+        }
         self.delegate = delegate
         manager.delegate = delegate
         // A street tree is a doorstep-scale target; anything coarser than `best` cannot tell two
@@ -102,6 +115,10 @@ final class MapLocationProvider {
         // markers on screen and no finger on the glass: **1.3–1.9 fps, worst frame 850 ms**, with the
         // whole of it main-thread time spent rebuilding an annotation layer that had not changed.
         manager.distanceFilter = 5
+        // CoreLocation's own version of the gate `publish(heading:)` keeps below. Asked for as well
+        // as enforced, for the reason the comment above records about `distanceFilter`: a filter
+        // this app has measured being ignored is a filter it cannot rely on alone.
+        manager.headingFilter = MapHeading.publishDegrees
         apply(authorization: manager.authorizationStatus)
     }
 
@@ -160,6 +177,46 @@ final class MapLocationProvider {
         if isPinned { return }
         hasStarted = false
         manager.stopUpdatingLocation()
+        stopHeading()
+    }
+
+    // MARK: - The magnetometer (task #155)
+
+    /// **Started and stopped separately from the fix, and that asymmetry is the answer to the
+    /// question the ticket asks.**
+    ///
+    /// The GPS session is deliberately never stopped when screen 01 goes away: one provider is
+    /// shared with screens 09, 12, 16 and the whole visit flow, and stopping it on the map's way to
+    /// a tree profile would take the accuracy out from under the record being written there
+    /// (`MapHomeView`'s own note says so). The heading has no such reader. Exactly one surface in
+    /// this app draws a cone, so the magnetometer can be scoped to the screen that draws it without
+    /// anybody else noticing, and a sensor nobody is reading is a sensor that should be off.
+    ///
+    /// That is a scope argument, not a measurement: **the power cost of `startUpdatingHeading` has
+    /// not been measured here and cannot be**, because no simulator has a magnetometer to spin up.
+    /// The gate is cheap, reversible and costs nothing if the cost turns out to be nil.
+    ///
+    /// `headingAvailable()` is asked because a device without a magnetometer answers no — and every
+    /// simulator answers no, which is why nothing in this file can be seen working on one.
+    func startHeading() {
+        if isPinned { return }
+        // **`type(of:)`, so the question is put to the manager this provider was actually handed.**
+        // Spelled `CLLocationManager.headingAvailable()` it is a call on the base class and nothing
+        // about the injected manager can answer it — which is not only a testing problem: this type
+        // takes a manager precisely because it is not supposed to assume which one it has. Measured
+        // on the 16 Pro Max simulator, the base class answers **false**, and that is the honest
+        // answer: no simulator has a magnetometer, so no simulator ever draws a cone.
+        guard type(of: manager).headingAvailable() else { return }
+        manager.startUpdatingHeading()
+    }
+
+    /// Stops the magnetometer **and forgets the last heading**, which is the point rather than
+    /// tidiness: a cone left pointing wherever the reader last stood is the confident wrong answer
+    /// that `MapHeading.usable` refuses one line at a time.
+    func stopHeading() {
+        if isPinned { return }
+        manager.stopUpdatingHeading()
+        headingDegrees = nil
     }
 
     /// The only route out of `denied`: iOS never re-presents the sheet, so the honest affordance is
@@ -224,6 +281,21 @@ final class MapLocationProvider {
         #endif
     }
 
+    /// The one place `headingDegrees` is written.
+    ///
+    /// A heading that has *become* unusable is published immediately — that is the fallback to the
+    /// bare dot and it must not wait for a five-degree turn that a stationary reader will never
+    /// make. A heading that has merely moved a little is dropped, for the churn reason
+    /// `MapHeading.publishDegrees` records.
+    private func publish(heading: Double?) {
+        guard let heading else {
+            headingDegrees = nil
+            return
+        }
+        guard MapHeading.isWorthPublishing(heading, over: headingDegrees) else { return }
+        headingDegrees = heading
+    }
+
     private func apply(authorization status: CLAuthorizationStatus) {
         authorization = status
         switch status {
@@ -251,6 +323,8 @@ final class MapLocationProvider {
     private final class Delegate: NSObject, CLLocationManagerDelegate {
         var onAuthorizationChange: (@MainActor (CLAuthorizationStatus) -> Void)?
         var onLocation: (@MainActor (Coordinate, Double) -> Void)?
+        /// A heading, or `nil` for one that cannot be trusted. See `MapHeading.usable`.
+        var onHeading: (@MainActor (Double?) -> Void)?
 
         func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
             let status = manager.authorizationStatus
@@ -268,6 +342,23 @@ final class MapLocationProvider {
             let accuracy = last.horizontalAccuracy
             let effective = accuracy >= 0 ? accuracy : VisitShortlist.assumedAccuracyM
             MainActor.assumeIsolated { onLocation?(coordinate, effective) }
+        }
+
+        func locationManager(_ manager: CLLocationManager, didUpdateHeading newHeading: CLHeading) {
+            let usable = MapHeading.usable(
+                trueHeading: newHeading.trueHeading,
+                accuracyDegrees: newHeading.headingAccuracy
+            )
+            MainActor.assumeIsolated { onHeading?(usable) }
+        }
+
+        /// **No figure-of-eight.** Answering `true` here lets iOS put its own full-screen
+        /// calibration HUD over whatever the app is showing, uninvited, whenever it decides the
+        /// magnetometer needs work — on a screen whose job is to show the reader a tree in front of
+        /// them. This app's answer to a heading it cannot trust is to stop drawing one
+        /// (`MapHeading.usable`), which needs nothing from the reader and interrupts nothing.
+        func locationManagerShouldDisplayHeadingCalibration(_ manager: CLLocationManager) -> Bool {
+            false
         }
 
         func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {

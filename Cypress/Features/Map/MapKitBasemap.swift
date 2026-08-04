@@ -101,6 +101,10 @@ struct MapKitBasemap: View {
     /// a species coloring there would be four hues answering a question nobody is asking.
     var speciesPalette: MapSpeciesPalette = .empty
     let userCoordinate: Coordinate?
+    /// Which way the reader is facing (task #155). Defaults to nothing, for the same reason the
+    /// species palette does: 16's pin adjust and the pin-set map are about one tree and the reader's
+    /// bearing answers no question either of them asks. `nil` draws the bare dot.
+    var userHeadingDegrees: Double?
     let selectedPinID: UUID?
 
     var onCameraChange: (BoundingBox, Int) -> Void
@@ -126,6 +130,7 @@ struct MapKitBasemap: View {
             pins: pins,
             speciesPalette: speciesPalette,
             userCoordinate: userCoordinate,
+            userHeadingDegrees: userHeadingDegrees,
             selectedPinID: selectedPinID,
             onCameraChange: onCameraChange,
             onSelectPin: onSelectPin,
@@ -240,6 +245,46 @@ enum MapLayout {
     /// reintroducing per-update view rebuilds is E139's ~50-sessions-a-second class and is exactly
     /// what this must never do.
     static let userDotGlideSeconds: TimeInterval = 1.0
+
+    // MARK: The direction cone (task #155)
+    //
+    // **NOT SPECIFIED in SCREENS.md** — 01 draws a bare GPS dot, and C19's catalog has no cone. This
+    // is the owner's own request of 2026-08-01, named as "the compass-cone/beam treatment readers
+    // know from Maps", and the numbers below are therefore this screen's rather than the mock's, in
+    // the same way `MapRecenter`'s are. Nothing is added to the color palette: the cone is
+    // `CypressColor.gpsDot`, the dot's own blue, faded out along its length.
+
+    /// How far the cone reaches past the center of the dot, in points.
+    ///
+    /// A little under twice the 18 pt dot, so the mark reads as *belonging to* the dot rather than
+    /// as a second object beside it, and so it stays inside the 44 pt of tap target the marker view
+    /// already claims — the cone must not become a thing the reader tries to touch.
+    static let userHeadingConeRadius: CGFloat = 30
+
+    /// How wide the cone opens, in degrees, total.
+    ///
+    /// Wide enough to read as a direction at a glance at 30 pt long, and no wider: the cone is an
+    /// answer to "which way am I facing", not a claim about how precisely the magnetometer knows.
+    /// It does **not** vary with `headingAccuracy` — a cone that fattened and thinned as the reader
+    /// walked past parked cars would be reporting sensor noise as if it were information, and the
+    /// one accuracy decision this feature makes is the honest one: below zero, no cone at all.
+    static let userHeadingConeDegrees: Double = 62
+
+    /// The cone's opacity where it leaves the dot. It fades to nothing at `userHeadingConeRadius`.
+    ///
+    /// Faint on purpose. The dot is the fact; the cone is a hint about it, and a solid wedge at the
+    /// dot's own blue would swallow both the dot and the pins the reader is looking for.
+    static let userHeadingConeOpacity: Double = 0.32
+
+    /// How long the cone takes to swing from one heading to the next, in seconds.
+    ///
+    /// **Not `userDotGlideSeconds`.** The dot's one-second glide is matched to CoreLocation's own
+    /// roughly-one-fix-a-second cadence while walking; headings arrive as fast as the reader turns,
+    /// gated at `MapHeading.publishDegrees`, and a one-second sweep would leave the cone visibly
+    /// behind the phone in the hand holding it. A quarter of a second is long enough to read as a
+    /// turn rather than a jump — which is what #149 established for the dot and what this must not
+    /// undo one channel over — and short enough that the cone is where the reader is pointing.
+    static let userHeadingRotationSeconds: TimeInterval = 0.25
 
     /// A jump longer than this snaps instead of gliding, in degrees of latitude/longitude.
     ///
