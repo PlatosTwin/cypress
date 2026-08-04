@@ -50,11 +50,18 @@ struct DeployPathsAgreeTests {
         return entries
     }
 
-    /// The line carrying the `ships` predicate's regex.
-    static func shipsPredicate(root: URL) throws -> String {
+    /// The right-hand side of a shell assignment in the `scope` step, e.g. `DOC_ONLY='…'`.
+    ///
+    /// Matched on the assignment rather than on a `grep` line, because the two predicates are now
+    /// built from named variables and used further down. Quotes are stripped; the value is
+    /// returned as written otherwise.
+    static func assignment(_ name: String, root: URL) throws -> String {
         let text = try String(contentsOf: root.appendingPathComponent(workflow), encoding: .utf8)
-        let line = text.split(separator: "\n").first { $0.contains("grep -vE") && $0.contains(".github/") }
-        return line.map(String.init) ?? ""
+        guard let line = text.split(separator: "\n").first(where: {
+            $0.trimmingCharacters(in: .whitespaces).hasPrefix("\(name)=")
+        }) else { return "" }
+        let value = line.drop { $0 != "=" }.dropFirst()
+        return value.trimmingCharacters(in: CharacterSet(charactersIn: "'\" "))
     }
 
     /// What a `paths-ignore` glob must leave a trace of in the predicate.
@@ -73,9 +80,10 @@ struct DeployPathsAgreeTests {
     func theTwoListsAgree() throws {
         let root = AppSourceLiterals.repositoryRoot()
         let ignored = try Self.pathsIgnore(root: root)
-        let predicate = try Self.shipsPredicate(root: root)
+        let docOnly = try Self.assignment("DOC_ONLY", root: root)
+        let noArchive = try Self.assignment("NO_ARCHIVE", root: root)
 
-        // Controls. Either read coming back empty would make every check below vacuous — the
+        // Controls. Any read coming back empty would make every check below vacuous — the
         // failure shape ARCHITECTURE §7 records and #93 shipped once already.
         #expect(
             ignored.count >= 3,
@@ -85,23 +93,42 @@ struct DeployPathsAgreeTests {
             """
         )
         #expect(
-            !predicate.isEmpty,
+            !docOnly.isEmpty,
             """
-            found no `grep -vE` line mentioning .github/ in \(Self.workflow) — either the ships \
-            predicate was removed, in which case every push mints a build again, or it moved and \
-            this gate needs to be told where to.
+            found no `DOC_ONLY=` assignment in \(Self.workflow)'s `scope` step. Either it was \
+            renamed — in which case this gate needs to be told the new name, and is passing \
+            without checking anything until it is — or the whole two-question derivation was \
+            removed.
+            """
+        )
+        #expect(
+            !noArchive.isEmpty,
+            "found no `NO_ARCHIVE=` assignment in \(Self.workflow)'s `scope` step (see above)"
+        )
+
+        // **`NO_ARCHIVE` must be DERIVED from `DOC_ONLY`, not repeat it.** This is the assertion
+        // that keeps a third copy of the deny-list from appearing. Written as two literals, the
+        // pair drifts — that is #215, which happened within a day of the pair being created.
+        #expect(
+            noArchive.contains("$DOC_ONLY"),
+            """
+            NO_ARCHIVE no longer interpolates $DOC_ONLY, so the doc deny-list is now written twice \
+            inside one shell step. Whichever copy someone edits next, the other is the bug: the \
+            suite would skip a change it should test, or mint a build for prose. Build NO_ARCHIVE \
+            by extending DOC_ONLY.
             """
         )
 
         for glob in ignored {
             let token = Self.token(for: glob)
             #expect(
-                predicate.contains(token),
+                docOnly.contains(token),
                 """
-                `\(glob)` is ignored by the push trigger but the ships predicate never mentions \
-                `\(token)`. The two lists have drifted: a push touching only \(glob) would start no \
-                run — or, alongside a .github/ change, would start one AND mint a build whose app \
-                is byte-identical to the last (#212). Add it to the predicate in the `ships` step.
+                `\(glob)` is ignored by the push trigger but DOC_ONLY never mentions `\(token)`. \
+                The two lists have drifted, and both directions are broken: a push touching only \
+                \(glob) starts no run, while a PR touching only \(glob) runs the entire 26-minute \
+                suite it was meant to skip — and, alongside a .github/ change, would mint a build \
+                whose app is byte-identical to the last (#212). Add it to DOC_ONLY.
                 """
             )
         }
@@ -126,11 +153,22 @@ struct DeployPathsAgreeTests {
             ("CypressUITests/", "#215", "a UI-test-only change"),
         ] {
             #expect(
-                predicate.contains(token),
+                noArchive.contains(token),
                 """
-                the ships predicate no longer mentions `\(token)`. That restores \(ticket) exactly: \
+                NO_ARCHIVE no longer mentions `\(token)`. That restores \(ticket) exactly: \
                 \(change) would mint a build whose app is byte-identical to the last one, expiring \
                 the build before it and notifying every tester about nothing.
+                """
+            )
+            // And the converse, which is the newer half: these three must NOT be in DOC_ONLY.
+            // Putting one there would skip the suite for a change to the pipeline or to the tests
+            // themselves — a green required check over code nothing ran.
+            #expect(
+                !docOnly.contains(token),
+                """
+                DOC_ONLY now mentions `\(token)`, so \(change) would SKIP the entire suite and \
+                `gate` would report success having tested nothing. Only prose belongs in \
+                DOC_ONLY; \(token) belongs in NO_ARCHIVE, which is the run-but-do-not-ship set.
                 """
             )
         }

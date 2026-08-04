@@ -124,7 +124,8 @@ jobs:
     timeout-minutes: 5
     outputs:
       shards: ${{ steps.read.outputs.shards }}
-      ships: ${{ steps.ships.outputs.ships }}
+      ships: ${{ steps.scope.outputs.ships }}
+      tests: ${{ steps.scope.outputs.tests }}
     steps:
       # `fetch-depth: 0` because the ships decision below diffs against the previous tip, and a
       # shallow clone does not have it.
@@ -175,53 +176,91 @@ jobs:
       # workflow change that genuinely needs a real archive to prove itself — signing, export
       # options, the upload step — is exactly the class this would otherwise leave unproven. Run the
       # workflow by hand and it releases.
-      - id: ships
+      # ── Two questions, one list ───────────────────────────────────────────────────────
+      # `tests`  — does anything here need the suite run at all?
+      # `ships`  — having run, does this deserve a build number?
+      #
+      # They are different questions with a strict containment between them, and writing them as
+      # one derivation rather than two literals is the point. `NO_ARCHIVE` extends `DOC_ONLY`;
+      # nothing can be in the doc set without also being in the no-build set, so `ships=true`
+      # always implies `tests=true` and the release job can never be reached by a run whose suite
+      # did not execute. Two separate literals is exactly the shape that drifted within a day and
+      # produced #215.
+      - id: scope
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" != "push" ]; then
-            # Manual runs ship by definition; pull requests never reach the release job at all.
+
+          # `DOC_ONLY` is the push trigger's `paths-ignore`, written as a regex: prose, and
+          # nothing a test could exercise. `*` does not cross a `/` in those glob patterns, so
+          # `*.md` is the repository root only and is anchored the same way here.
+          DOC_ONLY='docs/|graphify-out/|[^/]*\.md$'
+          # Plus the three that must RUN and must not SHIP. `.github/` because a pipeline change
+          # proves itself by running (#212); the two test directories because they ARE the suite,
+          # and cannot reach the archive — Cypress.xcscheme has one BuildActionEntry, the app
+          # target (#215).
+          NO_ARCHIVE="\.github/|CypressTests/|CypressUITests/|$DOC_ONLY"
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # The escape hatch: a manual run tests everything and ships. This is what makes the
+            # skipping safe — a pipeline or test change that genuinely needs a real archive to
+            # prove it (signing, export options, the upload step) is run by hand.
+            echo "tests=true" >> "$GITHUB_OUTPUT"
             echo "ships=true" >> "$GITHUB_OUTPUT"
-            echo "event is ${{ github.event_name }}, not push — shipping"
+            echo "manual run — the suite runs and it ships"
             exit 0
           fi
 
-          before="${{ github.event.before }}"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # `github.sha` on a PR event is the MERGE commit, so base…merge is the PR's net diff.
+            before="${{ github.event.pull_request.base.sha }}"
+          else
+            before="${{ github.event.before }}"
+          fi
           # A brand-new branch, or a history GitHub cannot name, reports all-zeros. Fall back to the
-          # merge's first parent, which for a merge commit IS the previous main tip. Defaulting to
-          # "ship" on any doubt is deliberate: a missed build is visible, a surprise one is not.
+          # merge's first parent, which for a merge commit IS the previous tip. Defaulting to
+          # "run and ship" on any doubt is deliberate in both directions: a missed build is visible,
+          # a surprise one is not — and an unrun suite is worse than either.
           if [ -z "$before" ] || [ "$before" = "0000000000000000000000000000000000000000" ] \
              || ! git cat-file -e "$before^{commit}" 2>/dev/null; then
             before="$(git rev-parse HEAD^1 2>/dev/null || true)"
           fi
           if [ -z "$before" ]; then
+            echo "tests=true" >> "$GITHUB_OUTPUT"
             echo "ships=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::could not determine the previous tip — shipping rather than guessing"
+            echo "::notice::could not determine the previous tip — running and shipping rather than guessing"
             exit 0
           fi
 
           changed="$(git diff --name-only "$before" "${{ github.sha }}")"
           echo "changed paths:"; echo "$changed" | sed 's/^/  /'
 
-          # The patterns are the `paths-ignore` list plus the three that run without shipping:
-          # `.github/`, `CypressTests/`, `CypressUITests/`. `*.md` matches only the repository root
-          # there — `*` does not cross a `/` in those patterns — so it is anchored the same way here
-          # rather than matching every .md in the tree.
-          outside="$(printf '%s\n' "$changed" \
-            | grep -vE '^(\.github/|CypressTests/|CypressUITests/|docs/|graphify-out/|[^/]*\.md$)' || true)"
+          testable="$(printf '%s\n' "$changed" | grep -vE "^($DOC_ONLY)" || true)"
+          buildable="$(printf '%s\n' "$changed" | grep -vE "^($NO_ARCHIVE)" || true)"
 
-          if [ -z "$changed" ]; then
+          if [ -z "$changed" ] || [ -z "$testable" ]; then
+            echo "tests=false" >> "$GITHUB_OUTPUT"
             echo "ships=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::no paths changed against $before — no build minted"
-          elif [ -z "$outside" ]; then
+            echo "::notice::only prose changed (docs/, graphify-out/ or a root *.md), so no test can exercise it and no build is minted. The suite is skipped deliberately and `gate` checks that it was skipped for this reason. Run this workflow manually (workflow_dispatch) to force a full run."
+            exit 0
+          fi
+
+          echo "tests=true" >> "$GITHUB_OUTPUT"
+          echo "the suite runs — these are not prose:"; echo "$testable" | sed 's/^/  /'
+
+          if [ -z "$buildable" ]; then
             echo "ships=false" >> "$GITHUB_OUTPUT"
             echo "::notice::nothing changed that can affect the built app (only .github/, CypressTests/, CypressUITests/, docs/, graphify-out/ or a root *.md), so the suite runs but no build is minted — it would be byte-identical to the last one. Run this workflow manually (workflow_dispatch) if a pipeline or test change needs a real archive to prove it: signing, export options, or the upload step."
           else
             echo "ships=true" >> "$GITHUB_OUTPUT"
-            echo "shipping — these can affect the app:"; echo "$outside" | sed 's/^/  /'
+            echo "shipping — these can affect the app:"; echo "$buildable" | sed 's/^/  /'
           fi
 
   # ── The unit suite, and the only place warnings are certified ─────────────────────────
+  # Skipped when `plan` says nothing but prose changed. `gate` does not simply accept a skipped
+  # job — it asserts the skip matches plan's decision, so this cannot go quietly missing.
   unit:
+    needs: plan
+    if: needs.plan.outputs.tests == 'true'
     runs-on: macos-26
     timeout-minutes: 45
     steps:
@@ -254,6 +293,7 @@ jobs:
   # ── The UI suite, one shard per runner ────────────────────────────────────────────────
   ui:
     needs: plan
+    if: needs.plan.outputs.tests == 'true'
     runs-on: macos-26
     timeout-minutes: 60
     strategy:
@@ -318,22 +358,56 @@ jobs:
   # `if: always()` is load-bearing. Without it a failed `unit` or `ui` SKIPS this job, and GitHub
   # does not treat a skipped required check as a failed one — the branch would go mergeable
   # precisely when the suite went red. So it always runs, and reads the results itself.
+  #
+  # Since the suite can now be skipped ON PURPOSE for a prose-only change, this job is the only
+  # thing standing between that optimization and a check that goes green without testing anything.
+  # It does not accept a skip; it accepts a skip that MATCHES plan's decision.
   gate:
-    needs: [unit, ui]
+    needs: [plan, unit, ui]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Refuse unless every test job succeeded
+      - name: Refuse unless the suite did what plan said it should
         run: |
           set -euo pipefail
-          echo "unit: ${{ needs.unit.result }}"
-          echo "ui:   ${{ needs.ui.result }}"
-          # Explicit equality, not `!= failure`: a cancelled or skipped dependency is also not a
-          # pass, and "did not fail" would let both through.
-          [ "${{ needs.unit.result }}" = "success" ] || { echo "::error::unit did not succeed"; exit 1; }
-          [ "${{ needs.ui.result }}" = "success" ] || { echo "::error::ui did not succeed"; exit 1; }
-          echo "every test job succeeded"
+          plan_result="${{ needs.plan.result }}"
+          tests="${{ needs.plan.outputs.tests }}"
+          unit="${{ needs.unit.result }}"
+          ui="${{ needs.ui.result }}"
+          echo "plan: $plan_result (tests=${tests:-<none>})"
+          echo "unit: $unit"
+          echo "ui:   $ui"
+
+          # **plan is checked FIRST, and the order is the whole safety argument.** If plan dies,
+          # `tests` is the empty string — which is not 'true', so unit and ui skip, and the
+          # prose-only branch below would find two skipped jobs exactly where it expects them and
+          # pass. A required check going green because the job that decides everything crashed is
+          # precisely the false green this file exists to prevent.
+          [ "$plan_result" = "success" ] \
+            || { echo "::error::plan did not succeed ($plan_result) — nothing below can be trusted"; exit 1; }
+          case "$tests" in
+            true|false) ;;
+            *) echo "::error::plan succeeded but published tests='${tests}' — expected true or false"; exit 1 ;;
+          esac
+
+          if [ "$tests" = "true" ]; then
+            # Explicit equality, not `!= failure`: a cancelled or skipped dependency is also not a
+            # pass, and "did not fail" would let both through.
+            [ "$unit" = "success" ] || { echo "::error::unit did not succeed ($unit)"; exit 1; }
+            [ "$ui" = "success" ] || { echo "::error::ui did not succeed ($ui)"; exit 1; }
+            echo "every test job succeeded"
+          else
+            # Equally explicit in the other direction. plan said no test could exercise this diff,
+            # so the two jobs must be *skipped* — not failed, not cancelled, and not succeeded
+            # either, because a success here would mean the `if:` conditions and this branch
+            # disagree about what ran.
+            [ "$unit" = "skipped" ] \
+              || { echo "::error::plan said tests=false but unit is '$unit', not 'skipped'"; exit 1; }
+            [ "$ui" = "skipped" ] \
+              || { echo "::error::plan said tests=false but ui is '$ui', not 'skipped'"; exit 1; }
+            echo "prose-only change: the suite was skipped, and skipped for that reason"
+          fi
 
   # ── Archive, upload, leave exactly one testable build ─────────────────────────────────
   # `needs` both, so a red anywhere stops the upload. GitHub skips a needs-job when any dependency
@@ -344,9 +418,14 @@ jobs:
     # **A pull request must never ship a build.** It would take a build number, expire the build
     # the testers are on, and do it from code that has not landed on main.
     #
-    # **And a `.github/`-only push must not either** — see `plan`'s `ships` step for the whole
+    # **And a `.github/`-only push must not either** — see `plan`'s `scope` step for the whole
     # argument. `needs: plan` is here for that output; the shard matrix was already depending on it
     # through `ui`.
+    #
+    # Nothing extra is needed for the skipped-suite case, and that is a property of the derivation
+    # rather than luck: `NO_ARCHIVE` strictly contains `DOC_ONLY`, so `ships=true` implies
+    # `tests=true`, and a run whose suite was skipped can never satisfy this condition. Belt and
+    # braces anyway — `needs: [unit, ui]` means GitHub skips this job outright when they skip.
     if: github.event_name != 'pull_request' && needs.plan.outputs.ships == 'true'
     runs-on: macos-26
     timeout-minutes: 45
