@@ -1,0 +1,19 @@
+{
+  "runs": [
+    {
+      "date": "2026-07-31T23:52:51.227803+00:00",
+      "input_tokens": 911303,
+      "output_tokens": 0,
+      "files": 416
+    },
+    {
+      "date": "2026-08-04T02:05:54.419440+00:00",
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "files": 352,
+      "note": "incremental --update: 327 code (AST) + 25 docs (host-agent semantic), 13 pruned"
+    }
+  ],
+  "total_input_tokens": 911303,
+  "total_output_tokens": 0
+}

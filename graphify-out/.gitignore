@@ -1,0 +1,20 @@
+# Machine-specific state (absolute paths) — regenerated per clone by the graphify skill.
+.graphify_python
+.graphify_root
+
+# Regenerable AST cache (~27 MB, churns on every rebuild). Derived from source; not worth versioning.
+cache/
+
+# Transient pipeline intermediates (normally cleaned up at end of a run).
+.graphify_detect.json
+.graphify_extract.json
+.graphify_ast.json
+.graphify_semantic.json
+.graphify_semantic_new.json
+.graphify_analysis.json
+.graphify_incremental.json
+.graphify_old.json
+.graphify_cached.json
+.graphify_uncached.txt
+.graphify_chunk_*.json
+.needs_update
