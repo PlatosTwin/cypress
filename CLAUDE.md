@@ -62,6 +62,14 @@ conflicts with convenience, the rule wins.
 - Verify every merge by running the suite on the **merged** tree; a branch's green proves the
   branch, only the merged tree proves main.
 - A green re-run proves a failure was intermittent, never why it happened.
+- **A green `gate` on GitHub no longer means the suite ran.** Since #216 a change touching only
+  prose — `docs/`, `graphify-out/`, a root `*.md` — skips `unit` and `ui` deliberately, and `gate`
+  reports success on having checked that they were skipped *for that reason*. This is intended and
+  it is guarded (`gate` reads `plan` first, so a crashed `plan` cannot masquerade as a prose-only
+  run), but it changes what the badge means: **a green check is now evidence about the diff, not
+  evidence about the code.** Before citing CI as proof that a change is safe, read `plan`'s
+  decision — the run's own log says `the suite runs — these are not prose:` or `only prose
+  changed`. A one-minute run did not test anything, and it does not claim to.
 
 ## Simulators
 - **The plain iPhone 16 is the owner's — keep it free.** Its UDID is deliberately not written

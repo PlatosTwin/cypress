@@ -1,7 +1,7 @@
 # Graph Report - cypress  (2026-08-04)
 
 ## Corpus Check
-- 459 files · ~1,438,203 words
+- 459 files · ~1,438,890 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -10,7 +10,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `1275e213`
+- Built from commit: `76b65258`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
