@@ -95,25 +95,18 @@ final class DeepLinkVoiceOverTests: XCTestCase {
 
         for direction in ["north", "east", "south", "west"] {
             let nudge = app.buttons["Move the pin \(direction)"]
-            XCTAssertTrue(
-                nudge.exists,
-                "pinAdjust: there is no '\(direction)' nudge control, so the pin can only be moved by "
-                    + "a gesture a screen reader cannot perform"
-            )
-            XCTAssertTrue(nudge.isHittable, "pinAdjust: the '\(direction)' nudge is in the tree but dead")
+            assertReachable(nudge, "pinAdjust: the '\(direction)' nudge control")
         }
 
-        XCTAssertTrue(
-            app.buttons["Back to where you are standing"].isHittable,
-            "pinAdjust: there is no one-press way back to the fix, so a mis-aimed pin has to be "
-                + "walked back by hand"
+        assertReachable(
+            app.buttons["Back to where you are standing"],
+            "pinAdjust: the one-press way back to the fix"
         )
 
         let back = app.buttons["Back"]
-        XCTAssertTrue(
-            back.exists && back.isHittable,
-            "pinAdjust: there is no reachable way to leave the pin screen without confirming a "
-                + "placement"
+        assertReachable(
+            back,
+            "pinAdjust: the way to leave the pin screen without confirming a placement"
         )
 
         app.terminate()
@@ -721,17 +714,9 @@ final class DeepLinkVoiceOverTests: XCTestCase {
             )
 
             let back = app.buttons["Back"]
-            XCTAssertTrue(
-                back.exists,
-                "\(screen): there is no Back control in the accessibility tree, so this screen cannot "
-                    + "be left without a swipe gesture an assistive technology may not perform",
-                file: file, line: line
-            )
-            XCTAssertTrue(
-                back.isHittable,
-                "\(screen): Back is in the tree but cannot be activated",
-                file: file, line: line
-            )
+            // Without a reachable Back this screen cannot be left except by a swipe gesture an
+            // assistive technology may not perform.
+            assertReachable(back, "\(screen): the Back control", file: file, line: line)
         }
 
         app.terminate()

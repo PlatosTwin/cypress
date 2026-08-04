@@ -351,8 +351,7 @@ final class MapSearchUITests: XCTestCase {
         // the honest proxy: it is a keyboard toolbar, so it is in the tree exactly while a field of
         // this app's is focused, whatever the keyboard itself is doing.
         let done = app.buttons["Done"]
-        XCTAssertTrue(done.waitForExistence(timeout: 10), "there is no drawn way out of the keyboard")
-        XCTAssertTrue(done.isHittable, "the way out of the keyboard is in the tree but cannot be tapped")
+        assertReachable(done, "the drawn way out of the keyboard")
         done.tap()
 
         XCTAssertTrue(
@@ -392,8 +391,7 @@ final class MapSearchUITests: XCTestCase {
 
         field.tap()
         field.typeText("cypress")
-        XCTAssertTrue(clear.waitForExistence(timeout: 10), "typing drew no clear control")
-        XCTAssertTrue(clear.isHittable, "the clear control is in the tree but nothing can touch it")
+        assertReachable(clear, "the clear control typing must draw")
 
         // A 44 pt target, ARCHITECTURE §6 — measured, because the glyph is 16 pt and the enlargement
         // is the whole reason a thumb can hit it.

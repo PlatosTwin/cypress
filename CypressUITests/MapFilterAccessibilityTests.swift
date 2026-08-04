@@ -220,7 +220,7 @@ final class MapFilterAccessibilityTests: XCTestCase {
         )
 
         let yours = chip(Self.alwaysOnToggle, app)
-        XCTAssertTrue(yours.isHittable, "the “\(Self.alwaysOnToggle)” chip cannot be activated")
+        assertReachable(yours, "the “\(Self.alwaysOnToggle)” chip")
         XCTAssertEqual(
             yours.value as? String, Self.off,
             "the “\(Self.alwaysOnToggle)” chip announces "
@@ -384,11 +384,10 @@ final class MapFilterAccessibilityTests: XCTestCase {
         // The year control kept its whole contract through the move: a `Menu` carrying a value,
         // announcing `Any year` before a decade is chosen.
         let year = app.buttons[Self.yearChip]
-        XCTAssertTrue(
-            year.waitForExistence(timeout: 10),
-            "#145 moved “\(Self.yearChip)” into the control and the open control does not hold it"
+        assertReachable(
+            year,
+            "“\(Self.yearChip)”, which #145 moved into the control the open drawer must hold"
         )
-        XCTAssertTrue(year.isHittable, "the year control is in the open drawer and cannot be opened")
         XCTAssertEqual(
             year.value as? String, Self.anyYear,
             "the year control announces “\(year.value as? String ?? "nothing")” before a decade is "

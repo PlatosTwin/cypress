@@ -35,9 +35,7 @@ final class AccessibilityTreeTests: XCTestCase {
     func testTheFourTabsAreReachable() {
         let app = launch()
         for tab in ["Map", "My Grove", "Journal", "You"] {
-            let element = app.buttons[tab]
-            XCTAssertTrue(element.waitForExistence(timeout: 10), "the \(tab) tab is not in the accessibility tree")
-            XCTAssertTrue(element.isHittable, "the \(tab) tab is present but cannot be activated by an assistive technology")
+            assertReachable(app.buttons[tab], "the \(tab) tab")
         }
     }
 

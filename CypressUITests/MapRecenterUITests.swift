@@ -69,11 +69,7 @@ final class MapRecenterUITests: XCTestCase {
     func testTheRecenterControlIsInTheTreeAndSaysWhatItIsDoing() {
         let app = launch()
         let control = recenterControl(app)
-        XCTAssertTrue(
-            control.waitForExistence(timeout: 15),
-            "screen 01 has no control labeled “\(Self.controlLabel)”"
-        )
-        XCTAssertTrue(control.isHittable, "the recenter control is present but cannot be activated")
+        assertReachable(control, "screen 01's control labeled “\(Self.controlLabel)”")
         XCTAssertFalse(
             control.value as? String ?? "" == "",
             "the control has no accessibility value, so a VoiceOver reader cannot tell whether the "
