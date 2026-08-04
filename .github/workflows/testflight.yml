@@ -64,19 +64,21 @@ on:
       - '*.md'
       - 'graphify-out/**'
 
-  # Since the beta lock (#206), main takes pull requests only, so the suite has to run on them —
-  # a required status check that never reports makes the branch unmergeable by anybody.
+  # Since the beta lock (#206), main takes pull requests only, and `gate` is a REQUIRED status
+  # check on it.
   #
-  # The same three ignores, deliberately duplicated rather than anchored: a docs-only PR should
-  # skip for the same reason a docs-only push does. **If you edit the list above, edit it here.**
-  # YAML anchors would couple them, and were not used because `paths-ignore` is read by GitHub
-  # before any anchor expansion this repo could test.
+  # **There is deliberately no `paths-ignore` here, and it must stay that way.** The deny-list above
+  # is safe on `push` because a skipped run means only a skipped deploy. On `pull_request` it is a
+  # deadlock: a docs-only PR would start no run, `gate` would never report, and the required check
+  # would wait forever — a branch nobody can merge and no red anywhere saying why. That is strictly
+  # worse than a wasted CI run, and it is not hypothetical; this trigger shipped with the ignores on
+  # it and they were removed the same hour.
+  #
+  # The cost is real and accepted: a documentation-only PR runs the whole suite, about 26 minutes.
+  # The saving is kept where it is free — merging that PR to main still deploys nothing, because the
+  # `push` deny-list above still applies to the merge commit.
   pull_request:
     branches: [main]
-    paths-ignore:
-      - 'docs/**'
-      - '*.md'
-      - 'graphify-out/**'
 
   workflow_dispatch:
 
