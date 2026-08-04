@@ -80,3 +80,5 @@ next question is whether the model settles at all, not whether the number should
 **A guard that stays quiet when it fires is worse than no guard**, because it moves the blame to
 the innocent line downstream. Any waiter, retry or poll loop in this codebase must say so when it
 gives up — and must say it at the caller's line, or a suite with four call sites reports one.
+
+_Verified 2026-08-03: a docs-only commit under the graphify hook triggers no deploy._
