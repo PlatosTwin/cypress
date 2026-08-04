@@ -90,8 +90,7 @@ conflicts with convenience, the rule wins.
   not running`, `'X' never appeared` and `Test run with 0 tests` with no crash report; a wide camera
   draws cluster badges where a test waits for pins; and a narrow camera **pointed somewhere the
   inventory does not cover** draws nothing at all, which is the same symptom from the opposite
-  geometry. Whether the device has a fix is still not checked — fixless is legitimate and #121's
-  tests skip on it. **A UI log whose skip count changed between two runs of the same tree is
+  geometry. Tests run with the CYPRESS_LOCATION environment variable (R58, task #121) pinning location state, so tests run unconditionally rather than skipping on simulator availability. **A UI log whose skip count changed between two runs of the same tree is
   reporting a device change, not a code change.**
 - **Every log carries its own provenance** — `run_tests.sh` stamps `CYPRESS-RUN:` lines with the
   device, `screen-width-pt`, worktree, HEAD and both E202 states. Judge a width-sensitive UI result
@@ -192,7 +191,7 @@ conflicts with convenience, the rule wins.
 - `Core` is pure Foundation; `Data` imports no UI framework; `Features` may import anything
   (ARCHITECTURE §2).
 - No raw hex, font sizes, or radii — tokens only (§6). No SF Symbols (policy; the five legacy
-  sites are ticketed, #130). American spellings: favorite, color, center, neighborhood.
+  sites are drawn as shapes, R57, enforced by `DrawnGlyphGuardTests`). American spellings: favorite, color, center, neighborhood.
 - `CypressTests` is Swift Testing; `CypressUITests` is XCTest.
 - A confident comment is where bugs have survived here. Never assert an invariant in a comment
   you have not verified; a comment is not a test. Cite errata by number, never by pending

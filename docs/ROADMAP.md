@@ -73,17 +73,17 @@ inside a view file.
 
 ---
 
-## Now — correctness pass
+## Now — correctness pass (resolved)
 
 Ahead of new screens because both defects corrupt data that cannot be recovered afterwards.
 
-- **Unknown leaf retention** (ERRATA E9). `leafRetention` becomes optional so the app stops asserting
+- **Unknown leaf retention** (ERRATA E9, resolved). `leafRetention` becomes optional so the app stops asserting
   evergreen-or-deciduous for species nobody established. Carries through to the seed, the SQLite
   round trip, and every phenology and autumn-color surface. Loads `Fixtures/species/*.yaml` into the
   seed at the same time, and fixes two `sf_species_map.csv` defects: six non-taxa (`Shrub`, `Privet`,
   `To Be Determine`, …) mapped to real species ids, and `patanus racemosa ::` holding one species as
   two under different ids.
-- **Outbox drops shot type.** The payload carries `photoPaths: [String]` with no shot type, so every
+- **Outbox drops shot type** (resolved). The payload carries `photoPaths: [String]` with no shot type, so every
   synced photo is labeled `full_tree`. Fixed at the payload level, with migration for outbox rows
   already persisted on disk.
 
@@ -265,10 +265,7 @@ faking one would be the exact class of lie the suite exists to catch. What is st
 is **reading order and grouping** — that the elements come in the sequence a person expects — which
 XCUITest exposes but no test here asserts yet.)
 
-**Two contrast pairs are still failing and are design's** — the C10 locked glyph and the C23 chart
-series on a dark card, both under 3:1. R1 fixed the text ramp and deliberately left these, because a
-glyph and a data encoding are drawn decisions rather than a ramp. They are the first thing on a
-designer's list.
+*(The "Two contrast pairs are still failing" entry that stood here is resolved. E120 fixed the C10 locked glyph via lightness-only OKLCh (3.06:1/3.05:1), and E122 fixed the C23 chart series via the same method — chartSeriesPrimary 2.53→3.05, chartSeriesTertiary 2.27→3.06, both moved from `knownFailures` to `retinted`.)*
 
 *(The "no test target" entry that stood here is resolved: `CypressTests` is a hosted swift-testing
 bundle and has been since M2. It found two shipped bugs on the day it was wired.)*
