@@ -36,7 +36,7 @@ final class SheetExitUITests: XCTestCase {
         let app = launch("careLog")
         let title = waitForTitle(app, "Care log")
         dragDown(app, fromY: title.frame.minY - 12)
-        assertMapArrived(app, after: "dragging the care log down")
+        assertMapArrived(app, after: "dragging the care log down", sheetTitled: "Care log")
         app.terminate()
     }
 
@@ -44,7 +44,7 @@ final class SheetExitUITests: XCTestCase {
         let app = launch("share")
         let title = waitForTitle(app, "Share this tree")
         dragDown(app, fromY: title.frame.minY - 12)
-        assertMapArrived(app, after: "dragging the share sheet down")
+        assertMapArrived(app, after: "dragging the share sheet down", sheetTitled: "Share this tree")
         app.terminate()
     }
 
@@ -61,7 +61,7 @@ final class SheetExitUITests: XCTestCase {
         app.coordinate(withNormalizedOffset: .zero)
             .withOffset(CGVector(dx: app.frame.midX, dy: 58))
             .tap()
-        assertMapArrived(app, after: "tapping the scrim strip")
+        assertMapArrived(app, after: "tapping the scrim strip", sheetTitled: "Care log")
         app.terminate()
     }
 
@@ -121,11 +121,32 @@ final class SheetExitUITests: XCTestCase {
 
     /// A downward drag at the display's horizontal center, from `fromY` to 85% of the screen —
     /// far past the quarter-height commit line on every device class.
+    ///
+    /// **Deliberate, not flicked (#200).** This was `press(forDuration: 0.05, thenDragTo:)` at the
+    /// default velocity, and on a shared CI runner it was not reliably read as a drag at all —
+    /// `testShareSheetDragDownDismisses` failed run 30868888144 and roughly one CI run in three
+    /// before it. A 50 ms touch-down followed by a default-velocity sweep gives the sheet's
+    /// gesture recognizer very few intermediate events to work with, and a loaded machine
+    /// delivers fewer still.
+    ///
+    /// So the gesture is slowed to something a thumb would actually produce: a quarter-second
+    /// settle before any movement, ~500 pt/s instead of the default 1000, and a brief hold at the
+    /// bottom so the release is unambiguously a release at that position rather than the tail of
+    /// a flick. Roughly a second per drag, four drags in this file — a few seconds of runtime to
+    /// stop gating every deploy on a coin flip.
+    ///
+    /// This does NOT weaken what is asserted: the drag still travels the same distance from the
+    /// same place, and `assertMapArrived` still demands the map come back.
     private func dragDown(_ app: XCUIApplication, fromY: CGFloat) {
         let origin = app.coordinate(withNormalizedOffset: .zero)
         let start = origin.withOffset(CGVector(dx: app.frame.midX, dy: fromY))
         let end = origin.withOffset(CGVector(dx: app.frame.midX, dy: app.frame.height * 0.85))
-        start.press(forDuration: 0.05, thenDragTo: end)
+        start.press(
+            forDuration: 0.25,
+            thenDragTo: end,
+            withVelocity: XCUIGestureVelocity(rawValue: 500),
+            thenHoldForDuration: 0.15
+        )
     }
 
     /// The sheets are deep-linked over the map tab, so the map's own chrome becoming *hittable*
@@ -136,15 +157,44 @@ final class SheetExitUITests: XCTestCase {
     /// existence check still passed). And the FAB rather than a text field: 09 carries a text
     /// field of its own, so a field query would be satisfied by the very sheet that failed to
     /// leave.
-    private func assertMapArrived(_ app: XCUIApplication, after action: String) {
+    ///
+    /// **The message names which of two failures happened (#200, and #202's lesson).** This
+    /// assertion used to report "the sheet did not dismiss" for both a gesture the sheet never
+    /// read AND a sheet that dismissed onto a map too slow to become hittable inside ten seconds.
+    /// Those want opposite fixes, and the log could not tell them apart — the same conflation that
+    /// made eleven timed-out map tests read as eleven logic defects.
+    ///
+    /// The wait is 30s rather than 10s because the second case is real: the map redraws several
+    /// hundred pins behind the sheet, and a CI runner has three cores.
+    private func assertMapArrived(
+        _ app: XCUIApplication,
+        after action: String,
+        sheetTitled sheetTitle: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
         let fab = app.buttons["What tree is this?"]
         let uncovered = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "exists == true AND hittable == true"),
             object: fab
         )
-        XCTAssertEqual(
-            XCTWaiter.wait(for: [uncovered], timeout: 10), .completed,
-            "after \(action), the map underneath never became reachable — the sheet did not dismiss"
+        guard XCTWaiter.wait(for: [uncovered], timeout: 30) != .completed else { return }
+
+        // Read ONLY now, and only to explain a failure that has already been decided. What is
+        // asserted is still the map's arrival — a presence, per this file's header — because a
+        // vanished title proves only that a query stopped matching. Diagnosing with it after the
+        // fact costs that principle nothing.
+        let stillStanding = app.staticTexts
+            .matching(NSPredicate(format: "label BEGINSWITH %@", sheetTitle))
+            .firstMatch.exists
+        XCTFail(
+            stillStanding
+                ? "after \(action), “\(sheetTitle)” is STILL ON SCREEN: the gesture was never read "
+                    + "as a drag. Look at dragDown, not at the map (#200)."
+                : "after \(action), “\(sheetTitle)” is gone but the map's own control never became "
+                    + "hittable within 30s: the sheet dismissed and what is slow is the map "
+                    + "behind it. Look at the runner and at map draw, not at the gesture.",
+            file: file, line: line
         )
     }
 }
