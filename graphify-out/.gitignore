@@ -18,3 +18,8 @@ cache/
 .graphify_uncached.txt
 .graphify_chunk_*.json
 .needs_update
+
+# Dated backups graphify writes before each rebuild (~13 MB each, one per rebuild that changes
+# the graph). Git is already the history of this directory — versioning a copy of the previous
+# version inside the versioned directory grows the repo without adding a single fact.
+[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/
