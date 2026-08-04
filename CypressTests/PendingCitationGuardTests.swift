@@ -95,15 +95,33 @@ enum PendingCitationGuard {
     }
 
     /// Every `.swift` file under the three roots, sorted, each with its repo-relative path.
+    ///
+    /// **Both sides of the prefix arithmetic are resolved before it runs (#229).** `root` already
+    /// arrives resolved from `AppSourceLiterals.repositoryRoot()`, but resolving `url` here too —
+    /// rather than trusting that guarantee — is what makes `dropFirst(directory.path.count)` safe
+    /// on its own terms: if `directory` and `url` do not carry the same spelling, the character
+    /// count on one side does not describe the other, and the drop takes either too few or too
+    /// many characters with no error to flag it. That is exactly how an unresolved `/tmp/…` root
+    /// and a `FileManager`-enumerated `/private/tmp/…` URL produced `CypressTests` →
+    /// `"CypressTestsessTests"` and `CypressUITests` → `"CypressUITestssUITests"`, both bucketed
+    /// under keys nothing asked for and both silently counted as zero — while `"Cypress"` (8
+    /// characters, the same length as the un-dropped `"/private"`) happened to survive by
+    /// coincidence, which is what made the failure read as one target rather than three.
+    /// `.resolvingSymlinksInPath()` does not make both sides say `/private/tmp`; per Apple's
+    /// documented behavior it does the opposite, stripping a leading `/private` back off whenever
+    /// the shorter path still names the same file — so both `directory` and `resolved` below
+    /// converge on the *short* `/tmp/…` spelling instead. Which spelling wins is not the point;
+    /// that both sides now agree on the same one is.
     static func sourceFiles(root: URL) -> [(url: URL, relative: String)] {
         var out: [(url: URL, relative: String)] = []
         for name in roots {
-            let directory = root.appendingPathComponent(name)
+            let directory = root.appendingPathComponent(name).resolvingSymlinksInPath()
             guard let walker = FileManager.default.enumerator(
                 at: directory, includingPropertiesForKeys: nil
             ) else { continue }
             for case let url as URL in walker where url.pathExtension == "swift" {
-                out.append((url, name + url.path.dropFirst(directory.path.count)))
+                let resolved = url.resolvingSymlinksInPath()
+                out.append((resolved, name + resolved.path.dropFirst(directory.path.count)))
             }
         }
         return out.sorted { $0.relative < $1.relative }

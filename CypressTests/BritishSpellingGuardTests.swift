@@ -211,10 +211,30 @@ enum BritishSpelling {
 enum AppSourceLiterals {
 
     /// The worktree root, derived from this file's own compile-time path.
+    ///
+    /// **`.resolvingSymlinksInPath()` is load-bearing, not cosmetic (#229).** `#filePath` is
+    /// whatever spelling the compiler was invoked with — in a scratchpad worktree that landed
+    /// under `/tmp/…`, which macOS symlinks to `/private/tmp/…`. `FileManager`'s enumerators hand
+    /// back the *unsymlinked* `/private/tmp/…` spelling regardless, so the two disagreed. The fix
+    /// is not "make both sides say `/private/tmp`" — `URL.resolvingSymlinksInPath()` does not
+    /// resolve `/tmp` outward to `/private/tmp` at all; per Apple's own documented behavior it
+    /// does the opposite, stripping a leading `/private` back off whenever the shorter path still
+    /// names the same file. Verified directly: `URL(fileURLWithPath:
+    /// "/private/tmp/x").resolvingSymlinksInPath().path == "/tmp/x"`. Calling it on **both** this
+    /// root and the paths enumerated against it (`PendingCitationGuard.sourceFiles`) canonicalizes
+    /// both onto the same short spelling, which is the only property that matters here — not which
+    /// spelling wins. Every caller of this root does prefix arithmetic against paths built from it
+    /// (`dropFirst(directory.path.count)`, `replacingOccurrences(of: root.path + "/", …)`), and
+    /// both forms silently misbucket or no-op the moment the two sides' spellings disagree, because
+    /// the byte counts and substrings stop lining up. See `PendingCitationGuard.sourceFiles` for
+    /// the shape of what one such mismatch did: it counted zero files under two of three targets
+    /// while still finding every citation, because the *scan* used absolute URLs throughout and
+    /// only the per-target *bucketing* did prefix arithmetic.
     static func repositoryRoot(from file: StaticString = #filePath) -> URL {
         URL(fileURLWithPath: "\(file)")
             .deletingLastPathComponent()   // CypressTests/
             .deletingLastPathComponent()   // the worktree root
+            .resolvingSymlinksInPath()
     }
 
     struct Literal {
