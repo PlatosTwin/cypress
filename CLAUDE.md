@@ -10,6 +10,7 @@ conflicts with convenience, the rule wins.
 - `docs/distilled/SCREENS.md`, `docs/distilled/DECISIONS.md`, `docs/distilled/PRODUCT.md`
   (they live in `docs/distilled/`, not `docs/`)
 - `docs/errata-pending/`, `docs/rulings-pending/` — see **Numbering** below
+- `docs/CONTRIBUTING.md` — how work lands on main; see **Branching and review** below
 
 ## Verification — this project's signature failure mode is false green
 - Run tests with `Tools/run_tests.sh <udid> <log> [xcodebuild args…]`; judge any log with
@@ -107,6 +108,22 @@ conflicts with convenience, the rule wins.
   the checkout.
 - A rename of a shared identifier breaks every other live branch even when correctly scoped to
   your ticket; announce it, and budget a compile-and-fix pass at merge.
+
+## Branching and review
+- **main cannot be force-pushed or deleted, by anyone, including the owner** (ruleset
+  `main-guardrails`, no bypass actors — both rules red-proved with a control on 2026-08-03). There
+  is no rewriting main: a bad commit is recovered *forward*, with a revert. Note that
+  `git push --dry-run` does **not** evaluate rulesets — it reported success for a rewind the server
+  then refused, so a dry run is not evidence here either.
+- **Today, work still lands on main directly**, under the unchanged merge protocol: merge locally,
+  run the suite on the **merged** tree, certify warnings on a **fresh** DerivedData, then push.
+- **After the beta lock (#187), every non-doc change ships as a PR** reviewed adversarially by an
+  agent that did not write it — protocol and beta-lock checklist in `docs/CONTRIBUTING.md`. The
+  owner throws that switch; no agent throws it or assumes it has been thrown.
+- **Do not read this file to find out which regime is running** — prose goes stale, which is the
+  whole lesson of the schema-version bullet above. Ask GitHub:
+  `gh api repos/PlatosTwin/cypress/rulesets --jq '.[] | "\(.name)\t\(.enforcement)"'`.
+  `main-pull-request-only → disabled` means direct-to-main; `→ active` means PRs only.
 
 ## Working in a worktree (agents)
 - Set up with `Tools/setup_worktree.sh <worktree-path>` — it copies the git-ignored ~103 MB seed
