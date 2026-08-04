@@ -860,6 +860,29 @@ public struct TreeProfile: Hashable, Sendable {
 
     /// Whether the photo has no owner left — see `anonymizedPhotoIDs`.
     public func isAnonymizedPhoto(_ photo: Photo) -> Bool { anonymizedPhotoIDs.contains(photo.id) }
+
+    /// The one visibility rule for a person's own screens — ERRATA E215.
+    ///
+    /// Own photos (`isOwnPhoto`): `Photo.isVisibleToItsContributor` — this device may see what it
+    /// wrote whatever moderation has or has not done with it yet. Everyone else's:
+    /// `Photo.isPubliclyVisible` — moderation gates *publication* (ERRATA E37), and that includes
+    /// publication to a stranger's own device.
+    ///
+    /// Filed because two features asked this question in two places and only one of them was
+    /// own-aware: `TreePhotosModel.load()` filtered every row on `isVisibleToItsContributor` alone,
+    /// which is correct only for as long as `ownPhotoIDs` happens to be every row a read returns
+    /// (`LocalAPI`, no sync). The day a read returns somebody else's photograph, that filter shows
+    /// it — unmoderated — on a stranger's screen. There is exactly one predicate now, asked here,
+    /// so the hero pill and the photo browser cannot answer this differently again.
+    public func isVisibleOnDevice(_ photo: Photo) -> Bool {
+        isOwnPhoto(photo) ? photo.isVisibleToItsContributor : photo.isPubliclyVisible
+    }
+
+    /// `photos`, narrowed by `isVisibleOnDevice` — the one series the hero (screen 03/14) and the
+    /// browser (screen 20) both build from (ERRATA E215).
+    public var visiblePhotos: Series<Photo> {
+        photos.filter(isVisibleOnDevice)
+    }
 }
 
 /// The body of `POST /trees`.
