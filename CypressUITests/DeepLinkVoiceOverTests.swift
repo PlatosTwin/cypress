@@ -23,6 +23,14 @@ import XCTest
 /// 3. It can be left again — a pushed screen with no reachable Back is a trap.
 final class DeepLinkVoiceOverTests: XCTestCase, DeepLinkHarness {
 
+    /// Once per class, before `testMemorial` or any other test in it — see `DeepLinkOverrideReset`
+    /// (ERRATA E217 "Still open"). `testMemorial` is the one test here that writes a status override
+    /// and never un-writes it.
+    override class func setUp() {
+        super.setUp()
+        DeepLinkOverrideReset.performOnce()
+    }
+
     override func setUp() {
         super.setUp()
         continueAfterFailure = false

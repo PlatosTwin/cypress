@@ -23,6 +23,57 @@ import XCTest
 /// files want, and a name as ordinary as `launch` should not be visible to the rest.
 protocol DeepLinkHarness: XCTestCase {}
 
+/// A process-wide, one-time reset of this device's `tree_status_overrides`, run before the first
+/// `.memorial` (or `.deadProfile`) case of the suite (ERRATA E217 "Still open").
+///
+/// **Why the leak is real and why nothing before this cleared it.** `.memorial` marks the nearest
+/// standing tree removed and never un-marks anything; `standingTree` — through `DebugDeepLink
+/// .candidates(_:)` — correctly skips a marked tree on every later resolution, in this run and every
+/// run after it, because the row this writes outlives the launch and, per E217's own repair note,
+/// the device container. A device driven for long enough walks the `.memorial` slot outward one
+/// record per run with nothing in the harness or the app to stop it — the "Still open" paragraph's
+/// own words. This does not change the march; it starts every run's march from the same place.
+///
+/// **A free enum, not a `DeepLinkHarness` requirement.** `PrimaryCTAReachabilityTests` reaches
+/// `.memorial` through its own `launchAtAX5(_:)` and does not conform to this protocol — the file
+/// comment on `DeepLinkHarness` above records that an extension method named `launch` collided with
+/// two classes' own private helpers of the same name, which is the same reason a *second* ordinary
+/// name is not put on the protocol here. A caller that does not conform still needs to reach this.
+enum DeepLinkOverrideReset {
+    /// The launch environment key `DebugDeepLink.clearStatusOverridesEnvironmentKey` resolves to,
+    /// copied by hand for the reason every other literal in this black-box target is (see
+    /// `PrimaryCTAReachabilityTests`'s file comment): nothing here imports `Cypress`.
+    private static let clearKey = "CYPRESS_CLEAR_STATUS_OVERRIDES"
+    /// `DebugDeepLink.overridesClearedMessage`, copied by hand for the same reason.
+    private static let clearedText = "STATUS OVERRIDES CLEARED"
+
+    private static var didRun = false
+
+    /// Call from a `class func setUp()` — once per class, before any instance or test method in it —
+    /// rather than an instance `setUp()`, which XCTest calls before every test and would pay a whole
+    /// extra app launch per method for a table that is already clear after the first. Safe to call
+    /// from more than one class's `class func setUp()` in the same suite: `didRun` makes every call
+    /// after the first a no-op, which is what lets each `.memorial`-reaching class own its own call
+    /// rather than one class silently doing it on the others' behalf.
+    static func performOnce() {
+        guard !didRun else { return }
+        didRun = true
+        let app = XCUIApplication()
+        app.launchEnvironment[clearKey] = "1"
+        app.launch()
+        let banner = app.staticTexts[clearedText]
+        // Generous for `arrive`'s reason: a cold launch pays the seed-attach cost before anything —
+        // here, before any text at all — can appear.
+        if !banner.waitForExistence(timeout: 30) {
+            XCTFail(
+                "the status-override reset launch never showed '\(clearedText)' — "
+                    + "tree_status_overrides may not be clear for this run (ERRATA E217)"
+            )
+        }
+        app.terminate()
+    }
+}
+
 extension DeepLinkHarness {
 
 
