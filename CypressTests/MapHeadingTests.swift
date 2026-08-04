@@ -305,10 +305,15 @@ struct MapHeadingTests {
         return view
     }
 
-    /// The rotation runs on the render server, where no screenshot can catch which way it went
-    /// round, so the accumulated angle is the assertion. It is unwrapped on purpose: 350 → 10 must
-    /// come out as 370, a two-degree turn forwards, not as 10 — a 340° spin backwards through south.
-    @Test("the cone turns the short way, and keeps turning the same way past north")
+    /// The accumulator is unwrapped on purpose: 350 → 10 must come out as 370, a two-degree turn
+    /// forwards, not as 10 — a 340° spin backwards through south.
+    ///
+    /// **This test does not prove the cone turns the short way, and for a round after #155 shipped it
+    /// was read as if it did.** It asserts the number `setHeading` computes, not the number the
+    /// animation is handed, and those came apart: the accumulator was right and the cone still swung
+    /// a full revolution on every reading. `theSwingIsNeverTheLongWayRound` below is the one that
+    /// answers the question this one's name asks.
+    @Test("the accumulated angle keeps counting the same way past north")
     func theConeTakesTheShortWay() {
         let view = userDotView(heading: 350)
         view.setHeading(350, animated: false)
@@ -325,6 +330,54 @@ struct MapHeadingTests {
         )
         view.setHeading(350, animated: true)
         #expect(view.headingRotationDegrees == 350)
+    }
+
+    /// **The turn the reader actually sees** (#207): the distance between the swing's two endpoints,
+    /// which is the only thing that decides which way round the cone goes.
+    ///
+    /// The endpoints have to be in one space. `target` accumulates unwrapped; the angle read back off
+    /// the render server is normalized into `(-π, π]`. Mixing them asks for a swing of a full turn
+    /// minus the turn — a cone that spins all the way round to arrive two degrees along, which is how
+    /// this arrived from the phone: *"it points correctly when i'm still, but if i rotate even a bit
+    /// it does a whole revolution before settling."* Standing still requests no animation, so the
+    /// defect is invisible until the reader turns.
+    ///
+    /// Asserted on `swingStartDegrees` rather than through the view because a detached `CALayer` has
+    /// no presentation layer: `presentation()` answers `nil` there, the defect's own branch never
+    /// runs, and a view-level test of this passes against the broken code.
+    @Test("a swing is never the long way round, at any wrap")
+    func theSwingIsNeverTheLongWayRound() {
+        // Each case is (drawn on the glass, accumulated target). The second is the one that shipped
+        // broken: the accumulator has passed 360 and the render server has wrapped back to 10.
+        let cases: [(drawn: Double, target: Double)] = [
+            (350, 370),     // crossing north forwards, accumulator unwrapped
+            (10, 370),      // the same instant as the render server reports it — #207 itself
+            (-10, 350),     // normalized negative, target below the wrap
+            (170, -190),    // the half turn, from the other side
+            (0, 720),       // two full turns of accumulation
+            (45, 45),       // no turn at all
+        ]
+        for (drawn, target) in cases {
+            let start = MapHeading.swingStartDegrees(drawnAt: drawn, target: target)
+            let swing = abs(target - start)
+            #expect(
+                swing <= 180 + 1e-9,
+                """
+                Drawn at \(drawn)° with the cone accumulated to \(target)°, the swing starts at \
+                \(start)° and travels \(swing)°. Anything past 180° is the cone going the long way \
+                round — the reader turns a few degrees and watches a full revolution (#207).
+                """
+            )
+            // The start must still BE the drawn angle, not merely close to the target: a swing that
+            // begins somewhere the cone is not would jump before it turned.
+            #expect(
+                abs(MapHeading.shortestDelta(from: start, to: drawn)) < 1e-9,
+                """
+                The swing starts at \(start)°, which is not where the cone is drawn (\(drawn)°). \
+                Bringing the start into the target's space must move it by whole turns only.
+                """
+            )
+        }
     }
 
     /// No heading, no cone — on the view as well as in the arithmetic. This is the bare dot the app

@@ -131,6 +131,14 @@ conflicts with convenience, the rule wins.
   and you will chase a defect you did not cause.
 - **Commit continuously.** Limit deaths take every agent at once and a stall with uncommitted
   work is the only way work is lost here.
+- **Never `git stash`, and never `git stash pop` with no argument.** A stash lives in the shared
+  object store, not in your worktree: it outlives the worktree's removal and the branch's deletion,
+  it is invisible to `git log` and `git branch`, and nothing ever reminds anyone it is there. One
+  from a deleted agent worktree sat in this checkout for nine days and was found only when a bare
+  `pop` grabbed it and conflicted seven files — a `pop` acts on whatever it finds, which is not
+  necessarily what you put there. Commit to your branch instead; that is the whole of the rule
+  above. If you must set work aside, `git diff > <scratchpad>/<name>.patch` leaves something with a
+  name on it.
 - Use a private DerivedData directory named for yourself (`<scratchpad>/dd-<your-suffix>/`).
   The scratchpad is shared by every agent: never `rm -rf` at its root, and never reuse another
   run's log path — `rm -f` your own log before each run.

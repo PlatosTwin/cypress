@@ -15,9 +15,9 @@
     "semantic_hash": "d36dec40196f2e7b14d415fbbb0b8d2d"
   },
   "Cypress/App/DebugDeepLink.swift": {
-    "mtime": 1785767554.050618,
-    "ast_hash": "424eb74cdb1f898f6025299d7c639a3d",
-    "semantic_hash": "424eb74cdb1f898f6025299d7c639a3d"
+    "mtime": 1785824274.1926992,
+    "ast_hash": "2e5a1797d3a4a2b6546db665deacf6e1",
+    "semantic_hash": ""
   },
   "Cypress/App/RootView.swift": {
     "mtime": 1785767554.0520554,
@@ -175,9 +175,9 @@
     "semantic_hash": "2fa61de12c3abd831154b094539c3bd5"
   },
   "Cypress/Data/API/CypressAPI.swift": {
-    "mtime": 1785774417.4266124,
-    "ast_hash": "e7fc0f611ca8c53dfe8c8eb7799c7430",
-    "semantic_hash": "e7fc0f611ca8c53dfe8c8eb7799c7430"
+    "mtime": 1785824274.1944325,
+    "ast_hash": "ea1e17aeebdfa0149c44899023a149cc",
+    "semantic_hash": ""
   },
   "Cypress/Data/API/DeviceContributions.swift": {
     "mtime": 1785756682.4844806,
@@ -195,9 +195,9 @@
     "semantic_hash": "3585dfa1e500711207daf63e6724021b"
   },
   "Cypress/Data/API/LocalAPI.swift": {
-    "mtime": 1785767554.0534208,
-    "ast_hash": "c9d69b26c8f30335ea2e56a65563e279",
-    "semantic_hash": "c9d69b26c8f30335ea2e56a65563e279"
+    "mtime": 1785824274.1955402,
+    "ast_hash": "34aa64d2816d0e8fccbc6d2c64fe5653",
+    "semantic_hash": ""
   },
   "Cypress/Data/API/MapMembership.swift": {
     "mtime": 1785756682.4870842,
@@ -225,9 +225,9 @@
     "semantic_hash": "760090bcd5cc32b5ab9d4392b24b25ba"
   },
   "Cypress/Data/API/RemoteAPI.swift": {
-    "mtime": 1785756682.4894192,
-    "ast_hash": "e7122f61a7a45a2bdea7e625f70e1de7",
-    "semantic_hash": "e7122f61a7a45a2bdea7e625f70e1de7"
+    "mtime": 1785824274.1963434,
+    "ast_hash": "cb4edcc2b5c5a4a427d239a9242b9386",
+    "semantic_hash": ""
   },
   "Cypress/Data/API/SpeciesClaim.swift": {
     "mtime": 1785756682.4900577,
@@ -615,9 +615,9 @@
     "semantic_hash": "85def3c42ab6637db5b33da72b833459"
   },
   "Cypress/Features/Almanac/AlmanacPresentation.swift": {
-    "mtime": 1785756682.5102322,
-    "ast_hash": "21f5f1a36bd2d9fbe39d75acd4f36ec7",
-    "semantic_hash": "21f5f1a36bd2d9fbe39d75acd4f36ec7"
+    "mtime": 1785824274.1973872,
+    "ast_hash": "5b385796c8e36eccacdbea6ead70bb7e",
+    "semantic_hash": ""
   },
   "Cypress/Features/Almanac/AlmanacPreviews.swift": {
     "mtime": 1785756682.510712,
@@ -740,9 +740,9 @@
     "semantic_hash": "f0d3bd14fbff54835514a4252efa0621"
   },
   "Cypress/Features/Journal/JournalPresentation.swift": {
-    "mtime": 1785756682.5173383,
-    "ast_hash": "86cb8e02180d7c186bef27025e8acb9e",
-    "semantic_hash": "86cb8e02180d7c186bef27025e8acb9e"
+    "mtime": 1785824274.1990755,
+    "ast_hash": "1b17eec5f8b8953f0d67d19f036505fb",
+    "semantic_hash": ""
   },
   "Cypress/Features/Journal/JournalPreviews.swift": {
     "mtime": 1785018581.5900936,
@@ -750,9 +750,9 @@
     "semantic_hash": "5ec924e399f36291b9419b42b077dac5"
   },
   "Cypress/Features/Journal/JournalTabView.swift": {
-    "mtime": 1785756682.517633,
-    "ast_hash": "bbce31e6fb43bfc6a512fab788faf8f6",
-    "semantic_hash": "bbce31e6fb43bfc6a512fab788faf8f6"
+    "mtime": 1785824274.199696,
+    "ast_hash": "9aa991644677782096d18d6d37d4f5e5",
+    "semantic_hash": ""
   },
   "Cypress/Features/Map/MapAnnotationLayer.swift": {
     "mtime": 1785822592.3231678,
@@ -2407,6 +2407,46 @@
   "docs/rulings-pending/heading-is-visual-only.md": {
     "mtime": 1785822592.3255928,
     "ast_hash": "0d6835c28d5ebb55d995e32488fb9f25",
+    "semantic_hash": ""
+  },
+  "Cypress/Data/API/City.swift": {
+    "mtime": 1785824274.1932113,
+    "ast_hash": "98442fc0ac22cd16a6e1f18efd2192be",
+    "semantic_hash": ""
+  },
+  "Cypress/Data/Store/CityQueries.swift": {
+    "mtime": 1785824274.1967957,
+    "ast_hash": "9ecae8cc1d0cc34ae03c7c2068732874",
+    "semantic_hash": ""
+  },
+  "Cypress/Features/City/CityModel.swift": {
+    "mtime": 1785824274.19782,
+    "ast_hash": "58ee5bca4de0cfaa276a1c9e26ab1471",
+    "semantic_hash": ""
+  },
+  "Cypress/Features/City/CityPresentation.swift": {
+    "mtime": 1785824274.1983097,
+    "ast_hash": "716317851c4fa8fb637d8af8ffad6c0f",
+    "semantic_hash": ""
+  },
+  "Cypress/Features/City/CityView.swift": {
+    "mtime": 1785824274.1985679,
+    "ast_hash": "c29c30c3d778953a9a32592fc2828be2",
+    "semantic_hash": ""
+  },
+  "CypressTests/CityPresentationTests.swift": {
+    "mtime": 1785824274.2001503,
+    "ast_hash": "dc8d802656fd6bf53e1f34a64d3961f5",
+    "semantic_hash": ""
+  },
+  "CypressTests/CityQueriesTests.swift": {
+    "mtime": 1785824274.200462,
+    "ast_hash": "cc8f16d28bb91bc0bcc512a461889cea",
+    "semantic_hash": ""
+  },
+  "docs/rulings-pending/journal-city-segment.md": {
+    "mtime": 1785824274.2009397,
+    "ast_hash": "1e0e14b4d8707edce1eb3bdef3a8db52",
     "semantic_hash": ""
   }
 }

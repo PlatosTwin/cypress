@@ -100,6 +100,38 @@ enum MapHeading {
         normalized(heading - cameraHeading)
     }
 
-    /// Degrees to radians, for the one caller that rotates a layer.
+    /// Degrees to radians, for the caller that rotates a layer.
     static func radians(_ degrees: Double) -> Double { degrees * .pi / 180 }
+
+    /// Radians back to degrees, for the one caller that has to read an angle *out* of a layer.
+    ///
+    /// That direction exists because `transform.rotation.z` is not a stored scalar — it is recovered
+    /// from a `CATransform3D`, and comes back normalized into `(-π, π]` however far the value written
+    /// to it had accumulated. #207 is what happens when that is forgotten.
+    static func degrees(_ radians: Double) -> Double { radians * 180 / .pi }
+
+    /// Where a swing to `target` has to **start**, given where the cone is currently drawn.
+    ///
+    /// **This function is #207, and it lives here rather than in the layer because the layer is the
+    /// one place it could not be tested.** The rotation the reader sees is the difference between an
+    /// animation's two endpoints, and those endpoints have to be in the same space. `target` is
+    /// unwrapped — it accumulates past 360° so that a reader crossing north keeps turning the same
+    /// way. `drawn` comes back from `transform.rotation.z`, which is normalized into `(-π, π]`
+    /// whatever was written to it. Handing those two to `CABasicAnimation` as they are asks for a
+    /// swing of 360° minus the turn: at 370° the accumulator says 370, the render server says 10,
+    /// and the cone goes all the way round to arrive two degrees along.
+    ///
+    /// Subtracting the *shortest* delta from `target` puts the start beside the end by construction,
+    /// so `|target - start| ≤ 180°` for any pair of angles however either has wrapped — while the
+    /// start still lands on the angle actually on the glass, which is what lets a swing be retargeted
+    /// mid-turn without jumping.
+    ///
+    /// A unit test cannot reach this through the view: a detached `CALayer` has no presentation
+    /// layer, `presentation()` answers `nil`, and the defect's own code path never runs. Reading the
+    /// accumulator instead — which is what the test did for a round after #155 shipped — asserts the
+    /// number the code computed rather than the number the animation was given, and passes either
+    /// way.
+    static func swingStartDegrees(drawnAt drawn: Double, target: Double) -> Double {
+        target - shortestDelta(from: drawn, to: target)
+    }
 }

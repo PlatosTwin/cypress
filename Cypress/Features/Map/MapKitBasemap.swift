@@ -272,9 +272,19 @@ enum MapLayout {
 
     /// The cone's opacity where it leaves the dot. It fades to nothing at `userHeadingConeRadius`.
     ///
-    /// Faint on purpose. The dot is the fact; the cone is a hint about it, and a solid wedge at the
-    /// dot's own blue would swallow both the dot and the pins the reader is looking for.
-    static let userHeadingConeOpacity: Double = 0.32
+    /// Restrained, not faint. The dot is the fact; the cone is a hint about it, and a solid wedge at
+    /// the dot's own blue would swallow both the dot and the pins the reader is looking for.
+    ///
+    /// **It was 0.32 in build 9 and that was too light on the phone** (#208). The number to reason
+    /// about is not the peak but the average: the gradient falls linearly to nothing over 30 pt, so a
+    /// 0.32 peak is a mean alpha near 0.16 over the cone's whole area — which survives a screenshot
+    /// on a desk and disappears against a sunlit basemap outdoors. 0.55 holds the same shape at a
+    /// mean near 0.27.
+    ///
+    /// No simulator can settle this and none ever will: there is no magnetometer, `usable` returns
+    /// `nil`, and the cone is never drawn. It is an outdoor judgment on a real phone, and it is the
+    /// owner's.
+    static let userHeadingConeOpacity: Double = 0.55
 
     /// How long the cone takes to swing from one heading to the next, in seconds.
     ///

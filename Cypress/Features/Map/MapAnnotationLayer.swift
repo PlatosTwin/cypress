@@ -933,12 +933,20 @@ final class MapMarkerView: MKAnnotationView {
     /// The angle the cone is turned to, **unwrapped** — it accumulates past 360° and below 0°
     /// rather than being brought back into a circle.
     ///
-    /// **That is what makes the cone take the short way round.** `transform.rotation.z` is a number,
-    /// not a bearing: animating it from 350 to 10 spins the cone 340° backwards through south, which
-    /// is what a reader wobbling past north would see on every other reading. Adding
-    /// `MapHeading.shortestDelta` to a running total means the animation is always given the two
-    /// degrees the reader actually turned. It is readable so a test can assert that — the rotation
-    /// is on the render server and no screenshot can catch which way it went round.
+    /// `transform.rotation.z` is a number, not a bearing: animating it from 350 to 10 spins the cone
+    /// 340° backwards through south, which is what a reader wobbling past north would see on every
+    /// other reading. Adding `MapHeading.shortestDelta` to a running total keeps this value free of
+    /// that.
+    ///
+    /// **This being right is not the same as the cone turning the short way, and #207 is the
+    /// difference.** For a round after #155 shipped, this accumulator was correct and the cone still
+    /// took a full revolution on every reading, because `setHeading` animated *to* it *from* an angle
+    /// read back out of the presentation layer — which normalizes. The two numbers were in different
+    /// spaces and only one of them was ever asserted.
+    ///
+    /// So: read this to check the accumulator, and **never** to conclude anything about which way the
+    /// cone went round. The only thing that answers that is the animation the layer was handed, which
+    /// is what `MapHeadingTests` reads now.
     private(set) var headingRotationDegrees: Double?
     /// The two rings of the selection reticle. See `setSelectedAppearance`.
     ///
@@ -1116,8 +1124,19 @@ final class MapMarkerView: MKAnnotationView {
         let radians = MapHeading.radians(target)
         // Where the cone is *drawn* right now, which during a swing is not where the model layer
         // says it is. Retargeting mid-turn has to start from what the reader can see.
-        let from = cone.presentation()?.value(forKeyPath: "transform.rotation.z") as? Double
-            ?? previous.map(MapHeading.radians)
+        //
+        // **It is brought into `target`'s space before it is used, and that is the whole of #207** —
+        // `MapHeading.swingStartDegrees` carries the argument, and carries it there because a
+        // detached layer has no presentation layer and this line cannot be reached from a test.
+        //
+        // The fallback is the previous *accumulated* angle rather than the drawn one, for the case
+        // where nothing has been committed to the render server yet; it goes through the same
+        // function so there is one rule and not two.
+        let drawn = (cone.presentation()?.value(forKeyPath: "transform.rotation.z") as? Double)
+            .map(MapHeading.degrees) ?? previous
+        let from = drawn.map {
+            MapHeading.radians(MapHeading.swingStartDegrees(drawnAt: $0, target: target))
+        }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         cone.setValue(radians, forKeyPath: "transform.rotation.z")
