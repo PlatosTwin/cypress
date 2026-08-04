@@ -148,9 +148,19 @@ jobs:
       # that had not changed.
       #
       # So: **skip the release only when EVERY changed path is one that cannot affect the built
-      # app.** That set is the `paths-ignore` list above plus `.github/` — the deny-list decides
-      # whether a run happens, this decides whether that run mints a build, and they are the same
-      # paths for the same reason.
+      # app.** That set is the `paths-ignore` list above, plus `.github/`, plus the two test
+      # directories — the deny-list decides whether a run happens, this decides whether that run
+      # mints a build, and for three of those the answers deliberately differ.
+      #
+      # `CypressTests/` and `CypressUITests/` are here for `.github/`'s exact reason, and #215 is
+      # the receipt: merging PR #4 changed one test file and one root .md and was minting build 13
+      # when it was caught. A test change must RUN — it is the suite — and must not SHIP. That it
+      # cannot ship is a fact about the scheme, not a judgement:
+      # `Cypress.xcodeproj/xcshareddata/xcschemes/Cypress.xcscheme` has exactly one
+      # `BuildActionEntry`, the `Cypress` app target, `buildForArchiving="YES"`. The test targets
+      # are testables. Nothing under either directory is an archive input. If that ever changes —
+      # a test target becomes an app dependency, a fixture gets bundled into the app — these two
+      # tokens must come out, and `DeployPathsAgreeTests` names them so the deletion is deliberate.
       #
       # Both halves are needed. `.github/` alone would still mint a build for a push that touched a
       # workflow AND a doc, which is the same byte-identical build under a rarer shape; the
@@ -192,18 +202,19 @@ jobs:
           changed="$(git diff --name-only "$before" "${{ github.sha }}")"
           echo "changed paths:"; echo "$changed" | sed 's/^/  /'
 
-          # The four patterns are the `paths-ignore` list plus `.github/`. `*.md` matches only the
-          # repository root there — `*` does not cross a `/` in those patterns — so it is anchored
-          # the same way here rather than matching every .md in the tree.
+          # The patterns are the `paths-ignore` list plus the three that run without shipping:
+          # `.github/`, `CypressTests/`, `CypressUITests/`. `*.md` matches only the repository root
+          # there — `*` does not cross a `/` in those patterns — so it is anchored the same way here
+          # rather than matching every .md in the tree.
           outside="$(printf '%s\n' "$changed" \
-            | grep -vE '^(\.github/|docs/|graphify-out/|[^/]*\.md$)' || true)"
+            | grep -vE '^(\.github/|CypressTests/|CypressUITests/|docs/|graphify-out/|[^/]*\.md$)' || true)"
 
           if [ -z "$changed" ]; then
             echo "ships=false" >> "$GITHUB_OUTPUT"
             echo "::notice::no paths changed against $before — no build minted"
           elif [ -z "$outside" ]; then
             echo "ships=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::nothing changed that can affect the built app (only .github/, docs/, graphify-out/ or a root *.md), so the suite runs but no build is minted — it would be byte-identical to the last one. Run this workflow manually (workflow_dispatch) if a pipeline change needs a real archive to prove it: signing, export options, or the upload step."
+            echo "::notice::nothing changed that can affect the built app (only .github/, CypressTests/, CypressUITests/, docs/, graphify-out/ or a root *.md), so the suite runs but no build is minted — it would be byte-identical to the last one. Run this workflow manually (workflow_dispatch) if a pipeline or test change needs a real archive to prove it: signing, export options, or the upload step."
           else
             echo "ships=true" >> "$GITHUB_OUTPUT"
             echo "shipping — these can affect the app:"; echo "$outside" | sed 's/^/  /'
