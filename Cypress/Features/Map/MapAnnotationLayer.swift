@@ -923,7 +923,13 @@ final class MapMarkerView: MKAnnotationView {
 
     private var pulseLayer: CALayer?
     /// The direction cone on the reader's own dot, and nothing else's (task #155).
-    private var headingConeLayer: CALayer?
+    ///
+    /// Readable for the reason `reticleLayers` is: the cone is never rasterised through
+    /// `MapPinImage`, it is only ever composited on the render server, and no simulator can produce
+    /// the heading that would draw it. Its geometry — that it points the way the reader faces rather
+    /// than the opposite way, that it is not a zero-sized layer, that the fade starts opaque enough
+    /// to see — is checkable **only** through the layer itself.
+    private(set) var headingConeLayer: CALayer?
     /// The angle the cone is turned to, **unwrapped** — it accumulates past 360° and below 0°
     /// rather than being brought back into a circle.
     ///

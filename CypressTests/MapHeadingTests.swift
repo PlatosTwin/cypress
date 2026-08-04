@@ -355,6 +355,72 @@ struct MapHeadingTests {
         #expect(view.headingRotationDegrees == nil)
     }
 
+    /// **The one thing a screenshot could have checked, and cannot.** The cone is never rasterised
+    /// through `MapPinImage` and no simulator can produce the heading that would draw it, so the
+    /// failure `MapMarkerRenderingTests` guards for every pin kind — *a mark that renders to
+    /// nothing, and looks plausible while doing it* — has no picture to be caught in here. The layer
+    /// is the only witness, so it is the one asserted: a wedge with real size, pointing up its own
+    /// coordinate space before rotation, opaque enough at the dot to see and transparent at its end.
+    @Test("the cone is a real wedge, pointing forwards, visible where it meets the dot")
+    func theConeHasTheGeometryItClaims() {
+        let view = userDotView(heading: 0)
+        view.setHeading(0, animated: false)
+        guard let cone = view.headingConeLayer else {
+            Issue.record("a heading was set and no cone layer was made — the dot draws bare")
+            return
+        }
+        #expect(cone.superlayer === view.layer)
+
+        let radius = MapLayout.userHeadingConeRadius
+        #expect(cone.bounds.size == CGSize(width: radius * 2, height: radius * 2))
+        #expect(cone.position == CGPoint(x: view.bounds.midX, y: view.bounds.midY))
+
+        guard let wedge = cone.mask as? CAShapeLayer, let path = wedge.path else {
+            Issue.record("the cone has no wedge mask, so it draws as a full circle around the dot")
+            return
+        }
+        // Up the middle of the cone, two thirds of the way out. In the layer's own coordinates —
+        // before the rotation that carries it round to the reader's heading — up is -y.
+        #expect(
+            path.contains(CGPoint(x: radius, y: radius - radius * 0.66)),
+            "the wedge does not cover the direction it is meant to point"
+        )
+        // And behind the reader, which is the same wedge drawn 180° wrong — the failure that would
+        // send somebody walking away from the tree they are looking for.
+        #expect(
+            !path.contains(CGPoint(x: radius, y: radius + radius * 0.66)),
+            "the wedge covers the ground behind the reader, so the cone points backwards"
+        )
+        // Sideways at the same distance is outside a 62° cone and inside a circle, which is what
+        // separates "a cone" from "a halo".
+        #expect(!path.contains(CGPoint(x: radius + radius * 0.66, y: radius)))
+
+        guard let gradient = cone as? CAGradientLayer, let colors = gradient.colors as? [CGColor] else {
+            Issue.record("the cone carries no gradient, so it does not fade out along its length")
+            return
+        }
+        #expect(colors.count == 2)
+        #expect(
+            (colors.first?.alpha ?? 0) > 0.1,
+            "the cone is transparent where it meets the dot — an invisible mark, not a direction"
+        )
+        #expect(colors.last?.alpha == 0, "the cone ends in a hard edge instead of fading out")
+    }
+
+    /// The rotation is what carries that wedge round to the reader's bearing, and it is applied to
+    /// the model layer rather than only to an animation — an animation is a temporary thing and the
+    /// cone has to stay pointed after it finishes.
+    @Test("the cone's layer is turned to the angle it was given")
+    func theConeLayerCarriesTheAngle() {
+        let view = userDotView(heading: 90)
+        view.setHeading(90, animated: false)
+        let turned = view.headingConeLayer?.value(forKeyPath: "transform.rotation.z") as? Double
+        #expect(
+            (turned ?? 0) == MapHeading.radians(90),
+            "the cone layer sits at \(turned ?? .nan) rad with a 90° heading set"
+        )
+    }
+
     /// **Heading stays out of what VoiceOver says.** #100 made this label about *where you are*; a
     /// bearing that changed every time the reader turned their wrist would talk over everything else
     /// on the screen and serve nobody. The cone is visual-only, and this is the assertion that keeps
