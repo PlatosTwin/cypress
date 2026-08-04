@@ -186,7 +186,13 @@ def cmd_status() -> None:
             print(f"  autoNotifyEnabled   {beta.get('autoNotifyEnabled')}")
         else:
             print("  buildBetaDetail  (none)")
-        groups = call("GET", f"/builds/{build['id']}/betaGroups", bearer).get("data", [])
+        # Asked of /betaGroups filtered BY the build, not of /builds/<id>/betaGroups: that
+        # relationship allows only CREATE and DELETE, and a GET on it is a 403 FORBIDDEN_ERROR.
+        groups = call(
+            "GET",
+            f"/betaGroups?{urllib.parse.urlencode({'filter[builds]': build['id'], 'limit': '200'})}",
+            bearer,
+        ).get("data", [])
         if groups:
             for group in groups:
                 g = group.get("attributes", {})
