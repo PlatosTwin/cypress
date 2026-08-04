@@ -90,8 +90,11 @@ conflicts with convenience, the rule wins.
   not running`, `'X' never appeared` and `Test run with 0 tests` with no crash report; a wide camera
   draws cluster badges where a test waits for pins; and a narrow camera **pointed somewhere the
   inventory does not cover** draws nothing at all, which is the same symptom from the opposite
-  geometry. Tests run with the CYPRESS_LOCATION environment variable (R58, task #121) pinning location state, so tests run unconditionally rather than skipping on simulator availability. **A UI log whose skip count changed between two runs of the same tree is
-  reporting a device change, not a code change.**
+  geometry. Whether the device has a fix is still not checked, and no longer needs to be: R58's
+  `CYPRESS_LOCATION` launch variable pins the app's location state, so the six tests that used to
+  skip on a fixless device now run unconditionally — `CypressUITests` reports 0 skipped, where a
+  healthy device previously reported 4. **A UI log whose skip count changed between two runs of the
+  same tree is reporting a device change, not a code change.**
 - **Every log carries its own provenance** — `run_tests.sh` stamps `CYPRESS-RUN:` lines with the
   device, `screen-width-pt`, worktree, HEAD and both E202 states. Judge a width-sensitive UI result
   only from a log whose width you have read. A log with no `CYPRESS-RUN` header did not come from
