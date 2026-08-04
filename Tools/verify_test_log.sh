@@ -38,8 +38,22 @@ done
 set -- ${ARGS+"${ARGS[@]}"}
 
 LOG="${1:?usage: verify_test_log.sh [--warnings] <log> [max-age-minutes] [file…]}"
-MAX_AGE_MIN="${2:-60}"
-shift $(( $# > 2 ? 2 : $# ))
+shift
+# The optional age is positional and the file list follows it, so `verify … <log> a.swift b.swift`
+# used to bind "a.swift" to MAX_AGE_MIN and drop it from the file list. Both halves of that failed
+# SILENTLY: `find -mmin +a.swift` errors, its stderr is discarded, the empty result reads as "not
+# stale", and the freshness guard — the one that exists because a stale log at a reused path once
+# reported a clean suite from an 8-hour-old run — was simply off. Meanwhile the file it swallowed
+# went unchecked while the E203 certification still said OK.
+#
+# An age is always digits and a path never is, so the two are told apart by shape rather than by
+# position. No caller has to remember the order, and there is no spelling of this command that
+# quietly checks less than it was asked to.
+MAX_AGE_MIN=60
+case "${1:-}" in
+  ''|*[!0-9]*) ;;
+  *) MAX_AGE_MIN="$1"; shift ;;
+esac
 CLAIMED_FILES=("$@")
 
 fail() { echo "VERIFY-FAIL: $1" >&2; exit 1; }
@@ -48,7 +62,15 @@ note() { echo "VERIFY-NOTE: $1"; }
 [ -f "$LOG" ] || fail "log does not exist: $LOG"
 
 # Freshness — a stale log at the same path has produced a false green before.
-if [ -n "$(find "$LOG" -mmin +"$MAX_AGE_MIN" 2>/dev/null)" ]; then
+#
+# `find`'s failure is fatal rather than discarded. An empty result from a `find` that never ran
+# is indistinguishable from an empty result meaning "not stale", and the second reading is the
+# one that lets an eight-hour-old log through: this guard spent an unknown period switched off
+# because a bad argument made `find` error into a suppressed stderr.
+if ! stale="$(find "$LOG" -mmin +"$MAX_AGE_MIN")"; then
+  fail "could not test the age of $LOG (max-age ${MAX_AGE_MIN}m) — refusing to treat an unrun freshness check as a fresh log"
+fi
+if [ -n "$stale" ]; then
   fail "log is older than ${MAX_AGE_MIN}m (mtime $(stat -f '%Sm' "$LOG")) — stale artifact, not evidence"
 fi
 

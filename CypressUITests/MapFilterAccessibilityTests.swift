@@ -577,7 +577,7 @@ final class MapFilterAccessibilityTests: XCTestCase {
                 + "the species filter — has no entry to tap, and there is no filter available that "
                 + "leaves the map holding anything to count. The map colors a species only where it "
                 + "drew at least two of its pins. Put the map over some streets: xcrun simctl "
-                + "location EA0AD796-3052-4EE5-A7A8-A1DE807A3653 set 37.78485,-122.4215 (and note "
+                + "location \(runningDeviceUDID) set 37.78485,-122.4215 (and note "
                 + "that `simctl location clear` does not unfix a device — revoke the app's location "
                 + "grant to do that). ERRATA E202 is worth reading before believing a red here."
             announceSkip(message, test: "testNoTextAccompaniesAFilter")
@@ -714,6 +714,17 @@ final class MapFilterAccessibilityTests: XCTestCase {
             "narrowing by \(description) put a sentence about planting dates over the map. That is "
                 + "the message task #180 removed by name; R41 forbids it returning in any wording."
         )
+    }
+
+    /// The device this test is running on, for remediation messages that name a real `simctl`
+    /// target.
+    ///
+    /// A skip message used to hard-code one agent's simulator UDID, which made its advice wrong
+    /// on every other device — including the CI runner, whose simulator is chosen from a candidate
+    /// list and is not any of the four an agent uses. The runner sets `SIMULATOR_UDID` in the test
+    /// process's environment; when it is absent the message says so rather than inventing one.
+    private var runningDeviceUDID: String {
+        ProcessInfo.processInfo.environment["SIMULATOR_UDID"] ?? "<this device's UDID>"
     }
 
     /// A skip nobody has to go looking for (#121).

@@ -1,0 +1,37 @@
+# What App Store Connect actually holds — on demand, in about a minute.
+#
+# The TestFlight web page answers "what is the status of this build?" with one word, and that word
+# is a lossy merge of several independent fields: a build reading "Ready to Submit" is reporting its
+# EXTERNAL testing state and saying nothing at all about whether the internal testers can install
+# it. This workflow exists so that question gets answered from the API's own fields instead of from
+# a screenshot.
+#
+# Runs on ubuntu and touches no Xcode, so it costs a minute rather than the release workflow's
+# ninety. Read-only: it lists, it never writes.
+#
+# Run it from the Actions tab -> "App Store Connect status" -> Run workflow.
+name: App Store Connect status
+
+on:
+  workflow_dispatch:
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ask App Store Connect what it holds
+        env:
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          # A venv for the same reason the release workflow uses one: the runner's Python is
+          # externally managed, and --break-system-packages trades the runner's toolchain for
+          # one saved command.
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet --disable-pip-version-check pyjwt cryptography
+          "$RUNNER_TEMP/venv/bin/python" Tools/appstore_connect.py status

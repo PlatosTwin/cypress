@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-appstore_connect.py -- the two App Store Connect questions CI has to ask, and nothing else.
+appstore_connect.py -- the App Store Connect questions CI has to ask, and nothing else.
 
     next-build-number      the highest CFBundleVersion this app has ever uploaded, plus one
     expire-others <build>  expire every OTHER build, leaving <build> the only one testable
+    status                 print every build's real state, which the web UI summarizes lossily
 
 WHY THIS EXISTS AT ALL. `xcrun altool` can upload but cannot answer either question, and both
 have bitten already: the repo's committed CURRENT_PROJECT_VERSION is 1 while App Store Connect
@@ -150,12 +151,70 @@ def cmd_expire_others(keep: str) -> None:
     print(f"kept build {keep_n}; expired {expired} other(s)")
 
 
+def cmd_status() -> None:
+    """Print what App Store Connect actually holds, field by field.
+
+    The TestFlight web UI collapses several independent states into one word per build, and the
+    word it picks is not always the one that matters: "Ready to Submit" is the EXTERNAL testing
+    state, and says nothing about whether internal testers can install the build. Nothing here
+    interprets — it prints the API's own values so a question about a build's status can be
+    answered from data instead of from a screenshot.
+    """
+    bearer = token()
+    app = app_id(bearer)
+    builds = all_builds(bearer, app)
+    if not builds:
+        print("no builds at all for", BUNDLE_ID)
+        return
+    print(f"{BUNDLE_ID}: {len(builds)} build(s), newest first\n")
+    for build in builds:
+        attributes = build.get("attributes", {})
+        print(f"build {attributes.get('version')}  (id {build['id']})")
+        print(f"  uploaded         {attributes.get('uploadedDate')}")
+        print(f"  processingState  {attributes.get('processingState')}")
+        print(f"  expired          {attributes.get('expired')}")
+        print(f"  expirationDate   {attributes.get('expirationDate')}")
+        print(f"  minOsVersion     {attributes.get('minOsVersion')}")
+        print(f"  usesNonExemptEncryption {attributes.get('usesNonExemptEncryption')}")
+        detail = call("GET", f"/builds/{build['id']}/buildBetaDetail", bearer).get("data")
+        if detail:
+            beta = detail.get("attributes", {})
+            # The two states the UI merges into one column. INTERNAL is the one that decides
+            # whether the five testers can install anything.
+            print(f"  internalBuildState  {beta.get('internalBuildState')}")
+            print(f"  externalBuildState  {beta.get('externalBuildState')}")
+            print(f"  autoNotifyEnabled   {beta.get('autoNotifyEnabled')}")
+        else:
+            print("  buildBetaDetail  (none)")
+        groups = call("GET", f"/builds/{build['id']}/betaGroups", bearer).get("data", [])
+        if groups:
+            for group in groups:
+                g = group.get("attributes", {})
+                print(f"  group            {g.get('name')!r} "
+                      f"internal={g.get('isInternalGroup')} "
+                      f"publicLink={bool(g.get('publicLinkEnabled'))} "
+                      f"(id {group['id']})")
+        else:
+            print("  group            NONE -- no tester group holds this build")
+        print()
+    # Listed separately because a group with no build is invisible above, and an empty group is
+    # exactly what a build stuck outside internal testing looks like from the other side.
+    print("beta groups on this app:")
+    for group in call("GET", f"/betaGroups?filter[app]={app}&limit=200", bearer).get("data", []):
+        g = group.get("attributes", {})
+        print(f"  {g.get('name')!r} internal={g.get('isInternalGroup')} "
+              f"hasAccessToAllBuilds={g.get('hasAccessToAllBuilds')} "
+              f"publicLinkEnabled={g.get('publicLinkEnabled')} (id {group['id']})")
+
+
 def main() -> None:
     if len(sys.argv) < 2:
         fail(__doc__.strip().splitlines()[2], 2)
     command = sys.argv[1]
     if command == "next-build-number":
         cmd_next_build_number()
+    elif command == "status":
+        cmd_status()
     elif command == "expire-others":
         if len(sys.argv) != 3:
             fail("usage: appstore_connect.py expire-others <build-number>", 2)

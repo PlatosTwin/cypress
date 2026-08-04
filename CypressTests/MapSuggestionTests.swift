@@ -345,13 +345,17 @@ struct MapSuggestionTests {
     @MainActor
     private static func waitUntil(
         _ condition: () -> Bool,
-        timeout: Duration = .seconds(20)
+        timeout: Duration = TestWait.ceiling,
+        sourceLocation: SourceLocation = #_sourceLocation
     ) async throws {
-        let deadline = ContinuousClock.now + timeout
+        let started = ContinuousClock.now
+        let deadline = started + timeout
         while ContinuousClock.now < deadline {
             if condition() { return }
             try await Task.sleep(for: .milliseconds(50))
         }
-        #expect(condition(), "the model never settled within \(timeout)")
+        TestWait.timedOut(
+            after: started.duration(to: .now), sourceLocation: sourceLocation, condition
+        )
     }
 }
