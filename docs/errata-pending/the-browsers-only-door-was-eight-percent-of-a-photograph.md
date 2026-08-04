@@ -62,6 +62,33 @@ closing the cover and pushing `Route.photos` with `unlessAlreadyOnTop` so the sa
 from a viewer opened *out of* screen 20 means "back to the set" instead of stacking a second copy of
 it. The design decision is written up as a pending ruling; this entry records the defect.
 
+## The test, and how it was made to fail
+
+`CypressUITests/PhotoBrowserReachabilityTests`, a UI test for E173's reason. Made to fail by deleting
+the one line that draws the door — which restores the defect exactly, since nothing else changed —
+and both cases went red on their own sentences, having first walked all the way into the viewer:
+
+```
+PhotoBrowserReachabilityTests.swift:54: error: testTheHeroPhotographReachesTheBrowserItsPillHides :
+  XCTAssertTrue failed - the photograph was pressed, the viewer opened over one photograph, and
+  there was no way on from it to the tree's other photographs — which is the whole of the report
+PhotoBrowserReachabilityTests.swift:96: error: testTheViewerReachedFromTheBrowserGoesBackToOneBrowser :
+  failed - the browser's own row opened a viewer with no way back to the set
+     Executed 2 tests, with 4 failures (0 unexpected) in 39.650 seconds
+```
+
+The line restored, both green, and then the whole suite on the merged tree:
+
+```
+VERIFY-OK: ✔ Test run with 1161 tests in 112 suites passed after 117.992 seconds.
+           | XCTest: Executed 84 tests, with 0 failures (0 unexpected) in 1201.163 seconds
+VERIFY-WARNINGS: source=0 non-source=3 compile-tasks=419 files-checked=3
+```
+
+**`UITestShardCoverageTests` caught the new class before CI could.** A UI test class on no line of
+`Tools/ui-test-shards.txt` never runs on CI and nothing goes red for it; the unit suite failed with
+`unassigned → ["PhotoBrowserReachabilityTests"]`, which is that guard doing exactly its job.
+
 ## The lesson, which is E173's restated
 
 A control being reachable is not the same fact as a control being reached. Both times, the surface
