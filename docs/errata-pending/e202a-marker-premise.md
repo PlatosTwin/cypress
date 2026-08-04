@@ -127,9 +127,13 @@ ticket's budget — see "What is still open" below.
 
 #### The resolution
 
-**E202-A's stated general mechanism — device data, and specifically this marker file, survives an
-`xcodebuild test` reinstall on this device — is true, and reconfirmed five times today by a table
-with no self-clearing logic of its own.** `Tools/run_tests.sh`'s E202-A refusal reads the marker
+**E202-A's stated general mechanism — device data survives an `xcodebuild test` reinstall on this
+device — is true, reconfirmed five times today via `tree_status_overrides`, a table with no
+self-clearing logic of its own. The marker file itself did not survive in any experiment here,
+and that is not evidence against E202-A: an undownloaded marker is deleted by `CityLibrary`'s
+self-heal on the next boot — a distinct, intentional app-level mechanism — while E202-A's original
+scenario, a downloaded install-backed marker, is exactly what this note does not retest.**
+`Tools/run_tests.sh`'s E202-A refusal reads the marker
 *before* the current invocation's app has booted even once, so a genuine leftover from a prior
 manual download-and-activate (the scenario the refusal exists for) is caught before any self-heal
 could run — the guard remains both correct and reachable.
