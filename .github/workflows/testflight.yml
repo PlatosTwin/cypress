@@ -240,7 +240,11 @@ jobs:
           if [ -z "$changed" ] || [ -z "$testable" ]; then
             echo "tests=false" >> "$GITHUB_OUTPUT"
             echo "ships=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::only prose changed (docs/, graphify-out/ or a root *.md), so no test can exercise it and no build is minted. The suite is skipped deliberately and `gate` checks that it was skipped for this reason. Run this workflow manually (workflow_dispatch) to force a full run."
+            # No backticks in this string, and that is not a style preference. It is a DOUBLE-quoted
+            # shell string, so `word` is command substitution: written with them, the shell ran
+            # `gate` as a command, got nothing, and silently deleted the word from the notice a
+            # reader sees. Harmless with that word; arbitrary execution with a different one.
+            echo "::notice::only prose changed (docs/, graphify-out/ or a root *.md), so no test can exercise it and no build is minted. The suite is skipped deliberately, and the gate job checks that it was skipped for this reason. Run this workflow manually (workflow_dispatch) to force a full run."
             exit 0
           fi
 

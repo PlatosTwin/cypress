@@ -1740,7 +1740,7 @@
     "semantic_hash": "8908100c2203cd72b212b1f682ce6737"
   },
   "Tools/run_tests.sh": {
-    "mtime": 1785756682.596123,
+    "mtime": 1785876070.6884851,
     "ast_hash": "d43ca48e5efa64cde8e85c91083bf5b7",
     "semantic_hash": "d43ca48e5efa64cde8e85c91083bf5b7"
   },
@@ -1860,8 +1860,8 @@
     "semantic_hash": "c4f48ab0a3d487f5a965e8d683c2ba1b"
   },
   "CLAUDE.md": {
-    "mtime": 1785868986.7079442,
-    "ast_hash": "5b56225db8042560031fe678bc4db506",
+    "mtime": 1785875433.2473085,
+    "ast_hash": "ee14066c6e1db8a5b952f1c0c5809dbc",
     "semantic_hash": ""
   },
   "CRITIQUES.md": {
