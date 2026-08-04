@@ -298,9 +298,31 @@ jobs:
       # ── What shipped ─────────────────────────────────────────────────────────────────
       # #196: the repo could not previously answer this. A tag can — and it matters more now that
       # docs-only commits do not deploy, so main can be ahead of the newest build.
+      #
+      # Created through the API rather than `git push origin build-N`. A push whose ref carries a
+      # change to `.github/workflows/**` is rejected for a GitHub App token without `workflows`
+      # permission — and since this pipeline's own commits edit this file, tagging them failed with
+      #
+      #   ! [remote rejected] build-5 -> build-5 (refusing to allow a GitHub App to create or
+      #     update workflow `.github/workflows/testflight.yml` without `workflows` permission)
+      #
+      # The obvious fix is to grant `workflows: write`, and it is the wrong one: it would let any
+      # step in this job rewrite the pipeline that gates releases, to remove a check the size of
+      # the whole test suite. GitHub gates that deliberately. Creating a ref through the API
+      # changes no file — the commit is already on main — so it needs no such grant.
       - name: Tag the commit that shipped
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           n=${{ steps.build_number.outputs.n }}
-          git tag -a "build-$n" -m "TestFlight build $n from ${GITHUB_SHA}"
-          git push origin "build-$n"
+          if gh api "repos/${GITHUB_REPOSITORY}/git/refs" \
+               -f "ref=refs/tags/build-$n" -f "sha=${GITHUB_SHA}" >/dev/null; then
+            echo "tagged ${GITHUB_SHA} as build-$n"
+          else
+            # A re-run reaches an existing tag. That is not a release failure, and failing here
+            # would leave a shipped build looking unshipped.
+            echo "::warning::could not create tag build-$n (it may already exist)"
+            gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/build-$n" --jq '.object.sha' \
+              | sed 's/^/build-'"$n"' already points at /'
+          fi
