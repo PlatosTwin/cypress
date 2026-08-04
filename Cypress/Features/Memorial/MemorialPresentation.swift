@@ -144,7 +144,9 @@ struct MemorialPresentation: Equatable {
         locale: Locale = .current
     ) {
         let tree = profile.tree
-        let photos = profile.photos.filter { profile.isOwnPhoto($0) ? $0.isVisibleToItsContributor : $0.isPubliclyVisible }
+        // `TreeProfile.visiblePhotos` (ERRATA E215) — one predicate, shared with screen 03/14's hero
+        // and screen 20's browser.
+        let photos = profile.visiblePhotos
         let visits = profile.visits.filter { $0.deletedAt == nil }
         let observations = profile.observations.filter { $0.deletedAt == nil }
         let removalYear = facts.removedAt.map { calendar.component(.year, from: $0) }
