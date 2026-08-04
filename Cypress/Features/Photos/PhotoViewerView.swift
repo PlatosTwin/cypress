@@ -51,6 +51,28 @@
 //  `TreePhotosModel`, so there is one implementation of "may this person delete this, and what does
 //  it cost" rather than two that can drift.
 //
+//  ── Why there is a way onward from it (the other half of E173) ───────────────────────────
+//  E173's own account of the defect names two missing things: "no delete, **and no way onward to the
+//  screen that has one**". It shipped the first and left the second, and the second came back as its
+//  own report:
+//
+//  > when i click on the tree photo from a tree page, i can get to the view where I see all photos
+//  > and can thumbs up/down them, change between all/full/trunk/leaf only very ocassionally, and
+//  > sometimes not at all, instead seeing only the hero photo and no other photos and no option at
+//  > all to thumbs up/down
+//
+//  That is this screen, described from the outside by somebody who meant to reach screen 20. The
+//  hero is 224 pt of photograph and the pill is the only door to the browser, so almost every press
+//  on the picture lands here — one photograph, no set, no vote, no filter — and E173's sentence about
+//  the pill applies unchanged: it is mono 10.5 in a translucent capsule beside `Best photo · Oct
+//  2025`, and nothing about it reads *there are controls behind this*.
+//
+//  So the viewer gets the door. It already holds the tree id — E173 put it there — so the control
+//  costs no read and cannot be wrong about which tree it means. **In the screen's control vocabulary
+//  and not its caption vocabulary**, which is the whole point: solid `heroBackFill` and `textBody`,
+//  the treatment `Close` and the delete already wear here, rather than the translucent mono capsule
+//  that E173 recorded as unreadable as a control.
+//
 //  ── Why there is no pinch-to-zoom ────────────────────────────────────────────────────────
 //  Deliberate, and worth writing down because it is the obvious next thing to reach for. The report
 //  is that the photograph is *cut off*; showing it whole answers that completely. A zoom that had to
@@ -67,6 +89,14 @@ struct PhotoViewerView: View {
     /// The words already on screen for this photograph — see `Route.photoViewer`.
     let caption: String
     let onClose: () -> Void
+    /// Opens screen 20 over this photograph's tree — the way onward E173 left unbuilt.
+    ///
+    /// A closure rather than a `router.push` in here, like every other navigation in this app: a
+    /// feature does not construct its siblings' views (`AppRouter`). The composition root closes the
+    /// cover and pushes, and it pushes `unlessAlreadyOnTop` — this screen is reached from screen 20's
+    /// own rows as well as from the hero, and from there the door means "back to the set", not a
+    /// second copy of it on the stack (ERRATA E151's mechanism, a second use for it).
+    let onOpenBrowser: () -> Void
 
     /// Screen 20's model, over the tree this photograph belongs to. Deliberately the same type: the
     /// question "may this person delete this photograph, and what does removing it cost the tree"
@@ -81,19 +111,28 @@ struct PhotoViewerView: View {
         caption: String,
         treeID: UUID,
         api: (any CypressAPI)? = nil,
-        onClose: @escaping () -> Void
+        onClose: @escaping () -> Void,
+        onOpenBrowser: @escaping () -> Void
     ) {
         self.photoID = photoID
         self.caption = caption
         self.onClose = onClose
+        self.onOpenBrowser = onOpenBrowser
         _model = State(wrappedValue: TreePhotosModel(treeID: treeID, api: api))
     }
 
     /// A finished model, for previews and the screen sweep.
-    init(photoID: UUID, caption: String, model: TreePhotosModel, onClose: @escaping () -> Void) {
+    init(
+        photoID: UUID,
+        caption: String,
+        model: TreePhotosModel,
+        onClose: @escaping () -> Void,
+        onOpenBrowser: @escaping () -> Void = {}
+    ) {
         self.photoID = photoID
         self.caption = caption
         self.onClose = onClose
+        self.onOpenBrowser = onOpenBrowser
         _model = State(wrappedValue: model)
     }
 
@@ -204,6 +243,7 @@ struct PhotoViewerView: View {
     /// where the button was.
     private var captionBlock: some View {
         VStack(alignment: .leading, spacing: CypressSpacing.gapRows) {
+            browserDoor
             if isNobodysToRemove {
                 Text(TreePhotosCopy.nobodysToRemove)
                     .font(CypressFont.body125)
@@ -241,6 +281,37 @@ struct PhotoViewerView: View {
             // is announced twice, which is the `DeepLinkVoiceOverTests` complaint about doubled
             // labels in a different costume.
             .accessibilityHidden(true)
+    }
+
+    /// The way onward to screen 20 — every photograph of this tree, the thumbs, and the subject
+    /// filter. See the file header for the report it answers.
+    ///
+    /// **Drawn always, and gated on nothing.** The count of photographs is a read that has not
+    /// finished when this screen appears, so a door that waited for it would appear late, move the
+    /// caption under somebody's thumb, and be missing exactly when the read is slowest. It is also
+    /// true of a tree with one photograph: the thumbs live on the other side of this control, and a
+    /// single photograph is a thing somebody may want to vote on.
+    ///
+    /// **Named for where it goes.** R2 asks that a control be named for what it is rather than
+    /// relabeled with the next tap; a door is what it goes to, and the hint carries the part of the
+    /// destination the name cannot — that the photographs are votable there, which is the half of the
+    /// report the delete's repair did not cover.
+    private var browserDoor: some View {
+        Button(action: onOpenBrowser) {
+            Text(PhotoViewerCopy.allPhotos)
+                .font(CypressFont.body13Bold)
+                .foregroundStyle(CypressColor.textBody)
+                .padding(.vertical, CypressSpacing.Component.headerPillPaddingV)
+                .padding(.horizontal, CypressSpacing.Component.headerPillPaddingH)
+                .background { Capsule().fill(CypressColor.heroBackFill) }
+                .cypressShadow(CypressShadow.heroButton)
+                // The drawn capsule is under 44 pt tall, so the target grows around it and the
+                // visual stays where it is — ARCHITECTURE §6, the rule `HeroPhotoHeader`'s own pill
+                // follows one screen up.
+                .cypressTapTarget()
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint(PhotoViewerCopy.allPhotosHint)
     }
 
     /// The delete, on the one screen that shows a single named photograph whole (ERRATA E173).
@@ -351,4 +422,11 @@ enum PhotoViewerCopy {
     static let delete = "Delete this photo"
     static let wholeFrame = "The whole photograph"
     static let unavailable = "That photograph could not be opened"
+    /// The door onward to screen 20. "Of this tree" and not just "All photos": this cover is drawn
+    /// over one tree's photograph with no other context on screen, and the app has no all-photos
+    /// screen for the phone.
+    static let allPhotos = "All photos of this tree"
+    /// What is on the other side, in the words the report used — the browser is where a photograph
+    /// is voted on, and that is the half of it the label cannot say.
+    static let allPhotosHint = "Opens every photo of this tree, with a thumb up and down on each"
 }
