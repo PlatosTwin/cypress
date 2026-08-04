@@ -41,8 +41,12 @@
 # `DeepLinkSweepTests` (92.6s for its 2 tests on that same machine) and
 # `DeepLinkVoiceOverTests/testTreeOrderParserReportsAnInvertedTree` (0.05s) — 6 tests, 110.2s total,
 # `VERIFY-OK: Executed 6 tests, with 0 failures (0 unexpected) in 110.215 seconds`. Placed on the
-# `DeepLinkVoiceOverTests` line because that shard already carries the longest single class and one
-# more short class does not change which shard is the pipeline's pace-setter.
+# `SheetExitUITests` line, which the table above makes the shortest (327.0s, against 332.6s and
+# 344.8s for the next two) — the rule at the top of this file, applied with the file's own numbers.
+# It was first placed on the `DeepLinkVoiceOverTests` line under a claim that the pace-setter would
+# not move; the PR #14 review ran the arithmetic and it would have (332.6 + 17.5 = 350.1s, past
+# Shard 3's 344.8s). The numbers are one-run snapshots either way — but a placement that cites them
+# has to add them.
 #
 # THE FLOOR WAS ONE CLASS, AND #204 MOVED IT. `DeepLinkVoiceOverTests` was 462.8s — 35% of the
 # suite — because two of its 28 tests SWEEP every deep-linked screen, launching once per screen,
@@ -56,7 +60,7 @@
 # Sharding further would trade complexity for seconds. The next lever is the build each shard
 # repeats, not the tests it runs.
 
-DeepLinkVoiceOverTests MapCenteredStateUITests ReadingOrderAccessibilityTests
+DeepLinkVoiceOverTests MapCenteredStateUITests
 MapFilterAccessibilityTests AnonymizedPhotoNoticeUITests MapRecenterUITests PhotoBrowserReachabilityTests
 DeepLinkSweepTests PrimaryCTAReachabilityTests SheetHeightUITests AlmanacGroupTapTests
-SheetExitUITests MapSearchUITests MapSuggestionUITests MapPanTabSwitchUITests PhotoDeletionReachabilityTests AccessibilityTreeTests
+SheetExitUITests MapSearchUITests MapSuggestionUITests MapPanTabSwitchUITests PhotoDeletionReachabilityTests AccessibilityTreeTests ReadingOrderAccessibilityTests
