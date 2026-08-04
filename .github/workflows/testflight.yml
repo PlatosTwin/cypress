@@ -1,12 +1,29 @@
 # Merge to main -> verified build -> TestFlight, with exactly one testable build left.
 #
-# The suite gates the upload, deliberately. This project's signature failure mode is a
-# false green (docs/investigations/repeat-failures-postmortem.md), so the workflow judges
-# every run with Tools/verify_test_log.sh and believes nothing else -- not an exit code,
-# not a step that "succeeded". The two lines that count are `Test run with N tests passed`
-# (Swift Testing) and `Executed N tests, with 0 failures` + `** TEST SUCCEEDED **` (XCTest).
+# The suite gates the upload, deliberately. This project's signature failure mode is a false green
+# (docs/investigations/repeat-failures-postmortem.md), so every job judges its log with
+# Tools/verify_test_log.sh and believes nothing else -- not an exit code, not a step that
+# "succeeded". The two lines that count are `Test run with N tests passed` (Swift Testing) and
+# `Executed N tests, with 0 failures` + `** TEST SUCCEEDED **` (XCTest).
 #
-# Expect ~35 minutes: the UI suite alone runs ~20. macOS runners are free on public repos.
+# SHAPE, and why it is four jobs rather than one. Measured on run 30846300488: the whole thing took
+# 50 minutes, of which the UI suite was 28.4 and everything else 21.6. One runner running one job
+# could only ever be as fast as the sum. So the UI suite is split across runners -- separate
+# machines, not separate simulators on one machine. That distinction is the whole design: a
+# macos-26-arm64 runner has THREE cores, and run 30850154829 proved that a runner under load blows
+# this suite's waits (#202). Cloning simulators onto one box would buy parallelism by re-creating
+# the exact failure we just spent an evening diagnosing.
+#
+#   plan     ~10s   reads Tools/ui-test-shards.txt and decides how many UI jobs there are
+#   unit     ~14m   the 1137-test Swift Testing suite, plus the zero-warning certification
+#   ui       ~24m   N parallel jobs, one shard each; the longest shard sets the pace
+#   release  ~10m   archive, upload, expire, tag -- only after unit AND every ui shard is green
+#
+# ~34 minutes wall clock for ~60 minutes of runner time, which is free on a public repo.
+#
+# THE FLOOR IS ONE CLASS. DeepLinkVoiceOverTests is 851.7s by itself -- 50% of the UI suite -- so
+# no arrangement of whole classes gets below ~14 minutes. Splitting further means splitting by test
+# method, a list that breaks silently on a rename. See Tools/ui-test-shards.txt.
 name: TestFlight
 
 on:
@@ -55,102 +72,140 @@ env:
   SCHEME: Cypress
   PROJECT: Cypress.xcodeproj
   BUNDLE_ID: app.cypress.Cypress
-  SIMULATOR: iPhone 16 Pro
 
 jobs:
-  release:
-    runs-on: macos-26
-    timeout-minutes: 90
+  # ── How many UI jobs? Ask the file, never a second list ───────────────────────────────
+  # The matrix is DERIVED from Tools/ui-test-shards.txt rather than written beside it. A hardcoded
+  # `shard: [1, 2, 3]` would be a second copy of the same fact, and the day someone adds a fourth
+  # line without editing the matrix, that shard's tests stop running and every job stays green.
+  # `UITestShardCoverageTests` already guarantees every class is on some line; this guarantees
+  # every line gets a runner. Between them there is no way to add a UI test that silently never
+  # runs.
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      shards: ${{ steps.read.outputs.shards }}
     steps:
       - uses: actions/checkout@v4
-
-      # ── Refuse an unusable toolchain in the first ten seconds ──────────────────────
-      # Apple rejects uploads built with an SDK older than iOS 26. The first run of this
-      # workflow discovered that FORTY MINUTES in, at the upload, having already run the
-      # whole suite — the failure was knowable before a single test. So the check moved
-      # here, and it fails loudly rather than leaving a 40-minute run to die at the end.
-      # Selecting the newest installed Xcode rather than a hardcoded path, because a
-      # pinned /Applications/Xcode_X.app vanishes with the next runner image bump.
-      - name: Select the newest Xcode, and refuse an SDK too old to upload
+      - id: read
         run: |
           set -euo pipefail
-          newest="$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)"
-          if [ -n "$newest" ]; then
-            echo "selecting $newest"
-            sudo xcode-select -s "$newest/Contents/Developer"
-          fi
-          xcodebuild -version
-          sdk="$(xcodebuild -showsdks | sed -n 's/.*-sdk iphoneos\([0-9][0-9]*\).*/\1/p' | sort -n | tail -1)"
-          echo "newest iOS SDK: $sdk"
-          if [ -z "$sdk" ] || [ "$sdk" -lt 26 ]; then
-            echo "::error::iOS SDK $sdk is too old. App Store Connect requires iOS 26 or"
-            echo "::error::later. Installed Xcodes: $(ls -d /Applications/Xcode*.app | tr '\n' ' ')"
-            exit 1
-          fi
-          xcrun simctl --version || true
-          swift --version
+          n="$(grep -cvE '^[[:space:]]*(#|$)' Tools/ui-test-shards.txt || true)"
+          [ "${n:-0}" -ge 1 ] || { echo "::error::Tools/ui-test-shards.txt names no shards"; exit 1; }
+          echo "sharding the UI suite $n ways"
+          echo "shards=$(seq 1 "$n" | jq -R . | jq -sc .)" >> "$GITHUB_OUTPUT"
 
-      # ── The seed ───────────────────────────────────────────────────────────────────
-      # ~103 MB, git-ignored, and mandatory: without it 13 tests fail on `seedURL -> nil`
-      # and the app ships empty. Resolved from the published manifest and verified by
-      # sha256 -- see Tools/fetch_seed.sh for why a fixed "latest" path is not safe.
-      - name: Fetch and verify the seed
-        run: bash Tools/fetch_seed.sh "$GITHUB_WORKSPACE"
+  # ── The unit suite, and the only place warnings are certified ─────────────────────────
+  unit:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/prepare
+        id: prep
 
-      # ── The suite ──────────────────────────────────────────────────────────────────
-      - name: Boot the simulator
-        id: sim
+      - name: Run the unit suite, and judge the log rather than the exit code
         run: |
           set -euo pipefail
-          # A CANDIDATE LIST, not one name: the runner image decides which simulators
-          # exist, and it moves. macos-26 has no "iPhone 16 Pro" at all, which is how the
-          # first macos-26 run died. Each name is matched with a trailing " (" so
-          # "iPhone 17 Pro" cannot also match "iPhone 17 Pro Max" — a wider screen changes
-          # what the UI suite sees, and run_tests.sh stamps screen-width-pt for exactly
-          # that reason. Ordered by preference; the whole available list is printed either
-          # way, so a future image bump is diagnosable from the log alone.
-          echo "available devices:"
-          xcrun simctl list devices available | grep -E "^\s+iPhone" || true
-          udid=""
-          for name in "iPhone 17 Pro" "iPhone 17" "iPhone 16 Pro" "iPhone 16"; do
-            udid="$(xcrun simctl list devices available \
-              | grep -F "$name (" \
-              | head -1 \
-              | sed -E 's/.*\(([0-9A-Fa-f-]{36})\).*/\1/')"
-            if [ -n "$udid" ]; then SIMULATOR="$name"; break; fi
-          done
-          [ -n "$udid" ] || { echo "::error::none of the candidate iPhone simulators exist on this image"; exit 1; }
-          echo "using $SIMULATOR $udid"
-          xcrun simctl boot "$udid" || true
-          xcrun simctl bootstatus "$udid" -b
-          # The unit suite hangs forever on a simulator that never granted camera access.
-          xcrun simctl privacy "$udid" grant camera "$BUNDLE_ID" || true
-          echo "udid=$udid" >> "$GITHUB_OUTPUT"
-
-      - name: Run the suite, and judge the log rather than the exit code
-        run: |
-          set -euo pipefail
-          Tools/run_tests.sh "${{ steps.sim.outputs.udid }}" "$RUNNER_TEMP/ci.log" \
+          Tools/run_tests.sh "${{ steps.prep.outputs.udid }}" "$RUNNER_TEMP/unit.log" \
+            -only-testing:CypressTests \
             -derivedDataPath "$RUNNER_TEMP/dd"
-          Tools/verify_test_log.sh "$RUNNER_TEMP/ci.log"
+          Tools/verify_test_log.sh "$RUNNER_TEMP/unit.log"
 
+      # Certified here and nowhere else. A fresh DerivedData is what makes the count mean
+      # anything (E203) and this job is the one that builds into one; the UI shards would each
+      # re-certify the same number from the same source for no added confidence.
       - name: Certify the zero-warning line
-        run: Tools/verify_test_log.sh --warnings "$RUNNER_TEMP/ci.log"
+        run: Tools/verify_test_log.sh --warnings "$RUNNER_TEMP/unit.log"
 
       - name: Keep the log, whatever happened
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-log
-          path: ${{ runner.temp }}/ci.log
+          name: unit-log
+          path: ${{ runner.temp }}/unit.log
           if-no-files-found: warn
 
-      # ── The build number ───────────────────────────────────────────────────────────
+  # ── The UI suite, one shard per runner ────────────────────────────────────────────────
+  ui:
+    needs: plan
+    runs-on: macos-26
+    timeout-minutes: 60
+    strategy:
+      # A red shard must not cancel its siblings. The point of a release gate is to learn
+      # everything that is wrong in one run, and cancelling turns three findings into one.
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.plan.outputs.shards) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/prepare
+        id: prep
+
+      - name: Run UI shard ${{ matrix.shard }}
+        run: |
+          set -euo pipefail
+          line="$(grep -vE '^[[:space:]]*(#|$)' Tools/ui-test-shards.txt | sed -n "${{ matrix.shard }}p")"
+          # Cannot happen while the matrix comes from this same file — asserted anyway, because
+          # an empty argument list makes xcodebuild run the WHOLE suite, and a shard that
+          # quietly ran everything would look like a pass while taking 28 minutes.
+          [ -n "$line" ] || { echo "::error::shard ${{ matrix.shard }} has no line in Tools/ui-test-shards.txt"; exit 1; }
+          # Split on newlines from `tr`, NOT on the shell's word splitting. `for class in $line`
+          # reads correctly in bash and produces ONE argument in zsh, which does not word-split
+          # unquoted expansions — so the same line yields four -only-testing: flags on the runner
+          # and one malformed flag when a maintainer dry-runs it locally. That divergence is how
+          # CLAUDE.md's `grep [x]codebuild` check came to pass vacuously; this one behaves the same
+          # everywhere.
+          args=()
+          while IFS= read -r class; do
+            [ -n "$class" ] || continue
+            args+=("-only-testing:CypressUITests/$class")
+          # `printf '%s\n'`, not `printf '%s'`: without the trailing newline `read` returns false
+          # on the last field and the loop discards it, so every shard silently drops its final
+          # class — 11 of 14 classes ran when this was first written, and all three jobs were
+          # green. The count assertion below is what turns that into a red rather than a quiet
+          # gap in coverage.
+          done < <(printf '%s\n' "$line" | tr ' ' '\n')
+          # An empty list makes xcodebuild run the WHOLE suite: a shard that quietly ran
+          # everything would pass while taking 28 minutes and telling nobody why.
+          [ "${#args[@]}" -ge 1 ] || { echo "::error::shard ${{ matrix.shard }} parsed to no test classes"; exit 1; }
+          echo "shard ${{ matrix.shard }} runs ${#args[@]} class(es): $line"
+          Tools/run_tests.sh "${{ steps.prep.outputs.udid }}" "$RUNNER_TEMP/ui-${{ matrix.shard }}.log" \
+            "${args[@]}" \
+            -derivedDataPath "$RUNNER_TEMP/dd"
+          Tools/verify_test_log.sh "$RUNNER_TEMP/ui-${{ matrix.shard }}.log"
+
+      - name: Keep the log, whatever happened
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-log-${{ matrix.shard }}
+          path: ${{ runner.temp }}/ui-${{ matrix.shard }}.log
+          if-no-files-found: warn
+
+  # ── Archive, upload, leave exactly one testable build ─────────────────────────────────
+  # `needs` both, so a red anywhere stops the upload. GitHub skips a needs-job when any dependency
+  # fails, and a skipped job is not a passed job — nothing here has to re-check that the tests were
+  # green, because it does not run otherwise.
+  release:
+    needs: [unit, ui]
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      # No simulator: this job archives for a device and never runs a test. Booting one costs
+      # 2.5 minutes to sit idle.
+      - uses: ./.github/actions/prepare
+        with:
+          boot-simulator: "false"
+
+      # ── The build number ─────────────────────────────────────────────────────────────
       # Asked of App Store Connect, never read from the repo. The committed
-      # CURRENT_PROJECT_VERSION is 1 while App Store Connect already holds 3 (#196), so a
-      # number taken from the project would be rejected as a duplicate. Passed to
-      # xcodebuild as a setting override, which leaves project.pbxproj untouched --
-      # CLAUDE.md forbids editing it, and this is why that costs nothing.
+      # CURRENT_PROJECT_VERSION is 1 while App Store Connect already holds 4 (#196), so a number
+      # taken from the project would be rejected as a duplicate. Passed to xcodebuild as a setting
+      # override, which leaves project.pbxproj untouched — CLAUDE.md forbids editing it, and this
+      # is why that costs nothing.
       - name: Ask App Store Connect for the next build number
         id: build_number
         env:
@@ -159,19 +214,18 @@ jobs:
           ASC_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
         run: |
           set -euo pipefail
-          # A venv, not `pip install` into the system Python: the runner's Homebrew Python
-          # is externally managed and refuses under PEP 668. --break-system-packages would
-          # also "work" and is the wrong trade — it risks the runner's own toolchain to
-          # save one command.
+          # A venv, not `pip install` into the system Python: the runner's Homebrew Python is
+          # externally managed and refuses under PEP 668. --break-system-packages would also
+          # "work" and is the wrong trade — it risks the runner's own toolchain to save one
+          # command.
           python3 -m venv "$RUNNER_TEMP/venv"
           "$RUNNER_TEMP/venv/bin/pip" install --quiet --disable-pip-version-check pyjwt cryptography
           n="$("$RUNNER_TEMP/venv/bin/python" Tools/appstore_connect.py next-build-number)"
           echo "next build number: $n"
           echo "n=$n" >> "$GITHUB_OUTPUT"
 
-      # ── Archive, export, upload ────────────────────────────────────────────────────
-      # The API key does signing-asset management AND the upload, so no distribution
-      # certificate or provisioning profile needs to live in a secret.
+      # The API key does signing-asset management AND the upload, so no distribution certificate
+      # or provisioning profile needs to live in a secret.
       - name: Write the API key where xcodebuild expects it
         env:
           ASC_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
@@ -219,11 +273,11 @@ jobs:
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
             | tail -30
 
-      # ── One testable build, as asked ───────────────────────────────────────────────
-      # Processing is asynchronous: the build is not in App Store Connect the moment the
-      # upload returns. appstore_connect.py REFUSES to expire anything if it cannot find
-      # the build it is meant to protect, so a slow processing run leaves the previous
-      # build testable rather than leaving none at all.
+      # ── One testable build, as asked ─────────────────────────────────────────────────
+      # Processing is asynchronous: the build is not in App Store Connect the moment the upload
+      # returns. appstore_connect.py REFUSES to expire anything if it cannot find the build it is
+      # meant to protect, so a slow processing run leaves the previous build testable rather than
+      # leaving none at all.
       - name: Wait for processing, then expire every other build
         env:
           ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
@@ -241,8 +295,9 @@ jobs:
           echo "The upload may still be processing. Nothing was expired."
           exit 1
 
-      # ── What shipped ───────────────────────────────────────────────────────────────
-      # #196: the repo could not previously answer this. A tag can.
+      # ── What shipped ─────────────────────────────────────────────────────────────────
+      # #196: the repo could not previously answer this. A tag can — and it matters more now that
+      # docs-only commits do not deploy, so main can be ahead of the newest build.
       - name: Tag the commit that shipped
         run: |
           set -euo pipefail

@@ -1,0 +1,41 @@
+# Which XCUITest classes run on which CI runner.
+#
+# One shard per non-comment line; class names separated by spaces. `.github/workflows/testflight.yml`
+# reads line N for matrix entry N and turns it into `-only-testing:CypressUITests/<Class>` arguments.
+#
+# WHY THIS FILE EXISTS RATHER THAN A LIST IN THE YAML. `UITestShardCoverageTests` reads it and fails
+# the unit suite if any class in CypressUITests/ is missing from it, named twice, or named here but
+# nonexistent. A shard list that can drift is a false green waiting to happen: a UI test class that
+# belongs to no shard never runs, and CI stays green while it does not. That failure has to be
+# impossible to reach by forgetting, so the check lives in a test rather than in a habit.
+#
+# ADDING A UI TEST CLASS: put it on whichever line is shortest. The unit suite will tell you if you
+# forget; it will not tell you if you unbalance it.
+#
+# BALANCE, measured on CI run 30846300488 (macos-26-arm64, iPhone 17 Pro, 82 tests, 1701.6s total).
+# Re-measure before trusting these — they are a record of one run, not a property of the tests:
+#
+#   DeepLinkVoiceOverTests           28 tests   851.7s   <- 50% of the whole UI suite, alone
+#   MapFilterAccessibilityTests      10 tests   302.8s
+#   PrimaryCTAReachabilityTests      12 tests   147.1s
+#   MapSearchUITests                  5 tests    76.6s
+#   MapSuggestionUITests              5 tests    60.2s
+#   AccessibilityTreeTests            3 tests    47.0s
+#   SheetExitUITests                  4 tests    44.4s
+#   MapPanTabSwitchUITests            2 tests    34.7s
+#   AlmanacGroupTapTests              2 tests    32.4s
+#   PhotoDeletionReachabilityTests    2 tests    27.2s
+#   SheetHeightUITests                3 tests    23.1s
+#   AnonymizedPhotoNoticeUITests      2 tests    22.0s
+#   MapRecenterUITests                2 tests    19.9s
+#   MapCenteredStateUITests           2 tests    12.5s
+#
+# THE FLOOR IS ONE CLASS. `DeepLinkVoiceOverTests` is 851.7s on its own, so no arrangement of
+# whole classes puts the UI suite under ~14 minutes — splitting it further means splitting it by
+# test method, which is a list that breaks silently on a rename. Sharding stops here on purpose;
+# the real lever on that class is the 30s-per-test relaunch it pays, which would also shorten every
+# local run (ticketed separately).
+
+DeepLinkVoiceOverTests
+MapFilterAccessibilityTests PrimaryCTAReachabilityTests MapPanTabSwitchUITests MapRecenterUITests
+MapSearchUITests MapSuggestionUITests AccessibilityTreeTests SheetExitUITests AlmanacGroupTapTests PhotoDeletionReachabilityTests SheetHeightUITests AnonymizedPhotoNoticeUITests MapCenteredStateUITests

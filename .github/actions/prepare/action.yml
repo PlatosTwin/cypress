@@ -1,0 +1,92 @@
+# The setup every CI job that runs Cypress needs, in one place.
+#
+# The release workflow is four jobs now (plan, unit, ui × N shards, release) and each of them has
+# to select a toolchain, fetch the seed and boot a simulator. GitHub Actions has no YAML anchors,
+# so without a composite action those steps get copied five times — and a guard that exists in four
+# copies is a guard that will disagree with itself. Every reason below was paid for once already
+# and should not have to be re-learned per job.
+name: Prepare a Cypress runner
+description: Select the newest Xcode, refuse an old SDK, fetch and verify the seed, boot a simulator.
+
+inputs:
+  boot-simulator:
+    description: >
+      Boot a simulator and grant it camera. Set false for jobs that only archive — there is no
+      device to run on, and booting one costs 2.5 minutes for nothing.
+    required: false
+    default: "true"
+
+outputs:
+  udid:
+    description: The booted simulator's UDID, empty when boot-simulator was false.
+    value: ${{ steps.sim.outputs.udid }}
+  simulator:
+    description: The booted simulator's model name.
+    value: ${{ steps.sim.outputs.simulator }}
+
+runs:
+  using: composite
+  steps:
+    # ── Refuse an unusable toolchain in the first ten seconds ──────────────────────────
+    # Apple rejects uploads built with an SDK older than iOS 26. The first run of this pipeline
+    # discovered that FORTY MINUTES in, at the upload, having already run the whole suite — the
+    # failure was knowable before a single test. Selecting the newest installed Xcode rather than
+    # a hardcoded path, because a pinned /Applications/Xcode_X.app vanishes with the next image.
+    - name: Select the newest Xcode, and refuse an SDK too old to upload
+      shell: bash
+      run: |
+        set -euo pipefail
+        newest="$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)"
+        if [ -n "$newest" ]; then
+          echo "selecting $newest"
+          sudo xcode-select -s "$newest/Contents/Developer"
+        fi
+        xcodebuild -version
+        sdk="$(xcodebuild -showsdks | sed -n 's/.*-sdk iphoneos\([0-9][0-9]*\).*/\1/p' | sort -n | tail -1)"
+        echo "newest iOS SDK: $sdk"
+        if [ -z "$sdk" ] || [ "$sdk" -lt 26 ]; then
+          echo "::error::iOS SDK $sdk is too old. App Store Connect requires iOS 26 or"
+          echo "::error::later. Installed Xcodes: $(ls -d /Applications/Xcode*.app | tr '\n' ' ')"
+          exit 1
+        fi
+        swift --version
+
+    # ── The seed ───────────────────────────────────────────────────────────────────────
+    # ~103 MB, git-ignored, and mandatory: without it 13 tests fail on `seedURL -> nil` and the
+    # app ships empty. Resolved from the published manifest and verified by sha256 — see
+    # Tools/fetch_seed.sh for why a fixed "latest" path is not safe.
+    - name: Fetch and verify the seed
+      shell: bash
+      run: bash Tools/fetch_seed.sh "$GITHUB_WORKSPACE"
+
+    # ── A device ───────────────────────────────────────────────────────────────────────
+    - name: Boot the simulator
+      id: sim
+      if: inputs.boot-simulator == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        # A CANDIDATE LIST, not one name: the runner image decides which simulators exist, and it
+        # moves. macos-26 has no "iPhone 16 Pro" at all, which is how the first macos-26 run died.
+        # Each name is matched with a trailing " (" so "iPhone 17 Pro" cannot also match "iPhone 17
+        # Pro Max" — a wider screen changes what the UI suite sees, and run_tests.sh stamps
+        # screen-width-pt for exactly that reason. The whole available list is printed either way,
+        # so a future image bump is diagnosable from the log alone.
+        echo "available devices:"
+        xcrun simctl list devices available | grep -E "^\s+iPhone" || true
+        udid=""
+        for name in "iPhone 17 Pro" "iPhone 17" "iPhone 16 Pro" "iPhone 16"; do
+          udid="$(xcrun simctl list devices available \
+            | grep -F "$name (" \
+            | head -1 \
+            | sed -E 's/.*\(([0-9A-Fa-f-]{36})\).*/\1/')"
+          if [ -n "$udid" ]; then simulator="$name"; break; fi
+        done
+        [ -n "$udid" ] || { echo "::error::none of the candidate iPhone simulators exist on this image"; exit 1; }
+        echo "using $simulator $udid"
+        xcrun simctl boot "$udid" || true
+        xcrun simctl bootstatus "$udid" -b
+        # The unit suite hangs forever on a simulator that never granted camera access.
+        xcrun simctl privacy "$udid" grant camera app.cypress.Cypress || true
+        echo "udid=$udid" >> "$GITHUB_OUTPUT"
+        echo "simulator=$simulator" >> "$GITHUB_OUTPUT"
