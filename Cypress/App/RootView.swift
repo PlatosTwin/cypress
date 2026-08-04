@@ -321,7 +321,16 @@ struct RootView: View {
                 caption: caption,
                 treeID: treeID,
                 api: data.api,
-                onClose: { router.sheet = nil }
+                onClose: { router.sheet = nil },
+                // The way onward E173 named and did not build. `sheet` first, so the cover is on its
+                // way out before the stack under it changes — `AppRouter.goToTab`'s ordering, for
+                // its reason. `unlessAlreadyOnTop` because this viewer is opened from screen 20's
+                // own rows as well as from the hero: from there the control means "back to the set",
+                // and an unconditional push would stack a second identical browser (ERRATA E151).
+                onOpenBrowser: {
+                    router.sheet = nil
+                    router.push(.photos(treeID), unlessAlreadyOnTop: true)
+                }
             )
 
         default:

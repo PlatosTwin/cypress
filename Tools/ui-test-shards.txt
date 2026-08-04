@@ -31,6 +31,11 @@
 #   MapRecenterUITests                         18.4s
 #   MapCenteredStateUITests                    17.8s
 #
+# NOT FROM THAT RUN, and kept apart from the table above so it cannot be read as if it were:
+# `PhotoBrowserReachabilityTests` was added afterwards and has never been on CI. It took 33.2s
+# (2 tests) in a whole-suite run on a local iPhone 16 Plus simulator, which is a different machine
+# and a different device from every number above.
+#
 # THE FLOOR WAS ONE CLASS, AND #204 MOVED IT. `DeepLinkVoiceOverTests` was 462.8s — 35% of the
 # suite — because two of its 28 tests SWEEP every deep-linked screen, launching once per screen,
 # where the other 26 examine one screen each. Those two are now `DeepLinkSweepTests`, which is a
@@ -44,6 +49,6 @@
 # repeats, not the tests it runs.
 
 DeepLinkVoiceOverTests MapCenteredStateUITests
-MapFilterAccessibilityTests AnonymizedPhotoNoticeUITests MapRecenterUITests
+MapFilterAccessibilityTests AnonymizedPhotoNoticeUITests MapRecenterUITests PhotoBrowserReachabilityTests
 DeepLinkSweepTests PrimaryCTAReachabilityTests SheetHeightUITests AlmanacGroupTapTests
 SheetExitUITests MapSearchUITests MapSuggestionUITests MapPanTabSwitchUITests PhotoDeletionReachabilityTests AccessibilityTreeTests
