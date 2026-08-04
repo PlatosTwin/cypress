@@ -31,6 +31,26 @@ conflicts with convenience, the rule wins.
   into a fresh DerivedData directory to measure — a reused one recompiles nothing and reports
   nothing, while a green test line survives it unchanged.
 - Never write a conclusion before reading the output that supports it.
+- **Calibrate the instrument before you trust the reading.** The rule above is necessary and not
+  sufficient: the output can be answering a different question than the one you asked, and it looks
+  identical to an answer. Before believing a count, a grep or a diff, **run it against a case whose
+  answer you already know** — one command, and it is the only thing that separates a measurement
+  from a coincidence. Four wrong conclusions in one day (2026-08-04) came from ad-hoc commands, not
+  from the app or CI:
+  - `grep -oE '^### E[0-9]+'` stops at the digits, so `E124-B` reports as a second `E124`. Every
+    sub-numbered entry looked like a duplicate, and a ticket was filed for a defect that did not
+    exist.
+  - an unquoted `$VAR` holding 25 filenames arrived as **one** argument, because zsh does not
+    word-split; `verify_test_log.sh` then correctly said it could not certify that "file". Use
+    `xargs`, or an array. Same family as `grep [x]codebuild` and `for c in $line`.
+  - a workflow log was grepped for its own `echo` lines, which appear in the log as **command text**
+    before they ever run. Strip the ANSI-escaped command echoes, or you are reading the script
+    rather than the run.
+  - `git stash pop` with no argument popped a stash from a deleted agent worktree, nine days old.
+    A `pop` acts on whatever it finds.
+  This project's tooling is gated — `run_tests.sh`, `verify_test_log.sh`,
+  `UITestShardCoverageTests`, `DragGestureGateTests`. **The commands you type to make claims about
+  that tooling are not.** They are the least guarded thing you touch and the easiest to believe.
 - Prove every new test can fail: break the code, watch red, restore. Assert presence, not
   absence; assert facts, not phrasing.
 - **A red-proof must go red for the reason you expect — read the failure message, not just the
