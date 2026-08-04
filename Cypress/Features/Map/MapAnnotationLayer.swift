@@ -126,8 +126,18 @@ final class TreeClusterAnnotation: NSObject, MKAnnotation {
 final class UserDotAnnotation: NSObject, MKAnnotation {
     @objc dynamic var coordinate: CLLocationCoordinate2D
 
-    init(coordinate: CLLocationCoordinate2D) {
+    /// Which way the reader is facing, in degrees clockwise from true north, or `nil` for "do not
+    /// draw a direction" (task #155).
+    ///
+    /// **Deliberately not `@objc dynamic`.** MapKit observes `coordinate` and moves the view for
+    /// us; nothing in MapKit knows what a heading is, so KVO here would buy an observer nobody has.
+    /// `Coordinator.applyUserHeading` hands the angle to the marker view instead — which is also
+    /// where the map's own rotation is subtracted, and that cannot be done from the annotation.
+    var headingDegrees: Double?
+
+    init(coordinate: CLLocationCoordinate2D, headingDegrees: Double? = nil) {
         self.coordinate = coordinate
+        self.headingDegrees = headingDegrees
     }
 }
 
@@ -272,6 +282,10 @@ struct MapAnnotationLayer: UIViewRepresentable {
     /// The four color slots, as `MapModel` ranked them over exactly these pins.
     var speciesPalette: MapSpeciesPalette = .empty
     let userCoordinate: Coordinate?
+    /// Which way the reader is facing, in degrees clockwise from true north (task #155). `nil` on
+    /// the two one-tree screens, and `nil` whenever the magnetometer cannot be trusted — in both
+    /// cases the dot draws bare, which is the whole fallback.
+    var userHeadingDegrees: Double?
     let selectedPinID: UUID?
 
     var onCameraChange: (BoundingBox, Int) -> Void
@@ -408,7 +422,7 @@ struct MapAnnotationLayer: UIViewRepresentable {
             palette: speciesPalette,
             on: mapView
         )
-        context.coordinator.syncUserDot(userCoordinate, on: mapView)
+        context.coordinator.syncUserDot(userCoordinate, heading: userHeadingDegrees, on: mapView)
         context.coordinator.applySelection(selectedPinID, on: mapView)
     }
 
@@ -479,6 +493,7 @@ struct MapAnnotationLayer: UIViewRepresentable {
             pinAnnotations.removeAll()
             clusterAnnotations.removeAll()
             userDot = nil
+            appliedHeadingAngle = nil
             wash = nil
             appliedSequence = nil
         }
@@ -622,6 +637,16 @@ struct MapAnnotationLayer: UIViewRepresentable {
         /// lost by waiting, because `AimableMapView.onFirstLayout` guarantees the aim arrives — which
         /// is the job that hook now has, and the only one it does.
         func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
+            // The cone is drawn relative to the screen and the reader can rotate the basemap under
+            // it, so a camera that turns has to move the cone the other way or it stops pointing at
+            // the same piece of the world (task #155). Not animated: this arrives once per frame of
+            // the reader's own gesture, and a quarter-second sweep chasing a live rotation would
+            // drag behind the fingers doing it. `applyUserHeading` compares before it does anything,
+            // so a pan that only translates costs one subtraction.
+            //
+            // Above the gate below rather than under it, because it is not about reporting a camera:
+            // this runs whether or not the layer has ever aimed the map.
+            applyUserHeading(on: mapView, animated: false)
             guard appliedSequence != nil else { return }
             parent.onCameraChange(
                 BoundingBox(mapView.region),
@@ -648,6 +673,10 @@ struct MapAnnotationLayer: UIViewRepresentable {
         /// `setRegion`, which this file calls from `updateUIView`, so a direct write lands in the
         /// middle of a SwiftUI view update and is discarded. See `echo(_:)` and ERRATA E168.
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
+            // The settled camera is the authority on the map's rotation as well as its region, and a
+            // flown camera settles without `mapViewDidChangeVisibleRegion` necessarily having seen
+            // the last frame of it.
+            applyUserHeading(on: mapView, animated: false)
             echo(mapView.region)
         }
 
@@ -746,14 +775,20 @@ struct MapAnnotationLayer: UIViewRepresentable {
         /// same rule `applyCameraIfChanged` follows), and a teleport past
         /// `MapLayout.userDotSnapDegrees` (an animation would claim a journey that never
         /// happened).
-        func syncUserDot(_ coordinate: Coordinate?, on mapView: MKMapView) {
+        func syncUserDot(_ coordinate: Coordinate?, heading: Double?, on mapView: MKMapView) {
             guard let coordinate else {
                 if let userDot { mapView.removeAnnotation(userDot) }
                 userDot = nil
+                appliedHeadingAngle = nil
                 return
             }
             let next = coordinate.clLocationCoordinate
             if let userDot {
+                // **Before the coordinate comparison below, not after it.** That comparison returns
+                // early for a reader standing still, which is exactly the reader who is turning on
+                // the spot — put the heading after it and the cone would move only when the dot did.
+                userDot.headingDegrees = heading
+                applyUserHeading(on: mapView, animated: true)
                 let current = userDot.coordinate
                 guard current.latitude != next.latitude
                         || current.longitude != next.longitude else { return }
@@ -774,9 +809,37 @@ struct MapAnnotationLayer: UIViewRepresentable {
                 }
                 return
             }
-            let dot = UserDotAnnotation(coordinate: next)
+            let dot = UserDotAnnotation(coordinate: next, headingDegrees: heading)
             userDot = dot
+            appliedHeadingAngle = nil
             mapView.addAnnotation(dot)
+            // No `applyUserHeading` here: MapKit has not built a view for this annotation yet.
+            // `mapView(_:viewFor:)` puts the cone on at the right angle the moment it does.
+        }
+
+        // MARK: The direction cone (task #155)
+
+        /// The screen angle the cone was last set to, so a pan that changes nothing does nothing.
+        ///
+        /// It is the *screen* angle rather than the reader's heading because both inputs move: the
+        /// reader turns, and the reader can turn the map. Recording the answer is what makes both
+        /// of the callers below — one per frame of a rotation gesture — cost a comparison.
+        private var appliedHeadingAngle: Double?
+
+        /// Hands the marker view the angle to draw the cone at, if it has changed.
+        ///
+        /// **The map's own rotation is subtracted here** (`MapHeading.screenAngleDegrees`), because
+        /// this is the only place that knows both numbers. An `MKAnnotationView` stays square to the
+        /// screen while the basemap turns under it, so a cone drawn at the raw compass bearing would
+        /// be correct only on a north-up map and would quietly lie on any other.
+        func applyUserHeading(on mapView: MKMapView, animated: Bool) {
+            guard let userDot, let view = mapView.view(for: userDot) as? MapMarkerView else { return }
+            let angle = userDot.headingDegrees.map {
+                MapHeading.screenAngleDegrees(heading: $0, cameraHeading: mapView.camera.heading)
+            }
+            guard angle != appliedHeadingAngle else { return }
+            appliedHeadingAngle = angle
+            view.setHeading(angle, animated: animated)
         }
 
         /// A tapped pin grows a little so the card and the pin read as one selection
@@ -822,6 +885,16 @@ struct MapAnnotationLayer: UIViewRepresentable {
             if let pin = annotation as? TreePinAnnotation {
                 view?.setSelectedAppearance(pin.pin.id == selectedPinID)
             }
+            // A dot arriving on the map, or a recycled view taking the dot back on, starts at the
+            // angle the reader is facing **now** — never animated, because there is nothing to turn
+            // from. Same rule the dot's own first fix follows in `syncUserDot`.
+            if let dot = annotation as? UserDotAnnotation {
+                let angle = dot.headingDegrees.map {
+                    MapHeading.screenAngleDegrees(heading: $0, cameraHeading: mapView.camera.heading)
+                }
+                appliedHeadingAngle = angle
+                view?.setHeading(angle, animated: false)
+            }
             return view
         }
 
@@ -849,6 +922,18 @@ final class MapMarkerView: MKAnnotationView {
     static let reuseIdentifier = "cypress.marker"
 
     private var pulseLayer: CALayer?
+    /// The direction cone on the reader's own dot, and nothing else's (task #155).
+    private var headingConeLayer: CALayer?
+    /// The angle the cone is turned to, **unwrapped** — it accumulates past 360° and below 0°
+    /// rather than being brought back into a circle.
+    ///
+    /// **That is what makes the cone take the short way round.** `transform.rotation.z` is a number,
+    /// not a bearing: animating it from 350 to 10 spins the cone 340° backwards through south, which
+    /// is what a reader wobbling past north would see on every other reading. Adding
+    /// `MapHeading.shortestDelta` to a running total means the animation is always given the two
+    /// degrees the reader actually turned. It is readable so a test can assert that — the rotation
+    /// is on the render server and no screenshot can catch which way it went round.
+    private(set) var headingRotationDegrees: Double?
     /// The two rings of the selection reticle. See `setSelectedAppearance`.
     ///
     /// Readable rather than private so `MapSpeciesColorTests` can assert the size these end up on the
@@ -870,6 +955,9 @@ final class MapMarkerView: MKAnnotationView {
         // the one thing on this view that cannot resolve itself off the trait collection.
         registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (view: MapMarkerView, _) in
             view.redrawReticleForCurrentAppearance()
+            // The cone is a `CGColor` in a layer too, and `refreshAllMarkerImages` cannot help it:
+            // that pass replaces bitmaps, and the cone is not one.
+            if let cone = view.headingConeLayer { view.applyConeColors(to: cone) }
         }
     }
 
@@ -988,6 +1076,114 @@ final class MapMarkerView: MKAnnotationView {
         }
     }
 
+    // MARK: The direction cone (task #155)
+
+    /// Points the cone at `degrees` on the glass, or takes it off entirely for `nil`.
+    ///
+    /// `nil` is the fallback the whole feature turns on: no magnetometer, a `headingAccuracy` below
+    /// zero, a provider that has been stopped, or a screen that never asked. In every one of those
+    /// the reader gets the bare dot they had before this task, which is the one honest thing to draw
+    /// when nobody knows which way they are facing.
+    ///
+    /// **It rotates on the render server, like everything else on this view.** A `CABasicAnimation`
+    /// on one sublayer's `transform.rotation.z` costs the main thread nothing per frame and costs
+    /// SwiftUI nothing at all — the E139 class this file exists to keep out, and the reason #149's
+    /// glide was built the same way. The cone is a layer for the same reason the pulse and the
+    /// reticle are: it adds no entry to `MapPinImage`'s countable cache.
+    ///
+    /// Not animated on the first heading (there is nothing to turn *from*) or under Reduce Motion
+    /// (the direction is the answer, not the way it is delivered) — the two exemptions `syncUserDot`
+    /// already makes for the dot's own movement.
+    func setHeading(_ degrees: Double?, animated: Bool) {
+        guard let degrees else {
+            headingConeLayer?.removeFromSuperlayer()
+            headingConeLayer = nil
+            headingRotationDegrees = nil
+            return
+        }
+        let cone = headingConeLayer ?? makeConeLayer()
+        let previous = headingRotationDegrees
+        let target = (previous ?? degrees)
+            + MapHeading.shortestDelta(from: previous ?? degrees, to: degrees)
+        headingRotationDegrees = target
+
+        let radians = MapHeading.radians(target)
+        // Where the cone is *drawn* right now, which during a swing is not where the model layer
+        // says it is. Retargeting mid-turn has to start from what the reader can see.
+        let from = cone.presentation()?.value(forKeyPath: "transform.rotation.z") as? Double
+            ?? previous.map(MapHeading.radians)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        cone.setValue(radians, forKeyPath: "transform.rotation.z")
+        CATransaction.commit()
+
+        guard animated, previous != nil, !UIAccessibility.isReduceMotionEnabled,
+              let from, from != radians else { return }
+        let swing = CABasicAnimation(keyPath: "transform.rotation.z")
+        swing.fromValue = from
+        swing.toValue = radians
+        swing.duration = MapLayout.userHeadingRotationSeconds
+        swing.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        cone.add(swing, forKey: "cypressHeading")
+    }
+
+    /// The cone itself: a wedge of the dot's own blue, fading out along its length.
+    ///
+    /// Drawn pointing **up** and turned by the layer's rotation, so the geometry is written once and
+    /// the only thing that ever changes is one angle. Up is `-90°` in UIKit's y-down coordinates.
+    ///
+    /// A `CAGradientLayer` under a wedge-shaped mask rather than a filled `CAShapeLayer`: a hard
+    /// arc at the far end would read as a fact about how far the reader can see, which it is not.
+    /// The mask turns with the layer, so the fade stays anchored to the dot.
+    private func makeConeLayer() -> CALayer {
+        let radius = MapLayout.userHeadingConeRadius
+        let box = CGRect(x: 0, y: 0, width: radius * 2, height: radius * 2)
+
+        let wedge = CAShapeLayer()
+        wedge.bounds = box
+        wedge.position = CGPoint(x: radius, y: radius)
+        let center = CGPoint(x: radius, y: radius)
+        let half = MapLayout.userHeadingConeDegrees / 2
+        let path = UIBezierPath()
+        path.move(to: center)
+        path.addArc(
+            withCenter: center,
+            radius: radius,
+            startAngle: CGFloat(MapHeading.radians(-90 - half)),
+            endAngle: CGFloat(MapHeading.radians(-90 + half)),
+            clockwise: true
+        )
+        path.close()
+        wedge.path = path.cgPath
+        wedge.fillColor = UIColor.black.cgColor
+
+        let cone = CAGradientLayer()
+        cone.type = .radial
+        cone.bounds = box
+        cone.position = CGPoint(x: bounds.midX, y: bounds.midY)
+        cone.startPoint = CGPoint(x: 0.5, y: 0.5)
+        cone.endPoint = CGPoint(x: 1, y: 1)
+        cone.mask = wedge
+        // Under the dot's own bitmap, the way the pulse and the reticle sit under theirs.
+        cone.zPosition = -1
+        layer.addSublayer(cone)
+        headingConeLayer = cone
+        applyConeColors(to: cone)
+        return cone
+    }
+
+    /// `CypressColor.gpsDot`, at the cone's opacity where it meets the dot and at nothing where it
+    /// ends. `resolvedColor` because a `CALayer` holds `CGColor`s and cannot resolve a dynamic one
+    /// itself — the same reason the reticle redraws on a trait change rather than being told a color.
+    private func applyConeColors(to cone: CALayer) {
+        guard let gradient = cone as? CAGradientLayer else { return }
+        let blue = UIColor(CypressColor.gpsDot).resolvedColor(with: traitCollection)
+        gradient.colors = [
+            blue.withAlphaComponent(MapLayout.userHeadingConeOpacity).cgColor,
+            blue.withAlphaComponent(0).cgColor,
+        ]
+    }
+
     /// **czPulse**, on the amber pin and nothing else — "reserved solely for 'this tree needs
     /// something'" (SCREENS.md §1.1).
     ///
@@ -1039,6 +1235,7 @@ final class MapMarkerView: MKAnnotationView {
     override func layoutSubviews() {
         super.layoutSubviews()
         pulseLayer?.position = CGPoint(x: bounds.midX, y: bounds.midY)
+        headingConeLayer?.position = CGPoint(x: bounds.midX, y: bounds.midY)
         for layer in reticleLayers { layer.position = CGPoint(x: bounds.midX, y: bounds.midY) }
     }
 
@@ -1057,5 +1254,8 @@ final class MapMarkerView: MKAnnotationView {
         pulseLayer?.removeFromSuperlayer()
         pulseLayer = nil
         setReticle(false)
+        // A view that carried the reader's dot is handed to a tree next. A cone left on it would be
+        // a direction pointer on a pin, which is not a mark this app has.
+        setHeading(nil, animated: false)
     }
 }
