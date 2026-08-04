@@ -23,16 +23,23 @@
 //  tab is screen 12's only entrance in the entire product. A journal that simply took the tab would
 //  have deleted a finished, fully specified screen from the app without removing a line of its code,
 //  and every test would still have passed — which is ERRATA E57 exactly, reintroduced by the round
-//  that was supposed to be closing E99. So there are two segments and the almanac is one of them.
+//  that was supposed to be closing E99. So there are (now three) segments and the almanac is one of
+//  them.
+//
+//  ── The third segment ──────────────────────────────────────────────────────────────────────
+//  `City` is the owner's own ask — "similar but not identical stats and views to what's on the
+//  neighborhood view" — and it sits after the almanac in `JournalSegment` for the same reason the
+//  almanac sits after the journal: each segment is a wider ring than the one before it, your own
+//  record first.
 //
 //  ── Why C5, when screen 08's pill row exists ──────────────────────────────────────────────
 //  ERRATA E46 settled that 08's three-pill row is **08's own drawn geometry** and deliberately not
 //  C5: different radius, a gap between separate pills rather than dividers inside one container, and
 //  08 is not among C5's listed users. That reasoning binds this screen in the opposite direction.
 //  This tab has no drawn geometry at all, so rule 8 sends it to the nearest specified thing — and
-//  the nearest specified thing to "pick which of these two views to show" is C5, the segmented
-//  control the app already draws on 05, 16 and D3. Borrowing 08's row would mean copying a geometry
-//  that SCREENS.md attaches to one specific screen onto a screen it never drew.
+//  the nearest specified thing to "pick which of these views to show" is C5, the segmented control
+//  the app already draws on 05, 16 and D3. Borrowing 08's row would mean copying a geometry that
+//  SCREENS.md attaches to one specific screen onto a screen it never drew.
 //
 
 import SwiftUI
@@ -97,6 +104,16 @@ struct JournalTabView: View {
                     coordinate: coordinate,
                     onOpenTree: onOpenTree,
                     onShowGroup: onShowGroup,
+                    onRequestLocation: onRequestLocation
+                )
+            case .city:
+                // Screen 12's own outbound affordances minus `onShowGroup`: nothing on the City
+                // segment counts a group of trees, only a species mix and a list of five, so there
+                // is no map destination to hand down.
+                CityView(
+                    api: api,
+                    coordinate: coordinate,
+                    onOpenTree: onOpenTree,
                     onRequestLocation: onRequestLocation
                 )
             }

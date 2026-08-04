@@ -117,6 +117,10 @@ enum DebugDeepLink {
         /// device's contributions, so on a device that has made none it is the empty state, which is
         /// the state worth photographing anyway.
         case journalList
+        /// The Journal tab's third segment, `City`. Draws from the same seed the other two read, so
+        /// on the shipped bundle it is never the cold-start state — both fused cities clear every
+        /// card's floor.
+        case journalCity
         case you                // 18
         case moderationReview   // the You tab with a lead's open review (ERRATA E124-B)
         /// The community add's pin step — a map with a movable pin, opened on its own.
@@ -386,6 +390,9 @@ enum DebugDeepLink {
             case .journalList:
                 router.tab = .journal
                 router.journalSegment = .journal
+            case .journalCity:
+                router.tab = .journal
+                router.journalSegment = .city
             case .you:
                 router.tab = .you
             case .pinAdjust:

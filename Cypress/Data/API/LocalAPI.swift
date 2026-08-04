@@ -18,6 +18,7 @@ public actor LocalAPI: CypressAPI {
     private let assertions = SpeciesAssertionStore()
     private let groveQueries: GroveQueries?
     private let almanacQueries: AlmanacQueries?
+    private let cityQueries: CityQueries?
     private let now: @Sendable () -> Date
 
     /// This installation's device id (D9). Contributions made before sign-in are attributed here.
@@ -65,6 +66,7 @@ public actor LocalAPI: CypressAPI {
         self.speciesQueries = store.seed.map { SpeciesQueries(schema: $0) }
         self.groveQueries = store.seed.map { GroveQueries(schema: $0) }
         self.almanacQueries = store.seed.map { AlmanacQueries(schema: $0) }
+        self.cityQueries = store.seed.map { CityQueries(schema: $0) }
         self.photoDirectory = photoDirectory
             ?? store.databaseURL.deletingLastPathComponent().appendingPathComponent("Photos", isDirectory: true)
     }
@@ -1177,6 +1179,97 @@ public actor LocalAPI: CypressAPI {
                     composition: composition,
                     coverage: coverage,
                     vacantSites: vacantSites
+                )
+            )
+        }
+    }
+
+    // MARK: - City
+
+    /// The Journal tab's `City` segment: a species contrast against the reader's own street, the
+    /// city's whole composition, and the oldest planting dates the city has on file.
+    ///
+    /// **The fused-bundle guarantee, in one sentence: every read below either takes an `idSpace` and
+    /// predicates on it, or is used only to resolve one.** `CityQueries`'s own header states why —
+    /// the shipped seed holds two cities under one attached schema with no `city_id` column, and a
+    /// read that forgot the predicate would be R48's defect, a count spanning both cities under one
+    /// city's name (here, under no name, which does not make an unscoped count honest — it is still
+    /// the wrong population).
+    public func city(near coordinate: Coordinate?) async throws -> CityAlmanac {
+        guard let coordinate, let speciesQueries, let almanacQueries, let cityQueries else { return .empty }
+
+        return try await store.queue.readConsistently { connection -> CityAlmanac in
+            // --- Which city. A fact off the nearest row, never a guess from the coordinate alone
+            // (`CityQueries.resolveIDSpace`'s own doc comment). Bounded by the same radius the
+            // almanac's own fallback area uses, so a reader this resolves a city for is a reader the
+            // almanac itself would not call out of range.
+            guard let citySpace = try cityQueries.resolveIDSpace(
+                near: coordinate,
+                radiusM: AlmanacLimits.fallbackRadiusM,
+                connection: connection
+            ) else {
+                return .empty
+            }
+
+            // --- The local scope, resolved exactly as the almanac resolves its own area (RULINGS
+            // R29): a named neighborhood where the seed carries one, a stated radius where it does
+            // not. This is what lets card 1 ask about the same "near you" the almanac already means,
+            // and what keeps this read from claiming ground the record has never covered — a city
+            // resolved above does not by itself prove the immediate area does too (a reader could be
+            // 1,199 m from the nearest tree and still resolve a city while `holdsAnyRecord` finds
+            // nothing inside a *tighter* box centered differently); in practice for this seed's two
+            // cities the two agree, and where they would not, the honest answer is no local mix
+            // rather than one borrowed from farther away than the almanac itself would use.
+            let localScope: AlmanacScope?
+            if let polygon = try speciesQueries.resolveNeighborhood(near: coordinate, connection: connection) {
+                localScope = .neighborhood(id: polygon.id, name: polygon.name)
+            } else {
+                let fallback = AlmanacScope.radius(center: coordinate, meters: AlmanacLimits.fallbackRadiusM)
+                localScope = try almanacQueries.holdsAnyRecord(scope: fallback, connection: connection)
+                    ? fallback : nil
+            }
+
+            // --- Card 1's local half, and card 1 & 2's citywide half. `AlmanacQueries.speciesMix`
+            // unmodified for the local read (ERRATA E38's whole-read discipline is already built into
+            // it); `CityQueries.speciesMix(idSpace:)` for the city-scoped one.
+            let localMix = try localScope.map { try almanacQueries.speciesMix(scope: $0, connection: connection) } ?? []
+            let localComposition = localMix.isEmpty ? nil : NeighborhoodComposition(
+                distinctSpeciesCount: localMix.count,
+                treeCount: localMix.reduce(0) { $0 + $1.treeCount },
+                leading: localMix
+            )
+
+            let cityMix = try cityQueries.speciesMix(idSpace: citySpace, connection: connection)
+            let cityComposition = cityMix.isEmpty ? nil : NeighborhoodComposition(
+                distinctSpeciesCount: cityMix.count,
+                treeCount: cityMix.reduce(0) { $0 + $1.treeCount },
+                leading: cityMix
+            )
+
+            // --- Card 3, the oldest on file. One row more than the card draws (`CityLimits
+            // .oldestRowLimit + 1`), so `CityPresentation` can tell whether the row just past its cut
+            // shares the last drawn row's year.
+            let heroPhotoIDs = try contributions.heroPhotoIDs(connection: connection)
+            let oldest = try cityQueries.oldestOnFile(
+                idSpace: citySpace,
+                limit: CityLimits.oldestRowLimit + 1,
+                connection: connection
+            ).map { found in
+                ElderTree(
+                    treeID: found.treeID,
+                    activeName: try contributions.activeName(treeID: found.treeID, connection: connection)?.name,
+                    speciesCommonName: found.speciesCommonName,
+                    address: found.address,
+                    plantedYear: found.plantedYear,
+                    heroPhotoID: heroPhotoIDs[found.treeID]
+                )
+            }
+
+            return CityAlmanac(
+                snapshot: CityAlmanac.Snapshot(
+                    localComposition: localComposition,
+                    cityComposition: cityComposition,
+                    oldest: oldest
                 )
             )
         }
