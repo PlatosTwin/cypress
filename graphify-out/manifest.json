@@ -2240,9 +2240,9 @@
     "semantic_hash": "1d09c704b1c84b3b3f7f0e9735a33fa0"
   },
   "CypressUITests/MapPanTabSwitchUITests.swift": {
-    "mtime": 1785767580.6292944,
-    "ast_hash": "b53ee931c896bdffa6eaa422c87470ff",
-    "semantic_hash": "b53ee931c896bdffa6eaa422c87470ff"
+    "mtime": 1785827224.5692225,
+    "ast_hash": "d9adf07acede117e024bdc6e4bc971e9",
+    "semantic_hash": ""
   },
   "CypressUITests/MapRecenterUITests.swift": {
     "mtime": 1785811758.7823124,
@@ -2260,8 +2260,8 @@
     "semantic_hash": "cfd0793fc4d8acc6735da26caff51ff9"
   },
   "CypressUITests/SheetExitUITests.swift": {
-    "mtime": 1785813626.42053,
-    "ast_hash": "1849018fe1cf04af38743c1629f801bd",
+    "mtime": 1785827243.3954158,
+    "ast_hash": "33388073110c02a56ed21202a59be670",
     "semantic_hash": ""
   },
   "CypressUITests/SheetHeightUITests.swift": {
@@ -2365,8 +2365,8 @@
     "semantic_hash": ""
   },
   "CypressUITests/UIWait.swift": {
-    "mtime": 1785813613.4616144,
-    "ast_hash": "8230cc99ef3aebf3b5673181f281e945",
+    "mtime": 1785827216.7967055,
+    "ast_hash": "3a39ce9b1ff72b445c0ae5d9b36d3091",
     "semantic_hash": ""
   },
   "CypressUITests/DeepLinkHarness.swift": {
@@ -2452,6 +2452,11 @@
   "docs/errata-pending/a-test-that-asserts-the-number-the-code-computed.md": {
     "mtime": 1785825235.4357176,
     "ast_hash": "5cd7891f823441541c007e816b49a2d0",
+    "semantic_hash": ""
+  },
+  "CypressTests/DragGestureGateTests.swift": {
+    "mtime": 1785827329.9459898,
+    "ast_hash": "469d192c51afb4234fd0c9ce62f52a43",
     "semantic_hash": ""
   }
 }

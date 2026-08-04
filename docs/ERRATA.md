@@ -13519,3 +13519,367 @@ describe the *city*, so the corrected build had nowhere to go but on top of an i
 is derived entirely from its *inputs' upstream dates* cannot express a change in the *pipeline*.
 Any versioning scheme that names only the data will eventually serve two different bytes under one
 name.
+
+### E220 — `headingAvailable()` answers for the base class, and answers no on every simulator (task #155)
+
+**Found:** 2026-08-03, on branch `heading-155` (task #155), iPhone 16 Pro Max simulator
+`DE8E11AE-4375-4C3B-A296-9B60A7DF1DB3`.
+**Class:** a feature that can be fully wired, fully green, and switched off at runtime on every
+machine in this repo.
+
+## What it looked like
+
+`MapLocationProvider.startHeading()` was written the way Apple's own snippets are:
+
+```swift
+guard CLLocationManager.headingAvailable() else { return }
+manager.startUpdatingHeading()
+```
+
+The provider takes its `CLLocationManager` by injection — that seam exists precisely so a test can
+watch what the provider *does to a manager* — and the test's stub overrode `headingAvailable()` to
+answer `true`. The stub was never consulted. The test went red on
+`(manager.headingStarts → 0) == 1`.
+
+## What it was
+
+Two facts, and the second is the one that matters off the test bench.
+
+1. **`CLLocationManager.headingAvailable()` names the base class**, so it is dispatched on
+   `CLLocationManager` itself. No subclass the provider was handed can answer it. The injected
+   manager — the whole point of the seam — is not in the conversation.
+2. **The base class answers `false` on a simulator.** There is no magnetometer to report, and
+   `simctl` has no way to simulate one (it can set a location; it cannot set a heading). So on every
+   device this repo's suites run on, `startUpdatingHeading` is never called, no `CLHeading` is ever
+   delivered, and the direction cone can never be drawn.
+
+Written as it was, the guard therefore did two things at once: it made the sensor check
+untestable, and it silently disabled the feature everywhere a machine could look at it. A suite
+green on that code says the arithmetic is right and says nothing whatsoever about the feature.
+
+## The fix
+
+Ask the manager the provider actually holds:
+
+```swift
+guard type(of: manager).headingAvailable() else { return }
+```
+
+This is not a change made to serve a test double — it is the more correct call. A type that takes
+its manager by injection has no business asking a different object whether the hardware exists.
+
+## What to carry forward
+
+- **A capability check spelled with a class name is not covered by an injection seam.** Anything
+  reached as `CLLocationManager.something()`, `UIScreen.main`, `Bundle.main` inside a type that
+  takes its dependency by parameter is a second, hidden dependency the seam does not reach.
+- **A magnetometer feature cannot be verified below the physical phone.** Not "is hard to" — the
+  sensor gate is off, so the code path does not run. Any claim that a heading feature works, made
+  from a simulator run, is a claim about code that did not execute.
+
+### E221 — `verify_test_log.sh` bound the first filename to `max-age-minutes`, silently unchecking that file and disabling the freshness guard (task #203)
+
+**Found:** 2026-08-03, while certifying the zero-warning line for the #202 waiter change.
+**Class:** false green in the tooling that exists to prevent false greens.
+
+## What happened
+
+The command was
+
+```
+Tools/verify_test_log.sh --warnings <log> A.swift B.swift C.swift D.swift E.swift
+```
+
+and it answered
+
+```
+VERIFY-WARNINGS: source=0 non-source=3 compile-tasks=412 files-checked=4
+```
+
+Five files named, four checked, and the line said `OK`. The discrepancy was visible only because
+the count is printed — nothing failed, nothing warned.
+
+## Why
+
+The interface is `verify_test_log.sh [--warnings] <log> [max-age-minutes] [file…]`, and the age is
+**positional**. `A.swift` therefore became `MAX_AGE_MIN`, and `shift 2` dropped it from the file
+list. Two independent guards failed at once, both silently:
+
+1. **The named file went unchecked** while the E203 certification still reported OK. E203 exists to
+   refuse a warning count from a build that did not compile the files being claimed about — here it
+   was simply never asked about one of them.
+
+2. **The freshness guard was switched off entirely.** It ran
+
+   ```
+   find "$LOG" -mmin +"A.swift" 2>/dev/null
+   ```
+
+   which errors, has its stderr discarded, and returns nothing. Empty output is the same shape as
+   "this log is not stale", so the check passed vacuously. That guard exists because a stale log at
+   a reused path once reported a clean suite from an eight-hour-old run — the precise failure it
+   was, at that moment, no longer able to catch.
+
+There is no way to know how many past certifications used this argument order. Any judgment made
+with `verify_test_log.sh <log> <file…>` and no explicit age checked one fewer file than it named
+and did not test the log's age at all.
+
+## Fix
+
+- The age is now told from a path **by shape, not by position**: an age is all digits and a path
+  never is. Every non-numeric argument after the log is a file. There is no longer an argument
+  order that quietly checks less than it was asked to, and no caller has to remember one.
+- `find`'s failure is now fatal. An empty result from a `find` that never ran is no longer read as
+  a fresh log.
+
+## Proved
+
+Against the same build log, after the fix:
+
+- five files named, `files-checked=5`;
+- `<log> 600 A.swift` still parses 600 as the age (`files-checked=1`);
+- a file with no `SwiftCompile` task → `VERIFY-FAIL … (E203)`;
+- a log back-dated to 2025 → `VERIFY-FAIL: log is older than 60m`.
+
+## The general lesson
+
+Both halves failed by *discarding evidence of their own failure* — one by dropping an argument, one
+by discarding stderr. A guard that cannot distinguish "I checked and found nothing" from "I did not
+run" is not a guard. Prefer a shape test over a positional one, and never let a check's own error
+be the thing that makes it pass.
+
+### E222 — A silent timeout arrives disguised as a wrong answer (task #202)
+
+**Found:** 2026-08-03, on CI run 30850154829 (main, `d14d43b`).
+**Class:** a red that named the wrong defect eleven times.
+
+## What it looked like
+
+The unit suite failed with eighteen issues across three suites, and every one of them read like a
+logic defect in the map's search:
+
+```
+speciesIDs → nil → nil
+(before → 0) > 0
+(rows.count → 0) >= 2
+rows.contains { $0.commonName == "Monterey Cypress" }
+“cypress” left the model at .off
+```
+
+Eleven separate tests, three separate suites, all claiming the search narrowed to nothing.
+
+## What it was
+
+A slow machine. The previous run — run 30846300488, commit `017e0d7` — was **green on a tree that
+differed by five lines of workflow YAML and not one byte of Swift**. That is as clean a control as
+this project has ever had for an intermittent, and it says the code was never in question.
+
+The red runner took **327s** over the same 1137 unit tests the green runner finished in **233s**,
+and 1926s vs 1701s on the UI suite. No `SQLITE_IOERR`, no fd storm, nothing in the log but slower
+wall clock. All three suites poll a `waitUntil` with a fixed **20-second** ceiling against the
+debounce-plus-query path over the 103 MB seed, and on that runner 20 seconds was not enough.
+
+## Why it cost so much to diagnose
+
+Two of the three waiters **returned silently** when the ceiling ran out:
+
+```swift
+while ContinuousClock.now < deadline {
+    if condition() { return }
+    try await Task.sleep(for: .milliseconds(50))
+}
+// ← falls out here and returns, saying nothing
+```
+
+So a timeout never reported itself. It reported as whatever assertion happened to run next, against
+a model that had simply not finished. `speciesIDs → nil` is a true statement about a model that was
+still working; it is not the failure, it is the shadow of the failure.
+
+The third waiter did assert, but from inside the helper — so every one of that suite's timeouts
+pointed at `MapSuggestionTests.swift:355`, the same line, regardless of which of its four call sites
+had been waiting.
+
+**Nothing in eighteen issues contained the word "timeout".**
+
+## Fix
+
+`CypressTests/TestWait.swift`: one ceiling, one reporter.
+
+- The ceiling is **90s**, and it is a *liveness bound, not an assertion*. No test here claims how
+  fast search settles — the debounces are tuned for a thumb, and a test that pinned them would fail
+  the day they were retuned. It costs nothing when a test passes: the waiter returns on the poll
+  that sees the condition, never on the deadline.
+- Every waiter now records `the model never settled: waited <elapsed>` before the downstream
+  assertion can misreport, and threads `#_sourceLocation` so the issue names **the waiting test's
+  line**, not the helper's.
+- `MapEmptyInventoryTests` keeps its own 5s waiter: it drives a fake API with no seed, and was not
+  among the failures.
+
+Red-proved by forcing the ceiling to 1 ms: the suite goes red with
+`the model never settled: waited 0.085413625 seconds` at `MapSearchTests.swift:423`, ahead of the
+`.off` assertion that used to be the only thing anyone saw.
+
+## What this does not settle
+
+One sample cannot distinguish *"needed more than 20 seconds"* from *"would never have settled on
+that runner"*. If a wait ever times out at 90 seconds, believe the message and not the ceiling: the
+next question is whether the model settles at all, not whether the number should go up again.
+
+## The general rule
+
+**A guard that stays quiet when it fires is worse than no guard**, because it moves the blame to
+the innocent line downstream. Any waiter, retry or poll loop in this codebase must say so when it
+gives up — and must say it at the caller's line, or a suite with four call sites reports one.
+
+_Verified 2026-08-03: a docs-only commit under the graphify hook triggers no deploy._
+
+### E223 — Screen 20's only door was 8% of the photograph everybody presses (E173's other half)
+
+**Found:** 2026-08-03, from a field report on a physical iPhone, reproduced on a simulator.
+**Class:** a shipped, tested, correct feature that the gesture people make leads away from —
+E173 again, on the half E173 named and did not build.
+
+## The report
+
+> when i click on the tree photo from a tree page, i can get to the view where I see all photos and
+> can thumbs up/down them, change between all/full/trunk/leaf only very ocassionally, and sometimes
+> not at all, instead seeing only the hero photo and no other photos and no option at all to thumbs
+> up/down
+
+## The state that decides it, in one sentence
+
+**Nothing in the data decides it — the finger does:** screen 20 has exactly one entrance, the hero's
+metadata pill, whose hit rectangle is 44 × ~178 pt in the bottom-trailing corner of a 430 × 224 pt
+photograph, so roughly **8%** of the hero opens the browser and the other 92% opens
+`PhotoViewerView` — one photograph, no set, no vote, no filter, and until now nowhere to go.
+
+"Only very occasionally" is that 8% being hit by accident.
+
+## How it was reproduced
+
+`CYPRESS_SCREEN=photoHero` on iPhone 16 Plus (430 pt wide), which puts three photographs — full
+tree, trunk, leaf — on one seed tree and opens screen 03 over it. Then two taps in device points,
+each followed by a screenshot:
+
+| tap | lands on |
+|---|---|
+| (215, 112) — the middle of the photograph | the viewer: one photograph, `Close`, a trash, **no thumbs, no segments** |
+| (335, 201) — inside the pill | screen 20: three rows, `Hero` badge, thumbs, `All / Full tree / Trunk / Leaf close-up` |
+
+Both surfaces are exactly what their code says they are. The screenshot of the first one is the
+report, verbatim, in a picture.
+
+## Why no test saw it
+
+Every predicate involved is correct, and the ones a unit test can reach are the ones that were never
+wrong:
+
+- `TreeProfilePresentation.visiblePhotos` (own-aware) and `TreePhotosModel.load`
+  (`isVisibleToItsContributor`, unconditional) return **the same rows on a shipping device**, because
+  `LocalAPI.treeProfile` fills `ownPhotoIDs` with every row it read. Task **#191**'s divergence is
+  real and is *not* this: it makes the browser show **more** than the pill counts, after a sync that
+  does not exist yet, and could never leave the browser with less.
+- `Series` is complete here — the profile reads photos with `limit: nil` — so
+  `heroMetaPill` is drawn on every tree that has a photograph. The pill is never missing. It is small.
+- Task **#154**'s subject filter has not regressed: all four segments draw and filter.
+- Task **#48**'s gate is not involved: the thumbs are per row on screen 20 and are unconditional.
+
+The defect is entirely in which of two adjacent surfaces a finger arrives at, which is only visible
+to a test that presses things — E173 made this same argument about `PhotoDeletionTests` and it held
+again here.
+
+## The repair
+
+The viewer gets the way onward that E173's own account of the defect named — *"no delete, **and no
+way onward to the screen that has one**"* — and did not build. One control,
+`All photos of this tree`, in the screen's control vocabulary rather than its caption vocabulary,
+closing the cover and pushing `Route.photos` with `unlessAlreadyOnTop` so the same control pressed
+from a viewer opened *out of* screen 20 means "back to the set" instead of stacking a second copy of
+it. The design decision is written up as a pending ruling; this entry records the defect.
+
+## The test, and how it was made to fail
+
+`CypressUITests/PhotoBrowserReachabilityTests`, a UI test for E173's reason. Made to fail by deleting
+the one line that draws the door — which restores the defect exactly, since nothing else changed —
+and both cases went red on their own sentences, having first walked all the way into the viewer:
+
+```
+PhotoBrowserReachabilityTests.swift:54: error: testTheHeroPhotographReachesTheBrowserItsPillHides :
+  XCTAssertTrue failed - the photograph was pressed, the viewer opened over one photograph, and
+  there was no way on from it to the tree's other photographs — which is the whole of the report
+PhotoBrowserReachabilityTests.swift:96: error: testTheViewerReachedFromTheBrowserGoesBackToOneBrowser :
+  failed - the browser's own row opened a viewer with no way back to the set
+     Executed 2 tests, with 4 failures (0 unexpected) in 39.650 seconds
+```
+
+The line restored, both green, and then the whole suite on the merged tree:
+
+```
+VERIFY-OK: ✔ Test run with 1161 tests in 112 suites passed after 117.992 seconds.
+           | XCTest: Executed 84 tests, with 0 failures (0 unexpected) in 1201.163 seconds
+VERIFY-WARNINGS: source=0 non-source=3 compile-tasks=419 files-checked=3
+```
+
+**`UITestShardCoverageTests` caught the new class before CI could.** A UI test class on no line of
+`Tools/ui-test-shards.txt` never runs on CI and nothing goes red for it; the unit suite failed with
+`unassigned → ["PhotoBrowserReachabilityTests"]`, which is that guard doing exactly its job.
+
+## The lesson, which is E173's restated
+
+A control being reachable is not the same fact as a control being reached. Both times, the surface
+somebody arrives at by making the obvious gesture had no route to the feature, and both times every
+test of the feature passed. When a screen exists only behind one small control, the thing to check
+is not whether that control works — it did — but what is at the other end of the gesture people
+actually make.
+
+### E224 — A test that asserts the number the code computed, not the number the animation was given (task #207)
+
+**The defect.** The direction cone on the reader's dot (#155) shipped in build 9 and swung a **full
+revolution** on every heading update. It pointed correctly whenever the reader stood still, which is
+why it survived review: standing still produces no new heading, so no animation runs, and the cone
+is simply correct.
+
+**The mechanism.** `MapMarkerView.setHeading` keeps `headingRotationDegrees` as an *unwrapped*
+accumulator — 350° followed by 10° becomes 370°, so a reader crossing north keeps turning the same
+way instead of spinning backwards through south. That part was right, and its comment said so at
+length. The animation's start point was then read back off the render server:
+
+    cone.presentation()?.value(forKeyPath: "transform.rotation.z")
+
+`transform.rotation.z` is not a stored scalar. It is recovered from the layer's `CATransform3D`, and
+it always answers **normalized into `(-π, π]`** however far the value written to it had accumulated.
+So at 370° the accumulator said 370 and the render server said 10, and `CABasicAnimation` was handed
+`from: 10°, to: 370°`: a full turn, to arrive two degrees along. The two numbers were in different
+spaces and nothing in the file said which space either was in.
+
+**Why the suite was green.** `MapHeadingTests` asserted:
+
+    #expect(view.headingRotationDegrees == 370)
+
+That is the accumulator — **the number the code computed**. The number that decides what the reader
+sees is the *difference between the animation's two endpoints*, and nothing asserted it. The test was
+named `theConeTakesTheShortWay`, and its own comment claimed the accumulated angle was a sufficient
+assertion because "the rotation is on the render server and no screenshot can catch which way it went
+round". The premise was true. The conclusion did not follow, and the name made the gap invisible for a
+round.
+
+**Why no test in that shape could have caught it.** A detached `CALayer` has no presentation layer.
+In a unit test `presentation()` answers `nil`, the code falls to its `previous`-based fallback, and
+**the defective branch never executes**. A view-level test of this passes against the broken code no
+matter how it is written. The defect was only reachable on a real render server — which, for a cone
+that requires a magnetometer, means only on a physical phone.
+
+**The repair, and the general rule.** The endpoint arithmetic moved out of the view into
+`MapHeading.swingStartDegrees(drawnAt:target:)`, where it is a pure function of two angles and a test
+can pass it the exact pair the render server produces. The view now calls it and nothing else.
+
+> When an animation is the deliverable, assert the **animation's endpoints**, never the model value
+> that fed them. And when a value is read back out of a framework rather than stored, write down the
+> space it comes back in — `transform.rotation.z` round-trips through a matrix and loses every whole
+> turn on the way.
+
+**What this cost.** One shipped TestFlight build with a visibly broken feature, found by the owner on
+the phone in the first minute of use. The three CLAUDE.md rules that would have caught it were all in
+place and all pointed the right way: *look at the running screen*, *a confident comment is where bugs
+have survived*, and *map and camera flows only tell the truth on the physical phone*. What was missing
+was the one that is now above: a test can be green, precise, and about the wrong number.
