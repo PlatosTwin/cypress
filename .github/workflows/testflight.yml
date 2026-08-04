@@ -124,8 +124,13 @@ jobs:
     timeout-minutes: 5
     outputs:
       shards: ${{ steps.read.outputs.shards }}
+      ships: ${{ steps.ships.outputs.ships }}
     steps:
+      # `fetch-depth: 0` because the ships decision below diffs against the previous tip, and a
+      # shallow clone does not have it.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - id: read
         run: |
           set -euo pipefail
@@ -133,6 +138,76 @@ jobs:
           [ "${n:-0}" -ge 1 ] || { echo "::error::Tools/ui-test-shards.txt names no shards"; exit 1; }
           echo "sharding the UI suite $n ways"
           echo "shards=$(seq 1 "$n" | jq -R . | jq -sc .)" >> "$GITHUB_OUTPUT"
+
+      # ── Does this push deserve a build number? ────────────────────────────────────────
+      # A change to THIS FILE still runs the whole suite — "a change to the pipeline has to prove
+      # itself by running" is why `.github/**` is not in the deny-list above, and it is how the wrong
+      # SDK, the wrong simulator name and the tag permission were each caught. But running is not
+      # shipping. Merging PR #1 minted build 12 whose app was byte-identical to build 11: a build
+      # number consumed, build 11 expired, and every tester handed an update notification for an app
+      # that had not changed.
+      #
+      # So: **skip the release only when EVERY changed path is one that cannot affect the built
+      # app.** That set is the `paths-ignore` list above plus `.github/` — the deny-list decides
+      # whether a run happens, this decides whether that run mints a build, and they are the same
+      # paths for the same reason.
+      #
+      # Both halves are needed. `.github/` alone would still mint a build for a push that touched a
+      # workflow AND a doc, which is the same byte-identical build under a rarer shape; the
+      # `paths-ignore` list alone never sees such a push, because the presence of `.github/` is what
+      # let it through the trigger.
+      #
+      # The direction matters and matches the deny-list argument above — anything this does not
+      # recognize still ships, so a new source directory cannot silently stop reaching TestFlight.
+      # It is a deny-list, not an allow-list.
+      #
+      # **`workflow_dispatch` always ships**, and that is the escape hatch that makes this safe. A
+      # workflow change that genuinely needs a real archive to prove itself — signing, export
+      # options, the upload step — is exactly the class this would otherwise leave unproven. Run the
+      # workflow by hand and it releases.
+      - id: ships
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" != "push" ]; then
+            # Manual runs ship by definition; pull requests never reach the release job at all.
+            echo "ships=true" >> "$GITHUB_OUTPUT"
+            echo "event is ${{ github.event_name }}, not push — shipping"
+            exit 0
+          fi
+
+          before="${{ github.event.before }}"
+          # A brand-new branch, or a history GitHub cannot name, reports all-zeros. Fall back to the
+          # merge's first parent, which for a merge commit IS the previous main tip. Defaulting to
+          # "ship" on any doubt is deliberate: a missed build is visible, a surprise one is not.
+          if [ -z "$before" ] || [ "$before" = "0000000000000000000000000000000000000000" ] \
+             || ! git cat-file -e "$before^{commit}" 2>/dev/null; then
+            before="$(git rev-parse HEAD^1 2>/dev/null || true)"
+          fi
+          if [ -z "$before" ]; then
+            echo "ships=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::could not determine the previous tip — shipping rather than guessing"
+            exit 0
+          fi
+
+          changed="$(git diff --name-only "$before" "${{ github.sha }}")"
+          echo "changed paths:"; echo "$changed" | sed 's/^/  /'
+
+          # The four patterns are the `paths-ignore` list plus `.github/`. `*.md` matches only the
+          # repository root there — `*` does not cross a `/` in those patterns — so it is anchored
+          # the same way here rather than matching every .md in the tree.
+          outside="$(printf '%s\n' "$changed" \
+            | grep -vE '^(\.github/|docs/|graphify-out/|[^/]*\.md$)' || true)"
+
+          if [ -z "$changed" ]; then
+            echo "ships=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::no paths changed against $before — no build minted"
+          elif [ -z "$outside" ]; then
+            echo "ships=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::nothing changed that can affect the built app (only .github/, docs/, graphify-out/ or a root *.md), so the suite runs but no build is minted — it would be byte-identical to the last one. Run this workflow manually (workflow_dispatch) if a pipeline change needs a real archive to prove it: signing, export options, or the upload step."
+          else
+            echo "ships=true" >> "$GITHUB_OUTPUT"
+            echo "shipping — these can affect the app:"; echo "$outside" | sed 's/^/  /'
+          fi
 
   # ── The unit suite, and the only place warnings are certified ─────────────────────────
   unit:
@@ -254,10 +329,14 @@ jobs:
   # fails, and a skipped job is not a passed job — nothing here has to re-check that the tests were
   # green, because it does not run otherwise.
   release:
-    needs: [unit, ui]
+    needs: [plan, unit, ui]
     # **A pull request must never ship a build.** It would take a build number, expire the build
     # the testers are on, and do it from code that has not landed on main.
-    if: github.event_name != 'pull_request'
+    #
+    # **And a `.github/`-only push must not either** — see `plan`'s `ships` step for the whole
+    # argument. `needs: plan` is here for that output; the shard matrix was already depending on it
+    # through `ui`.
+    if: github.event_name != 'pull_request' && needs.plan.outputs.ships == 'true'
     runs-on: macos-26
     timeout-minutes: 45
     steps:
