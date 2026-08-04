@@ -28,12 +28,29 @@
 set -u
 
 WARNINGS_MODE=0
+EXPECT_WIDTH=""
 ARGS=()
-for a in "$@"; do
-  case "$a" in
+while [ "$#" -gt 0 ]; do
+  case "$1" in
     --warnings) WARNINGS_MODE=1 ;;
-    *) ARGS+=("$a") ;;
+    # `--expect-width <pt>`: refuse a log that did not come from a screen this width.
+    #
+    # WHY (#201). The release gate runs on whatever simulator the runner image happens to offer —
+    # the workflow picks the first name on a candidate list, and that list exists because macos-26
+    # had no iPhone 16 Pro at all. So the width the gate runs at is decided by GitHub's image, and
+    # it moves without anyone choosing. This project has already spent an afternoon on #183, where
+    # two failures were filed as a width defect that did not exist, and E202/E216 are both about
+    # results that are only true at one width. A gate whose width can change silently is a gate
+    # that can start testing something else.
+    #
+    # Deliberately an EXACT match and a hard failure, not a warning. If the image bumps and the
+    # first candidate becomes a 430 pt phone, the right outcome is a red run that says the width
+    # moved — someone then decides whether to accept it and change the number. That is a decision;
+    # discovering it six weeks later from a mysterious CI-only failure is not.
+    --expect-width) shift; EXPECT_WIDTH="${1:?--expect-width needs a width in points}" ;;
+    *) ARGS+=("$1") ;;
   esac
+  shift
 done
 set -- ${ARGS+"${ARGS[@]}"}
 
@@ -81,6 +98,17 @@ fi
 STAMP_DEVICE=$(grep -m1 '^CYPRESS-RUN: device ' "$LOG" | sed 's/^CYPRESS-RUN: device //')
 STAMP_WIDTH=$(grep -m1 '^CYPRESS-RUN: screen-width-pt ' "$LOG" | sed 's/^CYPRESS-RUN: screen-width-pt //')
 STAMP_STATE=$(grep -m1 '^CYPRESS-RUN: device-state ' "$LOG" | sed 's/^CYPRESS-RUN: device-state //')
+if [ -n "$EXPECT_WIDTH" ]; then
+  # The stamp is `402 (1206 px @ 3.000000x)`; the width is the first field.
+  got_width="${STAMP_WIDTH%% *}"
+  if [ -z "$got_width" ]; then
+    fail "--expect-width ${EXPECT_WIDTH} was asked of a log with no CYPRESS-RUN screen-width stamp, so the width it ran at is unknown"
+  elif [ "$got_width" != "$EXPECT_WIDTH" ]; then
+    fail "this log ran at ${got_width} pt, not the ${EXPECT_WIDTH} pt it was asked to certify (device ${STAMP_DEVICE:-unknown}). The gate's screen changed. Decide whether to accept the new width and update the caller — do not delete the check (#201)."
+  fi
+  note "width ${got_width} pt confirmed against --expect-width ${EXPECT_WIDTH}"
+fi
+
 if [ -n "$STAMP_DEVICE" ]; then
   note "device ${STAMP_DEVICE} — screen ${STAMP_WIDTH:-unknown}"
   [ -n "$STAMP_STATE" ] && note "device-state ${STAMP_STATE}"

@@ -169,6 +169,58 @@ struct CityDownloadTests {
         }
     }
 
+    // MARK: - The manifest is the one file a cache must not answer (#199)
+
+    /// **Every other object in R37's design is immutable and hash-verified; the manifest is not.**
+    /// A reader holding yesterday's manifest is internally consistent and wrong — it verifies the
+    /// old city file perfectly, downloads nothing, and reports no error, so a republished city
+    /// never arrives and nothing on the phone says why. Measured on the public domain on
+    /// 2026-08-03: minutes after a republish a bare GET still returned the previous manifest while
+    /// the same URL with a unique query returned the new one.
+    ///
+    /// This asserts the request, not the network. The network is not a test dependency here (see
+    /// this suite's header) and a cache's behavior is not ours to assert anyway — what is ours is
+    /// that we never ask a question a cache is allowed to answer.
+    @Test("the manifest request carries a unique cache-buster, and no two are alike")
+    func manifestRequestIsUncacheable() throws {
+        let base = URL(string: "https://cypress-cities.t3.tigrisbucket.io")!
+        let first = CityDownloader.manifestRequest(base: base)
+        let second = CityDownloader.manifestRequest(base: base)
+
+        let firstURL = try #require(first.url)
+        let secondURL = try #require(second.url)
+
+        #expect(firstURL.path == "/manifest.json", "the request stopped naming the manifest: \(firstURL)")
+
+        let items = URLComponents(url: firstURL, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        let buster = items.first { $0.name == "cb" }?.value
+        #expect(
+            (buster?.isEmpty == false),
+            "the manifest URL carries no cache-buster, so an edge cache may answer it: \(firstURL)"
+        )
+        #expect(
+            firstURL != secondURL,
+            """
+            two manifest requests share a URL, so the second can be served from the cache the \
+            first filled — which is the whole defect: \(firstURL)
+            """
+        )
+        #expect(first.cachePolicy == .reloadIgnoringLocalCacheData)
+        #expect(first.value(forHTTPHeaderField: "Cache-Control") == "no-cache")
+    }
+
+    /// A query string on a `file://` URL does not identify a file. Every test in this suite serves
+    /// its fixtures from disk, so busting a cache that cannot exist there would break all of them.
+    @Test("a file:// base is left exactly as it was")
+    func manifestRequestLeavesFileURLsAlone() throws {
+        let base = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("fixtures")
+        let request = CityDownloader.manifestRequest(base: base)
+        let url = try #require(request.url)
+
+        #expect(url == base.appendingPathComponent("manifest.json"))
+        #expect(url.query == nil, "a query was appended to a file URL, which names no file: \(url)")
+    }
+
     // MARK: - Install-state comparison
 
     @Test("install state: every branch, including refuse-newer-schema")

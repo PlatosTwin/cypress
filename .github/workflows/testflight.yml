@@ -80,6 +80,13 @@ env:
   SCHEME: Cypress
   PROJECT: Cypress.xcodeproj
   BUNDLE_ID: app.cypress.Cypress
+  # The width the release gate is certified at (#201). The runner image decides which simulator
+  # exists, so without this the gate's screen can change with an image bump and nothing says so —
+  # and this project has already filed two failures as a width defect that did not exist (#183).
+  # A red run naming the new width is the point: accepting it is a decision, and this is where it
+  # gets made.
+  GATE_SCREEN_WIDTH_PT: "402"
+
 
 jobs:
   # ── How many UI jobs? Ask the file, never a second list ───────────────────────────────
@@ -182,7 +189,8 @@ jobs:
           Tools/run_tests.sh "${{ steps.prep.outputs.udid }}" "$RUNNER_TEMP/ui-${{ matrix.shard }}.log" \
             "${args[@]}" \
             -derivedDataPath "$RUNNER_TEMP/dd"
-          Tools/verify_test_log.sh "$RUNNER_TEMP/ui-${{ matrix.shard }}.log"
+          Tools/verify_test_log.sh --expect-width "$GATE_SCREEN_WIDTH_PT" \
+            "$RUNNER_TEMP/ui-${{ matrix.shard }}.log"
 
       - name: Keep the log, whatever happened
         if: always()

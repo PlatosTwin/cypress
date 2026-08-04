@@ -52,9 +52,46 @@ public struct CityDownloader: Sendable {
 
     // MARK: - Manifest
 
+    /// The request for `<base>/manifest.json`, built so no cache anywhere can answer it.
+    ///
+    /// **The manifest is the one file whose freshness is load-bearing** (#199). Every city file
+    /// lives at an immutable versioned path and is verified by sha256, so a stale *city* is
+    /// impossible — the manifest is the only mutable object in R37's design, and it is what says
+    /// which versions exist. A reader holding yesterday's manifest is internally consistent and
+    /// wrong: it verifies the old file perfectly, downloads nothing, and reports no error, so a
+    /// republished city simply never arrives and nothing on the phone ever says why.
+    ///
+    /// Measured on the public domain, 2026-08-03: minutes after a republish a bare GET still
+    /// returned the PREVIOUS manifest while the same URL with a unique query returned the new one.
+    /// So the query is the part that is actually doing the work here; `cachePolicy` and the header
+    /// address URLSession's own store and any well-behaved intermediary, and neither was enough on
+    /// its own.
+    ///
+    /// A UUID rather than a timestamp: two calls in the same millisecond would share a
+    /// cache-buster, and this needs no clock to be correct.
+    ///
+    /// **`file://` bases are left alone.** Unit tests serve fixture manifests from disk, and a
+    /// query string on a file URL does not identify a file — appending one would break every test
+    /// that uses this path, in the name of defeating a cache that cannot exist there.
+    static func manifestRequest(base: URL) -> URLRequest {
+        let url = base.appendingPathComponent("manifest.json")
+        var request = URLRequest(url: url)
+        guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
+              var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        else { return request }
+        components.queryItems = (components.queryItems ?? [])
+            + [URLQueryItem(name: "cb", value: UUID().uuidString)]
+        request = URLRequest(url: components.url ?? url)
+        // `.reloadIgnoringLocalAndRemoteCacheData` is documented as unimplemented; this is the
+        // strongest policy that is actually honored.
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        return request
+    }
+
     /// `GET <base>/manifest.json`, decoded strictly (`CityManifest.decode`).
     public func fetchManifest() async throws -> CityManifest {
-        let (data, response) = try await session.data(from: baseURL.appendingPathComponent("manifest.json"))
+        let (data, response) = try await session.data(for: Self.manifestRequest(base: baseURL))
         try Self.checkStatus(response)
         return try CityManifest.decode(data)
     }
