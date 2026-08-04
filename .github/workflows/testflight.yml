@@ -75,10 +75,10 @@ on:
   # it and they were removed the same hour.
   #
   # The cost is real and accepted: a documentation-only PR runs the whole suite, about 26 minutes.
-  # The saving is kept where it is free — merging a PR deploys nothing either way: to `main` the
-  # `push` deny-list above still applies to the merge commit, and to a `release/**` branch there is
-  # no deploy to save from in the first place, because `push` below is deliberately NOT extended to
-  # `release/**` (see the note just below) — it stays `main`-only.
+  # The saving is kept where it is free — merging a documentation-only PR deploys nothing, on
+  # either base: on `main` the `push` deny-list above skips the merge commit's run, and on a
+  # `release/**` branch there is no push-triggered run at all, because `push` below is deliberately
+  # NOT extended to `release/**` (see the note just below) — it stays `main`-only.
   #
   # **`release/**` is on this trigger and not on `push`.** #217: a release round targets PRs at
   # `release/0.2` (and future `release/**` branches) instead of `main`, so without this a
