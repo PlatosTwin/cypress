@@ -17,8 +17,7 @@ import Foundation
 /// name entered by hand — is fetched from a network manifest and does not exist for the reader who
 /// has never opened Cities or has no connection, which every other read on this payload does not
 /// require. So `CityQueries.resolveIDSpace` resolves *which* city (a fact off a row, for scoping
-/// queries) and nothing downstream of it ever turns that key into a name. See
-/// `docs/rulings-pending/journal-city-segment.md`.
+/// queries) and nothing downstream of it ever turns that key into a name.
 public struct CityAlmanac: Hashable, Sendable {
 
     /// What the resolved city has to say, or `nil` when no city resolved at all.

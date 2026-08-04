@@ -2,7 +2,7 @@
 //  CityPresentation.swift
 //  Cypress — Features/City
 //
-//  The Journal tab's third segment. `docs/rulings-pending/journal-city-segment.md`.
+//  The Journal tab's third segment.
 //
 //  ── What this screen is, in one line ──────────────────────────────────────────────────────────
 //  The owner's ask: "similar but not identical stats and views to what's on the neighborhood view

@@ -72,10 +72,9 @@ import Foundation
 ///
 /// So both live here, and the reader picks. See `JournalTabView` for why the control is C5.
 ///
-/// **A third case, `.city`, added for the Journal tab's `City` segment**
-/// (`docs/rulings-pending/journal-city-segment.md`). It sits after the almanac for the same reason
-/// the almanac sits after the journal: the reader's own record first, the immediate neighborhood
-/// second, the whole city last — each ring wider than the one before it.
+/// **A third case, `.city`, added for the Journal tab's `City` segment.** It sits after the almanac
+/// for the same reason the almanac sits after the journal: the reader's own record first, the
+/// immediate neighborhood second, the whole city last — each ring wider than the one before it.
 enum JournalSegment: String, CaseIterable, Identifiable {
     case journal
     case almanac

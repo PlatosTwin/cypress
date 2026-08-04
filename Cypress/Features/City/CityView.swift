@@ -2,7 +2,7 @@
 //  CityView.swift
 //  Cypress — Features/City
 //
-//  The Journal tab's `City` segment. `docs/rulings-pending/journal-city-segment.md`.
+//  The Journal tab's `City` segment.
 //
 //  Composed from the same tokens and the same C-numbers `AlmanacView` draws screen 12 from — C1's
 //  header, C10 rows for card 3, and card 1 & 2 built from tokens the way the almanac's own

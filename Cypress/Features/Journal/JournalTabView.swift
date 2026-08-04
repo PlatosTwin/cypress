@@ -27,10 +27,10 @@
 //  them.
 //
 //  ── The third segment ──────────────────────────────────────────────────────────────────────
-//  `City` (`docs/rulings-pending/journal-city-segment.md`) is the owner's own ask — "similar but not
-//  identical stats and views to what's on the neighborhood view" — and it sits after the almanac in
-//  `JournalSegment` for the same reason the almanac sits after the journal: each segment is a wider
-//  ring than the one before it, your own record first.
+//  `City` is the owner's own ask — "similar but not identical stats and views to what's on the
+//  neighborhood view" — and it sits after the almanac in `JournalSegment` for the same reason the
+//  almanac sits after the journal: each segment is a wider ring than the one before it, your own
+//  record first.
 //
 //  ── Why C5, when screen 08's pill row exists ──────────────────────────────────────────────
 //  ERRATA E46 settled that 08's three-pill row is **08's own drawn geometry** and deliberately not
@@ -108,8 +108,8 @@ struct JournalTabView: View {
                 )
             case .city:
                 // Screen 12's own outbound affordances minus `onShowGroup`: nothing on the City
-                // segment counts a group of trees, only a species mix and a list of five, so there is
-                // no map destination to hand down (`docs/rulings-pending/journal-city-segment.md`).
+                // segment counts a group of trees, only a species mix and a list of five, so there
+                // is no map destination to hand down.
                 CityView(
                     api: api,
                     coordinate: coordinate,

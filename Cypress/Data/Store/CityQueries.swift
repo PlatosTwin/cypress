@@ -28,8 +28,7 @@ import Foundation
 /// no display name for the city itself — `id` is `sf` / `us-ca-sj`, and `inventories.name` is the
 /// *inventory's* published name ("City of San Jose Street Tree inventory"), the same string
 /// `CityRecordCopy.provenanceNote` already uses per tree. Composing a city's name from that string, or
-/// from the `id_space` key, is exactly the guess R28 and R48 closed the door on. See
-/// `docs/rulings-pending/journal-city-segment.md`.
+/// from the `id_space` key, is exactly the guess R28 and R48 closed the door on.
 public struct CityQueries {
     private let schema: SeedSchema
     private let seed = SeedDatabase.schemaName
@@ -158,8 +157,8 @@ public struct CityQueries {
     ///   place — `CityCopy` falls back to its street, the same chain `AlmanacCopy.elderSubtitle`
     ///   already uses — but a stub species would put a raw ingest artifact like `9662` in front of the
     ///   reader as if it were this tree's name, on a list five times more exposed than the almanac's
-    ///   single elder row. See `docs/rulings-pending/journal-city-segment.md` for why this list skips
-    ///   the row rather than naming it by position.
+    ///   single elder row — so the row is skipped and the next non-stub tree takes its place, rather
+    ///   than being named by its position without a species.
     ///
     /// **`limit` is deliberately handed one higher than the card draws, by the caller.** This file
     /// does not decide how many rows are "the oldest" — that is whether the `limit + 1`th row ties the
