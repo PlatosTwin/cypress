@@ -20,9 +20,9 @@
     "semantic_hash": ""
   },
   "Cypress/App/RootView.swift": {
-    "mtime": 1785826001.0063028,
-    "ast_hash": "f277d32d8cdafab70355cc5346335f28",
-    "semantic_hash": "f277d32d8cdafab70355cc5346335f28"
+    "mtime": 1785827464.9288263,
+    "ast_hash": "01cd9adfb027ee57bc6c4b29b9f6a3d3",
+    "semantic_hash": ""
   },
   "Cypress/Assets.xcassets/AccentColor.colorset/Contents.json": {
     "mtime": 1784745301.1899588,
@@ -915,9 +915,9 @@
     "semantic_hash": "61124125dfb777de0a947daab286c7bb"
   },
   "Cypress/Features/Photos/PhotoViewerView.swift": {
-    "mtime": 1785763371.8256989,
-    "ast_hash": "aa27ca21e13506b5ca1bcf6b4c122fbd",
-    "semantic_hash": "aa27ca21e13506b5ca1bcf6b4c122fbd"
+    "mtime": 1785827464.9292858,
+    "ast_hash": "7122cfbfb742ee3cf6f2b40f676c13bd",
+    "semantic_hash": ""
   },
   "Cypress/Features/Photos/TreePhotosModel.swift": {
     "mtime": 1785756682.5295608,
@@ -1910,9 +1910,9 @@
     "semantic_hash": "c0f1dd67f2cd86ecaadeb440a633739e"
   },
   "docs/ERRATA.md": {
-    "mtime": 1785776497.0847135,
-    "ast_hash": "5c02a08345031c090ccae316cd9b1b25",
-    "semantic_hash": "5c02a08345031c090ccae316cd9b1b25"
+    "mtime": 1785827548.0760882,
+    "ast_hash": "d79fae333e9b2204305fb435d0519a02",
+    "semantic_hash": ""
   },
   "docs/ROADMAP.md": {
     "mtime": 1785756682.6002393,
@@ -1920,9 +1920,9 @@
     "semantic_hash": "9489500b642cc35032eebb0e027ad98e"
   },
   "docs/RULINGS.md": {
-    "mtime": 1785776460.8831856,
-    "ast_hash": "c76cb1d94cfed6b43eae4406557b8025",
-    "semantic_hash": "c76cb1d94cfed6b43eae4406557b8025"
+    "mtime": 1785827592.2637343,
+    "ast_hash": "e3c22da35b48c5756c6d5f2fa1ae7ab4",
+    "semantic_hash": ""
   },
   "docs/distilled/DECISIONS.md": {
     "mtime": 1785520984.7987487,
@@ -2315,19 +2315,9 @@
     "semantic_hash": ""
   },
   "Tools/ui-test-shards.txt": {
-    "mtime": 1785816313.8919168,
-    "ast_hash": "4929d611e1782bdbcc6d308149206931",
+    "mtime": 1785827464.9305153,
+    "ast_hash": "573a0cd5d662b1ceea3ce77ff207fdd2",
     "semantic_hash": ""
-  },
-  "docs/errata-pending/a-silent-timeout-arrives-disguised-as-a-wrong-answer.md": {
-    "mtime": 1785811636.2920935,
-    "ast_hash": "bd36f5cce27d526a86178bc1e704a147",
-    "semantic_hash": ""
-  },
-  "docs/errata-pending/verify-log-swallowed-a-filename-and-switched-off-its-own-freshness-guard.md": {
-    "mtime": 1785804433.9279156,
-    "ast_hash": "ab2e65e4a98024bd4dbbcdee6338672b",
-    "semantic_hash": "ab2e65e4a98024bd4dbbcdee6338672b"
   },
   "docs/investigations/api-hosting.md": {
     "mtime": 1785601015.474698,
@@ -2394,19 +2384,9 @@
     "ast_hash": "0c132eaebb5a8fcaaba111cfd9b9ad85",
     "semantic_hash": ""
   },
-  "docs/errata-pending/headingavailable-answers-for-the-base-class-and-answers-no-on-every-simulator.md": {
-    "mtime": 1785822592.32537,
-    "ast_hash": "8b8ef2a2c415a81599af7d74b768b4bc",
-    "semantic_hash": ""
-  },
   "docs/pull_request_template.md": {
     "mtime": 1785824010.1385024,
     "ast_hash": "03ae6db8ddd86865ef2d840d615195fb",
-    "semantic_hash": ""
-  },
-  "docs/rulings-pending/heading-is-visual-only.md": {
-    "mtime": 1785822592.3255928,
-    "ast_hash": "0d6835c28d5ebb55d995e32488fb9f25",
     "semantic_hash": ""
   },
   "Cypress/Data/API/City.swift": {
@@ -2444,19 +2424,14 @@
     "ast_hash": "cc8f16d28bb91bc0bcc512a461889cea",
     "semantic_hash": ""
   },
-  "docs/rulings-pending/journal-city-segment.md": {
-    "mtime": 1785824274.2009397,
-    "ast_hash": "1e0e14b4d8707edce1eb3bdef3a8db52",
-    "semantic_hash": ""
-  },
-  "docs/errata-pending/a-test-that-asserts-the-number-the-code-computed.md": {
-    "mtime": 1785825235.4357176,
-    "ast_hash": "5cd7891f823441541c007e816b49a2d0",
-    "semantic_hash": ""
-  },
   "CypressTests/DragGestureGateTests.swift": {
     "mtime": 1785827329.9459898,
     "ast_hash": "469d192c51afb4234fd0c9ce62f52a43",
+    "semantic_hash": ""
+  },
+  "CypressUITests/PhotoBrowserReachabilityTests.swift": {
+    "mtime": 1785827464.9297795,
+    "ast_hash": "b207315fad00ef91de5a0bbd5f3c2ebd",
     "semantic_hash": ""
   }
 }

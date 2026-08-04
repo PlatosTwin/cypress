@@ -130,6 +130,20 @@ if [ "$WARNINGS_MODE" = 1 ]; then
   if [ "$COMPILE_TASKS" -eq 0 ]; then
     fail "cannot certify a warning count: the log has 0 SwiftCompile tasks (E203). A reused DerivedData recompiles nothing and reports nothing — build into a fresh directory."
   fi
+  # A "filename" with a space in it is not a filename. It is a whole list that arrived as ONE
+  # argument, and the caller's shell is why: **zsh does not word-split an unquoted expansion**, so
+  # `FILES=$(cat list.txt); verify --warnings "$log" $FILES` passes one enormous argument under zsh
+  # and twenty-five under bash. Without this the failure below names every file at once and blames
+  # each of them for not being compiled — which sends the reader to look at the build, where
+  # nothing is wrong. Same family as the `grep [x]codebuild` and `for c in $line` traps already in
+  # CLAUDE.md; this is the third time the shell difference has cost a debugging round here.
+  for f in ${CLAIMED_FILES+"${CLAIMED_FILES[@]}"}; do
+    case "$f" in
+      *" "*)
+        fail "one argument contains spaces, so it is a file LIST that reached this script as a single argument, not a filename: '${f}'. Under zsh an unquoted \$VAR does not word-split. Pass the names as separate arguments — 'xargs $0 --warnings $LOG < list.txt' does it correctly from a file."
+        ;;
+    esac
+  done
   missing=""
   for f in ${CLAIMED_FILES+"${CLAIMED_FILES[@]}"}; do
     grep -q "^[[:space:]]*SwiftCompile .*${f}" "$LOG" || missing+=" $f"
