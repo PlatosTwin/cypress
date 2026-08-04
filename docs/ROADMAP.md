@@ -261,9 +261,18 @@ plus fourteen screens behind it. Every one of the 188 interactive elements found
 suite additionally pins that no modal leaks the screen behind it to assistive technology, and that
 every pushed screen has a reachable Back. **Screen 19 remains unread, and the reason is the data**: the
 seed holds only `alive` and `vacant_site`, so no `removed` tree exists to open a memorial with, and
-faking one would be the exact class of lie the suite exists to catch. What is still not machine-checked
-is **reading order and grouping** — that the elements come in the sequence a person expects — which
-XCUITest exposes but no test here asserts yet.)
+faking one would be the exact class of lie the suite exists to catch. **Reading order and grouping
+have partial coverage now (task #221).** `ReadingOrderAccessibilityTests` asserts composition order
+on three screens chosen because a wrong order there is a real usability failure: the map's field →
+suggestions → filter chips, screen 05's five vitality rows in rubric order (worst to best, never
+phrasing-dependent), and screen 03's identity block before the primary CTA before the secondary quad
+actions. `testAStatCardIsOneStop` (E118) already asserted the narrower grouping claim — a caption and
+its value arrive as one stop. **What this does not close**: every other screen's order is still
+unasserted, and — found while building the map test — `debugDescription`, the only order XCUITest
+exposes to a black-box test here, does not appear to move under `accessibilitySortPriority` at all, so
+nothing in this suite can yet verify that mechanism specifically (map task #143's fix for E183 §3 is
+therefore still unverified by any automated test); see
+`docs/errata-pending/debugdescription-blind-to-sortpriority.md`.)
 
 *(The "Two contrast pairs are still failing" entry that stood here is resolved. E120 fixed the C10 locked glyph via lightness-only OKLCh (3.06:1/3.05:1), and E122 fixed the C23 chart series via the same method — chartSeriesPrimary 2.53→3.05, chartSeriesTertiary 2.27→3.06, both moved from `knownFailures` to `retinted`.)*
 
