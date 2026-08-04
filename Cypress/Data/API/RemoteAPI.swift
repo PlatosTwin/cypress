@@ -80,6 +80,15 @@ public struct RemoteAPI: CypressAPI {
         throw unimplemented
     }
 
+    // MARK: - City
+
+    /// Will call the server's city read. Overrides the protocol's `.empty` default for the same
+    /// reason `almanac(near:)` does: an unbuilt server has no answer, which is a different fact from
+    /// a city with nothing to report.
+    public func city(near coordinate: Coordinate?) async throws -> CityAlmanac {
+        throw unimplemented
+    }
+
     // MARK: - Sync
 
     /// Will call `POST /sync` with the array of outbox items, and decode the per-item

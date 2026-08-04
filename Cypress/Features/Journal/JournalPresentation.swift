@@ -71,9 +71,15 @@ import Foundation
 /// which is precisely the class of defect ERRATA E57 was written about in the first place.
 ///
 /// So both live here, and the reader picks. See `JournalTabView` for why the control is C5.
+///
+/// **A third case, `.city`, added for the Journal tab's `City` segment**
+/// (`docs/rulings-pending/journal-city-segment.md`). It sits after the almanac for the same reason
+/// the almanac sits after the journal: the reader's own record first, the immediate neighborhood
+/// second, the whole city last — each ring wider than the one before it.
 enum JournalSegment: String, CaseIterable, Identifiable {
     case journal
     case almanac
+    case city
 
     var id: String { rawValue }
 
@@ -81,6 +87,7 @@ enum JournalSegment: String, CaseIterable, Identifiable {
         switch self {
         case .journal: return JournalCopy.journalSegment
         case .almanac: return JournalCopy.almanacSegment
+        case .city: return CityCopy.segmentLabel
         }
     }
 }

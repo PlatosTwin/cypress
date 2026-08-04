@@ -132,6 +132,19 @@ public protocol CypressAPI: Sendable {
     /// city inventory truthfully has.
     func almanac(near coordinate: Coordinate?) async throws -> Almanac
 
+    // MARK: - City
+
+    /// The Journal tab's `City` segment. `near` is the caller's fix, or nil when there is none.
+    ///
+    /// Not a BUILD-PLAN §6 endpoint, for the same reason `almanac` is not one: it postdates the
+    /// contract. The city is resolved from the fix through the nearest inventoried tree's `id_space`
+    /// (`CityQueries.resolveIDSpace`) rather than named by the caller — this app has no mechanism for
+    /// naming one, on purpose (`City.swift`).
+    ///
+    /// Defaulted in `City.swift` to the empty payload, which is what an implementation with no city
+    /// inventory truthfully has.
+    func city(near coordinate: Coordinate?) async throws -> CityAlmanac
+
     // MARK: - Sync
 
     /// `POST /sync` — the batch endpoint. Takes outbox items carrying their `client_uuid`s and

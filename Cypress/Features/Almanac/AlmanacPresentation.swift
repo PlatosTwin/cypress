@@ -302,7 +302,12 @@ struct AlmanacPresentation: Equatable {
     /// shares, so the four numbers on screen can be off by a point from summing to 100 but no
     /// species is ever credited with a tree it does not have. Displaying a remainder that had been
     /// derived from rounded values would be the opposite trade.
-    private static func composition(_ composition: NeighborhoodComposition?, locale: Locale) -> Composition? {
+    ///
+    /// **Not `private`.** `CityPresentation` reuses this verbatim for card 2 of the City segment —
+    /// same remainder discipline, same input shape (`NeighborhoodComposition`), scoped to a whole
+    /// `id_space` instead of a neighborhood. Two composition cards computing "everyone else"
+    /// differently is exactly the drift this sharing avoids.
+    static func composition(_ composition: NeighborhoodComposition?, locale: Locale) -> Composition? {
         guard let composition, composition.treeCount > 0, !composition.leading.isEmpty else { return nil }
 
         let total = Double(composition.treeCount)
