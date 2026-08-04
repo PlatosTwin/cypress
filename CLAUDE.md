@@ -115,11 +115,16 @@ conflicts with convenience, the rule wins.
   is no rewriting main: a bad commit is recovered *forward*, with a revert. Note that
   `git push --dry-run` does **not** evaluate rulesets — it reported success for a rewind the server
   then refused, so a dry run is not evidence here either.
-- **Today, work still lands on main directly**, under the unchanged merge protocol: merge locally,
-  run the suite on the **merged** tree, certify warnings on a **fresh** DerivedData, then push.
-- **After the beta lock (#187), every non-doc change ships as a PR** reviewed adversarially by an
-  agent that did not write it — protocol and beta-lock checklist in `docs/CONTRIBUTING.md`. The
-  owner throws that switch; no agent throws it or assumes it has been thrown.
+- **The merge protocol holds in both regimes and is not relaxed by either**: merge locally, run the
+  suite on the **merged** tree, certify warnings on a **fresh** DerivedData, then push. A branch's
+  green proves the branch; only the merged tree proves main. GitHub's "branch is up to date" is not
+  this check — it makes the diff current, it does not run the suite on the merge result.
+- **The beta locked on 2026-08-04, so every non-doc change now ships as a PR** reviewed
+  adversarially by an agent that did not write it. Protocol in `docs/CONTRIBUTING.md`. The reviewer
+  gets its own worktree at the PR head, its own simulator, and does not read the author's
+  transcript; "looks good to me" is not an outcome. **The author does not resolve its own review
+  threads** — the orchestrator adjudicates.
+- The switch back is the owner's alone, the same as the switch forward.
 - **Do not read this file to find out which regime is running** — prose goes stale, which is the
   whole lesson of the schema-version bullet above. Ask GitHub:
   `gh api repos/PlatosTwin/cypress/rulesets --jq '.[] | "\(.name)\t\(.enforcement)"'`.

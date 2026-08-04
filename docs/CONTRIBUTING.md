@@ -1,7 +1,10 @@
 # How work lands on main
 
-Two regimes. The first is in force now. The second is written, wired, and switched off, and the
-owner throws the switch — not an agent, not a schedule, not whoever reads this next.
+Two regimes. **The beta locked on 2026-08-04 and the second one is in force.** The first is kept
+below because it explains what the second replaced and why.
+
+Only the owner moves this, in either direction — not an agent, not a schedule, not whoever reads
+this next.
 
 **Never read this file to find out which regime is running.** Prose goes stale here; the
 `docs/ERRATA.md` shelf is half made of documents that described a state the code had left. One
@@ -37,28 +40,31 @@ Tags are untouched by this. The release job's `build-N` tag still pushes.
 
 ---
 
-## Regime 1 — now, through the beta lock
+## Regime 1 — until the beta lock (ENDED 2026-08-04)
 
-Work lands on main directly, exactly as it does today. The merge protocol is unchanged and is not
-relaxed by anything in this file:
+Work landed on main directly. **The merge protocol below was in force then, is in force now, and is
+not relaxed by anything in this file:**
 
 - merge the branch to main **locally**;
 - run the suite **on the merged tree** — a branch's green proves the branch;
 - certify the zero-warning line on a **fresh** DerivedData;
 - then push.
 
-This regime is deliberate. The beta is not locked, the feature set is still moving, and a review
-gate between an agent and main would cost a round-trip per ticket at exactly the moment the work is
-cheapest to redo. It is a trade, and it is being made knowingly.
+That regime was a deliberate trade: while the feature set was still moving, a review gate between an
+agent and main would have cost a round-trip per ticket at exactly the moment the work was cheapest
+to redo. The trade expired when the feature set stopped moving.
 
-## Regime 2 — after the beta lock
+## Regime 2 — IN FORCE since 2026-08-04
 
-**Trigger:** the owner declares the beta feature set frozen. #187 is where that lands; **#206 is the
-switch itself** and carries this checklist. No agent throws it, and no agent may assume it has been
-thrown.
+**Thrown 2026-08-04**, on the owner's instruction, by the checklist at the end of this file. #187
+carries the beta itself; #206 was the switch.
 
-From that moment, every change that is not a documentation edit ships as a pull request, reviewed
-adversarially by an agent that did not write it, and merged by the orchestrator.
+Every change that is not a documentation edit now ships as a pull request, reviewed adversarially by
+an agent that did not write it, and merged by the orchestrator.
+
+**Turning it back off is the owner's alone, the same as turning it on** — an agent that finds the
+gate inconvenient does not get to remove it, and "the ruleset was blocking me" is a thing to report,
+not a thing to fix.
 
 ### What GitHub can and cannot enforce here
 

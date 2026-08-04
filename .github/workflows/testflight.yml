@@ -63,12 +63,33 @@ on:
       - 'docs/**'
       - '*.md'
       - 'graphify-out/**'
+
+  # Since the beta lock (#206), main takes pull requests only, so the suite has to run on them —
+  # a required status check that never reports makes the branch unmergeable by anybody.
+  #
+  # The same three ignores, deliberately duplicated rather than anchored: a docs-only PR should
+  # skip for the same reason a docs-only push does. **If you edit the list above, edit it here.**
+  # YAML anchors would couple them, and were not used because `paths-ignore` is read by GitHub
+  # before any anchor expansion this repo could test.
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - 'graphify-out/**'
+
   workflow_dispatch:
 
 # One release at a time. Two concurrent runs would race for the same build number and the
 # loser's archive would be rejected as a duplicate.
+#
+# **Pull requests get their own group, one per branch.** With a single group a PR run would queue
+# ahead of a deploy that was already waiting — `cancel-in-progress: false` means it waits its full
+# turn — and a release would sit behind however many pull requests happened to be open. Only the
+# release path needs the mutual exclusion, because only it takes a build number.
 concurrency:
-  group: testflight
+  group: >-
+    testflight-${{ github.event_name == 'pull_request' && github.head_ref || 'main' }}
   cancel-in-progress: false
 
 # The tag step pushes, and the default GITHUB_TOKEN is read-only. Scoped to the one
@@ -200,12 +221,41 @@ jobs:
           path: ${{ runner.temp }}/ui-${{ matrix.shard }}.log
           if-no-files-found: warn
 
+  # ── One stable context for the branch ruleset to require ──────────────────────────────
+  # The UI matrix's check contexts are named "ui (1)"…"ui (N)", and N is DERIVED from
+  # Tools/ui-test-shards.txt. Requiring those by name would break the day somebody adds a shard
+  # line — and break it as a branch nobody can merge, waiting on a context that will never report,
+  # which is a far worse failure than a red test. This job's name never changes.
+  #
+  # `if: always()` is load-bearing. Without it a failed `unit` or `ui` SKIPS this job, and GitHub
+  # does not treat a skipped required check as a failed one — the branch would go mergeable
+  # precisely when the suite went red. So it always runs, and reads the results itself.
+  gate:
+    needs: [unit, ui]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Refuse unless every test job succeeded
+        run: |
+          set -euo pipefail
+          echo "unit: ${{ needs.unit.result }}"
+          echo "ui:   ${{ needs.ui.result }}"
+          # Explicit equality, not `!= failure`: a cancelled or skipped dependency is also not a
+          # pass, and "did not fail" would let both through.
+          [ "${{ needs.unit.result }}" = "success" ] || { echo "::error::unit did not succeed"; exit 1; }
+          [ "${{ needs.ui.result }}" = "success" ] || { echo "::error::ui did not succeed"; exit 1; }
+          echo "every test job succeeded"
+
   # ── Archive, upload, leave exactly one testable build ─────────────────────────────────
   # `needs` both, so a red anywhere stops the upload. GitHub skips a needs-job when any dependency
   # fails, and a skipped job is not a passed job — nothing here has to re-check that the tests were
   # green, because it does not run otherwise.
   release:
     needs: [unit, ui]
+    # **A pull request must never ship a build.** It would take a build number, expire the build
+    # the testers are on, and do it from code that has not landed on main.
+    if: github.event_name != 'pull_request'
     runs-on: macos-26
     timeout-minutes: 45
     steps:
