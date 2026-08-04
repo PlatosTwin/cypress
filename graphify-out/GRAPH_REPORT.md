@@ -1,39 +1,39 @@
 # Graph Report - cypress  (2026-08-03)
 
 ## Corpus Check
-- 444 files · ~1,403,488 words
+- 445 files · ~1,403,827 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 9734 nodes · 24824 edges · 522 communities (383 shown, 139 thin omitted)
-- Extraction: 88% EXTRACTED · 12% INFERRED · 0% AMBIGUOUS · INFERRED: 2914 edges (avg confidence: 0.8)
+- 9745 nodes · 24840 edges · 512 communities (370 shown, 142 thin omitted)
+- Extraction: 88% EXTRACTED · 12% INFERRED · 0% AMBIGUOUS · INFERRED: 2922 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `87e88124`
+- Built from commit: `41471188`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
 - ContributionStore
 - OutboxPresentation
-- VisitDraft
-- Sendable
+- AccountDeletion
+- Codable
 - CareLogDraft
 - Coordinate
-- SitePreviewAPI
+- CypressAPI
 - SpeciesPresentation
 - TreeProfilePresentation
 - test_ca_inventory_adapter.py
-- Date
+- ReminderOwner
 - Testing
 - MapModel
-- PinAdjustTests
+- Direction
 - CypressStore
 - Records
 - ActivityPresentationTests
 - .makeStore
-- Style
+- Chip
 - MapFilter
 - ActivityPresentation
 - String
@@ -41,42 +41,42 @@
 - Species
 - AppRouter
 - OutboxItem
-- .inMemory
+- LocalAPI
 - View
 - SwiftUI
-- CypressAPI
+- BottomTabBar
 - GrowthHistoryPresentation
 - SiteTests
-- LocalAPI
+- .now
 - TreeProfile
 - OutboxViewState
 - TreeQueries
-- String
+- Int32
 - JournalExportBytes
 - MeasureDraft
 - Page
 - Screen 3 · Tree Profile
 - String
-- FavoriteTests
+- .load
 - CypressColor
-- Identifiable
+- Size
 - Foundation
-- PhenologyTag
-- MapViewport
+- Int
+- MapQueryPlanTests
 - Block
 - SecondaryOutlineButton
 - PinSetDestinationTests
-- FixSensitive
+- Almanac
 - DeepLinkVoiceOverTests
-- Tree
+- SitePresentation
 - ScreenSweepShots
 - NearbySpeciesTree
 - MapSearch
-- CheckInPresentation
+- CheckInDraft
 - VisitPreviewAPI
 - ContributionCameraView
 - AlmanacNeighborhood
-- ModerationTests
+- .treeProfile
 - CypressGradient
 - GroveModel
 - ScreenEntranceTests
@@ -84,20 +84,20 @@
 - .almanac
 - MapContent
 - MeasurePresentation
-- Holdings
+- DeviceContributions
 - SpeciesClaimTests
 - VisitCameraView
 - OutboxPayload
-- State
+- GroveView
 - Kind
 - MapOpening
-- .cameraDidChange
+- MapSuggestionTests
 - TreeProfileModel
 - FoliageStrip
 - MeasureScreen
 - GrovePresentation
 - MapRecenterTests
-- Int
+- MapFrameProbe
 - MapCameraMemory
 - MapLocationProvider
 - FailsOnce
@@ -107,7 +107,7 @@
 - .repositoryRoot
 - ContrastTests
 - CityRecord
-- Quantity
+- CaseIterable
 - .drain
 - Script
 - TreeProfilePreviewAPI
@@ -129,7 +129,7 @@
 - MeasureEntranceKindTests
 - GroveTreesTests
 - SeedSchema
-- AccessibilityTests
+- Quantity
 - ActivityScreen
 - AccountAskProvider
 - .style
@@ -141,7 +141,7 @@
 - CodingKeys
 - CityManifest
 - MapAnnotationLayer
-- VisitCameraSessionTests
+- .jpeg
 - SlowGroveAPI
 - PrimaryCTAReachabilityTests
 - VisitLocationProvider
@@ -161,7 +161,7 @@
 - TreePhotosModel
 - SpeciesPickModel
 - GrowthHistoryView
-- .theAddTreeWellLeavesTheFormOnTheScreen
+- VisitCameraSessionTests
 - ModerationReviewList
 - Roadmap
 - SF city tree source (BUF vs tkzw-k3nq)
@@ -172,15 +172,15 @@
 - CityLibrary
 - SpeciesQueries
 - BottomSheet
-- CypressChipFlow
+- FlowRow
 - MethodBadge
 - Kind
 - CheckInView
 - .properties
 - inventory_adapters.py
 - build_seed.py
-- MeasureModel
-- .mapContent
+- VisitFlowView
+- MapViewport
 - cypressLeadInText
 - Color
 - CityDownloadRow
@@ -189,38 +189,38 @@
 - .dbh
 - .band
 - LandContextScreenTests
-- TreePlacementTests
+- CareLogModel
 - RecordDefectTests
-- TreePin
-- SearchBar
+- PinSet
+- .label
 - .region
 - MapHomeView
-- MemorialScreen
+- State
 - ReportModel
 - ShareView
 - .presentation
 - Vitality
-- AccountAskView
+- AccountAskScreen
 - MapSpeciesColorTests
 - .record
 - CityRecordPresentation
 - VisitIdentifyModel
 - VisitSaveLedger
 - MapSearchUITests
-- RecordingManager
+- .assertReachable
 - IconTextRow
 - CheckInModel
 - ScreenHeader
 - CareEvent
 - MapSpeciesPalette
 - MemorialPreviewAPI
-- PhotoUploadTicket
+- .init
 - .everyScreen
-- AlmanacScreen
+- AlmanacPresentation
 - AlmanacGeographyTests
 - PhotoFill
 - PhotoTally
-- ShotType
+- TreePhotosPresentation
 - ReportView
 - VisitSavedModel
 - RecordingSearchAPI
@@ -229,12 +229,12 @@
 - KnownSpecies
 - AppSchema
 - .bench
-- CheckInDraft
+- .tags
 - GrowthHistoryPreviewAPI
 - MemorialPresentation
 - PhotoViewerView
 - .relaunchAndDrain
-- PhotoOwnershipTests
+- PhotoOwner
 - SecondCityGeographyTests
 - XCTest
 - ui job (one shard per runner)
@@ -242,12 +242,12 @@
 - AccountLinkRecord
 - CityDownloader
 - MapCameraRequest
-- ShareDestinationGlyph
+- Shape
 - MessageComposer
 - SiteScreen
 - Dimension
 - UUID
-- CareLogPreviewAPI
+- CityDownloadTests
 - .bench
 - Screen
 - map_species_palette.py
@@ -261,8 +261,8 @@
 - D1: The Leaderboard Dies
 - Reviewer: Senior City Arborist
 - Persona: The City Forestry Worker
-- CoreLocation
-- Int32
+- MapGeography.swift
+- SQLiteError
 - MapTreeCard
 - VisitMetrics
 - VisitCandidate
@@ -275,15 +275,15 @@
 - Cal Poly SelecTree (Urban Forest Ecosystems Institute)
 - AppModel
 - DataSF Ingest Spec
-- AccountAskPreviewAPI
-- JournalPreviewAPI
+- SeedContractTests
+- .recordFailure
 - .render
 - VacantSiteRedirectTests
 - Sandbox
 - .writeContributions
 - .drawn
 - SheetExitUITests
-- CheckInPresentation.swift
+- ConfidenceBar
 - CypressRadius.swift
 - GroveTreesPresentation
 - .image
@@ -291,7 +291,7 @@
 - Five-Plate Sheared Crown, Weighted Downwind
 - Reviewer: Bearish Seed Investor
 - SpeciesCorrectionOffer
-- ComponentSupport.swift
+- SearchBar
 - .hex
 - SF landmark trees survey
 - appstore_connect.py
@@ -303,20 +303,20 @@
 - SpeciesPresentationTests
 - .speciesIDs
 - MapEmptyInventoryTests
-- CommunityAddTests
+- GroveJournalShotFixtures
 - CypressShadowStyle
-- FlowRow
+- Decade
 - ReviewFlagNoticeTests
 - .confirmAction
 - .hits
-- XCTestCase
+- MapRecenterUITests
 - PreviewView
 - TreeCluster
 - PhotoDeletion
 - RecordDefectOffer
-- AccountAskSheetTests
-- GrowthHistoryModel
-- .currentSpring
+- .user
+- SpeciesModel
+- Sendable
 - TreePhotosView
 - ContributionExtras
 - ShotBlankGuardTests
@@ -325,33 +325,33 @@
 - q
 - verification_state
 - CityInstallState
-- .outboxPhotoShotTypes
-- Duration
+- .enqueue
+- CypressPulseModifier
 - SeedStubNamingTests
 - UITestShardCoverageTests
 - AnonymizedPhotoNoticeUITests
 - SheetHeightUITests
 - E139 MKMapView layer (replaces SwiftUI Annotation layer)
 - ExportFormat
-- Affordance
+- Equatable
 - Corner
 - FoliageLevel
-- MemorialModel
-- PrivateReminderList
+- Availability
+- PrivateReminderItem
 - D16 — The destination is a merged national inventory
 - Mechanized guardrails vs recall-enforced rules
 - Cypress Logo — 640px Variant
 - ca_inventory_survey.py
 - Reviewer: Staff Engineer (Buildability)
 - Persona: The Weekend Volunteer
-- Shape
+- SpeciesAssertionSource
 - AvatarStack
 - PhotoFit
-- MemorialFacts
-- Kind
+- PhotoBand
+- NotBuiltYetView
 - Phase
-- .compass
-- TreePhotosFilterTests
+- LocationPrompt
+- ReminderSaveState
 - Cypress Logo Master Artwork
 - fetch_city_trees.py
 - fetch_sf_park_trees.py
@@ -361,13 +361,13 @@
 - Longitudinal Photo Timeline with Ghost Overlay
 - JournalModel
 - .thumb
-- ReportModel.swift
+- .callCity
 - PhotoDeletionReachabilityTests
 - SF park trees survey
 - iNaturalist observation annotations (month-of-year histogram)
 - Cypress App Icon (shipped 1024px asset)
-- ReportPreviewAPI
-- Engagement
+- .profile
+- LocationAccuracyTests
 - VisitCameraPreview.swift
 - JournalListView
 - JournalSegment
@@ -375,10 +375,10 @@
 - Species field guide entry (id_tips, seasonal, care_notes)
 - Tree (immutable UUID, status lifecycle, provenance, external_ref)
 - .target
-- Error
-- YouTabView.swift
+- .data
+- Kind
 - SIL Open Font License 1.1
-- DeviceContributions
+- Set
 - Kind
 - GrovePresentation.Tile
 - Export and licensing (ODbL data, CC-BY photos, i-Tree-compatible)
@@ -515,26 +515,16 @@
 - URLSession
 - XCUIApplication
 - XCUIElement
-- AccountAskModel
-- ActivityModel
-- TreeProfileView.swift
-- .write
+- Void
+- CGFloat
+- Int
 - Size
-- AccountAskScreen
 - ShareDestination
-- MapMembership
-- CypressChevron
 - .init
 - ShareModel
 - Press
-- Phase
-- PhotoCrownAlignment
-- .noteAndPhotosRoundTripThroughTheModel
-- SpeciesView.swift
-- MapProbeOverlay.swift
-- .init
+- MapProbeOverlay
 - .migrationPreservesExistingRows
-- GroveJournalShots
 - stage_graphify.sh
 
 ## God Nodes (most connected - your core abstractions)
@@ -590,159 +580,163 @@
 - **Cypress Visual Identity System (motif, roundel, palette, print style)** — mocks_assets_logo_master_lone_cypress_motif, mocks_assets_logo_master_circular_roundel_frame, mocks_assets_logo_master_brand_palette, mocks_assets_logo_master_woodcut_illustration_style [INFERRED 0.85]
 - **Logo Scene Composition (tree, granite outcrop, sunset seascape inside roundel)** — mocks_assets_logo_master, mocks_assets_logo_master_lone_cypress_motif, mocks_assets_logo_master_sunset_over_ocean, mocks_assets_logo_master_circular_roundel_frame [EXTRACTED 1.00]
 
-## Communities (522 total, 139 thin omitted)
+## Communities (512 total, 142 thin omitted)
 
 ### Community 0 - "ContributionStore"
-Cohesion: 0.07
-Nodes (27): ReviewFlag, HazardRedirectEvent, ContributionStore, JSONColumn, PhotoDeletionCounts, PhotoForDeletion, Attribution, Bool (+19 more)
+Cohesion: 0.05
+Nodes (36): FavoriteOwner, device, .deviceID, user, .userID, Encoder, ReviewFlag, HazardRedirectEvent (+28 more)
 
 ### Community 1 - "OutboxPresentation"
 Cohesion: 0.08
-Nodes (28): OutboxCopy, OutboxMetrics, OutboxPresentation, .headerPill, .isEmpty, .isQueueEmpty, .queue, .summaryLine (+20 more)
+Nodes (27): OutboxCopy, OutboxMetrics, OutboxPresentation, .headerPill, .isEmpty, .isQueueEmpty, .queue, .summaryLine (+19 more)
 
-### Community 2 - "VisitDraft"
-Cohesion: 0.18
-Nodes (9): String, .nilIfBlank, String, VisitDraft, .hasPhoto, .photoPaths, VisitOutboxWriter, VisitPhotoStaging (+1 more)
+### Community 2 - "AccountDeletion"
+Cohesion: 0.21
+Nodes (11): AccountDeletion, Outcome, PhotoBytes, .isEmpty, Bool, Date, Int, SQLiteBindable (+3 more)
 
-### Community 3 - "Sendable"
-Cohesion: 0.04
-Nodes (68): Codable, Envelope, .resolvedRetryable, Encoder, Source, inferredFromCityRecord, statedByContributor, Category (+60 more)
+### Community 3 - "Codable"
+Cohesion: 0.07
+Nodes (33): Codable, LinearRing, MultiPolygon, Polygon, FoliageAssessment, .isEmpty, FoliageDamage, chewed (+25 more)
 
 ### Community 4 - "CareLogDraft"
-Cohesion: 0.07
-Nodes (37): CareAction, litterCleared, mulched, staked, watered, weeded, CareLogModel, .hasPhoto (+29 more)
+Cohesion: 0.10
+Nodes (21): CareAction, litterCleared, mulched, staked, watered, weeded, .presentation, CareChip (+13 more)
 
 ### Community 5 - "Coordinate"
-Cohesion: 0.11
-Nodes (16): Coordinate, PhotoUploadRequest, Attribution, TreeDraft, PhotoDeletionTests, Double, Int, String (+8 more)
+Cohesion: 0.04
+Nodes (31): Coordinate, Double, Date, Int, UUID, Tree, TreeName, .isDisplayable (+23 more)
 
-### Community 6 - "SitePreviewAPI"
-Cohesion: 0.13
-Nodes (7): SitePreviewAPI, Data, Double, HazardRedirectEvent, Int, String, UUID
+### Community 6 - "CypressAPI"
+Cohesion: 0.10
+Nodes (10): SitePreviewAPI, Data, Double, HazardRedirectEvent, Int, String, UUID, CypressAPI (+2 more)
 
 ### Community 7 - "SpeciesPresentation"
 Cohesion: 0.05
-Nodes (51): Phase, failed, loaded, loading, Kind, family, habit, LeafRetentionLabel (+43 more)
+Nodes (49): Kind, family, habit, LeafRetentionLabel, SpeciesCopy, SpeciesIDTipRow, .id, .tint (+41 more)
 
 ### Community 8 - "TreeProfilePresentation"
-Cohesion: 0.03
-Nodes (70): ActivityItem, Caretakers, Kind, care, visit, StatDestination, growthHistory, .isMeasure (+62 more)
+Cohesion: 0.04
+Nodes (64): ActivityItem, Caretakers, StatDestination, growthHistory, .isMeasure, measure, StatItem, Bool (+56 more)
 
 ### Community 9 - "test_ca_inventory_adapter.py"
 Cohesion: 0.05
 Nodes (65): check_id_space_registry(), ContractError, Inventory, InventoryRecord, KindBasis, How the adapter knows a record's `kind`. Part of the record, not a comment. The…, One published list of records. What `trees.inventory_source` stores. Two…, A record, id space or inventory that the contract does not permit. (+57 more)
 
-### Community 10 - "Date"
-Cohesion: 0.07
-Nodes (29): HazardCategory, blockingSignalOrSightline, hangingOrBrokenLimb, struckByVehicle, uprooted, HazardRedirectEvent, PrivateReminder, ReminderOwner (+21 more)
+### Community 10 - "ReminderOwner"
+Cohesion: 0.09
+Nodes (16): HazardCategory, blockingSignalOrSightline, hangingOrBrokenLimb, struckByVehicle, uprooted, HazardRedirectEvent, PrivateReminder, ReminderOwner (+8 more)
 
 ### Community 12 - "MapModel"
-Cohesion: 0.07
-Nodes (35): MapCardSubject, .badge, .heroPhoto, .id, .isVacantSite, .lastVisitedAt, .scientificName, .thumbnail (+27 more)
-
-### Community 13 - "PinAdjustTests"
 Cohesion: 0.08
-Nodes (19): Direction, east, north, south, .step, west, Bool, Double (+11 more)
+Nodes (27): .basemap, MapModel, .clusters, .content, .filter, .hasSettled, .isNarrowed, .loadFailure (+19 more)
+
+### Community 13 - "Direction"
+Cohesion: 0.14
+Nodes (12): Direction, east, north, south, .step, west, Double, VisitPinAdjust (+4 more)
 
 ### Community 14 - "CypressStore"
-Cohesion: 0.10
-Nodes (24): URL, AppStateKey, accountLicenseVersion, accountProvider, currentUserID, currentUserRole, deviceUUID, signedOutUserID (+16 more)
+Cohesion: 0.08
+Nodes (26): AppStateKey, accountLicenseVersion, accountProvider, currentUserID, currentUserRole, deviceUUID, signedOutUserID, syncPhotosOnWifiOnly (+18 more)
 
 ### Community 15 - "Records"
 Cohesion: 0.06
 Nodes (33): Action, care, favorite, .hasOnState, .id, .label, report, share (+25 more)
 
 ### Community 16 - "ActivityPresentationTests"
-Cohesion: 0.17
-Nodes (10): BirthYearBucket, ActivityAttributionTests, ActivityPresentationTests, Bool, Calendar, Date, Int, TreeObservation (+2 more)
+Cohesion: 0.23
+Nodes (7): ActivityPresentationTests, Calendar, Date, Int, TreeObservation, UUID, Visit
 
-### Community 18 - "Style"
-Cohesion: 0.06
-Nodes (36): .pill, LegendDot, filled, hollow, Style, .border, careOff, careOn (+28 more)
+### Community 17 - ".makeStore"
+Cohesion: 0.18
+Nodes (4): Data, Int, String, JournalExportTests
+
+### Community 18 - "Chip"
+Cohesion: 0.05
+Nodes (48): CareActionLabel, Chip, .body, .chipShape, .isSelected, .pill, LegendDot, filled (+40 more)
 
 ### Community 19 - "MapFilter"
-Cohesion: 0.07
-Nodes (28): Condition, .id, inBloom, .label, needsCare, .needsSeasonalData, Decade, before1990 (+20 more)
+Cohesion: 0.06
+Nodes (35): CypressAPI, MapMembership, favorites, .id, yours, Set, UUID, MapFilterChips (+27 more)
 
 ### Community 20 - "ActivityPresentation"
 Cohesion: 0.08
 Nodes (39): ActivityCopy, ActivityMetrics, ActivityPresentation, .dryWeeks, .glance, .isEmpty, .moments, .monthlySeries (+31 more)
 
 ### Community 21 - "String"
-Cohesion: 0.11
-Nodes (27): PhenologyTagLabel, AlmanacCopy, AlmanacMetrics, AlmanacPresentation, .footnote, .isEmpty, AlmanacThresholds, Composition (+19 more)
+Cohesion: 0.13
+Nodes (16): PhenologyTagLabel, AlmanacCopy, AlmanacMetrics, AlmanacThresholds, Composition, CompositionRow, Coverage, Bool (+8 more)
 
 ### Community 22 - "test_inventory_contract.py"
 Cohesion: 0.08
 Nodes (54): IdSpace, A numbering scheme that record ids are drawn from. Not a city and not an…, check(), main(), FAILS IF: someone 'fixes' the collision between `city` and `datasf`. They…, FAILS IF: a second city's ids mint San Francisco's uuids. This is the whole…, The message `require_id_space` refuses this space with, or '' if it does not.…, FAILS IF: a second city may take San Francisco's uuid space. `sf`'s prefix is… (+46 more)
 
 ### Community 23 - "Species"
-Cohesion: 0.07
-Nodes (31): Bool, CareNote, IDTip, LeafRetention, .canShowFallColor, deciduous, evergreen, semiDeciduous (+23 more)
+Cohesion: 0.09
+Nodes (28): CareNote, IDTip, LeafRetention, .canShowFallColor, deciduous, evergreen, semiDeciduous, MonthRange (+20 more)
 
 ### Community 24 - "AppRouter"
-Cohesion: 0.06
-Nodes (37): AppRouter, .bottomTabSelection, Route, accountAsk, activity, almanac, careLog, checkIn (+29 more)
+Cohesion: 0.07
+Nodes (36): AppRouter, .bottomTabSelection, Route, accountAsk, activity, almanac, careLog, checkIn (+28 more)
 
 ### Community 25 - "OutboxItem"
 Cohesion: 0.07
 Nodes (33): Kind, careEvent, favoriteToggle, measurement, observation, privateReminder, visit, OutboxItem (+25 more)
 
-### Community 26 - ".inMemory"
-Cohesion: 0.08
-Nodes (21): PrivateReminder, APIOutboxTransport, OutboxQueue, OutboxTransport, CypressAPI, DatabaseQueue, Int, TimeInterval (+13 more)
+### Community 26 - "LocalAPI"
+Cohesion: 0.04
+Nodes (52): LocalAPI, .attribution, Attribution, Bool, Date, PrivateReminder, Attribution, Bool (+44 more)
 
 ### Community 27 - "View"
-Cohesion: 0.07
-Nodes (63): CareActionLabel, Chip, .body, .chipShape, .isSelected, Bool, InsettableShape, Void (+55 more)
+Cohesion: 0.09
+Nodes (53): ComponentGallery, .body, GalleryC1, GalleryC10, .body, GalleryC11, .body, GalleryC12 (+45 more)
 
 ### Community 28 - "SwiftUI"
-Cohesion: 0.05
-Nodes (16): CoreText, FoliageStrip.Density, .spokenName, LocationPrompt, .body, String, Void, SearchBarCopy (+8 more)
+Cohesion: 0.07
+Nodes (10): CoreText, CareLogMetrics, CGFloat, GrowthHistoryCopy, ContributionExtrasCopy, ContributionExtrasMetrics, CGFloat, MapKit (+2 more)
 
-### Community 29 - "CypressAPI"
-Cohesion: 0.09
-Nodes (22): AlmanacModel, .hasFailed, .needsLocation, .presentation, Phase, failed, loaded, loading (+14 more)
+### Community 29 - "BottomTabBar"
+Cohesion: 0.12
+Nodes (17): BottomTabBar, .body, Bool, Tab, .id, journal, .label, map (+9 more)
 
 ### Community 30 - "GrowthHistoryPresentation"
-Cohesion: 0.09
-Nodes (28): MeasurementSeries, estimated, measured, GrowthChart, .id, .seriesPresent, GrowthHistoryCopy, GrowthHistoryMetrics (+20 more)
+Cohesion: 0.10
+Nodes (25): GrowthChart, .id, .seriesPresent, GrowthHistoryCopy, GrowthHistoryMetrics, GrowthHistoryPresentation, .charts, .hasRecordButNoChart (+17 more)
 
 ### Community 31 - "SiteTests"
-Cohesion: 0.06
-Nodes (24): SiteModel, .presentation, Bool, CypressAPI, Double, UUID, Neighbor, SiteCopy (+16 more)
+Cohesion: 0.07
+Nodes (22): MapCardSubject, .badge, .heroPhoto, .id, .isVacantSite, .lastVisitedAt, .scientificName, .thumbnail (+14 more)
 
-### Community 32 - "LocalAPI"
-Cohesion: 0.06
-Nodes (33): AccountAskLink, SpeciesAssertion, .isCurrent, .owner, Attribution, Bool, ContributionOwner, Date (+25 more)
+### Community 32 - ".now"
+Cohesion: 0.08
+Nodes (21): SpeciesAssertion, .isCurrent, .owner, Attribution, Bool, ContributionOwner, Date, Double (+13 more)
 
 ### Community 33 - "TreeProfile"
-Cohesion: 0.10
-Nodes (14): InventorySource, Date, String, Series, TreeObservation, Visit, TreeProfile, CardBearingColumns (+6 more)
+Cohesion: 0.09
+Nodes (14): Series, TreeObservation, Visit, TreeProfile, SiteFixtures, .bare, .profile, CardBearingColumns (+6 more)
 
 ### Community 34 - "OutboxViewState"
-Cohesion: 0.10
-Nodes (23): OutboxFailureReason, OutboxItemSnapshot, .showsRetryAffordance, OutboxSnapshot, OutboxViewState, .isRefreshing, .refreshError, .snapshot (+15 more)
+Cohesion: 0.09
+Nodes (24): OutboxFailureReason, OutboxItemSnapshot, .showsRetryAffordance, OutboxSnapshot, OutboxViewState, .isRefreshing, .refreshError, .snapshot (+16 more)
 
 ### Community 35 - "TreeQueries"
 Cohesion: 0.11
 Nodes (22): named, Narrowing, .isNone, .predicate, SpatialIndexStrategy, coveringIndex, rtreePrefilter, Bool (+14 more)
 
-### Community 36 - "String"
-Cohesion: 0.21
-Nodes (8): SQLiteDecodingError, .description, malformedValue, missingColumn, unexpectedNull, SQLiteRow, String, T
+### Community 36 - "Int32"
+Cohesion: 0.11
+Nodes (15): Int32, Int64, SQLiteBindable, SQLiteDecodingError, .description, malformedValue, missingColumn, unexpectedNull (+7 more)
 
 ### Community 37 - "JournalExportBytes"
 Cohesion: 0.17
 Nodes (13): JournalCSVExport, .transferRepresentation, JournalExportBytes, JournalExportRows, .body, JournalGeoJSONExport, .transferRepresentation, async (+5 more)
 
 ### Community 38 - "MeasureDraft"
-Cohesion: 0.09
-Nodes (20): Collection, MeasurementKind, dbh, height, .plausibleSIRange, ClosedRange, MeasureDraft, .canSave (+12 more)
+Cohesion: 0.06
+Nodes (34): MeasurementKind, dbh, height, .plausibleSIRange, ClosedRange, MeasureModel, .presentation, .previousMeasurement (+26 more)
 
 ### Community 39 - "Page"
-Cohesion: 0.13
-Nodes (13): Page, .maximumLimit, Element, JournalPresentationTests, .calendar, Calendar, Data, Date (+5 more)
+Cohesion: 0.16
+Nodes (10): Page, .maximumLimit, JournalPresentationTests, .calendar, Calendar, Date, Int, String (+2 more)
 
 ### Community 40 - "Screen 3 · Tree Profile"
 Cohesion: 0.06
@@ -752,177 +746,177 @@ Nodes (48): Retired Artifact Redirect Notice, Theme-Aware Artifact Styling (pref
 Cohesion: 0.08
 Nodes (39): GradientSwatch, .id, RadiusSample, .id, ReviewCell, .body, .gradientOrColor, .hexPair (+31 more)
 
-### Community 42 - "FavoriteTests"
-Cohesion: 0.13
-Nodes (15): FavoriteOutboxWriter, FavoriteSaveReceipt, Attribution, Bool, Date, UUID, FavoriteTests, Row (+7 more)
+### Community 42 - ".load"
+Cohesion: 0.25
+Nodes (6): ProfileFavoriteWriter, .favoriteWriter, Bool, UUID, FavoriteRoundTripTests, Double
 
 ### Community 43 - "CypressColor"
 Cohesion: 0.08
-Nodes (35): CypressColor, CypressReviewToken, .id, Dark, Kind, derived, escalated, overruled (+27 more)
+Nodes (34): CypressColor, CypressReviewToken, .id, Kind, derived, escalated, overruled, CGFloat (+26 more)
 
-### Community 44 - "Identifiable"
-Cohesion: 0.10
-Nodes (24): Size, activity, almanac, candidate, candidateRow, .id, mapCard, nearby (+16 more)
+### Community 44 - "Size"
+Cohesion: 0.17
+Nodes (12): Size, activity, almanac, candidate, candidateRow, .id, mapCard, nearby (+4 more)
 
 ### Community 45 - "Foundation"
 Cohesion: 0.07
-Nodes (8): CryptoKit, BetaCapability, SQLiteExtendedCode, MapPinCopy, Foundation, Observation, QuartzCore, SQLite3
+Nodes (9): CoreLocation, CryptoKit, DebugLocationFixtures, BetaCapability, MapPinCopy, Foundation, Observation, QuartzCore (+1 more)
 
-### Community 46 - "PhenologyTag"
-Cohesion: 0.12
-Nodes (12): PhenologyTag, bare, fallColor, flowering, fruiting, fullLeaf, leafOut, String (+4 more)
+### Community 46 - "Int"
+Cohesion: 0.07
+Nodes (11): Int, AccountAskPreviewAPI, Coordinate, String, ActivityPreviewFixtures, T, MapZoom, ClosedRange (+3 more)
 
-### Community 47 - "MapViewport"
-Cohesion: 0.11
-Nodes (16): BoundingBox, MapViewport, .isFiltered, .isNarrowed, .shouldCluster, ClosedRange, Double, Set (+8 more)
+### Community 47 - "MapQueryPlanTests"
+Cohesion: 0.34
+Nodes (3): MapQueryPlanTests, Bool, Int
 
 ### Community 48 - "Block"
 Cohesion: 0.09
-Nodes (12): PinSetNeighbors, async, CypressAPI, .locateSet, Asked, Block, ShowWhereTests, Double (+4 more)
+Nodes (13): PinSetNeighbors, async, CypressAPI, .locateSet, Asked, Block, ShowWhereTests, Data (+5 more)
 
 ### Community 49 - "SecondaryOutlineButton"
-Cohesion: 0.07
+Cohesion: 0.08
 Nodes (32): PrimaryButton, .body, SecondaryOutlineButton, .body, ShowWhereButton, .body, Style, camera (+24 more)
 
 ### Community 50 - "PinSetDestinationTests"
-Cohesion: 0.12
-Nodes (13): PinSetMapView, .body, MKCoordinateRegion, UUID, Void, PinSetPresentation, UUID, BundleToken (+5 more)
+Cohesion: 0.15
+Nodes (12): PinSetMapView, .body, MKCoordinateRegion, UUID, Void, PinSetPresentation, UUID, BundleToken (+4 more)
 
-### Community 51 - "FixSensitive"
-Cohesion: 0.09
-Nodes (7): FixSensitive, Held, Double, HazardRedirectEvent, Int, String, UUID
+### Community 51 - "Almanac"
+Cohesion: 0.05
+Nodes (29): Almanac, .empty, CypressAPI, AlmanacModel, .hasFailed, .needsLocation, .presentation, Phase (+21 more)
 
 ### Community 52 - "DeepLinkVoiceOverTests"
 Cohesion: 0.11
-Nodes (7): DeepLinkVoiceOverTests, Bool, StaticString, String, XCUIApplication, XCUIElement, UInt
+Nodes (7): DeepLinkVoiceOverTests, Bool, StaticString, String, UInt, XCUIApplication, XCUIElement
 
-### Community 53 - "Tree"
-Cohesion: 0.09
-Nodes (29): CaseIterable, Status, active, removedByModeration, retired, Bool, Date, Int (+21 more)
+### Community 53 - "SitePresentation"
+Cohesion: 0.11
+Nodes (18): InventorySource, Date, String, TreeSource, cityImport, community, .presentation, Neighbor (+10 more)
 
 ### Community 54 - "ScreenSweepShots"
-Cohesion: 0.22
-Nodes (10): ScreenSweepShots, .outputDirectory, Bool, CGFloat, ColorScheme, DynamicTypeSize, String, UIImage (+2 more)
+Cohesion: 0.17
+Nodes (12): GroveJournalShots, CGFloat, ScreenSweepShots, .outputDirectory, Bool, CGFloat, ColorScheme, DynamicTypeSize (+4 more)
 
 ### Community 55 - "NearbySpeciesTree"
 Cohesion: 0.08
 Nodes (22): CypressAPI, NearbySpeciesTree, .id, SpeciesGuide, SpeciesGuideLimits, Double, Int, Series (+14 more)
 
 ### Community 56 - "MapSearch"
-Cohesion: 0.13
-Nodes (14): MapSearch, .isActive, narrowed, noMatch, off, MapSearchCopy, Narrowed, .isSample (+6 more)
+Cohesion: 0.14
+Nodes (15): MapSearchStatus, .body, MapSearch, .isActive, narrowed, noMatch, off, MapSearchCopy (+7 more)
 
-### Community 57 - "CheckInPresentation"
-Cohesion: 0.16
-Nodes (15): .presentation, CheckInPresentation, .foliageOptions, .showsVitality, .statusOptions, .structureOptions, .vitalityRows, Bool (+7 more)
+### Community 57 - "CheckInDraft"
+Cohesion: 0.09
+Nodes (27): CheckInDraft, .isEmpty, .orderedStructureFlags, CheckInMetrics, CheckInPresentation, .foliageOptions, .showsVitality, .statusOptions (+19 more)
 
 ### Community 58 - "VisitPreviewAPI"
-Cohesion: 0.09
-Nodes (13): Attribution, Data, Double, HazardRedirectEvent, Int, String, UserDefaults, UUID (+5 more)
+Cohesion: 0.08
+Nodes (14): Attribution, Data, Double, HazardRedirectEvent, Int, String, UserDefaults, UUID (+6 more)
 
 ### Community 59 - "ContributionCameraView"
-Cohesion: 0.06
-Nodes (32): AVCapturePhoto, AVCapturePhotoCaptureDelegate, AVCapturePhotoOutput, AVCaptureSession, ContributionCameraCopy, ContributionCameraView, .addedLine, .body (+24 more)
+Cohesion: 0.08
+Nodes (24): AVCapturePhoto, AVCapturePhotoCaptureDelegate, AVCapturePhotoOutput, AVCaptureSession, ContributionCameraCopy, ContributionCameraView, .addedLine, .body (+16 more)
 
 ### Community 60 - "AlmanacNeighborhood"
-Cohesion: 0.08
-Nodes (32): Almanac, .empty, AlmanacLimits, AlmanacNeighborhood, .name, BloomFirst, CoverageGap, CoverageTree (+24 more)
+Cohesion: 0.12
+Nodes (9): AlmanacNeighborhood, .name, AlmanacPresentationTests, Bool, Calendar, Double, Int, String (+1 more)
 
-### Community 61 - "ModerationTests"
-Cohesion: 0.17
-Nodes (8): ReviewQueueItem, UserRole, ModerationModel, ModerationTests, ObservationStatus, ReviewQueueItem, UserRole, UUID
+### Community 61 - ".treeProfile"
+Cohesion: 0.25
+Nodes (6): ReviewQueueItem, ModerationTests, ObservationStatus, ReviewQueueItem, UserRole, UUID
 
 ### Community 62 - "CypressGradient"
 Cohesion: 0.07
 Nodes (39): .tile, CypressGradient, CypressGradientField, .body, CypressGradientRecipe, CypressRadialStop, Scrim, SpeciesTileArt (+31 more)
 
 ### Community 63 - "GroveModel"
-Cohesion: 0.09
-Nodes (20): GroveModel, .hasFailed, .presentation, .treesHaveFailed, Phase, failed, loaded, loading (+12 more)
+Cohesion: 0.10
+Nodes (19): GroveModel, .hasFailed, .treesHaveFailed, Phase, failed, loaded, loading, CypressAPI (+11 more)
 
 ### Community 64 - "ScreenEntranceTests"
-Cohesion: 0.12
+Cohesion: 0.11
 Nodes (11): ScreenEntranceTests, .attribution, .calendar, Attribution, Bool, Calendar, Date, Int (+3 more)
 
 ### Community 65 - "RootView"
-Cohesion: 0.08
-Nodes (28): NotBuiltYetView, .body, RootView, .body, .favoriteWriter, .presentingSheet, Binding, ModerationModel (+20 more)
+Cohesion: 0.12
+Nodes (18): RootView, .presentingSheet, Binding, ModerationModel, PhotoImageStore, Void, DataLayer, UUID (+10 more)
 
 ### Community 66 - ".almanac"
-Cohesion: 0.11
-Nodes (23): AlmanacQueries, Bool, Date, Int, SQLiteConnection, String, UUID, AlmanacScope (+15 more)
+Cohesion: 0.10
+Nodes (24): AlmanacQueries, Bool, Date, Int, SQLiteConnection, String, UUID, AlmanacScope (+16 more)
 
 ### Community 67 - "MapContent"
-Cohesion: 0.08
-Nodes (13): MapContent, clusters, .markerCount, .pinCount, pins, AnswersOnDemand, Data, Double (+5 more)
+Cohesion: 0.06
+Nodes (19): MapContent, clusters, .markerCount, .pinCount, pins, PinAnswer, .endIndex, .isSample (+11 more)
 
 ### Community 68 - "MeasurePresentation"
 Cohesion: 0.11
-Nodes (25): .presentation, ChartEligibility, eligible, noFix, tooImprecise, MeasureCopy, MeasurePresentation, .anomaly (+17 more)
+Nodes (24): ChartEligibility, eligible, noFix, tooImprecise, MeasureCopy, MeasurePresentation, .anomaly, .canSave (+16 more)
 
-### Community 69 - "Holdings"
-Cohesion: 0.16
-Nodes (6): Holdings, Double, HazardRedirectEvent, Int, String, UUID
+### Community 69 - "DeviceContributions"
+Cohesion: 0.06
+Nodes (22): CypressAPI, DeviceContributions, .isEmpty, .total, Bool, Int, AccountAskModel, .presentation (+14 more)
 
 ### Community 70 - "SpeciesClaimTests"
 Cohesion: 0.12
 Nodes (10): UUID, .body, .footer, SpeciesClaimTests, .attribution, Attribution, CypressAPI, Data (+2 more)
 
 ### Community 71 - "VisitCameraView"
-Cohesion: 0.05
-Nodes (44): .closeButton, .shutterBlock, Framing, Attribution, Bool, CGFloat, CGRect, CypressAPI (+36 more)
+Cohesion: 0.06
+Nodes (39): .shutterBlock, Framing, Attribution, Bool, CypressAPI, MainActor, PhotosPickerItem, String (+31 more)
 
 ### Community 72 - "OutboxPayload"
-Cohesion: 0.08
-Nodes (21): FavoriteToggle, OutboxPayload, careEvent, .clientUUID, favoriteToggle, .kind, measurement, observation (+13 more)
+Cohesion: 0.09
+Nodes (22): FavoriteOutboxWriter, FavoriteSaveReceipt, FavoriteToggle, OutboxPayload, careEvent, .clientUUID, favoriteToggle, .kind (+14 more)
 
-### Community 73 - "State"
-Cohesion: 0.05
-Nodes (41): BottomTabBar, .body, Bool, Tab, .id, journal, .label, map (+33 more)
+### Community 73 - "GroveView"
+Cohesion: 0.10
+Nodes (19): GroveNote, .body, GroveTabRow, .body, GroveView, .body, .footnote, .speciesTab (+11 more)
 
 ### Community 74 - "Kind"
-Cohesion: 0.07
-Nodes (34): GalleryC18C19, .body, CGPoint, CGSize, Kind, .accessibilityLabel, cityTree, cityTreeSpecies (+26 more)
+Cohesion: 0.08
+Nodes (30): Kind, .accessibilityLabel, cityTree, cityTreeSpecies, cluster, community, .diameter, .fill (+22 more)
 
 ### Community 75 - "MapOpening"
-Cohesion: 0.09
-Nodes (20): MapLocationNotice, .action, .body, String, .standingNotice, MapOpening, MapOpeningCopy, Showing (+12 more)
+Cohesion: 0.08
+Nodes (25): IdentifyFAB, .body, .glyphTint, MapLocationCopy, MapLocationNotice, .action, .body, String (+17 more)
 
-### Community 76 - ".cameraDidChange"
+### Community 76 - "MapSuggestionTests"
 Cohesion: 0.10
-Nodes (16): .body, Listing, MapSuggestionCopy, MapSuggestions, listing, off, .rows, Remainder (+8 more)
+Nodes (19): MapSuggestionList, .body, .rule, CGFloat, Listing, MapSuggestionCopy, MapSuggestions, listing (+11 more)
 
 ### Community 77 - "TreeProfileModel"
 Cohesion: 0.11
-Nodes (16): ProfileFavoriteWriter, Bool, UUID, Set, Bool, CypressAPI, Never, String (+8 more)
+Nodes (13): Bool, CypressAPI, Never, String, Task, UUID, Void, TreeProfileModel (+5 more)
 
 ### Community 78 - "FoliageStrip"
-Cohesion: 0.10
-Nodes (20): ChartMonthAxis, .body, GallerySample, Density, bare, full, .id, .level (+12 more)
+Cohesion: 0.09
+Nodes (22): .body, GallerySample, Density, bare, full, .id, .level, partial (+14 more)
 
 ### Community 79 - "MeasureScreen"
-Cohesion: 0.06
-Nodes (36): .tabRoot, SegmentedControl, .body, Size, large, .paddingV, standard, Binding (+28 more)
+Cohesion: 0.08
+Nodes (25): .body, SegmentedControl, .body, Size, large, .paddingV, standard, Binding (+17 more)
 
 ### Community 80 - "GrovePresentation"
-Cohesion: 0.10
-Nodes (24): Celebration, GroveCopy, GroveMetrics, GrovePresentation, .footnote, .isEmpty, GroveThresholds, Progress (+16 more)
+Cohesion: 0.09
+Nodes (25): .presentation, Celebration, GroveCopy, GroveMetrics, GrovePresentation, .footnote, .isEmpty, GroveThresholds (+17 more)
 
 ### Community 81 - "MapRecenterTests"
-Cohesion: 0.11
-Nodes (11): MapRecenterButton, .body, .tint, Camera, .metersAcross, MapRecenter, MapRecenterCopy, Bool (+3 more)
+Cohesion: 0.09
+Nodes (17): MapRecenterButton, .body, .tint, Camera, .metersAcross, Engagement, askable, away (+9 more)
 
-### Community 82 - "Int"
-Cohesion: 0.10
-Nodes (16): CADisplayLink, CFTimeInterval, Double, Int, Int64, SQLiteBindable, Coordinate, Coordinate (+8 more)
+### Community 82 - "MapFrameProbe"
+Cohesion: 0.19
+Nodes (6): CADisplayLink, CFTimeInterval, MapFrameProbe, .isEnabled, Snapshot, .isSmooth
 
 ### Community 83 - "MapCameraMemory"
 Cohesion: 0.13
 Nodes (12): MapCameraMemory, .hasRememberedCamera, .openingSnapshot, .remembered, Snapshot, Bool, Double, MKCoordinateRegion (+4 more)
 
 ### Community 84 - "MapLocationProvider"
-Cohesion: 0.08
-Nodes (24): CLLocationManagerDelegate, Availability, .accuracyM, .coordinate, denied, .isRefused, located, notAsked (+16 more)
+Cohesion: 0.07
+Nodes (30): CLLocationManager, CLLocationManagerDelegate, Availability, .accuracyM, .coordinate, denied, .isRefused, located (+22 more)
 
 ### Community 85 - "FailsOnce"
 Cohesion: 0.09
@@ -930,35 +924,35 @@ Nodes (12): Attempts, FailedReadTests, FailsOnce, Bool, CGFloat, Data, Double, H
 
 ### Community 86 - "MapFilterAccessibilityTests"
 Cohesion: 0.22
-Nodes (9): MapFilterAccessibilityTests, .runningDeviceUDID, Bool, Set, String, TimeInterval, Void, XCUIApplication (+1 more)
+Nodes (9): MapFilterAccessibilityTests, .runningDeviceUDID, Bool, String, TimeInterval, XCUIApplication, XCUIElement, Set (+1 more)
 
 ### Community 87 - "TreeStatus"
 Cohesion: 0.06
-Nodes (31): Kind, appearsDead, appearsRemoved, .confirmedStatus, duplicateSuspected, neverExisted, .recordReviewKinds, removedButActive (+23 more)
+Nodes (29): Kind, appearsDead, appearsRemoved, .confirmedStatus, duplicateSuspected, neverExisted, .recordReviewKinds, removedButActive (+21 more)
 
 ### Community 88 - "Callout"
 Cohesion: 0.07
-Nodes (35): Callout, .background, .body, .content, .leadInColor, .radius, DashedIfNeeded, OptionalWell (+27 more)
+Nodes (36): Callout, .background, .body, .content, .leadInColor, .radius, DashedIfNeeded, OptionalWell (+28 more)
 
 ### Community 89 - ".repositoryRoot"
 Cohesion: 0.11
 Nodes (16): AppSourceLiterals, BritishSpelling, BritishSpellingGuardTests, Form, Literal, Int, Set, StaticString (+8 more)
 
 ### Community 90 - "ContrastTests"
-Cohesion: 0.13
+Cohesion: 0.14
 Nodes (9): ContrastTests, Pair, Pin, Double, String, T, UInt32, UITraitCollection (+1 more)
 
 ### Community 91 - "CityRecord"
-Cohesion: 0.09
-Nodes (16): CityRecord, .isEmpty, LandContext, cityPark, .isPublicLand, otherPublic, privateProperty, street (+8 more)
+Cohesion: 0.10
+Nodes (15): CityRecord, .isEmpty, LandContext, cityPark, .isPublicLand, otherPublic, privateProperty, street (+7 more)
 
-### Community 92 - "Quantity"
-Cohesion: 0.11
-Nodes (26): Attribution, Bool, Date, Double, UUID, TreeMeasurement, .attribution, .isChartable (+18 more)
+### Community 92 - "CaseIterable"
+Cohesion: 0.14
+Nodes (18): CaseIterable, Bool, VerificationState, cityRecord, .isFitForInventoryIngestion, orgVerified, unverified, Collection (+10 more)
 
 ### Community 93 - ".drain"
-Cohesion: 0.14
-Nodes (12): DrainReport, APIError, Bool, Date, Error, String, UUID, OutboxPresentationTests (+4 more)
+Cohesion: 0.20
+Nodes (7): Bool, UUID, OutboxPresentationTests, Date, Int, String, OutboxWifiCountTests
 
 ### Community 94 - "Script"
 Cohesion: 0.11
@@ -969,8 +963,8 @@ Cohesion: 0.08
 Nodes (16): Bool, Calendar, ColorScheme, Data, Date, Double, HazardRedirectEvent, Int (+8 more)
 
 ### Community 96 - "VisitCameraModel"
-Cohesion: 0.08
-Nodes (31): CloseIntent, discardShot, leaveCamera, Attribution, Bool, CypressAPI, Data, Double (+23 more)
+Cohesion: 0.09
+Nodes (27): CloseIntent, discardShot, leaveCamera, Attribution, CypressAPI, Double, Int, MainActor (+19 more)
 
 ### Community 97 - "StylizedBasemap"
 Cohesion: 0.19
@@ -981,40 +975,40 @@ Cohesion: 0.06
 Nodes (29): AttentionCard, .body, Size, compact, .paddingH, .paddingV, .radius, standard (+21 more)
 
 ### Community 99 - "GrovePreviewAPI"
-Cohesion: 0.09
-Nodes (12): GroveFixtures, GrovePreviewAPI, GroveReadCounter, .count, Bool, Data, Double, HazardRedirectEvent (+4 more)
+Cohesion: 0.10
+Nodes (10): GrovePreviewAPI, GroveReadCounter, .count, Data, Double, HazardRedirectEvent, Int, String (+2 more)
 
 ### Community 100 - "TreeProfileView"
-Cohesion: 0.11
-Nodes (10): ActivityRow, APIError, Bool, CypressAPI, String, UUID, Void, TreeProfileView (+2 more)
+Cohesion: 0.12
+Nodes (11): ActivityRow, APIError, Bool, CypressAPI, String, UUID, Void, TreeProfileView (+3 more)
 
 ### Community 101 - "View"
-Cohesion: 0.13
-Nodes (17): Animation, .sharedEnvironment, SharedEnvironment, .body, CypressAnimationModifier, CypressFadeInModifier, CypressPinDropModifier, .settled (+9 more)
+Cohesion: 0.16
+Nodes (13): Animation, .sharedEnvironment, SharedEnvironment, .body, CypressAnimationModifier, CypressFadeInModifier, CypressPinDropModifier, .settled (+5 more)
 
 ### Community 102 - "OutboxStore"
 Cohesion: 0.17
 Nodes (12): OutboxStore, Record, .id, APIError, Bool, Date, Int, Int64 (+4 more)
 
 ### Community 103 - ".init"
-Cohesion: 0.19
-Nodes (13): MemorialCopy, Moment, Stat, Calendar, Date, DateFormatter, Int, Locale (+5 more)
+Cohesion: 0.11
+Nodes (23): Kind, checkIn, cityRecord, firstPhoto, visit, MemorialCopy, MemorialFacts, MemorialMetrics (+15 more)
 
 ### Community 104 - "logo_gen.py"
 Cohesion: 0.15
 Nodes (27): badge(), bez(), bez_d(), birds(), Branch, card(), det(), ellipses_svg() (+19 more)
 
 ### Community 105 - "SQLiteConnection"
-Cohesion: 0.08
-Nodes (17): DatabaseQueue, T, SQLiteConnection, .changes, .lastInsertRowID, .userVersion, OpaquePointer, String (+9 more)
+Cohesion: 0.06
+Nodes (26): DatabaseQueue, T, Migration, MigrationError, databaseIsAhead, .description, duplicateVersion, nonPositiveVersion (+18 more)
 
 ### Community 106 - "MapSpeciesSlot"
 Cohesion: 0.09
 Nodes (23): CypressTriangle, MapSpeciesGlyph, .body, .extent, .stroke, MapSpeciesSlot, a, b (+15 more)
 
 ### Community 107 - "VisitAddTreeModel"
-Cohesion: 0.06
-Nodes (31): Phase, adding, composing, duplicate, failed, pickingSpecies, placingPin, Placement (+23 more)
+Cohesion: 0.07
+Nodes (28): Phase, adding, composing, duplicate, failed, pickingSpecies, placingPin, Attribution (+20 more)
 
 ### Community 108 - "GrovePresentationTests"
 Cohesion: 0.19
@@ -1033,28 +1027,28 @@ Cohesion: 0.13
 Nodes (12): IntRange, Bool, Int, MeasureEntranceKindTests, .attribution, .calendar, Attribution, Calendar (+4 more)
 
 ### Community 112 - "GroveTreesTests"
-Cohesion: 0.14
+Cohesion: 0.15
 Nodes (12): GroveRecord, .isEmpty, Bool, Int, GroveTreesTests, .calendar, Bool, Calendar (+4 more)
 
 ### Community 113 - "SeedSchema"
-Cohesion: 0.10
-Nodes (22): ContractError, .description, missingTable, unrecognizedShape, LocationError, .description, notFoundAtPath, notFoundInBundle (+14 more)
+Cohesion: 0.07
+Nodes (32): CustomStringConvertible, Int, ValidationError, .description, schemaTooNew, ContractError, .description, missingTable (+24 more)
 
-### Community 114 - "AccessibilityTests"
-Cohesion: 0.08
-Nodes (23): BarChart, .body, ChartCard, .body, ChartPoint, .series, ChartSeriesLegend, .body (+15 more)
+### Community 114 - "Quantity"
+Cohesion: 0.05
+Nodes (45): LengthUnit, centimeters, feet, inches, .isMetric, meters, .metersPerUnit, millimeters (+37 more)
 
 ### Community 115 - "ActivityScreen"
-Cohesion: 0.11
-Nodes (19): ActivityModel, .failureError, ActivityScreen, .body, .emptyState, .header, ActivityStripTile, .body (+11 more)
+Cohesion: 0.09
+Nodes (25): ChartCard, .body, ChartMonthAxis, ChartSeriesLegend, .body, .body, ActivityModel, .failureError (+17 more)
 
 ### Community 116 - "AccountAskProvider"
 Cohesion: 0.09
-Nodes (25): .presentation, AccountAskCopy, AccountAskMetrics, AccountAskPresentation, AccountAskProvider, apple, email, google (+17 more)
+Nodes (24): AccountAskCopy, AccountAskMetrics, AccountAskPresentation, AccountAskProvider, apple, email, google, .id (+16 more)
 
 ### Community 117 - ".style"
-Cohesion: 0.17
-Nodes (14): PhotoCloseGlyph, PhotoGlyphMetrics, photoGlyphPoint(), PhotoThumbGlyph, PhotoThumbMark, .body, PhotoTrashGlyph, CGFloat (+6 more)
+Cohesion: 0.10
+Nodes (21): PhotoCloseGlyph, PhotoGlyphMetrics, photoGlyphPoint(), PhotoThumbGlyph, PhotoThumbMark, .body, PhotoTrashGlyph, CGFloat (+13 more)
 
 ### Community 118 - "ReportPresentation"
 Cohesion: 0.08
@@ -1065,32 +1059,32 @@ Cohesion: 0.09
 Nodes (23): Phase, failed, loaded, loading, ShareCopy, SharePresentation, .accessibilityLabel, .bestPublicPhoto (+15 more)
 
 ### Community 120 - "Bool"
-Cohesion: 0.10
-Nodes (21): CoreEntity, FieldCaptured, .isEligibleForGrowthCharting, GPSAccuracy, SoftDeletable, .isDeleted, SyncableMutation, Device (+13 more)
+Cohesion: 0.07
+Nodes (31): CoreEntity, GPSAccuracy, SoftDeletable, .isDeleted, SyncableMutation, ShotType, fullTree, leaf (+23 more)
 
 ### Community 121 - "SeedCorpus"
 Cohesion: 0.42
 Nodes (5): SeedCorpus, Bool, Int, Set, String
 
 ### Community 122 - "UIColor"
-Cohesion: 0.16
-Nodes (13): CALayer, UIColor, MapMarkerView, Bool, CGPoint, String, TreePinAnnotation, MKAnnotation (+5 more)
+Cohesion: 0.13
+Nodes (15): CALayer, UIColor, MapMarkerView, Bool, CGPoint, String, TreePinAnnotation, CGRect (+7 more)
 
 ### Community 123 - "CodingKeys"
 Cohesion: 0.07
 Nodes (29): CodingKey, ErrorKeys, code, message, retryable, RootKeys, error, CodingKeys (+21 more)
 
 ### Community 124 - "CityManifest"
-Cohesion: 0.08
-Nodes (28): City, CityManifest, CodingKeys, bytes, cities, coverage, displayName, id (+20 more)
+Cohesion: 0.11
+Nodes (23): City, CityManifest, CodingKeys, bytes, cities, coverage, displayName, id (+15 more)
 
 ### Community 125 - "MapAnnotationLayer"
 Cohesion: 0.15
 Nodes (12): Coordinator, MapAnnotationLayer, Context, Coordinator, Int, MKCoordinateRegion, UUID, MKMapView (+4 more)
 
-### Community 126 - "VisitCameraSessionTests"
-Cohesion: 0.20
-Nodes (6): VisitSaveReceipt, .logVisitButton, Data, String, UUID, VisitCameraSessionTests
+### Community 126 - ".jpeg"
+Cohesion: 0.15
+Nodes (8): Bool, Data, UIImage, VisitSaveReceipt, .logVisitButton, Data, String, UUID
 
 ### Community 127 - "SlowGroveAPI"
 Cohesion: 0.10
@@ -1105,36 +1099,36 @@ Cohesion: 0.10
 Nodes (19): Delegate, Event, authorization, failed, location, Fix, .accuracyM, .coordinate (+11 more)
 
 ### Community 130 - "DebugLocationOverrideTests"
-Cohesion: 0.14
+Cohesion: 0.13
 Nodes (8): DebugLocationOverride, Request, invalid, pinned, Double, String, DebugLocationOverrideTests, String
 
 ### Community 131 - "AccountDeletionChoice"
-Cohesion: 0.06
-Nodes (39): AccountDeletionChoice, eraseEverything, leaveRecords, AccountDeletionCopy, String, AccountDeletion, Outcome, PhotoBytes (+31 more)
+Cohesion: 0.10
+Nodes (25): AccountDeletionChoice, eraseEverything, leaveRecords, AccountDeletionMetrics, AccountDeletionSheet, .body, .consequences, .doors (+17 more)
 
 ### Community 132 - "StatCard"
-Cohesion: 0.08
+Cohesion: 0.09
 Nodes (27): Size, large, .paddingH, .paddingV, standard, .valueFont, StatCard, .body (+19 more)
 
 ### Community 133 - "AlmanacPreviewAPI"
-Cohesion: 0.10
+Cohesion: 0.11
 Nodes (7): AlmanacPreviewAPI, Data, Double, HazardRedirectEvent, Int, String, UUID
 
 ### Community 134 - "CityDownloadsModel"
-Cohesion: 0.13
-Nodes (13): CityDownloadsModel, .catalogNote, Double, Never, String, Task, Void, CityDownloadsMetrics (+5 more)
+Cohesion: 0.11
+Nodes (17): Catalog, checking, loaded, unavailable, CityDownloadsModel, .catalogNote, Double, Never (+9 more)
 
 ### Community 135 - "VisitAddTreeView"
-Cohesion: 0.09
-Nodes (22): Attribution, Bool, CGFloat, CypressAPI, Double, Error, PhotosPickerItem, String (+14 more)
+Cohesion: 0.10
+Nodes (20): Attribution, Bool, CGFloat, CypressAPI, Double, Error, PhotosPickerItem, String (+12 more)
 
 ### Community 136 - "VisitIdentifyView"
 Cohesion: 0.10
-Nodes (26): Bool, CypressAPI, Double, InsettableShape, Int, String, Void, VisitAmberStatusChip (+18 more)
+Nodes (27): .body, Bool, CypressAPI, Double, InsettableShape, Int, String, Void (+19 more)
 
 ### Community 137 - "VisitSavedView"
-Cohesion: 0.19
-Nodes (12): AccountAskLink, CypressAPI, String, UUID, VisitSaveReceipt, Void, VisitSavedView, .footnote (+4 more)
+Cohesion: 0.12
+Nodes (18): VisitColor, AccountAskLink, CGFloat, CGPoint, CGSize, CypressAPI, String, UUID (+10 more)
 
 ### Community 138 - "MeasurePresentationTests"
 Cohesion: 0.19
@@ -1149,11 +1143,11 @@ Cohesion: 0.18
 Nodes (9): Series, .empty, .totalCount, Element, Calendar, Set, TreeProfilePresentationTests, .calendar (+1 more)
 
 ### Community 141 - ".visitPhotoRoundTrip"
-Cohesion: 0.19
-Nodes (10): PhotoBinary, Any, Bool, CFString, Data, Int, String, URL (+2 more)
+Cohesion: 0.17
+Nodes (11): PhotoBinary, Any, Bool, CFString, Data, Int, String, URL (+3 more)
 
 ### Community 142 - "RemoteAPI"
-Cohesion: 0.09
+Cohesion: 0.10
 Nodes (11): RemoteAPI, .unimplemented, APIError, Data, Double, HazardRedirectEvent, Int, String (+3 more)
 
 ### Community 143 - "TreePhotosModel"
@@ -1165,16 +1159,16 @@ Cohesion: 0.10
 Nodes (19): SpeciesPickCopy, SpeciesPickModel, .query, SpeciesPickState, idle, matched, noMatch, searching (+11 more)
 
 ### Community 145 - "GrowthHistoryView"
-Cohesion: 0.14
-Nodes (11): GrowthHistoryCopy, GrowthHistoryView, .addReadingLink, .body, .content, APIError, Calendar, CypressAPI (+3 more)
+Cohesion: 0.16
+Nodes (10): GrowthHistoryView, .addReadingLink, .body, .content, APIError, Calendar, CypressAPI, String (+2 more)
 
-### Community 146 - ".theAddTreeWellLeavesTheFormOnTheScreen"
-Cohesion: 0.12
-Nodes (14): Bitmap, Hosted, Bool, CGFloat, CGSize, ClosedRange, DynamicTypeSize, Int (+6 more)
+### Community 146 - "VisitCameraSessionTests"
+Cohesion: 0.14
+Nodes (16): VisitAddTreePhotoWell, Bitmap, Hosted, Bool, CGFloat, CGSize, ClosedRange, DynamicTypeSize (+8 more)
 
 ### Community 147 - "ModerationReviewList"
-Cohesion: 0.22
-Nodes (10): ModerationMetrics, ModerationReviewList, .confirmPresented, .dismissPresented, .empty, Binding, Bool, CGFloat (+2 more)
+Cohesion: 0.14
+Nodes (15): ModerationCopy, ModerationMetrics, ModerationReviewList, .body, .confirmPresented, .dismissPresented, .empty, Binding (+7 more)
 
 ### Community 148 - "Roadmap"
 Cohesion: 0.09
@@ -1193,16 +1187,16 @@ Cohesion: 0.18
 Nodes (5): Bundle, Int, BundleContractTests, .declaredFontFiles, String
 
 ### Community 152 - ".open"
-Cohesion: 0.22
-Nodes (10): DebugDeepLink, Failure, .message, Standalone, pinAdjust, Bool, Double, UUID (+2 more)
+Cohesion: 0.18
+Nodes (11): DebugDeepLink, Failure, .message, Standalone, pinAdjust, Bool, Double, UUID (+3 more)
 
 ### Community 153 - "Photo"
-Cohesion: 0.09
-Nodes (23): ModerationState, approved, .isPubliclyVisible, pending, rejected, Photo, .isBestPhotoShot, .isPublicBestPhotoCandidate (+15 more)
+Cohesion: 0.07
+Nodes (20): ModerationState, approved, .isPubliclyVisible, pending, rejected, Photo, .isBestPhotoShot, .isPublicBestPhotoCandidate (+12 more)
 
 ### Community 154 - "CityLibrary"
-Cohesion: 0.17
-Nodes (12): CityLibrary, .activeMarkerURL, .stagingURL, InstalledCity, Int64, String, URL, CityDownloadTests (+4 more)
+Cohesion: 0.21
+Nodes (8): CityLibrary, .activeMarkerURL, .stagingURL, InstalledCity, Int64, String, URL, URL
 
 ### Community 155 - "SpeciesQueries"
 Cohesion: 0.19
@@ -1212,21 +1206,21 @@ Nodes (8): MatchRank, SpeciesQueries, Double, Int, SQLiteConnection, String, T, 
 Cohesion: 0.06
 Nodes (33): BottomSheet, .paddedContent, .settled, ProfileSkeleton, .body, Style, account, .fillsHeight (+25 more)
 
-### Community 157 - "CypressChipFlow"
-Cohesion: 0.26
-Nodes (9): CypressChipFlow, Row, CGFloat, CGRect, CGSize, ProposedViewSize, Subviews, Void (+1 more)
+### Community 157 - "FlowRow"
+Cohesion: 0.15
+Nodes (17): CypressChipFlow, Row, CGFloat, CGRect, CGSize, ProposedViewSize, Subviews, Void (+9 more)
 
 ### Community 158 - "MethodBadge"
 Cohesion: 0.12
 Nodes (21): MeasuredValue, .body, MethodBadge, .accessibilityLabel, .background, .body, .foreground, .label (+13 more)
 
 ### Community 159 - "Kind"
-Cohesion: 0.09
-Nodes (21): Kind, .background, deadReported, .foreground, planted, removed, .text, thriving (+13 more)
+Cohesion: 0.10
+Nodes (20): Kind, .background, deadReported, .foreground, planted, removed, .text, thriving (+12 more)
 
 ### Community 160 - "CheckInView"
-Cohesion: 0.12
-Nodes (15): FoliageDensity, ObservationStatus, StructureFlag, Vitality, CheckInView, .foliageBinding, .footnote, .statusBinding (+7 more)
+Cohesion: 0.11
+Nodes (17): FoliageDensity, Int, ObservationStatus, StructureFlag, Vitality, CheckInView, .foliageBinding, .footnote (+9 more)
 
 ### Community 161 - ".properties"
 Cohesion: 0.22
@@ -1240,13 +1234,13 @@ Nodes (17): InventoryRecord, _clean(), parse_dbh_inches(), parse_planted_date(),
 Cohesion: 0.16
 Nodes (24): build(), canonical_case_map(), _compact_json(), dbh_bucket_cm(), die(), fetch(), flush(), load_city_layer() (+16 more)
 
-### Community 164 - "MeasureModel"
-Cohesion: 0.13
-Nodes (15): MeasureModel, .previousMeasurement, Calendar, CypressAPI, MainActor, String, Void, MeasureSaveReceipt (+7 more)
+### Community 164 - "VisitFlowView"
+Cohesion: 0.14
+Nodes (16): Step, addTree, camera, identify, resolving, saved, Subject, AccountAskLink (+8 more)
 
-### Community 165 - ".mapContent"
-Cohesion: 0.20
-Nodes (5): trees, MapFilterTests, Int, String, UUID
+### Community 165 - "MapViewport"
+Cohesion: 0.08
+Nodes (20): BoundingBox, MapViewport, .isFiltered, .isNarrowed, .shouldCluster, ClosedRange, Double, Element (+12 more)
 
 ### Community 166 - "cypressLeadInText"
 Cohesion: 0.12
@@ -1261,8 +1255,8 @@ Cohesion: 0.26
 Nodes (6): CityDownloadRow, CityDownloadsCopy, Bool, Double, Int64, String
 
 ### Community 169 - "OutboxScreen"
-Cohesion: 0.12
-Nodes (20): OutboxQueueRow, .content, .detailLine, .stateCorner, .stateWord, .textColumn, .tile, OutboxScreen (+12 more)
+Cohesion: 0.08
+Nodes (27): CypressToggle, .body, Binding, Bool, String, OutboxQueueRow, .content, .detailLine (+19 more)
 
 ### Community 170 - ".record"
 Cohesion: 0.15
@@ -1273,44 +1267,40 @@ Cohesion: 0.22
 Nodes (4): GrowthHistoryPresentationTests, Date, Double, Int
 
 ### Community 172 - ".band"
-Cohesion: 0.14
-Nodes (16): PhotoBand, backdrop, blue, green, other, red, PhotoCropTests, PixelSheet (+8 more)
+Cohesion: 0.19
+Nodes (10): PhotoCropTests, PixelSheet, .description, Bool, CGRect, Double, Int, String (+2 more)
 
 ### Community 173 - "LandContextScreenTests"
-Cohesion: 0.19
-Nodes (5): KnownLandContext, ReportCopy, LandContextScreenTests, CypressAPI, Data
+Cohesion: 0.15
+Nodes (8): KnownLandContext, Source, inferredFromCityRecord, statedByContributor, ReportCopy, LandContextScreenTests, CypressAPI, Data
 
-### Community 174 - "TreePlacementTests"
-Cohesion: 0.17
-Nodes (7): Attribution, CypressAPI, Data, String, UUID, TreePlacementTests, .attribution
+### Community 174 - "CareLogModel"
+Cohesion: 0.19
+Nodes (14): CareLogModel, .hasPhoto, Attribution, Bool, CareLogSaveReceipt, CypressAPI, Date, Double (+6 more)
 
 ### Community 175 - "RecordDefectTests"
-Cohesion: 0.31
+Cohesion: 0.26
 Nodes (4): RecordDefectTests, Date, UserRole, UUID
 
-### Community 176 - "TreePin"
-Cohesion: 0.06
-Nodes (35): PinAnswer, .endIndex, .isSample, .startIndex, .treesRepresented, Int, TreePin, PinSet (+27 more)
-
-### Community 177 - "SearchBar"
-Cohesion: 0.06
-Nodes (34): SearchBar, .isFocused, .showsClear, Bool, String, IdentifyFAB, .body, .glyphTint (+26 more)
+### Community 176 - "PinSet"
+Cohesion: 0.11
+Nodes (18): PinSet, .focusPinID, .isComplete, Subject, coverageGap, newestNeighbors, oneRecord, vacantSites (+10 more)
 
 ### Community 178 - ".region"
 Cohesion: 0.17
 Nodes (13): AimableMapView, Void, MapLayout, CGFloat, CLLocationCoordinate2D, CLLocationDistance, Double, TimeInterval (+5 more)
 
 ### Community 179 - "MapHomeView"
-Cohesion: 0.12
-Nodes (17): MapHomeView, .body, .bottomChrome, .bottomSlot, .camera, .cameraSnapshot, .recenterEngagement, .showing (+9 more)
+Cohesion: 0.11
+Nodes (18): MapHomeView, .body, .bottomChrome, .bottomSlot, .camera, .cameraSnapshot, .recenterEngagement, .showing (+10 more)
 
-### Community 180 - "MemorialScreen"
-Cohesion: 0.12
-Nodes (19): MemorialLayout, MemorialScreen, .banner, .body, .lineage, .nameText, .timeline, MemorialView (+11 more)
+### Community 180 - "State"
+Cohesion: 0.09
+Nodes (25): MemorialLayout, MemorialScreen, .banner, .body, .identity, .lineage, .nameText, .timeline (+17 more)
 
 ### Community 181 - "ReportModel"
-Cohesion: 0.26
-Nodes (8): PrivateReminderDraft, ReportModel, .canSaveReminder, CypressAPI, HazardCategory, Set, UUID, Void
+Cohesion: 0.17
+Nodes (13): PrivateReminderDraft, ReportModel, .canSaveReminder, CypressAPI, HazardCategory, Set, UUID, Void (+5 more)
 
 ### Community 182 - "ShareView"
 Cohesion: 0.19
@@ -1321,23 +1311,23 @@ Cohesion: 0.16
 Nodes (7): SharePresentationTests, .calendar, Calendar, Int, Set, String, UUID
 
 ### Community 184 - "Vitality"
-Cohesion: 0.10
-Nodes (18): Suppression, leafOffSeason, none, Bool, Set, String, Vitality, .anchor (+10 more)
+Cohesion: 0.13
+Nodes (16): Suppression, leafOffSeason, none, Bool, Set, String, Vitality, .anchor (+8 more)
 
-### Community 185 - "AccountAskView"
-Cohesion: 0.22
-Nodes (9): .providers, AccountAskView, AccountProviderButton, .body, AccountAskLink, Bool, CypressAPI, String (+1 more)
+### Community 185 - "AccountAskScreen"
+Cohesion: 0.14
+Nodes (19): AccountAskScreen, .bodyCopy, .consentBox, .consentRow, .consentSentence, .decline, .header, .notice (+11 more)
 
 ### Community 186 - "MapSpeciesColorTests"
 Cohesion: 0.21
 Nodes (5): MapSpeciesColorTests, Double, Int, UITraitCollection, UUID
 
 ### Community 187 - ".record"
-Cohesion: 0.18
-Nodes (17): OutboxPreviewFixtures, .attribution, .awaitingWifi, .checkIn, .expiredMeasurement, .rejectedCare, .syncedCare, .syncedVisit (+9 more)
+Cohesion: 0.15
+Nodes (19): .foliage, OutboxPreviewFixtures, .attribution, .awaitingWifi, .checkIn, .expiredMeasurement, .rejectedCare, .syncedCare (+11 more)
 
 ### Community 188 - "CityRecordPresentation"
-Cohesion: 0.13
+Cohesion: 0.14
 Nodes (13): CityRecordCopy, CityRecordPresentation, .facts, .isEmpty, Fact, Bool, Character, Set (+5 more)
 
 ### Community 189 - "VisitIdentifyModel"
@@ -1349,108 +1339,108 @@ Cohesion: 0.15
 Nodes (11): Bool, Int, String, UserDefaults, VisitSaveLedger, .askPresentationCount, .isAskResolved, .saveCount (+3 more)
 
 ### Community 191 - "MapSearchUITests"
-Cohesion: 0.24
-Nodes (7): MapSearchUITests, Bool, CGFloat, Int, String, TimeInterval, XCUIApplication
+Cohesion: 0.26
+Nodes (5): MapSearchUITests, Bool, String, TimeInterval, XCUIApplication
 
-### Community 192 - "RecordingManager"
-Cohesion: 0.19
-Nodes (7): CLLocationManager, MapLocationChurnTests, RecordingManager, .authorizationStatus, CLAuthorizationStatus, CLLocation, Double
+### Community 192 - ".assertReachable"
+Cohesion: 0.16
+Nodes (8): AccessibilityTreeTests, XCUIApplication, StaticString, String, TimeInterval, UInt, XCUIElement, XCTestCase
 
 ### Community 193 - "IconTextRow"
-Cohesion: 0.09
-Nodes (24): .body, CypressToggle, .body, Binding, Bool, String, IconTextRow, .body (+16 more)
+Cohesion: 0.12
+Nodes (17): .tabRoot, IconTextRow, .body, .row, String, UUID, Void, CGFloat (+9 more)
 
 ### Community 194 - "CheckInModel"
-Cohesion: 0.19
-Nodes (13): CheckInModel, Attribution, Calendar, CheckInSaveReceipt, CypressAPI, Date, Double, MainActor (+5 more)
+Cohesion: 0.15
+Nodes (15): CheckInModel, .presentation, Attribution, Calendar, CheckInSaveReceipt, CypressAPI, Date, Double (+7 more)
 
 ### Community 195 - "ScreenHeader"
-Cohesion: 0.14
-Nodes (18): BackCircle, BottomInset, standard, .value, wide, HeaderPill, .body, ScreenHeader (+10 more)
+Cohesion: 0.12
+Nodes (20): BackCircle, .body, BottomInset, standard, .value, wide, HeaderPill, .body (+12 more)
 
 ### Community 196 - "CareEvent"
-Cohesion: 0.13
-Nodes (18): CareEvent, .attribution, Favorite, .isActive, FavoriteOwner, device, .deviceID, user (+10 more)
+Cohesion: 0.18
+Nodes (12): CareEvent, .attribution, Favorite, .isActive, Attribution, Bool, Date, Decoder (+4 more)
 
 ### Community 197 - "MapSpeciesPalette"
-Cohesion: 0.20
+Cohesion: 0.22
 Nodes (8): MapPinKind, Entry, .id, MapSpeciesPalette, .unnamedSpeciesIDs, Int, String, UUID
 
 ### Community 198 - "MemorialPreviewAPI"
-Cohesion: 0.10
+Cohesion: 0.12
 Nodes (7): MemorialFixtures, .bare, .paged, .profile, MemorialPreviewAPI, Coordinate, String
 
-### Community 199 - "PhotoUploadTicket"
-Cohesion: 0.07
-Nodes (7): PhotoUploadTicket, TimeInterval, URL, CheckInPreviewAPI, String, SharePreviewAPI, String
+### Community 199 - ".init"
+Cohesion: 0.18
+Nodes (5): AccountAskLink, Sendable, URL, UserRole, ModerationModel
 
 ### Community 200 - ".everyScreen"
-Cohesion: 0.14
-Nodes (11): MeasurementMethod, caliper, estimate, laser, .series, tape, MeasurePreviewFixtures, Date (+3 more)
+Cohesion: 0.24
+Nodes (5): MeasurePreviewFixtures, Date, Double, Int, String
 
-### Community 201 - "AlmanacScreen"
+### Community 201 - "AlmanacPresentation"
 Cohesion: 0.12
-Nodes (17): AlmanacScreen, .body, .failure, .footnote, .header, .outOfRange, AlmanacView, CompositionShareRow (+9 more)
+Nodes (20): AlmanacPresentation, .footnote, .isEmpty, AlmanacScreen, .body, .failure, .footnote, .header (+12 more)
 
 ### Community 202 - "AlmanacGeographyTests"
 Cohesion: 0.09
 Nodes (12): AlmanacGeographyTests, BundleToken, NeverAnswers, CGFloat, Data, Double, HazardRedirectEvent, Int (+4 more)
 
 ### Community 203 - "PhotoFill"
-Cohesion: 0.17
-Nodes (13): PhotoCropAnchor, .alignment, center, crown, PhotoFill, .body, PhotoFillAccessibility, Alignment (+5 more)
+Cohesion: 0.13
+Nodes (17): AlignmentID, PhotoCropAnchor, .alignment, center, crown, PhotoCrownAlignment, PhotoFill, .body (+9 more)
 
 ### Community 204 - "PhotoTally"
 Cohesion: 0.18
 Nodes (8): PhotoHero, PhotoTally, PhotoVote, down, up, Int, .heroID, .bestPhoto
 
-### Community 205 - "ShotType"
-Cohesion: 0.18
-Nodes (9): ShotType, fullTree, leaf, other, .supportsGhostOverlay, trunk, Int, String (+1 more)
+### Community 205 - "TreePhotosPresentation"
+Cohesion: 0.19
+Nodes (5): Int, String, TreePhotosPresentation, Int, TreePhotosFilterTests
 
 ### Community 206 - "ReportView"
-Cohesion: 0.19
-Nodes (8): HazardPhoneGlyph, ReportView, .body, .reminderButton, CGFloat, CGRect, Path, String
+Cohesion: 0.29
+Nodes (6): HazardPhoneGlyph, ReportView, .body, .reminderButton, CGFloat, String
 
 ### Community 207 - "VisitSavedModel"
 Cohesion: 0.15
 Nodes (15): Binding, Bool, CypressAPI, Double, String, TimeInterval, UUID, VisitSaveReceipt (+7 more)
 
 ### Community 208 - "RecordingSearchAPI"
-Cohesion: 0.11
-Nodes (8): MapRecenterSearchTests, RecordingSearchAPI, Data, Double, HazardRedirectEvent, Int, String, UUID
+Cohesion: 0.13
+Nodes (7): RecordingSearchAPI, Data, Double, HazardRedirectEvent, Int, String, UUID
 
 ### Community 209 - "Records"
-Cohesion: 0.12
+Cohesion: 0.13
 Nodes (7): Records, Data, Double, HazardRedirectEvent, Int, String, UUID
 
 ### Community 210 - "APIError"
-Cohesion: 0.14
-Nodes (12): APIError, .code, conflict, forbidden, moderationRejected, notFound, rateLimited, .retryable (+4 more)
+Cohesion: 0.06
+Nodes (32): APIError, .code, conflict, forbidden, moderationRejected, notFound, rateLimited, .retryable (+24 more)
 
 ### Community 211 - "KnownSpecies"
-Cohesion: 0.19
-Nodes (11): CypressAPI, GroveNeighborhood, GroveSpecies, .empty, KnownSpecies, .id, Date, Series (+3 more)
+Cohesion: 0.16
+Nodes (13): CypressAPI, GroveNeighborhood, GroveSpecies, .empty, KnownSpecies, .id, Date, Series (+5 more)
 
 ### Community 212 - "AppSchema"
 Cohesion: 0.20
 Nodes (6): AppSchema, .currentVersion, Migration, SQLiteConnection, String, Int32
 
 ### Community 213 - ".bench"
-Cohesion: 0.23
+Cohesion: 0.25
 Nodes (8): MeasureOutboxWriter, Attribution, Date, Double, UUID, Bench, MeasurementAccuracyTests, String
 
-### Community 214 - "CheckInDraft"
-Cohesion: 0.17
-Nodes (10): Data, Int, CheckInDraft, .foliage, .isEmpty, .orderedStructureFlags, Set, CheckInPreviewFixtures (+2 more)
+### Community 214 - ".tags"
+Cohesion: 0.21
+Nodes (3): Bool, .availablePhenologyTags, PhenologyObservedStatesTests
 
 ### Community 215 - "GrowthHistoryPreviewAPI"
-Cohesion: 0.12
-Nodes (8): GrowthHistoryPreviewAPI, GrowthHistoryPreviewFixtures, Date, Double, HazardRedirectEvent, Int, String, UUID
+Cohesion: 0.11
+Nodes (9): GrowthHistoryPreviewAPI, GrowthHistoryPreviewFixtures, Data, Date, Double, HazardRedirectEvent, Int, String (+1 more)
 
 ### Community 216 - "MemorialPresentation"
-Cohesion: 0.26
-Nodes (3): MemorialPresentation, MemorialPresentationTests, String
+Cohesion: 0.17
+Nodes (7): MemorialModel, .presentation, CypressAPI, Sendable, MemorialPresentation, MemorialPresentationTests, String
 
 ### Community 217 - "PhotoViewerView"
 Cohesion: 0.13
@@ -1460,41 +1450,37 @@ Nodes (16): PhotoViewerCopy, PhotoViewerMetrics, PhotoViewerPresentation, PhotoV
 Cohesion: 0.27
 Nodes (8): Manifest, Bool, Double, String, URL, UUID, VisitDraft, VisitGates
 
-### Community 219 - "PhotoOwnershipTests"
-Cohesion: 0.30
-Nodes (3): PhotoOwnershipTests, Double, UUID
+### Community 219 - "PhotoOwner"
+Cohesion: 0.19
+Nodes (9): PhotoOwner, device, .deviceID, nobody, user, .userID, PhotoOwnershipTests, Double (+1 more)
 
 ### Community 220 - "SecondCityGeographyTests"
 Cohesion: 0.26
 Nodes (6): BundleToken, SecondCityGeographyTests, Int, String, URL, UUID
-
-### Community 221 - "XCTest"
-Cohesion: 0.12
-Nodes (3): AccessibilityTreeTests, XCUIApplication, XCTest
 
 ### Community 222 - "ui job (one shard per runner)"
 Cohesion: 0.19
 Nodes (18): Prepare a Cypress runner (composite action), Refuse an SDK too old to upload (iOS 26 minimum), Simulator candidate list (image-driven device selection), App Store Connect status workflow, build-N tag created via API (answers what shipped), paths-ignore deny-list (docs-only commits skip deploy), plan job (derives UI shard matrix), release job (archive, upload, expire, tag) (+10 more)
 
 ### Community 223 - "CoreGraphics"
-Cohesion: 0.17
+Cohesion: 0.18
 Nodes (6): CoreGraphics, CoreTransferable, String, .replacingUnderscores, ImageIO, UniformTypeIdentifiers
 
 ### Community 224 - "AccountLinkRecord"
-Cohesion: 0.12
+Cohesion: 0.13
 Nodes (14): AccountLinkRecord, .acceptsLicense, LicenseConsent, Bool, String, AccountCopy, AccountSection, .body (+6 more)
 
 ### Community 225 - "CityDownloader"
-Cohesion: 0.17
+Cohesion: 0.15
 Nodes (14): CityDownloader, DownloadError, checksumMismatch, .description, sizeMismatch, unacceptableStatus, Double, Int (+6 more)
 
 ### Community 226 - "MapCameraRequest"
-Cohesion: 0.16
-Nodes (13): .basemap, MapCameraRequest, MapKitBasemap, .body, Int, MKCoordinateRegion, UUID, Void (+5 more)
+Cohesion: 0.17
+Nodes (12): MapCameraRequest, MapKitBasemap, .body, Int, MKCoordinateRegion, UUID, Void, Box (+4 more)
 
-### Community 227 - "ShareDestinationGlyph"
-Cohesion: 0.16
-Nodes (14): ShareChainLink, ShareDestinationGlyph, .body, .copyLink, .messages, .strokeStyle, .system, .tint (+6 more)
+### Community 227 - "Shape"
+Cohesion: 0.10
+Nodes (24): ShareChainLink, ShareDestinationGlyph, .body, .copyLink, .messages, .strokeStyle, .system, .tint (+16 more)
 
 ### Community 228 - "MessageComposer"
 Cohesion: 0.22
@@ -1509,16 +1495,16 @@ Cohesion: 0.14
 Nodes (15): Dimension, address, cityDBH, .label, plantedYear, siteType, species, tell (+7 more)
 
 ### Community 231 - "UUID"
-Cohesion: 0.06
-Nodes (37): Attribution, .isAnonymous, Vitality, TreeObservation, .attribution, .raisesReviewFlagKind, UUID, CareLogOutboxWriter (+29 more)
+Cohesion: 0.05
+Nodes (47): Attribution, .isAnonymous, FieldCaptured, .isEligibleForGrowthCharting, PhenologyTag, bare, fallColor, flowering (+39 more)
 
-### Community 232 - "CareLogPreviewAPI"
-Cohesion: 0.14
-Nodes (5): CareLogPreviewAPI, CareLogPreviewFixtures, CareLogPreviewTransport, Coordinate, String
+### Community 232 - "CityDownloadTests"
+Cohesion: 0.23
+Nodes (6): Data, CityDownloadTests, Data, Int, String, URL
 
 ### Community 233 - ".bench"
-Cohesion: 0.34
-Nodes (6): Bench, GPSAccuracyAtSubmitTests, Phone, Double, String, MeasureModel
+Cohesion: 0.28
+Nodes (8): Bench, GPSAccuracyAtSubmitTests, Phone, Received, Double, String, MeasureModel, Receipt
 
 ### Community 234 - "Screen"
 Cohesion: 0.30
@@ -1529,8 +1515,8 @@ Cohesion: 0.25
 Nodes (17): contrast(), delta_e(), hex_to_lch(), hex_to_rgb(), in_gamut(), lch_to_hex(), _linear_to_srgb(), luminance() (+9 more)
 
 ### Community 236 - "CommunityTreeStore"
-Cohesion: 0.15
-Nodes (10): Double, CommunityTreeStore, Bool, Date, Double, Int, SQLiteConnection, UUID (+2 more)
+Cohesion: 0.12
+Nodes (12): CommunityTreeStore, Bool, Date, Double, Int, SQLiteConnection, UUID, Attribution (+4 more)
 
 ### Community 237 - "SheetDismissRuleTests"
 Cohesion: 0.16
@@ -1541,8 +1527,8 @@ Cohesion: 0.33
 Nodes (4): MessagesRoute, composer, systemShareSheet, Bool
 
 ### Community 239 - "VisitPinAdjustView"
-Cohesion: 0.28
-Nodes (6): VisitPinAdjustPresentation, Double, String, Void, VisitPinAdjustView, .body
+Cohesion: 0.22
+Nodes (8): Bool, VisitPinAdjustPresentation, Double, String, Void, VisitPinAdjustView, .body, .nudgePad
 
 ### Community 240 - "MapSuggestionUITests"
 Cohesion: 0.26
@@ -1568,25 +1554,25 @@ Nodes (16): Reviewer: Senior City Arborist, D4: Hazard Reporting Is Redirect-Onl
 Cohesion: 0.17
 Nodes (16): The Provenance Spine, species_assertions table, trees table, Anchored Vitality Rubric Demand, Persona: The City Forestry Worker, external_ref Round-Trip to City Inventory, Per-Field Method and Unit Metadata, Multi-Stem DBH Convention (+8 more)
 
-### Community 246 - "CoreLocation"
-Cohesion: 0.15
-Nodes (8): CoreLocation, DebugLocationFixtures, CompassPoint, Coordinate, .clLocationCoordinate, CLLocationCoordinate2D, MKCoordinateRegion, String
+### Community 246 - "MapGeography.swift"
+Cohesion: 0.27
+Nodes (6): CompassPoint, Coordinate, .clLocationCoordinate, CLLocationCoordinate2D, MKCoordinateRegion, String
 
-### Community 247 - "Int32"
-Cohesion: 0.09
-Nodes (20): Migration, MigrationError, databaseIsAhead, .description, duplicateVersion, nonPositiveVersion, SchemaMigrator, String (+12 more)
+### Community 247 - "SQLiteError"
+Cohesion: 0.18
+Nodes (10): SQLiteError, .asAPIError, .description, .isBusy, .isConstraintViolation, .isUniqueConstraintViolation, .primaryCode, SQLiteExtendedCode (+2 more)
 
 ### Community 248 - "MapTreeCard"
 Cohesion: 0.36
 Nodes (6): MapRelativeTime, MapTreeCard, .meta, Date, String, Void
 
 ### Community 249 - "VisitMetrics"
-Cohesion: 0.22
+Cohesion: 0.20
 Nodes (12): .accessibilityLayout, AddTree, .wellAspectRatio, Camera, .controlsFloor, .shotTypeGapAboveShutter, Identify, PinAdjust (+4 more)
 
 ### Community 250 - "VisitCandidate"
-Cohesion: 0.13
-Nodes (15): .footer, VisitColor, CGFloat, CGPoint, CGSize, VisitRouteMap, .body, UUID (+7 more)
+Cohesion: 0.16
+Nodes (11): String, UUID, VisitBearing, VisitCandidate, .displayName, .distanceM, .id, .latinName (+3 more)
 
 ### Community 251 - "InventoryContractTests"
 Cohesion: 0.22
@@ -1605,8 +1591,8 @@ Cohesion: 0.29
 Nodes (3): Int, String, UnreadSpeciesNameTests
 
 ### Community 255 - "AlmanacGroupTapTests"
-Cohesion: 0.23
-Nodes (7): AlmanacGroupTapTests, Bool, Int, String, TimeInterval, XCUIApplication, XCUIElement
+Cohesion: 0.21
+Nodes (8): AlmanacGroupTapTests, Bool, Int, String, TimeInterval, XCUIApplication, XCUIElement, XCTestCase
 
 ### Community 256 - "Static file distribution (shape A recommendation)"
 Cohesion: 0.20
@@ -1624,12 +1610,16 @@ Nodes (11): App, AppModel, .data, Phase, booting, failed, ready, String (+3 more
 Cohesion: 0.13
 Nodes (15): Golden-File Ingest Test, DataSF Ingest Spec, observations table (check-ins), review_flags table, sf_species_map, Data Ownership, FOIA, and Exit Plan, Data Governance and Licensing, Remaining Open Questions (+7 more)
 
-### Community 261 - "JournalPreviewAPI"
-Cohesion: 0.13
-Nodes (5): JournalFixtures, JournalPreviewAPI, JournalReadCounter, .count, String
+### Community 260 - "SeedContractTests"
+Cohesion: 0.18
+Nodes (5): Bool, .visiblePhotos, BundleToken, SeedContractTests, URL
+
+### Community 261 - ".recordFailure"
+Cohesion: 0.18
+Nodes (6): DrainReport, APIError, Date, Error, Int, String
 
 ### Community 262 - ".render"
-Cohesion: 0.15
+Cohesion: 0.12
 Nodes (11): DynamicTypeScreenshotTests, .outputDirectory, CGFloat, CGSize, ColorScheme, DynamicTypeSize, String, URL (+3 more)
 
 ### Community 263 - "VacantSiteRedirectTests"
@@ -1645,12 +1635,12 @@ Cohesion: 0.34
 Nodes (6): DeletionTombstoneTests, Attribution, Double, Int, String, UUID
 
 ### Community 267 - "SheetExitUITests"
-Cohesion: 0.30
-Nodes (5): CGFloat, SheetExitUITests, StaticString, XCUIApplication, XCUIElement
+Cohesion: 0.27
+Nodes (6): CGFloat, SheetExitUITests, StaticString, UInt, XCUIApplication, XCUIElement
 
-### Community 268 - "CheckInPresentation.swift"
-Cohesion: 0.14
-Nodes (9): CheckInCopy, CheckInMetrics, FoliageDensityLabel, ObservationStatusLabel, StructureFlagLabel, CGFloat, FoliageDensity, ObservationStatus (+1 more)
+### Community 268 - "ConfidenceBar"
+Cohesion: 0.27
+Nodes (9): .body, ConfidenceBar, .accessibilityLabel, .body, ProgressRing, .body, .clamped, Double (+1 more)
 
 ### Community 269 - "CypressRadius.swift"
 Cohesion: 0.23
@@ -1661,7 +1651,7 @@ Cohesion: 0.21
 Nodes (10): .treesPresentation, GroveCopy, GroveTreesPresentation, .emptyState, Row, .id, Bool, Int (+2 more)
 
 ### Community 271 - ".image"
-Cohesion: 0.25
+Cohesion: 0.27
 Nodes (6): Key, MapPinImage, .count, CGFloat, UIImage, MapMarkerRenderingTests
 
 ### Community 272 - "MapPanTabSwitchUITests"
@@ -1680,13 +1670,13 @@ Nodes (12): Reviewer: Bearish Seed Investor, D9: Accounts Come Later in the Funn
 Cohesion: 0.21
 Nodes (8): CypressAPI, SpeciesCorrectionOffer, correctable, reportable, unavailable, underReview, Bool, UUID
 
-### Community 276 - "ComponentSupport.swift"
-Cohesion: 0.21
-Nodes (7): CypressAppearance, automatic, forcedDark, .id, CypressDash, CGFloat, View
+### Community 276 - "SearchBar"
+Cohesion: 0.06
+Nodes (30): CypressAppearance, automatic, forcedDark, .id, CypressCheckmark, CypressChevron, CypressClearGlyph, CypressDash (+22 more)
 
 ### Community 277 - ".hex"
-Cohesion: 0.29
-Nodes (4): DerivedTokenTests, Double, UInt32, UITraitCollection
+Cohesion: 0.20
+Nodes (7): Comparable, DerivedTokenTests, ClosedRange, Double, UInt32, UITraitCollection, Self
 
 ### Community 278 - "SF landmark trees survey"
 Cohesion: 0.19
@@ -1713,11 +1703,11 @@ Cohesion: 0.33
 Nodes (11): Connection, attribution_for(), build_city_file(), content_rev_for(), fail(), main(), meta(), Newest snapshot date among the city's own inventories. seed_meta carries… (+3 more)
 
 ### Community 284 - "CommunityNote"
-Cohesion: 0.27
-Nodes (8): CoreEntity, CommunityNote, Neighborhood, Bool, Date, TimeInterval, UUID, SoftDeletable
+Cohesion: 0.19
+Nodes (12): CoreEntity, Category, needsWater, pest, vandalism, CommunityNote, Neighborhood, Bool (+4 more)
 
 ### Community 285 - "SpeciesPresentationTests"
-Cohesion: 0.24
+Cohesion: 0.26
 Nodes (3): SpeciesPresentationTests, Int, Series
 
 ### Community 286 - ".speciesIDs"
@@ -1728,36 +1718,36 @@ Nodes (6): GroveQueries, Int, Series, SQLiteConnection, String, UUID
 Cohesion: 0.15
 Nodes (5): MapInventoryCopy, MapInventoryNotice, Bool, Int, MapEmptyInventoryTests
 
-### Community 288 - "CommunityAddTests"
-Cohesion: 0.26
-Nodes (6): CommunityAddTests, .attribution, Attribution, CypressAPI, Data, String
+### Community 288 - "GroveJournalShotFixtures"
+Cohesion: 0.25
+Nodes (8): GroveJournalShotFixtures, .journalTab, .treesTab, Date, Int, String, UUID, View
 
 ### Community 289 - "CypressShadowStyle"
 Cohesion: 0.30
 Nodes (7): CypressSchemeShadow, CypressShadow, CypressShadowStyle, Dark, CGFloat, UInt32, View
 
-### Community 290 - "FlowRow"
-Cohesion: 0.35
-Nodes (8): FlowRow, Line, CGFloat, CGRect, CGSize, Int, ProposedViewSize, Subviews
+### Community 290 - "Decade"
+Cohesion: 0.20
+Nodes (10): Decade, before1990, .id, .label, nineties, twentyTens, twentyTwenties, twoThousands (+2 more)
 
-### Community 292 - ".confirmAction"
-Cohesion: 0.36
-Nodes (4): ModerationCopy, .body, Date, String
+### Community 291 - "ReviewFlagNoticeTests"
+Cohesion: 0.33
+Nodes (3): CheckInCopy, ReviewFlagNoticeTests, ObservationStatus
 
 ### Community 293 - ".hits"
 Cohesion: 0.27
 Nodes (6): Hit, PendingCitationGuard, PendingCitationGuardTests, Int, String, URL
 
-### Community 294 - "XCTestCase"
-Cohesion: 0.30
-Nodes (5): MapRecenterUITests, String, XCUIApplication, XCUIElement, XCTestCase
+### Community 294 - "MapRecenterUITests"
+Cohesion: 0.40
+Nodes (4): MapRecenterUITests, String, XCUIApplication, XCUIElement
 
 ### Community 295 - "PreviewView"
 Cohesion: 0.24
 Nodes (9): AnyClass, AVCaptureVideoPreviewLayer, PreviewView, .layerClass, .previewLayer, AVCaptureSession, Context, VisitCameraPreview (+1 more)
 
 ### Community 296 - "TreeCluster"
-Cohesion: 0.27
+Cohesion: 0.31
 Nodes (5): TreeCluster, CLLocationCoordinate2D, TreeClusterAnnotation, UserDotAnnotation, NSObject
 
 ### Community 297 - "PhotoDeletion"
@@ -1768,33 +1758,33 @@ Nodes (6): CypressAPI, PhotoDeletion, Bool, Data, Int, UUID
 Cohesion: 0.24
 Nodes (7): CypressAPI, RecordDefectOffer, reportable, unavailable, underReview, Bool, UUID
 
-### Community 299 - "AccountAskSheetTests"
-Cohesion: 0.24
-Nodes (3): AccountAskSheetTests, Locale, User
+### Community 299 - ".user"
+Cohesion: 0.28
+Nodes (4): BirthYearBucket, ActivityAttributionTests, Bool, User
 
-### Community 300 - "GrowthHistoryModel"
-Cohesion: 0.24
-Nodes (8): GrowthHistoryModel, .presentation, Phase, failed, loaded, loading, Calendar, CypressAPI
+### Community 300 - "SpeciesModel"
+Cohesion: 0.39
+Nodes (5): SpeciesModel, .monthCalendar, Calendar, Coordinate, CypressAPI
 
-### Community 301 - ".currentSpring"
-Cohesion: 0.33
-Nodes (3): AlmanacWindow, Calendar, Date
+### Community 301 - "Sendable"
+Cohesion: 0.08
+Nodes (47): Status, confirmed, dismissed, open, Status, active, removedByModeration, retired (+39 more)
 
 ### Community 302 - "TreePhotosView"
 Cohesion: 0.18
 Nodes (9): CGFloat, CypressAPI, PhotoImageStore, UUID, TreePhotosCopy, TreePhotosMetrics, TreePhotosView, .empty (+1 more)
 
 ### Community 303 - "ContributionExtras"
-Cohesion: 0.23
-Nodes (10): ContributionExtras, .body, .noteField, .photoSources, .thumbnails, Data, Int, PhotosPickerItem (+2 more)
+Cohesion: 0.25
+Nodes (9): ContributionExtras, .noteField, .photoSources, .thumbnails, Data, Int, PhotosPickerItem, String (+1 more)
 
 ### Community 304 - "ShotBlankGuardTests"
-Cohesion: 0.23
-Nodes (4): CGImage, UIImage, ShotBlankGuardTests, UIImage
+Cohesion: 0.10
+Nodes (14): CGImage, ShotBlankGuard, ShotVerdict, blank, .isBlank, ok, Bool, Data (+6 more)
 
 ### Community 305 - "NearbyTree"
-Cohesion: 0.08
-Nodes (25): CypressAPI, GroveEntry, .id, JournalEntry, Kind, careEvent, measurement, observation (+17 more)
+Cohesion: 0.04
+Nodes (30): CypressAPI, GroveEntry, .id, JournalEntry, Kind, careEvent, measurement, observation (+22 more)
 
 ### Community 306 - "Cypress iOS Architecture"
 Cohesion: 0.12
@@ -1812,13 +1802,13 @@ Nodes (10): D12: Export Verification State Stamp, verification_state, Never Trus
 Cohesion: 0.22
 Nodes (8): CityInstallState, installedCurrent, needsNewerApp, notInstalled, updateAvailable, Int, String, .rows
 
-### Community 310 - ".outboxPhotoShotTypes"
-Cohesion: 0.26
-Nodes (5): DataGates, Bool, SQLiteConnection, String, OutboxChaosTests
+### Community 310 - ".enqueue"
+Cohesion: 0.18
+Nodes (8): DataGates, Bool, SQLiteConnection, String, OutboxTestSupport, .attribution, Attribution, OutboxChaosTests
 
-### Community 311 - "Duration"
-Cohesion: 0.24
-Nodes (9): CypressMotion, CypressMotionOffset, Duration, Easing, CGFloat, Double, Bool, SourceLocation (+1 more)
+### Community 311 - "CypressPulseModifier"
+Cohesion: 0.16
+Nodes (13): CypressMotion, CypressMotionOffset, CypressPulseModifier, .ringOpacity, .ringSpread, Duration, Easing, Bool (+5 more)
 
 ### Community 312 - "SeedStubNamingTests"
 Cohesion: 0.40
@@ -1829,7 +1819,7 @@ Cohesion: 0.36
 Nodes (4): Set, String, URL, UITestShardCoverageTests
 
 ### Community 314 - "AnonymizedPhotoNoticeUITests"
-Cohesion: 0.42
+Cohesion: 0.36
 Nodes (4): AnonymizedPhotoNoticeUITests, Bool, TimeInterval, XCUIApplication
 
 ### Community 315 - "SheetHeightUITests"
@@ -1841,28 +1831,28 @@ Cohesion: 0.31
 Nodes (9): Debug stub trap (grepping Cypress stub finds nothing, false pass), e139-compiled-out.txt (Release strip proof: dylib vs stub vs Release), E130 level-of-detail rule (annotation count reduction), E139 MKMapView layer (replaces SwiftUI Annotation layer), MapFrameProbe (CADisplayLink fps instrument), MapProbeOverlay (on-screen probe readout), RootView @self invalidation (body 199-242/s residual defect), cypress-sync (R36 live-layer Fly.io placeholder server, #158) (+1 more)
 
 ### Community 317 - "ExportFormat"
-Cohesion: 0.10
-Nodes (11): ExportFormat, csv, geojson, Data, Data, Data, Data, FormatRecorder (+3 more)
+Cohesion: 0.12
+Nodes (10): ExportFormat, csv, geojson, Data, Data, Data, FormatRecorder, .formats (+2 more)
 
-### Community 318 - "Affordance"
-Cohesion: 0.29
-Nodes (7): Affordance, cancel, download, inUseLabel, remove, update, use
+### Community 318 - "Equatable"
+Cohesion: 0.05
+Nodes (44): Kind, bloom, elder, newestNeighbors, SeasonRow, .id, UUID, Affordance (+36 more)
 
 ### Community 319 - "Corner"
 Cohesion: 0.29
 Nodes (7): Corner, .alignment, bottomLeading, bottomTrailing, topLeading, topTrailing, Alignment
 
 ### Community 320 - "FoliageLevel"
-Cohesion: 0.22
-Nodes (8): .body, FoliageLevel, .color, densest, .id, mid, .name, sparsest
+Cohesion: 0.25
+Nodes (8): Dark, FoliageLevel, .color, densest, .id, mid, .name, sparsest
 
-### Community 321 - "MemorialModel"
+### Community 321 - "Availability"
+Cohesion: 0.25
+Nodes (8): Availability, denied, failed, idle, running, unavailable, undetermined, String
+
+### Community 322 - "PrivateReminderItem"
 Cohesion: 0.20
-Nodes (9): MemorialModel, .presentation, Phase, failed, loaded, loading, notMemorial, CypressAPI (+1 more)
-
-### Community 322 - "PrivateReminderList"
-Cohesion: 0.33
-Nodes (5): PrivateReminderCopy, PrivateReminderList, .body, String, Void
+Nodes (10): PrivateReminderItem, Date, HazardCategory, String, UUID, PrivateReminderCopy, PrivateReminderList, .body (+2 more)
 
 ### Community 323 - "D16 — The destination is a merged national inventory"
 Cohesion: 0.22
@@ -1888,9 +1878,9 @@ Nodes (8): D15: BUILD-PLAN as Buildability Contract, Reviewer: Staff Engineer (B
 Cohesion: 0.33
 Nodes (7): care_events table, Care Performed vs Condition Observed, Offline Queue as Table Stakes, Persona: The Weekend Volunteer, What Tree Is This? as a First-Class Flow, Platform and Architecture, Phase 1: The Living Map and the Ten-Second Visit
 
-### Community 329 - "Shape"
-Cohesion: 0.20
-Nodes (10): CypressCheckmark, CypressClearGlyph, CypressSearchGlyph, CGRect, Path, .body, .clearButton, .checkCircle (+2 more)
+### Community 329 - "SpeciesAssertionSource"
+Cohesion: 0.33
+Nodes (5): SpeciesAssertionSource, aiSuggestion, cityImport, community, org
 
 ### Community 330 - "AvatarStack"
 Cohesion: 0.43
@@ -1900,21 +1890,25 @@ Nodes (5): AvatarStack, .accessibilityLabel, .body, .isEmpty, String
 Cohesion: 0.38
 Nodes (6): PhotoFit, .body, PhotoFitAccessibility, String, UIImage, .wellContents
 
-### Community 332 - "MemorialFacts"
-Cohesion: 0.40
-Nodes (3): MemorialFacts, MemorialMetrics, CGFloat
+### Community 332 - "PhotoBand"
+Cohesion: 0.33
+Nodes (6): PhotoBand, backdrop, blue, green, other, red
 
-### Community 333 - "Kind"
-Cohesion: 0.25
-Nodes (7): Kind, checkIn, cityRecord, firstPhoto, visit, Bool, Vitality
+### Community 333 - "NotBuiltYetView"
+Cohesion: 0.50
+Nodes (3): NotBuiltYetView, .body, String
 
 ### Community 334 - "Phase"
 Cohesion: 0.33
 Nodes (6): Phase, elsewhere, failed, loaded, loading, APIError
 
-### Community 335 - ".compass"
-Cohesion: 0.39
-Nodes (3): String, VisitBearing, VisitPhenologyVocabulary
+### Community 335 - "LocationPrompt"
+Cohesion: 0.40
+Nodes (4): LocationPrompt, .body, String, Void
+
+### Community 336 - "ReminderSaveState"
+Cohesion: 0.40
+Nodes (5): ReminderSaveState, failed, idle, saved, saving
 
 ### Community 337 - "Cypress Logo Master Artwork"
 Cohesion: 0.39
@@ -1952,9 +1946,9 @@ Nodes (9): JournalModel, .hasFailed, Phase, failed, loaded, loading, CypressAPI,
 Cohesion: 0.43
 Nodes (3): Bool, ThumbAppearance, PhotoGlyphTests
 
-### Community 346 - "ReportModel.swift"
-Cohesion: 0.17
-Nodes (11): ReminderSaveState, failed, idle, saved, saving, Bool, URL, SystemTelephoneDialer (+3 more)
+### Community 346 - ".callCity"
+Cohesion: 0.38
+Nodes (4): Bool, URL, .callButton, .demotedCallButton
 
 ### Community 348 - "SF park trees survey"
 Cohesion: 0.33
@@ -1968,21 +1962,17 @@ Nodes (7): Metrosideros excelsa (New Zealand Xmas Tree), SF rank 3, The one lice
 Cohesion: 0.60
 Nodes (6): Cypress App Icon (shipped 1024px asset), Brand Palette: deep forest green, sage hillside, cream sky, ochre cloud accent, Cypress Grove Silhouette Motif, Flat vector illustration style (no gradients, no text, full-bleed square), App Icon Master Render (Tools/appicon/icon-1024.png), App Icon Render Pipeline (icon.svg source, rasterized to icon-1024.png, copied into the appiconset)
 
-### Community 352 - "Engagement"
-Cohesion: 0.33
-Nodes (6): Engagement, askable, away, centered, searching, unavailable
-
 ### Community 353 - "VisitCameraPreview.swift"
 Cohesion: 0.50
 Nodes (3): AVFoundation, VisitViewfinderPlaceholder, .body
 
 ### Community 354 - "JournalListView"
-Cohesion: 0.24
-Nodes (9): JournalListView, .body, JournalSection, .body, CypressAPI, Sendable, UUID, Void (+1 more)
+Cohesion: 0.22
+Nodes (10): JournalListView, .body, .failure, JournalSection, .body, CypressAPI, Sendable, UUID (+2 more)
 
 ### Community 355 - "JournalSegment"
-Cohesion: 0.15
-Nodes (8): JournalLimits, JournalMetrics, JournalSegment, almanac, .id, journal, .label, CGFloat
+Cohesion: 0.11
+Nodes (12): JournalCopy, JournalLimits, JournalMetrics, JournalSegment, almanac, .id, journal, .label (+4 more)
 
 ### Community 356 - "E117 (DebugDeepLink CYPRESS_SCREEN)"
 Cohesion: 0.33
@@ -2000,21 +1990,13 @@ Nodes (6): Constraint 7 — a status transition requires a moderator confirming 
 Cohesion: 0.22
 Nodes (9): MessagesLink, .id, ShareMetrics, CGFloat, Context, URL, SystemShareSheet, MessageUI (+1 more)
 
-### Community 360 - "Error"
-Cohesion: 0.18
-Nodes (11): CustomStringConvertible, Int, ValidationError, .description, schemaTooNew, FixtureFailure, String, MissingPinnedFix (+3 more)
-
-### Community 361 - "YouTabView.swift"
-Cohesion: 0.50
-Nodes (3): CGFloat, YouCopy, YouMetrics
+### Community 361 - "Kind"
+Cohesion: 0.67
+Nodes (3): Kind, care, visit
 
 ### Community 362 - "SIL Open Font License 1.1"
 Cohesion: 0.50
 Nodes (5): Alegreya Sans (upstream static TTFs, unmodified), SIL Open Font License 1.1, Source Serif 4 (static instances at opsz=20), Spline Sans Mono (static instances at wght 400/500/600), fontTools.varLib.instancer static-instance pipeline
-
-### Community 363 - "DeviceContributions"
-Cohesion: 0.20
-Nodes (7): CypressAPI, DeviceContributions, .isEmpty, .total, Bool, Int, AccountAskFixtures
 
 ### Community 364 - "Kind"
 Cohesion: 0.50
@@ -2052,41 +2034,13 @@ Nodes (3): E203 (warning count refused unless files compiled), Pending erratum: 
 Cohesion: 0.67
 Nodes (3): match_method vocabulary in leaf_retention citations, DataSF Street Tree List, DataSF-to-source record matching ladder
 
-### Community 501 - "AccountAskModel"
-Cohesion: 0.26
-Nodes (5): AccountAskModel, AccountAskLink, CypressAPI, .body, RecordedRequests
-
-### Community 502 - "ActivityModel"
-Cohesion: 0.23
-Nodes (9): ActivityModel, .presentation, Phase, failed, loaded, loading, Calendar, CypressAPI (+1 more)
-
-### Community 503 - "TreeProfileView.swift"
-Cohesion: 0.24
-Nodes (9): CGFloat, CGRect, Path, TreeProfileCameraBody, TreeProfileCameraBump, TreeProfileCameraGlyph, .body, TreeProfileMetrics (+1 more)
-
-### Community 504 - ".write"
-Cohesion: 0.17
-Nodes (10): ShotBlankGuard, ShotVerdict, blank, .isBlank, ok, Bool, Data, Int (+2 more)
-
 ### Community 505 - "Size"
 Cohesion: 0.24
 Nodes (9): LeafGlyph, Size, bullet, careThumb, fab, .id, tabBar, .value (+1 more)
 
-### Community 506 - "AccountAskScreen"
-Cohesion: 0.31
-Nodes (10): AccountAskScreen, .bodyCopy, .consentBox, .consentRow, .consentSentence, .decline, .header, .notice (+2 more)
-
 ### Community 507 - "ShareDestination"
 Cohesion: 0.22
 Nodes (8): ShareDestination, .accessibilityHint, copyLink, .id, .isPasteboard, .label, messages, system
-
-### Community 508 - "MapMembership"
-Cohesion: 0.25
-Nodes (7): CypressAPI, MapMembership, favorites, .id, yours, Set, UUID
-
-### Community 509 - "CypressChevron"
-Cohesion: 0.25
-Nodes (8): CypressChevron, Direction, leading, trailing, .backButton, .body, .body, StrokeStyle
 
 ### Community 510 - ".init"
 Cohesion: 0.25
@@ -2100,49 +2054,33 @@ Nodes (5): ShareModel, .hasFailed, .presentation, Calendar, CypressAPI
 Cohesion: 0.33
 Nodes (6): Press, ask, center, centerAndZoomIn, explainRefusal, waitForFix
 
-### Community 513 - "Phase"
-Cohesion: 0.33
-Nodes (6): Phase, failed, loaded, loading, notASite, APIError
-
-### Community 514 - "PhotoCrownAlignment"
-Cohesion: 0.50
-Nodes (4): AlignmentID, PhotoCrownAlignment, CGFloat, ViewDimensions
-
-### Community 516 - "SpeciesView.swift"
-Cohesion: 0.40
-Nodes (3): SpeciesOpacity, SpeciesThumbnail, Double
-
-### Community 517 - "MapProbeOverlay.swift"
-Cohesion: 0.50
-Nodes (3): MapProbeLayout, CGFloat, Double
-
-### Community 518 - ".init"
-Cohesion: 0.50
-Nodes (3): CypressAPI, UUID, Void
+### Community 517 - "MapProbeOverlay"
+Cohesion: 0.29
+Nodes (6): MapProbeLayout, MapProbeOverlay, .body, CGFloat, Double, MapFrameProbe
 
 ## Ambiguous Edges - Review These
 - `Ground Linear Gradient (#245740 → #13301F)` → `Two-Colour, No-Text, Profile-Independent Mark`  [AMBIGUOUS]
   Tools/appicon/icon.svg · relation: conceptually_related_to
 
 ## Knowledge Gaps
-- **1454 isolated node(s):** `stage_graphify.sh script`, `unauthorized`, `forbidden`, `notFound`, `validationFailed` (+1449 more)
+- **1454 isolated node(s):** `.runningDeviceUDID`, `stage_graphify.sh script`, `unauthorized`, `forbidden`, `notFound` (+1449 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **139 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **142 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
 - **What is the exact relationship between `Ground Linear Gradient (#245740 → #13301F)` and `Two-Colour, No-Text, Profile-Independent Mark`?**
   _Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low._
-- **Why does `Foundation` connect `Foundation` to `ContributionStore`, `OutboxPresentation`, `VisitDraft`, `Sendable`, `CareLogDraft`, `SpeciesPresentation`, `TreeProfilePresentation`, `Date`, `Testing`, `PinAdjustTests`, `CypressStore`, `ActivityPresentation`, `String`, `Species`, `OutboxItem`, `.inMemory`, `SwiftUI`, `GrowthHistoryPresentation`, `SiteTests`, `LocalAPI`, `TreeProfile`, `OutboxViewState`, `TreeQueries`, `MeasureDraft`, `FavoriteTests`, `PhenologyTag`, `Block`, `Tree`, `NearbySpeciesTree`, `MapSearch`, `AlmanacNeighborhood`, `RootView`, `.almanac`, `OutboxPayload`, `.cameraDidChange`, `GrovePresentation`, `MapRecenterTests`, `Int`, `TreeStatus`, `.repositoryRoot`, `CityRecord`, `OutboxStore`, `SQLiteConnection`, `GroveTreesTests`, `SeedSchema`, `AccountAskProvider`, `ReportPresentation`, `SharePresentation`, `Bool`, `CityManifest`, `AccountDeletionChoice`, `Series`, `RemoteAPI`, `.open`, `SpeciesQueries`, `CityDownloadRow`, `TreePin`, `SearchBar`, `Vitality`, `CityRecordPresentation`, `VisitSaveLedger`, `CareEvent`, `MapSpeciesPalette`, `PhotoTally`, `APIError`, `KnownSpecies`, `AppSchema`, `.bench`, `.relaunchAndDrain`, `CoreGraphics`, `AccountLinkRecord`, `Dimension`, `UUID`, `CommunityTreeStore`, `SheetDismissRuleTests`, `CoreLocation`, `Int32`, `VacantSiteRedirectTests`, `CheckInPresentation.swift`, `GroveTreesPresentation`, `SpeciesCorrectionOffer`, `CommunityNote`, `.speciesIDs`, `MapEmptyInventoryTests`, `.hits`, `PhotoDeletion`, `RecordDefectOffer`, `NearbyTree`, `CityInstallState`, `.outboxPhotoShotTypes`, `UITestShardCoverageTests`, `MemorialFacts`, `.compass`, `ReportModel.swift`, `JournalSegment`, `Error`, `DeviceContributions`, `MapMembership`?**
-  _High betweenness centrality (0.075) - this node is a cross-community bridge._
-- **Why does `Coordinate` connect `Coordinate` to `ContributionStore`, `Press`, `Sendable`, `CareLogDraft`, `.noteAndPhotosRoundTripThroughTheModel`, `SitePreviewAPI`, `SpeciesPresentation`, `PinAdjustTests`, `CypressStore`, `Records`, `ActivityPresentationTests`, `AppRouter`, `.inMemory`, `CypressAPI`, `SiteTests`, `LocalAPI`, `TreeProfile`, `TreeQueries`, `FavoriteTests`, `MapViewport`, `Block`, `SecondaryOutlineButton`, `PinSetDestinationTests`, `FixSensitive`, `Tree`, `NearbySpeciesTree`, `MapSearch`, `VisitPreviewAPI`, `AlmanacNeighborhood`, `ModerationTests`, `ScreenEntranceTests`, `RootView`, `.almanac`, `MapContent`, `Holdings`, `SpeciesClaimTests`, `MapOpening`, `TreeProfileModel`, `MeasureScreen`, `MapRecenterTests`, `MapCameraMemory`, `MapLocationProvider`, `FailsOnce`, `TreeProfilePreviewAPI`, `GrovePreviewAPI`, `VisitAddTreeModel`, `MeasureEntranceKindTests`, `GroveTreesTests`, `UIColor`, `MapAnnotationLayer`, `VisitCameraSessionTests`, `SlowGroveAPI`, `VisitLocationProvider`, `DebugLocationOverrideTests`, `AlmanacPreviewAPI`, `VisitIdentifyView`, `VisitSavedView`, `RemoteAPI`, `.open`, `Photo`, `SpeciesQueries`, `.properties`, `.mapContent`, `.dbh`, `LandContextScreenTests`, `TreePlacementTests`, `RecordDefectTests`, `TreePin`, `.region`, `MapHomeView`, `.presentation`, `MapSpeciesColorTests`, `VisitIdentifyModel`, `AlmanacScreen`, `AlmanacGeographyTests`, `VisitSavedModel`, `RecordingSearchAPI`, `Records`, `.bench`, `GrowthHistoryPreviewAPI`, `PhotoOwnershipTests`, `SecondCityGeographyTests`, `MapCameraRequest`, `.bench`, `CommunityTreeStore`, `VisitPinAdjustView`, `MapTreeCard`, `UnreadSpeciesNameTests`, `VacantSiteRedirectTests`, `.writeContributions`, `.drawn`, `.speciesIDs`, `MapEmptyInventoryTests`, `CommunityAddTests`, `TreeCluster`, `NearbyTree`, `.compass`?**
-  _High betweenness centrality (0.075) - this node is a cross-community bridge._
-- **Why does `Color` connect `Color` to `AccountDeletionChoice`, `SpeciesPresentation`, `Records`, `Style`, `.theAddTreeWellLeavesTheFormOnTheScreen`, `ComponentSupport.swift`, `.hex`, `Style`, `View`, `SwiftUI`, `BottomSheet`, `MethodBadge`, `Kind`, `CheckInView`, `CypressShadowStyle`, `cypressLeadInText`, `String`, `CypressColor`, `SecondaryOutlineButton`, `SearchBar`, `MapSpeciesColorTests`, `CypressGradient`, `FoliageLevel`, `State`, `AvatarStack`, `Kind`, `AlmanacScreen`, `ReportView`, `MapRecenterTests`, `Callout`, `ContrastTests`, `ShareDestinationGlyph`, `View`, `MapSpeciesSlot`, `AccessibilityTests`, `ActivityScreen`, `.style`, `Size`?**
-  _High betweenness centrality (0.060) - this node is a cross-community bridge._
+- **Why does `Coordinate` connect `Coordinate` to `ContributionStore`, `Press`, `Codable`, `CypressAPI`, `SpeciesPresentation`, `Direction`, `CypressStore`, `Records`, `ActivityPresentationTests`, `LocalAPI`, `BottomTabBar`, `SiteTests`, `.now`, `TreeProfile`, `TreeQueries`, `.load`, `Block`, `PinSetDestinationTests`, `Almanac`, `NearbySpeciesTree`, `VisitPreviewAPI`, `AlmanacNeighborhood`, `.treeProfile`, `RootView`, `.almanac`, `MapContent`, `DeviceContributions`, `SpeciesClaimTests`, `MapOpening`, `MapRecenterTests`, `MapCameraMemory`, `MapLocationProvider`, `FailsOnce`, `TreeStatus`, `CaseIterable`, `TreeProfilePreviewAPI`, `GrovePreviewAPI`, `VisitAddTreeModel`, `MeasureEntranceKindTests`, `GroveTreesTests`, `UIColor`, `MapAnnotationLayer`, `.jpeg`, `SlowGroveAPI`, `VisitLocationProvider`, `DebugLocationOverrideTests`, `AlmanacPreviewAPI`, `VisitIdentifyView`, `VisitSavedView`, `RemoteAPI`, `.open`, `Photo`, `SpeciesQueries`, `.properties`, `MapViewport`, `.dbh`, `LandContextScreenTests`, `RecordDefectTests`, `PinSet`, `.region`, `MapHomeView`, `.presentation`, `MapSpeciesColorTests`, `VisitIdentifyModel`, `AlmanacPresentation`, `AlmanacGeographyTests`, `VisitSavedModel`, `RecordingSearchAPI`, `Records`, `.bench`, `GrowthHistoryPreviewAPI`, `PhotoOwner`, `SecondCityGeographyTests`, `MapCameraRequest`, `.bench`, `CommunityTreeStore`, `VisitPinAdjustView`, `MapTreeCard`, `VisitCandidate`, `UnreadSpeciesNameTests`, `SeedContractTests`, `VacantSiteRedirectTests`, `.writeContributions`, `.drawn`, `.speciesIDs`, `MapEmptyInventoryTests`, `TreeCluster`, `Sendable`, `NearbyTree`, `Equatable`, `.profile`?**
+  _High betweenness centrality (0.089) - this node is a cross-community bridge._
+- **Why does `Foundation` connect `Foundation` to `ContributionStore`, `OutboxPresentation`, `AccountDeletion`, `Codable`, `CareLogDraft`, `Coordinate`, `SpeciesPresentation`, `ReminderOwner`, `Testing`, `Direction`, `CypressStore`, `MapFilter`, `ActivityPresentation`, `String`, `Species`, `OutboxItem`, `LocalAPI`, `SwiftUI`, `GrowthHistoryPresentation`, `.now`, `OutboxViewState`, `TreeQueries`, `Int32`, `MeasureDraft`, `Block`, `SitePresentation`, `ScreenSweepShots`, `NearbySpeciesTree`, `MapSearch`, `CheckInDraft`, `RootView`, `.almanac`, `DeviceContributions`, `OutboxPayload`, `MapSuggestionTests`, `TreeProfileModel`, `GrovePresentation`, `MapRecenterTests`, `.repositoryRoot`, `CityRecord`, `CaseIterable`, `OutboxStore`, `.init`, `SQLiteConnection`, `GroveTreesTests`, `SeedSchema`, `Quantity`, `AccountAskProvider`, `ReportPresentation`, `SharePresentation`, `Bool`, `CityManifest`, `AccountDeletionChoice`, `Series`, `RemoteAPI`, `.open`, `SpeciesQueries`, `MapViewport`, `CityDownloadRow`, `PinSet`, `ReportModel`, `Vitality`, `CityRecordPresentation`, `VisitSaveLedger`, `CareEvent`, `MapSpeciesPalette`, `PhotoTally`, `APIError`, `KnownSpecies`, `AppSchema`, `.relaunchAndDrain`, `CoreGraphics`, `AccountLinkRecord`, `Dimension`, `UUID`, `CommunityTreeStore`, `SheetDismissRuleTests`, `MapGeography.swift`, `SQLiteError`, `VisitCandidate`, `.render`, `VacantSiteRedirectTests`, `GroveTreesPresentation`, `SpeciesCorrectionOffer`, `CommunityNote`, `.speciesIDs`, `MapEmptyInventoryTests`, `.confirmAction`, `.hits`, `PhotoDeletion`, `RecordDefectOffer`, `Sendable`, `ShotBlankGuardTests`, `NearbyTree`, `CityInstallState`, `.enqueue`, `UITestShardCoverageTests`, `SpeciesAssertionSource`, `JournalSegment`?**
+  _High betweenness centrality (0.068) - this node is a cross-community bridge._
+- **Why does `Species` connect `Species` to `AlmanacPreviewAPI`, `CypressAPI`, `SpeciesPresentation`, `TreeProfilePresentation`, `VisitAddTreeView`, `MapModel`, `RemoteAPI`, `Records`, `SpeciesPickModel`, `.makeStore`, `Chip`, `String`, `Photo`, `SpeciesQueries`, `CommunityNote`, `SpeciesPresentationTests`, `SiteTests`, `.now`, `TreeProfile`, `TreeQueries`, `Int`, `Block`, `NearbyTree`, `Almanac`, `NearbySpeciesTree`, `Vitality`, `CheckInDraft`, `MapSearch`, `VisitPreviewAPI`, `SeedStubNamingTests`, `.treeProfile`, `.presentation`, `CheckInModel`, `MapContent`, `DeviceContributions`, `MemorialPreviewAPI`, `SpeciesClaimTests`, `VisitCameraView`, `AlmanacGeographyTests`, `MapSuggestionTests`, `TreeProfileModel`, `FoliageStrip`, `RecordingSearchAPI`, `Records`, `FailsOnce`, `.tags`, `GrowthHistoryPreviewAPI`, `CityRecord`, `TreeProfilePreviewAPI`, `VisitCameraModel`, `GrovePreviewAPI`, `UUID`, `VisitAddTreeModel`, `UnreadSpeciesNameTests`, `CodingKeys`, `SeasonalWindowTests`, `.names`, `.init`, `SlowGroveAPI`?**
+  _High betweenness centrality (0.051) - this node is a cross-community bridge._
 - **Are the 82 inferred relationships involving `LocalAPI` (e.g. with `.accountLink()` and `CommunityTreeStore`) actually correct?**
   _`LocalAPI` has 82 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 88 inferred relationships involving `Coordinate` (e.g. with `.parse()` and `.decodePhoto()`) actually correct?**
   _`Coordinate` has 88 INFERRED edges - model-reasoned connections that need verification._
-- **What connects `stage_graphify.sh script`, `unauthorized`, `forbidden` to the rest of the system?**
+- **What connects `.runningDeviceUDID`, `stage_graphify.sh script`, `unauthorized` to the rest of the system?**
   _1454 weakly-connected nodes found - possible documentation gaps or missing edges._

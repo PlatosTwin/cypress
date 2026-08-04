@@ -58,4 +58,46 @@ extension XCTestCase {
             file: file, line: line
         )
     }
+
+    /// The element's frame once it has stopped moving.
+    ///
+    /// **A frame read mid-animation is a coordinate for somewhere the element no longer is.**
+    /// `waitForExistence` returns as soon as a sheet's title enters the tree — which is while the
+    /// card is still sliding up. A test that reads `title.frame.minY` at that instant and then
+    /// starts a drag there begins the gesture wherever the card *was*: on the scrim above it, or
+    /// on content below the handle band, neither of which dismisses anything. The sheet then
+    /// stands there and the failure says the gesture was not read as a drag — true, and about the
+    /// start point rather than the gesture.
+    ///
+    /// That is what run 30873340010 reported for `testCareLogDragDownDismisses` after the gesture
+    /// itself had already been slowed down (#200): a runner slow enough to stretch the
+    /// presentation animation past the moment the frame was read.
+    ///
+    /// Settled means two consecutive samples agree. The element must be hittable first, so this
+    /// never reports the stable frame of something not yet presented.
+    func settledFrame(
+        _ element: XCUIElement,
+        _ description: String,
+        timeout: TimeInterval = 30,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) -> CGRect {
+        assertReachable(element, description, timeout: timeout, file: file, line: line)
+        guard element.exists else { return .zero }
+
+        var previous = element.frame
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            usleep(150_000)
+            let current = element.frame
+            if current.equalTo(previous) { return current }
+            previous = current
+        }
+        XCTFail(
+            "\(description) never stopped moving within \(Int(timeout))s — its frame is still "
+                + "changing, so any coordinate taken from it is already stale",
+            file: file, line: line
+        )
+        return previous
+    }
 }

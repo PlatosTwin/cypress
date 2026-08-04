@@ -35,7 +35,7 @@ final class SheetExitUITests: XCTestCase {
     func testCareLogDragDownDismisses() {
         let app = launch("careLog")
         let title = waitForTitle(app, "Care log")
-        dragDown(app, fromY: title.frame.minY - 12)
+        dragDown(app, fromY: title.minY - 12)
         assertMapArrived(app, after: "dragging the care log down", sheetTitled: "Care log")
         app.terminate()
     }
@@ -43,7 +43,7 @@ final class SheetExitUITests: XCTestCase {
     func testShareSheetDragDownDismisses() {
         let app = launch("share")
         let title = waitForTitle(app, "Share this tree")
-        dragDown(app, fromY: title.frame.minY - 12)
+        dragDown(app, fromY: title.minY - 12)
         assertMapArrived(app, after: "dragging the share sheet down", sheetTitled: "Share this tree")
         app.terminate()
     }
@@ -111,12 +111,15 @@ final class SheetExitUITests: XCTestCase {
         return app
     }
 
-    private func waitForTitle(_ app: XCUIApplication, _ anchor: String) -> XCUIElement {
+    /// The sheet's title, and — through `settledFrame` — the guarantee that reading its geometry
+    /// is safe. Every caller here takes a drag origin from that frame, and a frame read while the
+    /// card is still sliding up is a coordinate for somewhere the card no longer is.
+    @discardableResult
+    private func waitForTitle(_ app: XCUIApplication, _ anchor: String) -> CGRect {
         let title = app.staticTexts
             .matching(NSPredicate(format: "label BEGINSWITH %@", anchor))
             .firstMatch
-        XCTAssertTrue(title.waitForExistence(timeout: 30), "'\(anchor)' never appeared")
-        return title
+        return settledFrame(title, "the “\(anchor)” sheet title")
     }
 
     /// A downward drag at the display's horizontal center, from `fromY` to 85% of the screen —

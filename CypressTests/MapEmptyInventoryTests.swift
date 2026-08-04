@@ -327,15 +327,29 @@ struct MapEmptyInventoryTests {
 
     /// Polls rather than sleeping a fixed span: the map debounces the camera, and a test that
     /// pinned the debounce would fail the day it is retuned (`MapRecenterTests.waitUntil`).
+    ///
+    /// **This kept its own 5-second ceiling through #202 and should not have.** The judgment then
+    /// was that a suite driving a fake API with no seed could not be starved the way the
+    /// seed-backed map suites were. Run 30873340010 refuted it: `inventoryIsEmptyHere → false` at
+    /// line 301, on a runner busy enough that five seconds was not enough for a debounce and a
+    /// recompute. A fake API removes the I/O, not the scheduler — the wait is wall-clock either
+    /// way. It now shares `TestWait.ceiling` with everything else, and reports a timeout as a
+    /// timeout instead of returning silently into whichever assertion came next.
     private static func waitUntil(
-        timeout: Duration = .seconds(5),
+        timeout: Duration = TestWait.ceiling,
+        sourceLocation: SourceLocation = #_sourceLocation,
         _ condition: @MainActor () -> Bool
     ) async throws {
-        let deadline = ContinuousClock.now + timeout
+        let started = ContinuousClock.now
+        let deadline = started + timeout
         while ContinuousClock.now < deadline {
             if await condition() { return }
             try await Task.sleep(for: .milliseconds(25))
         }
+        let settled = await condition()
+        TestWait.timedOut(
+            after: started.duration(to: .now), sourceLocation: sourceLocation, { settled }
+        )
     }
 }
 
