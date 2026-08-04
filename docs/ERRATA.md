@@ -13883,3 +13883,43 @@ the phone in the first minute of use. The three CLAUDE.md rules that would have 
 place and all pointed the right way: *look at the running screen*, *a confident comment is where bugs
 have survived*, and *map and camera flows only tell the truth on the physical phone*. What was missing
 was the one that is now above: a test can be green, precise, and about the wrong number.
+
+### E225 — A path deny-list that is safe on `push` is a deadlock on `pull_request` (task #206)
+
+**Found:** 2026-08-04, by reading the trigger back minutes after proving the beta lock, not by
+hitting it.
+
+**Class:** a correct optimization that becomes a liveness bug when the thing that consumes it
+changes from "may skip" to "must report".
+
+**The setting.** `.github/workflows/testflight.yml` has carried a `paths-ignore` deny-list since
+#196 — `docs/**`, `*.md`, `graphify-out/**` — so a documentation-only commit ships no TestFlight
+build. The argument for a deny-list rather than an allow-list is written at the trigger and still
+holds: anything not named keeps deploying, so a new source directory cannot silently stop shipping.
+
+**The defect.** The beta lock (#206) added a `pull_request` trigger and made the `gate` job a
+**required status check**. The new trigger was given the same three ignores, on the reasoning that a
+docs-only PR should skip for the same reason a docs-only push does. That reasoning is wrong, and the
+asymmetry is the whole entry:
+
+- on `push`, a skipped run means **a deploy that does not happen**. Nothing is waiting on it.
+- on `pull_request`, a skipped run means **a required check that never reports**. GitHub does not
+  time it out and does not treat it as failed; it waits. The branch is unmergeable by anybody, with
+  no red anywhere to explain why, and the natural diagnosis — "CI is broken" — is wrong in a way
+  that sends the reader to the build logs of a run that does not exist.
+
+**The repair.** `pull_request` has no `paths-ignore` at all, and a comment at the trigger says it
+must stay that way. A documentation-only PR now runs the whole suite, about 26 minutes. The saving
+is kept where it is free: merging that PR to main still deploys nothing, because the `push`
+deny-list still applies to the merge commit.
+
+**The general rule.**
+
+> A filter that decides whether work *happens* is not the same as a filter that decides whether an
+> answer *arrives*. Before reusing a skip condition under a new trigger, ask what is waiting on the
+> result — if anything blocks on it, a skip is a hang.
+
+**What made it cheap.** The lock was proved with a real push rather than assumed, and the trigger
+was re-read immediately afterwards. Had it been left, the first person to find it would have been
+whoever opened a documentation PR — against a branch protection rule that had just been introduced,
+which is the worst possible moment to be debugging one.
