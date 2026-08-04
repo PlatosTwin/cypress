@@ -75,10 +75,22 @@ on:
   # it and they were removed the same hour.
   #
   # The cost is real and accepted: a documentation-only PR runs the whole suite, about 26 minutes.
-  # The saving is kept where it is free — merging that PR to main still deploys nothing, because the
-  # `push` deny-list above still applies to the merge commit.
+  # The saving is kept where it is free — merging a PR deploys nothing either way: to `main` the
+  # `push` deny-list above still applies to the merge commit, and to a `release/**` branch there is
+  # no deploy to save from in the first place, because `push` below is deliberately NOT extended to
+  # `release/**` (see the note just below) — it stays `main`-only.
+  #
+  # **`release/**` is on this trigger and not on `push`.** #217: a release round targets PRs at
+  # `release/0.2` (and future `release/**` branches) instead of `main`, so without this a
+  # release-targeted PR would start no run at all — no suite, no `gate` — and sit unmergeable with
+  # no red anywhere saying why, the same failure shape as E225. `push` stays `main`-only on purpose:
+  # the `release` job below is guarded only by `github.event_name != 'pull_request'` and the `ships`
+  # predicate, never by branch name, so a push-triggered run on a release branch would mint a real
+  # TestFlight build from a tree that has not been through review and has not landed on `main`.
+  # Extending `push` to `release/**` would do exactly what the pull-request guard on `release`
+  # exists to prevent.
   pull_request:
-    branches: [main]
+    branches: [main, 'release/**']
 
   workflow_dispatch:
 
