@@ -200,7 +200,13 @@ final class MapLocationProvider {
     /// simulator answers no, which is why nothing in this file can be seen working on one.
     func startHeading() {
         if isPinned { return }
-        guard CLLocationManager.headingAvailable() else { return }
+        // **`type(of:)`, so the question is put to the manager this provider was actually handed.**
+        // Spelled `CLLocationManager.headingAvailable()` it is a call on the base class and nothing
+        // about the injected manager can answer it — which is not only a testing problem: this type
+        // takes a manager precisely because it is not supposed to assume which one it has. Measured
+        // on the 16 Pro Max simulator, the base class answers **false**, and that is the honest
+        // answer: no simulator has a magnetometer, so no simulator ever draws a cone.
+        guard type(of: manager).headingAvailable() else { return }
         manager.startUpdatingHeading()
     }
 
