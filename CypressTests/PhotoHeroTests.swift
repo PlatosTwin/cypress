@@ -387,6 +387,120 @@ struct PhotoHeroTests {
         #expect(heroPhotoIDs[first] != heroPhotoIDs[second])
     }
 
+    // MARK: - 4b · Batched and scoped, for a caller-supplied set of trees (#222, ERRATA E204)
+    //
+    // Screen 07 §6's `Nearby individuals` cannot use `heroPhotoIDs()` above: its candidates are
+    // not "this device's own trees" the way grove/journal/almanac's are, so scanning the whole
+    // `main.photos` table to answer a two-or-three-tree question would be paying for the entire
+    // photo library on every species page. `heroPhotoIDs(treeIDs:)` is the scoped read named in
+    // E204's own follow-up instruction; see `SpeciesGuideNearbyPhotosTests` for the same rule
+    // proved through the full `speciesGuide` call path.
+
+    @Test("the scoped batched read agrees with the unscoped one, for the trees it was asked about")
+    func heroPhotoIDsScopedToTreesAgreesWithTheUnscopedRead() async throws {
+        let deviceID = UUID(uuidString: "D0000000-0000-4000-8000-0000000000C6")!
+        let attribution = Attribution.anonymous(deviceID: deviceID)
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: deviceID, photoDirectory: Self.photoDirectory())
+
+        let tree = try await api.addTree(TreeDraft(
+            coordinate: Coordinate(latitude: 37.77, longitude: -122.44),
+            photoLocalPath: "/tmp/cypress-hero-ids-scoped.jpg",
+            attribution: attribution
+        )).id
+        let ids = try await api.debugSeedPhotos(treeID: tree, count: 3)
+
+        let (scoped, unscoped) = try await store.queue.read { connection in
+            (
+                try ContributionStore().heroPhotoIDs(treeIDs: [tree], connection: connection),
+                try ContributionStore().heroPhotoIDs(connection: connection)
+            )
+        }
+        #expect(scoped[tree] == unscoped[tree])
+        #expect(scoped[tree] == ids[0], "the scoped read did not agree with A3's own ordering")
+    }
+
+    @Test("a tree outside the requested set never appears, even though it has photographs")
+    func heroPhotoIDsScopedToTreesExcludesTreesNotAsked() async throws {
+        let deviceID = UUID(uuidString: "D0000000-0000-4000-8000-0000000000C7")!
+        let attribution = Attribution.anonymous(deviceID: deviceID)
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: deviceID, photoDirectory: Self.photoDirectory())
+
+        let asked = try await api.addTree(TreeDraft(
+            coordinate: Coordinate(latitude: 37.80, longitude: -122.44),
+            photoLocalPath: "/tmp/cypress-hero-ids-scoped-asked.jpg",
+            attribution: attribution
+        )).id
+        let notAsked = try await api.addTree(TreeDraft(
+            coordinate: Coordinate(latitude: 37.81, longitude: -122.44),
+            photoLocalPath: "/tmp/cypress-hero-ids-scoped-not-asked.jpg",
+            attribution: attribution
+        )).id
+        let askedIDs = try await api.debugSeedPhotos(treeID: asked, count: 2)
+        _ = try await api.debugSeedPhotos(treeID: notAsked, count: 2)
+
+        let scoped = try await store.queue.read { connection in
+            try ContributionStore().heroPhotoIDs(treeIDs: [asked], connection: connection)
+        }
+        #expect(scoped[asked] == askedIDs[0])
+        #expect(scoped[notAsked] == nil, "a tree the caller never asked about must not appear at all")
+        #expect(scoped.count == 1, "the scoped read pulled in more trees than it was asked for")
+    }
+
+    @Test("a tree with no live photograph is simply absent — never a present key holding nil")
+    func heroPhotoIDsScopedToTreesOmitsAPhotolessTree() async throws {
+        let deviceID = UUID(uuidString: "D0000000-0000-4000-8000-0000000000C8")!
+        let attribution = Attribution.anonymous(deviceID: deviceID)
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: deviceID, photoDirectory: Self.photoDirectory())
+
+        let photographed = try await api.addTree(TreeDraft(
+            coordinate: Coordinate(latitude: 37.82, longitude: -122.44),
+            photoLocalPath: "/tmp/cypress-hero-ids-scoped-photographed.jpg",
+            attribution: attribution
+        )).id
+        // A tree id nothing has ever written a photo row for — the honest shape of "a fresh
+        // install's every seeded tree", which is what `Nearby individuals` actually asks about.
+        let untouched = UUID()
+
+        let scoped = try await store.queue.read { connection in
+            try ContributionStore().heroPhotoIDs(treeIDs: [untouched], connection: connection)
+        }
+        #expect(scoped.isEmpty, "a request naming only an untouched tree found a photo from nowhere")
+        #expect(scoped[untouched] == nil)
+
+        // And the same fact holds inside a mixed request, so a well-photographed neighbor cannot
+        // paper over an empty answer for the tree actually asked about.
+        let mixed = try await store.queue.read { connection in
+            try ContributionStore().heroPhotoIDs(treeIDs: [photographed, untouched], connection: connection)
+        }
+        #expect(mixed[untouched] == nil)
+        #expect(mixed[photographed] != nil)
+    }
+
+    @Test("an empty request answers empty, even when this device's photo library is not")
+    func heroPhotoIDsScopedToTreesAnEmptyRequestAnswersEmpty() async throws {
+        let deviceID = UUID(uuidString: "D0000000-0000-4000-8000-0000000000C9")!
+        let attribution = Attribution.anonymous(deviceID: deviceID)
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: deviceID, photoDirectory: Self.photoDirectory())
+
+        // A tree with real photographs on the device — present so that an empty request falling
+        // through to `heroPhotoIDs()`'s unscoped shape would be caught rather than trivially true.
+        let tree = try await api.addTree(TreeDraft(
+            coordinate: Coordinate(latitude: 37.83, longitude: -122.44),
+            photoLocalPath: "/tmp/cypress-hero-ids-scoped-empty-request.jpg",
+            attribution: attribution
+        )).id
+        _ = try await api.debugSeedPhotos(treeID: tree, count: 2)
+
+        let scoped = try await store.queue.read { connection in
+            try ContributionStore().heroPhotoIDs(treeIDs: [], connection: connection)
+        }
+        #expect(scoped.isEmpty, "asking about no trees must not answer with every tree's photograph")
+    }
+
     // MARK: - 5 · The map card (#176)
     //
     // `MapCardSubject` already carries `profile: TreeProfile?` — the same full read the tree

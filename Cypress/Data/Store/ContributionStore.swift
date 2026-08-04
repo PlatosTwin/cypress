@@ -422,6 +422,54 @@ public struct ContributionStore {
         return byTree.compactMapValues { PhotoHero.choose(from: $0, tallies: tallies) }.mapValues(\.id)
     }
 
+    /// The same rule as `heroPhotoIDs()`, `PhotoHero.choose` over this device's own photographs,
+    /// scoped to a caller-supplied set of tree ids rather than to the whole table (ERRATA E204).
+    ///
+    /// `heroPhotoIDs()` above is deliberately unscoped: grove, journal and the almanac's season
+    /// row already narrow their own candidates to "this device's own trees" before they ever ask
+    /// for a photograph, so scanning every live row in `main.photos` is scanning a set the same
+    /// order of magnitude as the answer. Screen 07 §6's `Nearby individuals` does not have that
+    /// property — `SpeciesGuideLimits` widens the candidate search across every tree of a species
+    /// near a coordinate, most of which this device has never photographed, to answer a
+    /// two-or-three-row question. Reusing the unscoped read there would mean paying for the whole
+    /// photo library on every species page. So this one takes the caller's own candidate ids and
+    /// narrows the statement to them, the way `TreeQueries.speciesRowIDs` narrows a search to a
+    /// bound `json_each` list rather than filtering after the fact.
+    ///
+    /// An empty `treeIDs` returns `[:]` without touching the database — the same short-circuit
+    /// `heroPhotoIDs()` takes for an empty table, for the same reason: `IN (SELECT value FROM
+    /// json_each('[]'))` is a well-formed no-op, but there is no read to make.
+    public func heroPhotoIDs(treeIDs: Set<UUID>, connection: SQLiteConnection) throws -> [UUID: UUID] {
+        guard !treeIDs.isEmpty else { return [:] }
+
+        let photoStatement = try connection.cachedStatement("""
+            SELECT * FROM photos
+             WHERE deleted_at IS NULL
+               AND tree_uuid COLLATE NOCASE IN (SELECT value FROM json_each(:trees))
+            """)
+        let treesJSON = "[\(treeIDs.map { "\"\($0.uuidString)\"" }.joined(separator: ","))]"
+        _ = try photoStatement.bind(treesJSON, forName: ":trees")
+        let photos = try photoStatement.fetchAll(Self.decodePhoto)
+        guard !photos.isEmpty else { return [:] }
+
+        let talliesStatement = try connection.cachedStatement("""
+            SELECT photo_id, SUM(vote) AS score FROM photo_votes
+             WHERE photo_id COLLATE NOCASE IN (SELECT value FROM json_each(:photos))
+             GROUP BY photo_id
+            """)
+        let photosJSON = "[\(photos.map { "\"\($0.id.uuidString)\"" }.joined(separator: ","))]"
+        _ = try talliesStatement.bind(photosJSON, forName: ":photos")
+        let tallyPairs = try talliesStatement.fetchAll { row -> (UUID, Int)? in
+            guard let id = try row.uuidIfPresent("photo_id") else { return nil }
+            return (id, try row.int("score"))
+        }
+        let tallies = Dictionary(uniqueKeysWithValues: tallyPairs.compactMap { $0 })
+            .mapValues { PhotoTally(score: $0) }
+
+        let byTree = Dictionary(grouping: photos, by: \.treeID)
+        return byTree.compactMapValues { PhotoHero.choose(from: $0, tallies: tallies) }.mapValues(\.id)
+    }
+
     /// Where a photo's bytes are on this device, if they are anywhere yet.
     ///
     /// Two columns, because a photograph is in one of two places for a while: `local_path` from the

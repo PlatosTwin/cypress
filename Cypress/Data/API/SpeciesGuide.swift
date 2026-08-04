@@ -101,18 +101,29 @@ public struct NearbySpeciesTree: Hashable, Sendable, Identifiable {
     /// 07 §6 renders it as the lowercased class label — `thriving`, `good`.
     public let vitality: Vitality?
 
+    /// Which of this tree's photographs the row draws, chosen by `PhotoHero.choose` — the same
+    /// rule the profile hero draws by (ERRATA E125, E204) — or `nil` when this device has no live
+    /// photograph of this tree. `nil` is the common case: `photoCount` can be positive from a
+    /// tree's whole population of photographers while this row still carries no id, because
+    /// nothing here syncs another contributor's photograph down (`TreeProfile.ownPhotoIDs`'s own
+    /// comment). The row draws the placeholder in that case, same as a tree with no photographs
+    /// at all — a sparse section is the correct, honest output (ERRATA E204).
+    public let heroPhotoID: UUID?
+
     public init(
         treeID: UUID,
         title: String?,
         distanceM: Double,
         photoCount: Int?,
-        vitality: Vitality?
+        vitality: Vitality?,
+        heroPhotoID: UUID? = nil
     ) {
         self.treeID = treeID
         self.title = title
         self.distanceM = distanceM
         self.photoCount = photoCount
         self.vitality = vitality
+        self.heroPhotoID = heroPhotoID
     }
 }
 

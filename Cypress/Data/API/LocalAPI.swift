@@ -976,14 +976,25 @@ public actor LocalAPI: CypressAPI {
             // One row more than the screen draws was asked for, so `isComplete` is a fact about the
             // read rather than a guess — the same proof `ContributionStore` uses.
             let isComplete = candidates.count <= SpeciesGuideLimits.nearbyRowLimit
-            let rows = try candidates.prefix(SpeciesGuideLimits.nearbyRowLimit).map { candidate in
+            let drawnCandidates = candidates.prefix(SpeciesGuideLimits.nearbyRowLimit)
+
+            // Which photograph each row draws, one statement for the whole section (ERRATA E204) —
+            // not `heroPhotoIDs()`'s unscoped shape, which would scan this device's entire photo
+            // library to answer a two-or-three-tree question. See that method's own comment.
+            let heroPhotoIDs = try contributions.heroPhotoIDs(
+                treeIDs: Set(drawnCandidates.map(\.tree.id)),
+                connection: connection
+            )
+
+            let rows = try drawnCandidates.map { candidate in
                 NearbySpeciesTree(
                     treeID: candidate.tree.id,
                     title: try contributions.activeName(treeID: candidate.tree.id, connection: connection)?.name
                         ?? candidate.tree.address,
                     distanceM: candidate.distanceM,
                     photoCount: try contributions.photos(treeID: candidate.tree.id, connection: connection).totalCount,
-                    vitality: try contributions.latestObservation(treeID: candidate.tree.id, connection: connection)?.vitality
+                    vitality: try contributions.latestObservation(treeID: candidate.tree.id, connection: connection)?.vitality,
+                    heroPhotoID: heroPhotoIDs[candidate.tree.id]
                 )
             }
 
