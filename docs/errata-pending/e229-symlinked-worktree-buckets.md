@@ -29,25 +29,81 @@ test was ever red.
 ### The fix, and the one thing worth flagging for whoever reads this next
 
 Both `AppSourceLiterals.repositoryRoot()` and `PendingCitationGuard.sourceFiles` now call
-`.resolvingSymlinksInPath()`. **This does not do what it sounds like it does.** Verified directly
-before trusting it:
+`.resolvingSymlinksInPath()`. **This does not do what it sounds like it does, and the collapse it
+performs is conditional on the path existing — not a string rewrite.** Verified directly before
+trusting it, with a path that exists and one that does not:
 
 ```swift
-URL(fileURLWithPath: "/private/tmp/x").resolvingSymlinksInPath().path  // → "/tmp/x"
-URL(fileURLWithPath: "/tmp/x").resolvingSymlinksInPath().path          // → "/tmp/x"
+URL(fileURLWithPath: "/private/tmp").resolvingSymlinksInPath().path    // → "/tmp"            (exists — collapses)
+URL(fileURLWithPath: "/private/tmp/x").resolvingSymlinksInPath().path  // → "/private/tmp/x"  (does not exist — untouched)
+URL(fileURLWithPath: "/tmp").resolvingSymlinksInPath().path            // → "/tmp"            (already short)
 ```
 
 `.resolvingSymlinksInPath()` does not resolve `/tmp` outward to `/private/tmp`; per Apple's
-documented behavior it does the opposite — it strips a leading `/private` back off whenever the
-shorter path still names the same file. So the fix does not make every path say `/private/tmp/…`;
-it converges every path (root and enumerated alike) onto the *short* `/tmp/…` spelling. Which
-spelling wins was never the point — only that both sides of the prefix arithmetic agree on the same
-one, whichever it is.
+documented behavior it does the opposite — it strips a leading `/private` back off, but only when
+the shorter path still names something real on disk (the collapse is a `stat`, not a string
+rewrite, which is why the fabricated `/private/tmp/x` above survives unchanged). That precondition
+is what makes the fix safe: `repositoryRoot()` and every enumerated file URL name real files the
+process just read, never a hypothetical path, so the collapse always fires for them. So the fix
+does not make every path say `/private/tmp/…`; it converges every path (root and enumerated alike)
+onto the *short* `/tmp/…` spelling. Which spelling wins was never the point — only that both sides
+of the prefix arithmetic agree on the same one, whichever it is.
 
-An initial draft of the fix comments asserted the wrong direction (claimed resolving would produce
-`/private/tmp` throughout) before this was checked against a standalone `swift` script. Left here so
-the next reader does not have to re-derive it: **`resolvingSymlinksInPath()` shortens, it does not
-lengthen** — a case CLAUDE.md's "calibrate the instrument" rule exists for.
+**Two rounds of getting this wrong, both left here so the next reader does not repeat either.**
+First, an initial draft of the fix comments asserted the wrong *direction* — claimed resolving would
+produce `/private/tmp` throughout — before this was checked against a standalone `swift` script:
+`resolvingSymlinksInPath()` shortens, it does not lengthen. Second, the corrected draft's own worked
+example (`"/private/tmp/x" → "/tmp/x"`) was itself run through PR review and found false as literally
+written: `x` names nothing, the collapse is existence-gated, and the actual output of that exact line
+is `"/private/tmp/x"`, unchanged. The general claim was right; the specific example asserting it
+wasn't one anybody had run. Fixed by re-verifying the exact committed example against a fresh
+`swift` process rather than trusting that a plausible-looking path would behave like the ones
+already checked — CLAUDE.md's "calibrate the instrument" rule, twice in one comment.
+
+### The fix was incomplete on first landing — a second real defect the reviewer found
+
+The comment above named the vulnerable *pattern*
+(`replacingOccurrences(of: root.path + "/", …)`) but the PR that introduced it only fixed
+`PendingCitationGuard.sourceFiles` — `AppSourceLiterals.sourceFiles(root:)` still returned raw,
+unresolved `FileManager` enumerator URLs, and three call sites computed a relative path with
+exactly the named pattern against them:
+
+- `BritishSpellingGuardTests.everyAppStringLiteralIsAmerican` (reads `AppSourceLiterals.sourceFiles`)
+- `DrawnGlyphGuardTests.theAppBorrowsNoGlyphs` (same)
+- `WorkflowShellQuotingTests.noAccidentalCommandSubstitution`, over its own separately-unresolved
+  `workflowFiles(root:)`
+
+**`replacingOccurrences` does not fail safe here.** It matches a substring anywhere, not only at
+the start, so an unresolved `root.path + "/"` (`/tmp/…/`) is still found *inside* a resolved
+`file.path` (`/private/tmp/…/`) — one component in from the front, right where the `/private` that
+made them differ ends — and that inner match is removed. What survives is the leading `/private`
+the match started after, glued directly to whatever text followed the match. Reproduced against
+this worktree's own, real `Cypress/App/CypressApp.swift`:
+
+```
+BEFORE fix: /privateCypress/App/CypressApp.swift
+AFTER fix:  Cypress/App/CypressApp.swift
+```
+
+Not a relative path, and not the untouched absolute path either — a third, worse shape, because
+it reads as *almost* a relative path. Nothing was red for this on first landing: the three scans
+downstream of these paths currently find zero real violations, so there was no offender's `file:line`
+for the corruption to show up in. It would have appeared the day any of them found one, in exactly
+the scratchpad-worktree environment this ticket is about — the PR's original claim that fixing
+`repositoryRoot()` "covers `BritishSpellingGuardTests`' own sweep too — same root function" was true
+of the *root* and false of the *enumeration*, which is a separate function per call site.
+
+**Fixed by resolving symlinks on the enumerated URLs too**, mirroring
+`PendingCitationGuard.sourceFiles`: `AppSourceLiterals.sourceFiles(root:)` and
+`WorkflowShellQuotingTests.workflowFiles(root:)` both now call `.resolvingSymlinksInPath()` on
+every URL the enumerator returns, not only on the root. Swept both test targets afterward for any
+other instance of the class (`grep` for `replacingOccurrences(of:.*\.path` and
+`dropFirst(.*\.path.*count`, and for any other `FileManager.default.enumerator` call): two more
+directory reads exist (`UITestShardCoverageTests.declaredUITestClasses`,
+`DragGestureGateTests.uiTestSources`), both via `contentsOfDirectory(at:)` rather than a deep
+enumerator, and neither computes a relative path by prefix arithmetic — one reads class names out
+of file *contents*, the other uses `url.lastPathComponent` alone. Not vulnerable to this class; left
+unchanged.
 
 ### Verification
 
@@ -80,8 +136,12 @@ Green, same worktree, after the fix: `Tools/verify_test_log.sh` reported
 `BritishSpellingGuardTests`, `DrawnGlyphGuardTests`, `DeployPathsAgreeTests`,
 `UITestShardCoverageTests`, `DragGestureGateTests`, `WorkflowShellQuotingTests` — every other caller
 of `AppSourceLiterals.repositoryRoot()` in `CypressTests`, run as a group to confirm the shared fix
-did not regress any of them. `Tools/verify_test_log.sh --warnings` reported `source=0` on both
-touched files.
+did not regress any of them. Re-run identically, same worktree, after the review round's fix to
+`AppSourceLiterals.sourceFiles` and `WorkflowShellQuotingTests.workflowFiles`: the same seven suites,
+same `Test run with 20 tests in 7 suites passed`. `Tools/verify_test_log.sh --warnings` reported
+`source=0` on every touched file across both rounds
+(`CypressTests/PendingCitationGuardTests.swift`, `CypressTests/BritishSpellingGuardTests.swift`,
+`CypressTests/WorkflowShellQuotingTests.swift`).
 
 ### Cross-reference
 

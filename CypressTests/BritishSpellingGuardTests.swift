@@ -218,9 +218,14 @@ enum AppSourceLiterals {
     /// back the *unsymlinked* `/private/tmp/…` spelling regardless, so the two disagreed. The fix
     /// is not "make both sides say `/private/tmp`" — `URL.resolvingSymlinksInPath()` does not
     /// resolve `/tmp` outward to `/private/tmp` at all; per Apple's own documented behavior it
-    /// does the opposite, stripping a leading `/private` back off whenever the shorter path still
-    /// names the same file. Verified directly: `URL(fileURLWithPath:
-    /// "/private/tmp/x").resolvingSymlinksInPath().path == "/tmp/x"`. Calling it on **both** this
+    /// does the opposite, stripping a leading `/private` back off, but **only when the resulting
+    /// path names something that actually exists on disk** — the collapse is a `stat`, not a string
+    /// rewrite. Verified directly, on a path guaranteed to exist on any macOS box: `URL(fileURLWithPath:
+    /// "/private/tmp").resolvingSymlinksInPath().path == "/tmp"`, while the same call on a
+    /// non-existent path (`"/private/tmp/x"` where `x` names nothing) leaves it untouched —
+    /// `.path == "/private/tmp/x"`, no collapse. That existence precondition is exactly why this is
+    /// safe to rely on here and nowhere else: `repositoryRoot()` and every enumerated file URL below
+    /// name real files the process just read, never a hypothetical path. Calling it on **both** this
     /// root and the paths enumerated against it (`PendingCitationGuard.sourceFiles`) canonicalizes
     /// both onto the same short spelling, which is the only property that matters here — not which
     /// spelling wins. Every caller of this root does prefix arithmetic against paths built from it
@@ -244,14 +249,30 @@ enum AppSourceLiterals {
     }
 
     /// Every `.swift` file under `Cypress/`.
+    ///
+    /// **Enumerated URLs are resolved before they leave this function (#229).** `root` arrives
+    /// resolved from `repositoryRoot()`, but `FileManager`'s enumerator hands back its own
+    /// spelling regardless of what it was asked with — every caller here computes a relative path
+    /// with `file.path.replacingOccurrences(of: root.path + "/", with: "")`, and that call does not
+    /// fail safe when the two spellings disagree: `replacingOccurrences` matches a substring
+    /// anywhere, not only at the start, so an unresolved `root.path + "/"` (`/tmp/…/`) is still
+    /// found *inside* a resolved `file.path` (`/private/tmp/…/`) — one component in from the front,
+    /// right after the `/private` that made them differ — and removed from there. What survives is
+    /// the leading `/private` the match started after, glued directly to whatever followed the
+    /// match. Confirmed against this worktree's own paths: `root = "/tmp/…/wt-e229"`, `file =
+    /// "/private/tmp/…/wt-e229/Cypress/App/CypressApp.swift"` produces
+    /// `"/privateCypress/App/CypressApp.swift"` — not a relative path, and not the untouched
+    /// absolute path either. Resolving here, once, is what keeps that arithmetic honest regardless
+    /// of which of the three callers runs it.
     static func sourceFiles(root: URL) -> [URL] {
-        let appRoot = root.appendingPathComponent("Cypress")
+        let appRoot = root.appendingPathComponent("Cypress").resolvingSymlinksInPath()
         guard let walker = FileManager.default.enumerator(
             at: appRoot, includingPropertiesForKeys: nil
         ) else { return [] }
-        return walker.compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" }.sorted {
-            $0.path < $1.path
-        }
+        return walker.compactMap { $0 as? URL }
+            .map { $0.resolvingSymlinksInPath() }
+            .filter { $0.pathExtension == "swift" }
+            .sorted { $0.path < $1.path }
     }
 
     // MARK: - The one measured floor, shared by both source-sweeping gates
