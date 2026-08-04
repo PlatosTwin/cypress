@@ -12,6 +12,32 @@ name: TestFlight
 on:
   push:
     branches: [main]
+    # A DENY-list, not an allow-list, and that direction is the whole safety argument: anything
+    # not named here still ships. A new source directory, a new resource, a new Tools script all
+    # keep deploying without anyone remembering to add them — whereas an allow-list that missed a
+    # path would silently stop shipping, which is the failure nobody notices until a tester asks
+    # why the build is a week old.
+    #
+    # Safe because nothing under docs/ is a build input: the citation guard sweeps Cypress/,
+    # CypressTests/ and CypressUITests/, and no test in the suite opens a file under docs/ at all
+    # (checked, 2026-08-03). A docs-only commit therefore cannot break a test that this skip would
+    # then hide.
+    #
+    # `*.md` matches only the repository root — `*` does not cross a `/` in these patterns — so
+    # Fixtures/species/SOURCES.md still triggers a deploy. That is deliberate: it sits beside the
+    # species YAML the seed is built from, and a file in a build input's directory gets the
+    # benefit of the doubt.
+    #
+    # `.github/**` is deliberately NOT ignored. A change to this pipeline has to prove itself by
+    # running, which is exactly how the SDK, the simulator name and the tag permission were each
+    # caught.
+    #
+    # A push that touches BOTH docs and code still deploys: the skip needs every changed path to
+    # match. And because a docs-only commit produces no run at all, the newest build can be behind
+    # main — the `build-N` tag on the commit that shipped is what answers "what is in TestFlight".
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
   workflow_dispatch:
 
 # One release at a time. Two concurrent runs would race for the same build number and the
