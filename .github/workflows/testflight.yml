@@ -490,6 +490,77 @@ jobs:
           printf '%s' "$ASC_PRIVATE_KEY" > "$RUNNER_TEMP/private_keys/AuthKey_${ASC_KEY_ID}.p8"
           chmod 600 "$RUNNER_TEMP/private_keys/AuthKey_${ASC_KEY_ID}.p8"
 
+      # ── Import the persisted signing certificate, if one exists ─────────────────────────
+      # #232: without this, `-allowProvisioningUpdates` on the Archive step below finds a
+      # keychain with no signing identity and mints a BRAND NEW Apple distribution certificate
+      # through the API, every single deploy. That certificate's private key is generated on the
+      # runner and dies with it, so nothing is ever reused — twelve deploys accumulated to
+      # Apple's per-account certificate cap and blocked a release outright (the surplus certs
+      # were just revoked by hand). Importing one persisted certificate here means every run
+      # reuses the same identity and stops minting new ones.
+      #
+      # `-allowProvisioningUpdates` STAYS on both xcodebuild calls below, and that is deliberate.
+      # It does two things: refreshes the provisioning profile, and creates a signing certificate
+      # when the keychain has none. Profiles are regenerable and uncapped, so that half is
+      # harmless and still needed — only the certificate-creation half is the problem, and it
+      # only fires when the keychain is empty. Importing a certificate here removes the "keychain
+      # is empty" condition without touching the flag that also does useful work.
+      #
+      # ── The guard is a step-level `if:`, not an in-script emptiness check ───────────────
+      # A step-level `if:` is evaluated by the Actions runtime before anything in `run:` starts —
+      # when the secrets are unset, the shell below never runs, so the (empty, in that case)
+      # secret value never enters a process environment that a stray `set -x`, an accidental
+      # `env` dump, or a future edit to this script could echo. An in-script `[ -z "$VAR" ]` check
+      # needs the secret exported into the step's environment on every run, including the skip
+      # case, just to be tested — strictly more surface for the identical decision. The owner has
+      # not added these secrets yet, so this must degrade cleanly today: the step below does not
+      # run at all, and the fallback step under it logs why, once, without touching either secret.
+      - name: Import the signing certificate
+        id: import_cert
+        if: ${{ secrets.DIST_CERT_P12 != '' && secrets.DIST_CERT_P12_PASSWORD != '' }}
+        env:
+          DIST_CERT_P12: ${{ secrets.DIST_CERT_P12 }}
+          DIST_CERT_P12_PASSWORD: ${{ secrets.DIST_CERT_P12_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN_PATH="$RUNNER_TEMP/dist_signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          CERT_PATH="$RUNNER_TEMP/dist_cert.p12"
+
+          # The secret is the base64 TEXT of a binary p12. Decoding explicitly (rather than
+          # trusting xcodebuild to do it) fails loudly on truncated input instead of silently
+          # importing a corrupt certificate.
+          echo "$DIST_CERT_P12" | base64 --decode -o "$CERT_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          # 6 hours: comfortably longer than this job's 45-minute timeout, so the keychain never
+          # auto-locks mid-archive.
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # -T /usr/bin/codesign, not -A: trust codesign specifically for this identity rather
+          # than every application on the runner.
+          security import "$CERT_PATH" -P "$DIST_CERT_P12_PASSWORD" -T /usr/bin/codesign \
+            -f pkcs12 -k "$KEYCHAIN_PATH"
+          rm -f "$CERT_PATH"
+
+          # Replaces the search list with just this keychain. The runner's default keychain has
+          # no identity xcodebuild needs, and an empty search list is why Archive minted a new
+          # certificate in the first place.
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+
+          # Lets codesign use the imported key without an interactive keychain prompt, which
+          # would otherwise hang the job forever on a headless runner.
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" \
+            "$KEYCHAIN_PATH"
+
+          echo "imported the persisted distribution certificate"
+
+      - name: Note that no persisted certificate is configured
+        if: ${{ secrets.DIST_CERT_P12 == '' || secrets.DIST_CERT_P12_PASSWORD == '' }}
+        run: |
+          echo "::notice::DIST_CERT_P12/DIST_CERT_P12_PASSWORD not set — signing falls back to xcodebuild's on-demand certificate creation (#232). Add both secrets to stop new certificates from being minted on every deploy."
+
       - name: Archive
         env:
           ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
@@ -578,4 +649,24 @@ jobs:
             echo "::warning::could not create tag build-$n (it may already exist)"
             gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/build-$n" --jq '.object.sha' \
               | sed 's/^/build-'"$n"' already points at /'
+          fi
+
+      # ── Always remove the temporary signing keychain ─────────────────────────────────
+      # `if: always()` so this runs whether Archive/Export/Tag above succeeded or died partway —
+      # a reused runner must never carry this keychain, or the password protecting it, into
+      # whatever runs on that machine next. Guarded on the keychain file actually existing:
+      # when "Import the signing certificate" above did not run (no persisted certificate
+      # configured yet, #232's documented fallback) there is nothing to delete, and
+      # `security delete-keychain` on a keychain that was never created would fail and mark this
+      # cleanup step red for no reason.
+      - name: Remove the temporary signing keychain
+        if: always()
+        run: |
+          set -euo pipefail
+          KEYCHAIN_PATH="$RUNNER_TEMP/dist_signing.keychain-db"
+          if [ -f "$KEYCHAIN_PATH" ]; then
+            security delete-keychain "$KEYCHAIN_PATH"
+            echo "deleted $KEYCHAIN_PATH"
+          else
+            echo "no signing keychain to remove"
           fi
