@@ -445,6 +445,15 @@ jobs:
     if: github.event_name != 'pull_request' && needs.plan.outputs.ships == 'true'
     runs-on: macos-26
     timeout-minutes: 45
+    env:
+      # Not the secrets — a boolean derived from them, for the two `if:`s on the certificate
+      # steps below. They cannot read `secrets` directly: the workflow parser does not accept
+      # `secrets` as a named value inside a step-level `if:`, and the failure mode is total —
+      # the whole FILE fails validation, no jobs run, and no checks appear on the PR (run
+      # 31017859507, "Unrecognized named-value: 'secrets'"). `env:` values ARE allowed to read
+      # secrets, and deriving `true`/`false` here keeps the secret values themselves out of
+      # every step's environment except the import step's own `env:` block.
+      HAS_PERSISTED_CERT: ${{ secrets.DIST_CERT_P12 != '' && secrets.DIST_CERT_P12_PASSWORD != '' }}
     steps:
       - uses: actions/checkout@v4
       # No simulator: this job archives for a device and never runs a test. Booting one costs
@@ -506,18 +515,20 @@ jobs:
       # only fires when the keychain is empty. Importing a certificate here removes the "keychain
       # is empty" condition without touching the flag that also does useful work.
       #
-      # ── The guard is a step-level `if:`, not an in-script emptiness check ───────────────
+      # ── The guard is a step-level `if:` on HAS_PERSISTED_CERT, not an in-script check ───
       # A step-level `if:` is evaluated by the Actions runtime before anything in `run:` starts —
       # when the secrets are unset, the shell below never runs, so the (empty, in that case)
       # secret value never enters a process environment that a stray `set -x`, an accidental
       # `env` dump, or a future edit to this script could echo. An in-script `[ -z "$VAR" ]` check
       # needs the secret exported into the step's environment on every run, including the skip
-      # case, just to be tested — strictly more surface for the identical decision. The owner has
-      # not added these secrets yet, so this must degrade cleanly today: the step below does not
-      # run at all, and the fallback step under it logs why, once, without touching either secret.
+      # case, just to be tested — strictly more surface for the identical decision. The `if:`
+      # tests the job-level boolean rather than the secrets themselves for the parser reason
+      # documented at that boolean's definition. When the secrets are unset this degrades
+      # cleanly: the step below does not run at all, and the fallback step under it logs why,
+      # once, without touching either secret.
       - name: Import the signing certificate
         id: import_cert
-        if: ${{ secrets.DIST_CERT_P12 != '' && secrets.DIST_CERT_P12_PASSWORD != '' }}
+        if: env.HAS_PERSISTED_CERT == 'true'
         env:
           DIST_CERT_P12: ${{ secrets.DIST_CERT_P12 }}
           DIST_CERT_P12_PASSWORD: ${{ secrets.DIST_CERT_P12_PASSWORD }}
@@ -557,7 +568,7 @@ jobs:
           echo "imported the persisted distribution certificate"
 
       - name: Note that no persisted certificate is configured
-        if: ${{ secrets.DIST_CERT_P12 == '' || secrets.DIST_CERT_P12_PASSWORD == '' }}
+        if: env.HAS_PERSISTED_CERT != 'true'
         run: |
           echo "::notice::DIST_CERT_P12/DIST_CERT_P12_PASSWORD not set — signing falls back to xcodebuild's on-demand certificate creation (#232). Add both secrets to stop new certificates from being minted on every deploy."
 
