@@ -123,12 +123,21 @@ struct SpeciesSearchTests {
     /// Unescaped, a lone `%` matches every name in the catalog: the map would narrow to the first
     /// 100 species for a keystroke that means nothing, and `_` would silently match any character
     /// inside a cultivar name typed with one. Escaped, both are ordinary characters — and no species
-    /// name contains either, so both queries correctly find nothing.
+    /// name contains either, so these queries correctly find nothing.
+    ///
+    /// **`c%s` and not `cypre%s`, since ERRATA E165's similarity pass landed.** The wildcard being
+    /// guarded here belongs to the `LIKE` predicate, and the similarity pass does not use `LIKE` —
+    /// it folds every non-alphanumeric to a space, so `cypre%s` reaches the Cypresses as an ordinary
+    /// near-miss of `cypress` rather than as an expanded pattern. That is the feature working, not
+    /// the escape leaking, but it makes `cypre%s` unable to tell the two apart. `c%s` can: three
+    /// characters is below `SpeciesQueries.minimumSimilarityQueryLength`, so the similarity pass
+    /// never runs and this is a statement about the `LIKE` path alone — and an honored `%` there
+    /// would match every name with a `c` before an `s`, which is most of the catalog.
     @Test("LIKE's own wildcards are matched literally, not honored")
     func wildcardsInTheQueryAreEscaped() async throws {
         let percent = try await Self.search("%")
         let underscore = try await Self.search("_")
-        let inWord = try await Self.search("cypre%s")
+        let inWord = try await Self.search("c%s")
         // The escape character itself, which must escape before the wildcards do.
         let backslash = try await Self.search("\\")
 
@@ -136,6 +145,26 @@ struct SpeciesSearchTests {
         #expect(underscore.isEmpty, "a bare _ matched \(underscore.count) species; the query is not escaped")
         #expect(inWord.isEmpty, "% acted as a wildcard inside a word, matching \(Self.names(inWord))")
         #expect(backslash.isEmpty)
+    }
+
+    /// The other half of the sentence above, asserted as the fact it now is: a `%` typed inside a
+    /// word is *punctuation* to the similarity pass, so the query still resolves to the word it
+    /// misspells and to nothing else.
+    ///
+    /// Presence, not absence: every species this returns carries the word `cypress`. A `%` honored
+    /// as a wildcard would not produce that set — it would produce every name with `cypre` somewhere
+    /// ahead of an `s`.
+    @Test("a % inside a word is punctuation to the similarity pass, not a wildcard (E165)")
+    func aWildcardInsideAWordIsFoldedNotExpanded() async throws {
+        let matches = try await Self.search("cypre%s")
+        try #require(!matches.isEmpty, "“cypre%s” found nothing; the similarity pass did not run")
+        for species in matches {
+            #expect(
+                species.commonName.lowercased().contains("cypress")
+                    || species.scientificName.lowercased().contains("cypress"),
+                "“cypre%s” returned \(species.commonName), which is not a Cypress: \(Self.names(matches))"
+            )
+        }
     }
 
     @Test("the escaper escapes the wildcards and its own escape character")
