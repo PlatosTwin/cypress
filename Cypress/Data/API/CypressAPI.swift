@@ -875,7 +875,23 @@ public struct TreeProfile: Hashable, Sendable {
     /// it — unmoderated — on a stranger's screen. There is exactly one predicate now, asked here,
     /// so the hero pill and the photo browser cannot answer this differently again.
     public func isVisibleOnDevice(_ photo: Photo) -> Bool {
-        isOwnPhoto(photo) ? photo.isVisibleToItsContributor : photo.isPubliclyVisible
+        Self.isPhotoVisible(photo, own: isOwnPhoto(photo))
+    }
+
+    /// `isVisibleOnDevice`'s rule, with "own" taken as a parameter rather than read off
+    /// `ownPhotoIDs` — the context-free half of E215, so a caller that determines ownership its
+    /// own way still answers the identical question rather than restating it.
+    ///
+    /// `ContributionStore.heroPhotoIDs(treeIDs:attribution:)` (07 §6's `Nearby individuals`,
+    /// ERRATA E204/#222) is the reason this exists: it reads a *batch* of candidate trees this
+    /// device may never have visited, so there is no single `TreeProfile` to hold an
+    /// `ownPhotoIDs` set — ownership there comes from comparing the row's own `user_id`/
+    /// `device_id` columns to the caller's `Attribution` in SQL, the same comparison
+    /// `deletablePhotoIDs` already makes. Once "own" is known, the visibility question is this
+    /// one function, so a nearby row and the profile hero can never disagree about a
+    /// stranger's unmoderated photograph the way the hero and the browser once did.
+    public static func isPhotoVisible(_ photo: Photo, own: Bool) -> Bool {
+        own ? photo.isVisibleToItsContributor : photo.isPubliclyVisible
     }
 
     /// `photos`, narrowed by `isVisibleOnDevice` — the one series the hero (screen 03/14) and the
