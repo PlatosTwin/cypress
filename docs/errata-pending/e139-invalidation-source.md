@@ -45,21 +45,46 @@ nothing is invalidating it.
 ### What is actually wrong: the prose
 
 Four comments asserted the retired rate as present fact. Fixed in `MapKitBasemap`, `MapHomeView`,
-`MapAnnotationLayer` (×2) and the three in `MapCameraOwnershipTests`. One of them was not merely
-stale — **it was a safety argument that E140 quietly invalidated**:
-
-> `MapAnnotationLayer.FirstLayoutMapView` justified its existence with "screen 01 re-runs its body 240
-> times a second and would have produced another pass on its own, but the two other screens that draw
-> this basemap are quiet".
-
-Screen 01 is now exactly as quiet as the other two. The first-layout callback did not become more
-correct, but it went from load-bearing on two screens to load-bearing on **all three**, and anyone
-removing it on the reasoning written beside it would strand the app's default screen on MapKit's
-whole-world default region (E168).
+`MapAnnotationLayer` (×2) and the three in `MapCameraOwnershipTests`.
 
 This is the same failure the standing rules already name — a confident comment is where bugs survive
 here — with the twist that the comment was true when written. **A measured number in a comment is a
 measurement with a date on it, and E140 was the date.**
+
+### And the same trap caught this round, one paragraph later
+
+The first draft of this work "fixed" `AimableMapView`'s stale rate claim by *reasoning from* the new
+number: since screen 01 is now as quiet as the other two, the first-layout callback must have gone
+from load-bearing on two screens to load-bearing on all three, so removing it would strand the app's
+default screen on MapKit's whole-world region. Adversarial review caught it. **Three paragraphs down
+in the same doc comment, E168's untouched text says the measured opposite**: on screen 01 the hook
+always loses the race to `updateUIView`, does nothing, and removing it changes no observable behavior
+and no test — "that was built and run, both ways."
+
+The error was not the arithmetic. It was reasoning from a rate at all: **a screen being mounted is not
+a screen at rest.** The mount delivers `updateUIView` passes whatever the resting rate is, so the race
+is structural and E140's rate drop cannot have decided it either way. The at-rest zero and the mount
+are simply different moments — and this round's own launch window, showing `body=10`, said so on the
+first screenful of evidence collected.
+
+**Settled by experiment rather than by wordsmithing**, which is how this repo settles comment disputes.
+The callback was removed, rebuilt and run on all three screens with a fix granted:
+
+| screen | with the hook | ablated |
+|---|---|---|
+| 01 map home | Folsom St, z18, 87 markers, dot on the fix | **identical** |
+| pin-adjust (16) | anchor in Dolores Park at opening scale | **identical** |
+| pin-set map | framed on the thirteen, Mission District | **identical** |
+
+Nothing stranded on the whole-world region anywhere. E168's account is the correct one and stands;
+the inferred paragraph was deleted rather than softened, and the code was restored unchanged.
+
+**The general form, which is the reason this is written down.** An inference and a measurement were
+sitting in the same doc comment, and the inference read as more current because it was newer and
+cited a fresh number. A measurement does not go stale because something nearby changed; it goes stale
+when somebody re-runs it and gets a different answer. This round nearly shipped the opposite of a
+recorded ablation on the strength of a plausible sentence — the exact shape of the failure the
+comment it was replacing had already been written to prevent.
 
 ### The guard, and what could not honestly be guarded
 

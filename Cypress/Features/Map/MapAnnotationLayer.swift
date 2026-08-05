@@ -224,18 +224,21 @@ enum MapPinImage {
 /// **A `UIViewRepresentable` has no layout hook, and this one needs exactly one** (ERRATA E168).
 /// `makeUIView` and the `updateUIView` passes around it can all run while the view is still
 /// `bounds == .zero`, and a camera cannot be aimed at a map with no area — so the opening camera has
-/// to wait for a size. Waiting is safe only if something wakes the layer when the size arrives, and
-/// nothing else does: a quiet screen sits on MapKit's default region forever.
+/// to wait for a size. Waiting is safe only if something wakes the layer when the size arrives; this
+/// hook is that guarantee, and what it is actually worth is set out at the end of this comment.
 ///
-/// **This callback is now the only thing that wakes any of the three, which was not true when it was
-/// written.** The original argument here was that screen 01 re-ran its body 240 times a second and
-/// "would have produced another pass on its own", so the callback was really for the two quiet
-/// screens — the pin-adjust and pin-set maps. E140 took screen 01's at-rest rate to **zero**
-/// (re-measured under task #226; see `MapCameraRequest`), so screen 01 is now exactly as quiet as the
-/// other two and has no spare pass to fall back on. The callback did not become more correct, but it
-/// did become load-bearing on all three screens rather than on two — so removing it on the old
-/// reasoning would now strand the app's *default* screen on MapKit's default region, which is the
-/// whole-world span E168 records.
+/// **Do not reason about it from the body's evaluation rate.** This note used to argue that screen 01
+/// "re-runs its body 240 times a second and would have produced another pass on its own", leaving the
+/// hook to serve the two quieter screens. The rate was the wrong quantity to look at, which is worth
+/// recording because a later round reasoned from it and got the opposite answer. E140 has since taken
+/// screen 01's *at-rest* rate to zero (re-measured under task #226 — see `MapCameraRequest`), and it
+/// changed nothing here: **a screen being mounted is not a screen at rest.** The mount delivers
+/// `updateUIView` passes whatever the resting rate is, and that is where the aim arrives from. The
+/// race below is structural, so no change in the resting rate can decide it either way.
+///
+/// Re-ablated under #226 on all three screens, with the callback removed and a fix granted: screen 01
+/// still opens on Folsom St with its 87 markers, the pin-adjust map on its anchor in Dolores Park, and
+/// the pin-set map framed on its thirteen — indistinguishable from the build that has it.
 ///
 /// One callback, fired once, then released. It is not a general layout observer and must not become
 /// one — everything else this file does is driven by `updateUIView`, and it stays that way.
@@ -255,7 +258,8 @@ enum MapPinImage {
 /// **Be honest about what this hook does on screen 01: nothing.** Measured on every launch traced,
 /// it loses the race to `updateUIView` and its `applyCameraIfChanged` is a `REJECT` of a ticket
 /// already spent. Removing the hop, or the whole hook, changes no observable behavior there and no
-/// test — that was built and run, both ways. Do not read the paragraphs above as a description of
+/// test — that was built and run, both ways, and #226 re-ran the ablation after E140 and found the
+/// same on the pin-adjust and pin-set maps too. Do not read the paragraphs above as a description of
 /// something that fires.
 ///
 /// **What it is actually for, since `mapViewDidChangeVisibleRegion` was gated.** That callback now
