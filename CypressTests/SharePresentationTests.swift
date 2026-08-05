@@ -46,6 +46,10 @@ struct SharePresentationTests {
     private static func presentation(
         name: String? = "Grandmother Cypress",
         address: String? = "Great Highway at Judah",
+        // Defaulted rather than left nil so every test unrelated to the location line keeps
+        // exercising a tree whose city IS known — the ordinary case (ERRATA E209/#233).
+        // `locationLineTests` below is what exercises the honest-fallback branches explicitly.
+        cityShortName: String? = "San Francisco",
         species: Species? = montereyCypress,
         photos: [Photo] = [],
         ownPhotoIDs: Set<UUID>? = nil
@@ -63,6 +67,7 @@ struct SharePresentationTests {
                 tree: tree,
                 activeName: name.map { TreeName(treeID: treeID, name: $0, givenBy: nil) },
                 species: species,
+                cityShortName: cityShortName,
                 photos: Series(complete: photos),
                 // The default is "this device took all of them", which is the state `LocalAPI` is
                 // always in — and the state under which the wrong predicate would look right.
@@ -172,6 +177,49 @@ struct SharePresentationTests {
         #expect(Self.presentation().locationLine == "Great Highway at Judah · San Francisco")
         #expect(Self.presentation(address: nil).locationLine == "San Francisco")
         #expect(Self.presentation(address: "").locationLine == "San Francisco")
+    }
+
+    /// **ERRATA E209/#233, Shape A's one surviving member.** Until this fix `ShareCopy.city` was
+    /// the literal `"San Francisco"`, true only while the seed held one city; a San Jose tree
+    /// shared from screen 10 was captioned with the wrong city on every single share. The city
+    /// half is no longer a constant — it is `profile.cityShortName`, so a tree whose row says
+    /// San Jose gets San Jose.
+    @Test("a San Jose tree's card names San Jose, not the old San Francisco constant")
+    func aSanJoseTreeIsNotCaptionedSanFrancisco() {
+        let page = Self.presentation(cityShortName: "San Jose")
+        #expect(page.locationLine == "Great Highway at Judah · San Jose")
+        #expect(page.locationLine.contains("San Francisco") == false)
+    }
+
+    /// **The honest fallback, both directions.** A city that is not known — an older seed with no
+    /// `id_spaces.short_name` (`SeedSchema.hasCivicShortNames` false), a row that predates
+    /// `id_space` entirely, or a community-added tree, which never has one — must not fall back to
+    /// a fabricated or stale city name. R37.3 makes "not known yet" ordinary rather than an error:
+    /// the bundled seed and a downloaded city file are legitimately different generations at once.
+    @Test("with no known city, the line falls back to the address alone — never a guessed city")
+    func noKnownCityFallsBackToAddressAlone() {
+        let page = Self.presentation(cityShortName: nil)
+        #expect(page.locationLine == "Great Highway at Judah")
+        #expect(page.locationLine.contains("San Francisco") == false)
+        #expect(page.locationLine.contains("·") == false, "a dangling separator with nothing after it")
+    }
+
+    /// The mirror of the existing "no address" fallback: with an address but no known city, the
+    /// city clause simply does not appear — the same "no dangling separator" rule that already
+    /// held for a missing address, now proved for a missing city too.
+    @Test("with no known city and no address, the line says nothing rather than inventing something")
+    func neitherAddressNorCityIsAnEmptyLine() {
+        let page = Self.presentation(address: nil, cityShortName: nil)
+        #expect(page.locationLine == "")
+    }
+
+    /// The city-known, address-known case is exercised by `locationLineIsTheTree`; this covers the
+    /// remaining cell of the 2×2 the fallback logic actually branches on — a known city and NO
+    /// address, which must still read as "city alone", not "· city" or the empty line.
+    @Test("a known city with no address reads as the city alone")
+    func knownCityNoAddressIsCityAlone() {
+        #expect(Self.presentation(address: nil, cityShortName: "San Jose").locationLine == "San Jose")
+        #expect(Self.presentation(address: "", cityShortName: "San Jose").locationLine == "San Jose")
     }
 
     /// ERRATA E42: `publicCoordinate` is deliberately unpopulated, and screen 10 is named as the

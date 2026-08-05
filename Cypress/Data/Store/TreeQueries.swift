@@ -742,6 +742,14 @@ public struct TreeQueries {
         /// `trees.inventory_source` — which of the city's two inventories listed **this row**, or
         /// nil for a seed built before the column existed. See `InventorySource`.
         public let inventorySourceID: String?
+        /// The row's own short civic name — `id_spaces.short_name` joined on `t.id_space`
+        /// (ERRATA E209/#233). Nil on any of three honest grounds, none of them an error: the
+        /// file predates `SeedSchema.hasCivicShortNames`, the row predates `id_space` entirely
+        /// (`hasIdSpace` false, so there is nothing to join on), or the row is a community
+        /// addition with no id space to begin with. `SharePresentation.locationLine` is the
+        /// reader — same shape as `neighborhoodName` above: a fact the seed keys by string
+        /// rather than by id, so it travels beside the row instead of living on `Tree`.
+        public let cityShortName: String?
     }
 
     /// `GET /trees/{id}`, the inventory half. `LocalAPI` adds the contributions.
@@ -751,22 +759,48 @@ public struct TreeQueries {
     /// SEARCH s USING INTEGER PRIMARY KEY (rowid=?) LEFT-JOIN
     /// SEARCH n USING INTEGER PRIMARY KEY (rowid=?) LEFT-JOIN
     /// SEARCH lin USING INTEGER PRIMARY KEY (rowid=?) LEFT-JOIN
+    /// SEARCH isp USING INDEX sqlite_autoindex_id_spaces_1 (id=?) LEFT-JOIN
     /// ```
-    public func tree(id: UUID, connection: SQLiteConnection) throws -> TreeRecord? {
-        let sql = """
+    /// (`id_spaces.id` is `TEXT PRIMARY KEY`, not an `INTEGER PRIMARY KEY` — it is not a rowid
+    /// alias, so SQLite answers the join off the table's own unique index rather than a rowid
+    /// lookup. Measured against the real seed shape via
+    /// `CivicShortNameTests.queryPlanMatchesTheProfileQuery`, which pins this text against
+    /// `treeSQL()` itself rather than leaving it to prose that can drift from the plan.)
+    ///
+    /// **The `isp.short_name` projection is gated on `hasCivicShortNames` AND `hasIdSpace`, the
+    /// same as the join that provides `isp` in the first place.** The two flags are introspected
+    /// independently — `hasCivicShortNames` asks only whether `id_spaces` carries the column,
+    /// `hasIdSpace` asks whether `trees.id_space` and both id-space tables exist — and nothing
+    /// stops the file from having one true and the other false. A seed test built with
+    /// `id_spaces.short_name` present but `trees.id_space` absent reproduced exactly that: the
+    /// `isp` alias never enters the query because `idSpaceJoin` is empty on `hasIdSpace` alone, so
+    /// projecting `isp.short_name` on `hasCivicShortNames` alone throws `no such column:
+    /// isp.short_name` at prepare — a naming collision with a table that was never joined, not a
+    /// null result. `CivicShortNameTests.aFixtureWithShortNameButNoTreeIDSpaceStillPrepares`
+    /// guards this shape.
+    func treeSQL() -> String {
+        let idSpaceJoin = schema.hasIdSpace
+            ? "LEFT JOIN \(seed).id_spaces isp ON isp.id = t.id_space"
+            : ""
+        let hasResolvableShortName = schema.hasCivicShortNames && schema.hasIdSpace
+        return """
         SELECT \(treeColumns),
                \(SpeciesQueries.projection(identityColumn: schema.speciesIdentityColumn)),
                n.name AS neighborhood_name,
                lin.\(schema.treeIdentityColumn) AS site_lineage_uuid,
-               \(schema.hasInventorySource ? "t.inventory_source" : "NULL") AS inventory_source
+               \(schema.hasInventorySource ? "t.inventory_source" : "NULL") AS inventory_source,
+               \(hasResolvableShortName ? "isp.short_name" : "NULL") AS city_short_name
           FROM \(seed).trees t
           LEFT JOIN \(seed).species s ON s.id = t.species_current
           LEFT JOIN \(seed).neighborhoods n ON n.id = t.neighborhood_id
           LEFT JOIN \(seed).trees lin ON lin.id = t.site_lineage
+          \(idSpaceJoin)
          WHERE t.\(schema.treeIdentityColumn) = :uuid COLLATE NOCASE
         """
+    }
 
-        let statement = try connection.cachedStatement(sql)
+    public func tree(id: UUID, connection: SQLiteConnection) throws -> TreeRecord? {
+        let statement = try connection.cachedStatement(treeSQL())
         _ = try statement.bind(id.uuidString, forName: ":uuid")
 
         return try statement.fetchOne { row in
@@ -775,7 +809,8 @@ public struct TreeQueries {
                 species: try SpeciesQueries.decodeIfPresent(row),
                 neighborhoodName: try row.stringIfPresent("neighborhood_name"),
                 siteLineageID: try row.uuidIfPresent("site_lineage_uuid"),
-                inventorySourceID: try row.stringIfPresent("inventory_source")
+                inventorySourceID: try row.stringIfPresent("inventory_source"),
+                cityShortName: try row.stringIfPresent("city_short_name")
             )
         }
     }

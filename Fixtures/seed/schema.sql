@@ -165,7 +165,21 @@ CREATE TABLE id_spaces (
     -- `sf`'s is the empty string and is the one space permitted to have one.
     identity_prefix TEXT NOT NULL,
     note            TEXT NOT NULL,
-    CHECK (id <> '')
+    -- The short, reader-facing civic name a public surface may print beside a
+    -- record from this space -- "San Francisco", "San Jose". Never
+    -- `inventories.name` (that is the inventory's own published name, e.g. "SF
+    -- Public Works street tree inventory") and never `identity_prefix` (frozen
+    -- identity plumbing, not prose). ERRATA E209 named the gap: no column
+    -- anywhere carried a short city name, so the share card (and nothing else)
+    -- hardcoded "San Francisco" and mislabeled every San Jose tree. Hand-entered
+    -- in `Tools/build_seed.py`'s SHORT_CITY_NAMES, written for exactly the id
+    -- spaces this file carries -- an id space with no entry fails the build
+    -- rather than shipping a blank. `SeedSchema.hasCivicShortNames` is the
+    -- app-side flag a reader-facing surface must check before trusting this
+    -- column exists, the same way `hasSpeciesTrigrams` gates `species_trigrams`.
+    short_name      TEXT NOT NULL,
+    CHECK (id <> ''),
+    CHECK (short_name <> '')
 );
 
 CREATE TABLE inventories (
