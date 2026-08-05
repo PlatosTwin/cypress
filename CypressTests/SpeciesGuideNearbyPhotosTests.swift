@@ -153,4 +153,79 @@ struct SpeciesGuideNearbyPhotosTests {
         #expect(row.photoCount == 0, "a tree this device never photographed reported photos anyway")
         #expect(row.heroPhotoID == nil, "an untouched tree must fall through to the placeholder, not invent an id")
     }
+
+    // MARK: - 3 · A stranger's photograph, end to end (ERRATA E215, review of #222/PR #16)
+    //
+    // The adversarial review of this PR constructed the failing case directly against
+    // `ContributionStore.heroPhotoIDs(treeIDs:)`: a seeded `.pending` photograph not owned by the
+    // caller still came back as the hero, because the batched read filtered only
+    // `deleted_at IS NULL`. `PhotoHeroTests`' "4c" section pins the store method in isolation;
+    // this pins the same fact through the real call path — `LocalAPI.speciesGuide` — against the
+    // real seed, the way a defect here would actually reach the species page.
+
+    private static let strangerID = UUID(uuidString: "57A4DE00-0000-4000-8000-00000000E216")!
+
+    private static func insertStrangersPhoto(
+        id: UUID = UUID(),
+        treeID: UUID,
+        moderationState: ModerationState,
+        capturedAt: Date,
+        connection: SQLiteConnection
+    ) throws {
+        let stamp = SQLiteTimestamp.string(from: capturedAt)
+        try connection.execute("""
+            INSERT INTO photos
+                (id, tree_uuid, shot_type, moderation_state, captured_at, created_at, updated_at, user_id)
+            VALUES ('\(id.uuidString)', '\(treeID.uuidString)', 'full_tree', '\(moderationState.rawValue)',
+                    '\(stamp)', '\(stamp)', '\(stamp)', '\(Self.strangerID.uuidString)')
+            """)
+    }
+
+    @Test("a stranger's unmoderated photo does not reach the species page as a nearby hero")
+    func nearbyRowExcludesAStrangersPendingPhoto() async throws {
+        let (api, store) = try await Self.harness()
+        let tree = try await Self.seedTree(offset: 3, on: store)
+
+        try await store.queue.write { connection in
+            try Self.insertStrangersPhoto(
+                treeID: tree.treeID, moderationState: .pending, capturedAt: Self.now, connection: connection
+            )
+        }
+
+        let guide = try await api.speciesGuide(id: tree.speciesID, near: tree.coordinate)
+        let row = try #require(guide.nearby.items.first { $0.treeID == tree.treeID })
+
+        #expect(
+            row.heroPhotoID == nil,
+            "a stranger's unmoderated photograph reached the species page — the case the review named"
+        )
+    }
+
+    @Test("a stranger's approved photo can reach the species page as a nearby hero")
+    func nearbyRowAdmitsAStrangersApprovedPhoto() async throws {
+        let (api, store) = try await Self.harness()
+        let tree = try await Self.seedTree(offset: 4, on: store)
+        let approved = UUID()
+
+        try await store.queue.write { connection in
+            // Same reasoning as `PhotoHeroTests`' "4c": an older pending row beside the approved
+            // one tells "exclude an unmoderated stranger" apart from "exclude every stranger".
+            try Self.insertStrangersPhoto(
+                treeID: tree.treeID, moderationState: .pending,
+                capturedAt: Self.now.addingTimeInterval(-86_400), connection: connection
+            )
+            try Self.insertStrangersPhoto(
+                id: approved, treeID: tree.treeID, moderationState: .approved,
+                capturedAt: Self.now, connection: connection
+            )
+        }
+
+        let guide = try await api.speciesGuide(id: tree.speciesID, near: tree.coordinate)
+        let row = try #require(guide.nearby.items.first { $0.treeID == tree.treeID })
+
+        #expect(
+            row.heroPhotoID == approved,
+            "a stranger's approved photograph should have led — moderation, not ownership, is meant to gate this"
+        )
+    }
 }

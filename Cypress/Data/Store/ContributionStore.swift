@@ -439,17 +439,55 @@ public struct ContributionStore {
     /// An empty `treeIDs` returns `[:]` without touching the database — the same short-circuit
     /// `heroPhotoIDs()` takes for an empty table, for the same reason: `IN (SELECT value FROM
     /// json_each('[]'))` is a well-formed no-op, but there is no read to make.
-    public func heroPhotoIDs(treeIDs: Set<UUID>, connection: SQLiteConnection) throws -> [UUID: UUID] {
+    ///
+    /// **Visibility, not just existence — ERRATA E215.** Unlike `heroPhotoIDs()` above, this
+    /// method's candidates are not "this device's own trees": `nearest`'s search (07 §6) widens
+    /// across every tree of a species near a coordinate, so a row this statement finds may belong
+    /// to a contributor this device has never met. `deleted_at IS NULL` alone is `heroPhotoIDs()`'s
+    /// own filter and it is not enough here — it would hand a stranger's `.pending` photograph to
+    /// the nearby section as a hero thumbnail the day anything syncs one down, which is exactly the
+    /// defect E215 named for the hero pill and the browser. `attribution` is compared against each
+    /// row's own `user_id`/`device_id` in SQL — the same comparison `deletablePhotoIDs` makes — and
+    /// the resulting own/not-own flag is handed to `TreeProfile.isPhotoVisible`, E215's own rule,
+    /// rather than a second predicate restated here that could drift from it.
+    public func heroPhotoIDs(
+        treeIDs: Set<UUID>,
+        attribution: Attribution,
+        connection: SQLiteConnection
+    ) throws -> [UUID: UUID] {
         guard !treeIDs.isEmpty else { return [:] }
 
+        // `COALESCE(…, 0)`: an ownerless row (both columns NULL, the state an account deletion's
+        // leaving door produces — `photos`' CHECK, AppSchema v12) makes `device_id = :device`
+        // compare NULL to a value, which SQL's three-valued logic resolves to NULL rather than
+        // false, and `OR` with a NULL operand is NULL unless the other side is already true.
+        // `row.bool(_:)` throws on NULL; treating an ownerless row as not-own (falls to
+        // `isPubliclyVisible`) is also the safe reading — nobody currently asking is its owner.
         let photoStatement = try connection.cachedStatement("""
-            SELECT * FROM photos
+            SELECT *,
+                   COALESCE(
+                       (:user IS NOT NULL AND user_id = :user COLLATE NOCASE)
+                        OR device_id = :device COLLATE NOCASE,
+                       0
+                   ) AS is_own
+              FROM photos
              WHERE deleted_at IS NULL
                AND tree_uuid COLLATE NOCASE IN (SELECT value FROM json_each(:trees))
             """)
         let treesJSON = "[\(treeIDs.map { "\"\($0.uuidString)\"" }.joined(separator: ","))]"
         _ = try photoStatement.bind(treesJSON, forName: ":trees")
-        let photos = try photoStatement.fetchAll(Self.decodePhoto)
+        _ = try photoStatement.bind([
+            ":user": attribution.userID?.uuidString,
+            ":device": attribution.deviceID.uuidString
+        ])
+        let candidates = try photoStatement.fetchAll { row -> (Photo, Bool) in
+            (try Self.decodePhoto(row), try row.bool("is_own"))
+        }
+        // The one visibility rule, applied here rather than restated as SQL: own photographs are
+        // visible whatever moderation has or has not done, everyone else's only once approved.
+        let photos = candidates
+            .filter { TreeProfile.isPhotoVisible($0.0, own: $0.1) }
+            .map(\.0)
         guard !photos.isEmpty else { return [:] }
 
         let talliesStatement = try connection.cachedStatement("""

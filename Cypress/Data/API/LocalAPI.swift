@@ -981,8 +981,12 @@ public actor LocalAPI: CypressAPI {
             // Which photograph each row draws, one statement for the whole section (ERRATA E204) —
             // not `heroPhotoIDs()`'s unscoped shape, which would scan this device's entire photo
             // library to answer a two-or-three-tree question. See that method's own comment.
+            // `attribution` is required here and not on `heroPhotoIDs()` above (ERRATA E215): these
+            // candidates are not "this device's own trees", so a photograph the read finds may be a
+            // stranger's, and only `attribution`'s own rows may lead with an unmoderated one.
             let heroPhotoIDs = try contributions.heroPhotoIDs(
                 treeIDs: Set(drawnCandidates.map(\.tree.id)),
+                attribution: attribution,
                 connection: connection
             )
 

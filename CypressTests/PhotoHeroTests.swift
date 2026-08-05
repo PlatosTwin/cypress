@@ -412,7 +412,7 @@ struct PhotoHeroTests {
 
         let (scoped, unscoped) = try await store.queue.read { connection in
             (
-                try ContributionStore().heroPhotoIDs(treeIDs: [tree], connection: connection),
+                try ContributionStore().heroPhotoIDs(treeIDs: [tree], attribution: attribution, connection: connection),
                 try ContributionStore().heroPhotoIDs(connection: connection)
             )
         }
@@ -441,7 +441,7 @@ struct PhotoHeroTests {
         _ = try await api.debugSeedPhotos(treeID: notAsked, count: 2)
 
         let scoped = try await store.queue.read { connection in
-            try ContributionStore().heroPhotoIDs(treeIDs: [asked], connection: connection)
+            try ContributionStore().heroPhotoIDs(treeIDs: [asked], attribution: attribution, connection: connection)
         }
         #expect(scoped[asked] == askedIDs[0])
         #expect(scoped[notAsked] == nil, "a tree the caller never asked about must not appear at all")
@@ -465,7 +465,7 @@ struct PhotoHeroTests {
         let untouched = UUID()
 
         let scoped = try await store.queue.read { connection in
-            try ContributionStore().heroPhotoIDs(treeIDs: [untouched], connection: connection)
+            try ContributionStore().heroPhotoIDs(treeIDs: [untouched], attribution: attribution, connection: connection)
         }
         #expect(scoped.isEmpty, "a request naming only an untouched tree found a photo from nowhere")
         #expect(scoped[untouched] == nil)
@@ -473,7 +473,9 @@ struct PhotoHeroTests {
         // And the same fact holds inside a mixed request, so a well-photographed neighbor cannot
         // paper over an empty answer for the tree actually asked about.
         let mixed = try await store.queue.read { connection in
-            try ContributionStore().heroPhotoIDs(treeIDs: [photographed, untouched], connection: connection)
+            try ContributionStore().heroPhotoIDs(
+                treeIDs: [photographed, untouched], attribution: attribution, connection: connection
+            )
         }
         #expect(mixed[untouched] == nil)
         #expect(mixed[photographed] != nil)
@@ -496,9 +498,97 @@ struct PhotoHeroTests {
         _ = try await api.debugSeedPhotos(treeID: tree, count: 2)
 
         let scoped = try await store.queue.read { connection in
-            try ContributionStore().heroPhotoIDs(treeIDs: [], connection: connection)
+            try ContributionStore().heroPhotoIDs(treeIDs: [], attribution: attribution, connection: connection)
         }
         #expect(scoped.isEmpty, "asking about no trees must not answer with every tree's photograph")
+    }
+
+    // MARK: - 4c · Visibility, not just existence (ERRATA E215, review of #222/PR #16)
+    //
+    // The scoped read's candidates are not "this device's own trees" (unlike the unscoped
+    // `heroPhotoIDs()` above), so a row it finds may belong to a contributor this device has
+    // never met. Caught in adversarial review: the SQL above filtered only `deleted_at IS NULL`
+    // — no ownership, no moderation — so the day anything syncs a stranger's photograph down, an
+    // unmoderated one could become a nearby hero. `PhotoOwnershipTests`' own idiom is used to seed
+    // the "stranger" row: a raw `INSERT` with a `user_id` this test's `attribution` does not hold,
+    // since nothing in the shipping write path can produce that row today (E215: "latent, not
+    // live") and the fixture has to reach past it the way a synced read someday would.
+
+    private static let strangerID = UUID(uuidString: "57A4DE00-0000-4000-8000-00000000E215")!
+
+    /// Inserts one photograph directly, owned by `Self.strangerID` rather than by the test's own
+    /// `attribution` — bypassing `ContributionStore.insert` exactly as `PhotoOwnershipTests`'
+    /// "theirs" rows do, because no write path this app ships can attribute a photograph to
+    /// somebody else on this device.
+    private static func insertStrangersPhoto(
+        id: UUID = UUID(),
+        treeID: UUID,
+        moderationState: ModerationState,
+        capturedAt: Date,
+        connection: SQLiteConnection
+    ) throws {
+        let stamp = SQLiteTimestamp.string(from: capturedAt)
+        try connection.execute("""
+            INSERT INTO photos
+                (id, tree_uuid, shot_type, moderation_state, captured_at, created_at, updated_at, user_id)
+            VALUES ('\(id.uuidString)', '\(treeID.uuidString)', 'full_tree', '\(moderationState.rawValue)',
+                    '\(stamp)', '\(stamp)', '\(stamp)', '\(Self.strangerID.uuidString)')
+            """)
+    }
+
+    @Test("a stranger's unmoderated photograph must not become a nearby hero")
+    func heroPhotoIDsScopedToTreesExcludesAStrangersPendingPhoto() async throws {
+        let deviceID = UUID(uuidString: "D0000000-0000-4000-8000-0000000000CA")!
+        let attribution = Attribution.anonymous(deviceID: deviceID)
+        let store = try await CypressStore.inMemory()
+        let tree = UUID()
+
+        try await store.queue.write { connection in
+            try Self.insertStrangersPhoto(
+                treeID: tree, moderationState: .pending, capturedAt: Self.moment, connection: connection
+            )
+        }
+
+        let scoped = try await store.queue.read { connection in
+            try ContributionStore().heroPhotoIDs(treeIDs: [tree], attribution: attribution, connection: connection)
+        }
+        #expect(
+            scoped[tree] == nil,
+            "a stranger's unmoderated photograph reached the nearby section — the exact case ERRATA E215 names"
+        )
+    }
+
+    @Test("a stranger's approved photograph may become a nearby hero — moderation, not ownership, is the gate")
+    func heroPhotoIDsScopedToTreesAdmitsAStrangersApprovedPhoto() async throws {
+        let deviceID = UUID(uuidString: "D0000000-0000-4000-8000-0000000000CB")!
+        let attribution = Attribution.anonymous(deviceID: deviceID)
+        let store = try await CypressStore.inMemory()
+        let tree = UUID()
+        let approved = UUID()
+
+        try await store.queue.write { connection in
+            // The unmoderated row from the previous test would also disqualify this one if the
+            // exclusion above were really "exclude every stranger" rather than "exclude an
+            // unmoderated stranger" — planting one beside the approved row is what tells the two
+            // rules apart, the same arm `PhotoVisibilityParityTests.strangersApprovedReachesTheBrowser`
+            // exists to check for the hero and the browser.
+            try Self.insertStrangersPhoto(
+                treeID: tree, moderationState: .pending, capturedAt: Self.moment.addingTimeInterval(-86_400),
+                connection: connection
+            )
+            try Self.insertStrangersPhoto(
+                id: approved, treeID: tree, moderationState: .approved, capturedAt: Self.moment,
+                connection: connection
+            )
+        }
+
+        let scoped = try await store.queue.read { connection in
+            try ContributionStore().heroPhotoIDs(treeIDs: [tree], attribution: attribution, connection: connection)
+        }
+        #expect(
+            scoped[tree] == approved,
+            "a stranger's approved, more recent photograph should have led — excluding it is 'exclude every stranger', not the moderation rule"
+        )
     }
 
     // MARK: - 5 · The map card (#176)
