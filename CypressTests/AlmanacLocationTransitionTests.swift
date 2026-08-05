@@ -22,7 +22,9 @@
 
 import CoreLocation
 import Foundation
+import SwiftUI
 import Testing
+import UIKit
 @testable import Cypress
 
 @MainActor
@@ -46,6 +48,49 @@ struct AlmanacLocationTransitionTests {
 
         func almanac(near coordinate: Coordinate?) async throws -> Almanac {
             reads.append(coordinate)
+            return .empty
+        }
+
+        func mapContent(in viewport: MapViewport) async throws -> MapContent { .pins([]) }
+        func treesNear(_ c: Coordinate, radiusM: Double, limit: Int) async throws -> [NearbyTree] { [] }
+        func treeProfile(id: UUID) async throws -> TreeProfile { throw APIError.notFound }
+        func addTree(_ draft: TreeDraft) async throws -> Tree { throw APIError.forbidden }
+        func species(id: UUID) async throws -> Species { throw APIError.notFound }
+        func searchSpecies(query: String, limit: Int) async throws -> [Species] { [] }
+        func sync(_ items: [OutboxItem]) async throws -> [SyncResult] { [] }
+        func beginPhotoUpload(_ r: PhotoUploadRequest) async throws -> PhotoUploadTicket {
+            throw APIError.forbidden
+        }
+        func uploadPhoto(at localPath: String, ticket: PhotoUploadTicket) async throws {}
+        func grove() async throws -> [GroveEntry] { [] }
+        func journal(cursor: String?, limit: Int) async throws -> Page<JournalEntry> { Page(items: []) }
+        func claimDevice(deviceUUID: UUID, userID: UUID) async throws {}
+        func logHazardRedirect(_ event: HazardRedirectEvent) async throws {}
+        func exportLatest(_ format: ExportFormat) async throws -> Data { Data() }
+    }
+
+    /// `ReadCountingAPI`, with one difference that matters only for the mount-race test below: a
+    /// real suspension inside `almanac(near:)`, via `Task.yield()`.
+    ///
+    /// **Why `ReadCountingAPI` itself cannot expose the race `mountingWithALiveProviderDoesNotDoubleRead`
+    /// is about.** Its `almanac(near:)` has no `await` in its body, and calling an `async` function
+    /// that never itself suspends does not guarantee a scheduler yield — Swift can and does run it to
+    /// completion in the same executor turn as its caller. `AlmanacModel.update(coordinate:)`'s two
+    /// racing callers (the view's own `.task(id:)` and `AlmanacModel.observeLocation()`) therefore
+    /// never actually interleave against `ReadCountingAPI`: the first caller's whole call chain —
+    /// guard, assignment, read, `phase = .loaded(...)` — completes before the second caller gets a
+    /// turn, so by the time it checks its own guard, `phase` is no longer `.loading` and the second
+    /// call is correctly refused regardless of whether `AlmanacView`'s gate exists. Measured directly:
+    /// the first attempt at this test used `ReadCountingAPI` and stayed green with the gate deleted.
+    /// `Task.yield()` opens the window a real database read already has — `AlmanacLateFixTests.Held`
+    /// exists for the identical reason, one call away from a `CypressAPI` read never being able to
+    /// show an ordering defect at all.
+    private final class SuspendingReadCountingAPI: CypressAPI, @unchecked Sendable {
+        private(set) var reads: [Coordinate?] = []
+
+        func almanac(near coordinate: Coordinate?) async throws -> Almanac {
+            reads.append(coordinate)
+            await Task.yield()
             return .empty
         }
 
@@ -245,5 +290,64 @@ struct AlmanacLocationTransitionTests {
             try? await Task.sleep(for: .milliseconds(5))
         }
         #expect(api.reads == [Self.fix], "coordinate drift inside an existing fix re-read the almanac")
+    }
+
+    // MARK: - The view's own gate: two mount-time triggers must not race (adversarial review, PR #17)
+
+    /// Mounts `AlmanacView` with a live `location:` supplied, so **both** reload paths are active
+    /// from the first frame: the view's own `.task(id: coordinate)` (which always fires once at
+    /// mount, whatever `id` starts at — see `AlmanacView.body`'s comment) and
+    /// `AlmanacModel.observeLocation()` (which performs its own, separate mount-time read). Neither
+    /// of this file's other tests can see a race between the two: the pure-predicate tests never
+    /// touch a view, and `grantWhileOpenReloads`/`driftDoesNotReload` build `AlmanacModel` directly,
+    /// so `AlmanacView`'s `.task(id: coordinate)` never runs at all in them.
+    ///
+    /// `AlmanacLateFixTests.LateFixHost` is the shape this borrows — `UIHostingController` in a
+    /// visible off-screen window, because `.task` never runs on a view that is never part of an
+    /// active hierarchy.
+    private struct MountHost: View {
+        let api: any CypressAPI
+        let location: MapLocationProvider
+
+        var body: some View {
+            AlmanacView(api: api, coordinate: location.availability.coordinate, location: location)
+        }
+    }
+
+    /// **What `AlmanacView.swift:114`'s `guard location == nil else { return }` is for.** Both of
+    /// `AlmanacModel.update(coordinate:)`'s callers race while `phase` is still `.loading` — the one
+    /// window in which its own `newValue != coordinate` guard cannot help, because `phase ==
+    /// .loading` is the *other* half of that guard's `||` and is true for both callers at once. Post-
+    /// mount transitions do not have this problem (`grantWhileOpenReloads` above proves a real grant
+    /// reads exactly once), which is exactly why deleting this one gate does not fail either of this
+    /// file's other tests — only a mount with a live provider can see it.
+    @Test("Mounting with a live provider does not double-read at mount")
+    func mountingWithALiveProviderDoesNotDoubleRead() async {
+        let manager = RecordingManager()
+        manager.stubbedAuthorization = .notDetermined
+        let provider = MapLocationProvider(manager: manager)
+        provider.start()
+
+        let api = SuspendingReadCountingAPI()
+        let host = UIHostingController(rootView: MountHost(api: api, location: provider))
+        let window = UIWindow(frame: CGRect(x: -2_000, y: 0, width: 393, height: 852))
+        window.rootViewController = host
+        window.isHidden = false
+        window.layoutIfNeeded()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+
+        // Both of `AlmanacView`'s `.task` modifiers start at mount and race there — give them many
+        // short passes rather than one guessed sleep, the same reasoning `driftDoesNotReload`'s own
+        // tail gives for proving a silence instead of timing one.
+        for _ in 0..<40 {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(
+            api.reads == [nil],
+            "the mount-time read fired more than once — AlmanacView's own gate on the old .task(id:) path did not hold"
+        )
     }
 }
