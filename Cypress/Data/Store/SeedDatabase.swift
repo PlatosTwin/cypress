@@ -59,10 +59,15 @@ public enum SeedDatabase {
     /// A published city file with a newer generation is refused — never downloaded
     /// (`CityInstallState.needsNewerApp`) and never attached (`CityLibrary`'s validation).
     ///
-    /// **15** is the pass that added `species_trigrams` (ERRATA E165). It is a pure addition:
-    /// every s14 file already in the wild still opens, still attaches and still searches, because
-    /// the search reads `SeedSchema.hasSpeciesTrigrams` and falls back to the substring match s14
-    /// shipped with. The bump is what lets a *later* build tell the two apart without guessing.
+    /// **15** is the pass that added `species_trigrams` (ERRATA E165) *and* `id_spaces.short_name`
+    /// (ERRATA E209/#233) — two additions folded into one generation rather than two, because
+    /// neither had published yet when the second landed (verified against the live manifest:
+    /// both cities were still `schema_version: 14` as this was written) and R37.2 makes a
+    /// generation number a publish event, not a code change. Both are pure additions: every s14
+    /// file already in the wild still opens, still attaches, still searches and still names its
+    /// city, because the read layer asks the file what it carries — `hasSpeciesTrigrams`,
+    /// `hasCivicShortNames` — and falls back to what s14 shipped with. The bump is what lets a
+    /// *later* build tell the generations apart without guessing.
     public static let newestKnownSchemaVersion = 15
 
     // MARK: - Locating
@@ -177,6 +182,20 @@ public struct SeedSchema: Equatable, Sendable {
     /// file are two different generations at the same time (R37.3): the app can be reading an s15
     /// bundle and an s14 San Jose in one session.
     public let hasSpeciesTrigrams: Bool
+    /// Whether `id_spaces.short_name` is present — the short, reader-facing civic name
+    /// ("San Francisco", "San Jose") ERRATA E209/#233 added so a public surface can print a
+    /// tree's own city instead of a literal that was only ever true while the seed held one.
+    ///
+    /// Column-gated rather than table-gated, unlike `hasSpeciesTrigrams`: the column lands on
+    /// the existing `id_spaces` table rather than a new one, the same shape as `hasCityRaw` and
+    /// `hasInventorySource` above. A seed with no `id_spaces` table at all (pre-v14) has no
+    /// `short_name` to be missing either — `columnNames(ofTable:)` answers empty for a table
+    /// that is not there, so this needs no separate `hasIdSpace` check to stay correct.
+    ///
+    /// A seed or city file built before this pass is still readable and still correct: the read
+    /// layer falls back to whatever it showed before a short name existed (see
+    /// `SharePresentation.locationLine`), never to a fabricated city.
+    public let hasCivicShortNames: Bool
     /// Whether the identity model is the current INTEGER-PK one.
     public var usesIntegerPrimaryKeys: Bool { treeIdentityColumn == "uuid" }
 
@@ -221,7 +240,9 @@ public struct SeedSchema: Equatable, Sendable {
             hasIdSpace: try treeColumns.contains("id_space")
                 && connection.tableExists("id_spaces", in: schema)
                 && connection.tableExists("inventories", in: schema),
-            hasSpeciesTrigrams: try connection.tableExists("species_trigrams", in: schema)
+            hasSpeciesTrigrams: try connection.tableExists("species_trigrams", in: schema),
+            hasCivicShortNames: try connection.columnNames(ofTable: "id_spaces", in: schema)
+                .contains("short_name")
         )
     }
 }

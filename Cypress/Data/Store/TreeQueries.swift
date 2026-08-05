@@ -742,6 +742,14 @@ public struct TreeQueries {
         /// `trees.inventory_source` — which of the city's two inventories listed **this row**, or
         /// nil for a seed built before the column existed. See `InventorySource`.
         public let inventorySourceID: String?
+        /// The row's own short civic name — `id_spaces.short_name` joined on `t.id_space`
+        /// (ERRATA E209/#233). Nil on any of three honest grounds, none of them an error: the
+        /// file predates `SeedSchema.hasCivicShortNames`, the row predates `id_space` entirely
+        /// (`hasIdSpace` false, so there is nothing to join on), or the row is a community
+        /// addition with no id space to begin with. `SharePresentation.locationLine` is the
+        /// reader — same shape as `neighborhoodName` above: a fact the seed keys by string
+        /// rather than by id, so it travels beside the row instead of living on `Tree`.
+        public let cityShortName: String?
     }
 
     /// `GET /trees/{id}`, the inventory half. `LocalAPI` adds the contributions.
@@ -751,18 +759,29 @@ public struct TreeQueries {
     /// SEARCH s USING INTEGER PRIMARY KEY (rowid=?) LEFT-JOIN
     /// SEARCH n USING INTEGER PRIMARY KEY (rowid=?) LEFT-JOIN
     /// SEARCH lin USING INTEGER PRIMARY KEY (rowid=?) LEFT-JOIN
+    /// SEARCH isp USING INTEGER PRIMARY KEY (rowid=?) LEFT-JOIN
     /// ```
     public func tree(id: UUID, connection: SQLiteConnection) throws -> TreeRecord? {
+        // Only emitted when `id_spaces` itself exists — a seed built before the v14 pass has no
+        // such table, and `LEFT JOIN`ing one that is not there is a SQL error, not a null result.
+        // (`hasCivicShortNames` alone is not enough to gate this: it can only be true when
+        // `hasIdSpace` also is, since the column it names lives on this same table, but the join
+        // is written against `hasIdSpace` directly so the two flags cannot drift apart here.)
+        let idSpaceJoin = schema.hasIdSpace
+            ? "LEFT JOIN \(seed).id_spaces isp ON isp.id = t.id_space"
+            : ""
         let sql = """
         SELECT \(treeColumns),
                \(SpeciesQueries.projection(identityColumn: schema.speciesIdentityColumn)),
                n.name AS neighborhood_name,
                lin.\(schema.treeIdentityColumn) AS site_lineage_uuid,
-               \(schema.hasInventorySource ? "t.inventory_source" : "NULL") AS inventory_source
+               \(schema.hasInventorySource ? "t.inventory_source" : "NULL") AS inventory_source,
+               \(schema.hasCivicShortNames ? "isp.short_name" : "NULL") AS city_short_name
           FROM \(seed).trees t
           LEFT JOIN \(seed).species s ON s.id = t.species_current
           LEFT JOIN \(seed).neighborhoods n ON n.id = t.neighborhood_id
           LEFT JOIN \(seed).trees lin ON lin.id = t.site_lineage
+          \(idSpaceJoin)
          WHERE t.\(schema.treeIdentityColumn) = :uuid COLLATE NOCASE
         """
 
@@ -775,7 +794,8 @@ public struct TreeQueries {
                 species: try SpeciesQueries.decodeIfPresent(row),
                 neighborhoodName: try row.stringIfPresent("neighborhood_name"),
                 siteLineageID: try row.uuidIfPresent("site_lineage_uuid"),
-                inventorySourceID: try row.stringIfPresent("inventory_source")
+                inventorySourceID: try row.stringIfPresent("inventory_source"),
+                cityShortName: try row.stringIfPresent("city_short_name")
             )
         }
     }

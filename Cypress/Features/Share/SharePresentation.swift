@@ -132,12 +132,31 @@ struct SharePresentation: Equatable {
 
     /// `Great Highway at Judah · San Francisco` — 10 §3.
     ///
-    /// The city is a constant because the product is one city deep at launch and NYC is
-    /// import-ready rather than shipped (DECISIONS §4, "Scope boundaries"). A tree whose city row
-    /// carries no address gets the city alone rather than a dangling separator.
+    /// **No longer a constant.** Until ERRATA E209/#233 (Shape A) this line hardcoded
+    /// `"San Francisco"`, true only while the seed held one city — once San Jose shipped, every
+    /// one of its 52,788 trees was captioned with the wrong city. The city half now comes from
+    /// `profile.cityShortName`, which `TreeQueries.tree(id:)` reads from `id_spaces.short_name`
+    /// off the row's own `id_space`, gated on `SeedSchema.hasCivicShortNames` so a seed that
+    /// cannot answer is never asked to guess.
+    ///
+    /// **The honest fallback, on both halves.** A tree whose city row carries no address gets the
+    /// city alone rather than a dangling separator, as before. A tree whose city is not known —
+    /// an older seed with no `short_name` column, a row from before `id_space` existed, or a
+    /// community-added tree, which has no id space at all — gets the address alone rather than a
+    /// fabricated or stale city name. R37.3 makes "not known yet" an ordinary state rather than
+    /// an error: the bundled seed and a downloaded city file are legitimately two different
+    /// generations at once. With neither known, the line is empty — silence is the honest answer
+    /// when the record says nothing, never a placeholder city.
     var locationLine: String {
-        guard let address = tree.address, !address.isEmpty else { return ShareCopy.city }
-        return "\(address) · \(ShareCopy.city)"
+        let address = tree.address.flatMap { $0.isEmpty ? nil : $0 }
+        let city = profile.cityShortName
+
+        switch (address, city) {
+        case let (address?, city?): return "\(address) · \(city)"
+        case let (address?, nil): return address
+        case let (nil, city?): return city
+        case (nil, nil): return ""
+        }
     }
 
     /// `cypress.app/sf/tree/<uuid>` — 10 §3's URL line.
@@ -220,9 +239,6 @@ enum ShareCopy {
     /// 10 §2, verbatim. Note it does *not* carry the tree's name — the earlier prototype's
     /// `Share {{ treeName }}` was replaced by a fixed title with the name on the card below it.
     static let title = "Share this tree"
-
-    /// The city half of the card's location line. One city deep at launch (DECISIONS §4).
-    static let city = "San Francisco"
 
     /// The public tree page's origin. W1 is a separate deliverable and is not built here
     /// (ARCHITECTURE §8), so this link has nothing behind it yet; see ERRATA (E60).
