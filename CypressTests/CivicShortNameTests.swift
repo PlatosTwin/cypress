@@ -240,7 +240,7 @@ struct CivicShortNameTests {
                 id INTEGER PRIMARY KEY, uuid TEXT NOT NULL UNIQUE,
                 external_ref TEXT, \(idSpaceColumn)
                 source TEXT NOT NULL, lat REAL NOT NULL, lon REAL NOT NULL,
-                address TEXT, site_type TEXT, status TEXT NOT NULL,
+                address TEXT, site_type TEXT, neighborhood_id INTEGER, status TEXT NOT NULL,
                 species_current INTEGER, planted_year INTEGER,
                 dbh_city_cm_min INTEGER, dbh_city_cm_max INTEGER,
                 site_lineage INTEGER, verification_state TEXT NOT NULL,
