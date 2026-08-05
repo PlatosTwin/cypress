@@ -143,6 +143,53 @@ struct GrovePresentationTests {
         #expect(subject.progress == nil)
         // Not the empty grove, though — the species they do know is still theirs.
         #expect(subject.tiles.contains { $0.isKnown })
+        #expect(!subject.isEmpty, "a species the contributor knows was read as the empty grove")
+    }
+
+    // MARK: - ERRATA E48 — the empty-grove sentence
+
+    /// `GrovePresentation.isEmpty` is the gate `GroveView.speciesTab` renders
+    /// `GroveCopy.emptyGrove` on (ERRATA E48, closed — owner-approved copy, 2026-08-05,
+    /// `docs/errata-pending/`). This is the other half of `emptyGroveRendersNothing` above: that
+    /// test pins the gate `true` for zero contributions; this one pins it `false` the moment there
+    /// is one, however incomplete the rest of the read is. A device with a single recognized
+    /// species, with no neighborhood, no ring, and no celebration, still is not the empty grove —
+    /// the sentence must not appear over a contributor who has, in fact, contributed.
+    @Test("A device with one known species, however little else the read carries, is not the empty grove")
+    func oneKnownSpeciesIsNeverTheEmptyGrove() {
+        // Same shape as `zeroRecognizedIsBelowThreshold` and `emptyNeighborhoodRendersNothing` —
+        // every other field at its most minimal — so the only thing keeping `isEmpty` false is the
+        // one known species itself.
+        for subject in [
+            Self.presentation(known: [Self.known(1)], neighborhood: nil),
+            Self.presentation(known: [Self.known(1)], neighborhood: Self.neighborhood(totalling: 40)),
+            Self.presentation(
+                known: [Self.known(1)],
+                neighborhood: GroveNeighborhood(area: .named("Treasure Island"), species: .empty)
+            )
+        ] {
+            #expect(!subject.isEmpty)
+        }
+    }
+
+    /// The owner approved this line verbatim (2026-08-05) — not a character of it may drift.
+    @Test("The empty-grove sentence is the owner-approved copy, verbatim")
+    func emptyGroveCopyIsVerbatim() {
+        #expect(
+            GroveCopy.emptyGrove == "Your grove is empty so far. The species you spot will gather here."
+        )
+    }
+
+    /// Screen 08 has three sentences that can occupy roughly the same slot — this one, the `Trees`
+    /// pill's own empty state, and the footnote that renders in both — and E158's warning (two
+    /// different facts reaching a reader in the same words) applies across pills exactly as it does
+    /// across screens. `MapEmptyInventoryTests.theFifthStateIsItsOwnSentence` is the same shape one
+    /// screen over.
+    @Test("The empty-grove sentence is not the Trees pill's empty state or the footnote wearing a new name")
+    func emptyGroveCopyIsItsOwnSentence() {
+        #expect(GroveCopy.emptyGrove != GroveCopy.treesEmptyState)
+        #expect(GroveCopy.emptyGrove != GroveCopy.footnote)
+        #expect(GroveCopy.emptyGrove != GroveCopy.loadFailed)
     }
 
     @Test("One recognized species is the threshold, and it renders")

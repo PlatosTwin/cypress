@@ -166,5 +166,101 @@ struct AX5ReflowTests {
             "screen 10 measured \(measured.width) pt wide on a \(Self.phoneWidth) pt phone"
         )
     }
+
+    // MARK: - R53's AX5 ruling (rulings-pending) · MapLocationNotice scrolls rather than overflows
+
+    /// `MapLayout.locateButtonHeightAX5` and `.fabHeightAX5`, the inputs to
+    /// `noticeMaxHeight(availableHeight:)`, are measurements rather than guesses — pinned here so
+    /// a change to either control's AX5 footprint fails loudly instead of quietly under-reserving
+    /// the notice's scroll budget.
+    @Test("the recenter control and the FAB measure what the notice's scroll budget assumes at AX5")
+    func bottomChromeControlsMatchTheReservedBudgetAtAX5() async {
+        let recenter = await Self.ax5Size(of: MapRecenterButton(engagement: .away, action: {}))
+        let fab = await Self.ax5Size(of: IdentifyFAB(action: {}))
+        #expect(
+            recenter.height == MapLayout.locateButtonHeightAX5,
+            """
+            MapRecenterButton now measures \(recenter.height) pt at AX5, against the \
+            \(MapLayout.locateButtonHeightAX5) pt the notice's scroll budget reserves for it
+            """
+        )
+        #expect(
+            fab.height == MapLayout.fabHeightAX5,
+            """
+            IdentifyFAB now measures \(fab.height) pt at AX5, against the \
+            \(MapLayout.fabHeightAX5) pt the notice's scroll budget reserves for it
+            """
+        )
+    }
+
+    /// **Engages.** Offered a budget the card's own unbounded AX5 height is known to exceed — half
+    /// of it — the card must not grow past that budget. The budget is derived from a real
+    /// measurement rather than a literal so this stays true if the shipped copy ever changes: it is
+    /// always something this card needs more than.
+    ///
+    /// **Not through `ax5Size`.** That helper mounts in a real window with a fixed, bounded frame
+    /// through several settle passes before its final unbounded `sizeThatFits` query — and once a
+    /// `ScrollView` has been laid out that way, the query it ends on reports the scroll content's
+    /// full, unclamped size instead of the frame's cap (watched directly: a 200pt-capped `ScrollView`
+    /// measured 254pt through `ax5Size`'s exact sequence, and 200pt through a bare
+    /// `UIHostingController` never mounted in a window — same view, same proposal, two different
+    /// numbers). `accountProviderLabelRefusesCompressionAtAX5` above already establishes the
+    /// bare-hosting-plus-`.accessibility5`-environment pattern this uses instead; a small rounding
+    /// tolerance covers the sub-point remainder `ScrollView`'s own line-height quantization leaves.
+    @Test("MapLocationNotice does not grow past a maxHeight it cannot fit in at AX5")
+    func mapLocationNoticeScrollsWhenOfferedLessThanItNeedsAtAX5() {
+        let width = Self.phoneWidth
+        func size(maxHeight: CGFloat?) -> CGSize {
+            let host = UIHostingController(rootView: AnyView(
+                MapLocationNotice(
+                    title: MapInventoryCopy.title,
+                    message: MapInventoryCopy.message,
+                    maxHeight: maxHeight
+                )
+                .environment(\.dynamicTypeSize, .accessibility5)
+            ))
+            return host.sizeThatFits(in: CGSize(width: width, height: .greatestFiniteMagnitude))
+        }
+        let unbounded = size(maxHeight: nil)
+        let budget = unbounded.height / 2
+        let bounded = size(maxHeight: budget)
+        let tolerance: CGFloat = 1
+        #expect(
+            bounded.height <= budget + tolerance,
+            """
+            MapLocationNotice measured \(bounded.height) pt against a \(budget) pt maxHeight (its \
+            own unbounded AX5 height is \(unbounded.height) pt) — it grew past the bound it was \
+            given instead of scrolling
+            """
+        )
+    }
+
+    /// **Unchanged at ordinary sizes.** At the default dynamic type size the shipped copy never
+    /// approaches any budget large enough to matter, so a `maxHeight` generous enough to be a real
+    /// screen's worth of room must make no difference at all — the same height with or without it.
+    @Test("MapLocationNotice is unchanged at ordinary sizes when it is given a maxHeight")
+    func mapLocationNoticeUnchangedAtOrdinarySizeWithAMaxHeight() {
+        let width = Self.phoneWidth
+        func size(maxHeight: CGFloat?) -> CGSize {
+            let host = UIHostingController(
+                rootView: MapLocationNotice(
+                    title: MapInventoryCopy.title,
+                    message: MapInventoryCopy.message,
+                    maxHeight: maxHeight
+                )
+            )
+            return host.sizeThatFits(in: CGSize(width: width, height: .greatestFiniteMagnitude))
+        }
+        let plain = size(maxHeight: nil)
+        let budgeted = size(maxHeight: Self.phoneHeight)
+        #expect(
+            budgeted == plain,
+            """
+            MapLocationNotice measured \(budgeted) with a \(Self.phoneHeight) pt maxHeight against \
+            \(plain) with none, at an ordinary text size — a budget no ordinary card ever reaches \
+            changed the card's rendering anyway
+            """
+        )
+    }
 }
 #endif

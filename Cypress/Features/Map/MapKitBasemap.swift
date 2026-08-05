@@ -218,6 +218,44 @@ enum MapLayout {
     /// still answers the tap, and it moves nothing else.
     static let selectedPinScale: CGFloat = 1.25
 
+    // MARK: The bottom notice's scroll budget (rulings-pending R53, ERRATA E183 §2)
+    //
+    // `MapLocationNotice` used to be free to grow as tall as its text needed. At AX5 that is
+    // taller than a 390 pt phone, and since the card is laid out from `bottomChrome`'s bottom
+    // edge it grew *upward past `y = 0`*, taking its own way out off the top of the screen with
+    // it. The owner's ruling is that it scrolls once it runs out of room rather than doing that —
+    // see `docs/rulings-pending/` — so the room it has to work with has to be a real number.
+
+    /// `MapRecenterButton`'s measured height at `.accessibility5` — 44pt at ordinary sizes, but
+    /// iOS grows a control's own minimum hit target as Dynamic Type climbs the accessibility
+    /// range, and the button reports that grown frame back through `sizeThatFits`. Measured
+    /// through `AX5ReflowTests.ax5Size`, not assumed.
+    static let locateButtonHeightAX5: CGFloat = 98
+    /// `IdentifyFAB`'s measured height at `.accessibility5` — its label is `.font(…, .body)`,
+    /// which scales with Dynamic Type, so this is not `fabPaddingV * 2` plus a fixed glyph.
+    /// Measured the same way.
+    static let fabHeightAX5: CGFloat = 137
+
+    /// Everything `bottomChrome`'s `VStack` stacks above the notice slot, at the worst case
+    /// (`.accessibility5`) either control ever measures: the recenter control, the gap to the
+    /// FAB, the FAB, the gap to the card, and the card's own gap down to the tab bar. Reserved
+    /// unconditionally — at ordinary sizes both controls are far smaller than this, so the notice
+    /// is left with more room than it asks for and nothing about its rendering changes; see
+    /// `noticeMaxHeight(availableHeight:)`.
+    static let bottomSlotReservedAboveAX5: CGFloat =
+        locateButtonHeightAX5 + locateToFabGap + fabHeightAX5 + fabToCardGap
+            + tabBarHeight + cardToTabBarGap
+
+    /// The height `MapLocationNotice` may take in the bottom slot before it must scroll instead
+    /// of growing past the top of the screen. Conservative rather than exact — it reserves the
+    /// AX5 heights of the recenter control and the FAB even when Dynamic Type is nowhere near
+    /// AX5, because at ordinary sizes the notice never gets close to this budget regardless, and
+    /// a budget computed once from constants is simpler than measuring the two controls' actual
+    /// height on every layout pass for a slot this is the backstop for, not the primary fit.
+    static func noticeMaxHeight(availableHeight: CGFloat) -> CGFloat {
+        availableHeight - bottomSlotReservedAboveAX5
+    }
+
     // MARK: The z-order of the marker layer (task #150)
     //
     // `MKAnnotation` has no z-order of its own; `zPriority` is what MapKit reads, and these three

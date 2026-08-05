@@ -92,13 +92,26 @@ struct GroveView: View {
 
     // MARK: - The two pills
 
-    /// Screen 08 proper: the ring, the celebration and the grid.
+    /// Screen 08 proper: the ring, the celebration and the grid — or, on a device that has made no
+    /// contributions yet, the sentence ERRATA E48 records the closure of.
     @ViewBuilder
     private var speciesTab: some View {
         if let presentation = model.presentation {
-            progressBlock(presentation)
-            celebration(presentation)
-            grid(presentation)
+            if presentation.isEmpty {
+                // ERRATA E48, closed — owner-approved copy, 2026-08-05 (docs/errata-pending/). The
+                // ring, the celebration and the grid are each derived from contributions
+                // (`GrovePresentation.isEmpty`), so a device that has made none renders none of
+                // them; this is the sentence that fills the column they would otherwise leave
+                // silent, above §6's bottom-pinned footnote. Same card `treesTab` already draws
+                // for its own empty state, below.
+                GroveNote(GroveCopy.emptyGrove)
+                    .padding(.top, CypressSpacing.labelSectionTop)
+                    .padding(.horizontal, CypressSpacing.gutter)
+            } else {
+                progressBlock(presentation)
+                celebration(presentation)
+                grid(presentation)
+            }
         } else if model.hasFailed {
             failure
         }
