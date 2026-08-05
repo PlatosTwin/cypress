@@ -2218,6 +2218,25 @@ public actor LocalAPI: CypressAPI {
         }
     }
 
+    /// Test seam (ERRATA E217 "Still open"): empty `tree_status_overrides`.
+    ///
+    /// **Why this has to exist at all.** `.memorial` and `.deadProfile` are the only two cases that
+    /// write here, and neither ever un-writes: `.memorial` marks the nearest standing tree removed and
+    /// `standingTree` — through `candidates(_:)` — correctly excludes it next time, so a device driven
+    /// for long enough walks its `.memorial` slot outward one record per run with nothing to stop it.
+    /// The errata that found this left it explicitly unfixed and named the shape: a seam the harness
+    /// calls before the walk can start, not a change to how the walk works.
+    ///
+    /// The other write. See `overrideCache` — same rule as `debugMarkStatus` and `confirmReview`, and
+    /// for the same reason: this changes what the table holds, and nothing else invalidates the cache
+    /// on this actor's behalf.
+    public func debugClearStatusOverrides() async throws {
+        try await store.queue.write { connection in
+            try contributions.clearStatusOverrides(connection: connection)
+        }
+        overrideCache = nil
+    }
+
     /// Test seam (ERRATA E125): give a real seed tree some photographs, so the deep-link harness can
     /// open screen 20 and the profile hero against records that exist.
     ///

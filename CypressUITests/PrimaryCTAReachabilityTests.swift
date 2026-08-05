@@ -71,6 +71,15 @@ import XCTest
 /// is renamed this fails, which is correct — the control a reader presses just changed its name.
 final class PrimaryCTAReachabilityTests: XCTestCase {
 
+    /// Once per class, before `testMemorialCTA` or any other test in it — see
+    /// `DeepLinkOverrideReset` (ERRATA E217 "Still open"). This class does not conform to
+    /// `DeepLinkHarness` (see that protocol's file comment), but `DeepLinkOverrideReset` is a free
+    /// enum for exactly this reason.
+    override class func setUp() {
+        super.setUp()
+        DeepLinkOverrideReset.performOnce()
+    }
+
     override func setUp() {
         super.setUp()
         continueAfterFailure = false

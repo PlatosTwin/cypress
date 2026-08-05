@@ -155,6 +155,14 @@ struct RootView: View {
                     .padding()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(CypressColor.surfaceScreen)
+            } else if overridesCleared {
+                // ERRATA E217 "Still open". The harness's own reset launch has nothing else to look
+                // at — no screen was asked for — so this text is the one thing in the accessibility
+                // tree it can wait on before terminating the process and trusting the table is empty.
+                Text(DebugDeepLink.overridesClearedMessage)
+                    .font(.footnote.monospaced())
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(CypressColor.surfaceScreen)
             } else if let debugStandalone {
                 debugStandaloneScreen(debugStandalone)
             }
@@ -165,6 +173,9 @@ struct RootView: View {
     #if DEBUG
     @State private var deepLinkFailure: String? = nil
     @State private var deepLinkAttempted = false
+    /// Set once `CYPRESS_CLEAR_STATUS_OVERRIDES` has actually run (ERRATA E217 "Still open"). See
+    /// `openDebugDeepLink` and the overlay above.
+    @State private var overridesCleared = false
     /// A screen the harness asked for that lives on no router — today only the community add's pin
     /// step, which is a phase of `VisitAddTreeModel` rather than a `Route`. See
     /// `DebugDeepLink.Standalone`.
@@ -194,6 +205,17 @@ struct RootView: View {
     @MainActor
     private func openDebugDeepLink() async {
         guard !deepLinkAttempted else { return }
+        // Checked first and exclusively: a launch asking for this clears the table and stops, with
+        // no `CYPRESS_SCREEN` required alongside it (ERRATA E217 "Still open"). `try?` rather than
+        // surfacing a failure banner, because a harness `setUp` that cannot clear the table is not
+        // a state a screenshot helps with — it belongs in the run's own log, and `debugClearStatus
+        // Overrides` is a single `DELETE` with nothing conditional in it to fail on in practice.
+        if ProcessInfo.processInfo.environment[DebugDeepLink.clearStatusOverridesEnvironmentKey] != nil {
+            deepLinkAttempted = true
+            try? await data.api.debugClearStatusOverrides()
+            overridesCleared = true
+            return
+        }
         // A junk `CYPRESS_LOCATION` draws itself, for `DebugDeepLink.Failure`'s reason: a seam that
         // quietly fell back to the real provider would leave a test asserting the denied refusal
         // path against a simulator with a perfectly good fix, and it would fail somewhere else —

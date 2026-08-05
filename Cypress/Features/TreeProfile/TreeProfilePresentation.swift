@@ -1226,10 +1226,11 @@ struct TreeProfilePresentation {
     ///
     /// So: the device's own photos, plus anything that has actually been approved. The photos stay
     /// `.pending`, which is the truth — nothing has moderated them.
+    ///
+    /// The predicate itself lives on `TreeProfile.isVisibleOnDevice` (ERRATA E215) — asked once, so
+    /// this hero and screen 20's browser (`TreePhotosModel.load()`) cannot answer it differently.
     var visiblePhotos: Series<Photo> {
-        profile.photos.filter { photo in
-            profile.isOwnPhoto(photo) ? photo.isVisibleToItsContributor : photo.isPubliclyVisible
-        }
+        profile.visiblePhotos
     }
 
     /// The photos a **public** surface may draw — the shared tree page, the share card, the

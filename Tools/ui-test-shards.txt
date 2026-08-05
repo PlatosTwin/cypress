@@ -36,6 +36,18 @@
 # (2 tests) in a whole-suite run on a local iPhone 16 Plus simulator, which is a different machine
 # and a different device from every number above.
 #
+# `ReadingOrderAccessibilityTests` (task #221) was added afterwards and has never been on CI either.
+# It took 17.5s (3 tests) on a local iPhone 16 Pro Max simulator, in a run alongside
+# `DeepLinkSweepTests` (92.6s for its 2 tests on that same machine) and
+# `DeepLinkVoiceOverTests/testTreeOrderParserReportsAnInvertedTree` (0.05s) — 6 tests, 110.2s total,
+# `VERIFY-OK: Executed 6 tests, with 0 failures (0 unexpected) in 110.215 seconds`. Placed on the
+# `SheetExitUITests` line, which the table above makes the shortest (327.0s, against 332.6s and
+# 344.8s for the next two) — the rule at the top of this file, applied with the file's own numbers.
+# It was first placed on the `DeepLinkVoiceOverTests` line under a claim that the pace-setter would
+# not move; the PR #14 review ran the arithmetic and it would have (332.6 + 17.5 = 350.1s, past
+# Shard 3's 344.8s). The numbers are one-run snapshots either way — but a placement that cites them
+# has to add them.
+#
 # THE FLOOR WAS ONE CLASS, AND #204 MOVED IT. `DeepLinkVoiceOverTests` was 462.8s — 35% of the
 # suite — because two of its 28 tests SWEEP every deep-linked screen, launching once per screen,
 # where the other 26 examine one screen each. Those two are now `DeepLinkSweepTests`, which is a
@@ -51,4 +63,4 @@
 DeepLinkVoiceOverTests MapCenteredStateUITests
 MapFilterAccessibilityTests AnonymizedPhotoNoticeUITests MapRecenterUITests PhotoBrowserReachabilityTests
 DeepLinkSweepTests PrimaryCTAReachabilityTests SheetHeightUITests AlmanacGroupTapTests
-SheetExitUITests MapSearchUITests MapSuggestionUITests MapPanTabSwitchUITests PhotoDeletionReachabilityTests AccessibilityTreeTests
+SheetExitUITests MapSearchUITests MapSuggestionUITests MapPanTabSwitchUITests PhotoDeletionReachabilityTests AccessibilityTreeTests ReadingOrderAccessibilityTests

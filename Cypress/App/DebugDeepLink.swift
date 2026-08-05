@@ -46,6 +46,21 @@ enum DebugDeepLink {
     /// `CYPRESS_SHOT_DIR` already establish the convention in this codebase.
     static let environmentKey = "CYPRESS_SCREEN"
 
+    /// Set (to anything non-empty) to have this launch clear `tree_status_overrides` and stop —
+    /// no screen, no `CYPRESS_SCREEN` required alongside it (ERRATA E217 "Still open").
+    ///
+    /// A launch of its own rather than a step folded into an ordinary deep link, for the reason
+    /// `environmentKey` is read from the environment rather than `launchArguments`: the harness that
+    /// wants a clean table before `.memorial` can march is a `setUp`, not a test, and it should not
+    /// have to name a screen it does not want opened to get one.
+    static let clearStatusOverridesEnvironmentKey = "CYPRESS_CLEAR_STATUS_OVERRIDES"
+
+    /// What `RootView` renders once the clear above has actually run, so the launching process has
+    /// something in the accessibility tree to wait on rather than a fixed sleep. Mirrors
+    /// `Failure.message`'s role for a deep link: proof the seam did its one job, not just that the
+    /// process did not crash.
+    static let overridesClearedMessage = "STATUS OVERRIDES CLEARED"
+
     /// The screens the harness can open, named as the UI test names them.
     ///
     /// **Screen 19, the memorial, is reachable now — the data changed (ERRATA E124-B).** The shipped

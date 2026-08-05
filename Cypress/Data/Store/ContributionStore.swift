@@ -1007,6 +1007,15 @@ public struct ContributionStore {
         return Dictionary(rows, uniquingKeysWith: { _, latest in latest })
     }
 
+    /// Empties the table `statusOverrides` reads (ERRATA E217 "Still open"). Whole-table, with no
+    /// predicate, because the harness that calls this wants the device back to holding none — the
+    /// same reason `debugClearPhotos` in `LocalAPI` takes a tree rather than a photograph.
+    public func clearStatusOverrides(connection: SQLiteConnection) throws {
+        let statement = try connection.cachedStatement("DELETE FROM tree_status_overrides")
+        try statement.run()
+        _ = try statement.reset()
+    }
+
     // MARK: - The map's membership sets (#116, RULINGS R23)
 
     /// Every tree this reader has contributed to — screen 01's `Yours` chip.
