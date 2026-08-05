@@ -327,13 +327,15 @@ struct MemorialPresentationTests {
     /// "First photo" row; under the fixed predicate it must lose to the device's own, later photo.
     @Test("a memorial does not surface a stranger's pending photo")
     func strangersPendingPhotoDoesNotSurface() {
+        // Day 15, not day 1 — `photos(_:)` above uses the same middle-of-month anchor so a
+        // timezone offset cannot walk a date across a month boundary and flip the label read out.
         let ownPhoto = Photo(
             treeID: Self.treeID, shotType: .fullTree, moderationState: .approved,
-            capturedAt: Self.date("2020-06-01")
+            capturedAt: Self.date("2020-06-15")
         )
         let strangersPending = Photo(
             treeID: Self.treeID, shotType: .trunk, moderationState: .pending,
-            capturedAt: Self.date("2019-01-01")
+            capturedAt: Self.date("2019-01-15")
         )
 
         // Fixture sanity, same shape as `PhotoVisibilityParityTests`: the row really is visible to
