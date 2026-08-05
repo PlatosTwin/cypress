@@ -215,10 +215,32 @@ extension DeepLinkHarness {
             if line.hasPrefix("Path to element") || line.hasPrefix("Query chain") { break }
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             guard let comma = trimmed.firstIndex(of: ","),
-                  let labelRange = trimmed.range(of: "label: '"),
-                  let close = trimmed.lastIndex(of: "'"),
-                  labelRange.upperBound < close
+                  let labelRange = trimmed.range(of: "label: '")
             else { continue }
+            // The label's own closing quote, not the line's last one (found live, task #221: a
+            // focused `TextField` prints `label: 'Search', placeholderValue: 'Search a
+            // species…', value: cypress, Keyboard Focused` — a second quoted field *after* the
+            // label). Taking the line's last quote grabbed `placeholderValue`'s closing quote
+            // instead and returned "Search', placeholderValue: 'Search a species…" as the label.
+            //
+            // The fix: the label ends at the first `'` immediately followed by `, ` (the start of
+            // the next field), searched from where the label opens. A label that itself embeds a
+            // quoted phrase — the cultivar name in `testTreeOrderParserReportsAnInvertedTree`'s own
+            // fixture, "Indian Laurel Fig Tree 'Green Gem'" — has no `', ` *inside* it, only at its
+            // true end if anything follows, so that case is unaffected. A label with nothing after
+            // it on the line — most of them — has no `', ` anywhere, and falls back to the line's
+            // last quote exactly as before.
+            let close: String.Index
+            if let boundary = trimmed.range(
+                of: "', ", range: labelRange.upperBound..<trimmed.endIndex
+            ) {
+                close = boundary.lowerBound
+            } else if let last = trimmed.lastIndex(of: "'") {
+                close = last
+            } else {
+                continue
+            }
+            guard labelRange.upperBound < close else { continue }
             result.append((String(trimmed[trimmed.startIndex..<comma]),
                            String(trimmed[labelRange.upperBound..<close])))
         }
