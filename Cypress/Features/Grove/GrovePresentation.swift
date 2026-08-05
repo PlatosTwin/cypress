@@ -308,6 +308,12 @@ enum GroveCopy {
     /// §6, verbatim. Centered, 12px, `text.faintAlt`.
     static let footnote = "Quiet collecting. There are no streaks and no leaderboards."
 
+    /// **ERRATA E48, closed.** BUILD-PLAN §9 M2 requires an empty-grove state and neither SCREENS.md
+    /// nor any mock gave it a word — E48 flagged the gap and shipped the honest minimum (nothing)
+    /// rather than invented copy. The owner approved this line verbatim on 2026-08-05; not a
+    /// character of it is changed here.
+    static let emptyGrove = "Your grove is empty so far. The species you spot will gather here."
+
     /// §4's bold lead-in, verbatim.
     static let celebrationLeadIn = "New species!"
 
