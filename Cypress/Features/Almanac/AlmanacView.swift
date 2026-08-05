@@ -51,19 +51,28 @@ struct AlmanacView: View {
     /// `.task(id:)` notice it change (ERRATA E155).
     private let coordinate: Coordinate?
 
+    /// The composition root's shared provider, held so the model can observe it directly (ERRATA
+    /// E123's residual, #223) rather than waiting for a fix to arrive as a changed `coordinate`
+    /// parameter on the next pass through the parent's body. `nil` in every preview and every test
+    /// that drives this view by setting `coordinate` alone — `AlmanacModel.observeLocation()` is a
+    /// no-op for them and the `.task(id: coordinate)` below is what still runs.
+    private let location: MapLocationProvider?
+
     private let onRequestLocation: (() -> Void)?
 
     init(
         api: any CypressAPI,
         coordinate: Coordinate?,
+        location: MapLocationProvider? = nil,
         now: @escaping @Sendable () -> Date = { Date() },
         onBack: (() -> Void)? = nil,
         onOpenTree: ((UUID) -> Void)? = nil,
         onShowGroup: ((PinSet) -> Void)? = nil,
         onRequestLocation: (() -> Void)? = nil
     ) {
-        _model = State(wrappedValue: AlmanacModel(api: api, coordinate: coordinate, now: now))
+        _model = State(wrappedValue: AlmanacModel(api: api, coordinate: coordinate, location: location, now: now))
         self.coordinate = coordinate
+        self.location = location
         self.onBack = onBack
         self.onOpenTree = onOpenTree
         self.onShowGroup = onShowGroup
@@ -94,7 +103,19 @@ struct AlmanacView: View {
         // be the only one this screen ever read from. Keyed on the coordinate, the read re-runs when
         // — and only when — the fix changes, which on a cold launch is `nil` → San Francisco a
         // second after the tab is pressed.
-        .task(id: coordinate) { await model.update(coordinate: coordinate) }
+        //
+        // **Only when there is no `location` to observe instead (ERRATA E123's residual, #223).**
+        // With a live provider, `AlmanacModel.observeLocation()` below is authoritative — it performs
+        // this exact mount-time read itself and then reloads only on a fix boundary, not on every
+        // published coordinate. Leaving this task active for both would mean two triggers racing to
+        // reload on the same transition, and — the defect this ticket is about — this task re-firing
+        // on every walking-distance coordinate change even when `observeLocation()` correctly did not.
+        .task(id: coordinate) {
+            guard location == nil else { return }
+            await model.update(coordinate: coordinate)
+        }
+        // The direct-observation path. A no-op for every caller above that left `location` `nil`.
+        .task { await model.observeLocation() }
     }
 }
 

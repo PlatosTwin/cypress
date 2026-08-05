@@ -314,6 +314,52 @@ struct MemorialPresentationTests {
         )
     }
 
+    // MARK: - 3b. Photo visibility (ERRATA E215)
+
+    /// Every fixture above is all-own (`profile()`'s `ownPhotoIDs: Set(shots.map(\.id))`), so the
+    /// screen's non-own arm has never had a failing case. `MemorialPresentation` now reads
+    /// `TreeProfile.visiblePhotos` (`isVisibleOnDevice`, ERRATA E215) rather than `photos` directly,
+    /// the same predicate `PhotoVisibilityParityTests` pins for the hero and the browser — this pins
+    /// it for the memorial, the third and last reader of that series.
+    ///
+    /// The stranger's photo is dated earliest, so under the old own-blind filter (every row read
+    /// through `isVisibleToItsContributor` alone, the exact defect E215 names) it would win §4's
+    /// "First photo" row; under the fixed predicate it must lose to the device's own, later photo.
+    @Test("a memorial does not surface a stranger's pending photo")
+    func strangersPendingPhotoDoesNotSurface() {
+        // Day 15, not day 1 — `photos(_:)` above uses the same middle-of-month anchor so a
+        // timezone offset cannot walk a date across a month boundary and flip the label read out.
+        let ownPhoto = Photo(
+            treeID: Self.treeID, shotType: .fullTree, moderationState: .approved,
+            capturedAt: Self.date("2020-06-15")
+        )
+        let strangersPending = Photo(
+            treeID: Self.treeID, shotType: .trunk, moderationState: .pending,
+            capturedAt: Self.date("2019-01-15")
+        )
+
+        // Fixture sanity, same shape as `PhotoVisibilityParityTests`: the row really is visible to
+        // its own contributor and really is unmoderated, or this is not the case E215 names.
+        #expect(strangersPending.isVisibleToItsContributor)
+        #expect(!strangersPending.isPubliclyVisible)
+
+        let profile = TreeProfile(
+            tree: Self.tree(),
+            species: Self.species,
+            photos: Series(complete: [ownPhoto, strangersPending]),
+            ownPhotoIDs: [ownPhoto.id]
+        )
+        let presentation = MemorialPresentation(profile: profile, facts: Self.removedInMay, now: Self.now)
+
+        let firstPhoto = presentation.moments.first { $0.kind == .firstPhoto }
+        #expect(
+            firstPhoto?.id != strangersPending.id,
+            "screen 19's 'First photo' row showed a stranger's unmoderated photograph (\(strangersPending.id)) — the exact failure ERRATA E215 names"
+        )
+        #expect(firstPhoto?.id == ownPhoto.id)
+        #expect(firstPhoto?.timestamp == "Jun 2020")
+    }
+
     // MARK: - 4. Read-only is an absence
 
     /// SCREENS.md 19: "no Visit CTA, no quad action row, no foliage strip. That absence *is* the

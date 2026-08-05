@@ -53,10 +53,38 @@ final class AlmanacModel {
 
     private let now: @Sendable () -> Date
 
-    init(api: any CypressAPI, coordinate: Coordinate?, now: @escaping @Sendable () -> Date = { Date() }) {
+    /// The provider this model was built against (ERRATA E123's residual, #223).
+    ///
+    /// `nil` in every unit test and preview that drives the model with `update(coordinate:)`
+    /// directly — the shape E155 already established, kept working unmodified below. Set only by
+    /// the composition root's real wiring, where it is the same shared instance `RootView` starts
+    /// and stops (ARCHITECTURE §3).
+    private let location: MapLocationProvider?
+
+    /// How often `observeLocation()` checks `location.availability` for a fix boundary.
+    ///
+    /// A poll, deliberately, the same shape `VisitIdentifyModel.run()` already uses to follow a
+    /// location provider for the life of a screen — and for the same reason that shape was chosen
+    /// over `withObservationTracking`'s continuation recipe: a continuation left unresumed when the
+    /// owning `Task` is cancelled does not resume itself, so a change that never arrives again after
+    /// the screen goes away would leak the wait (and everything it closed over) rather than end it.
+    /// `Task.sleep` has no such failure mode — cancellation throws through it immediately, which is
+    /// what lets this loop's own `while !Task.isCancelled` actually be the thing that stops it.
+    /// Injectable so a test can wait milliseconds instead of half a second.
+    private let locationPollInterval: Duration
+
+    init(
+        api: any CypressAPI,
+        coordinate: Coordinate?,
+        location: MapLocationProvider? = nil,
+        locationPollInterval: Duration = .milliseconds(500),
+        now: @escaping @Sendable () -> Date = { Date() }
+    ) {
         self.api = api
         self.coordinate = coordinate
         self.displayedCoordinate = coordinate
+        self.location = location
+        self.locationPollInterval = locationPollInterval
         self.now = now
     }
 
@@ -111,5 +139,59 @@ final class AlmanacModel {
     func retry() async {
         phase = .loading
         await load()
+    }
+
+    // MARK: - Following the shared provider (ERRATA E123's residual, #223)
+
+    /// Whether the change from `previous` to `current` is a fix boundary being crossed, in either
+    /// direction — the only change this screen reloads for.
+    ///
+    /// Pure and `static`, mirroring `MapLocationProvider.isWorthPublishing`'s own shape and for the
+    /// same reason its doc comment gives: the rule can be tested at its boundary without a running
+    /// `MapLocationProvider`, and the wiring that actually calls it is tested separately
+    /// (`observeLocation` below), because a predicate that is right and never called is exactly the
+    /// defect this entry exists to catch.
+    ///
+    /// **Deliberately blind to which fix, only to whether there is one.** `MapLocationProvider`
+    /// rewrites `availability` on every publish worth making — walking, five meters at a time
+    /// (`MapLocationProvider.publishDistanceM`) — and a screen 12 that reloaded on each of those
+    /// would re-read the whole almanac once per five meters of walking, the exact "per tick" churn
+    /// this entry's ticket forbids. `.located(A) → .located(B)` is therefore `false` here, on
+    /// purpose, even though `A != B`: neither side is a fix the reader did not already have.
+    /// `.located → .notAsked/.denied/.servicesOff/.waitingForFix` is `true` for the reverse reason —
+    /// that is E126's invariant reappearing in the other direction, and `update(coordinate:)` below
+    /// already knows what to do with a `nil` coordinate.
+    static func isFixAvailabilityTransition(
+        from previous: MapLocationProvider.Availability,
+        to current: MapLocationProvider.Availability
+    ) -> Bool {
+        (previous.coordinate == nil) != (current.coordinate == nil)
+    }
+
+    /// Watches `location` for the life of the screen and reloads on the one change that matters.
+    ///
+    /// Replaces `AlmanacView`'s old `.task(id: coordinate)` as the reload trigger whenever a live
+    /// provider is supplied — that task keyed on the coordinate itself, which is what made E155's
+    /// fix over-correct: the almanac reloaded once per published fix rather than once per grant.
+    /// This performs the mount-time read itself (whatever `location.availability` already is, which
+    /// on a cold launch is `nil` and on a screen reached after the map already has a fix is not),
+    /// then reloads again only when `isFixAvailabilityTransition` says the fix boundary moved.
+    ///
+    /// A no-op when `location` is `nil` — every unit test and preview that drives the model with
+    /// `update(coordinate:)` directly is unaffected, and `AlmanacView` falls back to its original
+    /// `.task(id: coordinate)` for exactly those callers.
+    func observeLocation() async {
+        guard let location else { return }
+        var previous = location.availability
+        await update(coordinate: previous.coordinate)
+        while !Task.isCancelled {
+            try? await Task.sleep(for: locationPollInterval)
+            guard !Task.isCancelled else { return }
+            let current = location.availability
+            if Self.isFixAvailabilityTransition(from: previous, to: current) {
+                await update(coordinate: current.coordinate)
+            }
+            previous = current
+        }
     }
 }
