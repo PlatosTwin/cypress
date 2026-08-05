@@ -66,7 +66,8 @@ final class ReadingOrderAccessibilityTests: XCTestCase, DeepLinkHarness {
     /// that order does not appear to honor `accessibilitySortPriority` at all on this SwiftUI tree, a
     /// fact consistent with `CypressTests/AccessibilityTests`' standing finding that SwiftUI serves
     /// accessibility over its own bridge rather than through the container protocol UIKit's sort
-    /// priority is documented against (ERRATA E196). See `docs/errata-pending/` for the write-up.
+    /// priority is documented against (ERRATA E196). The full write-up ships as an erratum with
+    /// task #221; until it carries a number, E196 is the citable record of the in-process half.
     /// **A test that actually watches `accessibilitySortPriority` take effect needs VoiceOver running
     /// on a real device**, which is out of reach for a black-box XCUITest here — this is the honest
     /// limit, stated rather than implied by a green result that looks like more than it is.
