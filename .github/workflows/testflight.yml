@@ -614,18 +614,20 @@ jobs:
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
             CURRENT_PROJECT_VERSION=${{ steps.build_number.outputs.n }} \
             MARKETING_VERSION="$MARKETING_VERSION" \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
             | tail -40
-          # CODE_SIGN_IDENTITY above: under automatic signing, `archive` signs with an Apple
-          # DEVELOPMENT identity by default and re-signs for distribution only at export. That
-          # default is what run 31052462134 exposed the moment #232's keychain replacement
-          # removed everything else: `No signing certificate "iOS Development" found`, on a
-          # keychain that verifiably held the imported Distribution identity (the find-identity
-          # audit line printed it seconds earlier). It also names what the pre-#232 per-deploy
-          # minting actually created: Development certificates, one per empty keychain.
-          # Signing the archive with the Distribution identity directly is the standard CI
-          # arrangement — the imported certificate is used for exactly what it is for, and
-          # nothing is left for -allowProvisioningUpdates to mint.
+          # The archive is deliberately UNSIGNED; the Export step below performs the one real
+          # signing pass. Both alternatives were run before this landed, not reasoned about:
+          # run 31052462134 proved that under automatic signing `archive` demands an Apple
+          # DEVELOPMENT identity (`No signing certificate "iOS Development" found`, on a
+          # keychain verifiably holding the imported Distribution identity) — which also names
+          # what the pre-#232 per-deploy minting created: Development certificates, one per
+          # empty keychain. And run 31054628357 proved the tempting one-line alternative,
+          # CODE_SIGN_IDENTITY="Apple Distribution" here, is rejected by the automatic-signing
+          # engine ("conflicting provisioning settings"), exactly as PR #31's review predicted
+          # from the documentation. Export signs with the imported Distribution identity and
+          # the ASC API key resolves the profile, so nothing is left to mint anywhere.
           # The archive is the only place the shipped numbers can be read back. Both are read,
           # because both were overridden above — a readback that skips the version would leave the
           # override unverified, which is how 0.1 shipped silently for a full round.
