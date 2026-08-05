@@ -154,7 +154,15 @@ struct SpeciesSearchTests {
     /// Presence, not absence: every species this returns carries the word `cypress`. A `%` honored
     /// as a wildcard would not produce that set — it would produce every name with `cypre` somewhere
     /// ahead of an `s`.
-    @Test("a % inside a word is punctuation to the similarity pass, not a wildcard (E165)")
+    ///
+    /// Conditional on the seed carrying the trigram index, for the reason set out at
+    /// `SpeciesTrigramTests.seedCarriesTrigrams`: on an s14 seed there is no similarity pass, so
+    /// `cypre%s` correctly finds nothing and there is no folding to observe. The `LIKE`-path half of
+    /// this pair — `c%s`, above — is unconditional and guards the escaping on every tree.
+    @Test(
+        "a % inside a word is punctuation to the similarity pass, not a wildcard (E165)",
+        .enabled(if: SpeciesTrigramTests.seedCarriesTrigrams, SpeciesTrigramTests.trigramSeedRequired)
+    )
     func aWildcardInsideAWordIsFoldedNotExpanded() async throws {
         let matches = try await Self.search("cypre%s")
         try #require(!matches.isEmpty, "“cypre%s” found nothing; the similarity pass did not run")

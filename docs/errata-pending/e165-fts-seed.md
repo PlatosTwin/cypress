@@ -97,26 +97,77 @@ three characters, which is below `minimumSimilarityQueryLength` and therefore a 
 `LIKE` path alone; an honored `%` there would match most of the catalog. The new behavior is
 asserted positively in its own test: every species `cypre%s` returns carries the word `cypress`.
 
-### What the round's publisher must do
+### This entry does not close E165. Merging it does not either.
 
-**Nothing was published by this change, and the manifest carries a version per city file, not one
-global version** — so the bump does not invalidate what is in the bucket.
+**The code shipped here is inert until the canonical seed is rebuilt.** That is the honest statement
+and it should not be softened, because everything about the change looks finished without it.
 
-1. **Republishing is required before an s15-only reader could exist, and is not urgent now.** The
-   app at `newestKnownSchemaVersion = 15` still accepts s14 files (`CityInstallState` refuses only
-   `published > newestKnown`), and they search by substring. Cities already in the bucket keep
-   working, unchanged, at their existing immutable paths (R37.2).
-2. **When cities are next published, republish from a seed built by this `build_seed.py`.** The
-   version string becomes `s15-r<content_rev>-<build_id>`. Because `schema_version` moved, this is a
-   new immutable path and not an overwrite — R60's `build_id` is not what is doing the work here.
-3. **No per-city index work.** The publisher byte-copies the fused seed and DELETEs the other city
-   out of an explicit table list (`trees`, `trees_rtree`, `species_assertions`, `neighborhoods`,
-   `inventories`, `id_spaces`); it never touches `species`, and it will never touch
-   `species_trigrams`. The trigram rows key on `species.id` and `species` stays whole by R37.3, so a
-   narrowed city file inherits the whole catalog's index for free.
-4. **`Tools/verify_seed.py` gained checks 18a–18f** and should be run on each published file: they
-   ask the index E165's two questions and assert the `cypress` control gains nothing, rather than
-   merely asserting the table exists.
+The seed is git-ignored. It is not built by CI and not carried by `git worktree add`: every tree gets
+the *canonical* file — `Tools/setup_worktree.sh` copies it from the main checkout, CI fetches that
+same published artifact through `Tools/fetch_seed.sh` — and that file is s14 with no
+`species_trigrams`. So on every machine except the one that wrote this, including CI and **including
+the shipped app reading its own bundle**, `SeedSchema.hasSpeciesTrigrams` is false and the search
+takes the fallback branch. A reader typing `liquidamber` still finds nothing.
+
+The two halves cannot land in one instant, in either order: an s15 canonical seed would fail the
+seed-contract tests on every tree that does not yet carry this schema bump, so the seed cannot be
+regenerated before this merges — and the four tests that assert E165's user-visible claims against
+the real catalog cannot pass before the seed is regenerated. The code goes first, deliberately, and
+the window between is real.
+
+**The four tests are `.enabled(if: seedCarriesTrigrams)` rather than deleted or made lenient.** They
+print as skipped, with a reason naming exactly what un-gates them, and they switch themselves on the
+moment a seed built by this `build_seed.py` is in place. Nothing has to be remembered and nothing has
+to be re-enabled by hand.
+
+### The acceptance check, and the owner's checklist
+
+**E165's user-visible half closes when, and only when, all three of these are true:**
+
+1. **The canonical seed is rebuilt** with this branch's `Tools/build_seed.py` — a real full build,
+   not the scaled `--limit` build this branch verified with.
+2. **It is published** per the manifest / `build_id` protocol (R60, `ERRATA E219`), and
+   `Tools/setup_worktree.sh` and `Tools/fetch_seed.sh` are serving the new file.
+3. **The four conditional tests activate and pass on a tree the author did not touch.** That
+   activation *is* the proof the fix went live — it is the only signal in the system that
+   distinguishes "shipped" from "shipped and inert", and it costs nothing to read: the same suite
+   that printed four skips prints four passes.
+
+Until (3) is observed, treat this ticket as landed-but-unproven.
+
+**What this branch verified, and the four gaps it left the publisher.** The branch built the index
+into a copy of the shipped seed and ran `build_seed.py` end to end only at `--source datasf
+--limit 40000`. That proves the wiring; it does not prove the shipped artifact. On the real rebuild:
+
+- **`seed_meta.species_trigram_rows` was never checked against `COUNT(*)`.** The build writes the
+  count it thinks it emitted; nothing has compared it to the rows actually in the table. Assert
+  `SELECT value FROM seed_meta WHERE key='species_trigram_rows'` equals
+  `SELECT COUNT(*) FROM species_trigrams` on the built file.
+- **Byte-identity across rebuilds was claimed but never double-built.** The trigram pairs are sorted
+  before insert specifically so two builds of the same data produce the same file (R37.1), and that
+  has not been tested. Build twice with the same `SOURCE_DATE_EPOCH` and compare sha256.
+- **Check 18c never ran against real stub rows.** The scaled build produced **0** stub rows, so "no
+  stub or deleted species is reachable through the index" passed vacuously. The canonical seed
+  carries **5** — measured, `SELECT COUNT(*) FROM species WHERE scientific_name LIKE ':: %'`, against
+  731 species of which 726 are searchable and 0 are soft-deleted. (The review round put this at 7;
+  it is 5, and the soft-delete half of 18c has no case in this seed at all, so that half stays
+  vacuous until one appears.) Re-run `Tools/verify_seed.py` on the real artifact and confirm 18c is
+  meeting a non-empty case.
+- **`publish_cities.py` has never been executed at `SEED_SCHEMA_VERSION = 15`.** The claim that a
+  narrowed city file inherits the catalog's index is an argument from the publisher's DELETE list
+  (`trees`, `trees_rtree`, `species_assertions`, `neighborhoods`, `inventories`, `id_spaces` — it
+  never touches `species`), read but not run. Publish, then query `species_trigrams` in the produced
+  city file and run checks 18a–18f against it.
+
+### What republishing does and does not require
+
+**The manifest carries a version per city file, not one global version**, so the bump invalidates
+nothing already in the bucket. The app at `newestKnownSchemaVersion = 15` still accepts s14 files
+(`CityInstallState` refuses only `published > newestKnown`) and they keep searching by substring at
+their existing immutable paths (R37.2). Republishing is therefore not urgent and not a migration —
+but it is the only thing that makes the feature exist for a reader. The version string becomes
+`s15-r<content_rev>-<build_id>`; because `schema_version` moved this is a new immutable path, so
+R60's `build_id` segment is not what is doing the work here.
 
 ### What is still not fixed
 
