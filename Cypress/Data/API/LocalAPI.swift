@@ -321,6 +321,7 @@ public actor LocalAPI: CypressAPI {
                     connection: connection
                 ),
                 neighborhoodName: record?.neighborhoodName,
+                cityShortName: record?.cityShortName,
                 latestObservation: observations.items.first,
                 observations: observations,
                 photos: photos,

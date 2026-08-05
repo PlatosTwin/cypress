@@ -691,6 +691,16 @@ public struct TreeProfile: Hashable, Sendable {
     /// The seed carries no UUID for a neighborhood — `name` is its external key — so `tree`'s
     /// `neighborhoodID` is nil and the name travels here instead.
     public let neighborhoodName: String?
+    /// The tree's own short civic name — "San Francisco", "San Jose" — read through
+    /// `SeedSchema.hasCivicShortNames` (ERRATA E209/#233's Shape A fix). Like
+    /// `neighborhoodName` above, the seed keys this by a string (`id_space`) rather than by an
+    /// id the model already carries, so it travels on the payload instead of living on `Tree`.
+    ///
+    /// Nil is an honest answer, not a missing one: a seed built before this pass, a row that
+    /// predates `id_space` entirely, or a community-added tree with no id space at all. Screen
+    /// 10's `SharePresentation.locationLine` is today's only reader and falls back to the
+    /// address alone rather than naming a city it does not know.
+    public let cityShortName: String?
     /// The most recent check-in, for the profile's summary line.
     public let latestObservation: TreeObservation?
     /// The check-in series.
@@ -813,6 +823,7 @@ public struct TreeProfile: Hashable, Sendable {
         activeName: TreeName? = nil,
         species: Species? = nil,
         neighborhoodName: String? = nil,
+        cityShortName: String? = nil,
         latestObservation: TreeObservation? = nil,
         observations: Series<TreeObservation> = .empty,
         photos: Series<Photo> = .empty,
@@ -833,6 +844,7 @@ public struct TreeProfile: Hashable, Sendable {
         self.activeName = activeName
         self.species = species
         self.neighborhoodName = neighborhoodName
+        self.cityShortName = cityShortName
         self.latestObservation = latestObservation
         self.observations = observations
         self.photos = photos

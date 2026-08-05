@@ -114,11 +114,21 @@ from datetime import datetime, timezone
 # The seed schema generation this publisher understands. See VERSIONING above.
 # Bump together with Fixtures/seed/schema.sql shape changes.
 #
-# 15 adds `species_trigrams`, the species-search similarity index (ERRATA E165).
-# It is carried by the byte-copy like every other shared species table (R37.3):
-# the publisher narrows `trees` and leaves `species` whole, and the trigram rows
-# key on `species.id`, so a narrowed city file inherits the whole catalog's index
-# and nothing has to be rebuilt per city.
+# 15 adds `species_trigrams`, the species-search similarity index (ERRATA E165),
+# AND `id_spaces.short_name`, the hand-maintained civic short name (ERRATA
+# E209/#233) -- folded into one generation because neither had published as of
+# this writing (verified against the live manifest: both cities were still
+# `schema_version: 14`), and R37.2 makes a generation number a publish event,
+# not a code change; two unpublished additions are one bump, not two.
+#
+# `species_trigrams` is carried by the byte-copy like every other shared
+# species table (R37.3): the publisher narrows `trees` and leaves `species`
+# whole, and the trigram rows key on `species.id`, so a narrowed city file
+# inherits the whole catalog's index and nothing has to be rebuilt per city.
+#
+# `id_spaces` is narrower still -- narrowed to the city's own row already
+# (VERSIONING above), so `short_name` travels with it automatically and this
+# publisher needed no change for the second addition, only this comment.
 SEED_SCHEMA_VERSION = 15
 
 # Manifest envelope format, for the app-side parser (#157). Bump on any change

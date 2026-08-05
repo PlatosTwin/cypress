@@ -371,6 +371,34 @@ STATUS_FOR_KIND = {
 
 
 # ---------------------------------------------------------------------------
+# Civic short names (ERRATA E209, Shape A; task #233)
+# ---------------------------------------------------------------------------
+# Short, reader-facing city names, keyed by `ID_SPACES` id -- "San Francisco",
+# not `inventories.name`'s "SF Public Works street tree inventory", and not
+# `IdSpace.identity_prefix`'s frozen identity plumbing. Written into
+# `id_spaces.short_name` below for exactly the id spaces this build's rows
+# occupy, so a reader-facing surface (the share card today; ERRATA E209 lists
+# no other survivor of Shape A) can print a tree's own city instead of the
+# literal `"San Francisco"` that used to be true only while the seed held one.
+#
+# Hand-entered on purpose, the same instrument as `Tools/publish_cities.py`'s
+# `DISPLAY_NAMES` and the same two values -- both are civic content
+# (DECISIONS constraint 15) copied from the same already-shipped manifest
+# field (`CityManifest.City.displayName`) rather than invented here. The two
+# dicts are independent by the owner's decision (this round's seed-schema
+# author is not the publisher's), so a change to one is not a change to the
+# other; keep them in sync by hand if either ever moves.
+#
+# A city with no entry here fails the build loudly (see the id_spaces insert
+# below) rather than shipping an empty short_name past the schema's own
+# `CHECK (short_name <> '')`.
+SHORT_CITY_NAMES = {
+    "sf": "San Francisco",
+    "us-ca-sj": "San Jose",
+}
+
+
+# ---------------------------------------------------------------------------
 # Case normalisation (issue #95)
 # ---------------------------------------------------------------------------
 # The seed columns whose values the APP COMPARES AGAINST A LITERAL, and which are
@@ -733,7 +761,21 @@ CREATE TABLE id_spaces (
     -- `sf`'s is the empty string and is the one space permitted to have one.
     identity_prefix TEXT NOT NULL,
     note            TEXT NOT NULL,
-    CHECK (id <> '')
+    -- The short, reader-facing civic name a public surface may print beside a
+    -- record from this space -- "San Francisco", "San Jose". Never
+    -- `inventories.name` (that is the inventory's own published name, e.g. "SF
+    -- Public Works street tree inventory") and never `identity_prefix` (frozen
+    -- identity plumbing, not prose). ERRATA E209 named the gap: no column
+    -- anywhere carried a short city name, so the share card (and nothing else)
+    -- hardcoded "San Francisco" and mislabeled every San Jose tree. Hand-entered
+    -- in `Tools/build_seed.py`'s SHORT_CITY_NAMES, written for exactly the id
+    -- spaces this file carries -- an id space with no entry fails the build
+    -- rather than shipping a blank. `SeedSchema.hasCivicShortNames` is the
+    -- app-side flag a reader-facing surface must check before trusting this
+    -- column exists, the same way `hasSpeciesTrigrams` gates `species_trigrams`.
+    short_name      TEXT NOT NULL,
+    CHECK (id <> ''),
+    CHECK (short_name <> '')
 );
 
 CREATE TABLE inventories (
@@ -1856,9 +1898,18 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
     if not contributing:
         die("no inventory contributed a row; the seed would have an empty vocabulary")
     spaces = sorted({INVENTORIES[i].id_space for i in contributing})
+    missing_short_names = [s for s in spaces if s not in SHORT_CITY_NAMES]
+    if missing_short_names:
+        die(
+            f"no short civic name registered for id space(s) {missing_short_names!r} in "
+            f"SHORT_CITY_NAMES -- names are entered, never derived"
+        )
     conn.executemany(
-        "INSERT INTO id_spaces(id,identity_prefix,note) VALUES(?,?,?)",
-        [(s, ID_SPACES[s].identity_prefix, ID_SPACES[s].note) for s in spaces],
+        "INSERT INTO id_spaces(id,identity_prefix,note,short_name) VALUES(?,?,?,?)",
+        [
+            (s, ID_SPACES[s].identity_prefix, ID_SPACES[s].note, SHORT_CITY_NAMES[s])
+            for s in spaces
+        ],
     )
     conn.executemany(
         "INSERT INTO inventories(id,id_space,name,url) VALUES(?,?,?,?)",
