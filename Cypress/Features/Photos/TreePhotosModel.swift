@@ -109,9 +109,14 @@ final class TreePhotosModel {
         isLoading = true
         defer { isLoading = false }
         guard let profile = try? await api.treeProfile(id: treeID) else { return }
-        // The set this device may show — moderation gates publication, not a person's own screen
-        // (E37). `TreeProfile.photos` is already only what this installation wrote.
-        photos = profile.photos.items.filter(\.isVisibleToItsContributor)
+        // The set this device may show — `TreeProfile.visiblePhotos` (ERRATA E215), the same
+        // predicate screen 03's hero reads. Own photos stay visible pre-moderation
+        // (`isVisibleToItsContributor`); moderation gates publication for everyone else's
+        // (`isPubliclyVisible`, ERRATA E37). This used to filter every row on
+        // `isVisibleToItsContributor` alone, which was silently correct only because nothing syncs
+        // anybody else's photographs down yet — the day a read returns one, this screen would have
+        // shown it, unmoderated, to a stranger.
+        photos = profile.visiblePhotos.items
         tallies = profile.photoTallies
         treeName = profile.activeName?.name ?? profile.species?.commonName
         deletableIDs = profile.deletablePhotoIDs
