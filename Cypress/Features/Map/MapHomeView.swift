@@ -314,7 +314,7 @@ struct MapHomeView: View {
         // sorts first; priorities compare among siblings, which each of these sets is.
         Color.clear
             .overlay(alignment: .bottom) {
-                bottomChrome
+                bottomChrome(availableHeight: availableHeight)
                     .accessibilitySortPriority(1)
             }
             .overlay(alignment: .top) {
@@ -393,7 +393,7 @@ struct MapHomeView: View {
     ///
     /// Lifted out of `chrome` unchanged so the two blocks could be reordered without the diff
     /// pretending anything inside either of them moved. See the comment at the reorder.
-    private var bottomChrome: some View {
+    private func bottomChrome(availableHeight: CGFloat) -> some View {
         VStack(alignment: .trailing, spacing: 0) {
             // Above the FAB and right-aligned with it, inside the same absolutely positioned
             // block — which is the position MapKit's own `MapUserLocationButton` could not
@@ -410,7 +410,7 @@ struct MapHomeView: View {
             IdentifyFAB { router.present(.identify(nil)) }
                 .padding(.horizontal, MapLayout.sideInset - MapLayout.cardInset)
                 .padding(.bottom, MapLayout.fabToCardGap)
-            bottomSlot
+            bottomSlot(noticeMaxHeight: MapLayout.noticeMaxHeight(availableHeight: availableHeight))
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.horizontal, MapLayout.cardInset)
@@ -430,18 +430,20 @@ struct MapHomeView: View {
     /// SwiftUI will not settle an insertion transition inside an overlay that the `Map` behind it
     /// keeps invalidating. A tap that answers instantly is better than one that answers prettily.
     @ViewBuilder
-    private var bottomSlot: some View {
+    private func bottomSlot(noticeMaxHeight: CGFloat) -> some View {
         switch recenterAnswer {
         case .waitingForFix:
             MapLocationNotice(
                 title: MapRecenterCopy.waitingTitle,
-                message: MapRecenterCopy.waitingMessage
+                message: MapRecenterCopy.waitingMessage,
+                maxHeight: noticeMaxHeight
             )
         case let .refused(availability):
             MapLocationNotice(
                 title: MapRecenterCopy.refusalTitle(availability),
                 message: MapRecenterCopy.refusalMessage,
-                onOpenSettings: openSettings
+                onOpenSettings: openSettings,
+                maxHeight: noticeMaxHeight
             )
         case nil:
             if let subject = model.selection {
@@ -455,7 +457,7 @@ struct MapHomeView: View {
                 // `Clear filters` button — is exactly the message box the owner struck. The empty
                 // map is the answer, and the way out stays in the row: the `Clear filters` chip
                 // is on screen whenever any dimension is set.
-                standingNotice
+                standingNotice(noticeMaxHeight: noticeMaxHeight)
             }
         }
     }
@@ -474,7 +476,7 @@ struct MapHomeView: View {
     /// waits are told apart from each other as well as from the two that are refusals — see
     /// `MapOpening.Standing`.
     @ViewBuilder
-    private var standingNotice: some View {
+    private func standingNotice(noticeMaxHeight: CGFloat) -> some View {
         switch MapOpening.standing(
             availability: location.availability,
             waited: waited,
@@ -497,7 +499,8 @@ struct MapHomeView: View {
             if model.inventoryIsEmptyHere {
                 MapLocationNotice(
                     title: MapInventoryCopy.title,
-                    message: MapInventoryCopy.message
+                    message: MapInventoryCopy.message,
+                    maxHeight: noticeMaxHeight
                 )
             } else {
                 EmptyView()
@@ -507,18 +510,21 @@ struct MapHomeView: View {
             // sheet, which the recenter control raises — and says so, in its hint.
             MapLocationNotice(
                 title: MapOpeningCopy.notAskedTitle,
-                message: MapOpeningCopy.notAskedMessage(showing)
+                message: MapOpeningCopy.notAskedMessage(showing),
+                maxHeight: noticeMaxHeight
             )
         case let .searching(showing):
             MapLocationNotice(
                 title: MapOpeningCopy.searchingTitle,
-                message: MapOpeningCopy.searchingMessage(showing)
+                message: MapOpeningCopy.searchingMessage(showing),
+                maxHeight: noticeMaxHeight
             )
         case let .refused(availability, showing):
             MapLocationNotice(
                 title: MapLocationCopy.title(availability),
                 message: MapLocationCopy.message(showing),
-                onOpenSettings: openSettings
+                onOpenSettings: openSettings,
+                maxHeight: noticeMaxHeight
             )
         }
     }

@@ -529,6 +529,18 @@ struct MapLocationNotice: View {
     /// The trailing button's press, when it is not `onOpenSettings`.
     var onAction: (() -> Void)?
 
+    /// The height this card may take before it scrolls rather than keep growing. `nil` — every
+    /// call site had until the owner's 2026-08-05 AX5 ruling (RULINGS R53 §6, ERRATA E183 §2) — is
+    /// the card's old, unbounded shape: it grows as tall as `title` and `message` need, with no
+    /// ceiling. At AX5 that is taller than a 390 pt phone, and because the card is laid out from
+    /// its parent's bottom edge (`MapHomeView.bottomChrome`) it grew *upward past `y = 0`*,
+    /// taking its own way out off the top of the screen with it — that defect is E183 §2. The
+    /// owner ruled that the card scrolls once it runs out of room instead. `MapHomeView` is
+    /// the only caller that passes this; `MapEmptyInventoryTests.theNoticeFitsTheSlotAtAX5`
+    /// deliberately measures the old, unbounded shape, because it compares notices against each
+    /// other rather than against a screen.
+    var maxHeight: CGFloat?
+
     /// One trailing button, whichever of the two filled it.
     private var action: (label: String, run: () -> Void)? {
         if let onAction { return (actionLabel, onAction) }
@@ -537,6 +549,22 @@ struct MapLocationNotice: View {
     }
 
     var body: some View {
+        if let maxHeight {
+            ScrollView {
+                card
+            }
+            .frame(maxHeight: maxHeight)
+            // Vertical only, the same reason `MapSuggestionList` carries it (R25): without it a
+            // card well under the budget sits in a tall, mostly empty scroll well instead of
+            // hugging its own content — which is what "unchanged at ordinary sizes" requires,
+            // since ordinary content never approaches this budget in the first place.
+            .fixedSize(horizontal: false, vertical: true)
+        } else {
+            card
+        }
+    }
+
+    private var card: some View {
         HStack(alignment: .top, spacing: MapLayout.cardSpacing) {
             VStack(alignment: .leading, spacing: MapLayout.cardMetaTop) {
                 Text(title)
