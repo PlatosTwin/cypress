@@ -224,10 +224,18 @@ enum MapPinImage {
 /// **A `UIViewRepresentable` has no layout hook, and this one needs exactly one** (ERRATA E168).
 /// `makeUIView` and the `updateUIView` passes around it can all run while the view is still
 /// `bounds == .zero`, and a camera cannot be aimed at a map with no area — so the opening camera has
-/// to wait for a size. Waiting is safe only if something wakes the layer when the size arrives:
-/// screen 01 re-runs its body 240 times a second and would have produced another pass on its own,
-/// but the two other screens that draw this basemap are quiet, and a quiet screen would have sat on
-/// MapKit's default region forever.
+/// to wait for a size. Waiting is safe only if something wakes the layer when the size arrives, and
+/// nothing else does: a quiet screen sits on MapKit's default region forever.
+///
+/// **This callback is now the only thing that wakes any of the three, which was not true when it was
+/// written.** The original argument here was that screen 01 re-ran its body 240 times a second and
+/// "would have produced another pass on its own", so the callback was really for the two quiet
+/// screens — the pin-adjust and pin-set maps. E140 took screen 01's at-rest rate to **zero**
+/// (re-measured under task #226; see `MapCameraRequest`), so screen 01 is now exactly as quiet as the
+/// other two and has no spare pass to fall back on. The callback did not become more correct, but it
+/// did become load-bearing on all three screens rather than on two — so removing it on the old
+/// reasoning would now strand the app's *default* screen on MapKit's default region, which is the
+/// whole-world span E168 records.
 ///
 /// One callback, fired once, then released. It is not a general layout observer and must not become
 /// one — everything else this file does is driven by `updateUIView`, and it stays that way.
@@ -663,7 +671,8 @@ struct MapAnnotationLayer: UIViewRepresentable {
         /// **A settle says nothing about the camera any more, and that is the fix for E140.** This
         /// used to answer a reader's pan by clearing the record of the last camera the app asked for,
         /// so that pressing the recenter control a second time was not swallowed as a duplicate value
-        /// (#66). Clearing it meant the next `updateUIView` — one of about 240 a second — found a
+        /// (#66). Clearing it meant the next `updateUIView` — one of about 240 a second, as the rate
+        /// then was — found a
         /// position that did not match an empty record, took that for a fresh request, and drove the
         /// camera back to the reader's own location. The map could not be moved. A press now mints
         /// its own ticket whether or not it names the same place, so the second press works without
