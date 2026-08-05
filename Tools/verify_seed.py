@@ -35,6 +35,12 @@ import sqlite3
 import sys
 import uuid
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Imported rather than restated: check 18 asks the index a question using the
+# same trigram scheme that built it, so a change to the scheme cannot leave the
+# verifier quietly agreeing with a stale copy of itself.
+from build_seed import species_trigrams as _trigrams  # noqa: E402
+
 # Must match Tools/build_seed.py. Frozen: these define every public tree URL.
 NS_TREE = uuid.UUID("6f2a1d8e-0f3d-5d3e-9a1a-7c1f0b9a0001")
 NS_SPECIES = uuid.UUID("6f2a1d8e-0f3d-5d3e-9a1a-7c1f0b9a0002")
@@ -455,6 +461,90 @@ def main() -> int:
         bad_json == 0,
         f"{bad_json} offending rows",
     )
+
+    # ------------------------------------------------------ 18 species trigrams
+    # The similarity index of ERRATA E165, seed schema 15. These checks are not
+    # "the table exists" -- they ask the index the two questions it was added to
+    # answer, because a table that is present and wrong looks exactly like a
+    # table that is present and right.
+    has_trigrams = q(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='species_trigrams'"
+    )[0]
+    c.check("18a. the seed carries species_trigrams (schema 15, E165)", has_trigrams == 1)
+
+    if has_trigrams:
+        indexable = q(
+            "SELECT COUNT(*) FROM species WHERE deleted_at IS NULL "
+            "AND scientific_name NOT LIKE ':: %'"
+        )[0]
+        covered = q("SELECT COUNT(DISTINCT species_id) FROM species_trigrams")[0]
+        c.check(
+            "18b. every searchable species carries trigrams",
+            covered == indexable,
+            f"{covered} of {indexable} searchable species are indexed",
+        )
+
+        # No stub and no soft-deleted row may be reachable through the index, or
+        # a fuzzy match would surface a name the search itself refuses to offer
+        # (RULINGS R47).
+        leaked = q(
+            "SELECT COUNT(DISTINCT t.species_id) FROM species_trigrams t "
+            "JOIN species s ON s.id = t.species_id "
+            "WHERE s.deleted_at IS NOT NULL OR s.scientific_name LIKE ':: %'"
+        )[0]
+        c.check(
+            "18c. no stub or deleted species is reachable through the index",
+            leaked == 0,
+            f"{leaked} unsearchable species are indexed",
+        )
+
+        # The calibration: a query whose answer is known before the run. These
+        # are the two misses ERRATA E165 named as still-not-fixed, so if the
+        # index cannot answer them it is not doing the job it was added for.
+        # Kept in step with SpeciesQueries.similarityNumerator/Denominator.
+        def similar(query: str) -> set:
+            grams = sorted(_trigrams(query))
+            marks = ",".join("?" * len(grams))
+            rows = conn.execute(
+                f"SELECT s.scientific_name FROM species s JOIN ("
+                f"  SELECT species_id, COUNT(*) AS shared FROM species_trigrams "
+                f"   WHERE trigram IN ({marks}) GROUP BY species_id "
+                f"  HAVING COUNT(*) * 5 >= ? * 3) m ON m.species_id = s.id "
+                f" WHERE s.deleted_at IS NULL AND s.scientific_name NOT LIKE ':: %'",
+                grams + [len(grams)],
+            ).fetchall()
+            return {r[0] for r in rows}
+
+        typo = similar("liquidamber")
+        c.check(
+            "18d. a misspelled query still reaches the species (E165, typo)",
+            "Liquidambar styraciflua" in typo,
+            f"'liquidamber' reached {sorted(typo)}",
+        )
+        alternate = similar("sweetgum")
+        c.check(
+            "18e. an alternate spelling reaches the species (E165, 'Sweet Gum')",
+            "Liquidambar styraciflua" in alternate,
+            f"'sweetgum' reached {sorted(alternate)}",
+        )
+        # The control: a query the substring search already answered correctly
+        # must not gain anything, or the bar is too low and the map narrows to
+        # species nobody asked for.
+        cypress = similar("cypress")
+        substring_cypress = {
+            r[0] for r in conn.execute(
+                "SELECT scientific_name FROM species WHERE deleted_at IS NULL "
+                "AND scientific_name NOT LIKE ':: %' AND (scientific_name LIKE '%cypress%' "
+                "OR common_name LIKE '%cypress%')"
+            ).fetchall()
+        }
+        c.check(
+            "18f. control: 'cypress' gains nothing it did not already match",
+            cypress <= substring_cypress,
+            f"the similarity bar admitted {sorted(cypress - substring_cypress)}",
+        )
+        print(f"  [note] species_trigrams: "
+              f"{q('SELECT COUNT(*) FROM species_trigrams')[0]:,} rows over {covered} species")
 
     populated = q(
         "SELECT COUNT(*) FROM species WHERE leaf_retention IS NOT NULL"

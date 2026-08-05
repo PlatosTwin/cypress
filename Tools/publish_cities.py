@@ -113,7 +113,13 @@ from datetime import datetime, timezone
 
 # The seed schema generation this publisher understands. See VERSIONING above.
 # Bump together with Fixtures/seed/schema.sql shape changes.
-SEED_SCHEMA_VERSION = 14
+#
+# 15 adds `species_trigrams`, the species-search similarity index (ERRATA E165).
+# It is carried by the byte-copy like every other shared species table (R37.3):
+# the publisher narrows `trees` and leaves `species` whole, and the trigram rows
+# key on `species.id`, so a narrowed city file inherits the whole catalog's index
+# and nothing has to be rebuilt per city.
+SEED_SCHEMA_VERSION = 15
 
 # Manifest envelope format, for the app-side parser (#157). Bump on any change
 # that would break a reader of the previous shape; additive keys do not bump it.
