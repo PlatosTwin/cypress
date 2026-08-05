@@ -149,8 +149,8 @@ struct GrovePresentationTests {
     // MARK: - ERRATA E48 — the empty-grove sentence
 
     /// `GrovePresentation.isEmpty` is the gate `GroveView.speciesTab` renders
-    /// `GroveCopy.emptyGrove` on (ERRATA E48, closed — owner-approved copy, 2026-08-05,
-    /// `docs/errata-pending/`). This is the other half of `emptyGroveRendersNothing` above: that
+    /// `GroveCopy.emptyGrove` on (ERRATA E48, closed — owner-approved copy, 2026-08-05).
+    /// This is the other half of `emptyGroveRendersNothing` above: that
     /// test pins the gate `true` for zero contributions; this one pins it `false` the moment there
     /// is one, however incomplete the rest of the read is. A device with a single recognized
     /// species, with no neighborhood, no ring, and no celebration, still is not the empty grove —

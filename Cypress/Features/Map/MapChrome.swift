@@ -530,12 +530,12 @@ struct MapLocationNotice: View {
     var onAction: (() -> Void)?
 
     /// The height this card may take before it scrolls rather than keep growing. `nil` — every
-    /// call site had until R53's AX5 ruling (`docs/rulings-pending/`, ERRATA E183 §2) — is the
-    /// card's old, unbounded shape: it grows as tall as `title` and `message` need, with no
+    /// call site had until the owner's 2026-08-05 AX5 ruling (RULINGS R53 §6, ERRATA E183 §2) — is
+    /// the card's old, unbounded shape: it grows as tall as `title` and `message` need, with no
     /// ceiling. At AX5 that is taller than a 390 pt phone, and because the card is laid out from
     /// its parent's bottom edge (`MapHomeView.bottomChrome`) it grew *upward past `y = 0`*,
     /// taking its own way out off the top of the screen with it — that defect is E183 §2. The
-    /// owner's ruling is that the card scrolls once it runs out of room instead. `MapHomeView` is
+    /// owner ruled that the card scrolls once it runs out of room instead. `MapHomeView` is
     /// the only caller that passes this; `MapEmptyInventoryTests.theNoticeFitsTheSlotAtAX5`
     /// deliberately measures the old, unbounded shape, because it compares notices against each
     /// other rather than against a screen.

@@ -2,8 +2,8 @@
 //  GroveEmptyStateTests.swift
 //  CypressTests
 //
-//  ERRATA E48, closed — the owner approved copy for screen 08's empty grove on 2026-08-05
-//  (`docs/errata-pending/`), and `GroveView.speciesTab` now draws it. `GrovePresentationTests` pins
+//  ERRATA E48, closed — the owner approved copy for screen 08's empty grove on 2026-08-05, and
+//  `GroveView.speciesTab` now draws it. `GrovePresentationTests` pins
 //  the two halves a renderer cannot see: the gate (`GrovePresentation.isEmpty`) and the string
 //  (`GroveCopy.emptyGrove`, verbatim). What is left is the one fact only a renderer can decide — that
 //  the sentence actually reaches the screen, in the slot E48 describes, above §6's footnote — and
@@ -49,7 +49,11 @@ import UIKit
 @Suite("Screen 08's empty-grove sentence, on screen (ERRATA E48)")
 struct GroveEmptyStateTests {
 
-    private static let now = Date(timeIntervalSince1970: 1_753_142_400) // 2025-07-22, matching GrovePreviews
+    /// `nonisolated` so the `@Sendable () -> Date` `GroveView.init` takes can read it — an
+    /// immutable `Date` carries no isolation of its own, and the suite's `@MainActor` is about the
+    /// hosting controller in `render(_:)`, not about this constant (`FailedReadTests.now`'s own
+    /// reasoning).
+    private nonisolated static let now = Date(timeIntervalSince1970: 1_753_142_400) // 2025-07-22, matching GrovePreviews
 
     // MARK: - The claim only a renderer can decide
 

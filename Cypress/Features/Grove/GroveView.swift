@@ -98,7 +98,7 @@ struct GroveView: View {
     private var speciesTab: some View {
         if let presentation = model.presentation {
             if presentation.isEmpty {
-                // ERRATA E48, closed — owner-approved copy, 2026-08-05 (docs/errata-pending/). The
+                // ERRATA E48, closed — owner-approved copy, 2026-08-05. The
                 // ring, the celebration and the grid are each derived from contributions
                 // (`GrovePresentation.isEmpty`), so a device that has made none renders none of
                 // them; this is the sentence that fills the column they would otherwise leave

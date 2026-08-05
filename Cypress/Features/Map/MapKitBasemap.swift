@@ -218,13 +218,13 @@ enum MapLayout {
     /// still answers the tap, and it moves nothing else.
     static let selectedPinScale: CGFloat = 1.25
 
-    // MARK: The bottom notice's scroll budget (rulings-pending R53, ERRATA E183 §2)
+    // MARK: The bottom notice's scroll budget (RULINGS R53 §6, ERRATA E183 §2)
     //
     // `MapLocationNotice` used to be free to grow as tall as its text needed. At AX5 that is
     // taller than a 390 pt phone, and since the card is laid out from `bottomChrome`'s bottom
     // edge it grew *upward past `y = 0`*, taking its own way out off the top of the screen with
-    // it. The owner's ruling is that it scrolls once it runs out of room rather than doing that —
-    // see `docs/rulings-pending/` — so the room it has to work with has to be a real number.
+    // it. The owner ruled on 2026-08-05 that it scrolls once it runs out of room rather than
+    // doing that, so the room it has to work with has to be a real number.
 
     /// `MapRecenterButton`'s measured height at `.accessibility5` — 44pt at ordinary sizes, but
     /// iOS grows a control's own minimum hit target as Dynamic Type climbs the accessibility

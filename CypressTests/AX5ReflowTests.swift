@@ -167,7 +167,7 @@ struct AX5ReflowTests {
         )
     }
 
-    // MARK: - R53's AX5 ruling (rulings-pending) · MapLocationNotice scrolls rather than overflows
+    // MARK: - RULINGS R53 §6's AX5 ruling (owner decision 2026-08-05) · MapLocationNotice scrolls rather than overflows
 
     /// `MapLayout.locateButtonHeightAX5` and `.fabHeightAX5`, the inputs to
     /// `noticeMaxHeight(availableHeight:)`, are measurements rather than guesses — pinned here so
