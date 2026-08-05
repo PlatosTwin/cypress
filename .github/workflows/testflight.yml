@@ -500,6 +500,10 @@ jobs:
           chmod 600 "$RUNNER_TEMP/private_keys/AuthKey_${ASC_KEY_ID}.p8"
 
       # ── Import the persisted signing certificate, if one exists ─────────────────────────
+      # The persisted certificate must be type **Apple Distribution** — Tools/ExportOptions.plist
+      # exports with the app-store-connect method, which no other certificate type satisfies
+      # (PR #26 review). A wrong-type p12 imports without complaint and fails only at Archive.
+      #
       # #232: without this, `-allowProvisioningUpdates` on the Archive step below finds a
       # keychain with no signing identity and mints a BRAND NEW Apple distribution certificate
       # through the API, every single deploy. That certificate's private key is generated on the
@@ -565,6 +569,12 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" \
             "$KEYCHAIN_PATH"
 
+          # What identity actually arrived, logged at import time. A revoked or wrong-type
+          # certificate imports "successfully" here and fails only minutes later inside Archive's
+          # tail -40, where the cause is hardest to read — this line is the audit trail that says
+          # whether the identity was ever valid on this runner (PR #26 review).
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
           echo "imported the persisted distribution certificate"
 
       - name: Note that no persisted certificate is configured
@@ -578,6 +588,22 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
         run: |
           set -euo pipefail
+          # The marketing version comes from the VERSION file at the repo root, the same way the
+          # build number comes from App Store Connect: as a setting override, because the number
+          # committed in project.pbxproj (0.1, six configurations) cannot be edited — the tree is
+          # a PBXFileSystemSynchronizedRootGroup and hand-edits are forbidden (CLAUDE.md). Before
+          # this override existed, every build shipped as 0.1 regardless of intent: the release/0.2
+          # branch name encoded a version no step ever read.
+          #
+          # Two checks, not one, because each catches what the other cannot (PR #28 review): a
+          # two-line file ("0.2" then "0.3") concatenates under a bare whitespace-strip into
+          # "0.20.3", which is a VALID semantic version — the line count is the only thing that
+          # rejects it. The format check then rejects everything that is one line but not a
+          # version.
+          [ "$(grep -c . VERSION)" -eq 1 ] || { echo "VERSION file must contain exactly one non-empty line" >&2; exit 1; }
+          MARKETING_VERSION="$(tr -d '[:space:]' < VERSION)"
+          printf '%s' "$MARKETING_VERSION" | grep -Eq '^[0-9]+\.[0-9]+(\.[0-9]+)?$' || { echo "VERSION file does not hold a plain semantic version: '$MARKETING_VERSION'" >&2; exit 1; }
+          echo "marketing version from VERSION file: $MARKETING_VERSION"
           xcodebuild archive \
             -project "$PROJECT" -scheme "$SCHEME" \
             -destination 'generic/platform=iOS' \
@@ -587,10 +613,17 @@ jobs:
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
             CURRENT_PROJECT_VERSION=${{ steps.build_number.outputs.n }} \
+            MARKETING_VERSION="$MARKETING_VERSION" \
             | tail -40
-          # The archive is the only place the shipped build number can be read back.
+          # The archive is the only place the shipped numbers can be read back. Both are read,
+          # because both were overridden above — a readback that skips the version would leave the
+          # override unverified, which is how 0.1 shipped silently for a full round.
           plutil -extract ApplicationProperties.CFBundleVersion raw \
             "$RUNNER_TEMP/Cypress.xcarchive/Info.plist"
+          SHIPPED_VERSION="$(plutil -extract ApplicationProperties.CFBundleShortVersionString raw \
+            "$RUNNER_TEMP/Cypress.xcarchive/Info.plist")"
+          echo "archive carries marketing version: $SHIPPED_VERSION"
+          [ "$SHIPPED_VERSION" = "$MARKETING_VERSION" ] || { echo "archive version $SHIPPED_VERSION does not match VERSION file $MARKETING_VERSION — the override did not take" >&2; exit 1; }
 
       - name: Export and upload to TestFlight
         env:
