@@ -38,12 +38,24 @@ struct WorkflowShellQuotingTests {
 
     /// Every `.yml` under `.github/`, so a new workflow or composite action is covered the day it
     /// is added rather than the day someone remembers to list it here.
+    ///
+    /// **Enumerated URLs are resolved before they leave this function (#229).** `noAccidentalCommandSubstitution`
+    /// below computes each offender's displayed path with
+    /// `file.path.replacingOccurrences(of: root.path + "/", with: "")` — `root` arrives resolved
+    /// from `AppSourceLiterals.repositoryRoot()`, but `FileManager`'s enumerator hands back its own
+    /// spelling regardless, and an unresolved/resolved mismatch there does not fail safe: the
+    /// shorter, unresolved needle still matches one component in from the front of the longer,
+    /// resolved path, and `replacingOccurrences` removes that inner match rather than reporting no
+    /// match at all — see `AppSourceLiterals.sourceFiles` for the exact worked example this mirrors.
+    /// Resolving here keeps a future offender's `file:line` readable instead of garbled.
     static func workflowFiles(root: URL) throws -> [URL] {
-        let dir = root.appendingPathComponent(workflowDirectory)
+        let dir = root.appendingPathComponent(workflowDirectory).resolvingSymlinksInPath()
         guard let walker = FileManager.default.enumerator(
             at: dir, includingPropertiesForKeys: nil
         ) else { return [] }
-        return walker.compactMap { $0 as? URL }.filter { $0.pathExtension == "yml" }
+        return walker.compactMap { $0 as? URL }
+            .map { $0.resolvingSymlinksInPath() }
+            .filter { $0.pathExtension == "yml" }
     }
 
     /// Whether `line` contains a backtick inside a double-quoted span.
