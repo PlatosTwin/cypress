@@ -18,13 +18,22 @@
 # - a collision refusal: a dead agent's xcodebuild keeps running, and a second run against the
 #   same simulator or the same worktree fakes "app is not running" / "never appeared" /
 #   "Test run with 0 tests" with no crash report (CLAUDE.md, simulators).
-# - a device-state refusal (E202, E216): a leftover `active-city` marker survives reinstall; a
-#   remembered `map.lastCamera` too wide for THIS screen draws cluster badges where a test
-#   waits for tree pins; and a camera narrow enough but pointed at a patch of the city the
-#   inventory does not cover draws nothing at all, which is the same symptom from the opposite
-#   geometry. Whether the device HAS a fix is still deliberately NOT checked — a fixless or
+# - a device-state refusal (E202-A): a leftover `active-city` marker survives reinstall and
+#   points every San-Francisco deep link at the wrong inventory. This one still REFUSES — it is
+#   a live collision with a prior smoke/run, the same family as the xcodebuild collision above,
+#   and there is no "correct" city to pick on the operator's behalf.
+# - a device-state SELF-HEAL (E202-B, E216, #225): a remembered `map.lastCamera` too wide for
+#   THIS screen draws cluster badges where a test waits for tree pins, and a camera narrow
+#   enough but pointed at a patch of the city the inventory does not cover draws nothing at
+#   all — the same symptom from the opposite geometry. Both used to refuse and hand the
+#   operator a manual repair command. They no longer do: the script computes a covered,
+#   correctly-narrow camera from the seed itself (`compute_safe_camera`), writes it
+#   (`write_safe_camera`), re-reads the device state to confirm it converged, and proceeds.
+#   Whether the device HAS a fix is still deliberately NOT checked — a fixless or
 #   location-denied device is a legitimate configuration and two tests skip on it (#121). What
-#   is checked is a good fix in the wrong place, which is neither of those states.
+#   is healed is a good fix in the wrong place, which is neither of those states. A healed run
+#   says so in its own header (`CYPRESS-RUN: camera-auto-healed`), so a log reader can tell an
+#   auto-healed run from an untouched one without diffing two runs (E202-B's own lesson).
 # - bootstatus -b before anything: simctl against a Shutdown device fails quietly in && chains.
 # - camera grant: the unit suite hangs forever on a simulator that never granted camera.
 # - verify_test_log.sh at the end: the only judgment that counts.
@@ -108,10 +117,12 @@ read_screen() {
 # Device state (E202). Both leftovers survive `xcodebuild test`, which replaces the app
 # bundle and leaves the data container alone.
 # ---------------------------------------------------------------------------
-ACTIVE_CITY="none"; LAST_CAMERA="none"; CAMERA_ZOOM=""
+ACTIVE_CITY="none"; LAST_CAMERA="none"; CAMERA_ZOOM=""; CONTAINER=""
 read_device_state() {
   local container
   container="$(xcrun simctl get_app_container "$UDID" "$APP_ID" data 2>/dev/null)" || container=""
+  CONTAINER="$container"
+  LAST_CAMERA="none"; CAMERA_ZOOM=""; CAMERA_TREES="n/a"
   if [ -z "$container" ]; then
     ACTIVE_CITY="n/a (app not installed)"; LAST_CAMERA="n/a (app not installed)"; return 0
   fi
@@ -182,6 +193,90 @@ count_camera_trees() {
     2>/dev/null)" || CAMERA_TREES="n/a (seed unreadable)"
 }
 
+# ---------------------------------------------------------------------------
+# #225 / E216 "worth mechanizing": compute a camera instead of just refusing a bad one.
+#
+# Only the CAMERA class heals (E202-B too wide, E216 pointed at nothing). The collision guard
+# above and the E202-A `active-city` check below are a live-collision signal, not a camera
+# fact — there is no safe value to compute on the operator's behalf for "another xcodebuild is
+# using this simulator" or "this device is reading San Jose", so both keep refusing untouched.
+#
+# The center is DERIVED FROM THE SEED at run time, never a literal coordinate: bin every tree
+# onto a ~0.002°  (~220 m) grid, keep the densest bin, and use that bin's own centroid. A
+# hardcoded point goes stale the day the seed changes (CLAUDE.md); a query does not. The span
+# is `MapLayout.defaultSpanMeters` (120 m, Cypress/Features/Map/MapKitBasemap.swift) converted
+# to degrees the same way `MKCoordinateRegion(center:latitudinalMeters:longitudinalMeters:)`
+# does — the app's own narrow default, not a number invented for this script. At 120 m that
+# span computes to zoom ≈18 for every device profile this repo runs on (all comfortably ≥ the
+# pin threshold of 16), so it does not need to be solved per-screen-width to clear the E202-B
+# gate; it is checked anyway below rather than trusted.
+# ---------------------------------------------------------------------------
+SAFE_LAT=""; SAFE_LON=""; SAFE_LAT_SPAN=""; SAFE_LON_SPAN=""; SAFE_TREES=""
+compute_safe_camera() {
+  local seed="$REPO/Cypress/Resources/cypress-seed.sqlite"
+  command -v sqlite3 >/dev/null 2>&1 || return 1
+  [ -f "$seed" ] || return 1
+  local row
+  row="$(sqlite3 -separator '|' "$seed" "
+    SELECT avg(lat), avg(lon), count(*)
+      FROM trees
+     GROUP BY CAST(lat/0.002 AS INT), CAST(lon/0.002 AS INT)
+     ORDER BY count(*) DESC
+     LIMIT 1;
+  " 2>/dev/null)" || return 1
+  [ -n "$row" ] || return 1
+  SAFE_LAT="$(printf '%s' "$row" | awk -F'|' '{print $1}')"
+  SAFE_LON="$(printf '%s' "$row" | awk -F'|' '{print $2}')"
+  SAFE_TREES="$(printf '%s' "$row" | awk -F'|' '{print $3}')"
+  [ -n "$SAFE_LAT" ] && [ -n "$SAFE_LON" ] || return 1
+  read -r SAFE_LAT_SPAN SAFE_LON_SPAN <<<"$(awk -v la="$SAFE_LAT" 'BEGIN{
+    pi = 3.14159265358979; m = 120
+    printf "%.8f %.8f", m/111320, m/(111320*cos(la*pi/180)) }')"
+  [ -n "$SAFE_LAT_SPAN" ] && [ -n "$SAFE_LON_SPAN" ]
+}
+
+# Writes the computed camera into the app's own preferences file (same encoding
+# `MapCameraMemory.encode` uses: four doubles, lat/lon/latSpan/lonSpan, MapOpeningCamera.swift)
+# and moves the device's location fix to the same point, so a reader who launches the app by
+# hand sees the same covered ground the suite was healed onto. Uses PlistBuddy, matching every
+# other read/repair in this script — not `defaults write`, which goes through cfprefsd and this
+# script already has no dependency on that cache being warm or cold.
+write_safe_camera() {
+  [ -n "$CONTAINER" ] || return 1
+  local prefs="$CONTAINER/Library/Preferences/$APP_ID.plist"
+  mkdir -p "$(dirname "$prefs")" 2>/dev/null || true
+  [ -f "$prefs" ] || plutil -create xml1 "$prefs" 2>/dev/null || return 1
+  /usr/libexec/PlistBuddy -c "Delete :map.lastCamera" "$prefs" >/dev/null 2>&1
+  /usr/libexec/PlistBuddy -c "Add :map.lastCamera array" "$prefs" >/dev/null 2>&1 || return 1
+  local v
+  for v in "$SAFE_LAT" "$SAFE_LON" "$SAFE_LAT_SPAN" "$SAFE_LON_SPAN"; do
+    /usr/libexec/PlistBuddy -c "Add :map.lastCamera: real $v" "$prefs" >/dev/null 2>&1 || return 1
+  done
+  xcrun simctl location "$UDID" set "$SAFE_LAT,$SAFE_LON" >/dev/null 2>&1
+  return 0
+}
+
+CAMERA_HEALED="no"; CAMERA_HEAL_REASON=""; CAMERA_BEFORE=""; CAMERA_AFTER=""
+# Computes, writes, then re-reads device state through the SAME functions `device_state_check`
+# trusts (`read_device_state` → `count_camera_trees`) — the only convergence proof worth having
+# is the one asked in the instrument's own voice, not a fresh assertion invented for this path.
+heal_camera() {
+  local reason="$1"
+  CAMERA_BEFORE="map.lastCamera=[${LAST_CAMERA}]${CAMERA_ZOOM:+ zoom=$CAMERA_ZOOM} camera-trees=${CAMERA_TREES}"
+  compute_safe_camera || refuse "camera heal ($reason): could not derive a safe camera from the seed."
+  write_safe_camera || refuse "camera heal ($reason): could not write the computed camera to the device."
+  read_device_state
+  if [ -n "$CAMERA_ZOOM" ] && [ "$CAMERA_ZOOM" -lt 16 ]; then
+    refuse "camera heal ($reason): computed camera is still too wide after healing — zoom $CAMERA_ZOOM."
+  fi
+  if [ "$CAMERA_TREES" = "0" ]; then
+    refuse "camera heal ($reason): computed camera still finds 0 seed trees within 250 m after healing."
+  fi
+  CAMERA_HEALED="yes"
+  CAMERA_HEAL_REASON="$reason"
+  CAMERA_AFTER="map.lastCamera=[${LAST_CAMERA}]${CAMERA_ZOOM:+ zoom=$CAMERA_ZOOM} camera-trees=${CAMERA_TREES} (densest-bin n=${SAFE_TREES})"
+}
+
 device_state_check() {
   case "$ACTIVE_CITY" in
     none|"n/a"*) ;;
@@ -192,27 +287,22 @@ device_state_check() {
       echo "    rm -f \"\$(xcrun simctl get_app_container $UDID $APP_ID data)/Library/Application Support/Cypress/cities/active-city\"" >&2
       exit 1 ;;
   esac
+  # #225: both camera refusals below now SELF-HEAL instead of exiting. Neither is a live
+  # collision — nothing else is touching this device — so there is a safe value to compute and
+  # no reason to hand it to the operator by hand.
   if [ -n "$CAMERA_ZOOM" ] && [ "$CAMERA_ZOOM" -lt 16 ]; then
-    echo "VERIFY-FAIL: this device remembers a map camera too wide for its own screen (E202-B)." >&2
-    echo "  map.lastCamera = [$LAST_CAMERA] → zoom $CAMERA_ZOOM at ${SCREEN_PT} pt; pins need zoom ≥ 16." >&2
-    echo "  Screen 01 reopens there and draws cluster badges, so cityTreePins(app) > 0 is never true." >&2
-    echo "  Clear it with the app not running, or it is rewritten on exit:" >&2
-    echo "    /usr/libexec/PlistBuddy -c 'Delete :map.lastCamera' \"\$(xcrun simctl get_app_container $UDID $APP_ID data)/Library/Preferences/$APP_ID.plist\"" >&2
-    exit 1
-  fi
+    echo "camera too wide for its own screen (E202-B): map.lastCamera = [$LAST_CAMERA] →" \
+         "zoom $CAMERA_ZOOM at ${SCREEN_PT} pt; pins need zoom ≥ 16. Healing…" >&2
+    heal_camera "E202-B too-wide"
   # Zero is the only refusing value. "n/a …" means the question could not be asked — a fresh
   # install with no remembered camera, or a worktree without the seed — and an unasked question
-  # must not read as an answered one, so it is stamped in the header either way.
-  if [ "$CAMERA_TREES" = "0" ]; then
-    echo "VERIFY-FAIL: this device's map camera points somewhere the inventory does not cover (E216)." >&2
-    echo "  map.lastCamera = [$LAST_CAMERA] → zoom $CAMERA_ZOOM, and the seed holds 0 trees within 250 m of it." >&2
-    echo "  Screen 01 reopens there and draws nothing, so tests waiting on a tree pin time out after 30 s." >&2
-    echo "  This is NOT a missing fix — a fixless device is fine and #121's tests skip on it. It is a" >&2
-    echo "  good fix in a place SF's street-tree inventory has no rows for (Golden Gate Park, the" >&2
-    echo "  Presidio, Lake Merced, the ocean, anywhere outside the two shipped cities)." >&2
-    echo "  Move the fix onto covered ground and relaunch the app once so it rewrites the camera:" >&2
-    echo "    xcrun simctl location $UDID set 37.7596,-122.4269" >&2
-    exit 1
+  # must not read as an answered one, so it is stamped in the header either way. A worktree with
+  # no seed cannot heal either (`compute_safe_camera` needs the same file), so that case still
+  # reaches `heal_camera`, which then refuses with a clear reason rather than looping silently.
+  elif [ "$CAMERA_TREES" = "0" ]; then
+    echo "camera over uncovered ground (E216): map.lastCamera = [$LAST_CAMERA] → zoom" \
+         "$CAMERA_ZOOM, and the seed holds 0 trees within 250 m of it. Healing…" >&2
+    heal_camera "E216 uncovered"
   fi
 }
 
@@ -240,6 +330,14 @@ read_device_state
   echo "CYPRESS-RUN: head $(git -C "$REPO" rev-parse --short HEAD 2>/dev/null || echo unknown)" \
        "$(git -C "$REPO" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
   echo "CYPRESS-RUN: device-state active-city=${ACTIVE_CITY} map.lastCamera=[${LAST_CAMERA}]${CAMERA_ZOOM:+ zoom=$CAMERA_ZOOM} camera-trees=${CAMERA_TREES}"
+  # #225: legible on its own face whether this device's camera was touched — E202-B's own
+  # lesson is that a skip-count (or here, a camera) that changed between two runs of the same
+  # tree is reporting a device change, not a code change, and must not be silent about it.
+  if [ "$CAMERA_HEALED" = "yes" ]; then
+    echo "CYPRESS-RUN: camera-auto-healed yes reason=${CAMERA_HEAL_REASON} before={${CAMERA_BEFORE}} after={${CAMERA_AFTER}}"
+  else
+    echo "CYPRESS-RUN: camera-auto-healed no"
+  fi
   echo "CYPRESS-RUN: args $*"
   [ "$SKIP_PREFLIGHT" = "1" ] && echo "CYPRESS-RUN: PREFLIGHT SKIPPED (CYPRESS_RUN_TESTS_SKIP_PREFLIGHT=1) — guards did not run"
   echo "CYPRESS-RUN: ---"
