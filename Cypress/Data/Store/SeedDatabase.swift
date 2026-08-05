@@ -58,7 +58,12 @@ public enum SeedDatabase {
     ///
     /// A published city file with a newer generation is refused — never downloaded
     /// (`CityInstallState.needsNewerApp`) and never attached (`CityLibrary`'s validation).
-    public static let newestKnownSchemaVersion = 14
+    ///
+    /// **15** is the pass that added `species_trigrams` (ERRATA E165). It is a pure addition:
+    /// every s14 file already in the wild still opens, still attaches and still searches, because
+    /// the search reads `SeedSchema.hasSpeciesTrigrams` and falls back to the substring match s14
+    /// shipped with. The bump is what lets a *later* build tell the two apart without guessing.
+    public static let newestKnownSchemaVersion = 15
 
     // MARK: - Locating
 
@@ -161,6 +166,17 @@ public struct SeedSchema: Equatable, Sendable {
     /// id space, and `seed_meta.identity_prefix` is the right answer for all of them. This flag is
     /// what lets the read layer and the contract test tell the two files apart rather than assume.
     public let hasIdSpace: Bool
+    /// Whether `species_trigrams` is present — the v15 seed pass (ERRATA E165), the similarity
+    /// index that lets the species search survive a typo or a name the catalog spells differently.
+    ///
+    /// A seed or city file built before that pass is still readable and still correct: the search
+    /// simply runs the substring match E165 shipped and finds what it always found. This is the
+    /// same shape as `hasIdSpace` above and exists for the same reason — the read layer asks the
+    /// file what it carries rather than trusting a version integer stamped somewhere else. That
+    /// matters more here than for the other flags, because the bundled seed and a downloaded city
+    /// file are two different generations at the same time (R37.3): the app can be reading an s15
+    /// bundle and an s14 San Jose in one session.
+    public let hasSpeciesTrigrams: Bool
     /// Whether the identity model is the current INTEGER-PK one.
     public var usesIntegerPrimaryKeys: Bool { treeIdentityColumn == "uuid" }
 
@@ -204,7 +220,8 @@ public struct SeedSchema: Equatable, Sendable {
             // `inventory_source` point at are one migration and are meaningless apart.
             hasIdSpace: try treeColumns.contains("id_space")
                 && connection.tableExists("id_spaces", in: schema)
-                && connection.tableExists("inventories", in: schema)
+                && connection.tableExists("inventories", in: schema),
+            hasSpeciesTrigrams: try connection.tableExists("species_trigrams", in: schema)
         )
     }
 }
