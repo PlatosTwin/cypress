@@ -2437,10 +2437,13 @@ product decision respectively, and both belong to whoever owns the license decla
 Two small substitutions on screen 15, both recorded because they are visible and neither is worth a
 resource or a component to fix:
 
-- §1 specifies "40×40 Cypress logo PNG". There is no logo in `Cypress/Resources` and no asset
-  catalog; `mocks/assets/logo-192.png` exists in the repo but is not a build input. The mark is C21
-  `LeafGlyph` — "the app's only bespoke mark" — at 40pt. Swapping in the artwork is one line at the
-  call site.
+- §1 specifies "40×40 Cypress logo PNG". There was no logo in `Cypress/Resources` and no asset
+  catalog; `mocks/assets/logo-192.png` existed in the repo but was not a build input, so the mark
+  drawn was C21 `LeafGlyph` — "the app's only bespoke mark" — at 40pt.
+
+  **RESOLVED.** `mocks/assets/logo-192.png` is now `CypressLogo` in `Cypress/Assets.xcassets` (a
+  build input), and `AccountAskView`'s header row draws it instead of `LeafGlyph` — the one-line
+  swap this entry called for. Confirmed against `ScreenSweepShots`' `15-account-ask` capture.
 - The frame's three pins are specified as 16×16 in `#4E8F6A`. `MapPin.cityTree` is 18pt in Canopy
   `#2F6B4F`. The backdrop is decorative — C18's own header calls the stylised grid the replaceable
   half of the seam — so the component that means "a tree on the map" was used rather than adding a

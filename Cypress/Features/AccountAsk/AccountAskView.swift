@@ -130,12 +130,13 @@ struct AccountAskScreen: View {
 
     /// `HStack(spacing:12)` — a 40×40 mark and the serif headline.
     ///
-    /// SCREENS.md 15 §1 says "40×40 Cypress logo PNG". There is no logo in the app bundle and adding
-    /// one is a resource change, so the mark here is C21 — "the app's only bespoke mark" — at the
-    /// same size. Recorded in ERRATA; swapping in the artwork is one line at this call site.
+    /// SCREENS.md 15 §1 says "40×40 Cypress logo PNG". ERRATA E91 recorded the substitute (`C21`
+    /// `LeafGlyph`) and the fix: `mocks/assets/logo-192.png` is now `CypressLogo` in the asset
+    /// catalog, swapped in here.
     private var header: some View {
         HStack(spacing: AccountAskMetrics.headerSpacing) {
-            LeafGlyph(size: AccountAskMetrics.markSide, tint: CypressColor.selectionFill)
+            Image("CypressLogo")
+                .resizable()
                 .frame(width: AccountAskMetrics.markSide, height: AccountAskMetrics.markSide)
 
             Text(presentation.headline)
