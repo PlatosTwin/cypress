@@ -860,6 +860,45 @@ public struct TreeProfile: Hashable, Sendable {
 
     /// Whether the photo has no owner left — see `anonymizedPhotoIDs`.
     public func isAnonymizedPhoto(_ photo: Photo) -> Bool { anonymizedPhotoIDs.contains(photo.id) }
+
+    /// The one visibility rule for a person's own screens — ERRATA E215.
+    ///
+    /// Own photos (`isOwnPhoto`): `Photo.isVisibleToItsContributor` — this device may see what it
+    /// wrote whatever moderation has or has not done with it yet. Everyone else's:
+    /// `Photo.isPubliclyVisible` — moderation gates *publication* (ERRATA E37), and that includes
+    /// publication to a stranger's own device.
+    ///
+    /// Filed because two features asked this question in two places and only one of them was
+    /// own-aware: `TreePhotosModel.load()` filtered every row on `isVisibleToItsContributor` alone,
+    /// which is correct only for as long as `ownPhotoIDs` happens to be every row a read returns
+    /// (`LocalAPI`, no sync). The day a read returns somebody else's photograph, that filter shows
+    /// it — unmoderated — on a stranger's screen. There is exactly one predicate now, asked here,
+    /// so the hero pill and the photo browser cannot answer this differently again.
+    public func isVisibleOnDevice(_ photo: Photo) -> Bool {
+        Self.isPhotoVisible(photo, own: isOwnPhoto(photo))
+    }
+
+    /// `isVisibleOnDevice`'s rule, with "own" taken as a parameter rather than read off
+    /// `ownPhotoIDs` — the context-free half of E215, so a caller that determines ownership its
+    /// own way still answers the identical question rather than restating it.
+    ///
+    /// `ContributionStore.heroPhotoIDs(treeIDs:attribution:)` (07 §6's `Nearby individuals`,
+    /// ERRATA E204/#222) is the reason this exists: it reads a *batch* of candidate trees this
+    /// device may never have visited, so there is no single `TreeProfile` to hold an
+    /// `ownPhotoIDs` set — ownership there comes from comparing the row's own `user_id`/
+    /// `device_id` columns to the caller's `Attribution` in SQL, the same comparison
+    /// `deletablePhotoIDs` already makes. Once "own" is known, the visibility question is this
+    /// one function, so a nearby row and the profile hero can never disagree about a
+    /// stranger's unmoderated photograph the way the hero and the browser once did.
+    public static func isPhotoVisible(_ photo: Photo, own: Bool) -> Bool {
+        own ? photo.isVisibleToItsContributor : photo.isPubliclyVisible
+    }
+
+    /// `photos`, narrowed by `isVisibleOnDevice` — the one series the hero (screen 03/14) and the
+    /// browser (screen 20) both build from (ERRATA E215).
+    public var visiblePhotos: Series<Photo> {
+        photos.filter(isVisibleOnDevice)
+    }
 }
 
 /// The body of `POST /trees`.

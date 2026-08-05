@@ -82,6 +82,43 @@ CREATE UNIQUE INDEX idx_species_scientific_name ON species(scientific_name);
 CREATE INDEX idx_species_common_name ON species(common_name);
 CREATE INDEX idx_species_curated ON species(curated);
 
+-- -------------------------------------------------------- species_trigrams --
+-- BUILD-PLAN section 6 specifies a trigram index over both species names.
+-- ERRATA E165 shipped substring matching as the on-device stand-in and recorded
+-- what that still does not do: a typo misses, and so does a name the catalog
+-- spells differently. This table is the part that fixes those two.
+--
+-- Why this and not `CREATE VIRTUAL TABLE ... USING fts5(tokenize='trigram')`:
+-- FTS5's trigram tokenizer answers *substring* queries. Measured against this
+-- very catalog, `MATCH 'liquidamber'` returns 0 rows and `MATCH 'sweetgum'`
+-- returns 1 -- byte-identical to what E165's LIKE '%q%' already returns, so an
+-- FTS5 trigram index would have added nothing to the two cases it was asked to
+-- fix. What section 6 means by "trigram index" is Postgres' pg_trgm, whose
+-- value is *similarity* -- the fraction of the query's trigrams a name carries
+-- -- and that is a set-overlap question, not a token-match one. So the overlap
+-- is stored directly and scored in SQL.
+--
+-- The scheme is pg_trgm's: lowercase, every non-[a-z0-9] run becomes a single
+-- space, then the string is padded with two leading and one trailing space and
+-- cut into 3-character windows. `Cypress` -> {'  c','  cy',...} etc. Padding is
+-- what makes a word's opening letters score, and the single internal space is
+-- what lets a trigram straddle two words, which is how a two-word query with a
+-- typo in each half ('monteray cypres') still reaches Monterey Cypress.
+--
+-- WITHOUT ROWID because every column is in the primary key: the table IS its
+-- index, so there is no second B-tree and no rowid to carry. ~21k rows for the
+-- 726 live species, which is why this costs well under a megabyte on a 108 MB
+-- file.
+--
+-- `Cypress/Data/Store/SpeciesQueries.swift` computes the query side and MUST
+-- agree with `species_trigrams()` in this file character for character;
+-- `SpeciesTrigramTests` is the test that holds the two together.
+CREATE TABLE species_trigrams (
+    trigram    TEXT NOT NULL,
+    species_id INTEGER NOT NULL REFERENCES species(id),
+    PRIMARY KEY (trigram, species_id)
+) WITHOUT ROWID;
+
 -- ---------------------------------------------------------- neighborhoods --
 -- Section 4 stores geom as MultiPolygon. On device we keep the source GeoJSON
 -- geometry verbatim in `geom_geojson` and precompute a bbox for cheap filters.

@@ -23,6 +23,14 @@ import XCTest
 /// 3. It can be left again — a pushed screen with no reachable Back is a trap.
 final class DeepLinkVoiceOverTests: XCTestCase, DeepLinkHarness {
 
+    /// Once per class, before `testMemorial` or any other test in it — see `DeepLinkOverrideReset`
+    /// (ERRATA E217 "Still open"). `testMemorial` is the one test here that writes a status override
+    /// and never un-writes it.
+    override class func setUp() {
+        super.setUp()
+        DeepLinkOverrideReset.performOnce()
+    }
+
     override func setUp() {
         super.setUp()
         continueAfterFailure = false
@@ -409,7 +417,8 @@ final class DeepLinkVoiceOverTests: XCTestCase, DeepLinkHarness {
     ///
     /// It also pins the format itself. The awkward cases are real ones lifted from live output: a
     /// trailing `, Selected` trait after the closing quote, a `, value: 0%` suffix, an apostrophe
-    /// inside a species cultivar name, and the `Path to element` footer that must not be parsed.
+    /// inside a species cultivar name, a focused `TextField`'s own second quoted field, and the
+    /// `Path to element` footer that must not be parsed.
     func testTreeOrderParserReportsAnInvertedTree() {
         let inverted = """
         Attributes: Application, 0x105e24fe0, pid: 21188, label: 'Cypress'
@@ -423,6 +432,7 @@ final class DeepLinkVoiceOverTests: XCTestCase, DeepLinkHarness {
               Button, 0x105d230e0, {{18.0, 142.3}, {89.3, 44.0}}, label: 'Alive', Selected
               StaticText, 0x102f2a060, {{51.0, 268.0}, {133.0, 17.0}}, label: 'Indian Laurel Fig Tree 'Green Gem''
               Other, 0x105929dd0, {{360.0, 49.0}, {30.0, 753.7}}, label: 'Vertical scroll bar, 2 pages', value: 0%
+              TextField, 0x10606a170, {{16.0, 70.0}, {408.0, 43.7}}, label: 'Search', placeholderValue: 'Search a species…', value: cypress, Keyboard Focused
         Path to element:
          →Application, 0x105e24fe0, pid: 21188, label: 'Never parsed'
         """
@@ -437,6 +447,22 @@ final class DeepLinkVoiceOverTests: XCTestCase, DeepLinkHarness {
         XCTAssertTrue(ordered.contains { $0.label == "Alive" })
         XCTAssertTrue(ordered.contains { $0.label == "Vertical scroll bar, 2 pages" })
         XCTAssertTrue(ordered.contains { $0.label == "Indian Laurel Fig Tree 'Green Gem'" })
+        // **Found live, task #221.** A focused `TextField` prints a second quoted field —
+        // `placeholderValue: '…'` — after the label, and the line's *last* quote then belongs to
+        // that field rather than to the label. The naive fix (take the line's last quote) reads
+        // this as "Search', placeholderValue: 'Search a species…", which is not a label anyone
+        // wrote — it is two fields mashed into one string by a parser that assumed the label was
+        // always the last quoted thing on the line.
+        XCTAssertTrue(
+            ordered.contains { $0.kind == "TextField" && $0.label == "Search" },
+            "a `TextField` with a quoted field after its label parsed as "
+                + "'\(ordered.first(where: { $0.kind == "TextField" })?.label ?? "nothing")' "
+                + "rather than 'Search' — the label's own closing quote, not the line's last one"
+        )
+        XCTAssertFalse(
+            ordered.contains { $0.label.contains("placeholderValue") },
+            "the TextField's placeholderValue field leaked into a label somewhere"
+        )
         XCTAssertFalse(
             ordered.contains { $0.label == "Never parsed" },
             "the `Path to element` footer was parsed, so elements are being counted twice"

@@ -16,7 +16,9 @@ import Testing
 /// `region`, never `position`, and nobody had pressed anything. So the next `updateUIView` compared
 /// a position that had not changed against a record that had been emptied, read that as a fresh
 /// request, and drove the camera back to the fix. Measured on screen 01 with 161 markers, the
-/// basemap body runs 240 times a second at rest, so "the next pass" was under a frame.
+/// basemap body ran 240 times a second at rest, so "the next pass" was under a frame. (That rate is
+/// zero at rest now, and this fix is why — see `MapCameraRequest`. None of the assertions below
+/// depend on the rate, which is the property that makes them worth keeping.)
 ///
 /// Making the two sides agree was not enough, and the probe proved it: `updateUIView` arrives
 /// carrying state from whichever body pass produced it, so after a pan there is always one in flight
@@ -134,8 +136,8 @@ struct MapCameraOwnershipTests {
 
     // MARK: - The defect
 
-    /// **The regression.** Pan, then let the screen update — which on the real screen it does 240
-    /// times a second — and the map must still be where it was put.
+    /// **The regression.** Pan, then let the screen update — which on the real screen it did 240
+    /// times a second when this was written — and the map must still be where it was put.
     ///
     /// Before the fix this failed with the camera back at the fix, several hundred meters away.
     @Test("a pan is not undone by the update passes that follow it")
@@ -171,7 +173,8 @@ struct MapCameraOwnershipTests {
     /// **The pass that actually breaks it.** SwiftUI hands `updateUIView` the view value from the
     /// body pass that produced it, and that pass read the app's state when it ran — so after a pan
     /// there is an update in flight carrying the camera as it was *before* the pan, and on screen 01,
-    /// at 240 passes a second, there always is.
+    /// at the 240 passes a second it then ran at, there always was. A pan still produces passes at any
+    /// rest-state rate, which is why this assertion outlives the number.
     ///
     /// This is the test the first two fixes would have failed. Clearing the record failed it, and so
     /// did writing the reader's region into both sides: measured on the device, the second one still
@@ -220,6 +223,56 @@ struct MapCameraOwnershipTests {
         #expect(
             Self.meters(screen.mapView.region.center, Self.fix) < 50,
             "a press of the recenter control did not move the camera to the fix"
+        )
+    }
+
+    // MARK: - The invariant that keeps the other two screens still
+
+    /// **An opening camera is rebuilt on every pass, and must never once look like a fresh ask.**
+    ///
+    /// Screen 01 owns its camera in `@State`. The two other screens that draw this basemap do not:
+    /// `VisitPinAdjustView` and `PinSetMapView` both spell the binding
+    /// `Binding(get: { position ?? .opening(…) }, set: …)`, so until the reader touches something the
+    /// getter **constructs a brand-new `MapCameraRequest` on every body pass**. That is the case
+    /// `MapCameraRequest.opening(_:)` exists for, and both call sites carry a comment saying
+    /// `.opening`, not `.move(to:)` — because a ticket minted in a getter is a fresh camera request as
+    /// often as the view is evaluated.
+    ///
+    /// Three comments assert that invariant and nothing tested it. `opening(_:)` is three lines and
+    /// reads like a convenience next to `move(to:)`, and the cost of "tidying" the two into one is
+    /// invisible at the call site: it is a map that drags itself back out from under the reader's
+    /// finger on two screens, which is E140 exactly. So this asserts the property head-on — rebuild
+    /// the request as fast as a body pass can and the camera must not move.
+    ///
+    /// Red-proved by giving `opening(_:)` a real ticket (`move(to: region)`): this fails with the
+    /// camera ~550 m off the pan and back at the fix, while `panSurvivesTheNextUpdatePass` above stays
+    /// green — that one never rebuilds the request, so it cannot see this.
+    @Test("an opening camera rebuilt on every pass never becomes a new request")
+    func rebuiltOpeningCameraNeverBecomesANewRequest() {
+        let screen = Screen(opening: Self.opening())
+
+        screen.readerPans(to: Self.pannedTo)
+        #expect(
+            Self.meters(screen.mapView.region.center, Self.pannedTo) < 50,
+            "the gesture itself must have moved the camera, or this test asserts nothing"
+        )
+
+        // A second of the rate E139 measured on screen 01, with the request **reconstructed** each
+        // time — which is what those two `Binding` getters hand `updateUIView` before anybody has
+        // pressed anything.
+        for _ in 0..<240 {
+            screen.position = .opening(Self.opening())
+            screen.updatePass()
+        }
+
+        let center = screen.mapView.region.center
+        #expect(
+            Self.meters(center, Self.pannedTo) < 50,
+            """
+            a rebuilt opening camera drove the map \(Int(Self.meters(center, Self.pannedTo))) m off \
+            the reader's pan and back toward the fix — `MapCameraRequest.opening(_:)` is minting \
+            tickets, so the pin-adjust and pin-set maps cannot be panned (ERRATA E140)
+            """
         )
     }
 

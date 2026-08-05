@@ -650,6 +650,43 @@ CREATE UNIQUE INDEX idx_species_scientific_name ON species(scientific_name);
 CREATE INDEX idx_species_common_name ON species(common_name);
 CREATE INDEX idx_species_curated ON species(curated);
 
+-- -------------------------------------------------------- species_trigrams --
+-- BUILD-PLAN section 6 specifies a trigram index over both species names.
+-- ERRATA E165 shipped substring matching as the on-device stand-in and recorded
+-- what that still does not do: a typo misses, and so does a name the catalog
+-- spells differently. This table is the part that fixes those two.
+--
+-- Why this and not `CREATE VIRTUAL TABLE ... USING fts5(tokenize='trigram')`:
+-- FTS5's trigram tokenizer answers *substring* queries. Measured against this
+-- very catalog, `MATCH 'liquidamber'` returns 0 rows and `MATCH 'sweetgum'`
+-- returns 1 -- byte-identical to what E165's LIKE '%q%' already returns, so an
+-- FTS5 trigram index would have added nothing to the two cases it was asked to
+-- fix. What section 6 means by "trigram index" is Postgres' pg_trgm, whose
+-- value is *similarity* -- the fraction of the query's trigrams a name carries
+-- -- and that is a set-overlap question, not a token-match one. So the overlap
+-- is stored directly and scored in SQL.
+--
+-- The scheme is pg_trgm's: lowercase, every non-[a-z0-9] run becomes a single
+-- space, then the string is padded with two leading and one trailing space and
+-- cut into 3-character windows. `Cypress` -> {'  c','  cy',...} etc. Padding is
+-- what makes a word's opening letters score, and the single internal space is
+-- what lets a trigram straddle two words, which is how a two-word query with a
+-- typo in each half ('monteray cypres') still reaches Monterey Cypress.
+--
+-- WITHOUT ROWID because every column is in the primary key: the table IS its
+-- index, so there is no second B-tree and no rowid to carry. ~21k rows for the
+-- 726 live species, which is why this costs well under a megabyte on a 108 MB
+-- file.
+--
+-- `Cypress/Data/Store/SpeciesQueries.swift` computes the query side and MUST
+-- agree with `species_trigrams()` in this file character for character;
+-- `SpeciesTrigramTests` is the test that holds the two together.
+CREATE TABLE species_trigrams (
+    trigram    TEXT NOT NULL,
+    species_id INTEGER NOT NULL REFERENCES species(id),
+    PRIMARY KEY (trigram, species_id)
+) WITHOUT ROWID;
+
 -- ---------------------------------------------------------- neighborhoods --
 -- Section 4 stores geom as MultiPolygon. On device we keep the source GeoJSON
 -- geometry verbatim in `geom_geojson` and precompute a bbox for cheap filters.
@@ -1018,6 +1055,71 @@ SEASONAL_KEYS = ("bloom_months", "fall_color_months", "fruit_months", "new_growt
 def _compact_json(value) -> str:
     """One spelling of every JSON column, so a rebuild is byte-identical."""
     return json.dumps(value, separators=(",", ":"), ensure_ascii=False)
+
+
+# Two leading spaces and one trailing, pg_trgm's padding. The leading pair is
+# what makes the first and second letters of a word carry their own trigram, so
+# a query's opening is scored rather than lost; the trailing single space closes
+# the last one.
+TRIGRAM_PAD_HEAD = "  "
+TRIGRAM_PAD_TAIL = " "
+
+
+def species_trigrams(text: str) -> set:
+    """The trigram set of one name -- the seed side of E165's similarity search.
+
+    Normalisation is deliberately ASCII-only: `.lower()` folds the query and the
+    catalog the same way for a-z, and every other scalar (a hyphen, a comma, an
+    apostrophe in `'Rotundiloba'`, an accented letter) collapses to a single
+    space. That is the same fold
+    `SpeciesQueries.trigrams(_:)` performs in Swift, and the pair is pinned by
+    `SpeciesTrigramTests.theSwiftAndPythonTrigramsAgree`. Change one and the
+    seed's index stops answering the app's questions -- silently, because a
+    mismatched trigram simply never joins.
+    """
+    folded = "".join(
+        c if ("a" <= c <= "z" or "0" <= c <= "9") else " "
+        for c in text.lower()
+    )
+    # Collapse runs and trim, so 'Sycamore,  London Plane' and 'Sycamore London
+    # Plane' produce one trigram set rather than two.
+    collapsed = " ".join(folded.split())
+    if not collapsed:
+        return set()
+    padded = TRIGRAM_PAD_HEAD + collapsed + TRIGRAM_PAD_TAIL
+    return {padded[i:i + 3] for i in range(len(padded) - 2)}
+
+
+def build_species_trigram_index(conn) -> int:
+    """Fill `species_trigrams` from the finished `species` table. Returns the row count.
+
+    Runs after the species content pass, because it indexes the names as they
+    ship: a name corrected by Fixtures/species/*.yaml must be indexed as
+    corrected, not as the city import first spelled it.
+
+    Stub rows (`:: 9662` -- a qSpecies string the ingest could not read, RULINGS
+    R47) and soft-deleted rows are skipped. They are the rows the search itself
+    excludes, so indexing them would only cost space and let a fuzzy match
+    surface a name the catalog refuses to offer.
+    """
+    rows = conn.execute(
+        "SELECT id, scientific_name, COALESCE(common_name, '') FROM species "
+        "WHERE deleted_at IS NULL AND scientific_name NOT LIKE ':: %'"
+    ).fetchall()
+
+    pairs = []
+    for species_id, scientific_name, common_name in rows:
+        for gram in species_trigrams(scientific_name) | species_trigrams(common_name):
+            pairs.append((gram, species_id))
+
+    # Sorted so a rebuild writes the same pages in the same order; the file is
+    # meant to be byte-identical across builds of the same data (R37.1).
+    pairs.sort()
+    conn.executemany(
+        "INSERT OR IGNORE INTO species_trigrams(trigram, species_id) VALUES(?,?)", pairs
+    )
+    conn.commit()
+    return len(pairs)
 
 
 def load_species_content(fixtures_dir: str, species_by_key: dict, strict: bool = True) -> dict:
@@ -1818,6 +1920,12 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
         f"of {len(species_by_key)} species"
     )
 
+    # ------------------------------------------------------- species trigrams
+    # Strictly after the content pass above: it is the last thing that can
+    # change a name, and the index has to describe the names that ship (E165).
+    trigram_rows = build_species_trigram_index(conn)
+    log(f"species trigrams: {trigram_rows:,} rows")
+
     # ------------------------------------------------------------ stub ceiling
     species_bearing_rows = stats["parsed_rows"] + stats["stub_rows"]
     stub_pct = (
@@ -2082,6 +2190,7 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             for seed_column, csv_column in CITY_RECORD_COLUMNS
         },
         "species_count": str(len(species_by_key)),
+        "species_trigram_rows": str(trigram_rows),
         "schema_contract": "Fixtures/seed/schema.sql",
     }
     conn.executemany("INSERT INTO seed_meta(key,value) VALUES(?,?)", sorted(meta.items()))

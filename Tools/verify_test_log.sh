@@ -125,6 +125,13 @@ note "SwiftCompile tasks=${COMPILE_TASKS}"
 HAS_TEST_MARKER=0
 grep -qE '\*\* TEST (SUCCEEDED|FAILED) \*\*|Test run with [0-9]+ tests? .*(passed|failed)' "$LOG" && HAS_TEST_MARKER=1
 
+# Did an XCTest phase (CypressUITests, or any XCTest target) actually start? Swift Testing's
+# XCTest bridge never emits this line shape for its own specimens — only genuine XCTest suites
+# print `Test Case '-[Target.Suite testName]' ...` — so this is a clean signal that a *second*,
+# independent phase began after whatever Swift Testing did or didn't finish.
+HAS_XCTEST_PHASE=0
+grep -qE "^Test Case '-\[" "$LOG" && HAS_XCTEST_PHASE=1
+
 if [ "$WARNINGS_MODE" = 1 ]; then
   # A build that compiled nothing cannot have reported a warning. Refuse to certify from it.
   if [ "$COMPILE_TASKS" -eq 0 ]; then
@@ -176,6 +183,20 @@ fi
 [ "$HAS_TEST_MARKER" = 1 ] || \
   fail "no terminal result marker — build was killed, is still running, or never ran tests"
 
+# E139/E231: terminal completeness above is satisfied by Swift Testing's own "Test run with N
+# tests ... passed" line ALONE, because that regex is an OR. That line only speaks for the Swift
+# Testing phase. If an XCTest phase (CypressUITests) started after it, that phase needs its OWN
+# terminus — the invocation-level `** TEST SUCCEEDED **` / `** TEST FAILED **` markers, which are
+# printed once, at the end of the whole xcodebuild invocation, after every phase it ran. Their
+# absence here means the XCTest phase that started is not finished: killed, interrupted, or still
+# running — exactly the shape of the E139 artifact, which ends `** BUILD INTERRUPTED **` with an
+# XCTest suite mid-test and no `** TEST SUCCEEDED **`/`FAILED` anywhere in the file. A Swift
+# Testing pass earlier in the same log is not evidence about a phase that came after it.
+if [ "$HAS_XCTEST_PHASE" = 1 ]; then
+  grep -qE '\*\* TEST (SUCCEEDED|FAILED) \*\*' "$LOG" || \
+    fail "an XCTest phase started (Test Case lines present) but the log has neither ** TEST SUCCEEDED ** nor ** TEST FAILED ** — that phase is incomplete (killed/interrupted/still running), not passing"
+fi
+
 grep -q '\*\* TEST FAILED \*\*' "$LOG" && fail "** TEST FAILED ** present"
 
 # A real pass line: Swift Testing's count is the only meaningful unit-test line —
@@ -186,6 +207,20 @@ SWIFT_LINE=$(grep -E 'Test run with [1-9][0-9]* tests?' "$LOG" | tail -1)
 grep -qE 'Test run with 0 tests' "$LOG" && [ -z "$SWIFT_LINE" ] && \
   fail "Swift Testing ran 0 tests — an -only-testing filter matched nothing; a zero-count green is not evidence"
 XCTEST_LINE=$(grep -E 'Executed [1-9][0-9]* tests?' "$LOG" | tail -1)
+
+# E139/E231: XCTEST_LINE above is only the LAST "Executed" line in the file, and it was never
+# checked for failures at all — a run that finishes normally prints one final AGGREGATE line
+# summing every suite, so tail -1 happens to be the right number to judge. An INTERRUPTED run
+# never reaches that aggregate: tail -1 then lands on whichever individual suite happened to run
+# (and finish) last, which can easily be a clean suite that started *after* an earlier one failed.
+# The kept E139 artifact is exactly this: `DeepLinkVoiceOverTests` finishes with "Executed 26
+# tests, with 1 failure", then `MapCenteredStateUITests` runs clean and is what tail -1 sees,
+# then the run is killed mid-`MapFilterAccessibilityTests` with no aggregate line ever printed.
+# Scan every "Executed" line the log contains, not just the last one.
+XCTEST_FAILURE_LINES=$(grep -E 'Executed [0-9]+ tests?,' "$LOG" | grep -E '[1-9][0-9]* failures?')
+if [ -n "$XCTEST_FAILURE_LINES" ]; then
+  fail "XCTest reports failures: $(printf '%s' "$XCTEST_FAILURE_LINES" | sed 's/^[[:space:]]*//' | paste -sd '; ' -)"
+fi
 
 if [ -z "$SWIFT_LINE" ] && [ -z "$XCTEST_LINE" ]; then
   fail "nothing actually executed ('Executed 0 tests' green is XCTest blind to Swift Testing, or an empty scheme/filter)"

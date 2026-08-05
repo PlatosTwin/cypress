@@ -23,6 +23,57 @@ import XCTest
 /// files want, and a name as ordinary as `launch` should not be visible to the rest.
 protocol DeepLinkHarness: XCTestCase {}
 
+/// A process-wide, one-time reset of this device's `tree_status_overrides`, run before the first
+/// `.memorial` (or `.deadProfile`) case of the suite (ERRATA E217 "Still open").
+///
+/// **Why the leak is real and why nothing before this cleared it.** `.memorial` marks the nearest
+/// standing tree removed and never un-marks anything; `standingTree` — through `DebugDeepLink
+/// .candidates(_:)` — correctly skips a marked tree on every later resolution, in this run and every
+/// run after it, because the row this writes outlives the launch and, per E217's own repair note,
+/// the device container. A device driven for long enough walks the `.memorial` slot outward one
+/// record per run with nothing in the harness or the app to stop it — the "Still open" paragraph's
+/// own words. This does not change the march; it starts every run's march from the same place.
+///
+/// **A free enum, not a `DeepLinkHarness` requirement.** `PrimaryCTAReachabilityTests` reaches
+/// `.memorial` through its own `launchAtAX5(_:)` and does not conform to this protocol — the file
+/// comment on `DeepLinkHarness` above records that an extension method named `launch` collided with
+/// two classes' own private helpers of the same name, which is the same reason a *second* ordinary
+/// name is not put on the protocol here. A caller that does not conform still needs to reach this.
+enum DeepLinkOverrideReset {
+    /// The launch environment key `DebugDeepLink.clearStatusOverridesEnvironmentKey` resolves to,
+    /// copied by hand for the reason every other literal in this black-box target is (see
+    /// `PrimaryCTAReachabilityTests`'s file comment): nothing here imports `Cypress`.
+    private static let clearKey = "CYPRESS_CLEAR_STATUS_OVERRIDES"
+    /// `DebugDeepLink.overridesClearedMessage`, copied by hand for the same reason.
+    private static let clearedText = "STATUS OVERRIDES CLEARED"
+
+    private static var didRun = false
+
+    /// Call from a `class func setUp()` — once per class, before any instance or test method in it —
+    /// rather than an instance `setUp()`, which XCTest calls before every test and would pay a whole
+    /// extra app launch per method for a table that is already clear after the first. Safe to call
+    /// from more than one class's `class func setUp()` in the same suite: `didRun` makes every call
+    /// after the first a no-op, which is what lets each `.memorial`-reaching class own its own call
+    /// rather than one class silently doing it on the others' behalf.
+    static func performOnce() {
+        guard !didRun else { return }
+        didRun = true
+        let app = XCUIApplication()
+        app.launchEnvironment[clearKey] = "1"
+        app.launch()
+        let banner = app.staticTexts[clearedText]
+        // Generous for `arrive`'s reason: a cold launch pays the seed-attach cost before anything —
+        // here, before any text at all — can appear.
+        if !banner.waitForExistence(timeout: 30) {
+            XCTFail(
+                "the status-override reset launch never showed '\(clearedText)' — "
+                    + "tree_status_overrides may not be clear for this run (ERRATA E217)"
+            )
+        }
+        app.terminate()
+    }
+}
+
 extension DeepLinkHarness {
 
 
@@ -164,10 +215,32 @@ extension DeepLinkHarness {
             if line.hasPrefix("Path to element") || line.hasPrefix("Query chain") { break }
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             guard let comma = trimmed.firstIndex(of: ","),
-                  let labelRange = trimmed.range(of: "label: '"),
-                  let close = trimmed.lastIndex(of: "'"),
-                  labelRange.upperBound < close
+                  let labelRange = trimmed.range(of: "label: '")
             else { continue }
+            // The label's own closing quote, not the line's last one (found live, task #221: a
+            // focused `TextField` prints `label: 'Search', placeholderValue: 'Search a
+            // species…', value: cypress, Keyboard Focused` — a second quoted field *after* the
+            // label). Taking the line's last quote grabbed `placeholderValue`'s closing quote
+            // instead and returned "Search', placeholderValue: 'Search a species…" as the label.
+            //
+            // The fix: the label ends at the first `'` immediately followed by `, ` (the start of
+            // the next field), searched from where the label opens. A label that itself embeds a
+            // quoted phrase — the cultivar name in `testTreeOrderParserReportsAnInvertedTree`'s own
+            // fixture, "Indian Laurel Fig Tree 'Green Gem'" — has no `', ` *inside* it, only at its
+            // true end if anything follows, so that case is unaffected. A label with nothing after
+            // it on the line — most of them — has no `', ` anywhere, and falls back to the line's
+            // last quote exactly as before.
+            let close: String.Index
+            if let boundary = trimmed.range(
+                of: "', ", range: labelRange.upperBound..<trimmed.endIndex
+            ) {
+                close = boundary.lowerBound
+            } else if let last = trimmed.lastIndex(of: "'") {
+                close = last
+            } else {
+                continue
+            }
+            guard labelRange.upperBound < close else { continue }
             result.append((String(trimmed[trimmed.startIndex..<comma]),
                            String(trimmed[labelRange.upperBound..<close])))
         }

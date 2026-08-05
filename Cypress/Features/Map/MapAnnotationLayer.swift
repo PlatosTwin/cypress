@@ -224,10 +224,21 @@ enum MapPinImage {
 /// **A `UIViewRepresentable` has no layout hook, and this one needs exactly one** (ERRATA E168).
 /// `makeUIView` and the `updateUIView` passes around it can all run while the view is still
 /// `bounds == .zero`, and a camera cannot be aimed at a map with no area — so the opening camera has
-/// to wait for a size. Waiting is safe only if something wakes the layer when the size arrives:
-/// screen 01 re-runs its body 240 times a second and would have produced another pass on its own,
-/// but the two other screens that draw this basemap are quiet, and a quiet screen would have sat on
-/// MapKit's default region forever.
+/// to wait for a size. Waiting is safe only if something wakes the layer when the size arrives; this
+/// hook is that guarantee, and what it is actually worth is set out at the end of this comment.
+///
+/// **Do not reason about it from the body's evaluation rate.** This note used to argue that screen 01
+/// "re-runs its body 240 times a second and would have produced another pass on its own", leaving the
+/// hook to serve the two quieter screens. The rate was the wrong quantity to look at, which is worth
+/// recording because a later round reasoned from it and got the opposite answer. E140 has since taken
+/// screen 01's *at-rest* rate to zero (re-measured under task #226 — see `MapCameraRequest`), and it
+/// changed nothing here: **a screen being mounted is not a screen at rest.** The mount delivers
+/// `updateUIView` passes whatever the resting rate is, and that is where the aim arrives from. The
+/// race below is structural, so no change in the resting rate can decide it either way.
+///
+/// Re-ablated under #226 on all three screens, with the callback removed and a fix granted: screen 01
+/// still opens on Folsom St with its 87 markers, the pin-adjust map on its anchor in Dolores Park, and
+/// the pin-set map framed on its thirteen — indistinguishable from the build that has it.
 ///
 /// One callback, fired once, then released. It is not a general layout observer and must not become
 /// one — everything else this file does is driven by `updateUIView`, and it stays that way.
@@ -247,7 +258,8 @@ enum MapPinImage {
 /// **Be honest about what this hook does on screen 01: nothing.** Measured on every launch traced,
 /// it loses the race to `updateUIView` and its `applyCameraIfChanged` is a `REJECT` of a ticket
 /// already spent. Removing the hop, or the whole hook, changes no observable behavior there and no
-/// test — that was built and run, both ways. Do not read the paragraphs above as a description of
+/// test — that was built and run, both ways, and #226 re-ran the ablation after E140 and found the
+/// same on the pin-adjust and pin-set maps too. Do not read the paragraphs above as a description of
 /// something that fires.
 ///
 /// **What it is actually for, since `mapViewDidChangeVisibleRegion` was gated.** That callback now
@@ -663,7 +675,8 @@ struct MapAnnotationLayer: UIViewRepresentable {
         /// **A settle says nothing about the camera any more, and that is the fix for E140.** This
         /// used to answer a reader's pan by clearing the record of the last camera the app asked for,
         /// so that pressing the recenter control a second time was not swallowed as a duplicate value
-        /// (#66). Clearing it meant the next `updateUIView` — one of about 240 a second — found a
+        /// (#66). Clearing it meant the next `updateUIView` — one of about 240 a second, as the rate
+        /// then was — found a
         /// position that did not match an empty record, took that for a fresh request, and drove the
         /// camera back to the reader's own location. The map could not be moved. A press now mints
         /// its own ticket whether or not it names the same place, so the second press works without

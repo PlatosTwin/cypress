@@ -301,7 +301,14 @@ struct ScreenSweepShots {
             ShareView(treeID: SharePreviewFixtures.treeID, api: SharePreviewAPI())
         })
 
-        #expect(await Self.sweep("11-growth-history") {
+        // Tall at AX5 (E199's flagged verification gap, #228): the log rows `GrowthHistoryView
+        // .logRow`'s `ViewThatFits` fix touches sit below the fold in a phone-height capture, so
+        // a default-height AX5 shot shows only the chart and never exercises the fix. Same
+        // technique as `02b-add-tree` and `c06-city-record-full-ramp` below.
+        #expect(await Self.sweep(
+            "11-growth-history",
+            ax5ViewportHeight: Self.tallestViewport
+        ) {
             NavigationStack {
                 GrowthHistoryView(
                     treeID: GrowthHistoryPreviewFixtures.treeID,

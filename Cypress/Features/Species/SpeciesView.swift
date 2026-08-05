@@ -299,7 +299,14 @@ struct SpeciesView: View {
             router?.push(.treeProfile(row.treeID))
         } label: {
             HStack(spacing: SpeciesMetrics.rowGap) {
-                ThumbnailGradient(SpeciesThumbnail.placeholder(for: species), size: .nearby)
+                // The species-hashed gradient (`SpeciesThumbnail.placeholder`) stays the
+                // placeholder — passed to `PhotoImage` rather than drawn directly, the same wiring
+                // `MapTreeCard` uses — so a tree this device has never photographed, or whose
+                // photograph has not loaded yet, draws exactly what this row always drew (ERRATA
+                // E204, closing the "found, and deliberately left alone" item).
+                ThumbnailGradient(size: .nearby) {
+                    PhotoImage(photoID: row.heroPhotoID, placeholder: SpeciesThumbnail.placeholder(for: species).recipe)
+                }
 
                 VStack(alignment: .leading, spacing: SpeciesMetrics.rowTextSpacing) {
                     if let title = row.title {

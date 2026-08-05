@@ -976,14 +976,29 @@ public actor LocalAPI: CypressAPI {
             // One row more than the screen draws was asked for, so `isComplete` is a fact about the
             // read rather than a guess — the same proof `ContributionStore` uses.
             let isComplete = candidates.count <= SpeciesGuideLimits.nearbyRowLimit
-            let rows = try candidates.prefix(SpeciesGuideLimits.nearbyRowLimit).map { candidate in
+            let drawnCandidates = candidates.prefix(SpeciesGuideLimits.nearbyRowLimit)
+
+            // Which photograph each row draws, one statement for the whole section (ERRATA E204) —
+            // not `heroPhotoIDs()`'s unscoped shape, which would scan this device's entire photo
+            // library to answer a two-or-three-tree question. See that method's own comment.
+            // `attribution` is required here and not on `heroPhotoIDs()` above (ERRATA E215): these
+            // candidates are not "this device's own trees", so a photograph the read finds may be a
+            // stranger's, and only `attribution`'s own rows may lead with an unmoderated one.
+            let heroPhotoIDs = try contributions.heroPhotoIDs(
+                treeIDs: Set(drawnCandidates.map(\.tree.id)),
+                attribution: attribution,
+                connection: connection
+            )
+
+            let rows = try drawnCandidates.map { candidate in
                 NearbySpeciesTree(
                     treeID: candidate.tree.id,
                     title: try contributions.activeName(treeID: candidate.tree.id, connection: connection)?.name
                         ?? candidate.tree.address,
                     distanceM: candidate.distanceM,
                     photoCount: try contributions.photos(treeID: candidate.tree.id, connection: connection).totalCount,
-                    vitality: try contributions.latestObservation(treeID: candidate.tree.id, connection: connection)?.vitality
+                    vitality: try contributions.latestObservation(treeID: candidate.tree.id, connection: connection)?.vitality,
+                    heroPhotoID: heroPhotoIDs[candidate.tree.id]
                 )
             }
 
@@ -2205,6 +2220,25 @@ public actor LocalAPI: CypressAPI {
         try await store.queue.read { connection in
             try contributions.statusOverrides(connection: connection)
         }
+    }
+
+    /// Test seam (ERRATA E217 "Still open"): empty `tree_status_overrides`.
+    ///
+    /// **Why this has to exist at all.** `.memorial` and `.deadProfile` are the only two cases that
+    /// write here, and neither ever un-writes: `.memorial` marks the nearest standing tree removed and
+    /// `standingTree` — through `candidates(_:)` — correctly excludes it next time, so a device driven
+    /// for long enough walks its `.memorial` slot outward one record per run with nothing to stop it.
+    /// The errata that found this left it explicitly unfixed and named the shape: a seam the harness
+    /// calls before the walk can start, not a change to how the walk works.
+    ///
+    /// The other write. See `overrideCache` — same rule as `debugMarkStatus` and `confirmReview`, and
+    /// for the same reason: this changes what the table holds, and nothing else invalidates the cache
+    /// on this actor's behalf.
+    public func debugClearStatusOverrides() async throws {
+        try await store.queue.write { connection in
+            try contributions.clearStatusOverrides(connection: connection)
+        }
+        overrideCache = nil
     }
 
     /// Test seam (ERRATA E125): give a real seed tree some photographs, so the deep-link harness can

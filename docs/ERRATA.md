@@ -2437,10 +2437,13 @@ product decision respectively, and both belong to whoever owns the license decla
 Two small substitutions on screen 15, both recorded because they are visible and neither is worth a
 resource or a component to fix:
 
-- §1 specifies "40×40 Cypress logo PNG". There is no logo in `Cypress/Resources` and no asset
-  catalog; `mocks/assets/logo-192.png` exists in the repo but is not a build input. The mark is C21
-  `LeafGlyph` — "the app's only bespoke mark" — at 40pt. Swapping in the artwork is one line at the
-  call site.
+- §1 specifies "40×40 Cypress logo PNG". There was no logo in `Cypress/Resources` and no asset
+  catalog; `mocks/assets/logo-192.png` existed in the repo but was not a build input, so the mark
+  drawn was C21 `LeafGlyph` — "the app's only bespoke mark" — at 40pt.
+
+  **RESOLVED.** `mocks/assets/logo-192.png` is now `CypressLogo` in `Cypress/Assets.xcassets` (a
+  build input), and `AccountAskView`'s header row draws it instead of `LeafGlyph` — the one-line
+  swap this entry called for. Confirmed against `ScreenSweepShots`' `15-account-ask` capture.
 - The frame's three pins are specified as 16×16 in `#4E8F6A`. `MapPin.cityTree` is 18pt in Canopy
   `#2F6B4F`. The backdrop is decorative — C18's own header calls the stylised grid the replaceable
   half of the seam — so the component that means "a tree on the map" was used rather than adding a
@@ -13965,3 +13968,1249 @@ an observed contrast. When the first app-source PR lands, that is the control: i
 reports anything other than `SKIPPED`, this entry is wrong and should be deleted.
 
 Until then the replay command is the instrument, and it does not depend on any of this.
+
+### E227 — E215's two photo-visibility predicates become one, asked once (task #219)
+
+**Appends to the existing ERRATA E215 entry** ("The hero pill and the photo browser filter the
+same series by two different rules").
+
+#### What E215's premises checked out as
+
+Verified against the code before building, per E215's own instruction and CLAUDE.md's "facts in
+your brief may be wrong":
+
+- Both sites really do read the same `TreeProfile.photos` series from `LocalAPI.treeProfile(id:)`
+  — confirmed.
+- The two predicates really did disagree in mechanism exactly as E215 describes —
+  `TreeProfilePresentation.visiblePhotos` (own-aware: `isOwnPhoto(photo) ? isVisibleToItsContributor
+  : isPubliclyVisible`) versus `TreePhotosModel.load()` (own-blind: `isVisibleToItsContributor`
+  alone) — confirmed by reading both sites directly.
+- They agree today only because `LocalAPI` sets `ownPhotoIDs` to every row it returns (no sync
+  exists) — confirmed in `LocalAPI.swift`.
+- **One premise the errata did not name, found while building:** a *third* site duplicated the same
+  own-aware predicate inline — `MemorialPresentation.init` (screen 19), one line, byte-for-byte the
+  same ternary as the hero's. It was not named in E215 and was not itself a live disagreement (its
+  own copy was correct), but it was a second place the rule could drift from the hero's the next
+  time either was touched. Folded into the same fix rather than left as a second unification still
+  owed.
+
+#### The repair
+
+One predicate, moved to `TreeProfile` in `Cypress/Data/API/CypressAPI.swift` (Data layer — the
+predicate reads only `Photo.isVisibleToItsContributor` / `Photo.isPubliclyVisible` (Core) and
+`TreeProfile.isOwnPhoto` (Data), so it needs nothing Data may not import per ARCHITECTURE §2):
+
+- `TreeProfile.isVisibleOnDevice(_:)` — the predicate itself.
+- `TreeProfile.visiblePhotos: Series<Photo>` — `photos.filter(isVisibleOnDevice)`, preserving the
+  series' completeness (`Series.filter`).
+
+All three sites now read it instead of restating it:
+
+- `TreeProfilePresentation.visiblePhotos` → `profile.visiblePhotos`.
+- `TreePhotosModel.load()` → `photos = profile.visiblePhotos.items` (was
+  `profile.photos.items.filter(\.isVisibleToItsContributor)` — the own-blind filter E215 names).
+- `MemorialPresentation.init` → `profile.visiblePhotos` (was the same inline ternary as the hero's,
+  now a read instead of a second copy).
+
+#### The test
+
+`CypressTests/PhotoVisibilityParityTests.swift` — one payload (`ownPhotoIDs` naming one of three
+photographs, the other two somebody else's, one pending and one approved), read once by both
+`TreeProfilePresentation.visiblePhotos` and `TreePhotosModel.load()` through a stub `CypressAPI`.
+Asserts the two sets are equal, and separately pins the named defect: a stranger's `.pending`
+photograph must not reach the browser even though it is visible on its own contributor's device.
+
+**Red-proof.** Reverted `TreePhotosModel.load()` to the pre-fix filter
+(`profile.photos.items.filter(\.isVisibleToItsContributor)`) and re-ran
+`PhotoVisibilityParityTests` alone. Two of the four tests failed, both for the guarded reason:
+
+```
+✘ Test "a stranger's unmoderated photo does not reach the browser, even though it reaches its own
+  contributor's device" recorded an issue at PhotoVisibilityParityTests.swift:156:9: Expectation
+  failed: !((model.photos.map(\.id) →
+  [E2150000-0000-4000-8000-0000000000A1, E2150000-0000-4000-8000-0000000000A2,
+   E2150000-0000-4000-8000-0000000000A3]).contains(Self.strangersPending.id →
+  E2150000-0000-4000-8000-0000000000A2) → true)
+↳ screen 20 showed a stranger's unmoderated photograph — the exact failure ERRATA E215 names
+
+✘ Test "the hero and the browser agree on exactly the same set of photographs" recorded an issue at
+  PhotoVisibilityParityTests.swift:116:9: Expectation failed: (browserIDs →
+  [E2150000-0000-4000-8000-0000000000A3, E2150000-0000-4000-8000-0000000000A1,
+   E2150000-0000-4000-8000-0000000000A2]) == (heroIDs →
+  [E2150000-0000-4000-8000-0000000000A1, E2150000-0000-4000-8000-0000000000A3])
+↳ screen 20 ([…A3, …A1, …A2]) and the hero ([…A1, …A3]) disagreed on the tree's own photo set
+```
+
+The other two tests in the suite (own pending photo reaches the browser; a stranger's *approved*
+photo reaches the browser) stayed green on the broken code, which is the expected shape — this
+regression only shows up on the one row moderation had not cleared. Restored the fix afterward;
+`Tools/verify_test_log.sh` on the re-run reported `Test run with 42 tests in 5 suites passed`.
+
+#### Verification
+
+`Tools/verify_test_log.sh --warnings` against a fresh DerivedData build reported `source=0` across
+the five touched files (`CypressAPI.swift`, `MemorialPresentation.swift`, `TreePhotosModel.swift`,
+`TreeProfilePresentation.swift`, `PhotoVisibilityParityTests.swift`), `compile-tasks=430`.
+
+Full `CypressTests` run on that same build: `1191 tests in 118 suites`, one failing —
+`PendingCitationGuardTests.theGuardCanSeeTheSourceItClaimsToCheck` ("the guard swept all three
+targets, not one of them"). **Confirmed pre-existing and unrelated**: reproduced identically
+(`swept → 0` for `CypressTests` and `CypressUITests`) on a clean `origin/main` control worktree with
+none of this branch's changes present. Not touched here — out of scope for #219/E215, and worth its
+own ticket (`AppSourceLiterals.repositoryRoot()` / `PendingCitationGuard.sourceFiles` appear not to
+resolve the worktree root correctly for `CypressTests`/`CypressUITests` under some condition this
+did not chase down).
+
+### E228 — `treeOrder`'s label parser mis-split a focused `TextField`'s second quoted field (task #221)
+
+**Found while building `CypressUITests/ReadingOrderAccessibilityTests`, screen 01's map test.**
+
+`DeepLinkHarness.treeOrder(_:)` (added for E117, extended by E118) parses `debugDescription` lines
+by finding `label: '` and then taking the line's *last* single quote as the closing delimiter — a
+design that was correct for every case on record, including a label that itself embeds a quoted
+phrase (a cultivar name in scare quotes, `testTreeOrderParserReportsAnInvertedTree`'s own fixture),
+because nothing after the label was ever quoted too.
+
+A focused `TextField` breaks that premise. Live output:
+
+```
+TextField, 0x10606a170, {{16.0, 70.0}, {408.0, 43.7}}, label: 'Search', placeholderValue: 'Search a species…', value: cypress, Keyboard Focused
+```
+
+`placeholderValue` is a second quoted field *after* the label, so "the line's last quote" belongs to
+it, not to the label. The old parser read this line's label as
+`"Search', placeholderValue: 'Search a species…"` — two fields mashed into one string — rather than
+`"Search"`. Nothing before this ticket exercised `treeOrder` against a focused text field's own
+`debugDescription` line, so nothing had found it.
+
+**The fix:** the label's closing quote is now the first `'` immediately followed by `, ` (the start
+of the next field), searched from where the label opens — falling back to the line's last quote when
+no such boundary exists, which covers every previously-working case (a label with nothing after it,
+and a label with embedded quotes and nothing after it). Verified against all of the above, plus the
+new `TextField` case, in the extended `testTreeOrderParserReportsAnInvertedTree`.
+
+Nothing else in the shipped suite was exercising this path — `DeepLinkSweepTests`' own use of
+`treeOrder` only reads pushed screens, none of which hold a focused text field — so this is a latent
+defect in shared infrastructure being fixed on the way past, not a regression of anything that had
+been asserting against it.
+
+### E229 — a symlinked scratchpad path made `PendingCitationGuardTests` miscount two of three targets (found while investigating #219)
+
+**Found while investigating #219's aftermath**: `PendingCitationGuardTests.theGuardCanSeeTheSourceItClaimsToCheck`
+was red in every scratchpad agent worktree and green on the main checkout and in CI. Confirmed
+against a control worktree built straight from unmodified `origin/main` (same failure) versus the
+main checkout at `/Users/…` (passes) and CI's runner (passes) — so the defect tracks the path, not
+the code.
+
+#### The mechanism
+
+`AppSourceLiterals.repositoryRoot()` (`CypressTests/BritishSpellingGuardTests.swift`) derives the
+worktree root from `#filePath` — whatever spelling the compiler was invoked with. In a scratchpad
+worktree that lands under `/tmp/…`, that spelling is `/tmp/…`. `/tmp` is a macOS symlink to
+`/private/tmp`, and `FileManager`'s enumerators hand back the unsymlinked `/private/tmp/…` spelling
+regardless of what was asked for. So `PendingCitationGuard.sourceFiles` built `directory` from the
+`/tmp/…` root and then computed each file's repo-relative path as
+`url.path.dropFirst(directory.path.count)` — dropping a character count measured against the
+*short* spelling from a path written in the *long* one, eight characters short.
+
+`"/Cypress"` is exactly eight characters — the same length as the un-dropped `"/private"` — so that
+target's bucket key survived the miscount by coincidence: `CypressTestsessTests` and
+`CypressUITestssUITests` are what `CypressTests` and `CypressUITests` become instead, and neither
+matches any key `theGuardCanSeeTheSourceItClaimsToCheck` asserts a floor against, so both were
+silently counted as zero. The *citation scan* itself (`everyCitationNamesADocumentAReaderCanFind`)
+was never compromised — it reads `file.url`, the absolute (correct) URL, not the mangled `relative`
+label, and iterates the full flat list regardless of per-target bucketing. That is why only the one
+test was ever red.
+
+#### The fix, and the one thing worth flagging for whoever reads this next
+
+Both `AppSourceLiterals.repositoryRoot()` and `PendingCitationGuard.sourceFiles` now call
+`.resolvingSymlinksInPath()`. **This does not do what it sounds like it does, and the collapse it
+performs is conditional on the path existing — not a string rewrite.** Verified directly before
+trusting it, with a path that exists and one that does not:
+
+```swift
+URL(fileURLWithPath: "/private/tmp").resolvingSymlinksInPath().path    // → "/tmp"            (exists — collapses)
+URL(fileURLWithPath: "/private/tmp/x").resolvingSymlinksInPath().path  // → "/private/tmp/x"  (does not exist — untouched)
+URL(fileURLWithPath: "/tmp").resolvingSymlinksInPath().path            // → "/tmp"            (already short)
+```
+
+`.resolvingSymlinksInPath()` does not resolve `/tmp` outward to `/private/tmp`; per Apple's
+documented behavior it does the opposite — it strips a leading `/private` back off, but only when
+the shorter path still names something real on disk (the collapse is a `stat`, not a string
+rewrite, which is why the fabricated `/private/tmp/x` above survives unchanged). That precondition
+is what makes the fix safe: `repositoryRoot()` and every enumerated file URL name real files the
+process just read, never a hypothetical path, so the collapse always fires for them. So the fix
+does not make every path say `/private/tmp/…`; it converges every path (root and enumerated alike)
+onto the *short* `/tmp/…` spelling. Which spelling wins was never the point — only that both sides
+of the prefix arithmetic agree on the same one, whichever it is.
+
+**Two rounds of getting this wrong, both left here so the next reader does not repeat either.**
+First, an initial draft of the fix comments asserted the wrong *direction* — claimed resolving would
+produce `/private/tmp` throughout — before this was checked against a standalone `swift` script:
+`resolvingSymlinksInPath()` shortens, it does not lengthen. Second, the corrected draft's own worked
+example (`"/private/tmp/x" → "/tmp/x"`) was itself run through PR review and found false as literally
+written: `x` names nothing, the collapse is existence-gated, and the actual output of that exact line
+is `"/private/tmp/x"`, unchanged. The general claim was right; the specific example asserting it
+wasn't one anybody had run. Fixed by re-verifying the exact committed example against a fresh
+`swift` process rather than trusting that a plausible-looking path would behave like the ones
+already checked — CLAUDE.md's "calibrate the instrument" rule, twice in one comment.
+
+#### The fix was incomplete on first landing — a second real defect the reviewer found
+
+The comment above named the vulnerable *pattern*
+(`replacingOccurrences(of: root.path + "/", …)`) but the PR that introduced it only fixed
+`PendingCitationGuard.sourceFiles` — `AppSourceLiterals.sourceFiles(root:)` still returned raw,
+unresolved `FileManager` enumerator URLs, and three call sites computed a relative path with
+exactly the named pattern against them:
+
+- `BritishSpellingGuardTests.everyAppStringLiteralIsAmerican` (reads `AppSourceLiterals.sourceFiles`)
+- `DrawnGlyphGuardTests.theAppBorrowsNoGlyphs` (same)
+- `WorkflowShellQuotingTests.noAccidentalCommandSubstitution`, over its own separately-unresolved
+  `workflowFiles(root:)`
+
+**`replacingOccurrences` does not fail safe here.** It matches a substring anywhere, not only at
+the start, so an unresolved `root.path + "/"` (`/tmp/…/`) is still found *inside* a resolved
+`file.path` (`/private/tmp/…/`) — one component in from the front, right where the `/private` that
+made them differ ends — and that inner match is removed. What survives is the leading `/private`
+the match started after, glued directly to whatever text followed the match. Reproduced against
+this worktree's own, real `Cypress/App/CypressApp.swift`:
+
+```
+BEFORE fix: /privateCypress/App/CypressApp.swift
+AFTER fix:  Cypress/App/CypressApp.swift
+```
+
+Not a relative path, and not the untouched absolute path either — a third, worse shape, because
+it reads as *almost* a relative path. Nothing was red for this on first landing: the three scans
+downstream of these paths currently find zero real violations, so there was no offender's `file:line`
+for the corruption to show up in. It would have appeared the day any of them found one, in exactly
+the scratchpad-worktree environment this ticket is about — the PR's original claim that fixing
+`repositoryRoot()` "covers `BritishSpellingGuardTests`' own sweep too — same root function" was true
+of the *root* and false of the *enumeration*, which is a separate function per call site.
+
+**Fixed by resolving symlinks on the enumerated URLs too**, mirroring
+`PendingCitationGuard.sourceFiles`: `AppSourceLiterals.sourceFiles(root:)` and
+`WorkflowShellQuotingTests.workflowFiles(root:)` both now call `.resolvingSymlinksInPath()` on
+every URL the enumerator returns, not only on the root. Swept both test targets afterward for any
+other instance of the class (`grep` for `replacingOccurrences(of:.*\.path` and
+`dropFirst(.*\.path.*count`, and for any other `FileManager.default.enumerator` call): two more
+directory reads exist (`UITestShardCoverageTests.declaredUITestClasses`,
+`DragGestureGateTests.uiTestSources`), both via `contentsOfDirectory(at:)` rather than a deep
+enumerator, and neither computes a relative path by prefix arithmetic — one reads class names out
+of file *contents*, the other uses `url.lastPathComponent` alone. Not vulnerable to this class; left
+unchanged.
+
+#### Verification
+
+Red, in a scratchpad worktree at the unfixed commit (`Tools/run_tests.sh`, `-only-testing:
+CypressTests/PendingCitationGuardTests`):
+
+```
+✘ Test "the guard swept all three targets, not one of them" recorded an issue at
+  PendingCitationGuardTests.swift:172:13: Expectation failed: (swept → 0) >= (target.floor → 95)
+↳ the guard swept 0 files under CypressTests/; that target held 107 at #189, so this is not it.
+✘ Test "the guard swept all three targets, not one of them" recorded an issue at
+  PendingCitationGuardTests.swift:172:13: Expectation failed: (swept → 0) >= (target.floor → 12)
+↳ the guard swept 0 files under CypressUITests/; that target held 15 at #189, so this is not it.
+```
+
+A temporary diagnostic (not shipped) printed the flat, unbucketed sweep before and after the fix, to
+confirm the citation scan's hit set was never touched by the bucketing bug:
+
+```
+before: E229-DIAG totalFiles=397 totalHits=0
+after:  E229-DIAG totalFiles=397 totalHits=0
+```
+
+Identical — 397 files (263 + 115 + 19, matching the main checkout's on-disk counts) and zero
+citation hits in both runs, confirming the fix changes only the per-target bucketing, not what the
+scan finds.
+
+Green, same worktree, after the fix: `Tools/verify_test_log.sh` reported
+`VERIFY-OK: ✔ Test run with 20 tests in 7 suites passed` across `PendingCitationGuardTests`,
+`BritishSpellingGuardTests`, `DrawnGlyphGuardTests`, `DeployPathsAgreeTests`,
+`UITestShardCoverageTests`, `DragGestureGateTests`, `WorkflowShellQuotingTests` — every other caller
+of `AppSourceLiterals.repositoryRoot()` in `CypressTests`, run as a group to confirm the shared fix
+did not regress any of them. Re-run identically, same worktree, after the review round's fix to
+`AppSourceLiterals.sourceFiles` and `WorkflowShellQuotingTests.workflowFiles`: the same seven suites,
+same `Test run with 20 tests in 7 suites passed`. `Tools/verify_test_log.sh --warnings` reported
+`source=0` on every touched file across both rounds
+(`CypressTests/PendingCitationGuardTests.swift`, `CypressTests/BritishSpellingGuardTests.swift`,
+`CypressTests/WorkflowShellQuotingTests.swift`).
+
+#### Cross-reference
+
+Filed after the investigation that produced ERRATA E215 (#219) surfaced this as an unrelated,
+pre-existing failure — see that entry's fix note for the control-worktree comparison that first
+isolated it to the path rather than the code.
+
+### E230 — `debugDescription`'s element order does not move under `accessibilitySortPriority` (task #221)
+
+**Found while building the map's reading-order test for `CypressUITests/ReadingOrderAccessibilityTests`,
+and worth flagging because it touches a load-bearing claim in `MapHomeView.swift`'s own comments and
+in RULINGS R25/task #143's fix for ERRATA E183 §3.**
+
+#### What was being verified
+
+E183 §3 found that R25 §1's claimed swipe order ("field → suggestions → chips → status line") was
+not what the running app produced, measured with `app.buttons` (the query-engine order — already
+known unreliable for this purpose per E118). Task #143's fix was to give `MapHomeView.chrome`'s
+chrome blocks explicit `accessibilitySortPriority` values (field 6 > suggestions 5 > chips 4 > status
+3 > legend 1, top block 2 > bottom chrome 1), and its own comment states the resulting reading order
+as settled fact: "the reading order a listener walks … is the same order with one stop removed,"
+citing `AccessibilityTreeTests` and `DeepLinkVoiceOverTests` as the tests that "walk that order."
+
+Building a `treeOrder`-based (`debugDescription`-based) test for this order was the natural next
+step — and it does not work.
+
+#### What was measured
+
+With `SearchBar`'s `accessibilitySortPriority` temporarily lowered from 6 to 2 (below the filter
+chips' 4) — a red-proof mutation that should invert the field-before-chips claim if `debugDescription`
+reflects sort priority — the parsed element order was **completely unchanged**, confirmed on a fresh,
+from-scratch 430-file build (not a reused DerivedData, ruling out a stale-cache explanation): the
+search field still read before the suggestion list, still before the filter chips, exactly as before
+the mutation. Reverting the mutation and instead reordering the actual `VStack` children in source
+(moving `MapFilterChips` above `SearchBar`) **did** change `debugDescription`'s order.
+
+The conclusion these two experiments together support: `debugDescription`'s depth-first dump reflects
+the raw view-composition (document) order, not the `accessibilitySortPriority`-adjusted order
+VoiceOver is documented to honor. This is consistent with — and may be the same root cause as —
+`CypressTests/AccessibilityTests`' standing finding (cited by ERRATA E196) that SwiftUI serves
+accessibility over its own bridge rather than through `NSObject`'s container protocol UIKit's
+`accessibilitySortPriority` handling is normally documented against.
+
+#### What this means for what is and is not tested
+
+- **Nothing in this suite — before this ticket or after it — has ever verified that
+  `accessibilitySortPriority` actually reorders what VoiceOver announces on this app.** The map's own
+  file comment overstates what `AccessibilityTreeTests`/`DeepLinkVoiceOverTests` prove; neither reads
+  order via a mechanism sensitive to sort priority (`AccessibilityTreeTests` does not assert order on
+  the map's chrome at all beyond field reachability, and nothing in `DeepLinkVoiceOverTests` touches
+  screen 01's suggestion/chips ordering).
+- `ReadingOrderAccessibilityTests.testMapFieldPrecedesSuggestionsPrecedesFilterChipsInComposition`
+  (this ticket) asserts the one thing that *is* verifiable this way: the three blocks stay composed,
+  in source, in the intended order. That is real coverage — nothing before this test would have
+  caught a `VStack` reorder — but it is not a proof that `accessibilitySortPriority`'s numbers are
+  doing anything, because the same `debugDescription` read would look identical whether those
+  modifiers were present, absent, or reversed.
+- **Verifying the sort-priority mechanism itself needs VoiceOver running on a real device**, which is
+  out of reach for a black-box XCUITest here (the standing limitation this whole target works within
+  — E116's header). This is a real, currently-open gap, not a defect in anything shipped: the map's
+  actual on-device behavior was not re-measured by this ticket and may well be correct; what changed
+  is that the claim is now known to be *unverified by any automated test*, where the file comment
+  reads as if it were.
+
+#### Suggested follow-up, not done here
+
+If this is worth closing rather than living with, the options are: a manual on-device VoiceOver pass
+recorded against `MapHomeView.chrome` (the shape `docs/RULINGS.md`'s physical-phone notes already use
+for camera/heading claims this project's own tooling cannot see), or filing whether any lower-level
+XCUITest API exposes `accessibilityElements`-array order directly rather than through
+`debugDescription`'s dump — not investigated here for lack of time, and worth fifteen minutes before
+assuming it does not exist.
+
+### E231 — `Tools/verify_test_log.sh` false-greened an interrupted run that carried an XCTest failure
+
+**The artifact.** An E139 (`perf/e139-basemap-invalidation`) run on the 16e simulator
+(`3A1F212D-8F3A-41F1-AF72-EC95E155A4C9`, 390 pt screen), full unit + UI suite, killed mid-run. The
+log ends `** BUILD INTERRUPTED **`, contains no `** TEST SUCCEEDED **` and no `** TEST FAILED **`
+anywhere, and contains `Executed 26 tests, with 1 failure (0 unexpected)` — a genuine
+`DeepLinkVoiceOverTests` failure earlier in the run. The unmodified verifier printed:
+
+```
+VERIFY-NOTE: device iPhone 16e 3A1F212D-8F3A-41F1-AF72-EC95E155A4C9 — screen 390 (1170 px @ 3.000000x)
+VERIFY-NOTE: SwiftCompile tasks=431
+VERIFY-NOTE: XCTest skipped=0 — a change in this number between two runs of the same tree is a device change, not a code change (E216)
+VERIFY-OK: ✔ Test run with 1193 tests in 118 suites passed after 117.474 seconds. | XCTest: Executed 2 tests, with 0 failures (0 unexpected) in 8.687 (8.689) seconds
+```
+
+Exit 0. Premise reproduced exactly before any fix was applied.
+
+#### The mechanism — two independent bugs, both load-bearing
+
+**1. Terminal completeness was an OR across two phases that do not share a terminus.**
+`HAS_TEST_MARKER` was set by:
+
+```
+grep -qE '\*\* TEST (SUCCEEDED|FAILED) \*\*|Test run with [0-9]+ tests? .*(passed|failed)' "$LOG"
+```
+
+Swift Testing's own `Test run with N tests … passed` line is a real terminus — but only for the
+Swift Testing (unit) phase. When both frameworks run in one invocation, the XCTest (UI) phase
+starts *after* Swift Testing's line has already been printed, and only the invocation-level
+`** TEST SUCCEEDED **` / `** TEST FAILED **` marker (printed once, at the very end of the whole
+`xcodebuild test` action) speaks for whether the XCTest phase itself finished. The interrupted
+E139 log has the Swift Testing line, satisfying the OR, while its XCTest phase never reaches its
+own terminus. A Swift Testing pass earlier in the log was accepted as evidence about a phase that
+ran after it and never finished.
+
+**2. The one XCTest summary line the script did read was chosen by `tail -1`, and a genuinely
+finished run's `tail -1` line is a coincidence, not a rule.**
+
+```
+XCTEST_LINE=$(grep -E 'Executed [1-9][0-9]* tests?' "$LOG" | tail -1)
+```
+
+`XCTEST_LINE` was captured — and then **never checked for failures at all**. In a run that reaches
+its own end, XCTest prints one `Executed` line per suite as each finishes, then a final *aggregate*
+line summing every suite in the invocation; that aggregate is always the last such line in the
+file, so `tail -1` happens to be the right number to judge. An **interrupted** run never reaches
+the aggregate. `tail -1` then falls back to whichever individual suite happened to finish last
+before the kill — which can be, and in this artifact is, a suite that ran *after* the one that
+failed and reported cleanly. `DeepLinkVoiceOverTests` finished with `Executed 26 tests, with 1
+failure`; `MapCenteredStateUITests` then ran clean and is the line `tail -1` returned; the run was
+then killed mid-`MapFilterAccessibilityTests` with no aggregate line ever printed. The one real
+failure in the run was structurally invisible to a check that only ever looked at the last line.
+
+Bug 2 is strictly narrower than bug 1: an interrupted run with **no** failures anywhere (nothing
+for `tail -1` or a full scan to find) still false-greened under the unmodified script, off bug 1
+alone. Confirmed by truncating a healthy log mid-`MapSearchUITests`, after an earlier suite
+finished clean, with zero failures anywhere in the file — the unmodified script printed the same
+`VERIFY-OK` shape. Both bugs had to be fixed.
+
+#### The fix
+
+`Tools/verify_test_log.sh`:
+
+- A new signal, `HAS_XCTEST_PHASE`, set by `grep -qE "^Test Case '-\["` — Swift Testing's XCTest
+  bridge never emits that line shape for its own specimens, so its presence means a genuine XCTest
+  suite (e.g. `CypressUITests`) started. If `HAS_XCTEST_PHASE=1` and the log has neither
+  `** TEST SUCCEEDED **` nor `** TEST FAILED **`, verification refuses: that phase is incomplete
+  (killed, interrupted, or still running), regardless of what a Swift Testing line elsewhere in
+  the file says.
+- `XCTEST_LINE` (the `tail -1` line) is still computed for the `VERIFY-OK` report and the skip-count
+  note, but failure detection no longer trusts it alone: `XCTEST_FAILURE_LINES` now `grep`s **every**
+  `Executed N tests, …` line in the file for a nonzero failure count and refuses if any exist,
+  independent of which one `tail -1` would have picked.
+
+Both guards are independently load-bearing — verified by disabling each in turn and re-running
+against the kept artifact; each one alone still refuses it, for a different stated reason. Neither
+was sufficient alone against the zero-failure interrupted case: the failure-scan guard has nothing
+to find there, so completeness is the only thing that catches it.
+
+#### Sibling sweep
+
+The kept artifact's `XCTEST_LINE` was one of two `tail -1` line captures in the script; the other is
+`SWIFT_LINE` (`grep -E 'Test run with [1-9][0-9]* tests?' "$LOG" | tail -1`). Checked and left
+unchanged: Swift Testing prints its `Test run with N tests in M suites …` line exactly once per
+invocation — a true final aggregate, not a per-suite line — so there is no earlier line of the same
+shape a truncation could hide behind. Confirmed empirically: not one log in the scratchpad's
+collection of real historical runs (several dozen, spanning many rounds) contains more than one
+`Test run with` line. The `-m1` (first-match) captures for the `CYPRESS-RUN:` provenance stamp
+(`STAMP_DEVICE`, `STAMP_WIDTH`, `STAMP_STATE`) are a different shape — those are header lines
+`run_tests.sh` writes once at the top of the log before any test runs, so "first match" is the
+correct and only sensible read, not a last-line risk. `COMPILE_TASKS` and the `--warnings` mode's
+`SRC_WARNINGS`/`OTHER_COUNT` all use `-c` (count) or `sort -u` over the whole file already, immune
+to this class by construction.
+
+#### Red-proof matrix
+
+All five cases run against the fixed script, log fixtures built from real captured logs (the kept
+E139 artifact, an E139 healthy re-run `e139-suite2.log` used as the healthy-green base, and one
+existing unit-only green log), never against a simulator or a build.
+
+1. **Kept artifact → refuses.**
+   ```
+   VERIFY-FAIL: an XCTest phase started (Test Case lines present) but the log has neither ** TEST SUCCEEDED ** nor ** TEST FAILED ** — that phase is incomplete (killed/interrupted/still running), not passing
+   ```
+   (exit 1; unmodified script on the same file: `VERIFY-OK`, exit 0.)
+
+2. **Interrupted, zero failures anywhere (healthy log truncated mid-`MapSearchUITests`, right
+   after `MapRecenterUITests` finished clean) → refuses as incomplete.**
+   ```
+   VERIFY-FAIL: an XCTest phase started (Test Case lines present) but the log has neither ** TEST SUCCEEDED ** nor ** TEST FAILED ** — that phase is incomplete (killed/interrupted/still running), not passing
+   ```
+   (exit 1; unmodified script on the same file: `VERIFY-OK: ✔ Test run with 1193 tests in 118
+   suites passed … | XCTest: Executed 2 tests, with 0 failures …`, exit 0 — the same false-green,
+   with no failure line anywhere for a naive fix to have caught.)
+
+3. **Healthy full green (E139 re-run, both phases complete, aggregate `Executed 87 tests, with 0
+   failures`, `** TEST SUCCEEDED **`) → still VERIFY-OK, byte-identical to the unmodified script.**
+   ```
+   VERIFY-OK: ✔ Test run with 1193 tests in 118 suites passed after 118.881 seconds. | XCTest: Executed 87 tests, with 0 failures (0 unexpected) in 1234.362 (1238.930) seconds
+   ```
+   (exit 0, both scripts.)
+
+4. **Healthy red (same log, one suite's `Executed` line and both aggregate lines edited to `1
+   failure`, `** TEST SUCCEEDED **` → `** TEST FAILED **`) → still VERIFY-FAIL, identical reason.**
+   ```
+   VERIFY-FAIL: ** TEST FAILED ** present
+   ```
+   (exit 1, both scripts — the pre-existing `** TEST FAILED **` path is untouched.)
+
+5. **Unit-only green (`CypressTests` only, no XCTest phase at all) → unchanged verdict.**
+   ```
+   VERIFY-OK: ✔ Test run with 8 tests in 1 suite passed after 0.540 seconds.
+   ```
+   (exit 0, both scripts — `HAS_XCTEST_PHASE=0`, the new guard never fires.)
+
+#### Cross-reference
+
+The kept artifact is from the same round as the E139 investigation on
+`perf/e139-basemap-invalidation`. `Tools/run_tests.sh` provenance stamping (device, screen width,
+device state) is unrelated to this bug and untouched.
+
+### E232 — E202-A's marker-survives-reinstall premise: it does, on this device today — E210 §4 measured a different mechanism (task #220)
+
+*Measured 2026-08-04, iPhone 16e `3A1F212D-8F3A-41F1-AF72-EC95E155A4C9`, iOS 18.6 (simulator runtime
+`com.apple.CoreSimulator.SimRuntime.iOS-18-6`), macOS 26.6 (build 25G72), Xcode 26.6 (build 17F113),
+worktree at commit `bb3d8f0` (base) then `bd153a4`/`03963e6` (this ticket's own commits, irrelevant to
+the mechanism below — the experiment does not touch `CityLibrary` or the marker path). Filed from
+task #220, which was asked to resolve the discrepancy between **E202-A** ("the marker survives
+reinstall, because `xcodebuild test` replaces the app bundle and leaves the data container alone")
+and **E210 §4** ("on this configuration the data container did **not** survive `xcodebuild test`" —
+three consecutive runs, three container UUIDs, marker gone every time, measured on this same 16e).*
+
+---
+
+#### The claim under test
+
+E202-A: a leftover `active-city` marker at `Application Support/Cypress/cities/active-city` survives
+`xcodebuild test`'s reinstall, "because `xcodebuild test` replaces the app bundle and leaves the data
+container alone." `Tools/run_tests.sh` refuses a run on that state (E202-A's own recommended fix).
+
+E210 §4 recorded a contrary result on this same device: it planted `us-ca-sj` at the marker path, ran
+one UI test through the escape hatch, and found the container UUID different afterward and the marker
+gone — three times, three different UUIDs — and left the discrepancy "not resolved," worth someone's
+attention "before E202-A is relied on again."
+
+#### Calibration first
+
+Before trusting any "present / absent" read below, the same `cat`/`[ -f ]` check was run against a
+marker just planted by hand, to confirm it finds what is actually there:
+
+    $ echo -n "us-ca-sj" > "$C/Library/Application Support/Cypress/cities/active-city"
+    $ cat "$C/Library/Application Support/Cypress/cities/active-city"; echo
+    us-ca-sj
+    PLANTED: marker file exists, detection command confirms
+
+This was repeated before every plant below. The detection command is trusted for the rest of this
+note.
+
+#### Experiment 1 — a mechanism E202-A's marker does not have: `tree_status_overrides`
+
+While proving E217's leak/fix (same ticket, same device, same session — see the PR this file ships
+with), `LocalAPI.debugMarkStatus` wrote rows to `tree_status_overrides`, a table with **no self-clearing
+logic anywhere in the app** — nothing reads it except `LocalAPI.debugStatusOverrides()`/`treesNear`'s
+override layer, and nothing writes an empty row or a tombstone into it. If device data survives
+`xcodebuild test` reinstalls on this device, this table is the cleanest instrument for it: no app-side
+validation can explain a row disappearing.
+
+Five separate `xcodebuild test` invocations were run against this device over two sessions (2026-08-03
+and 2026-08-04), each through `Tools/run_tests.sh`, each assigned its own fresh container by
+`xcrun simctl get_app_container … data`:
+
+| when | container UUID (`Data/Application/…`) | `tree_status_overrides` row count |
+|---|---|---|
+| 2026-08-03, several runs before this session | (not captured live) | 11 (found already present at session start) |
+| 2026-08-04 run 1 | `CF20BD30-926E-4570-AC54-095D11760C4A` | 13 (+2) |
+| 2026-08-04 run 2 | `47A20D8A-5430-4E37-8616-0CB002178227` | 15 (+2) |
+| 2026-08-04 run 3 (`testPinAdjustCTA` only, no write) | `CCC81C5B-0B31-4774-AD7F-CA75F55B98D4` | 15 (unchanged, confirms *read* survived) |
+| 2026-08-04 run 4 (`testPinAdjustCTA` only) | `590BDC8B-1B25-4A73-AA15-BB631FD441CC` | 15 (unchanged) |
+| 2026-08-04 run 5 (`testPinAdjustCTA` only) | `43F5BAD6-E3C6-4D5C-BAE6-4E80AE0591CD` | 15 (unchanged) |
+
+Every one of these five runs assigned a **different** container UUID (confirmed by `simctl
+get_app_container` before and after, and by the fact that the pre-run UUID's directory no longer
+exists on disk afterward — checked directly, e.g. `CF20BD30…` was gone after run 2). And every one of
+these five runs read back **the same 15-row table**, including the 11 rows that predate this session
+entirely. `tree_status_overrides` is under `Library/Application Support/Cypress/`, the same directory
+`cities/active-city` lives in.
+
+**This device's `Data/Application/` directory holds 133 old container UUIDs**, almost all stamped with
+the identical mtime `Aug 2 21:44` (one mass event — an erase or an initial device setup) — including
+every UUID this experiment assigned. `xcodebuild test`'s install step is not minting brand-new,
+empty containers each time; it is round-robining through a pool of pre-existing ones and carrying the
+data forward. Reinstall genuinely does not throw the data away on this device today.
+
+#### Experiment 2 — reproducing E210 §4's own method, with the mechanism read off first
+
+Three consecutive plant → run → check cycles, matching E210 §4's structure exactly:
+
+| run | container before | marker planted? | container after | marker present after? | `tree_status_overrides` count after |
+|---|---|---|---|---|---|
+| 1 | `47A20D8A-…` | yes (`us-ca-sj`) | `CCC81C5B-…` | **No such file or directory** | 15 |
+| 2 | `CCC81C5B-…` | yes (`us-ca-sj`) | `590BDC8B-…` | **No such file or directory** | 15 |
+| 3 | `590BDC8B-…` | yes (`us-ca-sj`) | `43F5BAD6-…` | **No such file or directory** | 15 |
+
+This reproduces E210 §4's own result precisely: three runs, three container UUIDs, marker gone every
+time. **And in every one of the same three runs, `tree_status_overrides` — sitting one directory over
+from the marker, written well before this experiment and never touched by it — survived intact.**
+Whatever removed the marker did not remove the container's data wholesale.
+
+#### The mechanism, read from the code rather than guessed at
+
+`Cypress/Data/Cities/CityLibrary.swift:177-195`, `validatedActiveSeedURL()`:
+
+    /// Resolves the marker to a seed URL this build may attach, validating the file first. A
+    /// dangling marker (removed city), an unreadable file, or a generation from the future all
+    /// clear the marker and return nil — the caller attaches the bundle and the app launches;
+    /// the Cities screen then shows the city as installed-but-not-in-use, which is the truth.
+    public func validatedActiveSeedURL() -> URL? {
+        guard let id = activeCityID() else { return nil }
+        guard let version = installedVersion(of: id) else {
+            try? deactivate()
+            return nil
+        }
+        …
+    }
+
+`installedVersion(of:)` looks for an actual downloaded city directory
+(`Application Support/Cypress/cities/<id>/<version>/<id>.sqlite`) on disk. `AppModel.swift:33` calls
+this — through `DataLayer.bootPreferringActiveCity` — on **every app launch**, marker-driven UI test
+or not. A marker planted with a bare `echo … > active-city`, with no matching download, has no
+`installedVersion`, so `deactivate()` — which deletes the marker file — fires on the very next boot.
+This is deliberate, documented app behavior, not data loss: the doc comment says so in as many words
+("a dangling marker … clear[s] the marker").
+
+E210 §4's own wording — "**Planted** `us-ca-sj` at the marker path" — describes exactly this: a raw
+write with nothing downloaded behind it. That configuration hits `validatedActiveSeedURL`'s self-heal
+on the very first launch after planting, independent of whether the surrounding container was reused,
+replaced, or genuinely wiped. **The experiment that produced E210 §4 could not have told the two apart**,
+because it only ever checked the marker after a launch, never before.
+
+E202-A's own original incident (E202, 2026-08-02, iPhone 16 Plus) is not this configuration: that
+marker was set by a real smoke test that **actually downloaded San Jose and tapped "Use"** — a
+directory with a real `installedVersion` exists behind it, so `validatedActiveSeedURL` would keep it
+rather than heal it. That marker's survival across the next `xcodebuild test` was never itself
+retested here, for the practical reason that reproducing a real city download was out of this
+ticket's budget — see "What is still open" below.
+
+#### The resolution
+
+**E202-A's stated general mechanism — device data survives an `xcodebuild test` reinstall on this
+device — is true, reconfirmed five times today via `tree_status_overrides`, a table with no
+self-clearing logic of its own. The marker file itself did not survive in any experiment here,
+and that is not evidence against E202-A: an undownloaded marker is deleted by `CityLibrary`'s
+self-heal on the next boot — a distinct, intentional app-level mechanism — while E202-A's original
+scenario, a downloaded install-backed marker, is exactly what this note does not retest.**
+`Tools/run_tests.sh`'s E202-A refusal reads the marker
+*before* the current invocation's app has booted even once, so a genuine leftover from a prior
+manual download-and-activate (the scenario the refusal exists for) is caught before any self-heal
+could run — the guard remains both correct and reachable.
+
+**E210 §4's contrary finding is not wrong about what it observed — the marker was gone, the
+container UUID did change every time — but it drew the wrong conclusion from it.** It measured
+`CityLibrary`'s own intentional self-heal of a marker with no download behind it, not a property of
+`xcodebuild test`'s reinstall. The "three consecutive runs, three container UUIDs" fact is real and
+reproduced again here; "the data container did not survive" is the part that does not hold — the
+data survived every time in this session, through every one of those UUID changes.
+
+#### What `Tools/run_tests.sh` should become
+
+**Nothing.** The refusal already fires on exactly the state it is meant to catch (a marker present
+*before* this invocation's app has run), and this note's evidence supports keeping it rather than
+weakening or removing it — a real leftover from a downloaded city would behave like E202's original
+33-failure incident, not like this experiment's synthetic plant. No script change is made here.
+
+The one edit worth making is to the comment trail: E210 §4's "Unresolved" section (docs/ERRATA.md,
+"on this configuration the data container did **not** survive `xcodebuild test`") should be marked
+superseded by E232, so the next agent does not re-open the same afternoon. That cross-reference is
+left as a follow-up edit to E210 rather than made here.
+
+#### What is still open
+
+This note did not test whether a marker backed by a **real download** (the actual E202 scenario)
+survives an `xcodebuild test` reinstall — only that a synthetic, undownloaded one is self-healed by
+the app itself regardless of what the container did. Given `tree_status_overrides`' clean five-for-five
+survival in the identical container/session, there is no positive reason to expect a real download's
+marker to behave differently, but it was not directly measured, and downloading a real city inside
+this ticket's environment was judged out of scope. Worth a cheap follow-up: download a city through
+the real UI flow (or seed a fake `<id>/<version>/<id>.sqlite` so `installedVersion` succeeds without a
+real download), plant its marker, run `xcodebuild test`, and confirm the marker is what `run_tests.sh`
+reads back before the next invocation.
+
+### E233 — The almanac now reloads on a grant while it is open — and E155's own fix was the thing over-reloading it (task #223, closing E123's "left as-is")
+
+E123 recorded, under "one known limitation, left as-is," that granting location while standing on
+the almanac would not reactively reload it — the reader would see the filled screen only on the
+next navigation. E155 (task #99) closed the adjacent "permanently blank" defect and, as a side
+effect, also closed this one: `AlmanacView`'s `.task(id: coordinate)` re-runs `AlmanacModel.update(
+coordinate:)` whenever the coordinate parameter changes, and a grant is one such change. So by the
+time this ticket started, **E123's literal reproduction no longer reproduced** — the premise as
+written was already false, and the first half of this round was confirming that rather than
+fixing it.
+
+#### What E155's mechanism actually does, that E123 never claimed
+
+`.task(id: coordinate)` fires on *any* different `Coordinate?`, not only on the nil → fix
+transition. `MapLocationProvider` republishes `availability` on every fix CoreLocation judges worth
+delivering — five meters of walking apart (`MapLocationProvider.publishDistanceM`) or a one-meter
+accuracy change (`publishAccuracyM`) — and each one is a different `Coordinate`, so each one re-ran
+`AlmanacModel.load()` and re-hit `CypressAPI.almanac(near:)`. Nobody had measured this before: E155's
+own test suite (`AlmanacLateFixTests`) only ever drives a *single* nil → fix transition, so the
+re-read-every-five-meters behavior was invisible to it. This round's `AlmanacLocationTransitionTests`
+demonstrates it directly (see the second red-proof below) before fixing it.
+
+#### What changed
+
+`AlmanacModel` now optionally holds the `MapLocationProvider` it was constructed against
+(`location:`, defaulted `nil` so every existing unit test and preview is unaffected) and, when one is
+supplied, follows it itself via `observeLocation()` — a poll loop in the shape
+`VisitIdentifyModel.run()` already uses for the same kind of question, chosen over
+`withObservationTracking`'s continuation recipe specifically because a continuation left unresumed
+when its owning `Task` is cancelled does not resume itself and would leak the wait; `Task.sleep`
+cancels cleanly. `AlmanacModel.isFixAvailabilityTransition(from:to:)` is the pure, `static` predicate
+that decides whether a given `Availability` change is a fix boundary being crossed (coordinate
+nil-ness flipping, in either direction) — the only kind of change this screen now reloads for.
+`.located(A) → .located(B)` is deliberately `false`, even though `A != B`: neither side is a fix the
+reader did not already have. `AlmanacView`'s original `.task(id: coordinate)` remains, gated to only
+run when no `location` is supplied, so every caller that drives the view by coordinate alone (tests,
+previews, and any future one) is unchanged.
+
+`JournalTabView` and both `RootView` call sites (`.journal` tab root and the currently-uncalled
+`.almanac` route) now thread the shared `MapLocationProvider` down alongside the coordinate they
+already passed.
+
+#### Premises checked against the code
+
+- **E123's own text, "granting location while standing on the almanac would not reactively reload
+  it,"** was already false at the current base — refuted above, not assumed.
+- **The ticket's warning about "no reload loops"** was not hypothetical: `.task(id: coordinate)`
+  alone, still active in production wiring, would have kept reloading on every walking-distance GPS
+  update. `AlmanacLocationTransitionTests.driftDoesNotReload` red-proves this was a real gap, not a
+  defensive test against a bug that could not occur.
+
+### E234 — `Tools/run_tests.sh` computes a safe camera instead of refusing a bad one (task #225)
+
+*Built and calibrated 2026-08-04, iPhone 16 Plus `24D1629F-9FA8-4E3D-812E-F6BC85C9E668`, worktree at
+commit `1fb0e6a` (`origin/release/0.2`), branch `tools/e216-compute-safe-camera`.*
+
+---
+
+#### What this mechanizes
+
+E216's "worth mechanizing, not done here" note: `run_tests.sh` already knew the camera and the
+worktree, and already refused a `map.lastCamera` too wide for the screen (E202-B) or narrow but
+pointed at ground the seed's street-tree inventory does not cover (E216). Both used to stop and hand
+the operator a manual repair command. They no longer do — the script now computes a covered,
+correctly-narrow camera **from the seed itself** and writes it, then re-checks its own work before
+proceeding.
+
+**Only the CAMERA class heals.** The collision guard (another live `xcodebuild` against this
+simulator or worktree) and the E202-A `active-city` marker check are untouched and still REFUSE —
+both are a live-collision signal ("something else is using this device right now" / "this device is
+reading the wrong city"), not a camera fact, and there is no safe value to compute on the operator's
+behalf for either. Only `Tools/run_tests.sh` changed; no Swift file in this diff.
+
+#### Where the camera comes from
+
+The center is **derived from the seed at run time**, never a literal coordinate: `compute_safe_camera`
+bins every row of `trees` onto a ~0.002° (~220 m) grid (`GROUP BY CAST(lat/0.002 AS INT), CAST(lon/0.002
+AS INT)`), keeps the densest bin, and uses that bin's own `avg(lat), avg(lon)` as the center. A
+hardcoded point goes stale the day the seed changes (the repo's standing lesson, CLAUDE.md); a query
+against the seed that is already sitting in the worktree does not. On the seed present at HEAD the
+densest bin holds 288 trees at `(37.7589434178774, -122.495377405412)` — nowhere near
+`MapLayout.defaultCenter` (Dolores Park, the app's own hardcoded fallback, which the app's own
+comments already document as having *no* trees inside its own 120 m view) — and a ±250 m box around it
+holds 834, comfortably clear of the E216 gate.
+
+The span is `MapLayout.defaultSpanMeters` (120 m, `Cypress/Features/Map/MapKitBasemap.swift`)
+converted to degrees the same way `MKCoordinateRegion(center:latitudinalMeters:longitudinalMeters:)`
+does — the app's own narrow default, not a number invented for this script. At 120 m that computes to
+zoom ≈18 on every device profile this repo runs on, comfortably clear of the pin threshold of 16, so
+it is not solved per-screen-width; it is *checked* per-screen-width anyway (see below) rather than
+trusted on the strength of the arithmetic alone.
+
+`write_safe_camera` writes the four doubles into `map.lastCamera` with `PlistBuddy` — the same tool
+every other read and repair in this script already uses, not `defaults write`, which goes through
+`cfprefsd` and this script has no standing dependency on that cache being warm. It also moves the
+device's location fix to the same point (`xcrun simctl location … set`), so a reader who launches the
+app by hand after a healed run sees the same covered ground the suite was healed onto.
+
+`heal_camera` then **re-reads device state through the same functions `device_state_check` already
+trusts** (`read_device_state` → `count_camera_trees`) and refuses if the computed camera does not
+itself clear both gates — the only convergence proof worth having is the one asked in the instrument's
+own voice, not a fresh assertion invented for this path.
+
+#### Legibility in the log (E202-B's own lesson)
+
+E202-B's finding was that a skip count that changed between two runs of the same tree is reporting a
+device change, not a code change, and the log has to say so on its own face. A healed run now stamps:
+
+    CYPRESS-RUN: camera-auto-healed yes reason=E202-B too-wide before={…} after={… (densest-bin n=288)}
+
+An untouched run stamps `camera-auto-healed no`. The `device-state` line already carries the
+**post-heal** values (the header is written after `device_state_check` returns), so the two lines
+together answer both "what does this run's camera behave like" and "was it touched to get there."
+
+#### Calibration (CLAUDE.md: prove the instrument before trusting the reading)
+
+All three planted on the same device, `Tools/run_tests.sh` run un-mutated (no
+`CYPRESS_RUN_TESTS_SKIP_PREFLIGHT`), predicted the camera in advance, then read it back.
+
+**(a) A known-bad wide camera** — the exact E202 postmortem literal
+`[37.065701, -122.166977, 1.659115, 1.065655]` (zoom 9) planted by hand. Predicted in advance from the
+seed query above: center `(37.758942, -122.495377)`, zoom 18. Ran:
+
+    camera too wide for its own screen (E202-B): map.lastCamera = [37.065701,-122.166977,1.659115,1.065655] →
+      zoom 9 at 430 pt; pins need zoom ≥ 16. Healing…
+    CYPRESS-RUN: device-state active-city=none map.lastCamera=[37.758942,-122.495377,0.001078,0.001364] zoom=18 camera-trees=834
+    CYPRESS-RUN: camera-auto-healed yes reason=E202-B too-wide
+      before={map.lastCamera=[37.065701,-122.166977,1.659115,1.065655] zoom=9 camera-trees=0}
+      after={map.lastCamera=[37.758942,-122.495377,0.001078,0.001364] zoom=18 camera-trees=834 (densest-bin n=288)}
+    VERIFY-OK: ✔ Test run with 6 tests in 1 suite passed after 1.282 seconds.
+
+Set camera matched the prediction to the digit; the run proceeded to a real `xcodebuild test` and
+finished green.
+
+**(b) A narrow camera over uncovered ground** — E216's own literal, Golden Gate Park,
+`[37.769402, -122.486198, 0.001081, 0.001362]` (zoom 18, confirmed 0 trees within ±250 m by direct
+`sqlite3` query first). Ran:
+
+    camera over uncovered ground (E216): map.lastCamera = [37.769402,-122.486198,0.001081,0.001362] →
+      zoom 18, and the seed holds 0 trees within 250 m of it. Healing…
+    CYPRESS-RUN: camera-auto-healed yes reason=E216 uncovered
+      before={map.lastCamera=[37.769402,-122.486198,0.001081,0.001362] zoom=18 camera-trees=0}
+      after={map.lastCamera=[37.758942,-122.495377,0.001078,0.001364] zoom=18 camera-trees=834 (densest-bin n=288)}
+    VERIFY-OK: ✔ Test run with 6 tests in 1 suite passed after 1.046 seconds.
+
+Same predicted camera, same convergence, distinct reason string — proof the two gates are still being
+told apart, not collapsed into one generic "bad camera" heal.
+
+**(c) A live-collision condition** — planted the E202-A marker (`echo -n "us-ca-sj" >
+…/cities/active-city`) and ran the identical command:
+
+    VERIFY-FAIL: this device has city 'us-ca-sj' selected (E202-A).
+      Every San-Francisco deep link honestly returns 0 records; 33 of 64 UI tests read as a broken map.
+      The marker survives reinstall. Clear it with:
+        rm -f "$(xcrun simctl get_app_container … data)/Library/Application Support/Cypress/cities/active-city"
+    SCRIPT-EXIT=1
+
+Exit 1, no log file written (refused before the log exists, unchanged from before this ticket) — the
+collision class still refuses, byte-for-byte the same message as before this diff.
+
+#### End-to-end: a real full suite, judged by `verify_test_log.sh`
+
+    CYPRESS-RUN: device-state active-city=n/a (app not installed) map.lastCamera=[n/a (app not installed)] camera-trees=n/a
+    CYPRESS-RUN: camera-auto-healed no
+    VERIFY-NOTE: XCTest skipped=0 — a change in this number between two runs of the same tree is a device change, not a code change (E216)
+    VERIFY-OK: ✔ Test run with 1192 tests in 118 suites passed after 120.320 seconds. |
+      XCTest: Executed 87 tests, with 0 failures (0 unexpected) in 1207.045 (1211.529) seconds
+
+(Fresh install on this run, so nothing needed healing — `camera-auto-healed no` is the honest answer,
+not a gap in coverage; (a)/(b) above are what exercise the heal path itself.)
+
+#### A dead end this ticket ran into and ruled out, in case it recurs
+
+The first full-suite attempt on this device (still holding a camera from repeated calibration writes,
+not freshly erased) failed three `CypressUITests/MapSuggestionUITests` cases with device-state-shaped
+symptoms ("a suggestion is drawn before anything has been typed" on a just-launched app; a tapped row
+not updating the field; a tapped `Done` not closing the list). Before assigning any of that to this
+diff: the same three cases reproduced **identically running bare `xcodebuild test` with no
+`run_tests.sh` involved at all**, which this diff cannot influence one way or the other. Per CLAUDE.md's
+simulator-degradation note, `xcrun simctl erase` on the same device cleared it — the rerun above is
+post-erase and fully green. `MapSuggestionUITests` itself documents that it is deliberately
+camera/viewport-independent, which is consistent with the cause being device degradation rather than
+this ticket's change. Worth knowing if `MapSuggestionUITests` goes red again on a reused simulator: it
+has now done so once for reasons this ticket traced to the device, not to any diff.
+
+### E235 — E139's last open item was closed by E140, and four comments went on saying it was not (task #226)
+
+**Task #226 was opened to find the source of the basemap's ~200 body evaluations a second at rest and
+stop it. The measurement was taken first, and there is nothing left to stop.** E139's "What is
+honestly still open" — "the basemap still re-evaluates its body around 200 times a second at rest
+once a fix has arrived … so it is cheap, and it is still wrong. It is not fixed here." — describes a
+state the app has not been in since E140. E139 guessed the residual and the unpannable map might
+share a root cause. E140 confirmed they did and recorded the rate going to zero. Nobody went back and
+amended E139, and four code comments still asserted the old rate in the present tense.
+
+#### What was measured, before anything was changed
+
+`origin/release/0.2` at `1fb0e6a`, unmodified. iPhone 16e (`3A1F212D…`), location **granted** with a
+fix set at `37.7599,-122.4148` — the condition E139 exists to insist on, since both of its
+predecessors were measured with location declined. The instrument is E139's own: `MapFrameProbe`'s
+`body` counter, incremented inside `MapKitBasemap.body`, printed once a second by the display link
+under `CYPRESS_MAP_PROBE=1`.
+
+**141 consecutive one-second windows, 87 markers at z18:**
+
+| | at rest | during interaction |
+|---|---|---|
+| basemap body passes / second | **0** (135 of 141 windows) | 1–10 |
+| frame rate | 60 fps | 58–60 fps |
+| worst frame | 16.7 ms | 80.9 ms (launch) |
+| gps publishes / second | 0 | 1 (the fix landing) |
+
+Every one of the six windows that is not zero is an interaction: the launch (`body=10 gps=1
+fetch=1`), a ten-point pan (`body=3` then `body=5`, `fetch=2` each, markers 87 → 88 → 75), a filter
+chip (`body=1`), and a recenter press (`body=2 fetch=1`, markers back to 87). Before/after over a
+fixed window is therefore **~200/sec → 0/sec**, and the "after" was already true at the base commit.
+
+#### The instrument was calibrated, and this is the part that matters
+
+A counter reading zero because it is broken is indistinguishable from a counter reading zero because
+the defect is gone, and this project has believed the wrong one of those before. The calibration is
+in the same process and the same run as the measurement: **the same counter that reads 0 for 135
+windows reads 10, 5, 3, 2 and 1 in the six windows where the map is doing something**, with `fetch`
+and the marker count moving alongside it. It is alive, it is attached to the body it claims to
+count, and its zero is a measurement.
+
+`Self._printChanges()` was not needed and was not used. It answers "what invalidated this view", and
+nothing is invalidating it.
+
+#### What is actually wrong: the prose
+
+Four comments asserted the retired rate as present fact. Fixed in `MapKitBasemap`, `MapHomeView`,
+`MapAnnotationLayer` (×2) and the three in `MapCameraOwnershipTests`.
+
+This is the same failure the standing rules already name — a confident comment is where bugs survive
+here — with the twist that the comment was true when written. **A measured number in a comment is a
+measurement with a date on it, and E140 was the date.**
+
+#### And the same trap caught this round, one paragraph later
+
+The first draft of this work "fixed" `AimableMapView`'s stale rate claim by *reasoning from* the new
+number: since screen 01 is now as quiet as the other two, the first-layout callback must have gone
+from load-bearing on two screens to load-bearing on all three, so removing it would strand the app's
+default screen on MapKit's whole-world region. Adversarial review caught it. **Three paragraphs down
+in the same doc comment, E168's untouched text says the measured opposite**: on screen 01 the hook
+always loses the race to `updateUIView`, does nothing, and removing it changes no observable behavior
+and no test — "that was built and run, both ways."
+
+The error was not the arithmetic. It was reasoning from a rate at all: **a screen being mounted is not
+a screen at rest.** The mount delivers `updateUIView` passes whatever the resting rate is, so the race
+is structural and E140's rate drop cannot have decided it either way. The at-rest zero and the mount
+are simply different moments — and this round's own launch window, showing `body=10`, said so on the
+first screenful of evidence collected.
+
+**Settled by experiment rather than by wordsmithing**, which is how this repo settles comment disputes.
+The callback was removed, rebuilt and run on all three screens with a fix granted:
+
+| screen | with the hook | ablated |
+|---|---|---|
+| 01 map home | Folsom St, z18, 87 markers, dot on the fix | **identical** |
+| pin-adjust (16) | anchor in Dolores Park at opening scale | **identical** |
+| pin-set map | framed on the thirteen, Mission District | **identical** |
+
+Nothing stranded on the whole-world region anywhere. E168's account is the correct one and stands;
+the inferred paragraph was deleted rather than softened, and the code was restored unchanged.
+
+**The general form, which is the reason this is written down.** An inference and a measurement were
+sitting in the same doc comment, and the inference read as more current because it was newer and
+cited a fresh number. A measurement does not go stale because something nearby changed; it goes stale
+when somebody re-runs it and gets a different answer. This round nearly shipped the opposite of a
+recorded ablation on the strength of a plausible sentence — the exact shape of the failure the
+comment it was replacing had already been written to prevent.
+
+#### The guard, and what could not honestly be guarded
+
+There is **no honest automated pin for the at-rest evaluation rate itself.** SwiftUI exposes no
+public body-evaluation hook. The app has a counter, but it is `#if DEBUG`, armed only by an
+environment variable, and `MapProbeOverlay` is deliberately `allowsHitTesting(false)` and
+`accessibilityHidden(true)` — "an instrument must not be a participant in what it measures" — so a UI
+test cannot read it without undoing that decision and disturbing the reading-order suite on the same
+screen. A test asserting an at-rest rate was not written, because the only ways to write one are to
+break the instrument or to fake it.
+
+What *is* pinnable is the mechanism, and one load-bearing piece of it was untested.
+`MapCameraRequest.opening(_:)` must not mint a ticket, because `VisitPinAdjustView` and
+`PinSetMapView` both rebuild it inside a `Binding` getter on every pass — three separate comments say
+so and nothing tested it. `opening(_:)` is three lines and reads like a convenience beside
+`move(to:)`; collapsing the two is an inviting tidy-up whose cost is invisible at the call site.
+`MapCameraOwnershipTests.rebuiltOpeningCameraNeverBecomesANewRequest` rebuilds the request 240 times
+after a pan and asserts the camera does not move. **Red-proved** by giving `opening(_:)` a real
+ticket: it fails at 550.6 m — the exact distance from the pan to the fix — while all four existing
+tests in the suite stay green, because none of them ever rebuilds the request.
+
+#### One thing noticed and not chased
+
+The probe's `markers` figure counts *fetched* content (`MapModel.content.markerCount`, set from
+`.onChange(of: model.content)`), not drawn pins. The species/condition filters narrow pins downstream
+without a re-fetch, so with "In bloom" active the overlay read `75 markers` over a map drawing one.
+The `body` counter this report rests on is incremented inside the body itself and is unaffected.
+
+### E236 — The species search now survives a typo, and the index that does it is **not** the FTS5 one the ticket asked for (task #227, closing E165's "what is still not fixed")
+
+`ERRATA E165` fixed prefix-matching by matching a substring, and closed by naming what that still
+was not: *"This is substring matching, not the trigram matching §6 specifies: a typo misses, and so
+does a name the catalog spells differently. That still wants an FTS5 index the seed does not carry,
+and it still belongs in `Tools/build_seed.py`."*
+
+Both halves of that sentence were acted on. The second half — build it into the seed, not on device
+— is exactly right and is what this change does. **The first half names the wrong index, and the
+measurement that says so is the reason this entry exists.**
+
+#### FTS5's trigram tokenizer answers substring queries, which is what we already had
+
+The instrument was calibrated before it was trusted, against the shipped 726-species catalog rather
+than against a fixture. An FTS5 table `USING fts5(scientific_name, common_name, tokenize='trigram')`
+was built over those exact rows and asked E165's own two questions:
+
+| query | today's `LIKE '%q%'` | FTS5 trigram `MATCH` |
+|---|---|---|
+| `cypress` (control) | 6 | 6 |
+| `liquidambar` (control) | 4 | 4 |
+| `liquidamber` (**typo**) | 0 | **0** |
+| `sweetgum` (**alternate spelling**) | 1 | **1** |
+
+The two columns are identical in every row. FTS5's trigram tokenizer exists to make `LIKE '%q%'`
+*fast*; it does not make it *fuzzy*. `MATCH 'liquidamber'` tokenizes the query into a phrase of
+consecutive trigrams and requires all of them, so one wrong letter is still a miss. Shipping it
+would have added a virtual table, five shadow tables and a schema generation, and fixed neither of
+the two cases it was added for — and every test written against it would have passed, because it
+answers the control queries correctly.
+
+What BUILD-PLAN §6 means by "a trigram index" is Postgres' `pg_trgm`, and `pg_trgm`'s value is
+**similarity**: the fraction of the query's trigrams a name carries. That is a set-overlap question,
+not a token-match one, and SQLite will answer it from an ordinary table.
+
+#### What shipped
+
+`seed.species_trigrams(trigram, species_id) WITHOUT ROWID` — the table is its own index — built in
+`Tools/build_seed.py` beside the data, as E165 required. ~21k rows over 726 species on the shipped
+seed, well under a megabyte of a 108 MB file. Stub (`:: 9662`, `RULINGS R47`) and soft-deleted rows
+are excluded, because they are the rows the search itself refuses to offer.
+
+The scheme is `pg_trgm`'s: lowercase, every non-`[a-z0-9]` run to a single space, two leading spaces
+and one trailing, cut into 3-character windows. The internal space is load-bearing — it lets a
+trigram straddle two words, which is how `monteray cypres`, wrong in both halves, still reaches
+`Monterey Cypress`.
+
+`SpeciesQueries.search` gained a **fourth band** below E165's three substring bands. It runs only
+for the page slots the substring pass did not fill, only for queries of four characters or more, and
+its results are deduplicated against what the substring pass already returned. Where the substring
+match answers, the answer is what E165 shipped, ranks and all.
+
+#### The bar is 0.6, and it is bracketed on both sides by measurement
+
+Counting what the similarity pass *adds* to what the substring pass already returned:
+
+| query | 0.5 | 0.6 | 0.7 |
+|---|---|---|---|
+| `cypress` | +3 (`Empress Tree`, `Cupressus arizonica`, `Cupressus species`) | nothing | nothing |
+| `oak` | nothing | nothing | nothing |
+| `quercus` | +1 (`Queen Palm`) | nothing | nothing |
+| `liquidamber` | +4 Liquidambars | **+4 Liquidambars** | +4 Liquidambars |
+| `sweetgum` | +8 | **+6, incl. all three Sweet Gums** | nothing |
+
+0.5 admits species into queries that already had a complete answer — and those are the queries whose
+exact ranking `SpeciesSearchTests` pins. 0.7 stops finding `American Sweet Gum` for `sweetgum`, one
+of the two misses E165 named. 0.6 is the only setting that fixes both and disturbs nothing.
+
+This was cross-validated rather than asserted: the red-proof that lowers the bar to 0.5 fails naming
+`Cupressus arizonica`, `Cupressus species` and `Empress Tree` — the same three species the Python
+sweep predicted, arrived at independently by the Swift path.
+
+#### The fallback, and why it is read from the file
+
+Seed schema **15**. `SeedDatabase.newestKnownSchemaVersion` and `Tools/publish_cities.py`'s
+`SEED_SCHEMA_VERSION` both move 14 → 15 (R37.1).
+
+The addition is pure: an s14 file has no `species_trigrams`, and `SeedSchema.hasSpeciesTrigrams`
+(introspected with `tableExists`, exactly as `hasIdSpace` is) turns the fourth band off, leaving the
+substring search s14 shipped with. This is not a courtesy — **R37.3 makes the mixed case ordinary**:
+the bundled seed and a downloaded city are two different generations at the same time, so the app
+can be reading an s15 bundle and an s14 San Jose in one session. A version integer could not answer
+that question per-attachment; the file can.
+
+Red-proved by forcing the flag true, which fails with
+`SQLiteError(1/1): no such table: seed.species_trigrams` — the crash the fallback exists to prevent.
+
+#### One existing test changed meaning, and it is not the escape leaking
+
+`SpeciesSearchTests.wildcardsInTheQueryAreEscaped` asserted that `cypre%s` finds nothing. It now
+finds the five Cypresses, because the similarity pass does not use `LIKE` — it folds `%` to a space
+like any other punctuation, so `cypre%s` is an ordinary near-miss of `cypress`.
+
+The invariant that test protects — a `%` must not act as "match any characters" — is intact and
+still asserted, but `cypre%s` can no longer distinguish the two outcomes. The probe moved to `c%s`,
+three characters, which is below `minimumSimilarityQueryLength` and therefore a statement about the
+`LIKE` path alone; an honored `%` there would match most of the catalog. The new behavior is
+asserted positively in its own test: every species `cypre%s` returns carries the word `cypress`.
+
+#### This entry does not close E165. Merging it does not either.
+
+**The code shipped here is inert until the canonical seed is rebuilt.** That is the honest statement
+and it should not be softened, because everything about the change looks finished without it.
+
+The seed is git-ignored. It is not built by CI and not carried by `git worktree add`: every tree gets
+the *canonical* file — `Tools/setup_worktree.sh` copies it from the main checkout, CI fetches that
+same published artifact through `Tools/fetch_seed.sh` — and that file is s14 with no
+`species_trigrams`. So on every machine except the one that wrote this, including CI and **including
+the shipped app reading its own bundle**, `SeedSchema.hasSpeciesTrigrams` is false and the search
+takes the fallback branch. A reader typing `liquidamber` still finds nothing.
+
+The two halves cannot land in one instant, in either order: an s15 canonical seed would fail the
+seed-contract tests on every tree that does not yet carry this schema bump, so the seed cannot be
+regenerated before this merges — and the four tests that assert E165's user-visible claims against
+the real catalog cannot pass before the seed is regenerated. The code goes first, deliberately, and
+the window between is real.
+
+**The four tests are `.enabled(if: seedCarriesTrigrams)` rather than deleted or made lenient.** They
+print as skipped, with a reason naming exactly what un-gates them, and they switch themselves on the
+moment a seed built by this `build_seed.py` is in place. Nothing has to be remembered and nothing has
+to be re-enabled by hand.
+
+#### The acceptance check, and the owner's checklist
+
+**E165's user-visible half closes when, and only when, all three of these are true:**
+
+1. **The canonical seed is rebuilt** with this branch's `Tools/build_seed.py` — a real full build,
+   not the scaled `--limit` build this branch verified with.
+2. **It is published** per the manifest / `build_id` protocol (R60, `ERRATA E219`), and
+   `Tools/setup_worktree.sh` and `Tools/fetch_seed.sh` are serving the new file.
+3. **The four conditional tests activate and pass on a tree the author did not touch.** That
+   activation *is* the proof the fix went live — it is the only signal in the system that
+   distinguishes "shipped" from "shipped and inert", and it costs nothing to read: the same suite
+   that printed four skips prints four passes.
+
+Until (3) is observed, treat this ticket as landed-but-unproven.
+
+**What this branch verified, and the four gaps it left the publisher.** The branch built the index
+into a copy of the shipped seed and ran `build_seed.py` end to end only at `--source datasf
+--limit 40000`. That proves the wiring; it does not prove the shipped artifact. On the real rebuild:
+
+- **`seed_meta.species_trigram_rows` was never checked against `COUNT(*)`.** The build writes the
+  count it thinks it emitted; nothing has compared it to the rows actually in the table. Assert
+  `SELECT value FROM seed_meta WHERE key='species_trigram_rows'` equals
+  `SELECT COUNT(*) FROM species_trigrams` on the built file.
+- **Byte-identity across rebuilds was claimed but never double-built.** The trigram pairs are sorted
+  before insert specifically so two builds of the same data produce the same file (R37.1), and that
+  has not been tested. Build twice with the same `SOURCE_DATE_EPOCH` and compare sha256.
+- **Check 18c never ran against real stub rows.** The scaled build produced **0** stub rows, so "no
+  stub or deleted species is reachable through the index" passed vacuously. The canonical seed
+  carries **5** — measured, `SELECT COUNT(*) FROM species WHERE scientific_name LIKE ':: %'`, against
+  731 species of which 726 are searchable and 0 are soft-deleted. (The review round put this at 7;
+  it is 5, and the soft-delete half of 18c has no case in this seed at all, so that half stays
+  vacuous until one appears.) Re-run `Tools/verify_seed.py` on the real artifact and confirm 18c is
+  meeting a non-empty case.
+- **`publish_cities.py` has never been executed at `SEED_SCHEMA_VERSION = 15`.** The claim that a
+  narrowed city file inherits the catalog's index is an argument from the publisher's DELETE list
+  (`trees`, `trees_rtree`, `species_assertions`, `neighborhoods`, `inventories`, `id_spaces` — it
+  never touches `species`), read but not run. Publish, then query `species_trigrams` in the produced
+  city file and run checks 18a–18f against it.
+
+#### What republishing does and does not require
+
+**The manifest carries a version per city file, not one global version**, so the bump invalidates
+nothing already in the bucket. The app at `newestKnownSchemaVersion = 15` still accepts s14 files
+(`CityInstallState` refuses only `published > newestKnown`) and they keep searching by substring at
+their existing immutable paths (R37.2). Republishing is therefore not urgent and not a migration —
+but it is the only thing that makes the feature exist for a reader. The version string becomes
+`s15-r<content_rev>-<build_id>`; because `schema_version` moved this is a new immutable path, so
+R60's `build_id` segment is not what is doing the work here.
+
+#### What is still not fixed
+
+Similarity is not synonymy. `sweetgum` reaches `American Sweet Gum`, but nothing here would make
+`liquid amber tree` reach it, and nothing makes a common name in another language reach anything —
+that wants an authored alias list beside the species content, not an index. The `sweetgum` case also
+admits `Sweetshade` and `Sweet viburnum` at the same overlap; they rank below every substring match
+and are genuinely trigram-similar, so they are noise the bar tolerates rather than a defect.
+
+The similarity pass is deliberately not gated by `MapQueryPlanTests`. Its plan is
+`SEARCH species_trigrams USING PRIMARY KEY (trigram=?)` — one covering seek per trigram over a
+`WITHOUT ROWID` table — and that is recorded in `SpeciesQueries.similarSQL`'s doc comment but not
+asserted, unlike the substring statement beside it. A gate there would be cheap and is worth a
+ticket.
+
+### E237 — E196's remaining AX5 punch list no longer reproduces — E199 already closed it; one verification gap of E199's own closed here (task #228), plus a hardened pan-precondition retry (task #230)
+
+#### Part A — #228
+
+The brief for this round carried E196's "Defects found at AX5 (find, don't fix)" list — screen 02
+overflow and denied-state truncation, screen 07 fact chips, screen 09 placeholder, screen 10 action
+captions, screen 11 overflow, screen 18 mono subtitle, screen 19 name column, and the 03/14 §9b
+two-column grid — as still-open work. It is not: **E199** (tasks #171, #172, merged) fixed every one
+of those items already, on the base this branch started from (`origin/release/0.2`). E196 is a
+point-in-time record and this round's premise had drifted; per the brief's own instruction, each item
+was re-verified at AX5 rather than assumed, and none needed a production-code change.
+
+**R53's `MapLocationNotice`-past-y=0 item was excluded, untouched, per the brief.**
+
+##### Per-item verdicts, this session
+
+Verified by re-running `CypressTests/AX5ReflowTests` (the 6 structural guards E199 built) and
+`CypressTests/ScreenSweepShots` with `TEST_RUNNER_CYPRESS_SHOT_DIR` exported, then looking at the
+renders — not trusting the green alone. Calibration: the same 10-test run (6 + 4) was run twice,
+once before any change here and once after, both green, so the harness itself was exercised before
+being trusted (the CLAUDE.md instrument-calibration rule).
+
+| # | Item (E196) | Verdict | Evidence looked at |
+|---|---|---|---|
+| 1 | Screen 02 (identify, populated) overflow | **No longer reproduces** — E199 #1 | `02-identify-light-ax5.png`: title, status pill, callout, footer all inside the phone width |
+| 2 | Screen 02 denied-state truncation | **No longer reproduces** — E199 #2 | `e02-identify-denied-light-ax5.png`: no ellipsis; the sentence is cut only by the sweep's non-scrolling static capture at the `ScrollView`'s own frame boundary, immediately above the footer CTA — confirmed structurally, `VisitIdentifyView.body` is `VStack(spacing: 0)` (header / statusChips / content / footer as siblings), not a `ZStack`, so the CTA cannot be overlapping the notice |
+| 3 | Screen 07 fact chips | **No longer reproduces** — E199 #7 | `07-species-light-ax5.png`: "Cupressaceae" and "Evergreen" each in their own full-width row, no mid-word split |
+| 4 | Screen 09 placeholder | **No longer reproduces — already stale at E199's own writing** | `09-care-log-light-ax5.png` + code read: `CareLogCopy.optionalWell` renders through a plain `Text` with no `lineLimit`, not a field placeholder — #168/#147 rebuilt this well before E199 started |
+| 5 | Screen 10 action captions | **No longer reproduces** — E199 #5 | `10-share-light-ax5.png`: "Messages", "Copy link", "Share…" each intact, one destination per row |
+| 6 | Screen 11 overflow | **No longer reproduces** — E199 #3, **and its own flagged verification gap closed here** | see below |
+| 7 | Screen 18 mono subtitle | **No longer reproduces** — E199 #9a | `18-next-tree-light-ax5.png`: "1 of 4 on today's list" wraps with gutter padding, not flush to the glass edge |
+| 8 | Screen 19 name column | **No longer reproduces** — E199 #4 | `19-memorial-light-ax5.png`: "Judah Street" renders on its own full-width line, not squeezed beside the badge |
+| 9 | 03/14 §9b two-column grid | **No longer reproduces** — E199 #8 | `c06-city-record-full-ramp-light-ax5.png` (E196's own "representative" shot): `QuadActionRow` draws 2×2, `StatGrid` draws one column, "#221277", "Sidewalk: Curb side : Cutout", "DPW Maintained", "A private party", "Friends of the Urban Forest" all render whole; `AX5ReflowTests.statGridColumnCount` / `.quadActionRowRows` (shared component, used identically on 03 and 14) pass |
+
+##### Screen 11's verification gap, closed
+
+E199 fixed `GrowthHistoryView.logRow`'s overflow (`ViewThatFits(in: .horizontal)`) but flagged it as
+**code-review-verified only**: `ScreenSweepShots.capture` rendered screen 11 at the default
+phone-height AX5 viewport, and the log rows the fix touches sit below the fold in an unscrolled
+`ScrollView` — nobody had looked at them. E199 named two ways to close this: scroll the capture for
+screen 11 specifically, or add an isolated `sizeThatFits` probe on `logRow`.
+
+The scroll route was taken, matching the technique `02b-add-tree` and `c06-city-record-full-ramp`
+already use in the same file: `ScreenSweepShots.everyScreen`'s `"11-growth-history"` sweep now passes
+`ax5ViewportHeight: Self.tallestViewport`, so the AX5 legs get a 2,700pt window instead of 852pt.
+This is safe for screen 11 specifically because its `ScrollView` is *always* present regardless of
+available height — unlike `VisitIdentifyNotice` (item 2 above), which switches structure
+(`ViewThatFits`) based on the height it is offered, where inflating the capture window would change
+which branch renders and stop testing the AX5-cramped case. That is why item 2 was verified a
+different way (structural sibling-layout read) instead of the same viewport trick.
+
+Looked at `11-growth-history-light-ax5.png` after: every log row's value+badge+date sits inside the
+393pt phone width; rows too wide for one line stack value+badge over the date instead of clipping;
+the chart's end values (`64`, `18`) and leading unit-label digits (`47 cm`, `14 m`) are intact,
+matching E199's separately-confirmed chart fix. `CypressTests/AX5ReflowTests` (6/6) and
+`CypressTests/ScreenSweepShots` (4/4) both green after the change —
+`<scratchpad>/ax5-baseline.log` (before), `<scratchpad>/ax5-after.log` (after, `SwiftCompile
+tasks=2`, confirming the file actually recompiled).
+
+No production code changed for Part A — the only diff is the test harness's capture height for one
+sweep call.
+
+#### Part B — #230
+
+`MapPanTabSwitchUITests.testADeliberatePanSurvivesLeavingForJournalAndBack` flaked 3× in CI this
+round, every time on its own precondition: *"panning the map did not move the camera off the
+reader."* `deliberateDrag` (#200/#209, commit `62c83f2`, `DragGestureGateTests`) already fixed the
+systematic version of a synthesized drag reading as nothing — too few intermediate touch events for
+the gesture recognizer to see on a loaded runner. This is the same family one level further down:
+even through `deliberateDrag`, a three-core CI runner can occasionally coalesce or delay the touch
+stream for one attempt and catch up on the next. That is contention, not a broken recognizer — the
+same shape `UIWait.swift` documents for hittability (`AccessibilityTreeTests
+.testTheFourTabsAreReachable`, run 30871836674) and CLAUDE.md records for device-state flakiness
+(E202): occasional, never reproduced locally, and not something a longer single wait fixes, because
+the drag never happened at all — there is nothing for a longer wait to catch up to.
+
+**The fix.** `panUntilMoved` retries the drag itself (not just the settle wait) up to three times,
+polling the recenter control's own `accessibilityValue` between attempts, with a half-second pause so
+a retry does not queue a second unlucky touch stream on a runner still catching up from the last one.
+Every attempt calls the existing `pan(_:)`, which is `deliberateDrag` — no second spelling of the
+gesture was introduced; `DragGestureGateTests` still passes. The final failure message is byte-for-
+byte the original precondition sentence, so a camera that is genuinely immovable after every attempt
+still fails exactly as before — nothing about direction one's assertion (`switchTabs`, the
+not-recentered check) changed.
+
+**Red-proofed both ways**, by temporarily making `pan(_:)`'s call inside `panUntilMoved` a no-op
+(first attempt only, then all attempts) and restoring it after each:
+
+- **Attempt 1 swallowed, attempt 2 real** → `testADeliberatePanSurvivesLeavingForJournalAndBack`
+  **passed**, 29.209s versus a ~14s per-test baseline (`<scratchpad>/pan-baseline-green.log`:
+  "Executed 2 tests… in 29.050s" for both tests together) — the extra ~15s is attempt 1's exhausted
+  10s settle window plus the 0.5s pause, which is the retry doing the recovering, not luck
+  (`<scratchpad>/pan-redproof-recovery.log`).
+- **Every attempt swallowed** → the test **failed** at 36.236s (three 10s settle windows plus two
+  0.5s pauses), with the unchanged message: *"panning the map did not move the camera off the reader
+  (the control reads "Centered on you"), so there is no deliberate camera to preserve"*
+  (`<scratchpad>/pan-redproof-immovable.log`) — a genuinely immovable camera is still a failure, for
+  the original reason.
+
+Real-code baseline and post-fix runs, both green: `<scratchpad>/pan-baseline-green.log` and
+`<scratchpad>/pan-final-green.log`, both `** TEST SUCCEEDED **` with `Executed 2 tests, with 0
+failures`. `DragGestureGateTests` green after: `<scratchpad>/drag-gate.log`.
+
+#### Verification
+
+Full suite, this session, foreground, judged by `Tools/verify_test_log.sh` and a manual log-tail read
+for `** TEST SUCCEEDED **` / `Test run with N tests passed` (ticket #231 established the verifier
+alone can false-green an interrupted run) — see the PR body for the exact log line and path.

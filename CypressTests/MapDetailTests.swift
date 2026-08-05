@@ -343,4 +343,49 @@ struct MapDetailTests {
             "the map is still drawing the pre-moderation status; the held overrides were not invalidated"
         )
     }
+
+    /// `debugClearStatusOverrides` (ERRATA E217 "Still open"): the seam the deep-link harness now
+    /// calls once per suite so `.memorial`'s march restarts from the same tree every run instead of
+    /// walking one record further outward forever. Two things have to hold for that to be true —
+    /// the table is actually empty afterward, and the map's held cache does not keep serving the
+    /// cleared row, the same invalidation `moderationInvalidatesTheHeldOverrides` above checks for
+    /// a write.
+    @Test("clearing the status overrides empties the table and un-holds the map's cache")
+    func clearingStatusOverridesEmptiesTheTableAndInvalidatesTheCache() async throws {
+        let seedURL = try #require(SeedContractTests.seedURL, "no seed database; set CYPRESS_SEED_PATH")
+        let store = try await CypressStore.inMemory(seedURL: seedURL)
+        let api = LocalAPI(store: store, deviceID: UUID())
+
+        let block = BoundingBox(
+            minLatitude: 37.7985, maxLatitude: 37.7995,
+            minLongitude: -122.4445, maxLongitude: -122.4430
+        )
+        let viewport = MapViewport(bounds: block, zoom: 16, pinLimit: MapModel.pinLimit)
+
+        guard case let .pins(before) = try await api.mapContent(in: viewport) else {
+            Issue.record("a zoom-16 viewport did not return pins")
+            return
+        }
+        let subject = try #require(before.first { $0.status == .alive })
+
+        try await api.debugMarkStatus(treeID: subject.id, .removed)
+        #expect(try await api.debugStatusOverrides()[subject.id] == .removed)
+
+        try await api.debugClearStatusOverrides()
+
+        #expect(
+            try await api.debugStatusOverrides().isEmpty,
+            "a row survived the clear — the next `.memorial` resolution would still see this tree removed"
+        )
+
+        guard case let .pins(after) = try await api.mapContent(in: viewport) else {
+            Issue.record("a zoom-16 viewport did not return pins")
+            return
+        }
+        let redrawn = try #require(after.first { $0.id == subject.id }, "the tree left the viewport")
+        #expect(
+            redrawn.status == .alive,
+            "the map is still drawing the cleared override; debugClearStatusOverrides did not invalidate the held cache"
+        )
+    }
 }

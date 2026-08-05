@@ -88,10 +88,21 @@ public struct SpeciesQueries {
     /// hyphen: DataSF's own double-name format is comma-separated (`Sycamore, London Plane`) and
     /// hyphenated common names are everywhere in the seed (`Drooping She-Oak`, `Purple-Leaf Plum`).
     ///
-    /// ── What this still is not ──────────────────────────────────────────────────────────────────
-    /// It is a substring match, not a trigram one: it does not tolerate a typo and it does not match
-    /// across word order. An FTS5 index would, and the seed does not carry one; that remains
-    /// `Tools/build_seed.py`'s to add rather than the client's to fake at launch.
+    /// ── The fourth band: trigram similarity, when the seed carries the index ────────────────────
+    /// The three bands above are all *substring* bands, so a query that is not a substring of any
+    /// name reaches none of them — a typo (`liquidamber`) and a name the catalog spells differently
+    /// (`sweetgum`, against `American Sweet Gum`) both come back empty or nearly so. That was E165's
+    /// "what is still not fixed", and `seed.species_trigrams` (seed schema 15) is what fixes it.
+    ///
+    /// The similarity pass runs **after** the substring pass, only for the slots the substring pass
+    /// did not fill, and only over species it did not already return. So it is a strict addition:
+    /// where the substring match answers, the answer is byte-for-byte what E165 shipped, ranks and
+    /// all. See `similarSQL(trigramCount:excluding:)`.
+    ///
+    /// Absent the index — an s14 city file, or any seed built before this pass — `hasSpeciesTrigrams`
+    /// is false and this method is exactly the substring search it was. That is not a graceful
+    /// degradation bolted on; it is the only behaviour the older file can support, and the flag is
+    /// read from the file rather than inferred from a version integer (`SeedSchema`).
     public func search(query: String, limit: Int, connection: SQLiteConnection) throws -> [Species] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
@@ -105,7 +116,154 @@ public struct SpeciesQueries {
             ":afterHyphen": "%-\(pattern)%",
             ":limit": limit
         ])
-        return try statement.fetchAll { try Self.decodeIfPresent($0) }.compactMap { $0 }
+        let substringMatches = try statement.fetchAll { try Self.decodeIfPresent($0) }.compactMap { $0 }
+
+        guard schema.hasSpeciesTrigrams,
+              substringMatches.count < limit,
+              trimmed.count >= Self.minimumSimilarityQueryLength
+        else { return substringMatches }
+
+        let grams = Array(Self.trigrams(trimmed)).sorted()
+        guard !grams.isEmpty else { return substringMatches }
+
+        let sql = Self.similarSQL(
+            trigramCount: grams.count,
+            identityColumn: schema.speciesIdentityColumn,
+            seed: seed
+        )
+        let similar = try connection.cachedStatement(sql)
+        var index: Int32 = 1
+        for gram in grams {
+            _ = try similar.bind(gram, at: index)
+            index += 1
+        }
+        // The trigram total the HAVING compares against, then the page size.
+        _ = try similar.bind(grams.count, at: index)
+        _ = try similar.bind(limit, at: index + 1)
+
+        // Deduplicated here rather than with a `NOT IN` over the ids already found: the exclusion
+        // list would be a different length on nearly every keystroke, and `cachedStatement` keys on
+        // the SQL text, so every length would prepare and retain its own statement forever. The only
+        // thing that varies in the text above is the trigram count, which is bounded by how much a
+        // person can type into a search bar.
+        let found = Set(substringMatches.map(\.id))
+        let fuzzy = try similar.fetchAll { try Self.decodeIfPresent($0) }
+            .compactMap { $0 }
+            .filter { !found.contains($0.id) }
+            .prefix(limit - substringMatches.count)
+        return substringMatches + fuzzy
+    }
+
+    /// Shorter than this and the similarity pass does not run at all.
+    ///
+    /// Four characters, for two reasons that happen to agree. Typo tolerance on a three-character
+    /// query is not a thing you can offer — one wrong letter out of three leaves almost no shared
+    /// trigrams, so anything it *did* return would be noise. And it keeps `oak` — the shortest
+    /// query the search tests pin an exact, complete ranking for — on the substring path alone,
+    /// which is why this change cannot reorder that result no matter what the catalog gains.
+    static let minimumSimilarityQueryLength = 4
+
+    /// The similarity bar: a species must carry at least this fraction of the query's trigrams.
+    ///
+    /// **0.6, and the value is bracketed on both sides by measurement rather than picked.** Against
+    /// the shipped catalog (`Tools/build_seed.py`'s index over 726 live species), counting what the
+    /// similarity pass *adds* to what the substring pass already returned:
+    ///
+    ///     query            0.5              0.6              0.7
+    ///     cypress          +3 (Empress      adds nothing     adds nothing
+    ///                          Tree, …)
+    ///     oak              adds nothing     adds nothing     adds nothing
+    ///     quercus          +1 (Queen Palm)  adds nothing     adds nothing
+    ///     liquidamber      +4 Liquidambars  +4 Liquidambars  +4 Liquidambars
+    ///     sweetgum         +8               +6 (the 3 Sweet  adds nothing
+    ///                                           Gums, + 3)
+    ///
+    /// At 0.5 the bar admits species into queries that already had a correct and complete answer —
+    /// `Empress Tree` for "cypress" — and those are the queries whose exact ranking is pinned. At
+    /// 0.7 it stops finding `American Sweet Gum` for "sweetgum", which is one of the two misses
+    /// E165 named. 0.6 is the only setting that fixes both misses and adds nothing to any query
+    /// that was already right.
+    ///
+    /// Compared as an integer ratio (`shared * 5 >= total * 3`) so no float rounding sits between
+    /// the number written here and the rows returned.
+    static let similarityNumerator = 3
+    static let similarityDenominator = 5
+
+    /// `search`'s similarity pass — the fourth band, over `seed.species_trigrams`.
+    ///
+    /// ```
+    /// SEARCH species_trigrams USING PRIMARY KEY (trigram=?)
+    /// SEARCH s USING INTEGER PRIMARY KEY (rowid=?)
+    /// ```
+    ///
+    /// One index seek per trigram of the query — the table is `WITHOUT ROWID`, so its primary key
+    /// *is* the table and the seek is covering. A twelve-character query is twelve seeks over a
+    /// ~21k-row index, which is why this can afford to run on every keystroke that the substring
+    /// pass did not already answer.
+    ///
+    /// The placeholder count varies with the query, so this is built rather than a constant. It is
+    /// still not string-interpolated user input: every `?` is a bound parameter and the only thing
+    /// the query length changes is *how many* there are.
+    static func similarSQL(
+        trigramCount: Int,
+        identityColumn: String,
+        seed: String
+    ) -> String {
+        let gramMarks = Array(repeating: "?", count: trigramCount).joined(separator: ",")
+        return """
+        SELECT \(Self.projection(identityColumn: identityColumn))
+          FROM \(seed).species s
+          JOIN (
+                 SELECT species_id, COUNT(*) AS shared
+                   FROM \(seed).species_trigrams
+                  WHERE trigram IN (\(gramMarks))
+                  GROUP BY species_id
+                 HAVING COUNT(*) * \(Self.similarityDenominator) >= ? * \(Self.similarityNumerator)
+               ) m ON m.species_id = s.id
+         WHERE s.deleted_at IS NULL
+           AND s.scientific_name NOT LIKE ':: %'
+         ORDER BY m.shared DESC, s.curated DESC, s.scientific_name
+         LIMIT ?
+        """
+    }
+
+    /// The query side of `seed.species_trigrams`, and it **must** agree with
+    /// `species_trigrams()` in `Tools/build_seed.py` exactly.
+    ///
+    /// Lowercase; every scalar that is not `a`–`z` or `0`–`9` becomes a space; runs of space
+    /// collapse; then two leading spaces and one trailing, cut into three-character windows. The
+    /// padding is what lets the opening of a word score — without it `cypress` and `ypress` would
+    /// share every trigram they have — and the single internal space is what lets a trigram straddle
+    /// two words, which is how `monteray cypres`, wrong in both halves, still reaches
+    /// `Monterey Cypress`.
+    ///
+    /// ASCII-only folding is deliberate and is the half most likely to drift: Swift's `lowercased()`
+    /// and Python's `.lower()` agree on `A`–`Z` and disagree in the corners (Turkish dotless i,
+    /// final sigma), so anything outside `a`–`z0`–`9` is discarded on **both** sides rather than
+    /// folded on either. `SpeciesTrigramTests` pins the two implementations against the same
+    /// checked-in expectations, because a drift here does not throw — it just quietly stops
+    /// matching.
+    static func trigrams(_ text: String) -> Set<String> {
+        var folded = ""
+        folded.reserveCapacity(text.count)
+        for character in text.lowercased() {
+            if let ascii = character.asciiValue,
+               (ascii >= 97 && ascii <= 122) || (ascii >= 48 && ascii <= 57) {
+                folded.append(character)
+            } else {
+                folded.append(" ")
+            }
+        }
+        let collapsed = folded.split(separator: " ", omittingEmptySubsequences: true).joined(separator: " ")
+        guard !collapsed.isEmpty else { return [] }
+
+        let padded = Array("  " + collapsed + " ")
+        guard padded.count >= 3 else { return [] }
+        var grams: Set<String> = []
+        for start in 0...(padded.count - 3) {
+            grams.insert(String(padded[start..<(start + 3)]))
+        }
+        return grams
     }
 
     /// The statement `search(query:limit:connection:)` runs, exposed so a plan gate can explain the

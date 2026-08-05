@@ -90,11 +90,56 @@ final class MapPanTabSwitchUITests: XCTestCase {
     ///
     /// Through `deliberateDrag` since run 30884912660, where `press(forDuration: 0.1, thenDragTo:)`
     /// was not read as a pan at all on a CI runner and this test failed on its own precondition —
-    /// the same defect #200 had already been diagnosed and fixed for, one file over.
+    /// the same defect #200 had already been diagnosed and fixed for, one file over (#209,
+    /// `62c83f2`, `DragGestureGateTests`).
     private func pan(_ app: XCUIApplication) {
         let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45))
         let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.6))
         deliberateDrag(from: start, to: end)
+    }
+
+    /// Pans, then confirms the camera actually left the reader — retrying the *drag itself*, not
+    /// just the wait, when it does not (task #230).
+    ///
+    /// `deliberateDrag` fixed one way a synthesized drag reads as nothing (#200/#209: too few
+    /// intermediate touch events for the recognizer to see). It did not make every drag land: a
+    /// three-core CI runner can still coalesce or delay the touch stream for one attempt and catch
+    /// up on the next, the same contention `UIWait.swift` documents for hittability
+    /// (`AccessibilityTreeTests.testTheFourTabsAreReachable`, run 30871836674) and CLAUDE.md
+    /// records for the device-state family (E202). CI flaked this test's precondition three times
+    /// this round, always here, never past it — the shape of a gesture occasionally swallowed
+    /// whole, not a gesture that is systematically wrong (a systematic defect would fail every
+    /// time, including locally, and #209's fix already covers the systematic case).
+    ///
+    /// This does not weaken what direction one asserts: a camera that never moves after every
+    /// attempt still fails, with the same sentence the single-shot precondition always used. What
+    /// changes is that "did the reader's own drag get read as a drag" is retried up to
+    /// `attempts` times — polling the control's own state between tries — before that sentence is
+    /// trusted as a verdict on the camera rather than on one unlucky touch stream. Every attempt
+    /// goes through `pan(_:)`, i.e. `deliberateDrag` — never a second spelling of the gesture
+    /// (`DragGestureGateTests`).
+    private func panUntilMoved(
+        _ app: XCUIApplication,
+        _ control: XCUIElement,
+        attempts: Int = 3,
+        settleTimeout: TimeInterval = 10
+    ) {
+        for attempt in 1...attempts {
+            pan(app)
+            if wait(timeout: settleTimeout, for: { self.value(control) == Self.notCentered }) {
+                return
+            }
+            // The camera did not move. Give the runner a beat — the swallow this guards against
+            // is contention, not a broken recognizer, and retrying instantly on a runner that is
+            // still catching up from the last attempt just queues a second unlucky touch stream.
+            if attempt < attempts {
+                usleep(500_000)
+            }
+        }
+        XCTFail(
+            "panning the map did not move the camera off the reader (the control reads "
+                + "“\(value(control))”), so there is no deliberate camera to preserve"
+        )
     }
 
     private func switchTabs(_ app: XCUIApplication, away: String = "Journal", home: String = "Map") {
@@ -132,12 +177,7 @@ final class MapPanTabSwitchUITests: XCTestCase {
     func testADeliberatePanSurvivesLeavingForJournalAndBack() throws {
         let (app, control) = try launchCentered()
 
-        pan(app)
-        XCTAssertTrue(
-            wait(timeout: 10) { self.value(control) == Self.notCentered },
-            "panning the map did not move the camera off the reader (the control reads "
-                + "“\(value(control))”), so there is no deliberate camera to preserve"
-        )
+        panUntilMoved(app, control)
 
         switchTabs(app)
         let control2 = app.buttons[Self.controlLabel]
