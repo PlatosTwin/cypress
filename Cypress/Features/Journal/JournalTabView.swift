@@ -51,6 +51,11 @@ struct JournalTabView: View {
     /// resolves its neighborhood from it and names no neighborhood at all without one.
     let coordinate: Coordinate?
 
+    /// The provider itself, handed down so the almanac segment can observe it directly rather than
+    /// only ever seeing a fix that already changed (ERRATA E123's residual, #223). `nil` in previews
+    /// and tests that supply `coordinate` alone — see `AlmanacView.location`.
+    var location: MapLocationProvider?
+
     /// Screen 12's own outbound affordances, resolved by the composition root so this folder does not
     /// construct another feature's view (ARCHITECTURE §3).
     ///
@@ -102,6 +107,7 @@ struct JournalTabView: View {
                 AlmanacView(
                     api: api,
                     coordinate: coordinate,
+                    location: location,
                     onOpenTree: onOpenTree,
                     onShowGroup: onShowGroup,
                     onRequestLocation: onRequestLocation

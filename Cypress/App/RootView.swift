@@ -381,6 +381,7 @@ struct RootView: View {
             JournalTabView(
                 api: data.api,
                 coordinate: location.availability.coordinate,
+                location: location,
                 onOpenTree: { id in router.push(.treeProfile(id)) },
                 onShowGroup: { group in router.push(.pinSet(group)) },
                 onRequestLocation: { location.start() }
@@ -674,6 +675,7 @@ struct RootView: View {
             AlmanacView(
                 api: data.api,
                 coordinate: location.availability.coordinate,
+                location: location,
                 onBack: { router.pop() },
                 onOpenTree: { id in router.push(.treeProfile(id)) },
                 onShowGroup: { group in router.push(.pinSet(group)) },
