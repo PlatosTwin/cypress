@@ -153,20 +153,91 @@ struct CivicShortNameTests {
         #expect(record?.tree.idSpace == nil)
     }
 
+    /// **PR #29's adversarial finding, guarded.** `hasCivicShortNames` and `hasIdSpace` are
+    /// introspected independently — the first asks only whether `id_spaces` carries a
+    /// `short_name` column, the second asks whether `trees.id_space` and both id-space tables
+    /// exist — and nothing keeps a file from having one true and the other false. This fixture is
+    /// exactly that: `id_spaces.short_name` is populated, but `trees` was never given an
+    /// `id_space` column at all.
+    ///
+    /// Before the fix, `treeSQL()` projected `isp.short_name` whenever `hasCivicShortNames` alone
+    /// was true, while the `LEFT JOIN` that defines the `isp` alias was gated on `hasIdSpace`
+    /// alone — so on exactly this fixture the join was never emitted and the projection referred
+    /// to an alias that does not exist in the statement. That is a *prepare*-time SQL error
+    /// (`no such column: isp.short_name`), not a null result, so it cannot be caught by asserting
+    /// on the returned value the way the other three fixtures are: the call never returns one.
+    @Test("a fixture with short_name but no trees.id_space column still prepares, and resolves to nil")
+    func aFixtureWithShortNameButNoTreeIDSpaceStillPrepares() async throws {
+        let url = try Self.miniSeed(idSpacesShape: .shortNamesButNoTreeIDSpace)
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+
+        let store = try await CypressStore.inMemory(seedURL: url)
+        let schema = try #require(store.seed)
+        // The precondition the whole test rests on: the two flags genuinely disagree here.
+        #expect(schema.hasCivicShortNames, "the fixture carries no short_name after all")
+        #expect(!schema.hasIdSpace, "the fixture is meant to have no trees.id_space column")
+
+        let queries = TreeQueries(schema: schema, seedHasSoftDeletedTrees: store.seedHasSoftDeletedTrees)
+        // The assertion is that this does not throw. Pre-fix, it threw
+        // `SQLiteError: no such column: isp.short_name` here.
+        let record = try await store.queue.read { connection in
+            try queries.tree(id: Self.sfTreeID, connection: connection)
+        }
+        #expect(record != nil, "the query itself failed rather than merely losing the city name")
+        #expect(record?.cityShortName == nil, "there is no isp row joined in to have named one")
+    }
+
+    /// **PR #29's non-blocking finding.** The doc comment above `treeSQL()` pins the plan's `isp`
+    /// step as `SEARCH isp USING INDEX sqlite_autoindex_id_spaces_1 (id=?)` — `id_spaces.id` is
+    /// `TEXT PRIMARY KEY`, not an `INTEGER PRIMARY KEY`, so it is not a rowid alias and SQLite
+    /// answers the join off the table's own unique index rather than a rowid lookup the way `s`,
+    /// `n` and `lin` do (all three are joined on an `INTEGER PRIMARY KEY`). Pinned against
+    /// `treeSQL()` itself — the statement production actually runs — rather than left as prose
+    /// that can drift from the plan, the same discipline `MapQueryPlanTests` established.
+    @Test("the profile query's id_spaces join resolves through its own unique index, not a rowid")
+    func queryPlanMatchesTheProfileQuery() async throws {
+        let url = try Self.miniSeed(idSpacesShape: .withShortNames)
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+
+        let store = try await CypressStore.inMemory(seedURL: url)
+        let schema = try #require(store.seed)
+        let queries = TreeQueries(schema: schema, seedHasSoftDeletedTrees: store.seedHasSoftDeletedTrees)
+
+        let plan = try await store.queue.read { connection in
+            try connection.queryPlan(for: queries.treeSQL())
+        }
+        let joined = plan.joined(separator: " | ")
+        #expect(
+            joined.contains("SEARCH isp USING INDEX sqlite_autoindex_id_spaces_1 (id=?)"),
+            "the id_spaces join no longer matches the pinned plan: \(joined)"
+        )
+        #expect(
+            joined.contains("SEARCH isp USING INTEGER PRIMARY KEY") == false,
+            "id_spaces.id is TEXT PRIMARY KEY and cannot be a rowid alias: \(joined)"
+        )
+    }
+
     // MARK: - Fixture
 
     private static let sfTreeID = UUID(uuidString: "00000000-0000-4000-8000-00000000CAFE")!
     private static let sjTreeID = UUID(uuidString: "00000000-0000-4000-8000-0000000005A1")!
 
     private enum IDSpacesShape: Equatable {
-        /// `id_spaces` and `inventories` present, `id_spaces.short_name` populated — the shape this
-        /// ticket adds.
+        /// `id_spaces` and `inventories` present, `id_spaces.short_name` populated, `trees.id_space`
+        /// present — the shape this ticket adds.
         case withShortNames
         /// `id_spaces` and `inventories` present, no `short_name` column — the v14 shape E209 found
         /// with nothing to answer it.
         case withoutShortNames
         /// Neither table exists, and `trees` has no `id_space` column — pre-v14.
         case absent
+        /// **The reviewer's adversarial shape (PR #29).** `id_spaces` carries `short_name` — so
+        /// `hasCivicShortNames` reads true — but `trees` has no `id_space` column at all, so
+        /// `hasIdSpace` reads false and the `LEFT JOIN` that would provide the `isp` alias is never
+        /// emitted. The two flags are introspected independently and nothing keeps them in lock
+        /// step; this fixture is the proof they can disagree, and it is what caught
+        /// `no such column: isp.short_name` at prepare against the pre-fix `treeSQL()`.
+        case shortNamesButNoTreeIDSpace
     }
 
     /// A minimal but complete `TreeQueries.tree(id:)` fixture: every column `treeColumns` and the
@@ -192,13 +263,12 @@ struct CivicShortNameTests {
             CREATE TABLE trees_rtree (id INTEGER PRIMARY KEY);
             """)
 
-        let idSpaceColumn: String
-        switch idSpacesShape {
-        case .withShortNames, .withoutShortNames:
-            idSpaceColumn = "id_space TEXT REFERENCES id_spaces(id),"
-        case .absent:
-            idSpaceColumn = ""
-        }
+        // Two independent axes, because the two flags under test are introspected independently:
+        // whether `trees.id_space` exists (drives `hasIdSpace`, together with the two tables
+        // below) and whether `id_spaces.short_name` exists (drives `hasCivicShortNames` alone).
+        // `.shortNamesButNoTreeIDSpace` is the one shape where they disagree.
+        let treesHaveIDSpaceColumn = idSpacesShape != .absent && idSpacesShape != .shortNamesButNoTreeIDSpace
+        let idSpaceColumn = treesHaveIDSpaceColumn ? "id_space TEXT REFERENCES id_spaces(id)," : ""
 
         switch idSpacesShape {
         case .withShortNames:
@@ -231,6 +301,23 @@ struct CivicShortNameTests {
                 INSERT INTO inventories VALUES
                     ('sf_city', 'sf', 'test SF inventory', 'https://example.invalid/sf');
                 """)
+        case .shortNamesButNoTreeIDSpace:
+            // `id_spaces` and `inventories` exist and carry `short_name`, exactly like
+            // `.withShortNames` — the tables are not the missing thing here. What is missing is
+            // `trees.id_space`, added separately below via `idSpaceColumn`.
+            try connection.execute("""
+                CREATE TABLE id_spaces (
+                    id TEXT PRIMARY KEY, identity_prefix TEXT NOT NULL, note TEXT NOT NULL,
+                    short_name TEXT NOT NULL
+                );
+                CREATE TABLE inventories (
+                    id TEXT PRIMARY KEY, id_space TEXT NOT NULL REFERENCES id_spaces(id),
+                    name TEXT NOT NULL, url TEXT NOT NULL
+                );
+                INSERT INTO id_spaces VALUES ('sf', '', 'test fixture', 'San Francisco');
+                INSERT INTO inventories VALUES
+                    ('sf_city', 'sf', 'test SF inventory', 'https://example.invalid/sf');
+                """)
         case .absent:
             break
         }
@@ -253,10 +340,10 @@ struct CivicShortNameTests {
         let now = "2026-01-01T00:00:00+00:00"
         func insertTree(uuid: UUID, idSpace: String?) throws {
             let idSpaceValue = idSpace.map { "'\($0)'" } ?? "NULL"
-            let idSpaceInsert = idSpacesShape == .absent ? "" : "\(idSpaceValue),"
+            let idSpaceInsert = treesHaveIDSpaceColumn ? "\(idSpaceValue)," : ""
             try connection.execute("""
                 INSERT INTO trees (
-                    uuid, external_ref, \(idSpacesShape == .absent ? "" : "id_space,")
+                    uuid, external_ref, \(treesHaveIDSpaceColumn ? "id_space," : "")
                     source, lat, lon, address, site_type, status,
                     verification_state, created_at, updated_at
                 ) VALUES (
@@ -266,7 +353,7 @@ struct CivicShortNameTests {
                 );
                 """)
         }
-        try insertTree(uuid: Self.sfTreeID, idSpace: idSpacesShape == .absent ? nil : "sf")
+        try insertTree(uuid: Self.sfTreeID, idSpace: treesHaveIDSpaceColumn ? "sf" : nil)
         if idSpacesShape == .withShortNames {
             // Only this shape registers `us-ca-sj` in `id_spaces` at all — `.withoutShortNames`
             // deliberately carries only `sf`, so a second row here would reference an id space

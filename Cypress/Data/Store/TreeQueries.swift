@@ -759,24 +759,37 @@ public struct TreeQueries {
     /// SEARCH s USING INTEGER PRIMARY KEY (rowid=?) LEFT-JOIN
     /// SEARCH n USING INTEGER PRIMARY KEY (rowid=?) LEFT-JOIN
     /// SEARCH lin USING INTEGER PRIMARY KEY (rowid=?) LEFT-JOIN
-    /// SEARCH isp USING INTEGER PRIMARY KEY (rowid=?) LEFT-JOIN
+    /// SEARCH isp USING INDEX sqlite_autoindex_id_spaces_1 (id=?) LEFT-JOIN
     /// ```
-    public func tree(id: UUID, connection: SQLiteConnection) throws -> TreeRecord? {
-        // Only emitted when `id_spaces` itself exists — a seed built before the v14 pass has no
-        // such table, and `LEFT JOIN`ing one that is not there is a SQL error, not a null result.
-        // (`hasCivicShortNames` alone is not enough to gate this: it can only be true when
-        // `hasIdSpace` also is, since the column it names lives on this same table, but the join
-        // is written against `hasIdSpace` directly so the two flags cannot drift apart here.)
+    /// (`id_spaces.id` is `TEXT PRIMARY KEY`, not an `INTEGER PRIMARY KEY` — it is not a rowid
+    /// alias, so SQLite answers the join off the table's own unique index rather than a rowid
+    /// lookup. Measured against the real seed shape via
+    /// `CivicShortNameTests.queryPlanMatchesTheProfileQuery`, which pins this text against
+    /// `treeSQL()` itself rather than leaving it to prose that can drift from the plan.)
+    ///
+    /// **The `isp.short_name` projection is gated on `hasCivicShortNames` AND `hasIdSpace`, the
+    /// same as the join that provides `isp` in the first place.** The two flags are introspected
+    /// independently — `hasCivicShortNames` asks only whether `id_spaces` carries the column,
+    /// `hasIdSpace` asks whether `trees.id_space` and both id-space tables exist — and nothing
+    /// stops the file from having one true and the other false. A seed test built with
+    /// `id_spaces.short_name` present but `trees.id_space` absent reproduced exactly that: the
+    /// `isp` alias never enters the query because `idSpaceJoin` is empty on `hasIdSpace` alone, so
+    /// projecting `isp.short_name` on `hasCivicShortNames` alone throws `no such column:
+    /// isp.short_name` at prepare — a naming collision with a table that was never joined, not a
+    /// null result. `CivicShortNameTests.aFixtureWithShortNameButNoTreeIDSpaceStillPrepares`
+    /// guards this shape.
+    func treeSQL() -> String {
         let idSpaceJoin = schema.hasIdSpace
             ? "LEFT JOIN \(seed).id_spaces isp ON isp.id = t.id_space"
             : ""
-        let sql = """
+        let hasResolvableShortName = schema.hasCivicShortNames && schema.hasIdSpace
+        return """
         SELECT \(treeColumns),
                \(SpeciesQueries.projection(identityColumn: schema.speciesIdentityColumn)),
                n.name AS neighborhood_name,
                lin.\(schema.treeIdentityColumn) AS site_lineage_uuid,
                \(schema.hasInventorySource ? "t.inventory_source" : "NULL") AS inventory_source,
-               \(schema.hasCivicShortNames ? "isp.short_name" : "NULL") AS city_short_name
+               \(hasResolvableShortName ? "isp.short_name" : "NULL") AS city_short_name
           FROM \(seed).trees t
           LEFT JOIN \(seed).species s ON s.id = t.species_current
           LEFT JOIN \(seed).neighborhoods n ON n.id = t.neighborhood_id
@@ -784,8 +797,10 @@ public struct TreeQueries {
           \(idSpaceJoin)
          WHERE t.\(schema.treeIdentityColumn) = :uuid COLLATE NOCASE
         """
+    }
 
-        let statement = try connection.cachedStatement(sql)
+    public func tree(id: UUID, connection: SQLiteConnection) throws -> TreeRecord? {
+        let statement = try connection.cachedStatement(treeSQL())
         _ = try statement.bind(id.uuidString, forName: ":uuid")
 
         return try statement.fetchOne { row in
