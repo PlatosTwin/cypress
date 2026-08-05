@@ -197,8 +197,11 @@ struct MapHomeView: View {
         //
         // **The camera is read here rather than watched.** This began as an
         // `.onChange(of: cameraSnapshot)` feeding an in-memory note, which is the obvious shape and
-        // was wrong twice over. It put a struct comparison on a body that runs 240 times a second
-        // (#84's hot path) to collect a value that is wanted at most twice per visit to the screen.
+        // was wrong twice over. It put a struct comparison on a body that, at the time, ran 240 times
+        // a second (#84's hot path) to collect a value that is wanted at most twice per visit to the
+        // screen. (That rate is zero at rest since E140; see `MapCameraRequest`. The reasoning below
+        // does not depend on it — a watcher for a value wanted twice per visit is the wrong shape at
+        // any rate — which is why the shape did not go back when the rate went away.)
         // And, measured on the device, it did not work: nothing was ever written, and the screen went
         // on saying "The map is over the middle of the city" to somebody who had been looking at
         // Folsom Street a second earlier.

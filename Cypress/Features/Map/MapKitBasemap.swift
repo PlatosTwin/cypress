@@ -32,13 +32,25 @@ import SwiftUI
 /// obvious from either side of the seam.
 ///
 /// A `UIViewRepresentable`'s `updateUIView` is called with the view value from a body pass, and that
-/// pass read the app's state at the moment it ran. Screen 01 re-evaluates its basemap body **240
-/// times a second at rest** (E139's unexplained residual), so when the reader pans, there is always
-/// an update already in flight carrying the camera as it was *before* the pan. Whatever the settle
-/// handler writes, that in-flight value arrives afterwards holding the old camera, differs from
-/// whatever the layer recorded, and is taken for a fresh request. The map is driven back. Measured:
-/// with the two sides written to agree, a pan still produced 39 camera writes and the map returned to
-/// the reader's own location every time.
+/// pass read the app's state at the moment it ran. When this was written screen 01 re-evaluated its
+/// basemap body **240 times a second at rest** (E139's unexplained residual), so when the reader
+/// panned, there was always an update already in flight carrying the camera as it was *before* the
+/// pan. Whatever the settle handler wrote, that in-flight value arrived afterwards holding the old
+/// camera, differed from whatever the layer recorded, and was taken for a fresh request. The map was
+/// driven back. Measured: with the two sides written to agree, a pan still produced 39 camera writes
+/// and the map returned to the reader's own location every time.
+///
+/// **That rest-state rate is now zero, and this type is why** — E139 guessed the residual and the
+/// unpannable map might share a root cause, and they did. Re-measured on 2026-08-04 (task #226) on a
+/// 16e with location granted and 87 markers: 135 of 141 one-second windows report `body=0`, and every
+/// window that does not is a pan, a filter tap, a recenter press or the launch itself. E139's "it is
+/// cheap, and it is still wrong" is discharged.
+///
+/// **The ticket is not thereby redundant, and must not be removed as dead weight.** A rate of zero at
+/// *rest* is not an absence of in-flight passes during interaction — a pan is precisely when both the
+/// stale value and the settle exist — and the guarantee here has never depended on the rate. That is
+/// the point of it: staleness is decided by a sequence number rather than by how fast the body runs,
+/// so no future change to the invalidation rate can bring E140 back.
 ///
 /// A sequence number settles it, because staleness is exactly what a sequence number can see. Every
 /// genuine ask takes the next ticket; a stale view value carries a ticket the layer has already
