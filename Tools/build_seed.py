@@ -371,30 +371,48 @@ STATUS_FOR_KIND = {
 
 
 # ---------------------------------------------------------------------------
-# Civic short names (ERRATA E209, Shape A; task #233)
+# dim_city (task #237)
 # ---------------------------------------------------------------------------
-# Short, reader-facing city names, keyed by `ID_SPACES` id -- "San Francisco",
-# not `inventories.name`'s "SF Public Works street tree inventory", and not
-# `IdSpace.identity_prefix`'s frozen identity plumbing. Written into
-# `id_spaces.short_name` below for exactly the id spaces this build's rows
-# occupy, so a reader-facing surface (the share card today; ERRATA E209 lists
-# no other survivor of Shape A) can print a tree's own city instead of the
-# literal `"San Francisco"` that used to be true only while the seed held one.
+# The city dimension table's rows, keyed by `ID_SPACES` id. Hand-entered on
+# purpose, the same instrument `SHORT_CITY_NAMES` (task #233, now absorbed
+# here as `display_name`) and `Tools/publish_cities.py`'s `DISPLAY_NAMES` used
+# before it -- civic content (DECISIONS constraint 15) is entered, never
+# derived or guessed. A contributing id space with no entry here fails the
+# build loudly (see the dim_city insert below) rather than shipping a blank
+# past the schema's own `CHECK`s.
 #
-# Hand-entered on purpose, the same instrument as `Tools/publish_cities.py`'s
-# `DISPLAY_NAMES` and the same two values -- both are civic content
-# (DECISIONS constraint 15) copied from the same already-shipped manifest
-# field (`CityManifest.City.displayName`) rather than invented here. The two
-# dicts are independent by the owner's decision (this round's seed-schema
-# author is not the publisher's), so a change to one is not a change to the
-# other; keep them in sync by hand if either ever moves.
+# `slug` is the "us-ca-sf" convention -- never `id_spaces.id` (frozen internal
+# identity plumbing; see the dim_city CREATE TABLE comment). `state` is the
+# postal abbreviation ("CA"), not the full name -- flagged for owner sign-off
+# in the PR that introduced this table.
 #
-# A city with no entry here fails the build loudly (see the id_spaces insert
-# below) rather than shipping an empty short_name past the schema's own
-# `CHECK (short_name <> '')`.
-SHORT_CITY_NAMES = {
-    "sf": "San Francisco",
-    "us-ca-sj": "San Jose",
+# Every `urban_forestry_url` was fetched live and confirmed to resolve to the
+# named page (2026-08-05) before being entered here:
+#   sf        https://sfpublicworks.org/streettreesf
+#             "StreetTreeSF | Public Works" -- San Francisco Public Works'
+#             Bureau of Urban Forestry program page.
+#   us-ca-sj  https://www.sanjoseca.gov/your-government/departments-offices/
+#             transportation/forestry
+#             "Forestry | City of San José" -- the City of San José's Forestry
+#             program page (Trees & Landscaping, Transportation department).
+DIM_CITY: dict[str, dict[str, str]] = {
+    "sf": {
+        "slug": "us-ca-sf",
+        "display_name": "San Francisco",
+        "state": "CA",
+        "county": "San Francisco",
+        "urban_forestry_url": "https://sfpublicworks.org/streettreesf",
+    },
+    "us-ca-sj": {
+        "slug": "us-ca-sj",
+        "display_name": "San Jose",
+        "state": "CA",
+        "county": "Santa Clara",
+        "urban_forestry_url": (
+            "https://www.sanjoseca.gov/your-government/departments-offices/"
+            "transportation/forestry"
+        ),
+    },
 }
 
 
@@ -731,6 +749,51 @@ CREATE TABLE neighborhoods (
     updated_at   TEXT NOT NULL
 );
 
+-- ---------------------------------------------------------------- dim_city --
+-- Task #237. A city dimension table: the reader-facing civic facts about a
+-- city -- slug, display name, state, county, the city's own official
+-- street-tree/urban-forestry page -- joined through `id_spaces.city_id`
+-- instead of scattered across other tables one column at a time.
+--
+-- SUPERSEDES renaming `id_spaces.id` to a "us-ca-sf"-style slug. `id_spaces.id`
+-- stays FROZEN internal identity plumbing -- it is the key `trees.id_space`
+-- carries and `Tools/inventory_contract.py`'s `IdSpace.identity_prefix` is
+-- frozen per space (`sf`'s is the empty string; DECISIONS 13, see the trees
+-- table above). The clean "us-ca-sf" convention lives here, on `dim_city.slug`,
+-- never on `id_spaces.id`.
+--
+-- `id_spaces.short_name` (task #233) is ABSORBED here as `dim_city.display_name`
+-- and the column is DROPPED from `id_spaces` in this pass -- one source of
+-- truth for a city's reader-facing name rather than two hand-maintained
+-- mappings that can drift apart. A reader-facing surface must check
+-- `SeedSchema.hasDimCity` (table-gated, the same shape `hasSpeciesTrigrams`
+-- uses for a new table) before joining through it, and falls back to
+-- `SeedSchema.hasCivicShortNames`'s `id_spaces.short_name` for a file built
+-- before this pass, never to a guess.
+--
+-- Hand-entered in `Tools/build_seed.py`'s DIM_CITY, sourced from each city's own
+-- official pages and verified live -- see that dict's comment for the source
+-- URL behind every value. A contributing id space with no entry there fails the
+-- build loudly, the same shape as DISPLAY_NAMES/SHORT_CITY_NAMES before it.
+CREATE TABLE dim_city (
+    id                  INTEGER PRIMARY KEY,
+    -- The "us-ca-sf" convention: <country>-<state>-<city>, lowercase. Never
+    -- `id_spaces.id` (frozen internal identity plumbing, see above).
+    slug                TEXT NOT NULL UNIQUE,
+    display_name        TEXT NOT NULL,
+    -- Postal abbreviation ("CA"), not the full state name. Flagged for owner
+    -- sign-off in the PR that introduced this table.
+    state               TEXT NOT NULL,
+    county              TEXT NOT NULL,
+    -- The city's own official street-tree / urban-forestry page.
+    urban_forestry_url  TEXT NOT NULL,
+    CHECK (slug <> ''),
+    CHECK (display_name <> ''),
+    CHECK (state <> ''),
+    CHECK (county <> ''),
+    CHECK (urban_forestry_url <> '')
+);
+
 -- ----------------------------------------------------- id spaces, inventories --
 -- THE SEED DECLARES ITS OWN VOCABULARY INSTEAD OF THE SCHEMA ENUMERATING IT.
 --
@@ -761,21 +824,13 @@ CREATE TABLE id_spaces (
     -- `sf`'s is the empty string and is the one space permitted to have one.
     identity_prefix TEXT NOT NULL,
     note            TEXT NOT NULL,
-    -- The short, reader-facing civic name a public surface may print beside a
-    -- record from this space -- "San Francisco", "San Jose". Never
-    -- `inventories.name` (that is the inventory's own published name, e.g. "SF
-    -- Public Works street tree inventory") and never `identity_prefix` (frozen
-    -- identity plumbing, not prose). ERRATA E209 named the gap: no column
-    -- anywhere carried a short city name, so the share card (and nothing else)
-    -- hardcoded "San Francisco" and mislabeled every San Jose tree. Hand-entered
-    -- in `Tools/build_seed.py`'s SHORT_CITY_NAMES, written for exactly the id
-    -- spaces this file carries -- an id space with no entry fails the build
-    -- rather than shipping a blank. `SeedSchema.hasCivicShortNames` is the
-    -- app-side flag a reader-facing surface must check before trusting this
-    -- column exists, the same way `hasSpeciesTrigrams` gates `species_trigrams`.
-    short_name      TEXT NOT NULL,
-    CHECK (id <> ''),
-    CHECK (short_name <> '')
+    -- The city dimension row carrying this space's reader-facing civic facts
+    -- (task #237). REPLACES `short_name` (task #233, dropped in this pass) --
+    -- see `dim_city` above for why a whole table now sits behind this column
+    -- instead of one string beside it. `SeedSchema.hasDimCity` is the app-side
+    -- flag that must be true before a reader joins through it.
+    city_id         INTEGER NOT NULL REFERENCES dim_city(id),
+    CHECK (id <> '')
 );
 
 CREATE TABLE inventories (
@@ -1898,16 +1953,31 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
     if not contributing:
         die("no inventory contributed a row; the seed would have an empty vocabulary")
     spaces = sorted({INVENTORIES[i].id_space for i in contributing})
-    missing_short_names = [s for s in spaces if s not in SHORT_CITY_NAMES]
-    if missing_short_names:
+    missing_dim_city = [s for s in spaces if s not in DIM_CITY]
+    if missing_dim_city:
         die(
-            f"no short civic name registered for id space(s) {missing_short_names!r} in "
-            f"SHORT_CITY_NAMES -- names are entered, never derived"
+            f"no dim_city row registered for id space(s) {missing_dim_city!r} in "
+            f"DIM_CITY -- civic facts are entered, never derived"
         )
+    # dim_city first: id_spaces.city_id is a foreign key into it, and
+    # `PRAGMA foreign_keys = ON` (top of SCHEMA_SQL) enforces that at insert
+    # time. Inserted in `spaces`' own sorted order, which is what keeps this
+    # build deterministic -- `dim_city.id` is the table's rowid, and a fixed
+    # insertion order reproduces the same rowids on every rebuild.
+    city_id_by_space = {}
+    for s in spaces:
+        city = DIM_CITY[s]
+        cur = conn.execute(
+            "INSERT INTO dim_city(slug,display_name,state,county,urban_forestry_url) "
+            "VALUES (?,?,?,?,?)",
+            (city["slug"], city["display_name"], city["state"], city["county"],
+             city["urban_forestry_url"]),
+        )
+        city_id_by_space[s] = cur.lastrowid
     conn.executemany(
-        "INSERT INTO id_spaces(id,identity_prefix,note,short_name) VALUES(?,?,?,?)",
+        "INSERT INTO id_spaces(id,identity_prefix,note,city_id) VALUES(?,?,?,?)",
         [
-            (s, ID_SPACES[s].identity_prefix, ID_SPACES[s].note, SHORT_CITY_NAMES[s])
+            (s, ID_SPACES[s].identity_prefix, ID_SPACES[s].note, city_id_by_space[s])
             for s in spaces
         ],
     )

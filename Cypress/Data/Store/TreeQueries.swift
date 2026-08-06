@@ -742,12 +742,13 @@ public struct TreeQueries {
         /// `trees.inventory_source` — which of the city's two inventories listed **this row**, or
         /// nil for a seed built before the column existed. See `InventorySource`.
         public let inventorySourceID: String?
-        /// The row's own short civic name — `id_spaces.short_name` joined on `t.id_space`
-        /// (ERRATA E209/#233). Nil on any of three honest grounds, none of them an error: the
-        /// file predates `SeedSchema.hasCivicShortNames`, the row predates `id_space` entirely
-        /// (`hasIdSpace` false, so there is nothing to join on), or the row is a community
-        /// addition with no id space to begin with. `SharePresentation.locationLine` is the
-        /// reader — same shape as `neighborhoodName` above: a fact the seed keys by string
+        /// The row's own short civic name. `dim_city.display_name`, joined through
+        /// `id_spaces.city_id`, when the file carries `dim_city` (task #237); `id_spaces.short_name`
+        /// joined directly on `t.id_space` for a v15 file that predates it (ERRATA E209/#233). Nil
+        /// on any of several honest grounds, none of them an error: the file predates both, the row
+        /// predates `id_space` entirely (`hasIdSpace` false, so there is nothing to join on), or the
+        /// row is a community addition with no id space to begin with. `SharePresentation.locationLine`
+        /// is the reader — same shape as `neighborhoodName` above: a fact the seed keys by string
         /// rather than by id, so it travels beside the row instead of living on `Tree`.
         public let cityShortName: String?
     }
@@ -767,34 +768,64 @@ public struct TreeQueries {
     /// `CivicShortNameTests.queryPlanMatchesTheProfileQuery`, which pins this text against
     /// `treeSQL()` itself rather than leaving it to prose that can drift from the plan.)
     ///
-    /// **The `isp.short_name` projection is gated on `hasCivicShortNames` AND `hasIdSpace`, the
-    /// same as the join that provides `isp` in the first place.** The two flags are introspected
-    /// independently — `hasCivicShortNames` asks only whether `id_spaces` carries the column,
-    /// `hasIdSpace` asks whether `trees.id_space` and both id-space tables exist — and nothing
-    /// stops the file from having one true and the other false. A seed test built with
-    /// `id_spaces.short_name` present but `trees.id_space` absent reproduced exactly that: the
-    /// `isp` alias never enters the query because `idSpaceJoin` is empty on `hasIdSpace` alone, so
-    /// projecting `isp.short_name` on `hasCivicShortNames` alone throws `no such column:
-    /// isp.short_name` at prepare — a naming collision with a table that was never joined, not a
-    /// null result. `CivicShortNameTests.aFixtureWithShortNameButNoTreeIDSpaceStillPrepares`
-    /// guards this shape.
+    /// This is the plan for a v15-shaped file (no `dim_city`). On a v16 file — `hasDimCity` true —
+    /// a fifth step joins `dc`, and unlike `isp` it *is* a rowid lookup: `dim_city.id` is an
+    /// `INTEGER PRIMARY KEY`, a rowid alias like `s`, `n` and `lin` above, not `TEXT PRIMARY KEY`
+    /// like `id_spaces.id`. `DimCityTests.queryPlanJoinsDimCityByRowid` pins that line the same way.
+    ///
+    /// **The city-name projection is gated on the same flags that provide the alias it reads
+    /// from, never on the name flag alone.** Three sources are tried in order, each conditioned
+    /// on both the flag that says the column/table exists AND `hasIdSpace` (the join that gets a
+    /// row to `id_spaces` at all):
+    ///
+    /// 1. `dc.display_name`, when `hasDimCity && hasIdSpace` (task #237) — `dim_city` joined
+    ///    through `isp.city_id`, which itself requires `isp` (hence `hasIdSpace` here too).
+    /// 2. `isp.short_name`, when neither (1) resolved and `hasCivicShortNames && hasIdSpace`
+    ///    (ERRATA E209/#233) — a v15 file, which has no `dim_city` to prefer.
+    /// 3. `NULL` otherwise.
+    ///
+    /// **Why not just gate on the name flag alone.** The two flags in each pair are introspected
+    /// independently and nothing stops a file from having one true and the other false — a seed
+    /// fixture built with `id_spaces.short_name` present but `trees.id_space` absent reproduced
+    /// exactly that for (2): the `isp` alias never enters the query because `idSpaceJoin` is empty
+    /// on `hasIdSpace` alone, so projecting `isp.short_name` on `hasCivicShortNames` alone throws
+    /// `no such column: isp.short_name` at prepare — a naming collision with a table that was
+    /// never joined, not a null result (`CivicShortNameTests
+    /// .aFixtureWithShortNameButNoTreeIDSpaceStillPrepares`). The same shape applies to `dc`: it is
+    /// only ever referenced when `isp` was also joined, because `dc` is joined *through* `isp`
+    /// (`dc.id = isp.city_id`) — `DimCityTests.aFixtureWithDimCityButNoTreeIDSpaceStillPrepares`
+    /// guards it.
     func treeSQL() -> String {
         let idSpaceJoin = schema.hasIdSpace
             ? "LEFT JOIN \(seed).id_spaces isp ON isp.id = t.id_space"
             : ""
-        let hasResolvableShortName = schema.hasCivicShortNames && schema.hasIdSpace
+        let hasResolvableDimCityName = schema.hasDimCity && schema.hasIdSpace
+        let dimCityJoin = hasResolvableDimCityName
+            ? "LEFT JOIN \(seed).dim_city dc ON dc.id = isp.city_id"
+            : ""
+        let hasResolvableShortName = !hasResolvableDimCityName
+            && schema.hasCivicShortNames && schema.hasIdSpace
+        let cityNameProjection: String
+        if hasResolvableDimCityName {
+            cityNameProjection = "dc.display_name"
+        } else if hasResolvableShortName {
+            cityNameProjection = "isp.short_name"
+        } else {
+            cityNameProjection = "NULL"
+        }
         return """
         SELECT \(treeColumns),
                \(SpeciesQueries.projection(identityColumn: schema.speciesIdentityColumn)),
                n.name AS neighborhood_name,
                lin.\(schema.treeIdentityColumn) AS site_lineage_uuid,
                \(schema.hasInventorySource ? "t.inventory_source" : "NULL") AS inventory_source,
-               \(hasResolvableShortName ? "isp.short_name" : "NULL") AS city_short_name
+               \(cityNameProjection) AS city_short_name
           FROM \(seed).trees t
           LEFT JOIN \(seed).species s ON s.id = t.species_current
           LEFT JOIN \(seed).neighborhoods n ON n.id = t.neighborhood_id
           LEFT JOIN \(seed).trees lin ON lin.id = t.site_lineage
           \(idSpaceJoin)
+          \(dimCityJoin)
          WHERE t.\(schema.treeIdentityColumn) = :uuid COLLATE NOCASE
         """
     }
