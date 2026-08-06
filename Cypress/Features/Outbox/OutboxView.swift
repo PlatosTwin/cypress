@@ -433,7 +433,11 @@ struct OutboxQueueRow: View {
     /// `#8A5A17` is **5.91:1** on the card and is already what the reason line directly beneath
     /// this word uses, so the two terminal lines now read as one voice. Dark is unchanged — both
     /// tokens resolve to `#D99A4E` there, at 6.57:1.
-    private var terminalStateWordColor: Color { CypressColor.amberChipSelectedText }
+    /// Internal and `static` so the suite can read the decision rather than the rendering: SwiftUI
+    /// builds no render tree a test can walk, so a call-site color that is only ever written inline
+    /// can be reverted to `accentAmber` without one assertion going red. Pinned by
+    /// `OutboxStateWordTests`.
+    static let terminalStateWordColor = CypressColor.amberChipSelectedText
 
     @ViewBuilder
     private var stateWord: some View {
@@ -445,12 +449,12 @@ struct OutboxQueueRow: View {
         case .stopped:
             Text(row.state.rawValue)
                 .font(CypressFont.mono11Bold)
-                .foregroundStyle(terminalStateWordColor)
+                .foregroundStyle(Self.terminalStateWordColor)
         case .retry:
             Button { onRetry?() } label: {
                 Text(row.state.rawValue)
                     .font(CypressFont.mono11Bold)
-                    .foregroundStyle(terminalStateWordColor)
+                    .foregroundStyle(Self.terminalStateWordColor)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
