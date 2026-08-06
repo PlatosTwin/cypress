@@ -63,10 +63,16 @@ eleven lines before the same cutoff — more of the sentence readable without sc
 108 pt of budget this ruling gives back. See
 `docs/errata-pending/ax5-recenter-occluded-after-reservation-correction.md` for a discovered side
 effect of the larger notice: in that same denied-location state, the recenter control (first in
-`bottomChrome`'s stack, so pushed furthest by the taller notice below it) loses hittability,
+`bottomChrome`'s stack, so pushed furthest by the taller notice below it) lost hittability,
 occluded by the filter chip row above it — an existing, separately-documented overlap
 (`MapHomeView.chrome`'s own comment on the top/bottom chrome blocks overlapping "at accessibility
-sizes, where they already did") that this ruling's correction measurably worsens for this one
-control, in this one state. That is not a defect in what this ruling asked for — the two constants
-now say what E243 measured, exactly — and fixing the reachability question is explicitly left open
-for a separate ticket.
+sizes, where they already did") that this ruling's correction measurably worsened for this one
+control, in this one state. That was not a defect in what this ruling asked for — the two constants
+say what E243 measured, exactly, and are untouched by what follows.
+
+**Task #250 fixed the reachability question, in the same PR, rather than leaving it for a separate
+ticket as first planned.** `MapLayout.noticeMaxHeight` gained a second reservation
+(`topChromeReservedAX5(topInset:)`) for the room the search bar and filter chip row need, so the
+notice's AX5 budget stops short of where the recenter control would rise back into that chrome. The
+two constants this ruling corrected (`locateButtonHeightAX5`, `.fabHeightAX5`) are unchanged by
+that fix. See the errata entry above for the mechanism and the receipts.
