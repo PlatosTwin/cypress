@@ -234,7 +234,11 @@ final class MapModel {
     /// for something that "dismisses quick"; no number was specified, and this one is the smallest
     /// commitment that satisfies both halves of the sentence. It is a `static let` rather than a
     /// literal so the value has a name in the one place a future owner ruling would change it.
-    static let defaultNeedsCareToastDuration: Duration = .seconds(3)
+    ///
+    /// `nonisolated` for `markerCellPoints`' reason: an immutable constant that took this type's
+    /// `@MainActor` only by living on it, and it is read from `init`'s default argument list,
+    /// which is not on the actor. Without it the Swift 5 mode warns and the Swift 6 mode refuses.
+    nonisolated static let defaultNeedsCareToastDuration: Duration = .seconds(3)
 
     /// The chip was pressed, or something else about the narrowing moved.
     private func needsCareChipDidChange(from old: MapFilter) {
