@@ -1910,18 +1910,18 @@
     "semantic_hash": "c0f1dd67f2cd86ecaadeb440a633739e"
   },
   "docs/ERRATA.md": {
-    "mtime": 1785943035.7641003,
-    "ast_hash": "fd8c4ac669ac9797ca1ce5883f853a56",
+    "mtime": 1785977329.4328563,
+    "ast_hash": "e714295c2a3b622ccef5afb7f6281c5c",
     "semantic_hash": ""
   },
   "docs/ROADMAP.md": {
-    "mtime": 1785943035.7682269,
-    "ast_hash": "3ee0e26047c91d2e157bb7336a3318f9",
+    "mtime": 1785977329.4339318,
+    "ast_hash": "fc6c87e7c087dcd2f2098ffe373c1992",
     "semantic_hash": ""
   },
   "docs/RULINGS.md": {
-    "mtime": 1785827592.2637343,
-    "ast_hash": "e3c22da35b48c5756c6d5f2fa1ae7ab4",
+    "mtime": 1785977329.4335291,
+    "ast_hash": "26a9c06386156eab73d1e1f7e30521de",
     "semantic_hash": ""
   },
   "docs/distilled/DECISIONS.md": {
@@ -2487,26 +2487,6 @@
   "CypressTests/GroveEmptyStateTests.swift": {
     "mtime": 1785964457.870945,
     "ast_hash": "9b750135a8001d9e9b1beab16f3f47c4",
-    "semantic_hash": ""
-  },
-  "docs/errata-pending/civic-short-names.md": {
-    "mtime": 1785964457.8744464,
-    "ast_hash": "6a7b4b85519224dd39317363ab1a1342",
-    "semantic_hash": ""
-  },
-  "docs/errata-pending/e48-empty-grove-copy-closed.md": {
-    "mtime": 1785964457.874736,
-    "ast_hash": "3a377170cf70c9e76cf7f74f3dbfda2b",
-    "semantic_hash": ""
-  },
-  "docs/rulings-pending/c19-vacant-and-standing-dead-stay-words-only.md": {
-    "mtime": 1785964457.8751895,
-    "ast_hash": "ccb754707e688e04224a664ad49e35e3",
-    "semantic_hash": ""
-  },
-  "docs/rulings-pending/mapLocationNotice-ax5-scrollable.md": {
-    "mtime": 1785964457.8754811,
-    "ast_hash": "514b3d8d984f1edacb1920581bb68e10",
     "semantic_hash": ""
   }
 }
