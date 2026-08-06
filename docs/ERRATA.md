@@ -1219,6 +1219,8 @@ wrote the other sentences. A screenshot of the state as built is attached to the
 
 **Flagged for design.** The honest minimum is what shipped; it is not a design.
 
+**Closed by E239** — the owner approved one sentence verbatim on 2026-08-05.
+
 ### E49 — three rules screen 08 needs and SCREENS.md does not state
 
 Recorded together because each is a small decision taken inside `GrovePresentation`, and each would
@@ -10909,6 +10911,9 @@ default center and was coloring `Southern Magnolia`.
   182 `colour` are somebody else's ticket.
 - **No schema change.** `AppSchema` is untouched at v13.
 
+**§2's layout ruling has since been taken: R65** (2026-08-05) — the card scrolls at AX5
+rather than growing past the top of the screen.
+
 ### E184 — the favorite a refresh put back, and the note that sent the reader to a heart nobody drew (task #139)
 
 Two reports from the project owner, walking the running app on 2026-07-31:
@@ -12493,8 +12498,6 @@ is the thing the seed is careful never to move.
 
 *Swept on branch `p1/species-page-copy`, 2026-08-02, after #181 turned out to be the fourth rediscovery of the same family (#137, #138, #141). Recorded rather than fixed; each member needs a decision wider than #181's delegation.*
 
-*UNNUMBERED — the orchestrator splices the number at merge. Filed from branch `p1/species-page-copy`.*
-
 ---
 
 #137, #138, #141 and now #181 have each found one surface that assumed the only city was San
@@ -12617,9 +12620,6 @@ the app's read layer** — the only occurrences are in `DataGates`, correctly pe
 ### E210 — The false-red families are now preflight refusals, and the 390 pt premise did not survive the device (task #182)
 
 *Mechanized on branch `p1/round8-a`, 2026-08-02. Each refusal was proved to fire by creating the bad state deliberately, and proved not to always fire by a negative control. Two follow-ups are recorded below and neither is resolved: E202-A's marker did not survive reinstall on the day this was written, and the two 16e failures that produced task #183 did not reproduce on a freshly-erased device.*
-
-*UNNUMBERED — the orchestrator splices the number at merge. Filed from branch `p1/round8-a`,
-measured on iPhone 16e `3A1F212D-8F3A-41F1-AF72-EC95E155A4C9`, freshly erased, 2026-08-02.*
 
 ---
 
@@ -12881,9 +12881,7 @@ not notified and claim no other reader.
 
 ### E213 — E209's Shape B, fixed and guarded — and the red-proof that caught the guard exempting itself (task #186)
 
-*UNNUMBERED — the orchestrator splices the number at merge and rewrites the code citations. Filed
-from branch `p1/round8-b`. Latest numbered at time of writing: E209, R49. The design decision is in
-the companion pending ruling, `city-record-columns-decline-outside-their-id-space.md`.*
+The design decision is in the companion ruling, **R51**.
 
 ---
 
@@ -13199,8 +13197,6 @@ columns with their own SQL and are unaffected by any of the above.
 *Found on branch `p1/round10-b` (task #185), 2026-08-03, on iPhone 16e `3A1F212D-…`. Not caused by
 that ticket; the control at the merge base proves it.*
 
-*UNNUMBERED — the orchestrator splices the number at merge.*
-
 ---
 
 **The symptom.** Two UI tests fail and nothing else does:
@@ -13266,8 +13262,6 @@ for a wide camera. That is a change to a shared tool from a branch, and it belon
 the next round of `run_tests.sh` rather than to a copy ticket.
 
 ### E217 — The deep-link harness resolved trees from the seed's status while every screen it opened read the device's (task #173)
-
-*UNNUMBERED — the orchestrator splices the number at merge.*
 
 *Found on branch `p1/round12-b`, 2026-08-03, iPhone 16e `3A1F212D-…`, by
 `CypressUITests/PrimaryCTAReachabilityTests` on its first run. Not caused by that ticket; the
@@ -13360,8 +13354,6 @@ no cleanup, and a device driven for long enough will eventually collide the way 
 to whoever owns the next round of the harness rather than to a probe ticket.
 
 ### E218 — E206's replacement figure was itself off by one, and three shipped comments copied it (task #122)
-
-*UNNUMBERED — the orchestrator splices the number at merge.*
 
 *Found on branch `p1/round13-a`, 2026-08-03, iPhone 16 Pro Max `DE8E11AE-…`, while auditing #122's
 list of quoted seed figures. Amends **E206**, which is otherwise correct and whose vacant-site
@@ -15214,3 +15206,178 @@ failures`. `DragGestureGateTests` green after: `<scratchpad>/drag-gate.log`.
 Full suite, this session, foreground, judged by `Tools/verify_test_log.sh` and a manual log-tail read
 for `** TEST SUCCEEDED **` / `Test run with N tests passed` (ticket #231 established the verifier
 alone can false-green an interrupted run) — see the PR body for the exact log line and path.
+
+### E238 — E209's Shape A, fixed: `id_spaces.short_name` in the seed, the share card off it (task #233)
+
+
+#### What E209 left open, and the decision that closes it
+
+E209-A1 named the one surviving Shape A member: `SharePresentation.ShareCopy.city` hardcoded
+`"San Francisco"`, true only while the seed held one city, so every one of San Jose's 52,788
+trees was captioned with the wrong city on screen 10's share card. E209 recorded why it was not
+fixed there — no table anywhere carried a short, reader-facing city name; `id_spaces` had `id`,
+`identity_prefix` and a prose `note`, and `inventories.name` is the inventory's own published
+name ("SF Public Works street tree inventory"), not a city's.
+
+The owner's decision (2026-08-05, this round): the short name is a hand-maintained mapping in
+`Tools/build_seed.py`, emitted into the seed itself as `id_spaces.short_name`, so one seed publish
+covers both this and the `species_trigrams` work (#227/E165) already merged into the same
+unpublished generation.
+
+#### The premise checked before building on it
+
+Neither addition had shipped. Fetched the live manifest directly
+(`https://cypress-cities.t3.tigrisbucket.io/manifest.json`, 2026-08-05): both `sf` and `us-ca-sj`
+are still `"schema_version": 14`, `"version": "s14-r2026-07-31-d3e3d229"` — the same publish E219
+recorded. So this folds into **s15** rather than minting s16, and `SeedDatabase.newestKnownSchemaVersion`
+(already 15, bumped for #227) needed no further bump — only its doc comment, which now names both
+additions the generation carries.
+
+This is the SEED schema space (`SeedDatabase.newestKnownSchemaVersion` /
+`Tools/publish_cities.py`'s `SEED_SCHEMA_VERSION`), not the WRITABLE database's
+(`AppSchema.currentVersion`) — the two are unrelated and this round touches only the first. No
+`AppSchema` migration was needed or written.
+
+#### What was added
+
+- `Fixtures/seed/schema.sql` / `Tools/build_seed.py`'s embedded `SCHEMA_SQL` (kept byte-identical,
+  as always): `id_spaces.short_name TEXT NOT NULL CHECK (short_name <> '')`.
+- `Tools/build_seed.py`'s `SHORT_CITY_NAMES` — `{"sf": "San Francisco", "us-ca-sj": "San Jose"}` —
+  the same two civic strings `Tools/publish_cities.py`'s `DISPLAY_NAMES` already ships in the
+  manifest's `display_name` field, entered independently rather than imported (the two publishers
+  are separately owned by design) but not invented: copied from an already-shipped, already
+  owner-approved source. A contributing id space with no entry fails the build loudly, the same
+  shape as `DISPLAY_NAMES`'s own refusal.
+- `SeedSchema.hasCivicShortNames` — introspected via `columnNames(ofTable: "id_spaces")`, never a
+  version compare, the same instrument `hasCityRaw`/`hasInventorySource` use for a column (rather
+  than `hasSpeciesTrigrams`'s `tableExists`, which is the right shape for a new table but not for a
+  column added to an existing one).
+- `TreeQueries.tree(id:)` gained a `LEFT JOIN id_spaces isp ON isp.id = t.id_space`, conditioned on
+  `schema.hasIdSpace` (not merely `hasCivicShortNames`) so the join itself is omitted — not merely
+  its column — on a seed with no `id_spaces` table at all. `TreeRecord.cityShortName` and
+  `TreeProfile.cityShortName` carry the answer to `SharePresentation.locationLine`, the same shape
+  as the existing `neighborhoodName` (a fact the seed keys by string, not by an id `Tree` already
+  carries).
+
+#### The fix, and the fallback
+
+`SharePresentation.locationLine` no longer reads a constant. It reads `profile.cityShortName` and
+falls back **honestly** — never to a guessed or stale city:
+
+- known address, known city → `"<address> · <city>"` (unchanged shape)
+- known address, no known city → `"<address>"` (no dangling separator — the new half)
+- no address, known city → `"<city>"` (unchanged)
+- neither known → `""` (silence, not a placeholder)
+
+"No known city" is not an error state — R37.3 already establishes that the bundled seed and a
+downloaded city file are legitimately different generations at once, so an s14 San Jose beside an
+s15 bundle, a pre-`id_space` row, or a community-added tree (which never has an id space) are all
+ordinary. `ShareCopy.city` is deleted; nothing else in the app referenced it.
+
+#### Tests
+
+`CypressTests/CivicShortNameTests.swift` proves the introspection-gated path against three built
+fixtures — `id_spaces.short_name` present, `id_spaces` present without the column, and `id_spaces`
+absent entirely (the dangerous case: a `LEFT JOIN` against a table that is not there is a SQL
+error, not a null result, and this is what proves the join is conditioned on `hasIdSpace` rather
+than only on `hasCivicShortNames`) — plus a real-seed check gated `.enabled(if:)` the same way
+`SpeciesTrigramTests` gates its four: the canonical seed on every tree is still s14 and cannot
+answer it yet, so that one test is currently disabled and reactivates on its own once a seed built
+by this branch's `build_seed.py` is canonical. `CypressTests/SharePresentationTests.swift` gained
+four cases for the fallback matrix, including the regression case by name — a San Jose tree's card
+must not read "San Francisco".
+
+**Red-proofed, twice, and read for the reason:**
+
+| break | result |
+|---|---|
+| `SharePresentation.locationLine`'s `city` reset to the literal `"San Francisco"` | 8 issues, `SharePresentationTests`: every new fallback/San-Jose case failed with the exact wrong string named (`"Great Highway at Judah · San Francisco"` where San Jose was expected, `"San Francisco"` where the empty-line case was expected) |
+| `TreeQueries.tree(id:)`'s `city_short_name` column forced to `NULL` unconditionally | 3 issues, `CivicShortNameTests.aFixtureWithShortNamesResolvesTheCity`: both rows resolved to `nil` instead of their own city, and the SF/SJ-disagree control failed too |
+
+Both restored and reconfirmed green before this was filed.
+
+#### What was refuted
+
+- **"An s15 seed has been published somewhere and this needs s16."** Checked against the live
+  manifest directly rather than assumed: false, both cities are still s14.
+- Nothing else in E209/E213's list needed reopening — E213 already confirmed Shape B is separate
+  and fixed, and E209 itself states Shape A had exactly one member left (`ShareCopy.city`); a
+  fresh grep for a second hardcoded city name in reader-facing copy found none.
+
+#### Left alone, deliberately
+
+`MapKitBasemap.defaultCentre` (E209's Shape B item, `MapKitBasemap.swift:312`) is untouched — it
+needs a per-city center `CityManifest.City` does not carry, which is a different, wider ticket, and
+E213 already declined it for the same reason.
+
+### E239 — E48's empty-grove copy, closed (owner-approved 2026-08-05, task #235)
+
+**Closes ERRATA E48** ("the empty grove is a BUILD-PLAN §9 requirement, and no copy exists for it").
+
+E48 recorded that BUILD-PLAN §9 requires an empty-grove state for screen 08, that no mock and no
+line of SCREENS.md gives it copy, and that the honest minimum — the ring, the celebration callout
+and the tile grid each absent because each derives from contributions, per
+`GrovePresentation.isEmpty` — was what shipped while the sentence itself was flagged for design.
+
+**The owner approved the following line verbatim on 2026-08-05:**
+
+> Your grove is empty so far. The species you spot will gather here.
+
+Not a character of it was changed. It renders in `GroveView.speciesTab` only when
+`GrovePresentation.isEmpty` is true — the same gate E48 already built and shipped — positioned in
+the empty column between the tab row and §6's bottom-pinned footnote, in the same `GroveNote` card
+`treesTab` already uses for its own empty state (`GroveCopy.treesEmptyState`). The constant is
+`GroveCopy.emptyGrove` (`Cypress/Features/Grove/GrovePresentation.swift`).
+
+No styling was invented: `GroveNote` is the existing shared component for "a sentence where a list
+would be" (screen 08's own doc comment), and no raw hex, font size or radius was introduced.
+
+**Tests**, all in `CypressTests`:
+- `GrovePresentationTests.oneKnownSpeciesIsNeverTheEmptyGrove` — `isEmpty` stays `false` the moment
+  there is one known species, however incomplete the rest of the read is.
+- `GrovePresentationTests.emptyGroveCopyIsVerbatim` — pins the exact string.
+- `GrovePresentationTests.emptyGroveCopyIsItsOwnSentence` — distinct from the Trees pill's empty
+  state, the footnote, and the failure sentence (E158's warning, applied across pills).
+- `GroveEmptyStateTests.theSentenceIsOnScreen` — a real `UIHostingController` render of the empty
+  grove compared against a real `GroveView` that never finished loading (an API whose
+  `groveSpecies()` never returns), which is the one state `speciesTab` has no branch for at all and
+  is produced by production code rather than a hand-reconstruction. Red-proved: watched fail with
+  the `GroveNote(GroveCopy.emptyGrove)` branch removed from `speciesTab` — the two renders came back
+  byte-identical (112658 bytes each) — then restored.
+- `GroveEmptyStateTests.aKnownSpeciesDrawsSomethingElse` — a grove with one known species renders
+  its tile, not the empty-grove sentence.
+
+### E240 — The deploy could not sign: two measured failures before the archive learned to ship unsigned (ticket #238)
+
+Ticket #232 (PR #26) imported a persisted Apple Distribution certificate so CI stops minting a new
+one per deploy. The first release that actually exercised the path — 0.2 (14) — then failed twice,
+differently, before it minted. The first failure was main's own post-merge acceptance run — the
+push run PR #28's merge triggered — so main's deploy pipeline did fail once in the open; it failed
+before any build was minted, and nothing broken shipped. The second failure and the eventual
+success were measured on pre-merge branch dispatches (safe because the app code was byte-identical
+to main), so the fix itself reached main already proven.
+
+**Failure 1 (run 31052462134).** `xcodebuild archive` under the project's Automatic signing style
+demanded an Apple *Development* identity. The imported Distribution identity was present in the
+keychain and irrelevant: under Automatic, the archive step signs with a development identity and
+re-signs at export, so an archive-time signing pass cannot be satisfied by a Distribution
+certificate alone.
+
+**Failure 2 (run 31054628357).** The direct response — forcing
+`CODE_SIGN_IDENTITY="Apple Distribution"` at archive while the style stayed Automatic — failed with
+"conflicting provisioning settings", exactly as the PR #31 reviewer predicted before the run was
+dispatched.
+
+**What ships (PR #31, take 2, run 31057202426).** The archive builds unsigned
+(`CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO`); export performs the one and only signing
+pass, driven by `Tools/ExportOptions.plist` (app-store-connect, automatic signing) with the
+imported Distribution identity and the ASC API key. The `VERSION`-file readback (ticket #236) is
+unaffected and held through all three runs. 0.2 (14) was minted from this configuration and tagged
+`build-14` at 32f5ec6.
+
+The lesson, in one line: **an identity in the keychain is necessary, not sufficient — what matters
+is which build step performs the signing moment.** Under Automatic signing, archive-then-export
+wants to sign twice with two different identity classes; the only configuration that signs exactly
+once, with exactly the imported identity, is an unsigned archive and a signing export. The workflow
+comment at the archive step cites both failed runs by ID so the next person measures before
+re-theorizing.
