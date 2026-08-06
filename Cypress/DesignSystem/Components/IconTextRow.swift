@@ -62,28 +62,29 @@ struct IconTextRow: View {
         .contentShape(Rectangle())
     }
 
-    /// `radial-gradient(circle at 45% 42%, <accent> 0%, transparent 55%)` over a pale base — drawn
-    /// on its own when there is no photograph, and reused as `PhotoImage`'s placeholder when there
-    /// is one so a tree whose bytes have not loaded yet, or have none, still draws this row's own
-    /// accent rather than a photograph-shaped hole.
+    /// **Which accents are drawn as an empty well rather than as a tree tile**, as a value.
     ///
-    /// **A vacant site is not drawn that way, because a vacant site is not a tree.** ROADMAP §1
+    /// **A vacant site is not drawn as a tree, because a vacant site is not one.** ROADMAP §1
     /// settles what it is — "a distinct planting-site state, *not* a variant of the tree profile" —
     /// and R7/E119/E123 gave that state a drawn vocabulary everywhere else it appears: the map pin,
     /// 14's empty photo well, the site screen, `LocationPrompt`. The almanac tile was the one member
     /// still wearing the tree's clothes, a radial blob at 45%/42% differing from the five living
-    /// tiles only in color. `emptyWell` below is that vocabulary at 34 pt, and nothing else.
-    /// **Which accents are drawn as an empty well rather than as a tree tile**, as a value.
+    /// tiles only in color. `emptyWell` is that vocabulary at 34 pt, and nothing else.
     ///
-    /// The `QuadActionRow.rows` precedent: a drawing decision a test can read cannot be reverted
-    /// without something going red, where an `if` inside a `@ViewBuilder` can — SwiftUI builds no
-    /// render tree a test can walk. Exactly one accent answers `true`, and the other five must keep
-    /// answering `false`: a living tree drawn as a hole in the pavement is the same category error
-    /// in the opposite direction.
+    /// A value rather than an `if` inside the `@ViewBuilder`, on the `QuadActionRow.rows`
+    /// precedent: SwiftUI builds no render tree a test can walk, so a drawing decision written
+    /// inline can be reverted without one assertion going red. Exactly one accent answers `true`,
+    /// and the other five must keep answering `false` — a living tree drawn as a hole in the
+    /// pavement is the same category error in the opposite direction.
     static func drawsEmptyWell(_ accent: CypressColor.TileAccent) -> Bool {
         accent == .vacantSite
     }
 
+    /// `radial-gradient(circle at 45% 42%, <accent> 0%, transparent 55%)` over a pale base — drawn
+    /// on its own when there is no photograph, and reused as `PhotoImage`'s placeholder when there
+    /// is one so a tree whose bytes have not loaded yet, or have none, still draws this row's own
+    /// accent rather than a photograph-shaped hole. A vacant site takes `emptyWell` instead; see
+    /// `drawsEmptyWell`.
     private var tile: some View {
         Group {
             if Self.drawsEmptyWell(accent) {
