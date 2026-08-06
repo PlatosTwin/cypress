@@ -68,7 +68,17 @@ public enum SeedDatabase {
     /// city, because the read layer asks the file what it carries — `hasSpeciesTrigrams`,
     /// `hasCivicShortNames` — and falls back to what s14 shipped with. The bump is what lets a
     /// *later* build tell the generations apart without guessing.
-    public static let newestKnownSchemaVersion = 15
+    ///
+    /// **16** (task #237) adds `dim_city`, the city dimension table — slug, display name, state,
+    /// county, the city's own official street-tree/urban-forestry page — joined through the new
+    /// `id_spaces.city_id`, and *drops* `id_spaces.short_name` (v15's addition, absorbed into
+    /// `dim_city.display_name` as one source of truth instead of two hand-maintained mappings).
+    /// This is NOT a pure addition the way 15 was: a v15 file still opens and still names a city
+    /// through `hasCivicShortNames`, and a v16 file no longer carries the column
+    /// `hasCivicShortNames` was written to find, so the read layer must ask each flag
+    /// independently rather than assume 16 implies 15's shape — see `SeedSchema.hasDimCity` and
+    /// `TreeQueries.treeSQL()`.
+    public static let newestKnownSchemaVersion = 16
 
     // MARK: - Locating
 
@@ -196,6 +206,17 @@ public struct SeedSchema: Equatable, Sendable {
     /// layer falls back to whatever it showed before a short name existed (see
     /// `SharePresentation.locationLine`), never to a fabricated city.
     public let hasCivicShortNames: Bool
+    /// Whether `dim_city` is present — the v16 seed pass (task #237), the city dimension table
+    /// (slug, display name, state, county, the city's own official street-tree/urban-forestry
+    /// page) that `id_spaces.city_id` joins through and that `id_spaces.short_name`'s civic name
+    /// is absorbed into.
+    ///
+    /// Table-gated, the same shape `hasSpeciesTrigrams` uses for a new table — unlike
+    /// `hasCivicShortNames`, which is column-gated because it lands on the pre-existing
+    /// `id_spaces` table. A seed or city file built before this pass has no `dim_city` at all;
+    /// the read layer falls back to `hasCivicShortNames`'s `id_spaces.short_name` for a v15 file,
+    /// and to nil for anything older — see `TreeQueries.treeSQL()`.
+    public let hasDimCity: Bool
     /// Whether the identity model is the current INTEGER-PK one.
     public var usesIntegerPrimaryKeys: Bool { treeIdentityColumn == "uuid" }
 
@@ -242,7 +263,8 @@ public struct SeedSchema: Equatable, Sendable {
                 && connection.tableExists("inventories", in: schema),
             hasSpeciesTrigrams: try connection.tableExists("species_trigrams", in: schema),
             hasCivicShortNames: try connection.columnNames(ofTable: "id_spaces", in: schema)
-                .contains("short_name")
+                .contains("short_name"),
+            hasDimCity: try connection.tableExists("dim_city", in: schema)
         )
     }
 }

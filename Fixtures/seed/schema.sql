@@ -135,6 +135,51 @@ CREATE TABLE neighborhoods (
     updated_at   TEXT NOT NULL
 );
 
+-- ---------------------------------------------------------------- dim_city --
+-- Task #237. A city dimension table: the reader-facing civic facts about a
+-- city -- slug, display name, state, county, the city's own official
+-- street-tree/urban-forestry page -- joined through `id_spaces.city_id`
+-- instead of scattered across other tables one column at a time.
+--
+-- SUPERSEDES renaming `id_spaces.id` to a "us-ca-sf"-style slug. `id_spaces.id`
+-- stays FROZEN internal identity plumbing -- it is the key `trees.id_space`
+-- carries and `Tools/inventory_contract.py`'s `IdSpace.identity_prefix` is
+-- frozen per space (`sf`'s is the empty string; DECISIONS 13, see the trees
+-- table above). The clean "us-ca-sf" convention lives here, on `dim_city.slug`,
+-- never on `id_spaces.id`.
+--
+-- `id_spaces.short_name` (task #233) is ABSORBED here as `dim_city.display_name`
+-- and the column is DROPPED from `id_spaces` in this pass -- one source of
+-- truth for a city's reader-facing name rather than two hand-maintained
+-- mappings that can drift apart. A reader-facing surface must check
+-- `SeedSchema.hasDimCity` (table-gated, the same shape `hasSpeciesTrigrams`
+-- uses for a new table) before joining through it, and falls back to
+-- `SeedSchema.hasCivicShortNames`'s `id_spaces.short_name` for a file built
+-- before this pass, never to a guess.
+--
+-- Hand-entered in `Tools/build_seed.py`'s DIM_CITY, sourced from each city's own
+-- official pages and verified live -- see that dict's comment for the source
+-- URL behind every value. A contributing id space with no entry there fails the
+-- build loudly, the same shape as DISPLAY_NAMES/SHORT_CITY_NAMES before it.
+CREATE TABLE dim_city (
+    id                  INTEGER PRIMARY KEY,
+    -- The "us-ca-sf" convention: <country>-<state>-<city>, lowercase. Never
+    -- `id_spaces.id` (frozen internal identity plumbing, see above).
+    slug                TEXT NOT NULL UNIQUE,
+    display_name        TEXT NOT NULL,
+    -- Postal abbreviation ("CA"), not the full state name. Flagged for owner
+    -- sign-off in the PR that introduced this table.
+    state               TEXT NOT NULL,
+    county              TEXT NOT NULL,
+    -- The city's own official street-tree / urban-forestry page.
+    urban_forestry_url  TEXT NOT NULL,
+    CHECK (slug <> ''),
+    CHECK (display_name <> ''),
+    CHECK (state <> ''),
+    CHECK (county <> ''),
+    CHECK (urban_forestry_url <> '')
+);
+
 -- ----------------------------------------------------- id spaces, inventories --
 -- THE SEED DECLARES ITS OWN VOCABULARY INSTEAD OF THE SCHEMA ENUMERATING IT.
 --
@@ -165,21 +210,13 @@ CREATE TABLE id_spaces (
     -- `sf`'s is the empty string and is the one space permitted to have one.
     identity_prefix TEXT NOT NULL,
     note            TEXT NOT NULL,
-    -- The short, reader-facing civic name a public surface may print beside a
-    -- record from this space -- "San Francisco", "San Jose". Never
-    -- `inventories.name` (that is the inventory's own published name, e.g. "SF
-    -- Public Works street tree inventory") and never `identity_prefix` (frozen
-    -- identity plumbing, not prose). ERRATA E209 named the gap: no column
-    -- anywhere carried a short city name, so the share card (and nothing else)
-    -- hardcoded "San Francisco" and mislabeled every San Jose tree. Hand-entered
-    -- in `Tools/build_seed.py`'s SHORT_CITY_NAMES, written for exactly the id
-    -- spaces this file carries -- an id space with no entry fails the build
-    -- rather than shipping a blank. `SeedSchema.hasCivicShortNames` is the
-    -- app-side flag a reader-facing surface must check before trusting this
-    -- column exists, the same way `hasSpeciesTrigrams` gates `species_trigrams`.
-    short_name      TEXT NOT NULL,
-    CHECK (id <> ''),
-    CHECK (short_name <> '')
+    -- The city dimension row carrying this space's reader-facing civic facts
+    -- (task #237). REPLACES `short_name` (task #233, dropped in this pass) --
+    -- see `dim_city` above for why a whole table now sits behind this column
+    -- instead of one string beside it. `SeedSchema.hasDimCity` is the app-side
+    -- flag that must be true before a reader joins through it.
+    city_id         INTEGER NOT NULL REFERENCES dim_city(id),
+    CHECK (id <> '')
 );
 
 CREATE TABLE inventories (

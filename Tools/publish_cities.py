@@ -129,7 +129,15 @@ from datetime import datetime, timezone
 # `id_spaces` is narrower still -- narrowed to the city's own row already
 # (VERSIONING above), so `short_name` travels with it automatically and this
 # publisher needed no change for the second addition, only this comment.
-SEED_SCHEMA_VERSION = 15
+#
+# 16 (task #237) drops `id_spaces.short_name` and adds `dim_city` -- the city
+# dimension table `short_name` is absorbed into, joined through
+# `id_spaces.city_id`. `build_city_file` below narrows `dim_city` to the one
+# row this file's `id_spaces` row still references, the same shape as
+# `id_spaces`/`inventories` above and for the same reason: a city file that
+# carried another city's civic facts would be claiming an authority it does
+# not have.
+SEED_SCHEMA_VERSION = 16
 
 # Manifest envelope format, for the app-side parser (#157). Bump on any change
 # that would break a reader of the previous shape; additive keys do not bump it.
@@ -138,6 +146,19 @@ MANIFEST_FORMAT = 1
 # Display names are civic facts, entered by hand on purpose: a city id with no
 # entry here fails the run loudly rather than shipping an invented or derived
 # name (DECISIONS constraint 15 is about botanical/civic content invention).
+#
+# DUPLICATION WITH THE SEED'S dim_city (task #237), evaluated and left alone.
+# `Tools/build_seed.py`'s `DIM_CITY` now carries the same two display names
+# (plus slug, state, county, and a source URL DISPLAY_NAMES has never carried)
+# and this publisher could read `display_name` out of the fused seed's
+# `dim_city` table instead of repeating it here. Left as its own dict because
+# the two tools are separately owned by design (`Tools/build_seed.py`'s
+# SHORT_CITY_NAMES carried the same independence, for the same reason, before
+# task #237 absorbed it): a change to the seed's civic content should not
+# silently reach into the publisher's manifest output on the next run, and a
+# change to the manifest's display name should not require touching the seed
+# schema author's file. If this drifts, the fix is to keep both hand-entries
+# in sync, not to import one from the other.
 DISPLAY_NAMES = {
     "sf": "San Francisco",
     "us-ca-sj": "San Jose",
@@ -217,6 +238,16 @@ def build_city_file(src: str, dest: str, space: str) -> dict:
                     " WHERE neighborhood_id IS NOT NULL)")
         cur.execute("DELETE FROM inventories WHERE id_space != ?", (space,))
         cur.execute("DELETE FROM id_spaces WHERE id != ?", (space,))
+        # dim_city AFTER id_spaces: narrowed to the one row the surviving
+        # id_spaces row still references (task #237), the same reason
+        # inventories/id_spaces above are narrowed to this city alone. The
+        # ordering is load-bearing for the subquery below, which reads the
+        # already-narrowed id_spaces. Nothing else enforces it: this
+        # connection never enables `PRAGMA foreign_keys`, so the FK on
+        # id_spaces.city_id refuses nothing here (measured in PR #33 review);
+        # a wrong-order delete would surface only in the foreign_key_check
+        # pass further down.
+        cur.execute("DELETE FROM dim_city WHERE id NOT IN (SELECT city_id FROM id_spaces)")
         con.commit()
 
         fused_meta = meta(con)
