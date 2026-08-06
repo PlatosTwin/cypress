@@ -122,11 +122,28 @@ AX5 rendering changed.
 Confirmed on the running screen: the recenter crosshair is visible again in the clear band below
 the chip row, and a tap on it produces `MapRecenterCopy.refusalMessage` exactly as
 `MapRecenterUITests.testPressingItWithLocationDeniedExplainsRatherThanDoingNothing` already proved
-it does outside AX5. The standing notice this entry's table was measured against
-(`MapLocationCopy.message`, `.whereYouLeftOff`) now renders its **full, un-truncated 13-line
-message with no scrolling required** — taller than both the pre-#246 figure (~7 lines) and the
-post-#246, pre-#250 figure (~10-11 lines) this branch's ruling recorded, so #246's own point (the
-notice gets its uninflated scroll budget back) still holds.
+it does outside AX5.
+
+**What the fix costs the notice — the first draft of this paragraph had it backwards.** That draft
+claimed the standing notice now renders its "full, un-truncated 13-line message with no scrolling
+required," taller than both earlier figures. It is retracted. PR #45's reviewer measured the same
+notice on the same device in the same launch state and counted **six** lines visible before a
+scroll gesture was needed for the rest, and the arithmetic in the code agrees with the reviewer,
+not with the draft. #246's correction gives the notice back exactly 108 pt (`98 → 44` and
+`137 → 83`, both summed into `bottomSlotReservedAboveAX5`). #250's `topChromeReservedAX5(topInset:)`
+takes `topInset + searchTopInset (8) + searchBarHeightAX5 (77) + chipRowTop (12) +
+chipRowHeightAX5 (60)` = `topInset + 157`. The net movement of `noticeMaxHeight` on any device is
+therefore **`49 pt + that device's top safe-area inset` *smaller* than before #246 touched
+anything** — at AX5 the notice scrolls sooner than it did on main, not later, and six lines after
+the fix against the seven the ruling measured before it is exactly what that subtraction predicts.
+
+This is the tradeoff the fix deliberately makes, not a regression to argue away: a control the
+reader cannot reach is worse than a sentence the reader must scroll, and RULINGS R65 already
+establishes that `MapLocationNotice` scrolls rather than growing off the screen. #246's own point
+survives in the narrower form the ticket actually asked for — the two constants now say what E243
+measured — but the "scroll budget given back" framing does not survive its own arithmetic once
+#250's reservation is in place, and the line counts in this branch's ruling are scoped to #246 in
+isolation, before that reservation existed.
 
 **Tests.** `CypressTests/AX5ReflowTests.topChromeFitsItsReservedBudgetAtAX5` guards
 `searchBarHeightAX5`/`chipRowHeightAX5` the same `<=` way

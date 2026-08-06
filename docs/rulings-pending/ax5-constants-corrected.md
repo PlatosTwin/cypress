@@ -60,7 +60,11 @@ DerivedData build-for-testing (`Tools/verify_test_log.sh --warnings`): `SwiftCom
 with the old constants the notice's visible body text ran seven lines before the card's bottom
 edge; with the corrected constants the same notice, same device, same launch state, ran ten to
 eleven lines before the same cutoff — more of the sentence readable without scrolling, which is the
-108 pt of budget this ruling gives back. See
+108 pt of budget this ruling gives back. **Both figures are this ruling's change in isolation.**
+Task #250's `topChromeReservedAX5(topInset:)`, below, subtracts `topInset + 157` from that same
+budget — more than the 108 this ruling adds — so the *shipped* notice at AX5 scrolls sooner than it
+did before either change (six lines, measured in review). The errata entry cited next carries that
+arithmetic and its receipts. See
 `docs/errata-pending/ax5-recenter-occluded-after-reservation-correction.md` for a discovered side
 effect of the larger notice: in that same denied-location state, the recenter control (first in
 `bottomChrome`'s stack, so pushed furthest by the taller notice below it) lost hittability,
