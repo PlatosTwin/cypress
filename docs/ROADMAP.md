@@ -271,8 +271,7 @@ its value arrive as one stop. **What this does not close**: every other screen's
 unasserted, and — found while building the map test — `debugDescription`, the only order XCUITest
 exposes to a black-box test here, does not appear to move under `accessibilitySortPriority` at all, so
 nothing in this suite can yet verify that mechanism specifically (map task #143's fix for E183 §3 is
-therefore still unverified by any automated test); see
-`docs/errata-pending/debugdescription-blind-to-sortpriority.md`.)
+therefore still unverified by any automated test); see ERRATA **E230**.)
 
 *(The "Two contrast pairs are still failing" entry that stood here is resolved. E120 fixed the C10 locked glyph via lightness-only OKLCh (3.06:1/3.05:1), and E122 fixed the C23 chart series via the same method — chartSeriesPrimary 2.53→3.05, chartSeriesTertiary 2.27→3.06, both moved from `knownFailures` to `retinted`.)*
 
