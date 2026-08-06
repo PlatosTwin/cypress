@@ -197,14 +197,15 @@ struct AX5ReflowTests {
     /// iPhone 16 Pro it was recorded on. On an iPhone 16e the same inset is 47 pt, so the same
     /// unmodified tree measured 91 and 130 and this test failed on the device rather than on the
     /// code. `ax5Size` now takes the inset back off (see its own note), which makes the measurement
-    /// device-independent — and leaves the reservations *larger* than the footprints they reserve
-    /// for, which is the direction `noticeMaxHeight` documents itself as taking ("conservative
-    /// rather than exact"). Over-reserving costs the notice room it does not use; under-reserving
-    /// is E183 §2, the card growing off the top of the screen. Only one of those is a defect, and
-    /// `<=` is the assertion that names it.
+    /// device-independent. Under-reserving is E183 §2, the card growing off the top of the screen;
+    /// `<=` is the assertion that names that direction as the only defect.
     ///
-    /// Correcting the reservations down to the footprints would change what ships at AX5 under an
-    /// owner ruling (R53 §6) and is not this ticket's to take.
+    /// **`MapLayout.locateButtonHeightAX5` and `.fabHeightAX5` were corrected to the bare footprints
+    /// this test measures (44 and 83) on 2026-08-06** — see the owner ruling recorded in
+    /// `docs/rulings-pending/ax5-constants-corrected.md`, which supersedes R53 §6's conservative
+    /// stance for these two constants specifically. `<=` is kept rather than tightened to `==`
+    /// because the guard's job is catching under-reservation if a control's footprint ever grows
+    /// again, not asserting today's exact numbers a second time.
     @Test("the recenter control and the FAB fit what the notice's scroll budget reserves at AX5")
     func bottomChromeControlsFitTheReservedBudgetAtAX5() async {
         let recenter = await Self.ax5Size(of: MapRecenterButton(engagement: .away, action: {}))

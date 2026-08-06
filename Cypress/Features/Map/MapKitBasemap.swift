@@ -228,28 +228,26 @@ enum MapLayout {
 
     /// The room reserved for `MapRecenterButton` above the notice slot.
     ///
-    /// **It is 54 pt more than the control ever takes, and the 54 pt has a name** (ticket #30).
-    /// This was recorded through `AX5ReflowTests.ax5Size`, which measures in a hosted `UIWindow`,
-    /// and `UIHostingController.sizeThatFits` adds the running simulator's top safe-area inset to
-    /// the height it reports — 54 pt on the iPhone 16 Pro this was taken on, 47 pt on an iPhone
-    /// 16e. The comment here used to say the 98 was iOS growing the control's minimum hit target
-    /// across the accessibility range; it was not, and it does not. `MapRecenterButton` is a fixed
-    /// `CypressSpacing.minTapTarget` square and measures 44 pt at `.accessibility5` exactly as it
-    /// does at every other size — now asserted, device-independently, by
-    /// `AX5ReflowTests.bottomChromeControlsFitTheReservedBudgetAtAX5`.
-    ///
-    /// The number is left where it is on purpose. Everything downstream of it is a *reserve*
-    /// (`bottomSlotReservedAboveAX5`, and `noticeMaxHeight` below, which documents itself as
-    /// conservative rather than exact), so an over-reservation costs the notice room it does not
-    /// use, while an under-reservation is E183 §2 — the card growing off the top of the screen.
-    /// Correcting it downward would change what ships at AX5 under an owner ruling (R53 §6).
-    static let locateButtonHeightAX5: CGFloat = 98
+    /// **Corrected 2026-08-06 (owner ruling, docs/rulings-pending/ax5-constants-corrected.md).**
+    /// ERRATA E243 found the old `98` was never a measurement of the control: it was the control's
+    /// real AX5 footprint plus the 54 pt top safe-area inset that `AX5ReflowTests.ax5Size`'s
+    /// measuring window inherited from whichever simulator it ran on (54 pt on an iPhone 16 Pro, 47
+    /// on an iPhone 16e — the harness has since been fixed to subtract it, which is why the value
+    /// here no longer needs to). `MapRecenterButton` is a fixed `CypressSpacing.minTapTarget` square
+    /// and measures exactly that at `.accessibility5`, device-independently — asserted by
+    /// `AX5ReflowTests.bottomChromeControlsFitTheReservedBudgetAtAX5`. The reservation is set to the
+    /// footprint itself rather than left as a margin over it.
+    static let locateButtonHeightAX5: CGFloat = CypressSpacing.minTapTarget
     /// The room reserved for `IdentifyFAB` above the notice slot. Its label is `.font(…, .body)`,
     /// which does scale with Dynamic Type, so this is genuinely not `fabPaddingV * 2` plus a fixed
-    /// glyph — but the number carries the same 54 pt safe-area term as the one above, and for the
-    /// same reason: the FAB measures 83 pt at `.accessibility5`, on both devices. Left as a
-    /// reserve, on the reasoning stated above.
-    static let fabHeightAX5: CGFloat = 137
+    /// glyph.
+    ///
+    /// **Corrected 2026-08-06** for the same reason as `locateButtonHeightAX5` above: E243 found the
+    /// old `137` carried the same 54 pt safe-area term. The FAB's real AX5 footprint is 83 pt,
+    /// measured through `AX5ReflowTests.ax5Size` after that helper's fix (subtracting the measuring
+    /// window's inherited safe-area insets), device-independently on both the iPhone 16 Pro and the
+    /// iPhone 16e.
+    static let fabHeightAX5: CGFloat = 83
 
     /// Everything `bottomChrome`'s `VStack` stacks above the notice slot, at or above the worst
     /// case (`.accessibility5`) either control ever measures: the recenter control, the gap to the
