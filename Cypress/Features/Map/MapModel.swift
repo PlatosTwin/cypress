@@ -31,11 +31,21 @@ final class MapModel {
     private let api: any CypressAPI
     private let calendar: Calendar
     private let now: () -> Date
+    /// How long the `Needs care` toast stays on the glass. Injected for the same reason `now` is:
+    /// a test that had to wait out the shipped interval to watch the toast let go of the screen
+    /// would put three seconds of wall clock into the suite for one assertion.
+    private let needsCareToastDuration: Duration
 
-    init(api: any CypressAPI, calendar: Calendar = .current, now: @escaping () -> Date = Date.init) {
+    init(
+        api: any CypressAPI,
+        calendar: Calendar = .current,
+        now: @escaping () -> Date = Date.init,
+        needsCareToastDuration: Duration = MapModel.defaultNeedsCareToastDuration
+    ) {
         self.api = api
         self.calendar = calendar
         self.now = now
+        self.needsCareToastDuration = needsCareToastDuration
     }
 
     // MARK: - State
@@ -62,7 +72,13 @@ final class MapModel {
     /// The `didSet` is task #190's: a search is a narrowing, and a narrowed map is never owed the
     /// empty-inventory sentence (RULINGS R41). See `recomputeInventoryEmptiness`.
     private(set) var search: MapSearch = .off {
-        didSet { recomputeInventoryEmptiness() }
+        didSet {
+            recomputeInventoryEmptiness()
+            // A typed word is a sixth narrowing, so a toast that outlived one would be a sentence
+            // about a map that is no longer the map it described (task #247). Gated on an actual
+            // change because `fetch()` rewrites this on every settled read (`search.reporting`).
+            if search != oldValue { hideNeedsCareToast() }
+        }
     }
 
     /// What drops under C20 for the text currently in it (task #109, ruling R25).
@@ -126,7 +142,13 @@ final class MapModel {
 
     var filter: Filter = .all {
         didSet {
-            if filter != oldValue { filterDidChange(from: oldValue) }
+            if filter != oldValue {
+                // Before `filterDidChange`, which refetches: the arming has to be in place by the
+                // time an answer can come back, and `filterDidChange` returns early on a
+                // membership press.
+                needsCareChipDidChange(from: oldValue)
+                filterDidChange(from: oldValue)
+            }
             recomputeInventoryEmptiness()
         }
     }
@@ -178,6 +200,86 @@ final class MapModel {
         )
         guard next != inventoryIsEmptyHere else { return }
         inventoryIsEmptyHere = next
+    }
+
+    // MARK: - The `Needs care` toast (task #247, owner's instruction 2026-08-06)
+    //
+    // `MapNeedsCareToast` decides whether this is *the state*; everything here decides whether this
+    // is *the moment*, and the two are deliberately separate. The state is true for as long as the
+    // chip is on over an empty map — every pan, every refetch, every re-read of the same ground —
+    // and a sentence posted every time it were true would be the permanent pollution the owner's
+    // instruction rules out in its own words ("doesn't pollute the map permanently").
+
+    /// Whether the toast is on the glass right now. Read by `MapHomeView`, written only by the two
+    /// methods below.
+    private(set) var needsCareToastIsShowing = false
+
+    /// **One activation of the chip, one answer.** Raised when `Needs care` is switched on and
+    /// lowered by the first settled read after that — whether or not that read produced a toast.
+    ///
+    /// This is the re-arm rule, and it is the conservative one on purpose. The alternative — post
+    /// whenever the state holds — fires on every pan and every zoom across an empty filtered map,
+    /// which is a toast that never stops arriving and is exactly what the owner excluded. What is
+    /// left is a toast that is the *answer to the press*: the reader asked "what needs care around
+    /// here", and the map answers once. Panning afterwards is a new question about the ground, not
+    /// a second press of the chip, and the empty map is already its whole answer (task #165).
+    private var needsCareToastArmed = false
+
+    private var needsCareToastTask: Task<Void, Never>?
+
+    /// How long the toast stays up before it takes itself off the screen.
+    ///
+    /// Three seconds: long enough to read four words at AX5 without hurrying, short enough that it
+    /// is gone before a reader has finished the pan they started. The owner asked for "quick" and
+    /// for something that "dismisses quick"; no number was specified, and this one is the smallest
+    /// commitment that satisfies both halves of the sentence. It is a `static let` rather than a
+    /// literal so the value has a name in the one place a future owner ruling would change it.
+    static let defaultNeedsCareToastDuration: Duration = .seconds(3)
+
+    /// The chip was pressed, or something else about the narrowing moved.
+    private func needsCareChipDidChange(from old: MapFilter) {
+        // **Any** change to the filter invalidates a toast already up: it was a sentence about one
+        // query's answer, and this is a different query. Turning the chip off is only the most
+        // obvious case of it.
+        hideNeedsCareToast()
+        let wasOn = old.condition == .needsCare
+        let isOn = filter.condition == .needsCare
+        guard wasOn != isOn else { return }
+        needsCareToastArmed = isOn
+    }
+
+    /// Called once per completed read, **after** every other published fact about it has landed —
+    /// `content`, `search`, `loadFailure` and `hasSettled` — because the gate reads three of them
+    /// and a toast decided from a half-published read would be answering the previous question.
+    private func noteSettledContent() {
+        guard needsCareToastArmed else { return }
+        // Consumed either way. A read that came back with trees answers the press just as
+        // completely as one that came back empty, and neither leaves anything owed to the next pan.
+        needsCareToastArmed = false
+        guard MapNeedsCareToast.isOwed(
+            filter: filter,
+            isSearching: search != .off,
+            readFailed: loadFailure != nil,
+            markerCount: content.markerCount
+        ) else { return }
+        showNeedsCareToast()
+    }
+
+    private func showNeedsCareToast() {
+        needsCareToastTask?.cancel()
+        needsCareToastIsShowing = true
+        needsCareToastTask = Task { [weak self, needsCareToastDuration] in
+            try? await Task.sleep(for: needsCareToastDuration)
+            guard !Task.isCancelled else { return }
+            self?.needsCareToastIsShowing = false
+        }
+    }
+
+    private func hideNeedsCareToast() {
+        needsCareToastTask?.cancel()
+        needsCareToastTask = nil
+        guard needsCareToastIsShowing else { return }
+        needsCareToastIsShowing = false
     }
 
     private(set) var selection: MapCardSubject?
@@ -523,6 +625,10 @@ final class MapModel {
             // while `content` still holds the opening `.pins([])` — that ordering would post the
             // notice for one publish cycle on every launch, over any street in the city.
             hasSettled = true
+            // **Last, deliberately.** The toast's gate reads `content`, `search` and `loadFailure`,
+            // all of which are published above; asking it any earlier would decide this read's
+            // sentence from the previous read's facts (task #247).
+            noteSettledContent()
         } catch let error as APIError {
             guard !Task.isCancelled else { return }
             loadFailure = error

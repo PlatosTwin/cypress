@@ -231,6 +231,15 @@ struct MapHomeView: View {
             MapFrameProbe.shared.note(markers: content.markerCount, zoom: model.viewport?.zoom ?? 0)
         }
         #endif
+        // **The toast, spoken** (task #247). A card that appears for three seconds in the chrome is
+        // a thing you have to be looking at; an announcement is the one mechanism that reports it
+        // without stealing focus, which is `speak`'s whole argument below and
+        // `VisitPinAdjustView`'s for its nudge pad. The card stays in the element tree as well, so
+        // a reader sweeping the chrome inside that window still finds it — this is the channel for
+        // the reader who is not.
+        .onChange(of: model.needsCareToastIsShowing) { _, isShowing in
+            if isShowing { speak(MapNeedsCareToastCopy.message) }
+        }
         .onChange(of: location.availability) { _, availability in
             // Any change in what the app knows about the user answers whatever the last press was
             // told to wait for — a grant arriving from Settings, or the first fix landing.
@@ -348,6 +357,21 @@ struct MapHomeView: View {
                     }
                     MapFilterChips(filter: $model.filter)
                         .accessibilitySortPriority(4)
+                    // **The one transient sentence on this screen** (task #247, the owner's
+                    // instruction of 2026-08-06, quoted in `MapNeedsCareToast`). Directly under
+                    // the chip that caused it and in the flow, so it cannot cover the chips above
+                    // it, the legend below it, or the FAB and the card in the bottom block — the
+                    // collision `chrome`'s own reorder note records seeing at AX5.
+                    //
+                    // 3.5 rather than a renumbering of its neighbors: the reading order this must
+                    // take is "after the chips, before the search status", and the four priorities
+                    // either side are walked by name by `CypressUITests/AccessibilityTreeTests`
+                    // and `DeepLinkVoiceOverTests`. A fraction changes nothing that is asserted.
+                    if model.needsCareToastIsShowing {
+                        MapToast(message: MapNeedsCareToastCopy.message)
+                            .accessibilitySortPriority(3.5)
+                            .transition(.opacity)
+                    }
                     // Below the chips, so the C20 → chips order the accessibility tests walk is
                     // exactly as it was. Draws nothing unless the search has something to say.
                     MapSearchStatus(search: model.search)
@@ -371,6 +395,11 @@ struct MapHomeView: View {
                 }
                 // The whole block the reader is typing into outranks the bottom chrome beside it.
                 .accessibilitySortPriority(2)
+                // Scoped to the toast's own value, so nothing else in this stack — the suggestion
+                // list arriving, the legend re-deriving — is animated by it. Reduce Motion turns
+                // it off rather than shortening it: the toast is the answer, not the way the
+                // answer is delivered, which is `flyTo`'s argument in this same file.
+                .cypressAnimation(CypressMotion.fade, value: model.needsCareToastIsShowing)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, MapLayout.sideInset)
                 .padding(.top, topInset + MapLayout.searchTopInset)
