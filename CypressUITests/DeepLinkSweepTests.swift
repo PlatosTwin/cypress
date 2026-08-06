@@ -39,6 +39,20 @@ final class DeepLinkSweepTests: XCTestCase, DeepLinkHarness {
     /// The cost is that this parses a debugging format that Apple does not version. That failure is at
     /// least loud rather than silent: a format change yields no parsed elements and the count assertion
     /// fails, rather than the test quietly passing on an empty list.
+    ///
+    /// **`arrive`'s existence check is satisfied while the push is still animating in, and that is
+    /// the window this method has to close itself (deep-link-sweep-window.md, family of ERRATA
+    /// E242).** A `NavigationStack` push keeps the outgoing screen in the accessibility tree for the
+    /// length of the slide transition, so `waitForExistence` on the pushed screen's anchor text
+    /// returns the instant the incoming view enters the hierarchy — which is early in the animation,
+    /// not after it settles — while the outgoing screen (its tab bar, its own rows) is still present
+    /// and still ahead of the incoming screen in `debugDescription`'s depth-first order. Outbox is
+    /// the arm that actually flaked (CI runs 31074532263, 31082691131): it pushes from the You tab,
+    /// whose `IconTextRow` rows carry combined labels like "Outbox, What is waiting to send, and
+    /// what has gone" and "Sign in, Gather what you save under one name on this phone" — exactly the
+    /// two "first controls" both runs reported — and whose own tab bar item is the "You" both runs
+    /// reported as the first static text. But the transition-overlap window is a property of every
+    /// push, not of the You tab specifically, so every arm below waits the same way.
     func testEveryPushedScreenSaysWhereItIsFirst() {
         continueAfterFailure = true
         defer { continueAfterFailure = false }
@@ -58,6 +72,39 @@ final class DeepLinkSweepTests: XCTestCase, DeepLinkHarness {
         for case let (screen, anchor, title) in screens {
             let app = launch(screen)
             guard arrive(app, screen: screen, anchor: anchor) else { continue }
+
+            // Wait for the PUSHED screen's own identity before reading order — not its title text.
+            // A title lookup was tried first and broke on `site`: `SiteCopy.headerTitle` and
+            // `SiteCopy.siteLabel` are both literally "Site" — one the header, one a stat-grid row
+            // that is ALSO on screen once loaded — so a label match is permanently ambiguous there,
+            // not just mid-transition, and XCUITest raises "Multiple matching elements" rather than
+            // ever settling. `check()` (`DeepLinkHarness.swift`) already treats the tab bar's
+            // disappearance as the identity signal for "this is the pushed screen, not the tab
+            // root it came from" — every screen this sweep visits covers the tab bar once actually
+            // pushed, deep link or not. Turned into a WAIT rather than `check()`'s one-shot
+            // assertion, because the race is exactly that: a `NavigationStack` push keeps the
+            // outgoing tab root (and its tab bar) in the tree for the length of the slide
+            // animation, so `arrive`'s existence check on the incoming screen's anchor text can be
+            // satisfied while the outgoing screen is still there, still hittable, and still ahead
+            // of the incoming screen in `debugDescription`'s depth-first order.
+            //
+            // This establishes only that the tab root is gone — never that `Back` is first, and
+            // never anything about the title's position — so the order assertions immediately below
+            // stay capable of failing on a fully settled screen whose reading order is genuinely
+            // wrong.
+            let tabRootWitness = app.buttons["My Grove"]
+            let departedTabRoot = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "hittable == false"), object: tabRootWitness
+            )
+            guard XCTWaiter.wait(for: [departedTabRoot], timeout: 30) == .completed else {
+                XCTFail(
+                    "\(screen): the tab bar ('My Grove') is still hittable 30s after the anchor "
+                        + "appeared — the push out of the tab root never completed, so no order was "
+                        + "read"
+                )
+                app.terminate()
+                continue
+            }
 
             let ordered = Self.treeOrder(app.debugDescription)
             XCTAssertGreaterThan(
