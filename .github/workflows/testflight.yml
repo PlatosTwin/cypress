@@ -177,12 +177,15 @@ jobs:
       # tokens must come out, and `DeployPathsAgreeTests` names them so the deletion is deliberate.
       #
       # `Tools/ui-test-shards.txt` is here for the same reason and #31 is its receipt: build 16
-      # (tag `build-16` at `cc9eefd`) was minted from a merge that touched only that file — PR #34
-      # rebalanced the shard list — and shipped an app byte-identical to build 15. A build number
-      # consumed, build 15 expired, and every tester handed an update notification for an app that
-      # had not changed. The file governs how the UI job splits work across runners (`plan`'s `read`
-      # step above derives the matrix from it); it is read by nothing the archive step touches, so
-      # it must RUN — a shard rebalance can still break the suite — and must not SHIP. Named as the
+      # (tag `build-16` at `cc9eefd`) was minted from PR #34, a six-file merge — four
+      # `CypressUITests/` files, one `docs/errata-pending/` note, and the shard list. Five of those
+      # six were already exempted from shipping by this same predicate; `Tools/ui-test-shards.txt`
+      # was the one file that was not, and it alone made `ships=true` — the merge shipped an app
+      # byte-identical to build 15. A build number consumed, build 15 expired, and every tester
+      # handed an update notification for an app that had not changed. The file governs how the UI
+      # job splits work across runners (`plan`'s `read` step above derives the matrix from it); it
+      # is read by nothing the archive step touches, so it must RUN — a shard rebalance can still
+      # break the suite — and must not SHIP. Named as the
       # single file rather than `Tools/` broadly: `Tools/build_seed.py` builds the seed database
       # that ships inside the app, and exempting all of `Tools/` from the ships predicate would
       # silence exactly the kind of change #212 and #215 exist to catch.

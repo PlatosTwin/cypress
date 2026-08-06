@@ -133,7 +133,7 @@ struct DeployPathsAgreeTests {
             )
         }
 
-        // Three paths are in the predicate and deliberately NOT in the trigger, because for them
+        // Four paths are in the predicate and deliberately NOT in the trigger, because for them
         // the two questions have different answers: they must RUN and must not SHIP. The check
         // above only runs trigger → predicate, so nothing there would notice one of these being
         // deleted. Named individually so that removing one is a decision someone had to make.
@@ -147,10 +147,20 @@ struct DeployPathsAgreeTests {
         // true — a test target becomes an app dependency, a fixture gets bundled — this assertion
         // is the wrong one and should be deleted along with the tokens.** It is guarding the
         // predicate, not the scheme.
+        //
+        // `Tools/ui-test-shards\.txt$` is #31 — build 16 shipped byte-identical to build 15 when a
+        // shard-list-only change slipped through unexempted. The token is matched with its own
+        // escaping and anchor intact (`\.txt$`, not a bare `.txt`) rather than a loose prefix like
+        // the other three, because unlike a directory this is a single file: a token that dropped
+        // the anchor (`Tools/ui-test-shards.txt` with an unescaped dot) would still read as present
+        // by a plain substring check even after silently widening to match a lookalike path or a
+        // directory of the same name — the exact regex text is the thing #31 depends on, so this
+        // assertion checks for exactly that text.
         for (token, ticket, change) in [
             (".github/", "#212", "a pipeline-only change"),
             ("CypressTests/", "#215", "a unit-test-only change"),
             ("CypressUITests/", "#215", "a UI-test-only change"),
+            ("Tools/ui-test-shards\\.txt$", "#31", "a shard-list-only change"),
         ] {
             #expect(
                 noArchive.contains(token),
