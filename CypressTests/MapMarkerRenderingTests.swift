@@ -1,5 +1,6 @@
 import Foundation
 import MapKit
+import SwiftUI
 import Testing
 import UIKit
 @testable import Cypress
@@ -22,7 +23,9 @@ struct MapMarkerRenderingTests {
 
     /// Every kind the map can put on screen. The route pins belong to screen 18 and go through the
     /// same cache, so they are here too.
-    private static let everyKind: [MapPin.Kind] = [
+    // `Cypress.MapPin`, qualified: this file imports SwiftUI for `Binding` (see `layerAndMap`) and
+    // SwiftUI publishes a deprecated `MapPin` of its own, so the bare name is ambiguous here.
+    private static let everyKind: [Cypress.MapPin.Kind] = [
         .cityTree, .needsCare, .community, .removed, .vacantSite,
         .cluster(count: 3, large: false), .cluster(count: 42, large: true),
         .gps, .routeDone, .routeActive,
@@ -114,6 +117,99 @@ struct MapMarkerRenderingTests {
         let annotation = TreeClusterAnnotation(cluster: cluster)
         #expect(annotation.cluster.id == "16:171234:57891")
         #expect(annotation.kind == .cluster(count: 12, large: true))
+    }
+
+    /// **A badge whose cell is still on screen and whose count has changed is redrawn** (task #240).
+    ///
+    /// The stable-id property pinned just above is exactly what makes this possible to get wrong,
+    /// and it was: the cluster half of `sync` tested membership against the id alone, so a cell that
+    /// was wanted before and is wanted now kept the annotation it already had — and a
+    /// `TreeClusterAnnotation` freezes its `kind`, count included, at init.
+    ///
+    /// A pan shows it at the perimeter — `clustersSQL` clips a cell straddling the fetched box's
+    /// edge to its clipped part, so its count moves under the stable id (measured in PR #39 review:
+    /// 156 → 181 across one 150 pt drag). A **narrowing** shows it at once, and on the running
+    /// screen it did. With #240's condition chips
+    /// reaching the query, pressing `In bloom` over a clustered map dropped the cells that emptied
+    /// and left every surviving badge reading its un-narrowed count — a map that had answered the
+    /// question and was still displaying the old answer, which is worse than the no-op it replaced.
+    /// It is not new either: a species typed into C20 has narrowed clustered counts since #116.
+    ///
+    /// The second half of the assertion is the property the whole file exists for (E130): a sync
+    /// whose clusters are the *same* clusters must churn nothing at all.
+    @Test("a cluster badge whose count changed under a stable id is redrawn")
+    func clusterBadgeFollowsItsCount() throws {
+        let (coordinator, mapView) = Self.layerAndMap()
+        func cell(_ count: Int) -> TreeCluster {
+            TreeCluster(
+                id: "12:171234:57891",
+                coordinate: Coordinate(latitude: 37.77, longitude: -122.42),
+                count: count
+            )
+        }
+
+        coordinator.sync(clusters: [cell(549)], pins: [], palette: .empty, on: mapView)
+        let first = try #require(
+            mapView.annotations.compactMap { $0 as? TreeClusterAnnotation }.first,
+            "the first sync drew no cluster annotation at all"
+        )
+        #expect(first.kind == .cluster(count: 549, large: true))
+
+        // The same sync again changes nothing — no annotation is destroyed, none is created.
+        coordinator.sync(clusters: [cell(549)], pins: [], palette: .empty, on: mapView)
+        let unchanged = mapView.annotations.compactMap { $0 as? TreeClusterAnnotation }
+        #expect(unchanged.count == 1)
+        #expect(
+            unchanged.first.map(ObjectIdentifier.init) == ObjectIdentifier(first),
+            "a sync whose clusters are the same clusters rebuilt the badge anyway (ERRATA E130)"
+        )
+
+        // A narrowing lands. Same cell, same id, far fewer trees.
+        coordinator.sync(clusters: [cell(12)], pins: [], palette: .empty, on: mapView)
+        let after = mapView.annotations.compactMap { $0 as? TreeClusterAnnotation }
+        #expect(after.count == 1, "the cell is still on screen and should hold exactly one badge")
+        #expect(
+            after.first?.kind == .cluster(count: 12, large: true),
+            """
+            the badge still draws \(String(describing: after.first?.kind)) after its cell came back \
+            holding 12 trees. That is a filtered map displaying the unfiltered count — task #240.
+            """
+        )
+        #expect(after.first?.cluster.count == 12)
+    }
+
+    /// One `MKMapView` and the coordinator that syncs annotations into it, with the delegate left
+    /// off — every callback this test needs it invokes itself, in the order `updateUIView` does.
+    /// The same fixture `MapSpeciesColorTests` builds, and for the same reason it gives: MapKit's
+    /// own callbacks would turn an assertion into a race.
+    private static func layerAndMap() -> (MapAnnotationLayer.Coordinator, MKMapView) {
+        let opening = MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: 37.77, longitude: -122.42),
+            span: MKCoordinateSpan(latitudeDelta: 0.004, longitudeDelta: 0.004)
+        )
+        let box = Box(position: .opening(opening), region: opening)
+        let layer = MapAnnotationLayer(
+            position: Binding(get: { box.position }, set: { box.position = $0 }),
+            region: Binding(get: { box.region }, set: { box.region = $0 }),
+            clusters: [],
+            pins: [],
+            userCoordinate: nil,
+            selectedPinID: nil,
+            onCameraChange: { _, _ in },
+            onSelectPin: { _ in },
+            onSelectCluster: { _ in }
+        )
+        return (layer.makeCoordinator(), MKMapView(frame: CGRect(x: 0, y: 0, width: 402, height: 874)))
+    }
+
+    @MainActor
+    private final class Box {
+        var position: MapCameraRequest
+        var region: MKCoordinateRegion
+        init(position: MapCameraRequest, region: MKCoordinateRegion) {
+            self.position = position
+            self.region = region
+        }
     }
 
     /// The marker view keeps the app's 44 pt tap target even though the drawn pin is 16–18 pt.

@@ -122,18 +122,25 @@ struct MapFilter: Equatable, Sendable {
             || siteKind != nil
     }
 
-    /// Whether the *fetch* is narrowed, as opposed to the drawn pins being filtered afterwards.
+    /// Whether the *fetch* is narrowed.
     ///
-    /// The distinction is the one `MapModel.recomputeAdmittedPins` turns on and it is load-bearing:
-    /// `membership`, `decade` and `speciesID` go into the query, so the answer that comes back holds
-    /// only matches; `condition` is applied to the pins already fetched, because neither "needs
-    /// care" nor "in bloom" is a column the seed's map queries select on.
-    /// `siteKind` is in the query for the same reason the other three are: it is `trees.status`, a
-    /// column, and answering it after the fetch would spend the pin budget on rows that cannot
-    /// match — the E36/E38 shape `TreeQueries.Narrowing` exists to prevent.
-    var narrowsTheQuery: Bool {
-        membership != nil || decade != nil || speciesID != nil || siteKind != nil
-    }
+    /// **Every dimension is, since task #240, and this property is now `isActive` under a name that
+    /// says why it is read.** It used to exclude `condition`, on the grounds that neither "needs
+    /// care" nor "in bloom" was a column the seed's map statements select on, so the two chips
+    /// filtered the pins already in hand instead. Both halves of that were wrong. `needs care` *is*
+    /// a column (`trees.status`), and `in bloom` resolves to a species set exactly as the search bar
+    /// does — but the fatal half is the conclusion, not the premise: **a filter applied to the pins
+    /// in hand does nothing at all at zoom ≤ 15**, where what comes back is `MapContent.clusters`
+    /// and a `TreeCluster` is a count and a centroid with no members to filter. Pressing either chip
+    /// over a clustered map left the whole city standing, badge for badge, even with zero trees in
+    /// the seed satisfying it.
+    ///
+    /// So the two properties are equal today, and they are kept apart on purpose: `isActive` asks
+    /// "is the reader looking at a narrowed map", which the chrome needs, and this asks "must the
+    /// map go back to the database", which the fetch needs. A dimension that could honestly be
+    /// answered after the fetch would make them differ again — and the bar it has to clear is that
+    /// it be answerable **on a cluster badge**, which is the thing #240 discovered nothing can be.
+    var narrowsTheQuery: Bool { isActive }
 
     /// The narrowings currently set **inside the row's expandable control** — the ones a reader
     /// cannot see while it is shut.
@@ -167,8 +174,25 @@ struct MapFilter: Equatable, Sendable {
             }
         }
 
-        /// `In bloom` is the only one that needs a species lookup to answer.
-        var needsSeasonalData: Bool { self == .inBloom }
+        /// **What this chip asks the query for** (task #240).
+        ///
+        /// A total function from the chip to the two viewport fields that answer it, so a third
+        /// condition cannot be added without saying how the *database* answers it. The exhaustive
+        /// `switch` forces the new case to be written, but `(nil, false)` still compiles — what
+        /// actually holds the line is `MapFilterTests.everyConditionReachesTheQuery`, which fails
+        /// on any condition whose narrowing changes nothing about the query. The defect #240 fixed
+        /// was a chip whose meaning existed only in the view layer; that pair is what stops the
+        /// next one being written the same way.
+        ///
+        /// `In bloom` takes the month rather than deciding it — the clock is the caller's
+        /// (`MapModel.now`), the bloom calendar is the seed's (`TreeQueries.bloomingSpeciesIDs`),
+        /// and neither one belongs to the other.
+        func narrowing(month: Int) -> (bloomMonth: Int?, needsCare: Bool) {
+            switch self {
+            case .inBloom: return (bloomMonth: month, needsCare: false)
+            case .needsCare: return (bloomMonth: nil, needsCare: true)
+            }
+        }
     }
 
     // MARK: - Decades

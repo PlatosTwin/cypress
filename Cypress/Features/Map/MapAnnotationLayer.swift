@@ -714,9 +714,36 @@ struct MapAnnotationLayer: UIViewRepresentable {
             palette: MapSpeciesPalette,
             on mapView: MKMapView
         ) {
+            // **A cluster id that is still wanted but now stands for a different answer is retired
+            // here** — the same rule the pin loop below applies to a pin whose *kind* changed, and
+            // it was missing (task #240).
+            //
+            // `TreeCluster.id` is `z<zoom>:<cellY>:<cellX>`, deliberately stable across a pan so a
+            // badge does not flicker and re-animate under the reader's thumb — and the count and the
+            // centroid are *not* in it, because the grid is a fact about the ground rather than
+            // about the answer. A membership test against the id alone therefore keeps a badge that
+            // is still in the right cell and no longer says the right number, and
+            // `TreeClusterAnnotation` freezes its `kind` — the count included — at init.
+            //
+            // A pan exposes it at the perimeter: `clustersSQL` clips each cell to the fetched box,
+            // so a cell straddling the box's edge is aggregated over its clipped part only, and its
+            // count and centroid move under the stable id (measured in PR #39 review — one 150 pt
+            // drag took an edge badge 156 → 181 while every interior badge held; the old
+            // membership-by-id test left exactly those badges stale too). A **narrowing** exposes it
+            // everywhere at once, because the same cell holds a different set — and this is the
+            // second half of what the owner saw in #240. With the condition chips
+            // reaching the query, pressing `In bloom` over a clustered map removed the cells that
+            // emptied out and left every surviving badge showing its un-narrowed count. It is not
+            // new: a species typed into C20 has narrowed clustered counts since #116 and had the
+            // same stale badges.
+            //
+            // Comparing the whole `TreeCluster` keeps E130's promise intact — an update whose
+            // clusters are the same clusters compares equal and does no work at all.
             var staleClusters: [MKAnnotation] = []
-            let wantedClusters = Set(clusters.map(\.id))
-            for (id, annotation) in clusterAnnotations where !wantedClusters.contains(id) {
+            var wantedClusters: [String: TreeCluster] = [:]
+            wantedClusters.reserveCapacity(clusters.count)
+            for cluster in clusters { wantedClusters[cluster.id] = cluster }
+            for (id, annotation) in clusterAnnotations where wantedClusters[id] != annotation.cluster {
                 staleClusters.append(annotation)
                 clusterAnnotations[id] = nil
             }
