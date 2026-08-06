@@ -86,12 +86,20 @@ per city.
 
 The Tigris keys exist only as `cypress-sync` app secrets and in the owner's Tigris
 dashboard (`server/README.md`); the publisher never reads, prints, or stores them.
-`dist/upload.sh` is generated per run and uses the standard `aws` CLI against
-whatever `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` the runner already has:
+`dist/upload.sh` is generated per run and uses the standard `aws` CLI resolving
+credentials from a named profile — `cypress-tigris` by default, overridable with
+`CYPRESS_TIGRIS_PROFILE` — never from ambient `AWS_*` environment variables. Both
+s15 and s16 publishes failed with `InvalidAccessKeyId` under the old
+export-into-shell flow, because an unset environment silently falls back to
+`~/.aws/credentials [default]` (Amazon keys Tigris has never heard of); ticket
+#248 pinned the profile into every generated `aws` invocation and added a
+fail-fast preflight, since an explicit `--profile` ignores whatever the shell
+happens to carry:
 
     aws s3 cp cities/sf/s14-r2026-07-31/sf.sqlite \
         s3://cypress-cities/cities/sf/s14-r2026-07-31/sf.sqlite \
-        --endpoint-url https://fly.storage.tigris.dev
+        --endpoint-url https://fly.storage.tigris.dev \
+        --profile "$PROFILE"
     # … one line per city, then manifest.json last
 
 Upload order matters and the script encodes it: **city files first, manifest last**,
