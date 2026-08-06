@@ -66,9 +66,18 @@ struct IconTextRow: View {
     /// on its own when there is no photograph, and reused as `PhotoImage`'s placeholder when there
     /// is one so a tree whose bytes have not loaded yet, or have none, still draws this row's own
     /// accent rather than a photograph-shaped hole.
+    ///
+    /// **A vacant site is not drawn that way, because a vacant site is not a tree.** ROADMAP §1
+    /// settles what it is — "a distinct planting-site state, *not* a variant of the tree profile" —
+    /// and R7/E119/E123 gave that state a drawn vocabulary everywhere else it appears: the map pin,
+    /// 14's empty photo well, the site screen, `LocationPrompt`. The almanac tile was the one member
+    /// still wearing the tree's clothes, a radial blob at 45%/42% differing from the five living
+    /// tiles only in color. `emptyWell` below is that vocabulary at 34 pt, and nothing else.
     private var tile: some View {
         Group {
-            if let photoID {
+            if accent == .vacantSite {
+                emptyWell
+            } else if let photoID {
                 PhotoImage(photoID: photoID, placeholder: Self.placeholderRecipe(accent))
             } else {
                 CypressGradientField(Self.placeholderRecipe(accent))
@@ -80,6 +89,26 @@ struct IconTextRow: View {
         )
         .cypressCornerRadius(CypressRadius.thumbSmAlt)
         .accessibilityHidden(true)
+    }
+
+    /// The empty planting basin, drawn exactly as 14's empty photo well, the site screen and
+    /// `LocationPrompt` draw it: `surfaceEmptyThumb` under a dashed `borderDashedStrong` edge. Off
+    /// the map a dashed frame is what this family already speaks — E119 chose a *solid* ring for the
+    /// pin only because on the map dashes mean the community layer (DECISIONS §3.16), and screen 12
+    /// has no community layer. No new token and no new hue.
+    ///
+    /// It also closes a rendering the swap in E122 did not reach: the radial drawing this replaces
+    /// read at 1.48:1 on a dark card, which is to say it did not read at all. The dashed frame is
+    /// the same 1.48:1 against the tile's own ground and is legible anyway, because a dashed edge on
+    /// a plane is a *shape* rather than a wash — the same reason no C10 tile is asked to clear 3:1.
+    private var emptyWell: some View {
+        RoundedRectangle(cornerRadius: CypressRadius.thumbSmAlt, style: .continuous)
+            .fill(CypressColor.surfaceEmptyThumb)
+            .cypressDashedBorder(
+                CypressColor.borderDashedStrong,
+                radius: CypressRadius.thumbSmAlt,
+                width: CypressSpacing.Component.outlineWidth
+            )
     }
 
     private static func placeholderRecipe(_ accent: CypressColor.TileAccent) -> CypressGradientRecipe {
