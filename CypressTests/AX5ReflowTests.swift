@@ -41,6 +41,18 @@ struct AX5ReflowTests {
     /// Hosts `content` at AX5 in an off-screen window and returns what it says it needs when
     /// offered the phone's width and unbounded height — `ScreenSweepShots.capture`'s mechanism,
     /// reduced to the measurement.
+    ///
+    /// **The running device's safe-area insets come back off the result** (ticket #30). `host.view`
+    /// is mounted in a real `UIWindow`, and a hosted root view inherits the *simulator's* safe-area
+    /// insets even though this window is parked off-screen and has no `windowScene`: 47 pt at the
+    /// top on an iPhone 16e, 54 pt on a 16 Pro — both measured, on the same tree, minutes apart.
+    /// `UIHostingController.sizeThatFits` adds them to the height it reports, so every height this
+    /// helper returned carried a term that said which simulator the suite was running on rather
+    /// than anything about the view: a `MapRecenterButton`, a fixed `CypressSpacing.minTapTarget`
+    /// square, came back 98 pt on the 16 Pro and 91 pt on the 16e, and the same 7 pt appeared on
+    /// the FAB because it is the same inset added once. Widths were never affected — the left and
+    /// right insets are 0 on both — which is why the width guards below never noticed, and why
+    /// this reached main inside the two assertions that read a height.
     static func ax5Size(
         of content: some View,
         width: CGFloat = phoneWidth,
@@ -63,7 +75,12 @@ struct AX5ReflowTests {
             host.view.setNeedsLayout()
             host.view.layoutIfNeeded()
         }
-        return host.sizeThatFits(in: CGSize(width: width, height: .greatestFiniteMagnitude))
+        let insets = host.view.safeAreaInsets
+        let measured = host.sizeThatFits(in: CGSize(width: width, height: .greatestFiniteMagnitude))
+        return CGSize(
+            width: measured.width - insets.left - insets.right,
+            height: measured.height - insets.top - insets.bottom
+        )
     }
 
     // MARK: - #171 · Horizontal overflow
@@ -170,25 +187,52 @@ struct AX5ReflowTests {
     // MARK: - RULINGS R53 §6's AX5 ruling (owner decision 2026-08-05) · MapLocationNotice scrolls rather than overflows
 
     /// `MapLayout.locateButtonHeightAX5` and `.fabHeightAX5`, the inputs to
-    /// `noticeMaxHeight(availableHeight:)`, are measurements rather than guesses — pinned here so
-    /// a change to either control's AX5 footprint fails loudly instead of quietly under-reserving
-    /// the notice's scroll budget.
-    @Test("the recenter control and the FAB measure what the notice's scroll budget assumes at AX5")
-    func bottomChromeControlsMatchTheReservedBudgetAtAX5() async {
+    /// `noticeMaxHeight(availableHeight:)`, are what the bottom slot reserves for the two controls
+    /// stacked above the notice. Guarded here so a control that outgrows its reservation fails
+    /// loudly instead of quietly under-reserving the notice's scroll budget.
+    ///
+    /// **`<=`, not `==`, and the difference is the whole of ticket #30.** These two assertions were
+    /// written as equalities against 98 and 137, and both numbers were the control's real footprint
+    /// plus the 54 pt top safe-area inset that `ax5Size`'s measuring window inherited from the
+    /// iPhone 16 Pro it was recorded on. On an iPhone 16e the same inset is 47 pt, so the same
+    /// unmodified tree measured 91 and 130 and this test failed on the device rather than on the
+    /// code. `ax5Size` now takes the inset back off (see its own note), which makes the measurement
+    /// device-independent — and leaves the reservations *larger* than the footprints they reserve
+    /// for, which is the direction `noticeMaxHeight` documents itself as taking ("conservative
+    /// rather than exact"). Over-reserving costs the notice room it does not use; under-reserving
+    /// is E183 §2, the card growing off the top of the screen. Only one of those is a defect, and
+    /// `<=` is the assertion that names it.
+    ///
+    /// Correcting the reservations down to the footprints would change what ships at AX5 under an
+    /// owner ruling (R53 §6) and is not this ticket's to take.
+    @Test("the recenter control and the FAB fit what the notice's scroll budget reserves at AX5")
+    func bottomChromeControlsFitTheReservedBudgetAtAX5() async {
         let recenter = await Self.ax5Size(of: MapRecenterButton(engagement: .away, action: {}))
         let fab = await Self.ax5Size(of: IdentifyFAB(action: {}))
         #expect(
-            recenter.height == MapLayout.locateButtonHeightAX5,
+            recenter.height <= MapLayout.locateButtonHeightAX5,
             """
-            MapRecenterButton now measures \(recenter.height) pt at AX5, against the \
+            MapRecenterButton now measures \(recenter.height) pt at AX5, past the \
             \(MapLayout.locateButtonHeightAX5) pt the notice's scroll budget reserves for it
             """
         )
         #expect(
-            fab.height == MapLayout.fabHeightAX5,
+            fab.height <= MapLayout.fabHeightAX5,
             """
-            IdentifyFAB now measures \(fab.height) pt at AX5, against the \
+            IdentifyFAB now measures \(fab.height) pt at AX5, past the \
             \(MapLayout.fabHeightAX5) pt the notice's scroll budget reserves for it
+            """
+        )
+        // The exact half, kept exact: the recenter control is a fixed `minTapTarget` square and
+        // does not grow with Dynamic Type at all — measured 44 pt at AX5 on both the 16e and the
+        // 16 Pro. `MapKitBasemap` used to claim in a comment that iOS grew this control's hit
+        // target across the accessibility range and that 98 pt was the grown frame; the 98 was the
+        // safe-area inset, and the claim was never true.
+        #expect(
+            recenter.height == CypressSpacing.minTapTarget,
+            """
+            MapRecenterButton measures \(recenter.height) pt at AX5 against the \
+            \(CypressSpacing.minTapTarget) pt frame it declares — it is no longer a fixed square
             """
         )
     }
