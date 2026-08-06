@@ -306,6 +306,75 @@ struct MapNeedsCareToastTests {
         )
     }
 
+    /// **A press whose read failed has still had its answer, and must not carry credit forward.**
+    ///
+    /// Found in review of this ticket and reproduced there against a fake API that throws once;
+    /// this is that probe made permanent. `noteReadFinished` was `noteSettledContent` and only the
+    /// success path of `fetch()` called it, so a read that threw left `needsCareToastArmed` live
+    /// *indefinitely* — and the next unrelated successful read, a plain pan with the chip
+    /// untouched, consumed the stale arm and posted the toast. The sentence then answered the pan
+    /// rather than the press, screens and minutes later: the "fires on every pan" pollution the
+    /// owner's instruction excludes by name, reached through a transient network failure.
+    ///
+    /// **None of the other nine tests could see it.** `aFailedReadIsNotAnEmptyAnswer` drives the
+    /// pure gate with `readFailed: true` and never goes near `fetch()`'s catch blocks; the two
+    /// re-arm tests drive the success path only. This is the one that drives a throw through the
+    /// real model.
+    ///
+    /// Three assertions, and the third is what keeps the fix from being an over-correction: the
+    /// failed read itself says nothing (E126), the pan after it says nothing, and a **fresh press**
+    /// still works — disarming on failure must not cost the chip its next legitimate activation.
+    @MainActor
+    @Test("a read that failed spends the press, and does not leave it for the next pan to collect")
+    func aFailedReadSpendsThePress() async throws {
+        let api = ToastAnswers()
+        // Long enough that nothing here races the auto-dismiss: what is under test is the arming.
+        let model = MapModel(api: api, needsCareToastDuration: .seconds(30))
+
+        await api.answer(with: .pins(PinAnswer([])))
+        model.cameraDidChange(bounds: Self.box, zoom: 18)
+        try await Self.waitUntil { model.hasSettled }
+
+        // 1 · The press, whose read throws.
+        await api.failNextRead()
+        model.filter = .needsCare
+        try await Self.waitUntil { model.loadFailure != nil }
+        #expect(
+            !model.needsCareToastIsShowing,
+            """
+            a read that threw was reported to the reader as a city with nothing needing care. \
+            "No trees need care" is a claim about the record, and a failed read has learned \
+            nothing about the record (E126).
+            """
+        )
+
+        // 2 · A plain pan. The chip is untouched — `needsCareChipDidChange` does not fire, because
+        // the filter did not change — so nothing re-arms here. This read succeeds and comes back
+        // just as empty, which is the state that would show a toast if the press were still owed
+        // one.
+        await api.answer(with: Self.secondEmptyAnswer)
+        model.cameraDidChange(bounds: Self.boxNorth, zoom: 18)
+        try await Self.waitUntil { model.content == Self.secondEmptyAnswer }
+        #expect(
+            !model.needsCareToastIsShowing,
+            """
+            a pan collected an arm left over from a press whose read had already failed, and \
+            posted the toast as the answer to the pan. One activation of the chip is one answer, \
+            and the failed read was that answer.
+            """
+        )
+
+        // 3 · And the chip still works. A disarm that cost the next real activation would have
+        // traded one defect for another.
+        model.filter = .all
+        model.filter = .needsCare
+        try await Self.waitUntil { model.needsCareToastIsShowing }
+        #expect(
+            model.needsCareToastIsShowing,
+            "disarming on a failed read left the chip unable to answer its next press"
+        )
+    }
+
     // MARK: - Fixtures
 
     /// One street-sized screenful, and one screenful north of it. The coordinates carry no meaning
@@ -352,10 +421,22 @@ struct MapNeedsCareToastTests {
 /// here depends on the shipped seed's zero `declining` rows staying zero.
 private actor ToastAnswers: CypressAPI {
     private var content: MapContent = .pins(PinAnswer([]))
+    /// One read, and one only, throws. A flag rather than a mode, because what
+    /// `aFailedReadSpendsThePress` is about is precisely what happens on the read *after* the
+    /// failure — an API stuck in a failing state could never show it.
+    private var failsNextRead = false
 
     func answer(with content: MapContent) { self.content = content }
 
-    func mapContent(in viewport: MapViewport) async throws -> MapContent { content }
+    func failNextRead() { failsNextRead = true }
+
+    func mapContent(in viewport: MapViewport) async throws -> MapContent {
+        if failsNextRead {
+            failsNextRead = false
+            throw APIError.serverError
+        }
+        return content
+    }
     func searchSpecies(query: String, limit: Int) async throws -> [Species] { [] }
     func treesNear(_ c: Coordinate, radiusM: Double, limit: Int) async throws -> [NearbyTree] { [] }
     func treeProfile(id: UUID) async throws -> TreeProfile { throw APIError.notFound }

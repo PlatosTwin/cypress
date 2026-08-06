@@ -215,7 +215,9 @@ final class MapModel {
     private(set) var needsCareToastIsShowing = false
 
     /// **One activation of the chip, one answer.** Raised when `Needs care` is switched on and
-    /// lowered by the first settled read after that — whether or not that read produced a toast.
+    /// lowered by the first read that *finishes* after that — whether it came back with trees,
+    /// with nothing, or with an error, and whether or not it produced a toast. `noteReadFinished`
+    /// is where that is spelled out, including why a cancelled read is not a finished one.
     ///
     /// This is the re-arm rule, and it is the conservative one on purpose. The alternative — post
     /// whenever the state holds — fires on every pan and every zoom across an empty filtered map,
@@ -252,13 +254,37 @@ final class MapModel {
         needsCareToastArmed = isOn
     }
 
-    /// Called once per completed read, **after** every other published fact about it has landed —
-    /// `content`, `search`, `loadFailure` and `hasSettled` — because the gate reads three of them
-    /// and a toast decided from a half-published read would be answering the previous question.
-    private func noteSettledContent() {
+    /// Called from **every terminal path of `fetch()`** — the answer, the `APIError`, and the
+    /// unexpected error — always *after* the facts that read has published (`content`, `search`,
+    /// `loadFailure`, `hasSettled`), because the gate reads three of them and a toast decided from
+    /// a half-published read would be answering the previous question.
+    ///
+    /// **It was `noteSettledContent()` and only the success path called it, which was a defect**
+    /// (found in review of task #247, reproduced against a fake API that throws once). A read that
+    /// threw left the arm live *indefinitely*: the press had had its answer and nothing said so, so
+    /// the next unrelated successful read — a plain pan, minutes and screens later, chip untouched
+    /// — consumed the stale arm and posted the toast. The sentence then answered the pan rather
+    /// than the press, which is the "fires on every pan" pollution the owner's instruction excludes
+    /// by name, reached through a transient network failure instead of directly.
+    ///
+    /// **A press whose read failed got its answer too, and the answer was the error state.** So it
+    /// spends the arm exactly as a successful read does; `MapNeedsCareToast.isOwed`'s `!readFailed`
+    /// guard is what keeps it from also *showing* anything, which is "a failed read is not an empty
+    /// answer" (E126) applied to the arm as well as to the gate. The name says `read finished`
+    /// rather than `content settled` because a failed read has no settled content and never sets
+    /// `hasSettled` — a method whose name asserted otherwise is exactly the confident comment this
+    /// project keeps finding bugs behind.
+    ///
+    /// **A cancelled read is deliberately not a terminal path and must not disarm.** Every
+    /// cancellation here means a *newer* fetch has already superseded this one (`scheduleFetch`
+    /// cancels the outstanding task), so the press's answer is the read that actually lands. The
+    /// three `guard !Task.isCancelled` returns in `fetch()` are therefore the only exits that leave
+    /// the arm alone, and that is the rule: **an answer spends the press; being overtaken does
+    /// not.**
+    private func noteReadFinished() {
         guard needsCareToastArmed else { return }
-        // Consumed either way. A read that came back with trees answers the press just as
-        // completely as one that came back empty, and neither leaves anything owed to the next pan.
+        // Consumed however the read ended. Trees, no trees, or an error — each of them answers the
+        // press completely, and none of them leaves anything owed to the next pan.
         needsCareToastArmed = false
         guard MapNeedsCareToast.isOwed(
             filter: filter,
@@ -632,13 +658,18 @@ final class MapModel {
             // **Last, deliberately.** The toast's gate reads `content`, `search` and `loadFailure`,
             // all of which are published above; asking it any earlier would decide this read's
             // sentence from the previous read's facts (task #247).
-            noteSettledContent()
+            noteReadFinished()
         } catch let error as APIError {
             guard !Task.isCancelled else { return }
             loadFailure = error
+            // **After `loadFailure`, never before** — the same ordering rule as the success path,
+            // and here it is what stops a failed read showing the toast off the *previous* read's
+            // content. See `noteReadFinished`, and `MapNeedsCareToastTests.aFailedReadSpendsThePress`.
+            noteReadFinished()
         } catch {
             guard !Task.isCancelled else { return }
             loadFailure = .serverError
+            noteReadFinished()
         }
     }
 
