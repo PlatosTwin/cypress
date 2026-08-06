@@ -177,9 +177,12 @@ struct MapFilter: Equatable, Sendable {
         /// **What this chip asks the query for** (task #240).
         ///
         /// A total function from the chip to the two viewport fields that answer it, so a third
-        /// condition cannot be added without saying how the *database* answers it. That is the whole
-        /// guarantee: the defect #240 fixed was a chip whose meaning existed only in the view layer,
-        /// and a `switch` with no default is what stops the next one being written the same way.
+        /// condition cannot be added without saying how the *database* answers it. The exhaustive
+        /// `switch` forces the new case to be written, but `(nil, false)` still compiles — what
+        /// actually holds the line is `MapFilterTests.everyConditionReachesTheQuery`, which fails
+        /// on any condition whose narrowing changes nothing about the query. The defect #240 fixed
+        /// was a chip whose meaning existed only in the view layer; that pair is what stops the
+        /// next one being written the same way.
         ///
         /// `In bloom` takes the month rather than deciding it — the clock is the caller's
         /// (`MapModel.now`), the bloom calendar is the seed's (`TreeQueries.bloomingSpeciesIDs`),

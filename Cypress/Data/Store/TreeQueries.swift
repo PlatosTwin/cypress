@@ -445,7 +445,8 @@ public struct TreeQueries {
         // else, which also leaves `MapContentBudgetTests` — which reaches its cap deliberately, and
         // un-narrowed — reading exactly as it did.
         //
-        // **`isFiltered`, not `isNarrowed` (#116).** It was the species test alone, and a year or
+        // **`isFiltered`, not the old species-only `isNarrowed` (#116; property since removed).**
+        // It was the species test alone, and a year or
         // membership narrowing is a set the reader named just as loudly — screen 01 puts a count
         // over the map for all three, and E38 forbids that count being the size of a truncated page.
         guard viewport.markerCellPoints == nil,

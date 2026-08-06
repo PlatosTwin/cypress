@@ -309,7 +309,10 @@ struct MapDetailTests {
 
         // The shipped seed carries no `declining` tree, so `Needs care` admits none — the honest
         // answer to the question the chip asks, and a clean assertion that the filter ran at all.
-        #expect(model.pins.allSatisfy { MapPinKind.needsCare(status: $0.status) })
+        #expect(
+            model.pins.allSatisfy { MapPinKind.needsCare(status: $0.status) },
+            "the needs-care narrowing admitted a pin that does not need care"
+        )
         #expect(model.pins.count < all, "the map came back holding \(model.pins.count) of \(all) pins")
 
         model.filter = .all

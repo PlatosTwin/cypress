@@ -528,12 +528,6 @@ public struct MapViewport: Hashable, Sendable {
         self.needsCare = needsCare
     }
 
-    /// Whether this viewport has been narrowed to a species at all.
-    ///
-    /// `bloomMonth` counts: it resolves to a species set and to nothing else, so a map narrowed by
-    /// the `In bloom` chip is narrowed to species in every sense this property is asked about.
-    public var isNarrowed: Bool { speciesIDs != nil || bloomMonth != nil }
-
     /// Whether anything at all narrows this viewport — species, planting year, membership, whether
     /// there is a tree on the site, and either of screen 01's two condition chips.
     public var isFiltered: Bool {

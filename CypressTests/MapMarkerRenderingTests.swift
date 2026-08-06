@@ -126,8 +126,10 @@ struct MapMarkerRenderingTests {
     /// was wanted before and is wanted now kept the annotation it already had — and a
     /// `TreeClusterAnnotation` freezes its `kind`, count included, at init.
     ///
-    /// A pan cannot show it: the same cell over the same inventory holds the same trees. A
-    /// **narrowing** shows it at once, and on the running screen it did. With #240's condition chips
+    /// A pan shows it at the perimeter — `clustersSQL` clips a cell straddling the fetched box's
+    /// edge to its clipped part, so its count moves under the stable id (measured in PR #39 review:
+    /// 156 → 181 across one 150 pt drag). A **narrowing** shows it at once, and on the running
+    /// screen it did. With #240's condition chips
     /// reaching the query, pressing `In bloom` over a clustered map dropped the cells that emptied
     /// and left every surviving badge reading its un-narrowed count — a map that had answered the
     /// question and was still displaying the old answer, which is worse than the no-op it replaced.
@@ -136,7 +138,7 @@ struct MapMarkerRenderingTests {
     /// The second half of the assertion is the property the whole file exists for (E130): a sync
     /// whose clusters are the *same* clusters must churn nothing at all.
     @Test("a cluster badge whose count changed under a stable id is redrawn")
-    func clusterBadgeFollowsItsCount() {
+    func clusterBadgeFollowsItsCount() throws {
         let (coordinator, mapView) = Self.layerAndMap()
         func cell(_ count: Int) -> TreeCluster {
             TreeCluster(
@@ -147,15 +149,18 @@ struct MapMarkerRenderingTests {
         }
 
         coordinator.sync(clusters: [cell(549)], pins: [], palette: .empty, on: mapView)
-        let first = try? #require(mapView.annotations.compactMap { $0 as? TreeClusterAnnotation }.first)
-        #expect(first?.kind == .cluster(count: 549, large: true))
+        let first = try #require(
+            mapView.annotations.compactMap { $0 as? TreeClusterAnnotation }.first,
+            "the first sync drew no cluster annotation at all"
+        )
+        #expect(first.kind == .cluster(count: 549, large: true))
 
         // The same sync again changes nothing — no annotation is destroyed, none is created.
         coordinator.sync(clusters: [cell(549)], pins: [], palette: .empty, on: mapView)
         let unchanged = mapView.annotations.compactMap { $0 as? TreeClusterAnnotation }
         #expect(unchanged.count == 1)
         #expect(
-            unchanged.first.map(ObjectIdentifier.init) == first.map(ObjectIdentifier.init),
+            unchanged.first.map(ObjectIdentifier.init) == ObjectIdentifier(first),
             "a sync whose clusters are the same clusters rebuilt the badge anyway (ERRATA E130)"
         )
 

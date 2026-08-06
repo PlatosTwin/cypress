@@ -725,9 +725,13 @@ struct MapAnnotationLayer: UIViewRepresentable {
             // is still in the right cell and no longer says the right number, and
             // `TreeClusterAnnotation` freezes its `kind` — the count included — at init.
             //
-            // A pan cannot expose that: the same cell over the same inventory holds the same trees.
-            // A **narrowing** exposes it immediately, because the same cell holds a different set —
-            // and this is the second half of what the owner saw in #240. With the condition chips
+            // A pan exposes it at the perimeter: `clustersSQL` clips each cell to the fetched box,
+            // so a cell straddling the box's edge is aggregated over its clipped part only, and its
+            // count and centroid move under the stable id (measured in PR #39 review — one 150 pt
+            // drag took an edge badge 156 → 181 while every interior badge held; the old
+            // membership-by-id test left exactly those badges stale too). A **narrowing** exposes it
+            // everywhere at once, because the same cell holds a different set — and this is the
+            // second half of what the owner saw in #240. With the condition chips
             // reaching the query, pressing `In bloom` over a clustered map removed the cells that
             // emptied out and left every surviving badge showing its un-narrowed count. It is not
             // new: a species typed into C20 has narrowed clustered counts since #116 and had the
