@@ -62,8 +62,23 @@ their own sentence and they hold the veto.**
 ## The re-arm rule, which is the half the instruction is really about
 
 **One activation of the chip, one answer.** The gate is armed when `Needs care` is switched on, and
-disarmed by the first settled read after that — whether or not that read produced a toast. Any other
-change to the filter, and any change to the search, takes a toast already up off the screen.
+disarmed by the first read that *finishes* after that — with trees, with nothing, **or with an
+error** — whether or not it produced a toast. Any other change to the filter, and any change to the
+search, takes a toast already up off the screen.
+
+**A press whose read failed has had its answer, and the answer was the error state.** This was
+missed on the first pass and found in review of PR #46: the disarm was reached only from `fetch()`'s
+success path, so a read that threw left the arm live indefinitely, and the next unrelated successful
+read — a plain pan, chip untouched, screens and minutes later — collected it and posted the toast.
+The sentence then answered the pan rather than the press, which is precisely the pollution this rule
+exists to prevent, reached through a transient network failure instead of directly.
+`noteReadFinished` is called from all three terminal paths now; `isOwed`'s `!readFailed` guard is
+what stops the failed read from *also* showing something, which is "a failed read is not an empty
+answer" (E126) applied to the arm as well as to the gate.
+
+**A cancelled read is deliberately not a finished one.** Every cancellation in `fetch()` means a
+newer fetch has already superseded it, so the press's answer is the read that actually lands. An
+answer spends the press; being overtaken does not.
 
 The alternative — post whenever the state holds — fires on every pan and every zoom across an empty
 filtered map. That is a toast that never stops arriving, which is the permanent pollution the
@@ -111,9 +126,9 @@ would be taking a design decision this task has no standing to take (constraint 
 
 ## What holds it
 
-`CypressTests/MapNeedsCareToastTests` — ten tests, six on the gate (including one that fails if any
-other narrowing can open it), one on the words, three driving the real `MapModel` through the real
-fetch path for the arming, the auto-dismissal and the re-arm rule. Every answer comes from a fake
+`CypressTests/MapNeedsCareToastTests` — eleven tests, six on the gate (including one that fails if
+any other narrowing can open it), one on the words, four driving the real `MapModel` through the
+real fetch path for the arming, the auto-dismissal, the re-arm rule, and a read that throws. Every answer comes from a fake
 API, so **nothing here depends on the shipped seed's zero `declining` rows staying zero.** Section 4
 of `CypressUITests/MapFilterAccessibilityTests` carries a note recording that R41's structural guard
 does not drive the one narrowing that produces this, and what a fourth case added there must expect.
