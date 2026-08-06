@@ -382,10 +382,25 @@ final class DeepLinkVoiceOverTests: XCTestCase, DeepLinkHarness {
     /// quiet. Asserted through `isHittable` rather than `exists`, because the presenting screen stays
     /// in the hierarchy by design (`RootView`'s one `fullScreenCover`) — being *there* is fine, being
     /// *reachable* is not.
+    ///
+    /// **Waits for the cover itself to arrive before reading what it covers (task #245, same
+    /// transition-window race #243 closed on the push side).** `arrive()`'s anchor check is satisfied
+    /// the instant "Care log"/"Share this tree" enters the tree, which `BottomSheet` puts there before
+    /// the sheet has risen — not merely before it finishes rising, see `waitForCoverToArrive`
+    /// (`DeepLinkHarness.swift`) for the mechanism. A one-shot `isHittable` read on the tab bar taken
+    /// in that pre-rise window can see the screen behind still genuinely hittable and fail on a race
+    /// rather than a defect. The witness deliberately differs from the push side's: a `fullScreenCover`
+    /// has no known-hittable predecessor whose departure can be watched (09/10 draw no close button),
+    /// so this waits for the cover's own named "Dismiss" scrim control to become hittable instead —
+    /// a positive signal, per `UIWait.swift`'s rule against waiting on the negative predicate directly.
     func testAModalIsolatesTheScreenBehindIt() {
         for screen in ["careLog", "share"] {
             let app = launch(screen)
             guard arrive(app, screen: screen, anchor: screen == "careLog" ? "Care log" : "Share this tree") else {
+                continue
+            }
+            guard waitForCoverToArrive(app, screen: screen) else {
+                app.terminate()
                 continue
             }
             for behind in ["Map", "My Grove", "Journal", "You"] {
