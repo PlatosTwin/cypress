@@ -226,18 +226,33 @@ enum MapLayout {
     // it. The owner ruled on 2026-08-05 that it scrolls once it runs out of room rather than
     // doing that, so the room it has to work with has to be a real number.
 
-    /// `MapRecenterButton`'s measured height at `.accessibility5` — 44pt at ordinary sizes, but
-    /// iOS grows a control's own minimum hit target as Dynamic Type climbs the accessibility
-    /// range, and the button reports that grown frame back through `sizeThatFits`. Measured
-    /// through `AX5ReflowTests.ax5Size`, not assumed.
+    /// The room reserved for `MapRecenterButton` above the notice slot.
+    ///
+    /// **It is 54 pt more than the control ever takes, and the 54 pt has a name** (ticket #30).
+    /// This was recorded through `AX5ReflowTests.ax5Size`, which measures in a hosted `UIWindow`,
+    /// and `UIHostingController.sizeThatFits` adds the running simulator's top safe-area inset to
+    /// the height it reports — 54 pt on the iPhone 16 Pro this was taken on, 47 pt on an iPhone
+    /// 16e. The comment here used to say the 98 was iOS growing the control's minimum hit target
+    /// across the accessibility range; it was not, and it does not. `MapRecenterButton` is a fixed
+    /// `CypressSpacing.minTapTarget` square and measures 44 pt at `.accessibility5` exactly as it
+    /// does at every other size — now asserted, device-independently, by
+    /// `AX5ReflowTests.bottomChromeControlsFitTheReservedBudgetAtAX5`.
+    ///
+    /// The number is left where it is on purpose. Everything downstream of it is a *reserve*
+    /// (`bottomSlotReservedAboveAX5`, and `noticeMaxHeight` below, which documents itself as
+    /// conservative rather than exact), so an over-reservation costs the notice room it does not
+    /// use, while an under-reservation is E183 §2 — the card growing off the top of the screen.
+    /// Correcting it downward would change what ships at AX5 under an owner ruling (R53 §6).
     static let locateButtonHeightAX5: CGFloat = 98
-    /// `IdentifyFAB`'s measured height at `.accessibility5` — its label is `.font(…, .body)`,
-    /// which scales with Dynamic Type, so this is not `fabPaddingV * 2` plus a fixed glyph.
-    /// Measured the same way.
+    /// The room reserved for `IdentifyFAB` above the notice slot. Its label is `.font(…, .body)`,
+    /// which does scale with Dynamic Type, so this is genuinely not `fabPaddingV * 2` plus a fixed
+    /// glyph — but the number carries the same 54 pt safe-area term as the one above, and for the
+    /// same reason: the FAB measures 83 pt at `.accessibility5`, on both devices. Left as a
+    /// reserve, on the reasoning stated above.
     static let fabHeightAX5: CGFloat = 137
 
-    /// Everything `bottomChrome`'s `VStack` stacks above the notice slot, at the worst case
-    /// (`.accessibility5`) either control ever measures: the recenter control, the gap to the
+    /// Everything `bottomChrome`'s `VStack` stacks above the notice slot, at or above the worst
+    /// case (`.accessibility5`) either control ever measures: the recenter control, the gap to the
     /// FAB, the FAB, the gap to the card, and the card's own gap down to the tab bar. Reserved
     /// unconditionally — at ordinary sizes both controls are far smaller than this, so the notice
     /// is left with more room than it asks for and nothing about its rendering changes; see
