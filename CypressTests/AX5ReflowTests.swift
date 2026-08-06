@@ -187,8 +187,8 @@ struct AX5ReflowTests {
     // MARK: - RULINGS R53 §6's AX5 ruling (owner decision 2026-08-05) · MapLocationNotice scrolls rather than overflows
 
     /// `MapLayout.locateButtonHeightAX5` and `.fabHeightAX5`, the inputs to
-    /// `noticeMaxHeight(availableHeight:)`, are what the bottom slot reserves for the two controls
-    /// stacked above the notice. Guarded here so a control that outgrows its reservation fails
+    /// `noticeMaxHeight(availableHeight:topInset:)`, are what the bottom slot reserves for the two
+    /// controls stacked above the notice. Guarded here so a control that outgrows its reservation fails
     /// loudly instead of quietly under-reserving the notice's scroll budget.
     ///
     /// **`<=`, not `==`, and the difference is the whole of ticket #30.** These two assertions were
@@ -233,6 +233,40 @@ struct AX5ReflowTests {
             """
             MapRecenterButton measures \(recenter.height) pt at AX5 against the \
             \(CypressSpacing.minTapTarget) pt frame it declares — it is no longer a fixed square
+            """
+        )
+    }
+
+    // MARK: - Task #250 · The top chrome's own reservation
+
+    /// `MapLayout.searchBarHeightAX5` and `.chipRowHeightAX5` are the inputs to
+    /// `topChromeReservedAX5(topInset:)`, which `noticeMaxHeight(availableHeight:topInset:)`
+    /// subtracts so the recenter control — first in `bottomChrome`'s bottom-anchored stack — cannot
+    /// rise above the filter chip row's own bottom edge no matter how tall the notice below it
+    /// grows. Guarded the same way `bottomChromeControlsFitTheReservedBudgetAtAX5` guards the other
+    /// two reservation inputs: `<=`, so either control growing past what is reserved for it fails
+    /// loudly instead of quietly under-reserving.
+    ///
+    /// **Both grow with Dynamic Type, unlike `MapRecenterButton`.** `SearchBar`'s field and
+    /// `MapFilterChips`'s pills carry `CypressFont.body145` text, and the row stays one line at
+    /// every size (#166) rather than wrapping, so neither is a fixed frame the way the recenter
+    /// square is — the bound is a footprint, not an exact measurement repeated.
+    @Test("the search bar and the filter chip row fit what the top-chrome reservation gives them at AX5")
+    func topChromeFitsItsReservedBudgetAtAX5() async {
+        let bar = await Self.ax5Size(of: SearchBar(text: .constant("")))
+        let chips = await Self.ax5Size(of: MapFilterChips(filter: .constant(.all)))
+        #expect(
+            bar.height <= MapLayout.searchBarHeightAX5,
+            """
+            SearchBar now measures \(bar.height) pt at AX5, past the \
+            \(MapLayout.searchBarHeightAX5) pt the top-chrome reservation gives it
+            """
+        )
+        #expect(
+            chips.height <= MapLayout.chipRowHeightAX5,
+            """
+            MapFilterChips now measures \(chips.height) pt at AX5, past the \
+            \(MapLayout.chipRowHeightAX5) pt the top-chrome reservation gives it
             """
         )
     }

@@ -314,7 +314,7 @@ struct MapHomeView: View {
         // sorts first; priorities compare among siblings, which each of these sets is.
         Color.clear
             .overlay(alignment: .bottom) {
-                bottomChrome(availableHeight: availableHeight)
+                bottomChrome(topInset: topInset, availableHeight: availableHeight)
                     .accessibilitySortPriority(1)
             }
             .overlay(alignment: .top) {
@@ -393,7 +393,13 @@ struct MapHomeView: View {
     ///
     /// Lifted out of `chrome` unchanged so the two blocks could be reordered without the diff
     /// pretending anything inside either of them moved. See the comment at the reorder.
-    private func bottomChrome(availableHeight: CGFloat) -> some View {
+    ///
+    /// **`topInset` (task #250).** This block's own layout does not use it — it is
+    /// passed through to `MapLayout.noticeMaxHeight(availableHeight:topInset:)` alone, so the
+    /// notice's AX5 scroll budget stays small enough that the recenter control, first in the
+    /// `VStack` below, cannot rise above the top chrome's own chip row no matter how tall the
+    /// notice grows. See `MapLayout`'s "top chrome's own reservation" section for the mechanism.
+    private func bottomChrome(topInset: CGFloat, availableHeight: CGFloat) -> some View {
         VStack(alignment: .trailing, spacing: 0) {
             // Above the FAB and right-aligned with it, inside the same absolutely positioned
             // block — which is the position MapKit's own `MapUserLocationButton` could not
@@ -410,7 +416,12 @@ struct MapHomeView: View {
             IdentifyFAB { router.present(.identify(nil)) }
                 .padding(.horizontal, MapLayout.sideInset - MapLayout.cardInset)
                 .padding(.bottom, MapLayout.fabToCardGap)
-            bottomSlot(noticeMaxHeight: MapLayout.noticeMaxHeight(availableHeight: availableHeight))
+            bottomSlot(
+                noticeMaxHeight: MapLayout.noticeMaxHeight(
+                    availableHeight: availableHeight,
+                    topInset: topInset
+                )
+            )
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.horizontal, MapLayout.cardInset)
