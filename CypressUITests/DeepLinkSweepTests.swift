@@ -96,6 +96,17 @@ final class DeepLinkSweepTests: XCTestCase, DeepLinkHarness {
     /// `Save check-in` at y=710 *before* the `Back` at y=69, while the hierarchy has Back nine
     /// positions earlier. A reading-order assertion built on it reports defects that do not exist. If
     /// VoiceOver's order is ever tested here, it has to come from recursing the element tree.
+    ///
+    /// **Every frame compared here goes through `settledFrame`, not a raw `.frame` read — this was
+    /// the one call site in the suite that compared geometry with no settle-or-finite wait at all.**
+    /// This method launches six times, each launch racing the seed attach and the screen's own
+    /// layout against whatever else a shared CI runner is doing; a containment check built on a
+    /// frame read mid-layout can both miss a real overlap (the not-yet-settled child has not
+    /// reached its final, overlapping position) and manufacture one that is not there. `settledFrame`
+    /// also refuses a non-finite read (`{{inf, inf}, {inf, inf}}`) rather than accepting it as
+    /// "stable" — see `frameHasSettled` in `UIWait.swift`. Read once per element and cached, not
+    /// once per pair compared, so the nested loop below does not re-wait for the same element's
+    /// frame on every label it happens to share.
     func testNothingIsAnnouncedTwice() {
         continueAfterFailure = true
         defer { continueAfterFailure = false }
@@ -108,17 +119,25 @@ final class DeepLinkSweepTests: XCTestCase, DeepLinkHarness {
             guard arrive(app, screen: screen, anchor: anchor) else { continue }
 
             let texts = app.staticTexts.allElementsBoundByIndex.filter { $0.isHittable }
+            let frames = texts.enumerated().map { index, element in
+                settledFrame(
+                    element, "\(screen)'s static text #\(index) (“\(element.label)”)", timeout: 5
+                )
+            }
+
             for (index, outer) in texts.enumerated() {
                 let label = outer.label.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !label.isEmpty else { continue }
-                for inner in texts[(index + 1)...] where inner.label
-                    .trimmingCharacters(in: .whitespacesAndNewlines) == label {
+                for innerIndex in (index + 1)..<texts.count {
+                    let inner = texts[innerIndex]
+                    guard inner.label.trimmingCharacters(in: .whitespacesAndNewlines) == label
+                    else { continue }
                     // Containment, not mere repetition: two different rows may legitimately say the
                     // same words. One element drawn inside another saying them is the defect.
                     XCTAssertFalse(
-                        outer.frame.contains(inner.frame),
-                        "\(screen): '\(label)' is announced by an element at \(outer.frame) and again "
-                            + "by one inside it at \(inner.frame), so it is heard twice"
+                        frames[index].contains(frames[innerIndex]),
+                        "\(screen): '\(label)' is announced by an element at \(frames[index]) and "
+                            + "again by one inside it at \(frames[innerIndex]), so it is heard twice"
                     )
                 }
             }

@@ -73,8 +73,9 @@ extension XCTestCase {
     /// itself had already been slowed down (#200): a runner slow enough to stretch the
     /// presentation animation past the moment the frame was read.
     ///
-    /// Settled means two consecutive samples agree. The element must be hittable first, so this
-    /// never reports the stable frame of something not yet presented.
+    /// Settled means two consecutive samples agree — see `frameHasSettled` for the finiteness half
+    /// of that decision. The element must be hittable first, so this never reports the stable frame
+    /// of something not yet presented.
     func settledFrame(
         _ element: XCUIElement,
         _ description: String,
@@ -90,16 +91,50 @@ extension XCTestCase {
         while Date() < deadline {
             usleep(150_000)
             let current = element.frame
-            if current.equalTo(previous) { return current }
+            if frameHasSettled(previous: previous, current: current) { return current }
             previous = current
         }
         XCTFail(
-            "\(description) never stopped moving within \(Int(timeout))s — its frame is still "
-                + "changing, so any coordinate taken from it is already stale",
+            isFiniteFrame(previous)
+                ? "\(description) never stopped moving within \(Int(timeout))s — its frame is "
+                    + "still changing, so any coordinate taken from it is already stale"
+                : "\(description)'s frame reads \(previous) — hittable, but XCUITest could not "
+                    + "resolve a real position for it. A non-finite frame reads as \"stable\" to a "
+                    + "plain equality check (see `frameHasSettled`), which is why that is not the "
+                    + "whole test; any coordinate taken from this frame is not a position at all",
             file: file, line: line
         )
         return previous
     }
+}
+
+/// Whether every component of `rect` is a real, finite number.
+///
+/// A free function rather than a method, so a test can call it directly against a literal
+/// `CGRect` — no live element, no simulator. See `frameHasSettled` for why this exists.
+func isFiniteFrame(_ rect: CGRect) -> Bool {
+    rect.origin.x.isFinite && rect.origin.y.isFinite
+        && rect.size.width.isFinite && rect.size.height.isFinite
+}
+
+/// Whether `current` counts as a settled read of an element, given the previous read: equal AND
+/// finite.
+///
+/// **Why finiteness is checked separately from equality.** `settledFrame`'s loop decides "has
+/// this stopped moving" by comparing two consecutive reads with `CGRect.equalTo`, and that
+/// comparison treats `.infinity == .infinity` as `true`. An element XCUITest could not resolve a
+/// real position for — a frame of `{{inf, inf}, {inf, inf}}`, read mid-transition on a contended
+/// runner rather than raised as an error — therefore looks exactly like a frame that has settled
+/// on the very first two samples: `equalTo` alone would hand a caller a coordinate for nowhere.
+///
+/// Split out to a free function, deliberately: the decision is pure `CGRect` arithmetic, and
+/// `FrameFinitenessGateTests` proves it directly, with no live element and no simulator, the same
+/// way `DragGestureGateTests` proves `deliberateDrag` is the suite's only spelling of a drag.
+func frameHasSettled(previous: CGRect, current: CGRect) -> Bool {
+    current.equalTo(previous) && isFiniteFrame(current)
+}
+
+extension XCTestCase {
 
     /// A drag a thumb would actually produce, rather than the instantaneous sweep XCUITest defaults
     /// to.
