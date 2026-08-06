@@ -64,6 +64,96 @@ import MapKit
 import SwiftUI
 import UIKit
 
+#if DEBUG
+/// Diagnostic-only trace of the reader's hand on the glass (task #241).
+///
+/// **Why this exists.** `MapPanTabSwitchUITests.panUntilMoved` failed its precondition twice on a
+/// loaded CI runner after #230's retry landed (runs 31067670540, 31074532263) — "panning the map
+/// did not move the camera off the reader" — and that one sentence cannot tell "the synthesized
+/// drag never reached the map" from "it reached the map and something moved the camera back". Both
+/// read identically from outside the app: the recenter control still says `Centered on you`.
+///
+/// **Not a log line — an accessibility value, read directly by the test that needs it.** A log
+/// was tried first and measured wrong: `NSLog` writes to the unified log, which `xcodebuild
+/// test`'s own captured text (what `Tools/run_tests.sh` writes and `Tools/verify_test_log.sh`
+/// reads) does not contain; a plain `print` from the *app* process fares no better, because the
+/// app under a UI test is a process xcodebuild does not attach its own stdout capture to — only
+/// the test-runner process's `print` calls (`MapPanTabSwitchUITests`' own `CYPAN-TEST` lines) show
+/// up there. An accessibility element has neither problem: the UI test that already knows how to
+/// read the recenter control's `accessibilityValue` can read this one the same way, and it works
+/// identically on a Mac and on a CI runner because it never depends on how either one captures a
+/// process's console.
+///
+/// Armed by `CYPRESS_PAN_PROBE=1`, the same seam `MapFrameProbe` uses for `CYPRESS_MAP_PROBE` — off
+/// unless asked for, `#if DEBUG` on top of that, so it is compiled out of a release binary exactly
+/// as that one is, and invisible in the accessibility tree of every test that does not arm it.
+@MainActor
+@Observable
+final class MapPanProbe {
+    static let environmentKey = "CYPRESS_PAN_PROBE"
+    static let isEnabled = ProcessInfo.processInfo.environment[environmentKey] == "1"
+    static let shared = MapPanProbe()
+
+    /// `MapHomeView` reads this through `accessibilityIdentifier` — task #241.
+    static let accessibilityIdentifier = "CypressPanProbe"
+
+    /// How many times *our own* pan recognizer (added in `makeUIView`, `cancelsTouchesInView =
+    /// false`) reached each state. This recognizer does not drive the camera — MapKit's own
+    /// internal one does that — so `panBegan > 0` answers "did a touch stream reach the map view
+    /// and get read as a pan at all", independent of whether MapKit's recognizer agreed.
+    private(set) var panBegan = 0
+    private(set) var panEnded = 0
+    private(set) var panCancelled = 0
+    private(set) var panFailed = 0
+    /// The translation `UIPanGestureRecognizer` itself measured at `.ended`, in points. `nil`
+    /// until a pan has ended at least once.
+    private(set) var lastEndedTranslation: CGPoint?
+
+    /// How many times MapKit reported a settled camera (`mapView(_:regionDidChangeAnimated:)`),
+    /// and where the most recent one landed. If a drag's own recognizer reaches `.ended` with a
+    /// real translation but no settle follows (or the settle lands back near the opening center),
+    /// that is "landed, then snapped back" rather than "never landed" — the distinction this
+    /// probe exists to make.
+    private(set) var settles = 0
+    private(set) var lastSettleCenter: Coordinate?
+    private(set) var lastSettleSpanDegrees: Double?
+
+    func noteGesture(_ recognizer: UIGestureRecognizer) {
+        guard recognizer is UIPanGestureRecognizer else { return }
+        switch recognizer.state {
+        case .began:
+            panBegan += 1
+        case .ended:
+            panEnded += 1
+            lastEndedTranslation = (recognizer as? UIPanGestureRecognizer)?.translation(in: recognizer.view)
+        case .cancelled:
+            panCancelled += 1
+        case .failed:
+            panFailed += 1
+        default:
+            break
+        }
+    }
+
+    func noteSettle(_ region: MKCoordinateRegion) {
+        settles += 1
+        lastSettleCenter = Coordinate(region.center)
+        lastSettleSpanDegrees = region.span.latitudeDelta
+    }
+
+    /// One line, read by `MapPanTabSwitchUITests` through the hidden element's
+    /// `accessibilityValue`.
+    var summary: String {
+        let translation = lastEndedTranslation.map { "\(Int($0.x)),\(Int($0.y))" } ?? "none"
+        let center = lastSettleCenter.map { "\($0.latitude),\($0.longitude)" } ?? "none"
+        let span = lastSettleSpanDegrees.map(String.init(describing:)) ?? "none"
+        return "panBegan=\(panBegan) panEnded=\(panEnded) panCancelled=\(panCancelled) "
+            + "panFailed=\(panFailed) lastEndedTranslation=\(translation) settles=\(settles) "
+            + "lastSettleCenter=\(center) lastSettleSpan=\(span)"
+    }
+}
+#endif
+
 // MARK: - The annotations
 
 /// One tree. `MKAnnotation` rather than a SwiftUI view, so MapKit can recycle the view drawing it.
@@ -690,6 +780,9 @@ struct MapAnnotationLayer: UIViewRepresentable {
             // flown camera settles without `mapViewDidChangeVisibleRegion` necessarily having seen
             // the last frame of it.
             applyUserHeading(on: mapView, animated: false)
+            #if DEBUG
+            if MapPanProbe.isEnabled { MapPanProbe.shared.noteSettle(mapView.region) }
+            #endif
             echo(mapView.region)
         }
 
@@ -697,7 +790,17 @@ struct MapAnnotationLayer: UIViewRepresentable {
 
         /// A pan or pinch began on the glass. Reported once per gesture, at `.began`, so the
         /// callback costs nothing per frame of the drag.
+        ///
+        /// **Logs every state, not just `.began` — task #241.** The early return below still gates
+        /// `onReaderGesture` at exactly one state, unchanged; the probe is a separate read of the
+        /// same callback, which UIKit already calls on every transition (`.began`, `.changed` per
+        /// frame of the drag, then `.ended`/`.cancelled`/`.failed`) because the recognizer was wired
+        /// with a single `#selector` covering all of them. Between a run with the probe armed and
+        /// one without, nothing about which state fires `onReaderGesture` changes.
         @objc func readerGesture(_ recognizer: UIGestureRecognizer) {
+            #if DEBUG
+            if MapPanProbe.isEnabled { MapPanProbe.shared.noteGesture(recognizer) }
+            #endif
             guard recognizer.state == .began else { return }
             parent.onReaderGesture?()
         }
