@@ -691,7 +691,8 @@ enum CypressColor {
     // 1. **≥ 3:1 (WCAG 1.4.11, non-text mark) on every ground screen 01 draws** — `map.paper`,
     //    `map.grid`, the street band, the park block and its inset ring, the ocean and the beach —
     //    in **both** appearances. Fourteen grounds per slot, 56 measurements, all pinned in
-    //    `ContrastTests.speciesPinsOnTheMap`. The park block is the binding one in light and the
+    //    `ContrastTests.speciesPinsInLight` and `.speciesPinsInDark`, over the
+    //    `ContrastTests.speciesOnTheMap` pair set. The park block is the binding one in light and the
     //    park ring in dark; the paper everyone would have measured against is the easiest of the
     //    seven, which is how a palette passes on paper and vanishes over Golden Gate Park.
     // 2. **≥ 0.10 apart from each other in OKLab ΔE**, five times the ~0.02 just-noticeable

@@ -436,7 +436,7 @@ struct OutboxQueueRow: View {
     /// Internal and `static` so the suite can read the decision rather than the rendering: SwiftUI
     /// builds no render tree a test can walk, so a call-site color that is only ever written inline
     /// can be reverted to `accentAmber` without one assertion going red. Pinned by
-    /// `OutboxStateWordTests`.
+    /// `Task14DrawingDecisionTests.terminalStateWordIsNotSignalAmber`.
     static let terminalStateWordColor = CypressColor.amberChipSelectedText
 
     @ViewBuilder
