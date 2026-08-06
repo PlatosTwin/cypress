@@ -77,10 +77,11 @@ import UIKit
 /// was tried first and measured wrong: `NSLog` writes to the unified log, which `xcodebuild
 /// test`'s own captured text (what `Tools/run_tests.sh` writes and `Tools/verify_test_log.sh`
 /// reads) does not contain; a plain `print` from the *app* process fares no better, because the
-/// app under a UI test is a process xcodebuild does not attach its own stdout capture to — only
-/// the test-runner process's `print` calls (`MapPanTabSwitchUITests`' own `CYPAN-TEST` lines) show
-/// up there. An accessibility element has neither problem: the UI test that already knows how to
-/// read the recenter control's `accessibilityValue` can read this one the same way, and it works
+/// app under a UI test is a separate process from the one whose stdout `xcodebuild` captures —
+/// only the *test-runner* process's own `print` calls land in that text (confirmed: a `print`
+/// added to `MapPanTabSwitchUITests` itself did show up; the identical call in the app did not).
+/// An accessibility element has neither problem: the UI test that already knows how to read the
+/// recenter control's `accessibilityValue` can read this one the same way, and it works
 /// identically on a Mac and on a CI runner because it never depends on how either one captures a
 /// process's console.
 ///
