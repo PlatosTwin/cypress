@@ -240,10 +240,13 @@ def build_city_file(src: str, dest: str, space: str) -> dict:
         cur.execute("DELETE FROM id_spaces WHERE id != ?", (space,))
         # dim_city AFTER id_spaces: narrowed to the one row the surviving
         # id_spaces row still references (task #237), the same reason
-        # inventories/id_spaces above are narrowed to this city alone. Ordered
-        # after, not before -- `id_spaces.city_id REFERENCES dim_city(id)` and
-        # `PRAGMA foreign_keys = ON` would refuse to delete a dim_city row a
-        # not-yet-narrowed id_spaces row still points at.
+        # inventories/id_spaces above are narrowed to this city alone. The
+        # ordering is load-bearing for the subquery below, which reads the
+        # already-narrowed id_spaces. Nothing else enforces it: this
+        # connection never enables `PRAGMA foreign_keys`, so the FK on
+        # id_spaces.city_id refuses nothing here (measured in PR #33 review);
+        # a wrong-order delete would surface only in the foreign_key_check
+        # pass further down.
         cur.execute("DELETE FROM dim_city WHERE id NOT IN (SELECT city_id FROM id_spaces)")
         con.commit()
 

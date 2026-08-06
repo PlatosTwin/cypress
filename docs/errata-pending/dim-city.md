@@ -1,7 +1,7 @@
 ### EXXX — `dim_city`: a city dimension table, absorbing `id_spaces.short_name` (task #237)
 
 *UNNUMBERED — the orchestrator splices the number at merge and rewrites the code citations. Filed
-from branch `feat/237-dim-city`. Latest numbered at time of writing: E222, R60.*
+from branch `feat/237-dim-city`. Latest numbered at time of writing: E240, R65.*
 
 ---
 
