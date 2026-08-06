@@ -12498,8 +12498,6 @@ is the thing the seed is careful never to move.
 
 *Swept on branch `p1/species-page-copy`, 2026-08-02, after #181 turned out to be the fourth rediscovery of the same family (#137, #138, #141). Recorded rather than fixed; each member needs a decision wider than #181's delegation.*
 
-*UNNUMBERED — the orchestrator splices the number at merge. Filed from branch `p1/species-page-copy`.*
-
 ---
 
 #137, #138, #141 and now #181 have each found one surface that assumed the only city was San
@@ -12622,9 +12620,6 @@ the app's read layer** — the only occurrences are in `DataGates`, correctly pe
 ### E210 — The false-red families are now preflight refusals, and the 390 pt premise did not survive the device (task #182)
 
 *Mechanized on branch `p1/round8-a`, 2026-08-02. Each refusal was proved to fire by creating the bad state deliberately, and proved not to always fire by a negative control. Two follow-ups are recorded below and neither is resolved: E202-A's marker did not survive reinstall on the day this was written, and the two 16e failures that produced task #183 did not reproduce on a freshly-erased device.*
-
-*UNNUMBERED — the orchestrator splices the number at merge. Filed from branch `p1/round8-a`,
-measured on iPhone 16e `3A1F212D-8F3A-41F1-AF72-EC95E155A4C9`, freshly erased, 2026-08-02.*
 
 ---
 
@@ -12886,9 +12881,7 @@ not notified and claim no other reader.
 
 ### E213 — E209's Shape B, fixed and guarded — and the red-proof that caught the guard exempting itself (task #186)
 
-*UNNUMBERED — the orchestrator splices the number at merge and rewrites the code citations. Filed
-from branch `p1/round8-b`. Latest numbered at time of writing: E209, R49. The design decision is in
-the companion pending ruling, `city-record-columns-decline-outside-their-id-space.md`.*
+The design decision is in the companion ruling, **R51**.
 
 ---
 
@@ -13204,8 +13197,6 @@ columns with their own SQL and are unaffected by any of the above.
 *Found on branch `p1/round10-b` (task #185), 2026-08-03, on iPhone 16e `3A1F212D-…`. Not caused by
 that ticket; the control at the merge base proves it.*
 
-*UNNUMBERED — the orchestrator splices the number at merge.*
-
 ---
 
 **The symptom.** Two UI tests fail and nothing else does:
@@ -13271,8 +13262,6 @@ for a wide camera. That is a change to a shared tool from a branch, and it belon
 the next round of `run_tests.sh` rather than to a copy ticket.
 
 ### E217 — The deep-link harness resolved trees from the seed's status while every screen it opened read the device's (task #173)
-
-*UNNUMBERED — the orchestrator splices the number at merge.*
 
 *Found on branch `p1/round12-b`, 2026-08-03, iPhone 16e `3A1F212D-…`, by
 `CypressUITests/PrimaryCTAReachabilityTests` on its first run. Not caused by that ticket; the
@@ -13365,8 +13354,6 @@ no cleanup, and a device driven for long enough will eventually collide the way 
 to whoever owns the next round of the harness rather than to a probe ticket.
 
 ### E218 — E206's replacement figure was itself off by one, and three shipped comments copied it (task #122)
-
-*UNNUMBERED — the orchestrator splices the number at merge.*
 
 *Found on branch `p1/round13-a`, 2026-08-03, iPhone 16 Pro Max `DE8E11AE-…`, while auditing #122's
 list of quoted seed figures. Amends **E206**, which is otherwise correct and whose vacant-site
@@ -15364,8 +15351,11 @@ would be" (screen 08's own doc comment), and no raw hex, font size or radius was
 
 Ticket #232 (PR #26) imported a persisted Apple Distribution certificate so CI stops minting a new
 one per deploy. The first release that actually exercised the path — 0.2 (14) — then failed twice,
-differently, before it minted. Both failures were measured on pre-merge branch dispatches (safe
-because the app code was byte-identical to main), so main never carried a broken deploy.
+differently, before it minted. The first failure was main's own post-merge acceptance run — the
+push run PR #28's merge triggered — so main's deploy pipeline did fail once in the open; it failed
+before any build was minted, and nothing broken shipped. The second failure and the eventual
+success were measured on pre-merge branch dispatches (safe because the app code was byte-identical
+to main), so the fix itself reached main already proven.
 
 **Failure 1 (run 31052462134).** `xcodebuild archive` under the project's Automatic signing style
 demanded an Apple *Development* identity. The imported Distribution identity was present in the
