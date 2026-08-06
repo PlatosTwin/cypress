@@ -23,7 +23,7 @@ final class DesignProposalShots: XCTestCase, DeepLinkHarness {
             ("measure", "Measure", "",     false, "16-measure-shipped"),
             ("measure", "Measure", "16a",  false, "16-measure-16a"),
             ("measure", "Measure", "16b",  false, "16-measure-16b"),
-            ("outbox",  "Outbox",  "",     false, "17-outbox-shipped"),
+            ("outbox",  "Outbox",  "17s",  false, "17-outbox-shipped"),
             ("outbox",  "Outbox",  "17a",  false, "17-outbox-17a"),
             ("outbox",  "Outbox",  "17b",  false, "17-outbox-17b"),
             // Item 2 · screen 10's share card. Layout is at stake, so AX5 too.
@@ -70,6 +70,16 @@ final class DesignProposalShots: XCTestCase, DeepLinkHarness {
                 // which only exists once a tab root has drawn.
                 _ = app.buttons["Journal"].waitForExistence(timeout: 60)
             }
+            // 16's readout is `text.ink` only once something has been entered; with an empty
+            // draft it draws the dimmed `text.faint` placeholder, and the first shot run
+            // photographed that instead of the 56 pt number this item is about. Type SCREENS.md
+            // 16's own `64` on the keypad the screen draws.
+            if shot.screen == "measure" {
+                for key in ["6", "4"] where app.buttons[key].waitForExistence(timeout: 10) {
+                    app.buttons[key].tap()
+                }
+            }
+
             // Let the push/tab transition settle before the shutter — a screenshot taken mid-slide
             // is a screenshot of two screens.
             Thread.sleep(forTimeInterval: 2.0)

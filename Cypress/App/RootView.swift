@@ -785,7 +785,30 @@ struct RootView: View {
             //
             // The state comes from this view rather than from a fresh `makeOutboxViewState()`
             // because the You tab shows the same wi-fi preference; see the `outbox` property.
+            //
+            // ⚠️ CAMERA RIG (design/14-proposals). Screen 17's amber only exists when the queue
+            // holds a terminal item, and this device's real queue is empty — the first shot run
+            // produced three identical photographs of "Nothing is waiting to send." The `17*`
+            // variants therefore draw SCREENS.md 17's own state, from the fixture the previews
+            // already use. Nothing but the shot harness sets `CYPRESS_DESIGN`.
+            #if DEBUG
+            if DesignProposalVariant.current.hasPrefix("17") {
+                OutboxScreen(
+                    presentation: OutboxPreviewFixtures.presentation([
+                        OutboxPreviewFixtures.visit,
+                        OutboxPreviewFixtures.checkIn,
+                        OutboxPreviewFixtures.expiredMeasurement,
+                        OutboxPreviewFixtures.syncedVisit,
+                        OutboxPreviewFixtures.syncedCare
+                    ]),
+                    syncPhotosOnWifiOnly: .constant(true)
+                )
+            } else {
+                OutboxView(state: outbox)
+            }
+            #else
             OutboxView(state: outbox)
+            #endif
 
         case .cityDownloads:
             // The Cities screen (#157). The library and downloader are constructed here — the
