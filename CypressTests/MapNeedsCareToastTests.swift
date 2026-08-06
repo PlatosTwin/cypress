@@ -168,8 +168,11 @@ struct MapNeedsCareToastTests {
     func theSentenceIsItsOwnAndCountsNothing() {
         let message = MapNeedsCareToastCopy.message
         #expect(!message.isEmpty)
+        // Reduced to a `Bool` before the macro sees it: `#expect` rewrites `contains(where:)` into
+        // a `rethrows` call it then cannot type-check (same family as CLAUDE.md's `Data ==` hang).
+        let carriesADigit = message.contains(where: \.isNumber)
         #expect(
-            !message.contains(where: \.isNumber),
+            !carriesADigit,
             """
             the toast carries a number. RULINGS R41 names a count among the surfaces forbidden \
             beside a filter, and "on the chip is the chip's voice, not a companion message".
@@ -282,13 +285,19 @@ struct MapNeedsCareToastTests {
         let api = ToastAnswers()
         let model = MapModel(api: api, needsCareToastDuration: .seconds(30))
 
+        // The opening read is deliberately a *different* value from the one the press gets back.
+        // The first draft answered both with the badges, so `waitUntil { content == badges }` was
+        // already true before the press was made and the assertion ran against the un-pressed
+        // model — a test that could not fail. Caught by its own red-proof (`return true` in the
+        // gate left it green), which is the whole reason CLAUDE.md asks for one.
+        await api.answer(with: .pins(PinAnswer([])))
+        model.cameraDidChange(bounds: Self.box, zoom: 18)
+        try await Self.waitUntil { model.hasSettled }
+
         let badges = MapContent.clusters([
             TreeCluster(id: "z18:1:1", coordinate: Self.center, count: 27)
         ])
         await api.answer(with: badges)
-        model.cameraDidChange(bounds: Self.box, zoom: 18)
-        try await Self.waitUntil { model.hasSettled }
-
         model.filter = .needsCare
         try await Self.waitUntil { model.content == badges }
         #expect(
