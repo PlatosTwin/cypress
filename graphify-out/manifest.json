@@ -135,9 +135,9 @@
     "semantic_hash": "dfe5184369d3b1470ef33e72f56b1ec0"
   },
   "Cypress/Core/Models/Tree.swift": {
-    "mtime": 1785756682.4819443,
-    "ast_hash": "f3b30ef6286b850c5107b34575de5b24",
-    "semantic_hash": "f3b30ef6286b850c5107b34575de5b24"
+    "mtime": 1786010965.9523916,
+    "ast_hash": "cb4b38a688024d9e9461c954ef8c76be",
+    "semantic_hash": ""
   },
   "Cypress/Core/Models/TreeMeasurement.swift": {
     "mtime": 1785756682.4822223,
@@ -175,8 +175,8 @@
     "semantic_hash": "2fa61de12c3abd831154b094539c3bd5"
   },
   "Cypress/Data/API/CypressAPI.swift": {
-    "mtime": 1785964457.8636706,
-    "ast_hash": "d5d5f067e712d1cd3fb79b72b5d6a5f7",
+    "mtime": 1786010965.9526951,
+    "ast_hash": "ad535575d6ec020eb6785c11926fcc2c",
     "semantic_hash": ""
   },
   "Cypress/Data/API/DeviceContributions.swift": {
@@ -195,8 +195,8 @@
     "semantic_hash": "3585dfa1e500711207daf63e6724021b"
   },
   "Cypress/Data/API/LocalAPI.swift": {
-    "mtime": 1785964457.8647058,
-    "ast_hash": "ac1d150fc333776fe0071f29b2a13116",
+    "mtime": 1786010965.9531682,
+    "ast_hash": "82a3a0c3883183144cde45177586965b",
     "semantic_hash": ""
   },
   "Cypress/Data/API/MapMembership.swift": {
@@ -350,8 +350,8 @@
     "semantic_hash": ""
   },
   "Cypress/Data/Store/TreeQueries.swift": {
-    "mtime": 1785983905.2698376,
-    "ast_hash": "ae8e7973e843075cae60293265296617",
+    "mtime": 1786010965.9535685,
+    "ast_hash": "414753b8938168792dab64b6d7d9f504",
     "semantic_hash": ""
   },
   "Cypress/Data/Tests/DataGates.swift": {
@@ -755,8 +755,8 @@
     "semantic_hash": ""
   },
   "Cypress/Features/Map/MapAnnotationLayer.swift": {
-    "mtime": 1785943035.740532,
-    "ast_hash": "587a617e62599d5286a9948136098f99",
+    "mtime": 1786010965.9539003,
+    "ast_hash": "f61b84352db6833d266ba3d5e87ae00c",
     "semantic_hash": ""
   },
   "Cypress/Features/Map/MapChrome.swift": {
@@ -765,9 +765,9 @@
     "semantic_hash": ""
   },
   "Cypress/Features/Map/MapFilter.swift": {
-    "mtime": 1785774417.431458,
-    "ast_hash": "4a52e0ac38e34181c4d9bbffc25fcd09",
-    "semantic_hash": "4a52e0ac38e34181c4d9bbffc25fcd09"
+    "mtime": 1786010965.954318,
+    "ast_hash": "938967f8d4ab5c148894fb1700fd5970",
+    "semantic_hash": ""
   },
   "Cypress/Features/Map/MapFrameProbe.swift": {
     "mtime": 1785028735.3593755,
@@ -785,8 +785,8 @@
     "semantic_hash": ""
   },
   "Cypress/Features/Map/MapKitBasemap.swift": {
-    "mtime": 1785964457.8688908,
-    "ast_hash": "32b9421d842c21407261424570ef2f24",
+    "mtime": 1785997423.842356,
+    "ast_hash": "03e2379d8652da870d167d3aa423133b",
     "semantic_hash": ""
   },
   "Cypress/Features/Map/MapLocationProvider.swift": {
@@ -795,9 +795,9 @@
     "semantic_hash": ""
   },
   "Cypress/Features/Map/MapModel.swift": {
-    "mtime": 1785756682.5214043,
-    "ast_hash": "6671cce96cb60f5407abe4640e48c9ec",
-    "semantic_hash": "6671cce96cb60f5407abe4640e48c9ec"
+    "mtime": 1786010965.954591,
+    "ast_hash": "e88079e549adea051b0d8c746f7efbcb",
+    "semantic_hash": ""
   },
   "Cypress/Features/Map/MapOpeningCamera.swift": {
     "mtime": 1785756682.5216823,
@@ -1415,14 +1415,14 @@
     "semantic_hash": "c7230979b96856048f0977f71217c83c"
   },
   "CypressTests/MapDetailTests.swift": {
-    "mtime": 1785943035.748401,
-    "ast_hash": "fbc3cb928e360971844a473f967398bd",
+    "mtime": 1786010965.9548008,
+    "ast_hash": "a470796d5909b308d2d2bbaab98ae8c7",
     "semantic_hash": ""
   },
   "CypressTests/MapFilterTests.swift": {
-    "mtime": 1785774417.4338923,
-    "ast_hash": "20b0ae7de6cc3755d98edd2015c0eb8c",
-    "semantic_hash": "20b0ae7de6cc3755d98edd2015c0eb8c"
+    "mtime": 1786010965.9551249,
+    "ast_hash": "eea4bfa43fff58dcf23580c9e4fa18d0",
+    "semantic_hash": ""
   },
   "CypressTests/MapLocationChurnTests.swift": {
     "mtime": 1785756682.5739326,
@@ -1430,9 +1430,9 @@
     "semantic_hash": "8bc99473aa9b1593ae089e172b1dd524"
   },
   "CypressTests/MapMarkerRenderingTests.swift": {
-    "mtime": 1785756682.5741992,
-    "ast_hash": "ee2f7a175ffc33aab52fe7006eefc740",
-    "semantic_hash": "ee2f7a175ffc33aab52fe7006eefc740"
+    "mtime": 1786010965.9554043,
+    "ast_hash": "bfe94c364786d3fcdb3ed47343c5fef1",
+    "semantic_hash": ""
   },
   "CypressTests/MapOpeningCameraTests.swift": {
     "mtime": 1785756682.5745258,
@@ -1910,8 +1910,8 @@
     "semantic_hash": "c0f1dd67f2cd86ecaadeb440a633739e"
   },
   "docs/ERRATA.md": {
-    "mtime": 1785990161.0289326,
-    "ast_hash": "c0714ce8b11e6aa1cf19766b81680b9e",
+    "mtime": 1786012490.8184903,
+    "ast_hash": "6f08c13de3e06f7087a26370e0519a35",
     "semantic_hash": ""
   },
   "docs/ROADMAP.md": {
@@ -2105,8 +2105,8 @@
     "semantic_hash": "ed2efcbf362fcb0ba7fdba2b6bae9f49"
   },
   "CypressTests/AX5ReflowTests.swift": {
-    "mtime": 1785964457.8703032,
-    "ast_hash": "1742770f707e2afdea0324eb332f812e",
+    "mtime": 1785997423.8427565,
+    "ast_hash": "81c40b8c48dd0b9dd3fe22a54761a1f5",
     "semantic_hash": ""
   },
   "CypressTests/AnonymizedPhotoNoticeTests.swift": {
@@ -2310,8 +2310,8 @@
     "semantic_hash": "29e926ed1eae6f911bf224312d8de037"
   },
   ".github/workflows/testflight.yml": {
-    "mtime": 1785975702.7362142,
-    "ast_hash": "196993c3a43bca04d7ac350d02e1898b",
+    "mtime": 1785994434.1778018,
+    "ast_hash": "546a08ed59fb940630dd3b75311eb659",
     "semantic_hash": ""
   },
   "Tools/ui-test-shards.txt": {
@@ -2365,8 +2365,8 @@
     "semantic_hash": ""
   },
   "CypressUITests/DeepLinkSweepTests.swift": {
-    "mtime": 1785985803.005673,
-    "ast_hash": "520625edd7f9ff6f02e3d5d14ecd7296",
+    "mtime": 1786012490.81938,
+    "ast_hash": "81367bbb508548eae662bee46bfc9bda",
     "semantic_hash": ""
   },
   "Cypress/Features/Map/MapHeading.swift": {
@@ -2435,8 +2435,8 @@
     "semantic_hash": ""
   },
   "CypressTests/DeployPathsAgreeTests.swift": {
-    "mtime": 1785875245.2923036,
-    "ast_hash": "6724262ebbf829d35be5bb6ebf6cd42e",
+    "mtime": 1785994434.1783154,
+    "ast_hash": "3c152838efe2b6c83c3f8f26dc2f5a58",
     "semantic_hash": ""
   },
   "Cypress/Assets.xcassets/CypressLogo.imageset/Contents.json": {
