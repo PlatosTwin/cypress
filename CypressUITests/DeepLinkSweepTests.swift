@@ -41,7 +41,7 @@ final class DeepLinkSweepTests: XCTestCase, DeepLinkHarness {
     /// fails, rather than the test quietly passing on an empty list.
     ///
     /// **`arrive`'s existence check is satisfied while the push is still animating in, and that is
-    /// the window this method has to close itself (deep-link-sweep-window.md, family of ERRATA
+    /// the window this method has to close itself (ERRATA E245, family of
     /// E242).** A `NavigationStack` push keeps the outgoing screen in the accessibility tree for the
     /// length of the slide transition, so `waitForExistence` on the pushed screen's anchor text
     /// returns the instant the incoming view enters the hierarchy — which is early in the animation,

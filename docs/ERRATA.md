@@ -15648,3 +15648,327 @@ Full `CypressUITests` suite, iPhone 16 Pro Max `DE8E11AE-4375-4C3B-A296-9B60A7DF
 Zero-warning line certified on a fresh `DerivedData` build (`Tools/verify_test_log.sh --warnings`,
 `437` compile tasks, all four changed files named and confirmed compiled): `VERIFY-WARNINGS-OK: 0
 source warnings`.
+
+### E243 — `AX5ReflowTests`'s height guards measured the simulator's safe-area inset, not the view (task #30)
+
+#### The symptom, and which of the ticket's two hypotheses held
+
+Task #30 reported that the iPhone 16e (`3A1F212D-8F3A-41F1-AF72-EC95E155A4C9`) fails
+`CypressTests/AX5ReflowTests` deterministically on unmodified main, before and after a
+`simctl erase`, and offered two hypotheses: (a) the tests are device-geometry-sensitive, or (b) the
+device image is bad.
+
+**(a) held, and (b) is refuted.** The image is fine — the same device runs the same suite green
+with the fix, and every other test in the suite passed on it throughout. But the geometry the tests
+were sensitive to is *not* the screen width the ticket guessed at. It is the device's **top
+safe-area inset**, arriving through the measuring harness.
+
+Reproduction, unmodified `origin/main` at `7da18bc`, `-only-testing:CypressTests/AX5ReflowTests`:
+
+| run | device | `screen-width-pt` | verdict |
+|---|---|---|---|
+| `ax5-16e-repro.log` | iPhone 16e | 390 | `✘ Test run with 9 tests in 1 suite failed … with 2 issues` |
+| `ax5-16pro-control.log` | iPhone 16 Pro | 402 | `✔ Test run with 9 tests in 1 suite passed` |
+
+Both `CYPRESS-RUN: worktree /Users/nikitabogdanov/PycharmProjects/cypress-wt-16e`,
+`CYPRESS-RUN: head 7da18bc`, two minutes apart, `camera-auto-healed no`. The two issues, in full:
+
+```
+Expectation failed: (recenter.height → 91.0) == (MapLayout.locateButtonHeightAX5 → 98.0)
+Expectation failed: (fab.height → 130.0)     == (MapLayout.fabHeightAX5        → 137.0)
+```
+
+Both short by **exactly 7 pt** — an additive term, identical on two controls with nothing in
+common, which is not what a width sensitivity looks like.
+
+#### The mechanism, measured rather than reasoned
+
+A throwaway probe suite, run on each device in turn against the same tree, printed the geometry
+`AX5ReflowTests.ax5Size` works in. The two runs differ in exactly one number:
+
+| probe | iPhone 16e | iPhone 16 Pro |
+|---|---|---|
+| `host.view.safeAreaInsets` | `top: 47` | `top: 54` |
+| bare `MapRecenterButton` at AX5 (never mounted in a window) | `44.0` | `44.0` |
+| bare `IdentifyFAB` at AX5 | `83.0` | `83.0` |
+| windowed `MapRecenterButton` (what `ax5Size` returned) | `91.0` | `98.0` |
+| windowed `IdentifyFAB` | `130.0` | `137.0` |
+| `window.frame`, `window.safeAreaInsets`, `window.windowScene` | `(-2000,0,393,852)`, all-zero, `nil` | identical |
+
+`ax5Size` mounts its content in a real `UIWindow` and asks
+`UIHostingController.sizeThatFits(in:)` for the result. **A hosted root view inherits the running
+device's safe-area insets even though this window is parked at `x = -2000`, is sized 393×852 rather
+than to the screen, and has no `windowScene` at all** — the window's own `safeAreaInsets` are zero
+while `host.view.safeAreaInsets.top` is 47 or 54 — and `sizeThatFits` adds them to the height it
+reports. 44 + 47 = 91; 44 + 54 = 98. 83 + 47 = 130; 83 + 54 = 137. Every height `ax5Size` ever
+returned carried a term naming the simulator rather than the view.
+
+The left and right insets are 0 on both devices, so the width guards in the same file — E196 §1
+and §3's, the reason the helper exists — were never affected and are unchanged by the fix. The
+defect reached main inside the only two assertions that read a height, and they were `==` against
+numbers recorded on a 16 Pro.
+
+#### What this says about the two shipped constants
+
+`MapLayout.locateButtonHeightAX5 = 98` and `.fabHeightAX5 = 137` were recorded through this
+harness, so each is its control's real AX5 footprint **plus 54 pt of 16 Pro safe area**. The
+comment on the first one claimed the 98 was iOS growing the control's minimum hit target across the
+accessibility range. That is not what it was, and it is not a thing this control does:
+`MapRecenterButton` is a fixed `CypressSpacing.minTapTarget` square and measures 44 pt at
+`.accessibility5` on both devices — the exact claim the fix now asserts in place of the old
+equality. The FAB's label does scale, and it measures 83 pt.
+
+**The shipped numbers are deliberately left alone.** Everything downstream of them is a *reserve*
+(`bottomSlotReservedAboveAX5`, then `noticeMaxHeight`, which documents itself as conservative
+rather than exact). Over-reserving costs `MapLocationNotice` about 108 pt of scroll budget it does
+not use; under-reserving is E183 §2 — the card laid out from its bottom edge growing off the top of
+the screen. Correcting them downward would change what ships at AX5 under an owner ruling (R53 §6)
+and is a decision for the owner, not for a ticket about a red simulator. It is flagged here so the
+next person to touch that budget knows the 108 pt is available and why nobody took it.
+
+#### The fix
+
+`ax5Size` subtracts the insets it measured from the size it returns, which makes it
+device-independent; the two guards become `<=` against the reservations (under-reserving is the
+only direction that is a defect), and the exact half is kept exact and device-independently as
+`recenter.height == CypressSpacing.minTapTarget`. `MapEmptyInventoryTests.theNoticeFitsTheSlotAtAX5`
+is the other caller of `ax5Size`; it compares two notices' heights against each other, so the term
+cancelled there and cancels still.
+
+#### Red-proof
+
+`MapLayout.fabHeightAX5` set to 80 — below the FAB's real 83 pt footprint, so the reservation
+under-reserves — and the suite run on the 16e (`redproof-16e.log`). It failed on the assertion
+under test, with the numbers in the message:
+
+```
+✘ Test "the recenter control and the FAB fit what the notice's scroll budget reserves at AX5"
+  recorded an issue at AX5ReflowTests.swift:219:9:
+  Expectation failed: (fab.height → 83.0) <= (MapLayout.fabHeightAX5 → 80.0)
+  ↳ IdentifyFAB now measures 83.0 pt at AX5, past the 80.0 pt the notice's scroll budget
+    reserves for it
+✘ Test run with 9 tests in 1 suite failed after 2.032 seconds with 1 issue.
+```
+
+The other two expectations in the same test — the recenter control against its own reservation, and
+the exact `== CypressSpacing.minTapTarget` — passed on the 16e in that same run, which is the fix's
+device-independence showing up on the device that used to fail.
+
+One issue, on the intended expectation, for the intended reason. Restored to 137, green again.
+
+#### For the operator
+
+There is nothing wrong with the 16e image and nothing to erase. Any AX5 measurement taken through a
+hosted `UIWindow` on this project is device-dependent by default — if a future guard pins a height,
+it must either strip the insets (as `ax5Size` now does) or host bare, the pattern
+`accountProviderLabelRefusesCompressionAtAX5` and
+`mapLocationNoticeScrollsWhenOfferedLessThanItNeedsAtAX5` already use.
+
+### E244 — The `In bloom` and `Needs care` chips did nothing to a clustered map, and the badges that survived lied about their counts (task #240)
+
+Owner-reported, 2026-08-05, verbatim:
+
+> try clicking the In Bloom or Needs Care filters. Nothing changes on the main screen, esp zoomed
+> out, EVEN THOUGH NOTHING MEETS THOSE FILTER CRITERIA!
+
+Reproduced on the running app before any code was read (iPhone 16 Pro, `CYPRESS_LOCATION=37.795,
+-122.403`), and it is two defects wearing one symptom.
+
+**1 · A filter applied after the fetch cannot narrow an answer the fetch already aggregated.**
+
+`MapFilter` is a conjunction of dimensions, and five of the six rode on `MapViewport` into the SQL.
+`condition` — SCREENS.md 01 §12's own two chips — did not. `MapModel.recomputeAdmittedPins` fetched
+the viewport un-narrowed and filtered **the pins it got back**:
+
+```swift
+switch filter.condition {
+case nil:        pins = fetched.items
+case .needsCare: pins = fetched.items.filter { MapPinKind.needsCare(status: $0.status) }
+case .inBloom:   … pin.speciesID → species[id]?.seasonal.bloomMonths.contains(month) …
+}
+```
+
+That is correct at zoom ≥ 16 and is *nothing at all* at zoom ≤ 15, because the first line of that
+method is `guard case let .pins(fetched) = content else { pins = []; return }`. Below A1's
+clustering threshold the answer is `MapContent.clusters` — one badge per 64 pt cell, carrying a
+`COUNT(*)` and a centroid — the guard takes the early branch, and the badges the map actually draws
+are read straight off `content` having never met a filter.
+
+Measured on the running screen, whole-city zoom over San Francisco: with `In bloom` off and with it
+on, every badge identical — `117 · 87 · 313 · 140 · 511 · 558 · 30 · 248 · 118 · 168 · 549 · 327 ·
+377 · 347 · 537 · 61 · 203 · 302 · 305 · 349 · 413`. Same for `Needs care`, which **no tree in the
+shipped seed satisfies**: the seed's only two statuses are `alive` (174,425) and `vacant_site`
+(24,200), so the correct render is an empty map and what drew was San Francisco.
+
+There is no version of `recomputeAdmittedPins` that could have fixed this. A `TreeCluster` carries
+an id, a centroid and a count; the trees it stands for are not in the answer and cannot be recovered
+from it. This is the family of E36 and E38 — a predicate applied downstream of a budget already
+spent — and `TreeQueries.Narrowing`'s own comments prescribe the only fix: the `WHERE` clause, where
+all four map statements read it.
+
+- `TreeStatus.needsCare` (`Core`) — the one definition, an exhaustive switch beside
+  `acceptsNewContributions`. The amber pin reads it, `TreeQueries.Narrowing` builds `AND t.status IN
+  (…)` from it, `LocalAPI` filters the community layer with it. `deadReported` is deliberately
+  outside the arm: a reported death is a claim awaiting a lead (DECISIONS §3.7) and `MapPinKind` has
+  never drawn it amber.
+- `MapViewport.bloomMonth` / `.needsCare`. `In bloom` **is a species narrowing** — it resolves
+  through `TreeQueries.bloomingSpeciesIDs` and is *intersected* with any typed or tapped species,
+  never substituted for it.
+- `MapFilter.Condition.narrowing(month:)`, a total function. A third chip cannot be added without
+  saying how the database answers it, which is the guarantee that stops this recurring.
+
+The post-fetch switch is gone, and `resolveSpeciesForVisiblePins` with it — the bloom chip no longer
+needs a species read per pin on screen.
+
+**A stale comment was refuted on the way.** `MapModel` asserted that "every `seasonal` in the
+shipped seed is `{}` and this chip currently matches no tree in any month". It is not: 11 species
+carry bloom months, and 2,472 trees are `Corymbia ficifolia`, which blooms in July, August and
+September. The chip has had something real to match for at least a corpus, and was showing the whole
+city instead. A confident comment is where bugs survive here.
+
+**2 · A cluster badge kept the count it was born with.**
+
+With the chips reaching the query, the running screen showed the second half. `MapAnnotationLayer`'s
+`sync` diffed cluster annotations by membership in `Set(clusters.map(\.id))`. `TreeCluster.id` is
+`z<zoom>:<cellY>:<cellX>` — deliberately stable across a pan so badges do not flicker (E130) — and
+the count and centroid are not in it, while `TreeClusterAnnotation` freezes its `kind`, count
+included, at init. So a cell wanted before and wanted now kept the badge it already had. Pressing
+`In bloom` dropped the cells that emptied out and left every survivor reading `511 · 549 · 347 ·
+537 · 377` — the un-narrowed counts. A map that had answered the question and was still displaying
+the old answer, which is worse than the no-op it replaced.
+
+The pin loop three lines below already had the rule ("an id that is still wanted but now draws
+differently is retired here"); the cluster loop never did. It compares the whole `TreeCluster` now,
+so identical clusters still compare equal and E130's "an update that changes nothing costs nothing"
+is intact.
+
+**This half is not new and was not caused by the first half.** A species typed into C20 has narrowed
+clustered counts since #116, and had the same stale badges.
+
+**Cost, measured rather than assumed.** `t.status` is not in `idx_trees_lat_lon`, so a needs-care
+cluster query stops being covering — the exact cost `clusters(in:)` warns about. Over the shipped
+seed, whole-city box, warm: 68 ms un-narrowed, **96 ms** with the status clause, against **95 ms**
+for the year narrowing that has shipped since #116. `sqlite_stat1` records 99,313 rows per status,
+half the table, so the planner declines `idx_trees_status` and is right to. The bloom narrowing is
+cheaper than un-narrowed (3 ms), because the planner answers it through
+`idx_trees_species_current`. Only a pressed chip pays anything.
+
+**A second cost surfaced in review, also measured rather than assumed: perimeter badge churn on
+pan.** `clustersSQL` clips each cell to the fetched box, so a cell straddling the box's edge
+aggregates its clipped part only — its count and centroid move under the stable id while interior
+badges hold (one 150 pt drag took an edge badge 156 → 181, its neighbour 393 → 468). Modelling
+`MapModel`'s own `bounds.expanded(by: 0.08)` in SQL: at zoom 13 a 20 %-of-width pan retires and
+re-adds 19 of 56 badges, 16 with on-screen centroids; at zoom 15, 15–20 of 66, 8–9 on-screen.
+The whole-value compare this fix added is what redraws those edge badges — the old
+membership-by-id test left them stale across pans too, so the churn is the price of correct
+counts, mitigated by the 200 ms debounce and the 8 % fetch pad. Recorded here so the next person
+profiling pan-time annotation churn starts from a measurement, not from the comment this entry
+corrected.
+
+**After the fix, on the same screen**: `In bloom` at whole-city zoom draws `15 · 7 · 3 · 6 · 5 · 4`
+where it drew `511 · 549 · 347 · 537 · 377`; `Needs care` empties the map entirely, with the
+`Clear filters` chip as the one way out and no message box (task #165, RULINGS R41).
+
+**Tests.** `CypressTests/MapFilterTests` section 8 — every load-bearing expectation is against a
+*clustered* viewport, because the pin regime is the half that already worked and a pin-only test
+would have passed on the broken code. `aConditionMeansTheSameThingAtBothZooms` states the invariant
+the defect denied: one box, one filter, asked at zoom 12 and at zoom 16, standing for the same
+trees. `CypressTests/MapMarkerRenderingTests.clusterBadgeFollowsItsCount` drives the real
+coordinator's `sync` against a real `MKMapView`. Every expectation is derived from a second,
+independent read of the seed.
+
+Six red-proofs, each watched failing for its stated reason and restored:
+
+| break | test that went red | message |
+|---|---|---|
+| `needsCare` clause dropped from the SQL predicate | needs-care badges | `(narrowed → 145837) == (expected → 0)` |
+| `deadReported` admitted to `TreeStatus.needsCare` | one definition | `!(.deadReported.needsCare → true)` |
+| `bloomMonth` ignored in `narrowing(for:)` | in-bloom badges | `(narrowed → 145837) == (expected → 26237)` |
+| bloom resolved for the pin query only | same thing at both zooms | `(clustered → 157) == (pinned → 21)` |
+| bloom set replaces the species set | intersection | `(both → 26237) == (speciesAlone → 4703)` |
+| cluster diff back to id-only membership | badge follows its count | `(kind → .cluster(count: 549…)) == .cluster(count: 12…)` |
+
+**One test asserted the defect and is inverted.** `MapDetailTests.filterChangeRecomputesTheAdmittedPins`
+— "changing the filter re-admits the pins without another read" — set the chip and read `model.pins`
+on the next line with no refetch, which is exactly the post-fetch filter that does nothing at
+zoom ≤ 15. It passed for as long as the defect shipped. It is now
+`a condition chip refetches, and the pins that come back honor it`.
+
+**Not taken, owner's call.** Nothing here invents a surface. An empty filtered map remains the whole
+answer (task #165: "if nothing matches, fine") and no sentence accompanies it (R41). Whether
+`Needs care` is worth a chip at all while the seed carries zero `declining` rows is a product
+question this task did not answer: the chip is specified by SCREENS.md 01 §12 and it now tells the
+truth, which is that nothing here needs care.
+
+### E245 — `DeepLinkSweepTests`'s outbox flake was a push-transition race in the test, not a reading-order defect (task #242)
+
+#### The two flakes, and why they're the same failure caught at two different moments
+
+`CypressUITests/DeepLinkSweepTests.testEveryPushedScreenSaysWhereItIsFirst` failed twice on CI's
+loaded runners, both on the outbox arm, in `ui (3)`:
+
+- Run **31074532263**: "the first control in the element tree is 'Outbox, What is waiting to send,
+  and what has gone' rather than Back" and "the first words read are 'You' rather than the
+  screen's own name".
+- Run **31082691131**: "the first control in the element tree is 'Sign in, Gather what you save
+  under one name on this phone' rather than Back" and the same "'You' rather than the screen's own
+  name".
+
+E242 already established that this suite had **no substantiated failures** before the night these
+occurred, so the family history here starts clean — this is a new mechanism, not a recurrence of
+anything E242 closed.
+
+#### The mechanism
+
+`outbox` is deep-linked through the You tab. A `NavigationStack` push keeps the OUTGOING screen
+(the You tab, its tab bar, its rows) in the accessibility tree for the length of the slide
+transition — the incoming screen's elements enter the hierarchy at the *start* of the animation,
+not once it settles. `DeepLinkHarness.arrive()` waits only for `waitForExistence` on the pushed
+screen's anchor text, which is satisfied the instant the incoming title enters the tree — while the
+outgoing You tab is still present, still hittable, and still ahead of the incoming screen in
+`debugDescription`'s depth-first order. The test then read `app.debugDescription` immediately.
+
+Both runs' second assertion ("first words read are 'You'") is the outgoing You tab's own tab-bar
+item — proof the tree read was the tab root's, not the pushed Outbox screen's. The two different
+"first controls" are the You tab's `IconTextRow` rows (`Cypress/DesignSystem/Components
+/IconTextRow.swift`), whose default SwiftUI button-label combining produces exactly the two
+strings both runs reported: `YouCopy.outboxRowTitle` + `YouCopy.outboxRowSubtitle` = "Outbox, What
+is waiting to send, and what has gone" (`Cypress/Features/You/YouTabView.swift`), and
+`AccountCopy.signInTitle` + `AccountCopy.signInSubtitle` = "Sign in, Gather what you save under one
+name on this phone" (`Cypress/Features/You/AccountSection.swift`). Two snapshots of the same
+outgoing tree, caught at different points in the same transition — not two different defects, and
+not a reading-order defect in the app at all.
+
+The window is structural to every push the sweep does, not specific to the You tab — the fix
+applies the same wait to all nine arms.
+
+#### The fix, and the one it isn't
+
+Added a wait, after `arrive()` and before reading order, for the tab bar (`app.buttons["My
+Grove"]`) to stop being hittable — the same signal `DeepLinkHarness.check()` already asserts,
+one-shot, as one of its two witnesses that a deep link actually pushed rather than landing on a tab
+root. Turned into a genuine `XCTWaiter` wait here because the race is exactly that a one-shot check
+run too early would still read the outgoing screen.
+
+A title-text identity wait (`app.staticTexts[title]`, gated with `settledFrame`) was tried first
+and rejected on evidence, not preference: `site`'s `ScreenHeader` title is `SiteCopy.headerTitle =
+"Site"`, and the same screen's stat grid carries `SiteCopy.siteLabel = "Site"` as a second,
+permanent element with the identical label. That collision isn't a race — both elements are on
+screen at steady state — so a label-based wait raised `"Multiple matching elements found"`
+deterministically on every run rather than ever settling. The tab-bar-departure signal doesn't
+depend on any screen's copy being unique, which is also why it generalizes to all nine arms without
+a per-screen exception.
+
+**Not tautological.** The wait establishes only that the outgoing tab root is gone — never that
+`Back` is first, and never anything about the `Back` button itself. Red-proofed by temporarily
+changing the expected first-button literal from `"Back"` to a value guaranteed wrong, running the
+full sweep: all nine arms — including outbox — failed for the order reason, and the failure message
+named the real, settled first control (`'Back' rather than RED-PROOF-WRONG-EXPECTATION`), not a
+mid-push artifact. Restored, then run twice more consecutively green
+(`Executed 2 tests, with 0 failures`, `XCTest skipped=0`, run device iPhone 16 Pro Max
+`DE8E11AE-4375-4C3B-A296-9B60A7DF1DB3`).
+
+Full `CypressUITests` suite on the same device and worktree, head `6d44d02`: `Executed 92 tests,
+with 0 failures`, `** TEST SUCCEEDED **`, `XCTest skipped=0`. Warnings certified on a fresh
+DerivedData build (`Tools/verify_test_log.sh --warnings`): `SwiftCompile tasks=438`, `0 source
+warnings`, `DeepLinkSweepTests.swift` confirmed among the compiled files.
