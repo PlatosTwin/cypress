@@ -33,6 +33,8 @@ final class DesignProposalShots: XCTestCase, DeepLinkHarness {
             ("share",   "Share",   "10c",  false, "10-share-10c"),
             ("share",   "Share",   "",     true,  "10-share-shipped-ax5"),
             ("share",   "Share",   "10a",  true,  "10-share-10a-ax5"),
+            ("share",   "Share",   "10d",  true,  "10-share-10d-ax5"),
+            ("share",   "Share",   "10d",  false, "10-share-10d"),
             // Item 3 · the vacant-site tile on screen 12.
             ("journal", "",        "",     false, "12-journal-shipped"),
             ("journal", "",        "12a",  false, "12-journal-12a"),

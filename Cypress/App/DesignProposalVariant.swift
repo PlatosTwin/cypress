@@ -79,11 +79,17 @@ enum DesignProposalVariant {
 
     enum ShareCardLayout { case shipped, fullWidthLink, indentedLink, wideStripAndLink }
 
+    /// `10d` is `10a` plus letting the link use as many lines as it needs at the accessibility
+    /// sizes, where two lines truncate it to `cypress.app/sf/tree/0…` and the reader gets none of
+    /// the identifier at all.
+    static var shareLinkUnclamped: Bool { current == "10d" }
+
     static var shareCardLayout: ShareCardLayout {
         switch current {
         case "10a": return .fullWidthLink
         case "10b": return .indentedLink
         case "10c": return .wideStripAndLink
+        case "10d": return .fullWidthLink
         default: return .shipped
         }
     }

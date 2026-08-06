@@ -143,7 +143,7 @@ struct ShareView: View {
         Text(presentation.publicURLText)
             .font(CypressFont.mono105)
             .foregroundStyle(CypressColor.textFaint)
-            .lineLimit(ShareMetrics.urlLineLimit)
+            .lineLimit(DesignProposalVariant.shareLinkUnclamped ? nil : ShareMetrics.urlLineLimit)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
