@@ -435,6 +435,52 @@ public struct MapViewport: Hashable, Sendable {
     /// the seed, so this is a `WHERE` clause and never a post-filter. See `MapSiteKind`.
     public let siteKind: MapSiteKind?
 
+    // MARK: The two condition chips (task #240)
+    //
+    // ── Why they are viewport fields at all, when they were not ─────────────────────────────────
+    // `In bloom` and `Needs care` are SCREENS.md 01 §12's own two chips and they used to be the one
+    // dimension of `MapFilter` that never reached a query: `MapModel` fetched the viewport
+    // un-narrowed and filtered the *pins it got back*. That works at zoom ≥ 16 and is a rendering
+    // no-op at zoom ≤ 15, because what comes back there is `MapContent.clusters` — badges carrying a
+    // count and a centroid and no member list at all. There is nothing in a `TreeCluster` to filter,
+    // so pressing either chip over a clustered map changed the chip's fill and nothing else, whole
+    // city intact, including in the state where zero trees in the seed satisfy the chip. That is
+    // task #240, and it is the same family as ERRATA E36 and E38: **a predicate applied downstream
+    // of the query cannot narrow an answer the query already aggregated.**
+    //
+    // The fix is the one `TreeQueries.Narrowing`'s own comments prescribe for every other dimension
+    // — put the predicate in the `WHERE` clause, where all four map statements read it — and it is
+    // the *only* fix available, because no amount of Swift downstream of `COUNT(*)` can recover
+    // which trees a badge stands for.
+
+    /// The month whose blooms the map has been narrowed to, or `nil` for every species — screen
+    /// 01's `In bloom` chip.
+    ///
+    /// **A month rather than a resolved species set, and that is deliberate.** What blooms is a fact
+    /// about `species.seasonal.bloom_months` in the seed; what month it is, is a fact about the
+    /// reader's clock. Data owns the first and must not own the second, so the clock's answer
+    /// crosses the boundary and the species lookup happens where the species live
+    /// (`TreeQueries.bloomingSpeciesIDs`). It also keeps the viewport `Hashable` over a single `Int`,
+    /// so the fetch debounce dedupes on it exactly as it does on every other narrowing.
+    ///
+    /// It resolves into the same `AND t.species_current IN (…)` that `speciesIDs` does, **intersected
+    /// with it** when both are set: a reader who typed a name and then pressed `In bloom` is asking
+    /// one question with two clauses, and either clause winning alone would be a control silently
+    /// dropping the other. Nothing blooming in the month is `.matchesNothing`, never "no narrowing".
+    public let bloomMonth: Int?
+
+    /// Whether the map has been narrowed to trees that need something — screen 01's `Needs care`
+    /// chip. `false` is every tree, not "no tree".
+    ///
+    /// A column narrowing like `siteKind`, and it composes with it by conjunction: `Needs care` plus
+    /// `Site: Empty planting site` is a question with an empty answer, and an empty answer is the
+    /// specified render (task #165 — "if nothing matches, fine" — and RULINGS R41, no message
+    /// beside a filter).
+    ///
+    /// `TreeStatus.needsCare` is the single definition of which statuses are in the arm; there is no
+    /// status vocabulary written in this file.
+    public let needsCare: Bool
+
     /// The trees this reader has a relationship with, when the map has been narrowed to them — the
     /// `Yours` and `Favorites` chips (#116, RULINGS R23). `nil` for every tree.
     ///
@@ -466,7 +512,9 @@ public struct MapViewport: Hashable, Sendable {
         speciesIDs: Set<UUID>? = nil,
         plantedYears: ClosedRange<Int>? = nil,
         treeIDs: Set<UUID>? = nil,
-        siteKind: MapSiteKind? = nil
+        siteKind: MapSiteKind? = nil,
+        bloomMonth: Int? = nil,
+        needsCare: Bool = false
     ) {
         self.bounds = bounds
         self.zoom = zoom
@@ -476,15 +524,21 @@ public struct MapViewport: Hashable, Sendable {
         self.plantedYears = plantedYears
         self.treeIDs = treeIDs
         self.siteKind = siteKind
+        self.bloomMonth = bloomMonth
+        self.needsCare = needsCare
     }
 
     /// Whether this viewport has been narrowed to a species at all.
-    public var isNarrowed: Bool { speciesIDs != nil }
+    ///
+    /// `bloomMonth` counts: it resolves to a species set and to nothing else, so a map narrowed by
+    /// the `In bloom` chip is narrowed to species in every sense this property is asked about.
+    public var isNarrowed: Bool { speciesIDs != nil || bloomMonth != nil }
 
-    /// Whether anything at all narrows this viewport — species, planting year, membership, or
-    /// whether there is a tree on the site.
+    /// Whether anything at all narrows this viewport — species, planting year, membership, whether
+    /// there is a tree on the site, and either of screen 01's two condition chips.
     public var isFiltered: Bool {
         speciesIDs != nil || plantedYears != nil || treeIDs != nil || siteKind != nil
+            || bloomMonth != nil || needsCare
     }
 
     /// **A1's clustering rule, and the one narrowing that suspends it.**

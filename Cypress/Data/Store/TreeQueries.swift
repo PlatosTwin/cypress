@@ -178,6 +178,10 @@ public struct TreeQueries {
         var treeUUIDs: [String]?
         /// Tree or empty planting site, or nil for both (`MapViewport.siteKind`, task #179).
         var siteKind: MapSiteKind?
+        /// Whether the map is narrowed to trees that need something (`MapViewport.needsCare`,
+        /// task #240). There is deliberately no "does not need care" arm — no chip asks for one, and
+        /// a `Bool?` here would be a third state nothing can reach.
+        var needsCare: Bool = false
         /// Whether some part of the narrowing resolved to the empty set, so no row can match.
         var matchesNothing: Bool = false
 
@@ -238,6 +242,27 @@ public struct TreeQueries {
                     .joined(separator: ",")
                 clauses.append("AND t.status IN (\(list))")
             }
+            if needsCare {
+                // Task #240. Written as an `IN` over the statuses `TreeStatus.needsCare` admits,
+                // for `siteKind`'s reason exactly: the arm a new status falls in is decided once,
+                // on the status, and reaches both the SQL and the drawn amber pin from there. A
+                // second `= 'declining'` written here is the drift `MapSiteKind.statuses`'s own
+                // comment names.
+                //
+                // **It costs a table probe and is worth it.** `status` is not in
+                // `idx_trees_lat_lon`, so a narrowed cluster query stops being covering — the exact
+                // cost `clusters(in:)` warns about, measured over the whole city on the shipped
+                // seed at 96 ms against 68 ms un-narrowed, which is the same 1.4× the year
+                // narrowing already pays (95 ms) and has paid since #116. The planner will not use
+                // `idx_trees_status` and is right not to: `sqlite_stat1` records 99,313 rows per
+                // status, half the table. The alternative is not a cheaper query, it is the
+                // rendering no-op #240 is about.
+                let list = TreeStatus.allCases
+                    .filter(\.needsCare)
+                    .map { TreeQueries.quote($0.rawValue) }
+                    .joined(separator: ",")
+                clauses.append("AND t.status IN (\(list))")
+            }
             if let treeUUIDs, !treeUUIDs.isEmpty {
                 // **Interpolated, and quoted by `quote(_:)` rather than bound**, for the reason
                 // `speciesPredicate` gives above at length: a list hidden behind `json_each` is a
@@ -257,7 +282,7 @@ public struct TreeQueries {
         /// Whether anything at all narrows this. Used only for assertions and tests.
         var isNone: Bool {
             speciesRowIDs == nil && plantedYears == nil && treeUUIDs == nil && siteKind == nil
-                && !matchesNothing
+                && !needsCare && !matchesNothing
         }
     }
 
@@ -269,7 +294,18 @@ public struct TreeQueries {
     func narrowing(for viewport: MapViewport, connection: SQLiteConnection) throws -> Narrowing {
         var narrowing = Narrowing()
 
-        if let ids = viewport.speciesIDs {
+        // **`In bloom` is a species narrowing, and it is intersected with the other one rather than
+        // put beside it** (task #240). A reader who typed `Cypress` and then pressed `In bloom` has
+        // asked one question with two clauses; letting either win alone is a control silently
+        // dropping the other, which is the same argument `MapModel.speciesIDs` makes about the
+        // search bar and the legend. `nil` species with a month set means the month alone.
+        var wantedSpecies = viewport.speciesIDs
+        if let month = viewport.bloomMonth {
+            let blooming = try bloomingSpeciesIDs(month: month, connection: connection)
+            wantedSpecies = wantedSpecies.map { $0.intersection(blooming) } ?? blooming
+        }
+
+        if let ids = wantedSpecies {
             guard !ids.isEmpty else { return .matchesNothing }
             let rowIDs = try speciesRowIDs(for: ids, connection: connection)
             guard !rowIDs.isEmpty else { return .matchesNothing }
@@ -290,7 +326,38 @@ public struct TreeQueries {
 
         narrowing.plantedYears = viewport.plantedYears
         narrowing.siteKind = viewport.siteKind
+        narrowing.needsCare = viewport.needsCare
         return narrowing
+    }
+
+    /// The species whose `seasonal.bloom_months` names this month — screen 01's `In bloom` chip
+    /// (task #240).
+    ///
+    /// **Answered from `species.seasonal.bloom_months` and from nothing else.** No month is inferred
+    /// from a genus, a region or a neighbor: a species the curated pipeline (BUILD-PLAN §8) has not
+    /// reached carries `{}` and is not in bloom in any month, which is the honest answer and the one
+    /// BUILD-PLAN §15 and DECISIONS §3.15 require. **The set is therefore small and moves as the
+    /// pipeline lands rows** — it is deliberately not written down in a comment here; the count is
+    /// asserted against the attached seed by `CypressTests/MapFilterTests`.
+    ///
+    /// A scan of `species`, and that is fine: it is 731 rows against 195,309 trees, it runs once per
+    /// settled camera rather than per row, and there is no index on a JSON array's contents to use.
+    /// Measured against the shipped seed at well under a millisecond — three orders below the
+    /// clustered tree query it narrows.
+    ///
+    /// `json_each` over the array rather than a `LIKE '%8%'`: `[1,2,...,12]` makes `LIKE` match `1`
+    /// for `11` and `12`, which is a filter that reads correct and answers a different question.
+    func bloomingSpeciesIDs(month: Int, connection: SQLiteConnection) throws -> Set<UUID> {
+        let statement = try connection.cachedStatement("""
+        SELECT sp.\(schema.speciesIdentityColumn) AS species_uuid
+          FROM \(seed).species sp
+         WHERE EXISTS (
+               SELECT 1 FROM json_each(json_extract(sp.seasonal, '$.bloom_months'))
+                WHERE json_each.value = :month
+               )
+        """)
+        _ = try statement.bind([":month": month])
+        return Set(try statement.fetchAll { try $0.uuid("species_uuid") })
     }
 
     /// Individual pins, zoom ≥ 16.
