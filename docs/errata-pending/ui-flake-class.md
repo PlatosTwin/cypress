@@ -64,8 +64,8 @@ are the failures #230 was written to fix, not evidence it didn't work.**
 it.** Run 31067670540 — main at `cc9eefd`, the merge of this very ticket — failed
 `testADeliberatePanSurvivesLeavingForJournalAndBack` at the same precondition, post-fix, on a
 loaded runner (`ui (4)`, 2026-08-06T03:17 UTC), with the retry present in the tree that failed.
-The identical tree had passed all four shards on the PR run an hour earlier, so the occurrence is
-intermittent, but it is the first one #230 cannot explain away. The pan precondition is the one
+The identical tree had passed all four shards on the PR run some twenty minutes earlier, so the
+occurrence is intermittent, but it is the first one #230 cannot explain away. The pan precondition is the one
 member of this family still standing; the next occurrence should reopen it as its own ticket
 rather than another rerun.
 
