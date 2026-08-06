@@ -1,7 +1,7 @@
 ### EXXX — #239's six 2026-08-04 UI flakes: three real, all already fixed; two claimed, unfound
 
 *UNNUMBERED — the orchestrator splices the number at merge and rewrites the code citations. Filed
-from branch `test/239-ui-flake-class`. Latest numbered at time of writing: E222, R60.*
+from branch `test/239-ui-flake-class`. Latest numbered at time of writing: E240, R65.*
 
 ---
 
@@ -45,7 +45,7 @@ named:
 |---|------|--------|--------------|
 | 1 | `MapPanTabSwitchUITests.testADeliberatePanSurvivesLeavingForJournalAndBack` | 30884912660 (06:44 UTC, push to main), 30958494676 (23:19, PR #15), 30959481241 (00:05, PR #14) | "panning the map did not move the camera off the reader…" — matches the brief's occurrence 2 |
 | 2 | `AccessibilityTreeTests.testTheFourTabsAreReachable` | 30871836674 (02:31), 30872810322 (02:54) | "the Map tab is present but cannot be activated by an assistive technology" |
-| 3 | `SheetExitUITests.testShareSheetDragDownDismisses` | 30868888144 (01:35), 30872810322 (02:54) | "the gesture was never read as a drag. Look at dragDown, not at the map (#200)." |
+| 3 | `SheetExitUITests.testShareSheetDragDownDismisses` | 30868888144 (01:35), 30872810322 (02:54) | "the gesture was never read as a drag. Look at dragDown, not at the map (#200)." — that literal is 30872810322's; 30868888144 predates #200's message rewrite and fails the same way under the older text |
 | 4 | `SheetExitUITests.testCareLogDragDownDismisses` | 30872810322 (02:54), 30873340010 (03:05) | same #200 signature |
 
 **All nine occurrences are already fixed on `main`, by work that landed before this ticket was

@@ -61,7 +61,7 @@
 # repeats, not the tests it runs.
 #
 # `FrameFinitenessGateTests` (#239) was added afterwards and costs nothing worth balancing for:
-# four `XCTAssert`s on literal `CGRect`s, no `XCUIApplication` anywhere in the file. Placed on the
+# `XCTAssert`s on literal `CGRect`s only, no `XCUIApplication` anywhere in the file. Placed on the
 # shortest line by class COUNT, since there is no per-class time to add it by — the rule above,
 # applied where the file's own numbers do not reach.
 
