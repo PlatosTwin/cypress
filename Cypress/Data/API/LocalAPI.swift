@@ -134,10 +134,30 @@ public actor LocalAPI: CypressAPI {
             // this filter would draw community vacant sites under a year while the city's own were
             // correctly excluded — one filter telling two stories depending on who added the row.
             // `MapSiteKind.of` is the single definition both sides call.
+            //
+            // **The two condition chips are here for the same reason** (task #240). `In bloom` is a
+            // species narrowing, so it is resolved to the same uuid set the seed's SQL resolves —
+            // through `TreeQueries.bloomingSpeciesIDs`, the one definition — and intersected with
+            // any typed or tapped species exactly as `TreeQueries.narrowing` intersects them. A
+            // community tree drawn under `Needs care` while the city's own were correctly excluded
+            // would be the dashed layer claiming *the community found you a tree that needs
+            // something*, which is the most convincing possible way to be wrong.
+            // `?? []` rather than `flatMap`: with no seed attached there is no bloom calendar, and
+            // the honest answer to "which species bloom this month" is then *none*. Letting it
+            // collapse to nil would read as "no narrowing" and draw the whole community layer under
+            // a chip that admitted nothing — the `[]` versus `nil` distinction R23 spends three
+            // paragraphs on, one layer down.
+            let bloomingSpecies: Set<UUID>? = try viewport.bloomMonth.map { month in
+                try treeQueries?.bloomingSpeciesIDs(month: month, connection: connection) ?? []
+            }
             let added = allAdded.filter { tree in
                 if let wanted = viewport.speciesIDs {
                     guard let id = tree.speciesCurrentID, wanted.contains(id) else { return false }
                 }
+                if let blooming = bloomingSpecies {
+                    guard let id = tree.speciesCurrentID, blooming.contains(id) else { return false }
+                }
+                if viewport.needsCare, !tree.status.needsCare { return false }
                 if let wanted = viewport.treeIDs, !wanted.contains(tree.id) { return false }
                 if let years = viewport.plantedYears {
                     guard let planted = tree.plantedYear, years.contains(planted) else { return false }

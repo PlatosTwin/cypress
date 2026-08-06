@@ -183,16 +183,19 @@ final class MapModel {
     private(set) var selection: MapCardSubject?
     private(set) var selectedPinID: UUID?
 
-    /// Species resolved for the bloom filter, keyed by id. Populated lazily and only for species
-    /// that are actually on screen — the catalog is 569 rows and the map does not need it.
-    private var species: [UUID: Species] = [:] {
-        didSet { if filter.condition?.needsSeasonalData == true { recomputeAdmittedPins() } }
-    }
+    /// Species resolved for the legend's names, keyed by id. Populated lazily and only for the ≤4
+    /// species holding a color slot — the catalog is 731 rows and the map does not need it.
+    ///
+    /// **It used to serve the `In bloom` chip as well, and had a `didSet` that re-filtered the pins
+    /// as each lookup landed** (task #240). That is gone with the post-fetch filter it fed: the
+    /// chip is a `WHERE` clause now, so a pin's admission no longer waits on a species read that
+    /// may never arrive. `resolveSpeciesForVisiblePins` — which resolved *every* species on screen
+    /// rather than the four with slots — went with it.
+    private var species: [UUID: Species] = [:]
     private var speciesMisses: Set<UUID> = []
 
     private var fetchTask: Task<Void, Never>?
     private var selectionTask: Task<Void, Never>?
-    private var speciesTask: Task<Void, Never>?
     private var paletteNameTask: Task<Void, Never>?
 
     /// A pan emits camera changes every frame. 200 ms is long enough that a flick costs one read
@@ -379,30 +382,26 @@ final class MapModel {
         // budget. Filtering here as well would be a second, redundant pass and would put the
         // "all and only" guarantee back downstream of the grid where it cannot be kept.
         //
-        // **`membership`, `decade` and `speciesID` are not applied here either, and for exactly the
-        // same reason** (#116): all three ride on the viewport, so the answer that came back already
-        // holds only matches. Re-applying them would be a redundant pass, and — worse — it would put
-        // the guarantee back downstream of the grid, where a pin thinned out of a 44 pt cell cannot
-        // be recovered. `condition` is the only dimension that *cannot* go into the query: neither
-        // "needs care" nor "in bloom" is a column the seed's map statements select on, so it is the
-        // only one left filtering pins in hand.
-        switch filter.condition {
-        case nil:
-            pins = fetched.items
-        case .needsCare:
-            pins = fetched.items.filter { MapPinKind.needsCare(status: $0.status) }
-        case .inBloom:
-            // Answered from `species.seasonal.bloom_months` and from nothing else. The curated
-            // species pipeline (BUILD-PLAN §8) has not landed, so every `seasonal` in the shipped
-            // seed is `{}` and this chip currently matches no tree in any month. That is the honest
-            // answer to the question the chip asks; inventing bloom months so it looks alive is
-            // precisely what BUILD-PLAN §15 and DECISIONS §3.15 forbid.
-            let month = calendar.component(.month, from: now())
-            pins = fetched.items.filter { pin in
-                guard let id = pin.speciesID, let species = species[id] else { return false }
-                return species.seasonal.bloomMonths.contains(month)
-            }
-        }
+        // **No dimension of the filter is applied here any more, and that is task #240's whole
+        // fix.** `membership`, `decade`, `speciesID` and `siteKind` never were (#116): all four ride
+        // on the viewport, so the answer that came back already holds only matches, and re-applying
+        // them would put the "all and only" guarantee back downstream of the grid where a pin
+        // thinned out of a 44 pt cell cannot be recovered.
+        //
+        // `condition` was the exception, and it was a defect rather than a design. A `switch` stood
+        // here filtering the fetched pins by `needs care` and by `bloom_months` — which is correct
+        // at zoom ≥ 16 and is *nothing at all* at zoom ≤ 15, because at zoom ≤ 15 this method takes
+        // the branch above: `content` is `.clusters`, `pins` is emptied, and the badges the map
+        // actually draws are read straight off `content` having never met a filter. Pressing
+        // `In bloom` or `Needs care` over a clustered map changed the chip's fill and left every
+        // badge and every count exactly where it was, including in the state where no tree in the
+        // seed satisfies the chip at all.
+        //
+        // There is no version of this method that could have fixed it. A `TreeCluster` carries an
+        // id, a centroid and a `COUNT(*)`; the trees it stands for are not in the answer and cannot
+        // be recovered from it. So the predicate went into the `WHERE` clause, where all four map
+        // statements read it (`TreeQueries.Narrowing`), and what is left here is the assignment.
+        pins = fetched.items
     }
 
     // MARK: - What the filter row reports, which is nothing (RULINGS R41, task #180)
@@ -463,8 +462,22 @@ final class MapModel {
             speciesIDs: speciesIDs,
             plantedYears: filter.decade?.years,
             treeIDs: members,
-            siteKind: filter.siteKind
+            siteKind: filter.siteKind,
+            // Task #240. The month is read here, once per viewport, rather than stored: a map left
+            // open across midnight on the 31st should answer the next month's question the next time
+            // it is asked, and a `MapViewport` that carried a resolved species set instead would
+            // have frozen the answer at the moment the chip was pressed.
+            bloomMonth: condition?.bloomMonth,
+            needsCare: condition?.needsCare ?? false
         )
+    }
+
+    /// What `filter.condition` asks the query for, with this model's clock supplying the month.
+    ///
+    /// One expression, read by the only place that builds a viewport, so the two chips cannot reach
+    /// the pin query and miss the cluster query — which is the whole of task #240.
+    private var condition: (bloomMonth: Int?, needsCare: Bool)? {
+        filter.condition?.narrowing(month: calendar.component(.month, from: now()))
     }
 
     private func scheduleFetch(immediate: Bool) {
@@ -510,7 +523,6 @@ final class MapModel {
             // while `content` still holds the opening `.pins([])` — that ordering would post the
             // notice for one publish cycle on every launch, over any street in the city.
             hasSettled = true
-            if filter.condition?.needsSeasonalData == true { resolveSpeciesForVisiblePins() }
         } catch let error as APIError {
             guard !Task.isCancelled else { return }
             loadFailure = error
@@ -616,7 +628,6 @@ final class MapModel {
         }
 
         recomputeAdmittedPins()
-        if filter.condition?.needsSeasonalData == true { resolveSpeciesForVisiblePins() }
         guard filter.narrowsTheQuery || old.narrowsTheQuery else { return }
         refetchThroughNarrowing()
     }
@@ -655,30 +666,17 @@ final class MapModel {
         scheduleFetch(immediate: true)
     }
 
-    /// Resolves the species of the pins currently on screen, once each, so `In bloom` can answer
-    /// from real seasonal data. Bounded by the pin budget and by the distinct species in view — in
-    /// SF that is a few dozen, not the whole 569-row catalog.
-    private func resolveSpeciesForVisiblePins() {
-        guard case let .pins(pins) = content else { return }
-        let wanted = Set(pins.compactMap(\.speciesID))
-            .subtracting(species.keys)
-            .subtracting(speciesMisses)
-        guard !wanted.isEmpty else { return }
-
-        speciesTask?.cancel()
-        speciesTask = Task { [weak self, api] in
-            for id in wanted {
-                if Task.isCancelled { return }
-                let resolved = try? await api.species(id: id)
-                guard let self else { return }
-                if let resolved {
-                    self.species[id] = resolved
-                } else {
-                    self.speciesMisses.insert(id)
-                }
-            }
-        }
-    }
+    // MARK: - What resolved the bloom filter, and does not any more (task #240)
+    //
+    // `resolveSpeciesForVisiblePins` stood here. It read the species of every pin on screen, one
+    // `api.species(id:)` per distinct species, so that `recomputeAdmittedPins` could ask each one
+    // whether it bloomed this month — a few dozen reads per settled camera, and a filter whose
+    // answer arrived asynchronously and in pieces after the pins were already drawn.
+    //
+    // The chip is a `WHERE` clause now (`MapViewport.bloomMonth`), so the seed answers it in one
+    // statement over 731 species rather than in dozens over the pins, before the map is drawn rather
+    // than after, and — the point of the ticket — for the cluster query as well as the pin query.
+    // `speciesTask` went with it; the palette's own name lookup keeps its own task.
 
     // MARK: - Selection
 
@@ -753,7 +751,14 @@ enum MapPinKind {
         return .cityTreeSpecies(slot)
     }
 
-    static func needsCare(status: TreeStatus) -> Bool { status == .declining }
+    /// Whether this status draws the amber pin.
+    ///
+    /// **It reads `TreeStatus.needsCare` rather than spelling `== .declining` here** (task #240).
+    /// The chip and the pin are two renderings of one question, and they were two literals in two
+    /// modules: the pin's was here, the chip's was a `switch` in `MapModel.recomputeAdmittedPins`,
+    /// and the query layer had neither. `Core` now holds the one definition, `TreeQueries` builds
+    /// its `IN` list from it, and this is the third reader rather than a second author.
+    static func needsCare(status: TreeStatus) -> Bool { status.needsCare }
 
     /// What a pin announces to VoiceOver.
     ///

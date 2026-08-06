@@ -19,6 +19,33 @@ public enum TreeStatus: String, Codable, Sendable, Hashable, CaseIterable {
     /// (PRODUCT §3, DECISIONS §3.17).
     public var isMemorial: Bool { self == .removed }
 
+    /// Whether this is a tree screen 01's `Needs care` chip is asking for — "this tree needs
+    /// something", the amber pin of SCREENS.md 01 §8.
+    ///
+    /// **It lives here, on the status, because three layers have to agree about it and two of them
+    /// are in modules that cannot see each other.** `MapPinKind` draws the amber pin from it,
+    /// `TreeQueries.Narrowing` builds `AND t.status IN (…)` from it, and `LocalAPI` filters the
+    /// community layer with it. Before task #240 the drawn pin read `status == .declining` in
+    /// `Features` and the query layer knew nothing about the chip at all — which is exactly how the
+    /// chip came to narrow the pins and leave the cluster badges standing.
+    ///
+    /// Exhaustive for `acceptsNewContributions`' reason (E95): a new `TreeStatus` has to be a
+    /// compile error here rather than a silent "no, that one never needs care".
+    ///
+    /// **`deadReported` is deliberately not in this arm**, and it is the one worth arguing. A
+    /// reported death is a claim awaiting a lead's confirmation (DECISIONS §3.7), not a condition a
+    /// passer-by can act on, and `MapPinKind` has never drawn it amber — admitting it here would
+    /// make one word mean two things on one screen, with the chip and the pin disagreeing. `removed`
+    /// and `vacantSite` have no tree to need anything.
+    public var needsCare: Bool {
+        switch self {
+        case .declining:
+            return true
+        case .alive, .deadReported, .removed, .vacantSite:
+            return false
+        }
+    }
+
     /// Whether a record in this state can take a new contribution.
     ///
     /// Two states cannot, for opposite reasons: a vacant site has no tree yet, and a memorial had
