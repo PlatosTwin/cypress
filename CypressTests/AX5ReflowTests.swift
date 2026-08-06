@@ -201,11 +201,10 @@ struct AX5ReflowTests {
     /// `<=` is the assertion that names that direction as the only defect.
     ///
     /// **`MapLayout.locateButtonHeightAX5` and `.fabHeightAX5` were corrected to the bare footprints
-    /// this test measures (44 and 83) on 2026-08-06** — see the owner ruling recorded in
-    /// `docs/rulings-pending/ax5-constants-corrected.md`, which supersedes R53 §6's conservative
-    /// stance for these two constants specifically. `<=` is kept rather than tightened to `==`
-    /// because the guard's job is catching under-reservation if a control's footprint ever grows
-    /// again, not asserting today's exact numbers a second time.
+    /// this test measures (44 and 83) on 2026-08-06, by direct owner ruling** — superseding
+    /// RULINGS R53 §6's conservative stance for these two constants specifically. `<=` is kept
+    /// rather than tightened to `==` because the guard's job is catching under-reservation if a
+    /// control's footprint ever grows again, not asserting today's exact numbers a second time.
     @Test("the recenter control and the FAB fit what the notice's scroll budget reserves at AX5")
     func bottomChromeControlsFitTheReservedBudgetAtAX5() async {
         let recenter = await Self.ax5Size(of: MapRecenterButton(engagement: .away, action: {}))

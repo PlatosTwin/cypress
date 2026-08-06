@@ -228,25 +228,26 @@ enum MapLayout {
 
     /// The room reserved for `MapRecenterButton` above the notice slot.
     ///
-    /// **Corrected 2026-08-06 (owner ruling, docs/rulings-pending/ax5-constants-corrected.md).**
-    /// ERRATA E243 found the old `98` was never a measurement of the control: it was the control's
-    /// real AX5 footprint plus the 54 pt top safe-area inset that `AX5ReflowTests.ax5Size`'s
-    /// measuring window inherited from whichever simulator it ran on (54 pt on an iPhone 16 Pro, 47
-    /// on an iPhone 16e — the harness has since been fixed to subtract it, which is why the value
-    /// here no longer needs to). `MapRecenterButton` is a fixed `CypressSpacing.minTapTarget` square
-    /// and measures exactly that at `.accessibility5`, device-independently — asserted by
-    /// `AX5ReflowTests.bottomChromeControlsFitTheReservedBudgetAtAX5`. The reservation is set to the
-    /// footprint itself rather than left as a margin over it.
+    /// **Corrected 2026-08-06 by direct owner ruling, superseding RULINGS R53 §6's conservative
+    /// stance for this constant specifically.** ERRATA E243 found the old `98` was never a
+    /// measurement of the control: it was the control's real AX5 footprint plus the 54 pt top
+    /// safe-area inset that `AX5ReflowTests.ax5Size`'s measuring window inherited from whichever
+    /// simulator it ran on (54 pt on an iPhone 16 Pro, 47 on an iPhone 16e — the harness has since
+    /// been fixed to subtract it, which is why the value here no longer needs to).
+    /// `MapRecenterButton` is a fixed `CypressSpacing.minTapTarget` square and measures exactly
+    /// that at `.accessibility5`, device-independently — asserted by
+    /// `AX5ReflowTests.bottomChromeControlsFitTheReservedBudgetAtAX5`. The reservation is set to
+    /// the footprint itself rather than left as a margin over it.
     static let locateButtonHeightAX5: CGFloat = CypressSpacing.minTapTarget
     /// The room reserved for `IdentifyFAB` above the notice slot. Its label is `.font(…, .body)`,
     /// which does scale with Dynamic Type, so this is genuinely not `fabPaddingV * 2` plus a fixed
     /// glyph.
     ///
-    /// **Corrected 2026-08-06** for the same reason as `locateButtonHeightAX5` above: E243 found the
-    /// old `137` carried the same 54 pt safe-area term. The FAB's real AX5 footprint is 83 pt,
-    /// measured through `AX5ReflowTests.ax5Size` after that helper's fix (subtracting the measuring
-    /// window's inherited safe-area insets), device-independently on both the iPhone 16 Pro and the
-    /// iPhone 16e.
+    /// **Corrected 2026-08-06**, for the same reason and under the same ruling as
+    /// `locateButtonHeightAX5` above: E243 found the old `137` carried the same 54 pt safe-area
+    /// term. The FAB's real AX5 footprint is 83 pt, measured through `AX5ReflowTests.ax5Size`
+    /// after that helper's fix (subtracting the measuring window's inherited safe-area insets),
+    /// device-independently on both the iPhone 16 Pro and the iPhone 16e.
     static let fabHeightAX5: CGFloat = 83
 
     /// Everything `bottomChrome`'s `VStack` stacks above the notice slot, at or above the worst
