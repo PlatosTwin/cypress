@@ -51,7 +51,7 @@ final class DesignProposalShots: XCTestCase, DeepLinkHarness {
             if shot.ax5 {
                 app.launchArguments += [
                     "-UIPreferredContentSizeCategoryName",
-                    "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge",
+                    "UICTContentSizeCategoryAccessibilityXXXL",
                 ]
             }
             app.launch()
