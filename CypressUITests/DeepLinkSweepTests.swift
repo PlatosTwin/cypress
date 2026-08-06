@@ -81,27 +81,18 @@ final class DeepLinkSweepTests: XCTestCase, DeepLinkHarness {
             // ever settling. `check()` (`DeepLinkHarness.swift`) already treats the tab bar's
             // disappearance as the identity signal for "this is the pushed screen, not the tab
             // root it came from" — every screen this sweep visits covers the tab bar once actually
-            // pushed, deep link or not. Turned into a WAIT rather than `check()`'s one-shot
-            // assertion, because the race is exactly that: a `NavigationStack` push keeps the
-            // outgoing tab root (and its tab bar) in the tree for the length of the slide
-            // animation, so `arrive`'s existence check on the incoming screen's anchor text can be
-            // satisfied while the outgoing screen is still there, still hittable, and still ahead
-            // of the incoming screen in `debugDescription`'s depth-first order.
+            // pushed, deep link or not.
+            //
+            // `waitForPushedScreenToArrive` (`DeepLinkHarness.swift`) is the one definition of this
+            // wait — task #243 hoisted it out of this method and into the harness so `check()`'s own
+            // tab-bar assertion, previously one-shot and reading the identical signal, shares it
+            // rather than growing a second dialect.
             //
             // This establishes only that the tab root is gone — never that `Back` is first, and
             // never anything about the title's position — so the order assertions immediately below
             // stay capable of failing on a fully settled screen whose reading order is genuinely
             // wrong.
-            let tabRootWitness = app.buttons["My Grove"]
-            let departedTabRoot = XCTNSPredicateExpectation(
-                predicate: NSPredicate(format: "hittable == false"), object: tabRootWitness
-            )
-            guard XCTWaiter.wait(for: [departedTabRoot], timeout: 30) == .completed else {
-                XCTFail(
-                    "\(screen): the tab bar ('My Grove') is still hittable 30s after the anchor "
-                        + "appeared — the push out of the tab root never completed, so no order was "
-                        + "read"
-                )
+            guard waitForPushedScreenToArrive(app, screen: screen) else {
                 app.terminate()
                 continue
             }
