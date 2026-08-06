@@ -92,7 +92,7 @@ pan.** `clustersSQL` clips each cell to the fetched box, so a cell straddling th
 aggregates its clipped part only — its count and centroid move under the stable id while interior
 badges hold (one 150 pt drag took an edge badge 156 → 181, its neighbour 393 → 468). Modelling
 `MapModel`'s own `bounds.expanded(by: 0.08)` in SQL: at zoom 13 a 20 %-of-width pan retires and
-re-adds 19 of 56 badges, 16 with on-screen centroids; at zoom 15, 15–20 of ~55, 8–9 on-screen.
+re-adds 19 of 56 badges, 16 with on-screen centroids; at zoom 15, 15–20 of 66, 8–9 on-screen.
 The whole-value compare this fix added is what redraws those edge badges — the old
 membership-by-id test left them stale across pans too, so the churn is the price of correct
 counts, mitigated by the 200 ms debounce and the 8 % fetch pad. Recorded here so the next person
