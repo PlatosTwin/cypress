@@ -1910,8 +1910,8 @@
     "semantic_hash": "c0f1dd67f2cd86ecaadeb440a633739e"
   },
   "docs/ERRATA.md": {
-    "mtime": 1785978332.8978386,
-    "ast_hash": "9b0d63c7c30799bdf520e2aef6bd0ea1",
+    "mtime": 1785990161.0289326,
+    "ast_hash": "c0714ce8b11e6aa1cf19766b81680b9e",
     "semantic_hash": ""
   },
   "docs/ROADMAP.md": {
@@ -2497,16 +2497,6 @@
   "CypressUITests/FrameFinitenessGateTests.swift": {
     "mtime": 1785985803.0060124,
     "ast_hash": "79290306267486619869fbece6adc6b8",
-    "semantic_hash": ""
-  },
-  "docs/errata-pending/dim-city.md": {
-    "mtime": 1785983905.2730553,
-    "ast_hash": "b36d139262b741d8f7d6c48883ef5196",
-    "semantic_hash": ""
-  },
-  "docs/errata-pending/ui-flake-class.md": {
-    "mtime": 1785987258.3444822,
-    "ast_hash": "6e6fa1e7b035f1157653b78acfae73e4",
     "semantic_hash": ""
   }
 }
