@@ -68,7 +68,12 @@ struct IconTextRow: View {
     /// accent rather than a photograph-shaped hole.
     private var tile: some View {
         Group {
-            if let photoID {
+            // ⚠️ CAMERA RIG (design/14-proposals) — E119/E122's open question, drawn so it can be
+            // photographed. Neither arm adds a hue: both are `surfaceEmptyThumb` under
+            // `borderDashedStrong`, the two tokens the vacant-site family already owns.
+            if accent == .vacantSite, DesignProposalVariant.vacantTile != .shipped {
+                vacantSiteTile
+            } else if let photoID {
                 PhotoImage(photoID: photoID, placeholder: Self.placeholderRecipe(accent))
             } else {
                 CypressGradientField(Self.placeholderRecipe(accent))
@@ -80,6 +85,41 @@ struct IconTextRow: View {
         )
         .cypressCornerRadius(CypressRadius.thumbSmAlt)
         .accessibilityHidden(true)
+    }
+
+    /// 12a · the empty photo well at 34 pt — `surfaceEmptyThumb` under a dashed
+    /// `borderDashedStrong` edge, which is what 14's well, the site screen and `LocationPrompt`
+    /// already draw. 12b · the map pin's hollow ring (E119), centered on the same ground.
+    @ViewBuilder
+    private var vacantSiteTile: some View {
+        switch DesignProposalVariant.vacantTile {
+        case .dashedWell:
+            RoundedRectangle(cornerRadius: CypressRadius.thumbSmAlt, style: .continuous)
+                .fill(CypressColor.surfaceEmptyThumb)
+                .overlay {
+                    RoundedRectangle(cornerRadius: CypressRadius.thumbSmAlt, style: .continuous)
+                        .strokeBorder(
+                            CypressColor.borderDashedStrong,
+                            style: StrokeStyle(
+                                lineWidth: CypressSpacing.Component.hairlineStrong,
+                                dash: [3, 2.5]
+                            )
+                        )
+                }
+        case .hollowRing:
+            RoundedRectangle(cornerRadius: CypressRadius.thumbSmAlt, style: .continuous)
+                .fill(CypressColor.surfaceEmptyThumb)
+                .overlay {
+                    Circle()
+                        .strokeBorder(
+                            CypressColor.borderDashedStrong,
+                            lineWidth: CypressSpacing.Component.outlineWidth
+                        )
+                        .padding(CypressSpacing.Component.hairlineStrong * 3)
+                }
+        case .shipped:
+            EmptyView()
+        }
     }
 
     private static func placeholderRecipe(_ accent: CypressColor.TileAccent) -> CypressGradientRecipe {

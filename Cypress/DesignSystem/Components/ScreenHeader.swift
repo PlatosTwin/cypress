@@ -176,7 +176,7 @@ struct HeaderPill: View {
                 )
             }
             .cypressPillBorder(
-                style == .amber ? CypressColor.amberPillBorder : CypressColor.borderCool
+                style == .amber ? (DesignProposalVariant.amberPillBorder ?? CypressColor.amberPillBorder) : CypressColor.borderCool
             )
             // Intrinsic width while the pill shares a row with the title, so it never compresses to
             // an ellipsis beside it. Once C1 has moved it onto its own line there is no competition

@@ -429,12 +429,12 @@ struct OutboxQueueRow: View {
         case .stopped:
             Text(row.state.rawValue)
                 .font(CypressFont.mono11Bold)
-                .foregroundStyle(CypressColor.accentAmber)
+                .foregroundStyle(DesignProposalVariant.stateWordAmber ?? CypressColor.accentAmber)
         case .retry:
             Button { onRetry?() } label: {
                 Text(row.state.rawValue)
                     .font(CypressFont.mono11Bold)
-                    .foregroundStyle(CypressColor.accentAmber)
+                    .foregroundStyle(DesignProposalVariant.stateWordAmber ?? CypressColor.accentAmber)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)

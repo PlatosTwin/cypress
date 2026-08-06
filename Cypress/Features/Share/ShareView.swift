@@ -110,7 +110,48 @@ struct ShareView: View {
 
     // MARK: - 3 · Preview card
 
+    // ⚠️ CAMERA RIG (design/14-proposals). The `layout` switch below draws E60's candidate
+    // two-row arrangements so they can be photographed; `.shipped` is the one-row card that
+    // ships today, unchanged. See `DesignProposalVariant`.
     private func previewCard(_ presentation: SharePresentation) -> some View {
+        let layout = DesignProposalVariant.shareCardLayout
+        return VStack(alignment: .leading, spacing: 0) {
+            cardTopRow(presentation, layout: layout)
+            if layout == .wideStripAndLink {
+                strip(presentation)
+            }
+            if layout != .shipped {
+                urlText(presentation)
+                    .padding(.top, ShareMetrics.urlTop)
+                    .padding(.leading, layout == .indentedLink
+                        ? CypressSpacing.Component.thumb72 + ShareMetrics.cardSpacing : 0)
+            }
+        }
+        .padding(ShareMetrics.cardPadding)
+        .background {
+            RoundedRectangle(cornerRadius: CypressRadius.cardLg, style: .continuous)
+                .fill(CypressColor.surfaceShareCard)
+        }
+        .cypressBorder(CypressColor.borderShareCard, radius: CypressRadius.cardLg)
+        .cypressShadow(CypressShadow.shareCard)
+        .padding(.bottom, ShareMetrics.cardBottom)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(presentation.accessibilityLabel)
+    }
+
+    private func urlText(_ presentation: SharePresentation) -> some View {
+        Text(presentation.publicURLText)
+            .font(CypressFont.mono105)
+            .foregroundStyle(CypressColor.textFaint)
+            .lineLimit(ShareMetrics.urlLineLimit)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func cardTopRow(
+        _ presentation: SharePresentation,
+        layout: DesignProposalVariant.ShareCardLayout
+    ) -> some View {
         HStack(alignment: .top, spacing: ShareMetrics.cardSpacing) {
             // C22. A photograph would go in this frame the day one is approved; until then the
             // gradient is what SCREENS.md 10 §3 draws anyway. See `SharePresentation`'s header.
@@ -130,45 +171,39 @@ struct ShareView: View {
                     .foregroundStyle(CypressColor.textMuted)
                     .fixedSize(horizontal: false, vertical: true)
 
-                FoliageStrip(
-                    // D5 is enforced inside the component; handing it the species attribute is the
-                    // whole contract.
-                    leafRetention: presentation.leafRetention,
-                    densities: presentation.foliageDensities,
-                    variant: .shareCard,
-                    showsMonthRow: false,
-                    showsEyebrow: false
-                )
-                .padding(.top, ShareMetrics.stripTop)
-                // The component labels each cell as a canopy state; this strip encodes *public*
-                // photo coverage (A5), so the honest label replaces them.
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(ShareMetrics.stripAccessibilityLabel)
+                if layout != .wideStripAndLink {
+                    strip(presentation)
+                }
 
-                Text(presentation.publicURLText)
-                    .font(CypressFont.mono105)
-                    .foregroundStyle(CypressColor.textFaint)
-                    // Wraps rather than truncating. SCREENS.md draws this on one line, and it fits
-                    // on one only because the mock's identifier is a four-character fixture; a real
-                    // tree id needs two. Half a link with an ellipsis on the end is worse than a
-                    // link on two lines — it is the one string on this card somebody might read
-                    // aloud or type. See ERRATA (E60).
-                    .lineLimit(ShareMetrics.urlLineLimit)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, ShareMetrics.urlTop)
+                if layout == .shipped {
+                    urlText(presentation)
+                        // Wraps rather than truncating. SCREENS.md draws this on one line, and it
+                        // fits on one only because the mock's identifier is a four-character
+                        // fixture; a real tree id needs two. Half a link with an ellipsis on the
+                        // end is worse than a link on two lines — it is the one string on this
+                        // card somebody might read aloud or type. See ERRATA (E60).
+                        .padding(.top, ShareMetrics.urlTop)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(ShareMetrics.cardPadding)
-        .background {
-            RoundedRectangle(cornerRadius: CypressRadius.cardLg, style: .continuous)
-                .fill(CypressColor.surfaceShareCard)
-        }
-        .cypressBorder(CypressColor.borderShareCard, radius: CypressRadius.cardLg)
-        .cypressShadow(CypressShadow.shareCard)
-        .padding(.bottom, ShareMetrics.cardBottom)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(presentation.accessibilityLabel)
+    }
+
+    private func strip(_ presentation: SharePresentation) -> some View {
+        FoliageStrip(
+            // D5 is enforced inside the component; handing it the species attribute is the
+            // whole contract.
+            leafRetention: presentation.leafRetention,
+            densities: presentation.foliageDensities,
+            variant: .shareCard,
+            showsMonthRow: false,
+            showsEyebrow: false
+        )
+        .padding(.top, ShareMetrics.stripTop)
+        // The component labels each cell as a canopy state; this strip encodes *public*
+        // photo coverage (A5), so the honest label replaces them.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(ShareMetrics.stripAccessibilityLabel)
     }
 
     // MARK: - 4 · Destination row

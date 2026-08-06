@@ -183,7 +183,9 @@ struct MeasureScreen: View {
                     .cypressMonoReadout(
                         // A dimmed placeholder, so "nothing entered" cannot be mistaken for
                         // somebody having typed a zero. See `MeasureCopy.readoutPlaceholder`.
-                        color: presentation.hasEntry ? CypressColor.textInk : CypressColor.textFaint
+                        color: presentation.hasEntry
+                            ? (DesignProposalVariant.readoutInk ?? CypressColor.textInk)
+                            : CypressColor.textFaint
                     )
                 Text(presentation.unitSuffix)
                     .font(CypressFont.body20SemiBold)

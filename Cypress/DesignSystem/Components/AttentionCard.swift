@@ -55,7 +55,7 @@ struct AttentionCard<Content: View>: View {
                     .fill(CypressColor.amberAttentionCardFill)
             }
             .cypressBorder(
-                CypressColor.amberAttentionCardBorder,
+                DesignProposalVariant.attentionCardBorder ?? CypressColor.amberAttentionCardBorder,
                 radius: size.radius,
                 width: CypressSpacing.Component.hairlineStrong
             )
