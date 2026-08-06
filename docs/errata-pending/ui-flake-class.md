@@ -60,6 +60,15 @@ an occurrence before concluding it's insufficient: all three `MapPanTabSwitch` f
 pre-date #230's merge (PR #23, 2026-08-05T09:27:25Z) — 06:44 and 23:19/00:05 the day before. They
 are the failures #230 was written to fix, not evidence it didn't work.**
 
+**Amended hours after this entry merged: #230's retry reduces the class, it does not eliminate
+it.** Run 31067670540 — main at `cc9eefd`, the merge of this very ticket — failed
+`testADeliberatePanSurvivesLeavingForJournalAndBack` at the same precondition, post-fix, on a
+loaded runner (`ui (4)`, 2026-08-06T03:17 UTC), with the retry present in the tree that failed.
+The identical tree had passed all four shards on the PR run an hour earlier, so the occurrence is
+intermittent, but it is the first one #230 cannot explain away. The pan precondition is the one
+member of this family still standing; the next occurrence should reopen it as its own ticket
+rather than another rerun.
+
 #### What this round adds, given the above
 
 With the four real, evidenced failure modes already hardened, the remaining work was auditing the

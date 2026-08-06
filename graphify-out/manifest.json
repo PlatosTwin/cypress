@@ -340,8 +340,8 @@
     "semantic_hash": "040a3ab70e5725a51aaa93680c8c4ae1"
   },
   "Cypress/Data/Store/SeedDatabase.swift": {
-    "mtime": 1785964457.865236,
-    "ast_hash": "b3c25f71b5dbad76862ef1e1b8cb160f",
+    "mtime": 1785983905.2690961,
+    "ast_hash": "f03c16c066881e9c0f3a2e24fbcb4db5",
     "semantic_hash": ""
   },
   "Cypress/Data/Store/SpeciesQueries.swift": {
@@ -350,8 +350,8 @@
     "semantic_hash": ""
   },
   "Cypress/Data/Store/TreeQueries.swift": {
-    "mtime": 1785964457.865716,
-    "ast_hash": "b44e7dd20408e8621b19c961d8a75287",
+    "mtime": 1785983905.2698376,
+    "ast_hash": "ae8e7973e843075cae60293265296617",
     "semantic_hash": ""
   },
   "Cypress/Data/Tests/DataGates.swift": {
@@ -1650,8 +1650,8 @@
     "semantic_hash": ""
   },
   "CypressUITests/MapFilterAccessibilityTests.swift": {
-    "mtime": 1785811790.4185505,
-    "ast_hash": "ecff98345ce6b9f4c5b4d65330247d34",
+    "mtime": 1785985803.0068243,
+    "ast_hash": "06a6ea90b814505ac388e411468d0f59",
     "semantic_hash": ""
   },
   "CypressUITests/MapSearchUITests.swift": {
@@ -1675,13 +1675,13 @@
     "semantic_hash": "31c62c6fa4d79b7c4c85f76b76fd3a1a"
   },
   "Fixtures/seed/schema.sql": {
-    "mtime": 1785964526.699682,
-    "ast_hash": "674f26dfcfe589f5fafca8503b8769c3",
+    "mtime": 1785983905.2711198,
+    "ast_hash": "c6522972da499ed3b248bbb8cf048e98",
     "semantic_hash": ""
   },
   "Tools/build_seed.py": {
-    "mtime": 1785964457.8733616,
-    "ast_hash": "62aeae2c3d02142c7ddadfa92c82e4df",
+    "mtime": 1785983905.2721262,
+    "ast_hash": "3e85a11f17546d7e951baa82fd401d33",
     "semantic_hash": ""
   },
   "Tools/ca_inventory_survey.py": {
@@ -1910,17 +1910,17 @@
     "semantic_hash": "c0f1dd67f2cd86ecaadeb440a633739e"
   },
   "docs/ERRATA.md": {
-    "mtime": 1785977952.5713341,
-    "ast_hash": "e714295c2a3b622ccef5afb7f6281c5c",
+    "mtime": 1785978332.8978386,
+    "ast_hash": "9b0d63c7c30799bdf520e2aef6bd0ea1",
     "semantic_hash": ""
   },
   "docs/ROADMAP.md": {
-    "mtime": 1785977952.5718658,
+    "mtime": 1785978332.8986998,
     "ast_hash": "fc6c87e7c087dcd2f2098ffe373c1992",
     "semantic_hash": ""
   },
   "docs/RULINGS.md": {
-    "mtime": 1785977952.5732183,
+    "mtime": 1785978332.9002001,
     "ast_hash": "26a9c06386156eab73d1e1f7e30521de",
     "semantic_hash": ""
   },
@@ -2285,8 +2285,8 @@
     "semantic_hash": "4e59b6816ce844bb84e7bc159c2e37a5"
   },
   "Tools/publish_cities.py": {
-    "mtime": 1785964457.87385,
-    "ast_hash": "4e0213142dd147b795ac71a996f0f0be",
+    "mtime": 1785983905.272503,
+    "ast_hash": "861f26787a032ee461f29225a8845bad",
     "semantic_hash": ""
   },
   "server/go.mod": {
@@ -2315,8 +2315,8 @@
     "semantic_hash": ""
   },
   "Tools/ui-test-shards.txt": {
-    "mtime": 1785943035.7593775,
-    "ast_hash": "775fbd70e673cabcea2a9d8957117912",
+    "mtime": 1785985803.0083199,
+    "ast_hash": "dd82d18f5bc18cf87def2f1625867c26",
     "semantic_hash": ""
   },
   "docs/investigations/api-hosting.md": {
@@ -2355,8 +2355,8 @@
     "semantic_hash": ""
   },
   "CypressUITests/UIWait.swift": {
-    "mtime": 1785827216.7967055,
-    "ast_hash": "3a39ce9b1ff72b445c0ae5d9b36d3091",
+    "mtime": 1785985803.007395,
+    "ast_hash": "791c91fe6924d7804a7f682ab0defaca",
     "semantic_hash": ""
   },
   "CypressUITests/DeepLinkHarness.swift": {
@@ -2365,8 +2365,8 @@
     "semantic_hash": ""
   },
   "CypressUITests/DeepLinkSweepTests.swift": {
-    "mtime": 1785816361.9111865,
-    "ast_hash": "df6c4f86dc6ac80bdb7b7afce32d6fe2",
+    "mtime": 1785985803.005673,
+    "ast_hash": "520625edd7f9ff6f02e3d5d14ecd7296",
     "semantic_hash": ""
   },
   "Cypress/Features/Map/MapHeading.swift": {
@@ -2487,6 +2487,26 @@
   "CypressTests/GroveEmptyStateTests.swift": {
     "mtime": 1785964457.870945,
     "ast_hash": "9b750135a8001d9e9b1beab16f3f47c4",
+    "semantic_hash": ""
+  },
+  "CypressTests/DimCityTests.swift": {
+    "mtime": 1785983905.27023,
+    "ast_hash": "0b0af6ad9cc5e4160b43c72b4d5f6d2f",
+    "semantic_hash": ""
+  },
+  "CypressUITests/FrameFinitenessGateTests.swift": {
+    "mtime": 1785985803.0060124,
+    "ast_hash": "79290306267486619869fbece6adc6b8",
+    "semantic_hash": ""
+  },
+  "docs/errata-pending/dim-city.md": {
+    "mtime": 1785983905.2730553,
+    "ast_hash": "b36d139262b741d8f7d6c48883ef5196",
+    "semantic_hash": ""
+  },
+  "docs/errata-pending/ui-flake-class.md": {
+    "mtime": 1785985803.008684,
+    "ast_hash": "5ba84bfb2cf3c3158e3241b40416277b",
     "semantic_hash": ""
   }
 }
