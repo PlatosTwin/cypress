@@ -119,6 +119,15 @@ conflicts with convenience, the rule wins.
   a `Bool` before the macro sees it.
 - The unit suite hangs on a simulator that never granted camera access (see above).
 
+## Publishing the seed
+- **No machine of the owner's carries a Tigris credential, by design — never ask the owner to
+  run `dist/upload.sh`, paste keys, or debug an `InvalidAccessKeyId`.** Both the s15 and s16
+  publishes stalled on exactly that ask (ticket #248). The publish runs agent-side via the Fly
+  relay documented in `server/README.md` ("Publishing without local credentials"): worker
+  machine on `cypress-sync` inherits the bucket keys, files travel through a temporary release,
+  hashes are verified on both ends, everything temporary is destroyed after. The one thing to
+  ask the owner for is the go-ahead to create the worker machine — nothing else.
+
 ## Numbering and shared files
 - Never write a number into `docs/ERRATA.md` or `docs/RULINGS.md` from a branch or agent. Write
   the entry **unnumbered** to `docs/errata-pending/<topic>.md` or `docs/rulings-pending/`; the

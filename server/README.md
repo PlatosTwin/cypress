@@ -41,6 +41,34 @@ call and preflights that profile before touching any object, so a missing or sta
 fails fast with this same command rather than silently uploading (or failing to upload) under
 the wrong identity.
 
+**Publishing without local credentials — the Fly relay (how the s16 publish actually shipped,
+2026-08-06).** The owner's machines carry NO Tigris credential by design, and asking the owner
+to paste keys per-publish is the exact failure #248 records twice. An agent with `dist/` built,
+`gh` auth, and Fly access publishes end to end like this — the keys never leave the Fly app:
+
+1. Put the four `dist/` files (two city files, the fused seed, `manifest.json`) on a temporary
+   release on this repo (`gh release create seed-relay-tmp … --prerelease --latest=false`).
+   The bytes are public-by-design — they are about to be served anonymously from the bucket.
+2. Launch a throwaway worker on the `cypress-sync` app, which inherits the bucket secrets as
+   env: `alpine:3.20`, ~512 MB, entrypoint `sh -c` with command `sleep 3600` (the MCP runner
+   appends a stray argv token; `sh -c` swallows it — a bare `sleep 3600` entrypoint exits 1).
+3. `exec` has a ~30 s transport ceiling: run every long step detached
+   (`nohup sh -c '… && touch /tmp/x.done || touch /tmp/x.fail' &`) and poll the marker files.
+   Steps: `apk add --no-cache aws-cli`; `wget` the four release assets; `sha256sum -c` against
+   the hashes in `manifest.json` (write the sums file with one `echo` per line — `printf '\n'`
+   mangles through the nested quoting); `aws s3 cp` each to its manifest path with
+   `--endpoint-url $AWS_ENDPOINT_URL_S3`, cities and seed first, manifest LAST with
+   `--content-type application/json`. Never print any `AWS_*` value — names only.
+4. Verify from OUTSIDE the machine, with the repo's own instruments: `curl` the public-domain
+   manifest with `?cb=$(date +%s)` and `cmp` against `dist/manifest.json`; run
+   `Tools/fetch_seed.sh <scratch>` (it hash-verifies the seed end to end); full-hash both city
+   files from the public domain.
+5. Clean up: destroy the worker, delete the relay release and its tag
+   (`gh release delete seed-relay-tmp --yes --cleanup-tag`).
+
+Creating machines on the credential-bearing app requires the owner's explicit go-ahead —
+ask, don't assume; and never ask the owner to run publication commands themselves.
+
 The bucket is **public read** (flipped 2026-08-01 for the R36 publish). Two gotchas, both
 measured on 2026-08-01: Tigris serves anonymous reads only on the dedicated public domain
 `https://cypress-cities.t3.tigrisbucket.io` — anonymous GET against the S3 API endpoints
