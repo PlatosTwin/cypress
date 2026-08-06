@@ -59,8 +59,13 @@
 # from 462.8s to ~345s, about two minutes, on a pipeline whose per-shard BUILD is ~10 minutes.
 # Sharding further would trade complexity for seconds. The next lever is the build each shard
 # repeats, not the tests it runs.
+#
+# `FrameFinitenessGateTests` (#239) was added afterwards and costs nothing worth balancing for:
+# four `XCTAssert`s on literal `CGRect`s, no `XCUIApplication` anywhere in the file. Placed on the
+# shortest line by class COUNT, since there is no per-class time to add it by — the rule above,
+# applied where the file's own numbers do not reach.
 
-DeepLinkVoiceOverTests MapCenteredStateUITests
+DeepLinkVoiceOverTests MapCenteredStateUITests FrameFinitenessGateTests
 MapFilterAccessibilityTests AnonymizedPhotoNoticeUITests MapRecenterUITests PhotoBrowserReachabilityTests
 DeepLinkSweepTests PrimaryCTAReachabilityTests SheetHeightUITests AlmanacGroupTapTests
 SheetExitUITests MapSearchUITests MapSuggestionUITests MapPanTabSwitchUITests PhotoDeletionReachabilityTests AccessibilityTreeTests ReadingOrderAccessibilityTests

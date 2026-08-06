@@ -160,11 +160,25 @@ final class MapFilterAccessibilityTests: XCTestCase {
     /// tree with a frame beyond the display and cannot be pressed until the row is dragged. The
     /// loops are bounded (a stalled scroll must fail the caller's assertion, not hang the suite),
     /// and the second loop drags back for callers that need a chip near the leading edge.
+    ///
+    /// **`isHittable` alone is not the same claim as "safe to tap".** It is a snapshot of this
+    /// instant; a chip mid-momentum-scroll can be hittable the moment this loop checks and be
+    /// somewhere else — under an adjacent chip's coordinates — by the time a caller's `.tap()`
+    /// actually synthesizes. Every caller here either taps the return value directly or asserts
+    /// `isHittable` on it and then taps a moment later, so once the loops above have found it
+    /// hittable, this also waits for the row's drag to have finished settling before handing the
+    /// chip back — through the same `settledFrame` every other geometry read in this suite goes
+    /// through, not a second wait spelled out here. An element that never became hittable is
+    /// returned exactly as before: every caller already has its own assertion, and its own
+    /// message, for that case.
     @discardableResult
     private func revealedChip(_ label: String, _ app: XCUIApplication) -> XCUIElement {
         let element = chip(label, app)
         for _ in 0..<6 where !element.isHittable { swipeRow(app, left: true) }
         for _ in 0..<6 where !element.isHittable { swipeRow(app, left: false) }
+        if element.isHittable {
+            _ = settledFrame(element, "the “\(label)” chip", timeout: 5)
+        }
         return element
     }
 
