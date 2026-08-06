@@ -142,15 +142,14 @@ extension DeepLinkHarness {
         assertEveryControlIsLabeled(app, screen: screen, file: file, line: line)
 
         if pushed {
-            // A pushed screen covers the tab root, so the bottom bar is gone. Its absence is a second,
-            // independent witness that the deep link actually navigated rather than landing on a tab
-            // root that happens to contain the anchor text somewhere.
-            XCTAssertFalse(
-                app.buttons["My Grove"].isHittable,
-                "\(screen): the bottom tab bar is still reachable, so this is a tab root rather than "
-                    + "the pushed screen the test asked for",
-                file: file, line: line
-            )
+            // A pushed screen covers the tab root, so the bottom bar eventually goes away. Its
+            // departure is a second, independent witness that the deep link actually navigated
+            // rather than landing on a tab root that happens to contain the anchor text somewhere —
+            // waited for, not read once (see `waitForPushedScreenToArrive`).
+            guard waitForPushedScreenToArrive(app, screen: screen, file: file, line: line) else {
+                app.terminate()
+                return
+            }
 
             let back = app.buttons["Back"]
             // Without a reachable Back this screen cannot be left except by a swipe gesture an
@@ -159,6 +158,48 @@ extension DeepLinkHarness {
         }
 
         app.terminate()
+    }
+
+    /// Waits for the outgoing tab root to leave the tree after a push, rather than reading its
+    /// hittability once (task #243, family of ERRATA E245).
+    ///
+    /// **The race this closes.** `arrive()`'s existence check on the pushed screen's own anchor text
+    /// is satisfied the instant the incoming view enters the accessibility hierarchy — early in the
+    /// `NavigationStack` slide transition, not once it settles — while the outgoing screen (its tab
+    /// bar, its own rows) is still present, still hittable, and still ahead of the incoming screen in
+    /// `debugDescription`'s depth-first order. E245 diagnosed exactly this in
+    /// `DeepLinkSweepTests.testEveryPushedScreenSaysWhereItIsFirst` (CI runs 31074532263,
+    /// 31082691131) and fixed it there with this same wait; #243 found the identical shape in
+    /// `check()`'s tab-bar assertion above, reachable through every `pushed: true` call in
+    /// `DeepLinkVoiceOverTests` — no recorded failure yet, but structurally identical, so one
+    /// definition now backs both call sites rather than a second dialect of the same wait.
+    ///
+    /// **Establishes only that the tab root is gone** — never that `Back` is reachable, and never
+    /// anything about the incoming screen's own contents — so whatever a caller asserts after this
+    /// call stays capable of failing on a fully settled screen whose defect is real. A tab bar that
+    /// never departs still fails loudly, on timeout, with the same message `check()`'s one-shot
+    /// assertion used to give.
+    @discardableResult
+    func waitForPushedScreenToArrive(
+        _ app: XCUIApplication,
+        screen: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) -> Bool {
+        let tabRootWitness = app.buttons["My Grove"]
+        let departedTabRoot = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "hittable == false"), object: tabRootWitness
+        )
+        guard XCTWaiter.wait(for: [departedTabRoot], timeout: 30) == .completed else {
+            XCTFail(
+                "\(screen): the bottom tab bar ('My Grove') is still hittable 30s after the anchor "
+                    + "appeared — this is still a tab root rather than the pushed screen the test "
+                    + "asked for",
+                file: file, line: line
+            )
+            return false
+        }
+        return true
     }
 
     /// No interactive element anywhere in the tree may be unlabeled.
