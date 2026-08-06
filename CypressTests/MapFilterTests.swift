@@ -589,10 +589,12 @@ struct MapFilterTests {
         #expect(filter.isActive)
         #expect(filter.narrowsTheQuery)
 
-        // The condition is the one dimension that does *not* reach the query, because neither
-        // "needs care" nor "in bloom" is a column the seed's map statements select on.
+        // **The condition reaches the query too, since task #240.** It used to be the one dimension
+        // that did not — filtered out of the pins already in hand — and that is exactly why pressing
+        // it over a clustered map did nothing at all. See section 8.
         #expect(MapFilter.needsCare.isActive)
-        #expect(!MapFilter.needsCare.narrowsTheQuery)
+        #expect(MapFilter.needsCare.narrowsTheQuery)
+        #expect(MapFilter.inBloom.narrowsTheQuery)
     }
 
     /// A membership viewport suspends A1's clustering, and only a membership viewport does. The
@@ -741,5 +743,317 @@ struct MapFilterTests {
     func membershipIsSpelledAmerican() {
         let label = MapFilterCopy.membershipLabel(.favorites)
         #expect(label == "Favorites", "the chip says \(label)")
+    }
+
+    // MARK: - 8. The two condition chips, at both zooms (task #240)
+    //
+    // ── What this section is guarding, in the owner's words ─────────────────────────────────────
+    // > "try clicking the In Bloom or Needs Care filters. Nothing changes on the main screen, esp
+    // > zoomed out, EVEN THOUGH NOTHING MEETS THOSE FILTER CRITERIA!"
+    //
+    // Both chips filtered the pins already fetched. That is correct at zoom ≥ 16 and is nothing at
+    // all at zoom ≤ 15, where the answer is `MapContent.clusters` — one badge per 64 pt cell,
+    // carrying a `COUNT(*)` and a centroid, with no member list to filter. So the chips were a
+    // *rendering* no-op over the clustered map: identical badges, identical counts, whole city
+    // standing, including under `Needs care`, which no tree in the shipped seed satisfies.
+    //
+    // ── Why the assertions below are about counts and not about pins ────────────────────────────
+    // A test that only checked the pin regime would have passed on the broken code, because the pin
+    // regime was the half that worked. The load-bearing assertion in every test here is against a
+    // **clustered** viewport, and the strongest of them (`aConditionMeansTheSameThingAtBothZooms`)
+    // says the thing the defect denied: a filter is a fact about which trees are on the map, not
+    // about how the map happens to be drawing them.
+    //
+    // Every expectation is derived from a second, independent read of the seed rather than from the
+    // query layer under test, on this suite's standing rule.
+
+    /// How many trees the whole clustered answer stands for — the sum of the badges.
+    private static func clusteredTotal(_ content: MapContent) throws -> Int {
+        guard case let .clusters(clusters) = content else {
+            Issue.record("the viewport drew pins when it should have clustered")
+            return -1
+        }
+        return clusters.reduce(0) { $0 + $1.count }
+    }
+
+    /// Trees in the box the seed itself says satisfy a status/species condition. A second read,
+    /// written against `trees` directly rather than through `TreeQueries`.
+    private static func seedCount(
+        in box: BoundingBox,
+        where clause: String,
+        store: CypressStore
+    ) async throws -> Int {
+        try await store.queue.read { connection in
+            let statement = try connection.cachedStatement("""
+            SELECT COUNT(*) AS n FROM \(SeedDatabase.schemaName).trees t
+             WHERE t.lat BETWEEN :minLat AND :maxLat
+               AND t.lon BETWEEN :minLon AND :maxLon
+               AND t.deleted_at IS NULL
+               \(clause)
+            """)
+            _ = try statement.bind([
+                ":minLat": box.minLatitude, ":maxLat": box.maxLatitude,
+                ":minLon": box.minLongitude, ":maxLon": box.maxLongitude
+            ])
+            return try statement.fetchOne { try $0.int("n") }!
+        }
+    }
+
+    /// **The owner's report, as an assertion: a clustered map under `Needs care` counts only the
+    /// trees that need care.**
+    ///
+    /// On the shipped seed that is zero — no row is `declining` — so the correct render is an empty
+    /// map, which is the specified answer (task #165: "if nothing matches, fine"; R41 forbids a
+    /// message beside it). Before #240 this viewport came back with every tree in San Francisco.
+    ///
+    /// The count is read out of the seed rather than written here, so the test states the
+    /// *relationship* and cannot go stale when a `declining` row lands: the day one does, this
+    /// asserts the badges carry exactly it.
+    @Test("a clustered map narrowed to Needs care counts only trees that need care")
+    func needsCareNarrowsTheClusteredMap() async throws {
+        let store = try await Self.store()
+        let api = LocalAPI(store: store, deviceID: Self.deviceID)
+
+        let statuses = TreeStatus.allCases.filter(\.needsCare).map { "'\($0.rawValue)'" }
+        try #require(!statuses.isEmpty, "no status needs care, so this chip asks nothing")
+        let expected = try await Self.seedCount(
+            in: Self.cityBounds,
+            where: "AND t.status IN (\(statuses.joined(separator: ",")))",
+            store: store
+        )
+
+        // The control: the same box, unnarrowed, has to hold a great many trees — otherwise an
+        // empty answer below would prove nothing about the filter.
+        let wide = try Self.clusteredTotal(
+            try await api.mapContent(in: MapViewport(bounds: Self.cityBounds, zoom: 12))
+        )
+        try #require(wide > 10_000, "the control viewport holds only \(wide) trees; it cannot show a narrowing")
+
+        let narrowed = try Self.clusteredTotal(try await api.mapContent(
+            in: MapViewport(bounds: Self.cityBounds, zoom: 12, needsCare: true)
+        ))
+        #expect(
+            narrowed == expected,
+            """
+            the Needs care badges count \(narrowed) trees; the seed holds \(expected) in this box \
+            that need care. \(wide) is the whole box — if that is what came back, the chip reached \
+            the pins and not the query, which is task #240.
+            """
+        )
+    }
+
+    /// **`In bloom` narrows the clustered map to the species that bloom in the month asked for.**
+    ///
+    /// Two assertions in one, and the second is the control: the badges must count the blooming
+    /// trees *and* that number must be neither zero nor the whole box, or the test would pass on a
+    /// filter that admitted nothing and on one that admitted everything alike.
+    ///
+    /// The month is chosen by measurement rather than written down: whichever month the attached
+    /// seed's bloom calendar actually populates. That keeps the test honest as BUILD-PLAN §8's
+    /// curated pipeline lands rows — it is testing the plumbing, not a botanical claim.
+    @Test("a clustered map narrowed to In bloom counts only that month's blooms")
+    func inBloomNarrowsTheClusteredMap() async throws {
+        let store = try await Self.store()
+        let api = LocalAPI(store: store, deviceID: Self.deviceID)
+
+        let month = try #require(
+            try await Self.busiestBloomMonth(store: store),
+            "no species in the attached seed names a bloom month, so this chip cannot be exercised"
+        )
+        let expected = try await Self.seedCount(
+            in: Self.cityBounds,
+            where: """
+            AND t.species_current IN (
+                SELECT sp.id FROM \(SeedDatabase.schemaName).species sp
+                 WHERE EXISTS (SELECT 1 FROM json_each(json_extract(sp.seasonal, '$.bloom_months'))
+                                WHERE json_each.value = \(month))
+            )
+            """,
+            store: store
+        )
+        let wide = try Self.clusteredTotal(
+            try await api.mapContent(in: MapViewport(bounds: Self.cityBounds, zoom: 12))
+        )
+
+        // The control. Without it a query that returned nothing and a query that returned everything
+        // would both be indistinguishable from a correct narrowing on some seed.
+        try #require(
+            expected > 0 && expected < wide,
+            "\(expected) of \(wide) trees bloom in month \(month); a narrowing that is empty or total proves nothing"
+        )
+
+        let narrowed = try Self.clusteredTotal(try await api.mapContent(
+            in: MapViewport(bounds: Self.cityBounds, zoom: 12, bloomMonth: month)
+        ))
+        #expect(
+            narrowed == expected,
+            """
+            the In bloom badges count \(narrowed) trees in month \(month); the seed holds \
+            \(expected) in this box. \(wide) is the whole box, which is what task #240 saw.
+            """
+        )
+    }
+
+    /// **The invariant the defect denied: a condition means the same thing at both zooms.**
+    ///
+    /// One box, one filter, asked twice — once at zoom 12 where the answer is badges and once at
+    /// zoom 16 where it is pins — and the two have to stand for the same trees. That is what a
+    /// filter *is*: a statement about which trees are on the map, not about how the map is drawing
+    /// them. Before #240 the pin regime honored the chip and the cluster regime ignored it, so
+    /// these two numbers differed by the whole box.
+    ///
+    /// The box is small enough that the pin budget cannot bite (`matchesInView == nil` is required),
+    /// because a thinned pin answer would make the comparison meaningless in the direction that
+    /// would hide a regression.
+    @Test("a condition narrows the clustered map and the pin map to the same trees")
+    func aConditionMeansTheSameThingAtBothZooms() async throws {
+        let store = try await Self.store()
+        let api = LocalAPI(store: store, deviceID: Self.deviceID)
+        let month = try #require(try await Self.busiestBloomMonth(store: store))
+
+        // One block, so the un-narrowed answer is well inside the pin budget at zoom 16.
+        let block = BoundingBox(
+            minLatitude: 37.7935, maxLatitude: 37.7965,
+            minLongitude: -122.4045, maxLongitude: -122.4015
+        )
+        let filtered = MapViewport(bounds: block, zoom: 16, pinLimit: MapModel.pinLimit, bloomMonth: month)
+        let pinned = try Self.pins(try await api.mapContent(in: filtered))
+        try #require(!pinned.isSample, "the pin answer was thinned, so it cannot be compared to a count")
+
+        let clustered = try Self.clusteredTotal(try await api.mapContent(
+            in: MapViewport(bounds: block, zoom: 12, bloomMonth: month)
+        ))
+        try #require(pinned.items.count > 0, "no tree in the test block blooms in month \(month)")
+
+        #expect(
+            clustered == pinned.items.count,
+            """
+            the same block under the same filter stands for \(clustered) trees clustered and \
+            \(pinned.items.count) as pins. A filter that means two things at two zooms is task #240.
+            """
+        )
+    }
+
+    /// **`In bloom` and a species narrowing intersect; neither silently drops the other.**
+    ///
+    /// A reader who typed a name and then pressed the chip has asked one question with two clauses.
+    /// The failure this guards is not a crash but a widening: letting either clause win alone gives
+    /// a map that looks plausible and answers something nobody asked. Same argument
+    /// `MapModel.speciesIDs` makes about the search bar and the legend, one layer down.
+    ///
+    /// The second half is the one that matters: a species that does *not* bloom this month, asked
+    /// for alongside the chip, must empty the map rather than reinstate itself.
+    @Test("In bloom intersects with a species narrowing rather than replacing it")
+    func inBloomIntersectsWithTheSpeciesNarrowing() async throws {
+        let store = try await Self.store()
+        let api = LocalAPI(store: store, deviceID: Self.deviceID)
+        let month = try #require(try await Self.busiestBloomMonth(store: store))
+        let (blooming, notBlooming) = try await Self.speciesEitherSideOfBloom(month: month, store: store)
+
+        let both = try Self.clusteredTotal(try await api.mapContent(in: MapViewport(
+            bounds: Self.cityBounds, zoom: 12, speciesIDs: [blooming], bloomMonth: month
+        )))
+        let speciesAlone = try Self.clusteredTotal(try await api.mapContent(in: MapViewport(
+            bounds: Self.cityBounds, zoom: 12, speciesIDs: [blooming]
+        )))
+        #expect(both == speciesAlone,
+                "a blooming species asked for with the chip came back as \(both) rather than its own \(speciesAlone)")
+        try #require(speciesAlone > 0, "the control species has no trees in the box")
+
+        let contradiction = try Self.clusteredTotal(try await api.mapContent(in: MapViewport(
+            bounds: Self.cityBounds, zoom: 12, speciesIDs: [notBlooming], bloomMonth: month
+        )))
+        #expect(
+            contradiction == 0,
+            """
+            a species that does not bloom in month \(month), asked for with the In bloom chip, drew \
+            \(contradiction) trees. One of the two clauses was dropped.
+            """
+        )
+    }
+
+    /// The chip's translation into the query is total, and it is the guarantee that stops #240
+    /// happening again: a third condition cannot be added without saying how the database answers
+    /// it, because `narrowing(month:)` has no default arm.
+    ///
+    /// Asserted over `allCases` rather than case by case, so a new chip fails here rather than
+    /// silently inheriting somebody else's clause.
+    @Test("every condition chip asks the query for something")
+    func everyConditionReachesTheQuery() {
+        for condition in MapFilter.Condition.allCases {
+            let narrowing = condition.narrowing(month: 8)
+            #expect(
+                narrowing.bloomMonth != nil || narrowing.needsCare,
+                "\(condition.label) narrows no viewport field, so it can only be a filter on pins already fetched — which is a no-op over a clustered map (task #240)"
+            )
+            var filter = MapFilter()
+            filter.condition = condition
+            #expect(filter.narrowsTheQuery, "\(condition.label) does not send the map back to the database")
+        }
+    }
+
+    /// `TreeStatus.needsCare` is the one definition the chip, the amber pin and the SQL all read.
+    ///
+    /// The arm worth pinning is `deadReported`: a reported death is a claim awaiting confirmation
+    /// (DECISIONS §3.7) and the pin has never drawn it amber, so admitting it to the chip would make
+    /// one word mean two things on one screen.
+    @Test("needing care is one definition, shared by the pin and the query")
+    func needsCareIsOneDefinition() {
+        #expect(TreeStatus.declining.needsCare)
+        #expect(!TreeStatus.alive.needsCare)
+        #expect(!TreeStatus.deadReported.needsCare, "a reported death is a claim, not a condition to act on")
+        #expect(!TreeStatus.removed.needsCare)
+        #expect(!TreeStatus.vacantSite.needsCare, "a vacant site has no tree to need anything")
+
+        for status in TreeStatus.allCases {
+            #expect(MapPinKind.needsCare(status: status) == status.needsCare,
+                    "the amber pin and the chip disagree about \(status.rawValue)")
+        }
+    }
+
+    // MARK: Seed reads the section above measures against
+
+    /// The month the attached seed's bloom calendar populates most heavily, or nil if it populates
+    /// none. Measured rather than written down: the seasonal columns fill in as BUILD-PLAN §8's
+    /// curated pipeline lands, and a month hard-coded here would rot into a vacuous test.
+    private static func busiestBloomMonth(store: CypressStore) async throws -> Int? {
+        try await store.queue.read { connection in
+            let statement = try connection.cachedStatement("""
+            SELECT m.value AS month, COUNT(*) AS n
+              FROM \(SeedDatabase.schemaName).species sp
+              JOIN json_each(json_extract(sp.seasonal, '$.bloom_months')) m
+              JOIN \(SeedDatabase.schemaName).trees t ON t.species_current = sp.id
+             WHERE t.deleted_at IS NULL
+             GROUP BY m.value
+             ORDER BY n DESC, m.value ASC
+             LIMIT 1
+            """)
+            return try statement.fetchOne { try $0.int("month") }
+        }
+    }
+
+    /// One species that blooms in the month and one that does not, both with trees in the seed.
+    private static func speciesEitherSideOfBloom(
+        month: Int,
+        store: CypressStore
+    ) async throws -> (blooming: UUID, notBlooming: UUID) {
+        try await store.queue.read { connection in
+            func pick(_ blooming: Bool) throws -> UUID {
+                let statement = try connection.cachedStatement("""
+                SELECT sp.uuid AS species_uuid
+                  FROM \(SeedDatabase.schemaName).species sp
+                 WHERE \(blooming ? "" : "NOT ") EXISTS (
+                       SELECT 1 FROM json_each(json_extract(sp.seasonal, '$.bloom_months'))
+                        WHERE json_each.value = :month
+                       )
+                   AND EXISTS (SELECT 1 FROM \(SeedDatabase.schemaName).trees t
+                                WHERE t.species_current = sp.id AND t.deleted_at IS NULL)
+                 ORDER BY sp.id LIMIT 1
+                """)
+                _ = try statement.bind([":month": month])
+                return try statement.fetchOne { try $0.uuid("species_uuid") }!
+            }
+            return (blooming: try pick(true), notBlooming: try pick(false))
+        }
     }
 }

@@ -277,27 +277,43 @@ struct MapDetailTests {
         )
     }
 
-    // MARK: - The filter, which is now stored rather than recomputed per body pass
+    // MARK: - The filter, which goes back to the database (task #240)
 
-    /// `pins` stopped being a computed property (ERRATA E130) and the three things that can change
-    /// its answer now write it. This is the one that is easy to forget: changing the chip with
-    /// content already on screen.
+    /// **A condition chip sends the map back to the database, and the answer it gets honors it.**
+    ///
+    /// ── What this test used to say, and why it was wrong ────────────────────────────────────────
+    /// It was `changing the filter re-admits the pins without another read`, and it asserted exactly
+    /// that: set `filter = .needsCare` and read `model.pins` on the next line, with no refetch,
+    /// because `Needs care` was filtered out of the pins already in hand. It passed, and the
+    /// behavior it certified was the defect — a filter applied downstream of the fetch does nothing
+    /// whatever at zoom ≤ 15, where the fetch returns cluster badges with no members to filter.
+    /// Screen 01 showed the whole city under a chip no tree in the seed satisfies (task #240).
+    ///
+    /// So the assertion is inverted on purpose. The chip is a `WHERE` clause now; the pins change
+    /// when the answer comes back, not before. `MapFilterTests` section 8 is where the narrowing
+    /// itself is checked at both zooms — this one guards the model's plumbing: that the press
+    /// reaches a fetch at all, and that E130's stored `pins` still tracks the content it is given.
     @MainActor
-    @Test("changing the filter re-admits the pins without another read")
-    func filterChangeRecomputesTheAdmittedPins() async throws {
+    @Test("a condition chip refetches, and the pins that come back honor it")
+    func conditionChipRefetchesRatherThanFilteringPinsInHand() async throws {
         let api = try await Self.api()
         let (model, _) = await Self.drawn(at: 16, around: Self.densest, api: api)
         let all = model.pins.count
         #expect(all > 0)
 
-        // The shipped seed carries no `declining` tree, so `Needs care` admits none of them — which
-        // is the honest answer to the question the chip asks, and what makes it a clean assertion
-        // that the filter ran at all.
+        // The press alone is not the answer — it schedules the read. `fetch()` is awaited here for
+        // the same reason `drawn` awaits it: this suite drives the model rather than the debounce.
         model.filter = .needsCare
+        #expect(model.filter.narrowsTheQuery, "the chip did not send the map back to the database")
+        await model.fetch()
+
+        // The shipped seed carries no `declining` tree, so `Needs care` admits none — the honest
+        // answer to the question the chip asks, and a clean assertion that the filter ran at all.
         #expect(model.pins.allSatisfy { MapPinKind.needsCare(status: $0.status) })
-        #expect(model.pins.count < all)
+        #expect(model.pins.count < all, "the map came back holding \(model.pins.count) of \(all) pins")
 
         model.filter = .all
+        await model.fetch()
         #expect(model.pins.count == all, "going back to All did not restore the pins")
     }
 
