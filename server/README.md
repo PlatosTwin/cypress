@@ -25,6 +25,22 @@ Bucket credentials (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_ENDPOINT_
 `AWS_REGION`, `BUCKET_NAME`) were set as app secrets automatically by `flyctl storage create`.
 They are not in this repo and must never be.
 
+**Publishing locally** (`dist/upload.sh`, written by `Tools/publish_cities.py`) does not use
+those app secrets or any ambient `AWS_*` environment variable -- #248 found that flow silently
+falls back to whatever is in `~/.aws/credentials [default]` the moment the shell that exported
+`AWS_*` closes, and Tigris rejects a mismatched key mid-multipart-upload with
+`InvalidAccessKeyId`. Set up a durable, named AWS CLI profile once, from this bucket's keys in
+the Tigris dashboard:
+
+```sh
+aws configure --profile cypress-tigris
+```
+
+`dist/upload.sh` passes `--profile "${CYPRESS_TIGRIS_PROFILE:-cypress-tigris}"` on every `aws`
+call and preflights that profile before touching any object, so a missing or stale profile
+fails fast with this same command rather than silently uploading (or failing to upload) under
+the wrong identity.
+
 The bucket is **public read** (flipped 2026-08-01 for the R36 publish). Two gotchas, both
 measured on 2026-08-01: Tigris serves anonymous reads only on the dedicated public domain
 `https://cypress-cities.t3.tigrisbucket.io` — anonymous GET against the S3 API endpoints
