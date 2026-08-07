@@ -120,6 +120,65 @@ struct AX5ReflowTests {
     // fix is `GrowthHistoryView.logRow`'s `ViewThatFits`; the sweep's
     // `11-growth-history-*-ax5` renders are what verify it, per ARCHITECTURE §7.
 
+    // The two guards below are screen 11's *other* half, found in the same renders a round later:
+    // E199 fixed the log rows and never reached the chart C23 draws above them. Both measure
+    // through `LineChart` / `ChartPlotLabel` themselves rather than through a copy of their
+    // styling — a probe that applied its own `cypressTypographicFurniture()` would go on passing
+    // with the cap deleted from the component, which is the shape of guard this file already threw
+    // away once.
+
+    /// The width `LineChart` is drawn in on screen 11: the phone less the screen gutter each side
+    /// (`GrowthHistoryView.chartCard`) and the card's own horizontal padding each side.
+    static let growthPlotWidth: CGFloat = phoneWidth
+        - 2 * CypressSpacing.gutter
+        - 2 * CypressSpacing.Component.chartPaddingH
+
+    /// The axis labels mark x positions in the plot above them, so a year that wrapped marks
+    /// nothing: at AX5 four unclamped years measure 356 pt, and their row adds 4 pt of horizontal
+    /// padding each side, so it needs 364 pt of a 329 pt plot and broke
+    /// `2019` into `201` over `9`. One line for four labels is the property — measured as "four
+    /// labels are no taller than one", so the guard names the wrap rather than a pixel count.
+    @Test("the growth chart's year axis stays on one line at AX5")
+    func theGrowthChartsYearAxisStaysOnOneLineAtAX5() async {
+        func chartHeight(_ labels: [String]) async -> CGFloat {
+            await Self.ax5Size(
+                of: LineChart(points: [], axisLabels: labels),
+                width: Self.growthPlotWidth,
+                settleIterations: 2
+            ).height
+        }
+        let four = await chartHeight(["2019", "2021", "2023", "2025"])
+        let one = await chartHeight(["2019"])
+        #expect(
+            four == one,
+            "four year labels made the chart \(four) pt tall against \(one) pt for a single label — the axis row wrapped, and a wrapped year is two numbers"
+        )
+    }
+
+    /// `LineChart` places the baseline label with `.position`, which centers it: half its width
+    /// hangs to the left of `baselineLabelCenterX`, and the only thing between that and the page
+    /// behind the card is the card's own horizontal padding. Unclamped at AX5 the label measured
+    /// 111 pt against a 26 pt center and was drawn outside the card in both appearances.
+    ///
+    /// `.position` draws outside its own frame without changing the size anything reports, so no
+    /// width probe on the screen can see this — the label's own measurement against the budget it
+    /// is placed in is the whole of the evidence available in-process.
+    @Test("the baseline chart label stays inside its card at AX5")
+    func theBaselineChartLabelStaysInsideItsCardAtAX5() async {
+        let scale = Self.growthPlotWidth / CypressSpacing.Component.chartLineViewWidth
+        let centerX = LineChart.baselineLabelCenterX(scale: scale)
+        let budget = centerX + CypressSpacing.Component.chartPaddingH
+        let measured = await Self.ax5Size(
+            of: ChartPlotLabel("47 cm", role: .baseline).fixedSize(),
+            width: Self.phoneWidth,
+            settleIterations: 2
+        )
+        #expect(
+            measured.width / 2 <= budget,
+            "the baseline label measured \(measured.width) pt, so centered at \(centerX) pt it reaches \(measured.width / 2 - budget) pt past the card's leading edge"
+        )
+    }
+
     // MARK: - #172 · Labels that fold
 
     /// E196 §6: the account sheet is a content-sized card with no scroll, and under vertical
