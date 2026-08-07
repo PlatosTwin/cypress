@@ -244,20 +244,20 @@ struct VitalityRubricTests {
                 "SCREENS 05 \u{a7}3's rubric table has no row for level \(level); it parsed as \(screens)"
             )
 
-            #expect(
-                inProduct == shipped,
-                "level \(level) (\(vitality.label)): **PRODUCT \u{a7}3 has drifted from the shipped "
-                    + "copy**. PRODUCT says \u{201c}\(inProduct)\u{201d}; Vitality.anchor says "
-                    + "\u{201c}\(shipped)\u{201d}. Ticket #261 landed one rubric in three places on "
-                    + "purpose \u{2014} whichever is right, they cannot differ."
-            )
-            #expect(
-                inScreens == shipped,
-                "level \(level) (\(vitality.label)): **SCREENS 05 \u{a7}3 has drifted from the "
-                    + "shipped copy**. SCREENS says \u{201c}\(inScreens)\u{201d}; Vitality.anchor "
-                    + "says \u{201c}\(shipped)\u{201d}. Ticket #261 landed one rubric in three "
-                    + "places on purpose \u{2014} whichever is right, they cannot differ."
-            )
+            let coda =
+                "Ticket #261 landed one rubric in three places on purpose \u{2014} whichever is "
+                + "right, they cannot differ."
+            let productDrift =
+                "level \(level) (\(vitality.label)): PRODUCT \u{a7}3 has drifted from the shipped "
+                + "copy. PRODUCT says \u{201c}\(inProduct)\u{201d}; Vitality.anchor says "
+                + "\u{201c}\(shipped)\u{201d}. \(coda)"
+            let screensDrift =
+                "level \(level) (\(vitality.label)): SCREENS 05 \u{a7}3 has drifted from the "
+                + "shipped copy. SCREENS says \u{201c}\(inScreens)\u{201d}; Vitality.anchor says "
+                + "\u{201c}\(shipped)\u{201d}. \(coda)"
+
+            #expect(inProduct == shipped, "\(productDrift)")
+            #expect(inScreens == shipped, "\(screensDrift)")
         }
     }
 
@@ -273,13 +273,11 @@ struct VitalityRubricTests {
         ]
         for (path, heading) in documents {
             let parsed = try RubricTable.anchors(underHeading: heading, in: Self.document(path))
-            #expect(
-                Set(parsed.keys) == Set(1...5),
+            let message =
                 "\(path): the rubric table under \u{201c}\(heading)\u{201d} parsed to levels "
-                    + "\(parsed.keys.sorted()), not 1\u{2013}5. The parser is reading the wrong "
-                    + "table or no table, and every comparison that depends on it is passing on "
-                    + "nothing."
-            )
+                + "\(parsed.keys.sorted()), not 1\u{2013}5. The parser is reading the wrong table "
+                + "or no table, and every comparison that depends on it is passing on nothing."
+            #expect(Set(parsed.keys) == Set(1...5), "\(message)")
             for (level, anchor) in parsed {
                 #expect(!anchor.isEmpty, "\(path): level \(level)'s anchor cell parsed empty")
             }
@@ -310,11 +308,10 @@ struct VitalityRubricTests {
         """
 
         let parsed = try RubricTable.anchors(underHeading: "### Vitality scale", in: specimen)
-        #expect(
-            parsed == [1: "first", 2: "second"],
-            "the parser read \(parsed) — it should take the third column, because that is the one "
-                + "headed \u{2018}Anchor line\u{2019}, and only rows inside the named section"
-        )
+        let read =
+            "the parser read \(parsed) \u{2014} it should take the third column, because that is "
+            + "the one headed \u{2018}Anchor line\u{2019}, and only rows inside the named section"
+        #expect(parsed == [1: "first", 2: "second"], "\(read)")
 
         // A section with no table must throw rather than return an empty dictionary that a caller
         // would compare successfully against nothing.
