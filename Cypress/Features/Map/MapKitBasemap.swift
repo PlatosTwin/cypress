@@ -228,47 +228,103 @@ enum MapLayout {
 
     /// The room reserved for `MapRecenterButton` above the notice slot.
     ///
-    /// **It is 54 pt more than the control ever takes, and the 54 pt has a name** (ticket #30).
-    /// This was recorded through `AX5ReflowTests.ax5Size`, which measures in a hosted `UIWindow`,
-    /// and `UIHostingController.sizeThatFits` adds the running simulator's top safe-area inset to
-    /// the height it reports — 54 pt on the iPhone 16 Pro this was taken on, 47 pt on an iPhone
-    /// 16e. The comment here used to say the 98 was iOS growing the control's minimum hit target
-    /// across the accessibility range; it was not, and it does not. `MapRecenterButton` is a fixed
-    /// `CypressSpacing.minTapTarget` square and measures 44 pt at `.accessibility5` exactly as it
-    /// does at every other size — now asserted, device-independently, by
-    /// `AX5ReflowTests.bottomChromeControlsFitTheReservedBudgetAtAX5`.
-    ///
-    /// The number is left where it is on purpose. Everything downstream of it is a *reserve*
-    /// (`bottomSlotReservedAboveAX5`, and `noticeMaxHeight` below, which documents itself as
-    /// conservative rather than exact), so an over-reservation costs the notice room it does not
-    /// use, while an under-reservation is E183 §2 — the card growing off the top of the screen.
-    /// Correcting it downward would change what ships at AX5 under an owner ruling (R53 §6).
-    static let locateButtonHeightAX5: CGFloat = 98
+    /// **Corrected 2026-08-06 by direct owner ruling, superseding RULINGS R53 §6's conservative
+    /// stance for this constant specifically.** ERRATA E243 found the old `98` was never a
+    /// measurement of the control: it was the control's real AX5 footprint plus the 54 pt top
+    /// safe-area inset that `AX5ReflowTests.ax5Size`'s measuring window inherited from whichever
+    /// simulator it ran on (54 pt on an iPhone 16 Pro, 47 on an iPhone 16e — the harness has since
+    /// been fixed to subtract it, which is why the value here no longer needs to).
+    /// `MapRecenterButton` is a fixed `CypressSpacing.minTapTarget` square and measures exactly
+    /// that at `.accessibility5`, device-independently — asserted by
+    /// `AX5ReflowTests.bottomChromeControlsFitTheReservedBudgetAtAX5`. The reservation is set to
+    /// the footprint itself rather than left as a margin over it.
+    static let locateButtonHeightAX5: CGFloat = CypressSpacing.minTapTarget
     /// The room reserved for `IdentifyFAB` above the notice slot. Its label is `.font(…, .body)`,
     /// which does scale with Dynamic Type, so this is genuinely not `fabPaddingV * 2` plus a fixed
-    /// glyph — but the number carries the same 54 pt safe-area term as the one above, and for the
-    /// same reason: the FAB measures 83 pt at `.accessibility5`, on both devices. Left as a
-    /// reserve, on the reasoning stated above.
-    static let fabHeightAX5: CGFloat = 137
+    /// glyph.
+    ///
+    /// **Corrected 2026-08-06**, for the same reason and under the same ruling as
+    /// `locateButtonHeightAX5` above: E243 found the old `137` carried the same 54 pt safe-area
+    /// term. The FAB's real AX5 footprint is 83 pt, measured through `AX5ReflowTests.ax5Size`
+    /// after that helper's fix (subtracting the measuring window's inherited safe-area insets),
+    /// device-independently on both the iPhone 16 Pro and the iPhone 16e.
+    static let fabHeightAX5: CGFloat = 83
 
     /// Everything `bottomChrome`'s `VStack` stacks above the notice slot, at or above the worst
     /// case (`.accessibility5`) either control ever measures: the recenter control, the gap to the
     /// FAB, the FAB, the gap to the card, and the card's own gap down to the tab bar. Reserved
     /// unconditionally — at ordinary sizes both controls are far smaller than this, so the notice
     /// is left with more room than it asks for and nothing about its rendering changes; see
-    /// `noticeMaxHeight(availableHeight:)`.
+    /// `noticeMaxHeight(availableHeight:topInset:)`.
     static let bottomSlotReservedAboveAX5: CGFloat =
         locateButtonHeightAX5 + locateToFabGap + fabHeightAX5 + fabToCardGap
             + tabBarHeight + cardToTabBarGap
 
+    // MARK: The top chrome's own reservation (task #250)
+    //
+    // Correcting `locateButtonHeightAX5`/`fabHeightAX5` above (task #246) gave `MapLocationNotice`
+    // back the ~108 pt of scroll budget those inflated constants had been silently eating — the
+    // ticket's own goal, and the taller notice that resulted is the point of #246. But
+    // `bottomSlotReservedAboveAX5` only ever named what `bottomChrome`'s `VStack` stacks *above the
+    // notice, inside that same block* — the recenter control, the FAB, their gaps, the tab bar. It
+    // never named anything about `MapHomeView.chrome`'s other, top-anchored block (the search bar
+    // and the filter chip row), because at ordinary sizes the two blocks do not meet. At AX5 they
+    // do (`MapHomeView.chrome`'s own comment on the reorder, "the two blocks only overlap at
+    // accessibility sizes, where they already did"), and a notice grown all the way to the bigger
+    // budget #246 gave back pushes the bottom-anchored stack up far enough that `MapRecenterButton`
+    // — first in it — rises **behind** the chip row: present in the tree, `isHittable == false`.
+    // Measured on iPhone 16 Pro Max, AX5, `CYPRESS_LOCATION=denied` (the longest of the four
+    // `MapOpening.Standing` sentences, so the state that pushes the notice closest to its budget):
+    // recenter's frame moved from `(380.3, 204.0, 44.0, 44.0)` (old, over-reserved constants) to
+    // `(380.3, 96.0, 44.0, 44.0)` (#246's corrected constants, this reservation still absent) —
+    // `isHittable` `true` → `false`. Task #250 fixed it in the same PR that shipped #246's
+    // correction — see `docs/ERRATA.md` once the orchestrator splices this branch's entry under
+    // its real number at merge.
+
+    /// `SearchBar`'s own AX5 footprint, content only — the simulator's inherited safe-area inset
+    /// already subtracted, the same way `AX5ReflowTests.ax5Size` measures `locateButtonHeightAX5`
+    /// and `.fabHeightAX5` above (E243). Unlike those two this is a bound rather than an exact
+    /// frame: the field carries Dynamic-Type text (`CypressFont.body145`), so it grows with the
+    /// size rather than staying a fixed square. Guarded by
+    /// `AX5ReflowTests.topChromeFitsItsReservedBudgetAtAX5`.
+    static let searchBarHeightAX5: CGFloat = 77
+    /// `MapFilterChips`'s own AX5 footprint — the collapsed row only. `isExpanded` starts `false`,
+    /// and the opened drawer (behind `MapFilterCopy.moreLabel`) pushes the row's *own* bottom edge
+    /// down when the reader opens it themselves, which is not room this reservation owes anybody in
+    /// advance. Bounded rather than fixed, for the reason `searchBarHeightAX5` above is: the chip
+    /// labels are Dynamic-Type text and the row stays one line at every size (#166) rather than
+    /// wrapping, so its height tracks the text without ever taking a second line.
+    static let chipRowHeightAX5: CGFloat = 60
+
+    /// The room the top chrome — `MapHomeView.chrome`'s `.top` overlay, down through the filter
+    /// chip row — needs before the recenter control may rise into it.
+    ///
+    /// **`topInset` is read live, not baked in.** It is `GeometryReader`'s own
+    /// `proxy.safeAreaInsets.top`, threaded down from `MapHomeView.chrome` through `bottomChrome`
+    /// to `noticeMaxHeight(availableHeight:topInset:)` below — never folded into a `MapLayout`
+    /// constant, because #246/E243 is exactly the lesson that a safe-area inset baked into a
+    /// constant silently doubles up with the real one on whichever simulator happens to measure it
+    /// (54 pt on an iPhone 16 Pro, 47 on an iPhone 16e, and neither the iPhone 16 Pro Max's own
+    /// figure this reservation is measured against). Reading it live is what makes this correct on
+    /// every device rather than merely on the one it was written against.
+    ///
+    /// `searchTopInset` and `chipRowTop` are the same two gaps the top overlay is itself laid out
+    /// with (`MapHomeView.chrome`'s `.padding(.top:)` and its `VStack`'s own `spacing:`), so this
+    /// sum is exactly the y-coordinate — in the same screen coordinates `bottomChrome` positions the
+    /// recenter control in — of the chip row's own bottom edge.
+    static func topChromeReservedAX5(topInset: CGFloat) -> CGFloat {
+        topInset + searchTopInset + searchBarHeightAX5 + chipRowTop + chipRowHeightAX5
+    }
+
     /// The height `MapLocationNotice` may take in the bottom slot before it must scroll instead
-    /// of growing past the top of the screen. Conservative rather than exact — it reserves the
-    /// AX5 heights of the recenter control and the FAB even when Dynamic Type is nowhere near
-    /// AX5, because at ordinary sizes the notice never gets close to this budget regardless, and
-    /// a budget computed once from constants is simpler than measuring the two controls' actual
-    /// height on every layout pass for a slot this is the backstop for, not the primary fit.
-    static func noticeMaxHeight(availableHeight: CGFloat) -> CGFloat {
-        availableHeight - bottomSlotReservedAboveAX5
+    /// of growing past the top of the screen, or up into the chip row above it (task #250).
+    /// Conservative rather than exact — it reserves the AX5 heights of the recenter control and the
+    /// FAB even when Dynamic Type is nowhere near AX5, because at ordinary sizes the notice never
+    /// gets close to this budget regardless, and a budget computed once from constants is simpler
+    /// than measuring the controls' actual height on every layout pass for a slot this is the
+    /// backstop for, not the primary fit.
+    static func noticeMaxHeight(availableHeight: CGFloat, topInset: CGFloat) -> CGFloat {
+        availableHeight - bottomSlotReservedAboveAX5 - topChromeReservedAX5(topInset: topInset)
     }
 
     // MARK: The z-order of the marker layer (task #150)
