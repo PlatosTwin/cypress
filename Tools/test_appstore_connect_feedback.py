@@ -3,6 +3,14 @@
 
     python3 Tools/test_appstore_connect_feedback.py
 
+NOTHING RUNS THIS AUTOMATICALLY. No workflow and no script invokes it. The same is true of
+`test_inventory_contract.py` and `test_ca_inventory_adapter.py`, so this is a pre-existing gap
+rather than one this file introduces, and wiring all three into CI is filed separately. It is said
+here rather than left implicit because a security regression test that never runs is weaker
+protection than its existence suggests: the path-traversal and scheme guards below are exactly the
+kind of thing a refactor drops silently, and until this is wired up, only a human choosing to run
+the command above would notice. Run it by hand when touching `feedback`.
+
 They run here rather than in `CypressTests` for the same reason as the ingest contract tests: the
 thing under test is Python. `feedback` reads attacker-adjacent data — a submission id, a URL and a
 response body all arrive over the network and all three decide what CI writes to disk — so the
