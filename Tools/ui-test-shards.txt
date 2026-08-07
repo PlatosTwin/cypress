@@ -64,23 +64,8 @@
 # `XCTAssert`s on literal `CGRect`s only, no `XCUIApplication` anywhere in the file. Placed on the
 # shortest line by class COUNT, since there is no per-class time to add it by — the rule above,
 # applied where the file's own numbers do not reach.
-#
-# `IdentifyFABReachabilityTests` (task #252) was added afterwards and has never been on CI. Its 3
-# tests took 20.9s (9.5 + 6.6 + 4.8) in a class-only run on a local iPhone 16 Pro simulator — a
-# different machine and a different device from every number in the table above.
-#
-# Placed on the `DeepLinkVoiceOverTests` line, and here is the addition this file insists on. The
-# four lines, summed from the table above TOGETHER WITH the two classes recorded only in the notes
-# (`PhotoBrowserReachabilityTests` 33.2s on line 2 and `ReadingOrderAccessibilityTests` 17.5s on
-# line 4 — the table alone does not reach them): 332.6s, 350.1s, 344.8s, 344.5s. Line 1 is the
-# shortest, so it takes this class — and, unlike the two additions above it, **this one moves the
-# pace-setter**: 332.6 + 20.9 = 353.5s, past Shard 2's 350.1s. Line 1 is still the right line, since
-# it is the placement that minimizes the maximum (line 3 or 4 would reach 365.7s and 365.4s), but
-# the longest shard is now Shard 1 rather than Shard 2 and this note says so rather than claiming a
-# conclusion the arithmetic does not support. The gap it costs is 3.4s on a ~1700s pipeline whose
-# per-shard build is ~10 minutes.
 
-DeepLinkVoiceOverTests MapCenteredStateUITests FrameFinitenessGateTests IdentifyFABReachabilityTests
+DeepLinkVoiceOverTests MapCenteredStateUITests FrameFinitenessGateTests
 MapFilterAccessibilityTests AnonymizedPhotoNoticeUITests MapRecenterUITests PhotoBrowserReachabilityTests
 DeepLinkSweepTests PrimaryCTAReachabilityTests SheetHeightUITests AlmanacGroupTapTests
 SheetExitUITests MapSearchUITests MapSuggestionUITests MapPanTabSwitchUITests PhotoDeletionReachabilityTests AccessibilityTreeTests ReadingOrderAccessibilityTests

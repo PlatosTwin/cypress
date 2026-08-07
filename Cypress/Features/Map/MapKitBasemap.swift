@@ -255,7 +255,7 @@ enum MapLayout {
     /// FAB, the FAB, the gap to the card, and the card's own gap down to the tab bar. Reserved
     /// unconditionally — at ordinary sizes both controls are far smaller than this, so the notice
     /// is left with more room than it asks for and nothing about its rendering changes; see
-    /// `noticeMaxHeight(availableHeight:topInset:topChromeBottom:chromeHeight:)`.
+    /// `noticeMaxHeight(availableHeight:topInset:)`.
     static let bottomSlotReservedAboveAX5: CGFloat =
         locateButtonHeightAX5 + locateToFabGap + fabHeightAX5 + fabToCardGap
             + tabBarHeight + cardToTabBarGap
@@ -301,7 +301,7 @@ enum MapLayout {
     ///
     /// **`topInset` is read live, not baked in.** It is `GeometryReader`'s own
     /// `proxy.safeAreaInsets.top`, threaded down from `MapHomeView.chrome` through `bottomChrome`
-    /// to `noticeMaxHeight(availableHeight:topInset:topChromeBottom:chromeHeight:)` below — never folded into a `MapLayout`
+    /// to `noticeMaxHeight(availableHeight:topInset:)` below — never folded into a `MapLayout`
     /// constant, because #246/E243 is exactly the lesson that a safe-area inset baked into a
     /// constant silently doubles up with the real one on whichever simulator happens to measure it
     /// (54 pt on an iPhone 16 Pro, 47 on an iPhone 16e, and neither the iPhone 16 Pro Max's own
@@ -316,75 +316,15 @@ enum MapLayout {
         topInset + searchTopInset + searchBarHeightAX5 + chipRowTop + chipRowHeightAX5
     }
 
-    // MARK: The rest of the top chrome, which the constants above cannot name (task #252)
-    //
-    // `topChromeReservedAX5` stops at the filter chip row because those are the two children of
-    // the top overlay whose AX5 footprint a constant can bound. **They are not the last two.**
-    // Below the chip row the same `VStack` also stacks the search status line, the `Needs care`
-    // toast, and — always, whenever the map has colored any species at all — `MapSpeciesLegend`,
-    // whose four chips wrap onto as many lines as the species names need at the current type size.
-    // Measured on iPhone 16 Pro, AX5, `CYPRESS_LOCATION=denied`: the legend alone is 262.67 pt and
-    // the top overlay's real bottom edge is y 492.67, against the 216 pt this reservation's
-    // constants predict. The identify FAB sat at y 371–454 — **inside the legend's own rectangle**,
-    // drawn over by it (the top block is applied second so it draws over the bottom one, which is
-    // `MapHomeView.chrome`'s own deliberate ordering).
-    //
-    // That is #250's defect exactly, one child lower down the same stack, and it is what made
-    // `IdentifyFABReachabilityTests` intermittent rather than red: XCUITest resolves `isHittable`
-    // by hit-testing the element's activation point and then, failing that, sampled points inside
-    // its frame, so a control covered everywhere except a 14 pt band reports reachable whenever the
-    // sampling happens to land in the band and unreachable when it does not.
-    //
-    // A third constant cannot fix it. The legend's height is a function of how many species the
-    // visible camera has colored (0–4) and how their names wrap at this width — a worst case wide
-    // enough to be safe would be wrong by 260 pt in the common case, and would spend the notice's
-    // whole budget on a legend that is not there. So the bottom edge is **measured**, and the
-    // constants stay as the floor beneath the measurement (see `noticeMaxHeight` below).
-
     /// The height `MapLocationNotice` may take in the bottom slot before it must scroll instead
-    /// of growing past the top of the screen, or up into the top chrome above it (tasks #250, #252).
-    ///
-    /// Conservative rather than exact on its bottom half — it reserves the AX5 heights of the
-    /// recenter control and the FAB even when Dynamic Type is nowhere near AX5, because at ordinary
-    /// sizes the notice never gets close to this budget regardless, and a budget computed once from
-    /// constants is simpler than measuring the controls' actual height on every layout pass for a
-    /// slot this is the backstop for, not the primary fit.
-    ///
-    /// **The measurement is not merged into the constant arithmetic — it is a second budget, and
-    /// the smaller one wins.** The two are in different coordinate spaces and neither can be
-    /// converted into the other from here. `availableHeight` is `GeometryReader`'s `size.height`,
-    /// which is the safe area; `topChromeReservedAX5` counts from the top of the *screen*, because
-    /// `topInset` is in it. The pair has always been ~93 pt conservative on a notched phone, and
-    /// that was harmless while the number it subtracted was 216. Subtracting a measured 492 from the
-    /// wrong one of the two collapses the notice to 16 pt — watched happen on an iPhone 16 Pro
-    /// before this was split in two. So the measured budget is computed entirely in the chrome
-    /// block's own space, where both of its terms are real edges of the same rectangle, and `min`
-    /// takes whichever budget is tighter.
-    ///
-    /// - Parameters:
-    ///   - topChromeBottom: the y-coordinate of the top overlay's real bottom edge, in the space
-    ///     `chromeHeight` measures.
-    ///   - chromeHeight: the height of the block both overlays are anchored in — the *same*
-    ///     rectangle `topChromeBottom` is measured inside. 0 before the first layout pass, which is
-    ///     why the measured budget is skipped rather than believed: a budget that briefly thought
-    ///     the top chrome ended at y 0 would let the notice grow to the whole screen and snap back.
-    ///   - The 12 pt held back is `chipRowTop`, the one vertical rhythm this screen's chrome has
-    ///     (`locateToFabGap` is the same number for the same reason). Without it the two blocks come
-    ///     to rest exactly edge to edge, which is a knife edge for both the reader and any guard
-    ///     asserting they do not intersect: the cap and the stack's own layout are the same
-    ///     arithmetic, so a third of a point of pixel rounding decides it either way.
-    static func noticeMaxHeight(
-        availableHeight: CGFloat,
-        topInset: CGFloat,
-        topChromeBottom: CGFloat,
-        chromeHeight: CGFloat
-    ) -> CGFloat {
-        let fromConstants =
-            availableHeight - bottomSlotReservedAboveAX5 - topChromeReservedAX5(topInset: topInset)
-        guard topChromeBottom > 0, chromeHeight > 0 else { return fromConstants }
-        let fromMeasurement =
-            chromeHeight - bottomSlotReservedAboveAX5 - topChromeBottom - chipRowTop
-        return min(fromConstants, fromMeasurement)
+    /// of growing past the top of the screen, or up into the chip row above it (task #250).
+    /// Conservative rather than exact — it reserves the AX5 heights of the recenter control and the
+    /// FAB even when Dynamic Type is nowhere near AX5, because at ordinary sizes the notice never
+    /// gets close to this budget regardless, and a budget computed once from constants is simpler
+    /// than measuring the controls' actual height on every layout pass for a slot this is the
+    /// backstop for, not the primary fit.
+    static func noticeMaxHeight(availableHeight: CGFloat, topInset: CGFloat) -> CGFloat {
+        availableHeight - bottomSlotReservedAboveAX5 - topChromeReservedAX5(topInset: topInset)
     }
 
     // MARK: The z-order of the marker layer (task #150)

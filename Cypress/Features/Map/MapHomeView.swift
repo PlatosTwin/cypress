@@ -95,25 +95,6 @@ struct MapHomeView: View {
     /// A press made while waiting for the first fix. The notice promises the map will move when one
     /// arrives; this is the promise, held.
     @State private var recenterWhenFixArrives = false
-    /// **Where the top chrome actually ends** (task #252), in `chromeSpace` — the same coordinates
-    /// `bottomChrome` is positioned in. `MapLayout.topChromeReservedAX5` bounds the search bar and
-    /// the chip row from constants and cannot bound what is below them: the species legend wraps to
-    /// as many lines as the visible camera's species names need, and at AX5 it reached 276 pt past
-    /// what the constants predict and drew over the identify FAB. See `MapLayout.noticeMaxHeight`.
-    ///
-    /// 0 until the first layout pass, which `noticeMaxHeight` treats as "no measurement yet" rather
-    /// than as "the top chrome ends at the top of the screen".
-    @State private var topChromeBottom: CGFloat = 0
-
-    /// The height of the block both of `chrome`'s overlays are anchored in — measured, because it is
-    /// the rectangle `topChromeBottom` above is measured *inside*, and it is not `availableHeight`.
-    /// See `MapLayout.noticeMaxHeight`, which will not use either number without the other.
-    @State private var chromeHeight: CGFloat = 0
-
-    /// The coordinate space both of `chrome`'s overlays are children of. Named rather than
-    /// `.global` so the measurement above cannot pick up a screen offset the bottom block's own
-    /// position does not carry.
-    private static let chromeSpace = "MapHomeChrome"
     /// Whether C20 is being typed into, which is the whole condition for the suggestion dropdown
     /// existing (task #109, ruling R25).
     ///
@@ -437,44 +418,7 @@ struct MapHomeView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, MapLayout.sideInset)
                 .padding(.top, topInset + MapLayout.searchTopInset)
-                // **Where this block really ends** (task #252). Measured on the padded block, so
-                // the number is the same bottom edge a reader sees and the same one `bottomChrome`
-                // has to stay clear of. A `.background` rather than an `.overlay`: the reader is
-                // reading through this rectangle at every size below AX5, and a transparent
-                // `GeometryReader` laid over the chrome would still be a view MapKit's own gesture
-                // recognizers sit underneath.
-                .background {
-                    GeometryReader { proxy in
-                        // `onChange` rather than a `PreferenceKey`: the value has one producer and
-                        // one consumer inside one view, which is not what a preference is for, and
-                        // a preference set inside a `.background` inside an `.overlay` has two
-                        // hops to survive before anything can read it. `initial: true` because the
-                        // first measurement is the one that matters — every later pass is a type
-                        // size or a species palette changing.
-                        Color.clear.onChange(
-                            of: proxy.frame(in: .named(Self.chromeSpace)).maxY,
-                            initial: true
-                        ) { _, bottom in
-                            topChromeBottom = bottom
-                        }
-                    }
-                }
             }
-            // The rectangle the measurement above is taken inside. Measured rather than derived
-            // from `availableHeight` and the safe-area insets: this block ignores the safe area and
-            // that one does not, and an arithmetic bridge between the two is exactly the kind of
-            // inset bookkeeping E243 was about.
-            .background {
-                GeometryReader { proxy in
-                    Color.clear.onChange(of: proxy.size.height, initial: true) { _, height in
-                        chromeHeight = height
-                    }
-                }
-            }
-            // Named on the container both overlays are children of, so the measurement above and
-            // the position `bottomChrome` is given are read in one coordinate space rather than
-            // two that happen to agree.
-            .coordinateSpace(.named(Self.chromeSpace))
             // The frame readout, when it is armed. Its own `#if DEBUG` and its own environment gate;
             // a separate `.overlay` rather than a member of either stack, so it cannot move anything
             // the mock positions. See `MapProbeOverlay`.
@@ -495,12 +439,10 @@ struct MapHomeView: View {
     /// pretending anything inside either of them moved. See the comment at the reorder.
     ///
     /// **`topInset` (task #250).** This block's own layout does not use it — it is
-    /// passed through to `MapLayout.noticeMaxHeight(availableHeight:topInset:topChromeBottom:chromeHeight:)`
-    /// alone, together with `topChromeBottom` (task #252), so the notice's AX5 scroll budget stays
-    /// small enough that the recenter control, first in the `VStack` below, cannot rise into the
-    /// top chrome no matter how tall the notice grows. See `MapLayout`'s "top chrome's own
-    /// reservation" section for the mechanism, and the section after it for why the chip row was
-    /// not the bottom of that chrome.
+    /// passed through to `MapLayout.noticeMaxHeight(availableHeight:topInset:)` alone, so the
+    /// notice's AX5 scroll budget stays small enough that the recenter control, first in the
+    /// `VStack` below, cannot rise above the top chrome's own chip row no matter how tall the
+    /// notice grows. See `MapLayout`'s "top chrome's own reservation" section for the mechanism.
     private func bottomChrome(topInset: CGFloat, availableHeight: CGFloat) -> some View {
         VStack(alignment: .trailing, spacing: 0) {
             // Above the FAB and right-aligned with it, inside the same absolutely positioned
@@ -521,9 +463,7 @@ struct MapHomeView: View {
             bottomSlot(
                 noticeMaxHeight: MapLayout.noticeMaxHeight(
                     availableHeight: availableHeight,
-                    topInset: topInset,
-                    topChromeBottom: topChromeBottom,
-                    chromeHeight: chromeHeight
+                    topInset: topInset
                 )
             )
         }

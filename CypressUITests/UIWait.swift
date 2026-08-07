@@ -74,50 +74,16 @@ extension XCTestCase {
     /// presentation animation past the moment the frame was read.
     ///
     /// Settled means two consecutive samples agree — see `frameHasSettled` for the finiteness half
-    /// of that decision. The element must be hittable first by default, so this never reports the
-    /// stable frame of something not yet presented.
-    ///
-    /// - Parameter requireHittable: whether the element must be *reachable* before its frame is
-    ///   read, or merely present. Default `true`, which is every caller that reads a frame in order
-    ///   to touch it.
-    ///
-    ///   **Pass `false` only when the assertion that follows is about the rectangle itself**, and
-    ///   that is a correctness requirement rather than a convenience — found the hard way by task
-    ///   #252. That ticket's defect was a control **covered** by a neighbor, and hittability is
-    ///   exactly what an occlusion takes away: gating the measurement on it makes the frame
-    ///   unreadable in precisely the state the assertion exists to catch, and the run then dies 30 s
-    ///   later reporting the symptom instead of the geometry. Watched twice — a red-proof that went
-    ///   red on "the recenter control … never became hittable" rather than on the overlap below it
-    ///   (PR #51), and a full-suite run of #252's own guard reporting that same sentence where it
-    ///   should have printed two rectangles.
-    ///
-    ///   It is **not** a way to make a flaky reachability wait go away. Nothing is weakened by it
-    ///   only because the claim changes with it: "these two rectangles do not intersect" is a
-    ///   different sentence from "a reader can press this", and a file that wants the second must
-    ///   assert it separately — `assertReachable`, or this helper's default.
+    /// of that decision. The element must be hittable first, so this never reports the stable frame
+    /// of something not yet presented.
     func settledFrame(
         _ element: XCUIElement,
         _ description: String,
         timeout: TimeInterval = 30,
-        requireHittable: Bool = true,
         file: StaticString = #filePath,
         line: UInt = #line
     ) -> CGRect {
-        if requireHittable {
-            assertReachable(element, description, timeout: timeout, file: file, line: line)
-        } else {
-            let present = XCTNSPredicateExpectation(
-                predicate: NSPredicate(format: "exists == true"),
-                object: element
-            )
-            if XCTWaiter.wait(for: [present], timeout: timeout) != .completed {
-                XCTFail(
-                    "\(description) never appeared in the accessibility tree at all within "
-                        + "\(Int(timeout))s",
-                    file: file, line: line
-                )
-            }
-        }
+        assertReachable(element, description, timeout: timeout, file: file, line: line)
         guard element.exists else { return .zero }
 
         var previous = element.frame
