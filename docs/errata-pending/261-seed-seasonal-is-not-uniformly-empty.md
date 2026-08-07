@@ -33,10 +33,19 @@ is stale, its numerators are not, and nothing it concluded about `In bloom` is d
 Two figures E189 did not report, and #261 depends on the second:
 
 - **13 rows carry at least one non-empty array** (9 evergreen, 3 deciduous, 1 semi-deciduous). Eleven
-  carry `bloom_months`, three carry `fruit_months`, and `Ginkgo biloba` carries `fall_color_months`
-  `[11, 12]`. So "511 carry a non-empty `seasonal` JSON" means 511 rows whose JSON object has *keys*,
-  not 511 rows with a calendar in them — a distinction worth stating, since the two readings differ by
-  a factor of forty.
+  carry `bloom_months`, **eight** carry `fruit_months` — seven rows carry both, which is why 11 + 8 + 1
+  does not sum to 13 — and `Ginkgo biloba` carries `fall_color_months` `[11, 12]`. So "511 carry a
+  non-empty `seasonal` JSON" means 511 rows whose JSON object has *keys*, not 511 rows with a calendar
+  in them — a distinction worth stating, since the two readings differ by a factor of forty.
+
+  The `fruit_months` figure first went into this entry as **three**, and how it went wrong is this
+  document's own subject one level down: it was counted by eye off a `GROUP BY seasonal` listing
+  instead of derived by a predicate, and seven of the eight sat in rows that also carried
+  `bloom_months` and read as bloom rows. Re-derived with
+  `json_array_length(COALESCE(json_extract(seasonal,'$.fruit_months'),'[]')) > 0`, which returns 8:
+  `Prunus cerasifera`, `Pittosporum undulatum`, `Acacia melanoxylon`, `Metrosideros excelsa`, `Olea
+  europaea`, `Myoporum laetum`, `Callistemon citrinus`, `Ligustrum lucidum`. A count read off a
+  listing is not a measurement.
 - **`new_growth_months` is empty on all 731 rows.** Zero exceptions, Ginkgo included.
 
 #### The sentence that should replace E33's
@@ -50,17 +59,40 @@ accurate form:
 > No species in the shipped seed authors `new_growth_months`, so every deciduous species takes the
 > April–October fallback today, and E33's wrapping-fall bug lands the moment one does.
 
-That is also the load-bearing fact for #261: the fallback contains October, so draft v0's row 3 —
-"Noticeable thinning or discoloration" — was reachable for every deciduous species in the month when
-discoloration is normal. Live today, not latent. E33 did not create that; E33 repaired a *different*
-bug in the same derivation, and fall color sitting inside the leaf-on window is the intended
-behavior, not the defect.
+#### What that means for #261's row 3, stated no more strongly than the seed supports
+
+Draft v0's row 3 read "Noticeable thinning or discoloration", and `Vitality.isRatingPermitted` gates
+on leaf-on/leaf-off and nothing else. Two separate claims follow, and only the first is unconditional:
+
+- **By construction, for any species that authors both seasons.** `leafOnMonths` closes the window at
+  `fallColor.end`, so the entire authored fall-color season is inside leaf-on and therefore ratable.
+  That is not a bug in the derivation — it is what E33 established the window should be, and narrowing
+  the gate to exclude fall color would suppress the rubric for trees that are in leaf, which is what
+  E33 exists to prevent. Any species with an authored calendar is exposed the day it lands.
+- **Today, through the fallback only, and the seed does not author the botany.** All 181 deciduous
+  species take April–October. The single species with an authored fall-color calendar, `Ginkgo
+  biloba`, has it at `[11, 12]` — *outside* the fallback — so the app suppresses vitality for Ginkgo
+  in exactly the two months its calendar says it is discoloring, and **no row in the shipped seed is
+  simultaneously ratable and inside an authored fall-color window.** Saying the defect is "live today"
+  therefore rests on October being fall-color season for deciduous street trees in San Francisco,
+  which is real-world botany this seed does not state and this project must not invent (DECISIONS
+  constraint 15).
+
+The copy repair stands on the first bullet alone, and on something neither bullet needs: a rater
+cannot tell seasonal color from stress color by looking, and the anchor asked them to. E33 did not
+create any of this — it repaired a *different* bug in the same derivation, and fall color sitting
+inside the leaf-on window is the intended behavior, not the defect.
 
 #### Calibration
 
-The counts above are from `sqlite3` predicates checked against answers known in advance before any
-of them was believed: `SELECT count(*) FROM species` returns 731, which the candidates document
-measured independently; `seasonal = '{}'` (220) plus `seasonal <> '{}'` (511) sums to 731, so the two
-predicates partition the table; and the `json_array_length` predicate on `bloom_months` returns 11,
-matching both E189's independent figure and an eyeball count of the eleven distinct `seasonal` values
-carrying a non-empty `bloom_months` in a `GROUP BY` of the column.
+Every count above is from a `sqlite3` predicate checked against an answer known in advance before it
+was believed. `SELECT count(*) FROM species` returns 731, which the candidates document measured
+independently. `seasonal = '{}'` (220) plus `seasonal <> '{}'` (511) sums to 731, so the two
+predicates partition the table. The `json_array_length` predicate on `bloom_months` returns 11,
+matching E189's independent figure, and the same predicate on `new_growth_months` returns 0, matching
+the `guard`'s observed behavior.
+
+The one figure here that was **not** derived that way was wrong, which is the calibration lesson
+rather than an aside: `fruit_months` was eyeballed off a `GROUP BY` and reported as three against a
+true eight. The rule that catches it is the same rule the rest of this entry applies — a listing is
+not a count, and a predicate is.

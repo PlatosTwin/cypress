@@ -16,6 +16,54 @@ the two source tables and the app state one rubric.
 
 Labels, level numbers and rubric order are unchanged. The text is Candidate A's §3 table verbatim.
 
+**A test, not a note, is what holds this.** `CypressTests/VitalityRubricTests.swift` parses the two
+distilled tables out of the markdown at build time and asserts, level by level, that they and
+`Vitality.anchor` state the same five sentences. A prose cross-reference asks a future reader to
+notice; the test refuses to let the fork reopen at all, and names which of the three sources drifted
+when one does.
+
+#### 0. What was superseded, quoted here so it survives splicing
+
+Both originals are reproduced verbatim below **because the two documents that carried them are
+themselves pending** — `docs/rulings-pending/vitality-rubric-candidates.md` and the #260 entry in
+`docs/errata-pending/` — and both cease to exist as files once they are spliced under their real E/R
+numbers. Without this section, the note each distilled document now carries would point at a record
+with no forwarding address, which is the failure the note exists to prevent.
+
+`docs/distilled/PRODUCT.md` §3 as it stood before this ruling, byte-identical to `SPEC-PHASE1.md` §6
+(lines 174–178):
+
+| Class | Label | Anchor (plain language) |
+|---|---|---|
+| 5 | Thriving | Full, dense canopy for the season; vigorous new growth; no visible dieback |
+| 4 | Good | Canopy mostly full; minor thinning or isolated dead twigs (under 10% dieback) |
+| 3 | Fair | Noticeable thinning or discoloration; dieback 10 to 25%; still clearly viable |
+| 2 | Poor | Sparse canopy; major dead limbs; dieback 25 to 50%; stress obvious |
+| 1 | Severe decline | Mostly bare in season; over 50% dieback; survival doubtful |
+
+`docs/distilled/SCREENS.md` 05 §3 as it stood before this ruling, byte-identical to
+`design_handoff_cypress/Cypress Screens.dc.html` inside the committed `Cypress.zip`, en dashes and
+all:
+
+| Level | Title | Anchor line |
+|---|---|---|
+| 1 | `1 · Severe decline` | `Mostly bare crown, major dead limbs` |
+| 2 | `2 · Poor` | `Large dead sections, 25–50% dieback` |
+| 3 | `3 · Fair` | `Noticeably thin, 10–25% dieback` |
+| 4 | `4 · Good` | `Canopy mostly full, isolated dead twigs` |
+| 5 | `5 · Thriving` | `Dense canopy, vigorous new growth` |
+
+Neither table was a transcription error. Each distilled document transcribed a different handoff
+artifact faithfully, and the two artifacts disagreed. A future transcription check that finds either
+table above in its primary and this ruling's table in the distilled document has found the intended
+state, not drift.
+
+**For the orchestrator, at splice time:** `docs/distilled/PRODUCT.md` §3 and §11, and
+`docs/distilled/SCREENS.md` line 9 and 05 §3, each defer to "the #261 ruling on the vitality rubric".
+Those four references need rewriting to this entry's real `R` number. They name a ticket rather than a
+filename deliberately — CLAUDE.md forbids citing a pending filename, and a ticket number stays
+resolvable either side of the splice.
+
 #### 1. R13's holding stands. R13's worked example does not, and is corrected here.
 
 R13 ruled that `SCREENS.md` holds screen 05's anchor sentences and that "its wording is what ships",
