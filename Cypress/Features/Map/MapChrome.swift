@@ -453,6 +453,64 @@ struct MapSearchStatus: View {
     }
 }
 
+// MARK: - The one transient sentence on this screen (task #247)
+
+/// A short, light, self-dismissing card in the chrome — the form the owner asked for on
+/// 2026-08-06 for the one state R41's carve-out now reaches. `MapNeedsCareToast` is where the
+/// instruction is quoted and the scope argued; `MapModel` owns when it appears and when it goes.
+///
+/// **It has exactly one caller and R41 is why it must keep exactly one.** A general-purpose toast
+/// over screen 01 is a mechanism, and R41 is categorical precisely because "each time, a message
+/// survived under a different mechanism". So this is a view with no state, no timer, no queue and
+/// no dismiss control: it draws a string for as long as it is in the tree, and the decision to put
+/// it there is made in one place that a test can read.
+///
+/// ── Three properties are load-bearing ────────────────────────────────────────────────────────
+///
+/// **1 · It is in the flow, immediately under the filter chips, not an overlay over the map.**
+/// `MapSuggestionList` argues this at length one control up and every word applies: an overlay
+/// leaves whatever it covers reachable by an assistive technology while invisible to everyone
+/// else, and puts the element somewhere other than where a reader looks for it. In the flow it
+/// cannot cover the chips, the legend, the recenter control, the FAB or the bottom card at any
+/// Dynamic Type size — at AX5 it wraps and the legend below it moves down, which is what the rest
+/// of this stack already does.
+///
+/// **2 · It takes no touches.** `allowsHitTesting(false)`: the map is directly behind it and a pan
+/// that started on those few points would otherwise die on a card that is about to disappear.
+/// There is nothing to press — the dismissal is time, not a control — so nothing is lost.
+/// Accessibility is a separate tree and is unaffected; the element stays readable, and
+/// `MapHomeView` also posts it as an announcement, which is the channel that reaches a listener
+/// who is not sweeping the chrome at that moment.
+///
+/// **3 · It is a card, not a capsule.** `MapSearchStatus` beside it is a `Capsule` because its
+/// sentence is one line at every size; four words at AX5 are three lines on a 375 pt phone, and a
+/// capsule around three lines is a lozenge the height of the chip row. `CypressRadius.cardSm` is
+/// the drawer's own radius, two controls above.
+struct MapToast: View {
+    let message: String
+
+    var body: some View {
+        Text(message)
+            .font(CypressFont.body13)
+            .foregroundStyle(CypressColor.textInk)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.vertical, CypressSpacing.Component.chipPaddingVFilter)
+            .padding(.horizontal, CypressSpacing.Component.chipPaddingHFilter)
+            .background {
+                RoundedRectangle(cornerRadius: CypressRadius.cardSm, style: .continuous)
+                    .fill(CypressColor.surfaceCard)
+            }
+            .cypressBorder(CypressColor.borderCool, radius: CypressRadius.cardSm)
+            .cypressShadow(light: CypressShadow.bottomCard, dark: CypressShadow.Dark.xl)
+            .allowsHitTesting(false)
+            // One element, one sentence, exactly as `MapSearchStatus` is: the map behind it has
+            // just changed shape and this is what says so.
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(message)
+    }
+}
+
 // MARK: - FAB
 
 /// SCREENS.md 01 §13. `HStack(spacing:9)`, `ctaFill`, pill, `padding:15px 20px`, `shadow.fab`,

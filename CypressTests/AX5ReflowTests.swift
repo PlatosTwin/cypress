@@ -243,8 +243,8 @@ struct AX5ReflowTests {
     // MARK: - RULINGS R53 §6's AX5 ruling (owner decision 2026-08-05) · MapLocationNotice scrolls rather than overflows
 
     /// `MapLayout.locateButtonHeightAX5` and `.fabHeightAX5`, the inputs to
-    /// `noticeMaxHeight(availableHeight:)`, are what the bottom slot reserves for the two controls
-    /// stacked above the notice. Guarded here so a control that outgrows its reservation fails
+    /// `noticeMaxHeight(availableHeight:topInset:)`, are what the bottom slot reserves for the two
+    /// controls stacked above the notice. Guarded here so a control that outgrows its reservation fails
     /// loudly instead of quietly under-reserving the notice's scroll budget.
     ///
     /// **`<=`, not `==`, and the difference is the whole of ticket #30.** These two assertions were
@@ -253,14 +253,14 @@ struct AX5ReflowTests {
     /// iPhone 16 Pro it was recorded on. On an iPhone 16e the same inset is 47 pt, so the same
     /// unmodified tree measured 91 and 130 and this test failed on the device rather than on the
     /// code. `ax5Size` now takes the inset back off (see its own note), which makes the measurement
-    /// device-independent — and leaves the reservations *larger* than the footprints they reserve
-    /// for, which is the direction `noticeMaxHeight` documents itself as taking ("conservative
-    /// rather than exact"). Over-reserving costs the notice room it does not use; under-reserving
-    /// is E183 §2, the card growing off the top of the screen. Only one of those is a defect, and
-    /// `<=` is the assertion that names it.
+    /// device-independent. Under-reserving is E183 §2, the card growing off the top of the screen;
+    /// `<=` is the assertion that names that direction as the only defect.
     ///
-    /// Correcting the reservations down to the footprints would change what ships at AX5 under an
-    /// owner ruling (R53 §6) and is not this ticket's to take.
+    /// **`MapLayout.locateButtonHeightAX5` and `.fabHeightAX5` were corrected to the bare footprints
+    /// this test measures (44 and 83) on 2026-08-06, by direct owner ruling** — superseding
+    /// RULINGS R53 §6's conservative stance for these two constants specifically. `<=` is kept
+    /// rather than tightened to `==` because the guard's job is catching under-reservation if a
+    /// control's footprint ever grows again, not asserting today's exact numbers a second time.
     @Test("the recenter control and the FAB fit what the notice's scroll budget reserves at AX5")
     func bottomChromeControlsFitTheReservedBudgetAtAX5() async {
         let recenter = await Self.ax5Size(of: MapRecenterButton(engagement: .away, action: {}))
@@ -289,6 +289,40 @@ struct AX5ReflowTests {
             """
             MapRecenterButton measures \(recenter.height) pt at AX5 against the \
             \(CypressSpacing.minTapTarget) pt frame it declares — it is no longer a fixed square
+            """
+        )
+    }
+
+    // MARK: - Task #250 · The top chrome's own reservation
+
+    /// `MapLayout.searchBarHeightAX5` and `.chipRowHeightAX5` are the inputs to
+    /// `topChromeReservedAX5(topInset:)`, which `noticeMaxHeight(availableHeight:topInset:)`
+    /// subtracts so the recenter control — first in `bottomChrome`'s bottom-anchored stack — cannot
+    /// rise above the filter chip row's own bottom edge no matter how tall the notice below it
+    /// grows. Guarded the same way `bottomChromeControlsFitTheReservedBudgetAtAX5` guards the other
+    /// two reservation inputs: `<=`, so either control growing past what is reserved for it fails
+    /// loudly instead of quietly under-reserving.
+    ///
+    /// **Both grow with Dynamic Type, unlike `MapRecenterButton`.** `SearchBar`'s field and
+    /// `MapFilterChips`'s pills carry `CypressFont.body145` text, and the row stays one line at
+    /// every size (#166) rather than wrapping, so neither is a fixed frame the way the recenter
+    /// square is — the bound is a footprint, not an exact measurement repeated.
+    @Test("the search bar and the filter chip row fit what the top-chrome reservation gives them at AX5")
+    func topChromeFitsItsReservedBudgetAtAX5() async {
+        let bar = await Self.ax5Size(of: SearchBar(text: .constant("")))
+        let chips = await Self.ax5Size(of: MapFilterChips(filter: .constant(.all)))
+        #expect(
+            bar.height <= MapLayout.searchBarHeightAX5,
+            """
+            SearchBar now measures \(bar.height) pt at AX5, past the \
+            \(MapLayout.searchBarHeightAX5) pt the top-chrome reservation gives it
+            """
+        )
+        #expect(
+            chips.height <= MapLayout.chipRowHeightAX5,
+            """
+            MapFilterChips now measures \(chips.height) pt at AX5, past the \
+            \(MapLayout.chipRowHeightAX5) pt the top-chrome reservation gives it
             """
         )
     }
