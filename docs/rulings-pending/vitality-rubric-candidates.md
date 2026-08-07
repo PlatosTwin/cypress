@@ -1,11 +1,85 @@
-### The vitality rubric — three candidates for the owner to choose between
+### The vitality rubric — three candidates, and the owner's decision
 
-Drafted for owner decision, following the pattern that closed E48's empty-grove copy (E239): draft
-candidates, the owner approves or redlines one, and the approved text ships verbatim. **Nothing here
-is a decision.** PRODUCT §3 calls the shipped scale "draft v0 — needs urban forestry advisor sign-off
-before launch" and DECISIONS §2.5 P-C1 calls the choice OPEN; no candidate below removes that
-requirement, and the one thing this document tries hardest to do is say which horticultural claims
-each candidate would be asking an advisor to underwrite.
+**Decision, 2026-08-07: the owner chose Candidate A.** Candidates B and C were not chosen. §0 below
+records the decision and the condition on it; §§1–7 are the deliberation as it was written before the
+decision and are kept unchanged, because the reasoning is what an advisor will be handed.
+
+The original framing of this document follows. It was written before the decision and says, correctly
+for its moment, that nothing in it is a decision — that is now true of §§1–7 only:
+
+> Drafted for owner decision, following the pattern that closed E48's empty-grove copy (E239): draft
+> candidates, the owner approves or redlines one, and the approved text ships verbatim. **Nothing here
+> is a decision.** PRODUCT §3 calls the shipped scale "draft v0 — needs urban forestry advisor sign-off
+> before launch" and DECISIONS §2.5 P-C1 calls the choice OPEN; no candidate below removes that
+> requirement, and the one thing this document tries hardest to do is say which horticultural claims
+> each candidate would be asking an advisor to underwrite.
+
+---
+
+## 0. The decision
+
+**On 2026-08-07 the owner chose Candidate A**: ratify the current draft as a documented collapse of
+the USFS i-Tree / Nowak crown-condition classes, with the band boundaries repaired. The five sentences
+in §3, Candidate A, are the approved text.
+
+**Candidate B was not chosen.** **Candidate C was not chosen.** Their write-ups stay in §3 unchanged:
+they are the record of what was weighed, and §5's list of what needs an advisor's signature is partly
+built out of them.
+
+Two things the decision does **not** do, both restated from §4 because they are conditions and not
+decoration:
+
+- It does **not** discharge PRODUCT §3's "needs urban forestry advisor sign-off before launch", and it
+  does not close DECISIONS §2.5 P-C1. §5 is the list the advisor is being asked to underwrite, and
+  item 1 — that five Cypress classes are a faithful collapse of the seven i-Tree / Nowak classes — is
+  the one Candidate A rests on entirely.
+- It does **not** move E30. The five per-class reference photographs are still the M2 entry gate and
+  still do not exist. §4's second condition stands: pursue NRS-194's Figures 8 and 9 regardless.
+
+### The decision is gated on ticket #260
+
+**Implementing Candidate A is blocked until #260 is resolved.** Candidate A is a repair of **PRODUCT
+§3's** boundaries, and RULINGS R13 currently says `SCREENS.md`, not `PRODUCT.md`, is the wording
+authority for exactly these five sentences. Landing Candidate A into `Vitality.swift` before that
+conflict is settled would be writing repaired PRODUCT text into the app under a standing ruling that
+says PRODUCT text is not what ships.
+
+#260 is the investigation §6 asked for when it said "somebody who was there should say which". Its
+findings are in `docs/errata-pending/` on branch `docs/260-r13-vitality-conflict`, and the two facts
+that bear on this decision are:
+
+- The two tables have disagreed since 1c469cf, because `PRODUCT.md` transcribes `SPEC-PHASE1.md` §6
+  and `SCREENS.md` transcribes the `Cypress Screens.dc.html` design export, and those two handoff
+  artifacts disagree. Neither distilled document is a transcription error, and neither table has
+  changed since.
+- R13's holding is sound but its worked example is wrong, and R13's own meaning/wording split puts the
+  dieback bands on PRODUCT's side — a band is a class's operational definition, not its phrasing. The
+  recommendation to the owner is therefore to correct R13's example rather than reverse the ruling,
+  and to land Candidate A's sentences in **PRODUCT §3, `SCREENS.md` 05 §3 and `Vitality.swift`
+  together**, closing the fork instead of adjudicating it. That is what §1 already required of
+  whichever candidate won.
+
+### One correction to §1's arithmetic, carried over from #260
+
+§1's first defect ("the bands own their endpoints twice") is right in substance and overstated in
+detail, and §5 item 2 repeats the overstatement. Read literally, "under 10%" excludes 10 and "over
+50%" excludes 50, so:
+
+- **25 percent** is genuinely double-owned — row 3's `10 to 25%` and row 2's `25 to 50%` are both
+  inclusive.
+- **0 percent** is genuinely double-owned — row 5's `no visible dieback` and row 4's `under 10%`. This
+  was not previously reported.
+- **10 percent** belongs to row 3 alone; **50 percent** belongs to row 2 alone.
+
+So the shipped table has one ambiguous interior boundary and one ambiguous endpoint, not three
+ambiguous boundaries. **This does not change the recommendation or the repair.** Candidate A's bands —
+`No dead wood visible` / `1 to 10%` / `11 to 25%` / `26 to 50%` / `Over half` — were checked against
+every integer from 0 to 100 and are exhaustive and non-overlapping, which the shipped table is not.
+
+§1's second defect (row 3's discoloration clause against the seasonality gate) was re-checked against
+`Vitality.isRatingPermitted` and `Species.leafOnMonths` and holds exactly as written. One thing #260
+adds: E33 records that every `seasonal` in the shipped seed is empty, so every deciduous species takes
+the documented April–October fallback, which contains October — the problem is live today, not latent.
 
 ---
 
@@ -81,7 +155,8 @@ words were never the gate. The photographs are.** Section 4 says what I think fo
 1. **The bands own their endpoints twice.** "under 10%", "10 to 25%", "25 to 50%", "over 50%": a
    rater who reads exactly 25 percent dieback has two rows that both fit, and a rater who reads
    exactly 10 percent has two more. The source these bands derive from does not do this (see §3,
-   Candidate A).
+   Candidate A). *(Overstated — see §0's correction. 25 percent and 0 percent are double-owned; 10 and
+   50 are not. The defect and the repair stand.)*
 2. **Row 3 asks about discoloration in a month when discoloration is normal.** The anchor says
    "Noticeable thinning or discoloration". `Vitality.isRatingPermitted` suppresses the section only
    for a deciduous species out of leaf, and `Species.leafOnMonths` is derived so that
@@ -328,7 +403,8 @@ to make and the project cannot presently stand behind.
 1. **That five Cypress classes are a faithful collapse of the seven i-Tree / Nowak classes** — and
    specifically that merging critical (51–75 percent) and dying (76–99 percent) into one `Severe
    decline` row does not destroy a distinction a city needs. This underwrites Candidate A entirely.
-2. **Where the boundaries fall.** 10, 25 and 50 currently belong to two rows each. The arithmetic
+2. **Where the boundaries fall.** 25 percent and 0 percent currently belong to two rows each; 10 and
+   50 do not (§0's correction amends this item, which originally named 10, 25 and 50). The arithmetic
    problem is mine to point at; the fix is an advisor's to pick.
 3. **Whether crown dieback alone is the right quantity, or whether discoloration and defoliation
    belong in it.** A uses dieback alone; B follows NRS-194 and adds the other two. These give
@@ -368,7 +444,9 @@ to make and the project cannot presently stand behind.
   SCREENS.md draws different ones, and that R13 says SCREENS.md's ship. I did not establish whether
   R13 was written knowing that, or whether it was written against PRODUCT's table by mistake. Somebody
   who was there should say which, because it determines whether this is a code defect or a ruling
-  defect.
+  defect. **Answered by ticket #260** — see §0. Nobody was there; git was. The two tables came in
+  disagreeing from two different handoff artifacts, R13 illustrated itself with a string that only the
+  running app produces, and its holding survives while its example does not.
 - **Anything requiring a build.** This is a documentation branch; nothing was compiled and no test was
   run. Every mechanical claim in §1 comes from reading `Vitality.swift`, `CheckInPresentation.swift`,
   `CheckInView.swift`, `StatusBadge.swift`, `CypressColor.swift`, `AppSchema.swift` and
