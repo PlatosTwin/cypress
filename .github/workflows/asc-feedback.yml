@@ -17,13 +17,11 @@
 # `asc-feedback` artifact.
 name: App Store Connect feedback
 
+# Note for whoever runs this first after it lands: `workflow_dispatch` is only dispatchable once
+# the file is on the default branch, so this was proved on the branch under a temporary `push:`
+# trigger (run 31195352441, removed in the following commit) rather than left unrun until merge.
 on:
   workflow_dispatch:
-  # TEMPORARY, REMOVED BEFORE THIS PR MERGES. `workflow_dispatch` is only dispatchable once the
-  # file is on the default branch, so there is no way to prove this workflow works before it is
-  # merged except to let a push to this one branch fire it.
-  push:
-    branches: [feat/asc-feedback]
 
 jobs:
   feedback:

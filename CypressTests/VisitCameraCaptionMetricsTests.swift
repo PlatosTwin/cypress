@@ -63,8 +63,7 @@ struct VisitCameraCaptionMetricsTests {
         let actual = Double(VisitMetrics.Camera.ghostCaptionLineSpacing)
         #expect(
             abs(actual - expected) < 0.001,
-            "ghostCaptionLineSpacing is \(actual); mono 10.5 at line-height 1.4 converts to "
-                + "\(expected). \(actual) is what dropping the − 1.2 produces."
+            "ghostCaptionLineSpacing is \(actual); mono 10.5 at line-height 1.4 converts to \(expected), and \(10.5 * 0.4) is what dropping the − 1.2 produces"
         )
     }
 }
