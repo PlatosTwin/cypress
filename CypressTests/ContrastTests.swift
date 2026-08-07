@@ -134,6 +134,58 @@ struct ContrastTests {
              foreground: CypressColor.amberAttentionCardBorder, background: CypressColor.surfaceScreen, floor: 3.0),
     ]
 
+    /// **The third boundary the new dark amber took** (task #14 item 1a), asserted on its own
+    /// rather than added to `amber` above, because `amber` is run in both appearances and this pair
+    /// has a floor in only one of them.
+    ///
+    /// After dark the pill's border was `#D99A4E` — the same value as the *text* inside the pill —
+    /// at 6.11:1 on its fill, so the boundary was as loud as the mark. Now `#A2670D`, and 1.4.11's
+    /// 3.0 binds on it for the reason it binds on C24: it is an amber edge that has to be told from
+    /// its amber ground. In light it is `#EBD3A8` at 1.28 and is *not* asked to clear anything — a
+    /// light pill is identified by its fill and its label, which is the same reading that leaves
+    /// `amberChipSelectedBorder` where R1 found it.
+    @Test("the amber pill border clears WCAG 1.4.11 on its own fill after dark")
+    func amberPillBorderClearsAfterDark() {
+        let ratio = Self.contrast(
+            Self.hex(CypressColor.amberPillBorder, Self.dark),
+            Self.hex(CypressColor.amberPillFill, Self.dark)
+        )
+        #expect(
+            ratio >= 3.0,
+            """
+            the amber pill border is \(String(format: "%.2f", ratio)):1 on its fill after dark, \
+            below WCAG 1.4.11's 3.0 floor.
+            """
+        )
+    }
+
+    /// **The boundary reads below the mark, which is the whole of item 1a.**
+    ///
+    /// The three ratios above each clearing 3.0 is necessary and not sufficient: a border at 6.5 and
+    /// a word at 6.5 clears every floor in this file and is exactly the collapse that was shipped.
+    /// So the ordering is asserted too, the same way `rampIsMonotonic` asserts the text ramp is a
+    /// ramp rather than four numbers over a line. In light this has always held; the assertion is
+    /// that dark now holds it as well.
+    @Test("on 17 the amber boundaries read below the amber marks, in both appearances")
+    func amberBoundariesSitBelowAmberMarks() {
+        for (appearance, traits) in [("light", Self.light), ("dark", Self.dark)] {
+            let card = Self.hex(CypressColor.surfaceCard, traits)
+            let boundary = Self.contrast(Self.hex(CypressColor.amberAttentionCardBorder, traits), card)
+            // The reason line under the state word — the loudest amber mark C24 draws on the card.
+            let mark = Self.contrast(Self.hex(CypressColor.amberChipSelectedText, traits), card)
+            #expect(
+                boundary < mark,
+                """
+                in \(appearance) C24's border reads \(String(format: "%.2f", boundary)):1 on the \
+                card and the amber mark on it reads \(String(format: "%.2f", mark)):1. A boundary \
+                that is as loud as the words it surrounds is the collapse task #14 item 1a was \
+                asked to fix: every dark amber cleared AA before it and the card's edge was still \
+                the loudest thing on the screen.
+                """
+            )
+        }
+    }
+
     @Test("the amber family clears AA in light")
     func amberInLight() { assertAll(Self.amber, Self.light, "light") }
 
@@ -610,14 +662,45 @@ struct ContrastTests {
         Pin(
             what: "C24 attention card border on the card it identifies (12, 17)",
             foreground: CypressColor.amberAttentionCardBorder, background: CypressColor.surfaceCard,
-            light: 3.39, dark: 6.57,
-            because: "R1: was 2.30 light; the border is the only thing distinguishing this card"
+            light: 3.39, dark: 3.39,
+            because: "R1: was 2.30 light; the border is the only thing distinguishing this card. "
+                + "Task #14 1a: dark was 6.57 at #D99A4E — the same lightness-only OKLCh move to "
+                + "#A2670D lands it on light's own 3.39, so the boundary reads at one strength in "
+                + "both appearances"
         ),
         Pin(
             what: "C24 attention card border against the page behind it (12, 17)",
             foreground: CypressColor.amberAttentionCardBorder, background: CypressColor.surfaceScreen,
-            light: 3.12, dark: 7.55,
-            because: "R1: was 2.12 light; a boundary is adjacent to a surface on each side of it"
+            light: 3.12, dark: 3.90,
+            because: "R1: was 2.12 light; a boundary is adjacent to a surface on each side of it. "
+                + "Task #14 1a: dark was 7.55 — the harder of C24's two grounds after dark as well, "
+                + "and it clears 1.4.11 by the wider margin because the page is darker than the card"
+        ),
+        // Task #14 item 1a · the second boundary that took `#A2670D`, and the marks that did not
+        // move, pinned beside it. The marks are here so "every amber mark stays exactly as shipped"
+        // is a fact the suite checks rather than a sentence in a ruling — the failure mode this
+        // change could have is retinting one rung too many, and it would be silent.
+        Pin(
+            what: "amber pill border on its fill (02, 06, 17)",
+            foreground: CypressColor.amberPillBorder, background: CypressColor.amberPillFill,
+            light: 1.28, dark: 3.15,
+            because: "Task #14 1a: dark was 6.11 at #D99A4E, the same ratio as the text inside the "
+                + "pill; light is #EBD3A8 and untouched, because 1.4.11 does not bind on a light "
+                + "pill identified by its fill and its label"
+        ),
+        Pin(
+            what: "the amber pill's text on its fill — a mark, and it does not move (17)",
+            foreground: CypressColor.amberPillText, background: CypressColor.amberPillFill,
+            light: 5.18, dark: 6.11,
+            because: "Task #14 1a: only boundaries took the new dark amber; every mark stays where "
+                + "E8's derivation put it"
+        ),
+        Pin(
+            what: "17's reason line and tile glyph on the card — a mark, and it does not move",
+            foreground: CypressColor.amberChipSelectedText, background: CypressColor.surfaceCard,
+            light: 5.91, dark: 6.57,
+            because: "Task #14 1a: unmoved after dark. In light this is also #249's landing place — "
+                + "see `retryWordClearsAAOnTheCard`"
         ),
         // R1a · the three grounds R1 was written without, because E106's sweep did not reach them.
         Pin(
@@ -668,6 +751,74 @@ struct ContrastTests {
 
     @Test("every ratio RULINGS R1 moved is still exactly where it was left")
     func retintedRatiosHaveNotMoved() { assertPinned(Self.retinted, "R1 retint") }
+
+    // MARK: - 17's terminal state word (#249)
+
+    /// **The AA failure nothing in this suite was watching, and the pair that replaced it.**
+    ///
+    /// `retry` and `stopped` are 17's trailing state words, drawn in mono **11 pt bold** on
+    /// `surface.card` and — before #249 — in `accentAmber` `#B4711F`, which reads **3.95:1** there
+    /// and 3.63 on the screen.
+    ///
+    /// **The floor is 4.5, and that is the whole finding.** WCAG's large-text exemption, which
+    /// drops the floor to 3.0, begins at 18 pt regular or **14 pt bold**; 11 pt bold is neither, so
+    /// no exemption applies and the pair takes the body floor like any other sentence. Nothing here
+    /// caught it because `accentAmber` appears in this file only as a *map pin* against map paper,
+    /// where 3.0 is the correct floor for a non-text mark — a token measured in one role and
+    /// therefore assumed answered in another, which is this suite's own recurring lesson.
+    ///
+    /// The closure is a call site and not a token: `accentAmber` is Signal Amber, a brand hue with
+    /// a reserved meaning that also draws the amber map pin, so retinting it to clear a text floor
+    /// would move a mark on a screen nobody asked about. `OutboxView` now draws the word in
+    /// `amberChipSelectedText`, already the color of the reason line directly beneath it.
+    ///
+    /// Both grounds, because `OutboxRow` is drawn inside C24 on 17 and the row can sit on the page
+    /// behind it; the page is the harder of the two, exactly as it is for C24's border.
+    @Test("17's `retry`/`stopped` state word clears the 4.5 floor 11 pt bold earns it")
+    func retryWordClearsAAOnTheCard() {
+        let grounds: [(String, Color)] = [
+            ("the card it sits on", CypressColor.surfaceCard),
+            ("the page behind the card", CypressColor.surfaceScreen),
+        ]
+        for (appearance, traits) in [("light", Self.light), ("dark", Self.dark)] {
+            for (name, ground) in grounds {
+                let ratio = Self.contrast(
+                    Self.hex(CypressColor.amberChipSelectedText, traits),
+                    Self.hex(ground, traits)
+                )
+                #expect(
+                    ratio >= 4.5,
+                    """
+                    17's state word is \(String(format: "%.2f", ratio)):1 on \(name) in \
+                    \(appearance), below 4.5. Mono 11 pt **bold** is not WCAG large text — that \
+                    exemption starts at 14 pt bold — so this pair gets the body floor and not the \
+                    3.0 one `accentAmber` earns as a map pin. #249 is the entry.
+                    """
+                )
+            }
+        }
+    }
+
+    /// …and Signal Amber itself is still the value it always was, which is the other half of #249's
+    /// answer. A future edit that "fixes" the state word by retinting the brand hue would satisfy
+    /// the test above and quietly move the amber map pin; this one fails instead.
+    @Test("#249 was closed at the call site — Signal Amber is untouched")
+    func signalAmberWasNotRetintedToCloseTheStateWord() {
+        #expect(
+            Self.hex(CypressColor.accentAmber, Self.light) == 0xB4711F,
+            """
+            accentAmber's light value is \
+            #\(String(format: "%06X", Self.hex(CypressColor.accentAmber, Self.light))), not \
+            #B4711F. #249 was closed by changing what 17 draws its state word in, not by retinting \
+            Signal Amber — the hue is reserved ("this tree needs something") and it draws the amber \
+            map pin, whose 7.08:1 on the dark map paper is measured nowhere near this screen.
+            """
+        )
+        #expect(
+            Self.hex(CypressColor.accentAmber, Self.dark) == 0xD99A4E,
+            "accentAmber's dark value moved; see above."
+        )
+    }
 
     // MARK: - The failures left in place, measured and pinned
 

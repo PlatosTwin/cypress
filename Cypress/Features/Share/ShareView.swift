@@ -110,54 +110,81 @@ struct ShareView: View {
 
     // MARK: - 3 · Preview card
 
+    /// **The link is a row of its own, under the whole block.**
+    ///
+    /// E60 recorded that the mock's four-hex slug cannot name one of 195,309 trees, so the card
+    /// renders the tree's UUID: `cypress.app/sf/tree/` plus 36 characters is **56**, and the card's
+    /// *full inner width* holds about 48 at mono 10.5. No two-column arrangement makes it one line,
+    /// so widening the text column is not the fix — giving two lines a place to live is. Row 1 is
+    /// the thumb beside name + location + strip, exactly as drawn; row 2 is the link at the card's
+    /// full inner width, starting at its left edge, so it reads as one address block rather than as
+    /// overflow squeezed beside a picture.
+    ///
+    /// No new token and no new spacing: `ShareMetrics.urlTop` (6) is the gap SCREENS.md 10 §3
+    /// already gives this string, and `ShareMetrics.cardPadding` (14) is the inset it already sits
+    /// inside. Task #14, item 2.
     private func previewCard(_ presentation: SharePresentation) -> some View {
-        HStack(alignment: .top, spacing: ShareMetrics.cardSpacing) {
-            // C22. A photograph would go in this frame the day one is approved; until then the
-            // gradient is what SCREENS.md 10 §3 draws anyway. See `SharePresentation`'s header.
-            ThumbnailGradient(
-                ShareThumbnail.placeholder(for: presentation.thumbnailSpeciesName),
-                size: .share
-            )
-
-            VStack(alignment: .leading, spacing: 0) {
-                Text(presentation.treeDisplayName)
-                    .font(CypressFont.shareName)
-                    .foregroundStyle(CypressColor.textInk)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Text(presentation.locationLine)
-                    .font(CypressFont.body12)
-                    .foregroundStyle(CypressColor.textMuted)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                FoliageStrip(
-                    // D5 is enforced inside the component; handing it the species attribute is the
-                    // whole contract.
-                    leafRetention: presentation.leafRetention,
-                    densities: presentation.foliageDensities,
-                    variant: .shareCard,
-                    showsMonthRow: false,
-                    showsEyebrow: false
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: ShareMetrics.cardSpacing) {
+                // C22. A photograph would go in this frame the day one is approved; until then the
+                // gradient is what SCREENS.md 10 §3 draws anyway. See `SharePresentation`'s header.
+                ThumbnailGradient(
+                    ShareThumbnail.placeholder(for: presentation.thumbnailSpeciesName),
+                    size: .share
                 )
-                .padding(.top, ShareMetrics.stripTop)
-                // The component labels each cell as a canopy state; this strip encodes *public*
-                // photo coverage (A5), so the honest label replaces them.
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(ShareMetrics.stripAccessibilityLabel)
 
-                Text(presentation.publicURLText)
-                    .font(CypressFont.mono105)
-                    .foregroundStyle(CypressColor.textFaint)
-                    // Wraps rather than truncating. SCREENS.md draws this on one line, and it fits
-                    // on one only because the mock's identifier is a four-character fixture; a real
-                    // tree id needs two. Half a link with an ellipsis on the end is worse than a
-                    // link on two lines — it is the one string on this card somebody might read
-                    // aloud or type. See ERRATA (E60).
-                    .lineLimit(ShareMetrics.urlLineLimit)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, ShareMetrics.urlTop)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(presentation.treeDisplayName)
+                        .font(CypressFont.shareName)
+                        .foregroundStyle(CypressColor.textInk)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text(presentation.locationLine)
+                        .font(CypressFont.body12)
+                        .foregroundStyle(CypressColor.textMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    FoliageStrip(
+                        // D5 is enforced inside the component; handing it the species attribute is
+                        // the whole contract.
+                        leafRetention: presentation.leafRetention,
+                        densities: presentation.foliageDensities,
+                        variant: .shareCard,
+                        showsMonthRow: false,
+                        showsEyebrow: false
+                    )
+                    .padding(.top, ShareMetrics.stripTop)
+                    // The component labels each cell as a canopy state; this strip encodes *public*
+                    // photo coverage (A5), so the honest label replaces them.
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(ShareMetrics.stripAccessibilityLabel)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text(presentation.publicURLText)
+                .font(CypressFont.mono105)
+                .foregroundStyle(CypressColor.textFaint)
+                // Wraps rather than truncating. SCREENS.md draws this on one line, and it fits
+                // on one only because the mock's identifier is a four-character fixture; a real
+                // tree id needs two. Half a link with an ellipsis on the end is worse than a
+                // link on two lines — it is the one string on this card somebody might read
+                // aloud or type. See ERRATA (E60).
+                //
+                // **And above the accessibility threshold the clamp comes off entirely.** At AX5
+                // two lines of mono 10.5 scaled up hold barely a third of the string, so
+                // `lineLimit(2)` rendered `cypress.app/sf/tree/0…` — the reader got *none* of the
+                // identifier, which is precisely the outcome E60 says is worse than extra lines,
+                // happening at the type size where it matters most. The cap exists to keep the
+                // card's drawn proportions, and at AX5 the card has already given those up.
+                .lineLimit(
+                    ShareMetrics.urlLineLimit(
+                        isAccessibilitySize: dynamicTypeSize.isAccessibilitySize
+                    )
+                )
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, ShareMetrics.urlTop)
         }
         .padding(ShareMetrics.cardPadding)
         .background {
@@ -404,9 +431,22 @@ enum ShareMetrics {
     static let stripTop: CGFloat = 7
     static let urlTop: CGFloat = 6
     /// A 36-character tree id in mono 10.5 does not fit the drawn card on one line, so it takes two.
-    /// Two is the ceiling: at AX sizes the line count is capped and the card keeps its proportions
-    /// rather than growing without limit.
     static let urlLineLimit = 2
+
+    /// **How many lines the link may take, which is a decision and therefore a value.**
+    ///
+    /// Two at the drawn sizes, where the cap keeps the card's proportions and the whole string
+    /// still fits inside it. `nil` — no cap — above the accessibility threshold, where two lines of
+    /// mono 10.5 scaled up hold about a third of the string and `lineLimit(2)` rendered
+    /// `cypress.app/sf/tree/0…`: the reader got **none** of the identifier, which is exactly the
+    /// truncation E60 refuses, happening at the type size where reading or typing the link matters
+    /// most. The cap protects proportions the card has already given up by AX5.
+    ///
+    /// A value rather than an inline ternary for the reason `QuadActionRow.rows` is one: a reflow
+    /// decision a test can read is a reflow decision that cannot regress quietly. Task #14, item 2.
+    static func urlLineLimit(isAccessibilitySize: Bool) -> Int? {
+        isAccessibilitySize ? nil : urlLineLimit
+    }
     /// 10 §4: `HStack(spacing:18)`, `padding:0 2px 4px`; each target 58 wide; well 52 with
     /// `margin:0 auto 5px`.
     static let destinationSpacing: CGFloat = 18

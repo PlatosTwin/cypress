@@ -419,6 +419,26 @@ struct OutboxQueueRow: View {
         stateWord.lineLimit(1).fixedSize()
     }
 
+    /// **The amber the two terminal words are drawn in, and why it is not Signal Amber.**
+    ///
+    /// `retry` and `stopped` are mono **11 pt bold** on `surface.card`. 11 pt bold is not WCAG
+    /// "large text" — that exemption starts at 14 pt bold — so the pair takes the 4.5 floor, and
+    /// `accentAmber` `#B4711F` reads **3.95:1** there (3.63 on the screen). Nothing was watching:
+    /// `ContrastTests` pins `accentAmber` as a *map pin* against map paper, where the 3.0 non-text
+    /// floor is the right one.
+    ///
+    /// The closure is a call site rather than a token. `accentAmber` is Signal Amber, a brand hue
+    /// with a reserved meaning (§1.1) that also draws the amber map pin; retinting it to clear a
+    /// text floor would move a mark on a screen nobody asked about. `amberChipSelectedText`
+    /// `#8A5A17` is **5.91:1** on the card and is already what the reason line directly beneath
+    /// this word uses, so the two terminal lines now read as one voice. Dark is unchanged — both
+    /// tokens resolve to `#D99A4E` there, at 6.57:1.
+    /// Internal and `static` so the suite can read the decision rather than the rendering: SwiftUI
+    /// builds no render tree a test can walk, so a call-site color that is only ever written inline
+    /// can be reverted to `accentAmber` without one assertion going red. Pinned by
+    /// `Task14DrawingDecisionTests.terminalStateWordIsNotSignalAmber`.
+    static let terminalStateWordColor = CypressColor.amberChipSelectedText
+
     @ViewBuilder
     private var stateWord: some View {
         switch row.state {
@@ -429,12 +449,12 @@ struct OutboxQueueRow: View {
         case .stopped:
             Text(row.state.rawValue)
                 .font(CypressFont.mono11Bold)
-                .foregroundStyle(CypressColor.accentAmber)
+                .foregroundStyle(Self.terminalStateWordColor)
         case .retry:
             Button { onRetry?() } label: {
                 Text(row.state.rawValue)
                     .font(CypressFont.mono11Bold)
-                    .foregroundStyle(CypressColor.accentAmber)
+                    .foregroundStyle(Self.terminalStateWordColor)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
