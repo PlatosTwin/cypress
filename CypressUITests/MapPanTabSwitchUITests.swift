@@ -55,6 +55,17 @@ final class MapPanTabSwitchUITests: XCTestCase {
 
     private func value(_ control: XCUIElement) -> String { control.value as? String ?? "" }
 
+    /// The app-side trace `MapPanProbe` keeps, read the same way the recenter control's own state
+    /// is (task #241). `MapPanProbe.accessibilityIdentifier` in `MapAnnotationLayer.swift`,
+    /// literal here for the same reason `locationKey` above is: this target imports nothing from
+    /// `Cypress`. Never `nil` on a run that armed the probe — `launchCentered()` always does — so
+    /// a missing element is itself informative: the app was not built with the probe compiled in,
+    /// or `CYPRESS_PAN_PROBE` did not reach it.
+    private func probeSummary(_ app: XCUIApplication) -> String {
+        let probe = app.staticTexts["CypressPanProbe"]
+        return probe.exists ? probe.label : "(no CypressPanProbe element — is DEBUG/CYPRESS_PAN_PROBE set?)"
+    }
+
     /// Launches with a **pinned** fix, and waits for the opening camera to settle on the reader.
     ///
     /// It used to skip when the simulator had no fix to settle on — see `MissingPinnedFix` for why
@@ -63,6 +74,12 @@ final class MapPanTabSwitchUITests: XCTestCase {
     private func launchCentered() throws -> (XCUIApplication, XCUIElement) {
         let app = XCUIApplication()
         app.launchEnvironment[Self.locationKey] = Self.pinnedFix
+        // Armed unconditionally, not just while chasing task #241 locally: reading one more
+        // accessibility element costs nothing on a green run, and the next time this precondition
+        // fails — on CI, not on a Mac an agent is sitting at — `panUntilMoved`'s own `XCTFail`
+        // carries the trace instead of another investigation starting from zero. See `MapPanProbe`
+        // in `MapAnnotationLayer.swift` and `probeSummary(_:)` above.
+        app.launchEnvironment["CYPRESS_PAN_PROBE"] = "1"
         app.launch()
         let control = app.buttons[Self.controlLabel]
         XCTAssertTrue(
@@ -136,9 +153,17 @@ final class MapPanTabSwitchUITests: XCTestCase {
                 usleep(500_000)
             }
         }
+        // **The probe's summary goes in the failure message itself, not a side channel — task
+        // #241.** Two post-#230 CI occurrences of this exact failure said only "did not move the
+        // camera", which cannot tell "the drag never reached the map" (`panBegan=0`) from "it
+        // reached the map and something moved the camera back" (`panBegan>0`, a settle exists, and
+        // it landed back near the opening center). Reading `MapPanProbe`'s state through
+        // `probeSummary(_:)` means the *next* occurrence answers that question from its own
+        // `XCTFail` text, on CI, without anybody re-running anything.
         XCTFail(
             "panning the map did not move the camera off the reader (the control reads "
-                + "“\(value(control))”), so there is no deliberate camera to preserve"
+                + "“\(value(control))”), so there is no deliberate camera to preserve — probe: "
+                + probeSummary(app)
         )
     }
 
