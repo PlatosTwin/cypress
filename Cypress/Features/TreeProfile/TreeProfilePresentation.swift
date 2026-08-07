@@ -818,8 +818,8 @@ struct TreeProfilePresentation {
         return profile.careEvents.items.first { $0.id == item.id }?.capturedAt ?? .distantPast
     }
 
-    /// Everything after the bold `Visit`, separator included: the note the mock draws, and then
-    /// the observed states the visit recorded.
+    /// Everything after the bold `Visit`, separator included: the observed states the visit
+    /// recorded, then the note the mock draws.
     ///
     /// **Why the phenology belongs here and is not a new surface.** A TestFlight tester on build 18
     /// tagged a visit and asked where that goes; the answer was nowhere, because this line read the
@@ -830,14 +830,19 @@ struct TreeProfilePresentation {
     /// pattern applied to a field the row already had, not a section the mocks do not draw
     /// (DECISIONS constraint 21).
     ///
-    /// The composition is the one judgment call: note first, in the curly quotes the mock draws,
-    /// then the states after a second ` · `. That leaves the drawn row byte-identical for a visit
-    /// with a note and no tags, and appends rather than reorders. C9's body wraps — it carries no
-    /// line limit — so a long note cannot push the states out of sight.
+    /// **States before the note**, which is the one judgment call here and was settled by looking at
+    /// the row rather than by argument. It puts the structured vocabulary immediately after the bold
+    /// label on *both* kinds of row, so `Visit · leaf out, fruiting` and `Care · watered, mulched`
+    /// read as the same thing said about two contributions — the parallel is the whole reason this
+    /// slot was the right one. It also leaves the free text last, and the free text is the only part
+    /// whose length is unbounded: photographed the other way round, a note long enough to wrap left
+    /// a ` · ` orphaned at the head of the second line. Neither ordering is drawn — the mock never
+    /// puts both on one row — so this is decided here, and a designer may overrule it by swapping
+    /// two lines.
+    ///
+    /// A visit with a note and no states is byte-identical to the row SCREENS 03 §8 draws.
     static func visitDetail(note: String?, phenologyTags: [PhenologyTag]) -> String {
         var clauses: [String] = []
-        // The curly quotes are the mock's, carried verbatim.
-        if let note { clauses.append("“\(note)”") }
         if !phenologyTags.isEmpty {
             clauses.append(
                 VisitPhenologyVocabulary.order
@@ -846,6 +851,8 @@ struct TreeProfilePresentation {
                     .joined(separator: ", ")
             )
         }
+        // The curly quotes are the mock's, carried verbatim.
+        if let note { clauses.append("“\(note)”") }
         return clauses.isEmpty ? "" : " · " + clauses.joined(separator: " · ")
     }
 

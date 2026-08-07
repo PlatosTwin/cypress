@@ -29,7 +29,9 @@
 //
 
 import Foundation
+import SwiftUI
 import Testing
+import UIKit
 @testable import Cypress
 
 @Suite("Phenology observations reach the tree profile (build 18 feedback)")
@@ -124,12 +126,15 @@ struct PhenologyOnProfileTests {
 
     // MARK: - Composition
 
-    @Test("note and observation both appear, note first, each after its own separator")
+    /// Both clauses present, observation first — the position `Care · watered, mulched` puts its own
+    /// vocabulary in, and the position that keeps the unbounded free text last so a wrap lands
+    /// inside the note rather than orphaning a separator. See `visitDetail(note:phenologyTags:)`.
+    @Test("note and observation both appear, observation first, each after its own separator")
     func noteAndTagsCompose() {
         let subject = Self.presentation(
             visits: [Self.visit(note: "Fog dripping off the crown", tags: [.flowering])]
         )
-        #expect(subject.activity.first?.detail == " · “Fog dripping off the crown” · flowering")
+        #expect(subject.activity.first?.detail == " · flowering · “Fog dripping off the crown”")
     }
 
     /// The row SCREENS 03 §8 actually draws. It must not have moved.
@@ -233,3 +238,67 @@ struct PhenologyStageVocabularyTests {
         }
     }
 }
+
+// MARK: - Photographed
+
+#if DEBUG
+/// Screen 03 with the row this change adds, in four appearances.
+///
+/// A string assertion says the words are there; it cannot say that a note and an observation on one
+/// C9 row still read as one line rather than as a run-on, or that the pair survives AX5 in a row
+/// whose body has no line limit. That is the part of this only a person looking can settle, and this
+/// is how every other state on 03 gets looked at.
+///
+/// The tags are ones a Monterey Cypress can carry: it is `.evergreen`, so D5's exclusion means the
+/// write path would strip `fallColor` and `bare` from this very fixture
+/// (`PhenologyTag.validated(_:for:)`), and photographing a row the app cannot produce would be
+/// photographing nothing.
+@MainActor
+@Suite("Observations on the tree profile · photographed")
+struct PhenologyOnProfileShots {
+
+    /// `TreeProfileSeedFixtures.populated`, with observations added to the two visits it already
+    /// holds — one beside a note, one on its own, which are the two compositions.
+    private static var withObservations: TreeProfile {
+        let base = TreeProfileSeedFixtures.populated
+        var visits = base.visits.items
+        visits[0].phenologyTags = [.flowering]
+        visits[1].note = nil
+        visits[1].phenologyTags = [.leafOut, .fruiting]
+
+        return TreeProfile(
+            tree: base.tree,
+            activeName: base.activeName,
+            species: base.species,
+            neighborhoodName: base.neighborhoodName,
+            latestObservation: base.latestObservation,
+            photos: base.photos,
+            measurements: base.measurements,
+            visits: Series(complete: visits),
+            careEvents: base.careEvents,
+            ownPhotoIDs: base.ownPhotoIDs
+        )
+    }
+
+    @Test("03's activity feed carrying an observation beside a note, and one on its own")
+    func photograph() async {
+        print("SHOT DIR \(ScreenSweepShots.outputDirectory.path)")
+
+        // The feed sits below every other section on 03, so at AX5 a phone-height window
+        // photographs the hero and the name and never reaches the rows this is about — the same
+        // reason `11-growth-history` and `02b-add-tree` ask for the tall viewport.
+        #expect(await ScreenSweepShots.sweep(
+            "phen-03-profile-observations",
+            ax5ViewportHeight: ScreenSweepShots.tallestViewport
+        ) {
+            NavigationStack {
+                TreeProfileView(
+                    treeID: Self.withObservations.tree.id,
+                    api: TreeProfilePreviewAPI(profile: Self.withObservations)
+                )
+            }
+            .environment(AppRouter())
+        })
+    }
+}
+#endif
