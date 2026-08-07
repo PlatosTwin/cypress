@@ -64,8 +64,22 @@
 # `XCTAssert`s on literal `CGRect`s only, no `XCUIApplication` anywhere in the file. Placed on the
 # shortest line by class COUNT, since there is no per-class time to add it by — the rule above,
 # applied where the file's own numbers do not reach.
+#
+# `IdentifyFABReachabilityTests` (task #252) was added afterwards and has never been on CI. Its 2
+# tests took 12.3s (7.7s + 4.6s) in a class-only run on a local iPhone 16 Plus simulator, which is a
+# different machine and a different device from every number in the table above.
+#
+# Placed on the `DeepLinkVoiceOverTests` line, and here is the addition this file insists on. The
+# four lines, summed from the table: 332.6s, 350.1s, 344.8s, 344.5s. (Those reproduce the three
+# figures the notes above cite independently — 332.6s, 344.8s, and the SheetExit line's 327.0s
+# before `ReadingOrderAccessibilityTests` joined it — which is the only reason to trust the other
+# one.) The `DeepLinkVoiceOverTests` line is now the shortest at 332.6s, so 332.6 + 12.3 = 344.9s
+# and the pace-setter stays where it was, Shard 2 at 350.1s. Adding to the shortest line is what
+# minimizes the longest one, which is the whole point of the rule at the top of this file — and note
+# it is the same line the PR #14 review rejected for `ReadingOrderAccessibilityTests`. It was the
+# wrong line then and the right one now because the totals moved, not because the rule did.
 
-DeepLinkVoiceOverTests MapCenteredStateUITests FrameFinitenessGateTests
+DeepLinkVoiceOverTests MapCenteredStateUITests FrameFinitenessGateTests IdentifyFABReachabilityTests
 MapFilterAccessibilityTests AnonymizedPhotoNoticeUITests MapRecenterUITests PhotoBrowserReachabilityTests
 DeepLinkSweepTests PrimaryCTAReachabilityTests SheetHeightUITests AlmanacGroupTapTests
 SheetExitUITests MapSearchUITests MapSuggestionUITests MapPanTabSwitchUITests PhotoDeletionReachabilityTests AccessibilityTreeTests ReadingOrderAccessibilityTests
