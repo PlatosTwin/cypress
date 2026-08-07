@@ -818,8 +818,8 @@ struct TreeProfilePresentation {
         return profile.careEvents.items.first { $0.id == item.id }?.capturedAt ?? .distantPast
     }
 
-    /// Everything after the bold `Visit`, separator included: the observed states the visit
-    /// recorded, then the note the mock draws.
+    /// Everything after the bold `Visit`, separator included: the note the mock draws, then the
+    /// observed states the visit recorded.
     ///
     /// **Why the phenology belongs here and is not a new surface.** A TestFlight tester on build 18
     /// tagged a visit and asked where that goes; the answer was nowhere, because this line read the
@@ -830,19 +830,31 @@ struct TreeProfilePresentation {
     /// pattern applied to a field the row already had, not a section the mocks do not draw
     /// (DECISIONS constraint 21).
     ///
-    /// **States before the note**, which is the one judgment call here and was settled by looking at
-    /// the row rather than by argument. It puts the structured vocabulary immediately after the bold
-    /// label on *both* kinds of row, so `Visit · leaf out, fruiting` and `Care · watered, mulched`
-    /// read as the same thing said about two contributions — the parallel is the whole reason this
-    /// slot was the right one. It also leaves the free text last, and the free text is the only part
-    /// whose length is unbounded: photographed the other way round, a note long enough to wrap left
-    /// a ` · ` orphaned at the head of the second line. Neither ordering is drawn — the mock never
-    /// puts both on one row — so this is decided here, and a designer may overrule it by swapping
-    /// two lines.
+    /// **The note keeps the position the mock gives it**, and the states follow. This was decided on
+    /// the mock's own positioning, not on how the row happens to wrap: SCREENS 03 §8 draws
+    /// `**Visit** · “Fog dripping off the crown”`, so the note is the one clause the mock actually
+    /// places, and constraint 21's spirit is not to relocate what is drawn in order to make room for
+    /// what is not. Two things that are *not* reasons, recorded because both were argued and neither
+    /// survived: the parallel with `Care · watered, mulched` is weaker than it looks, because that
+    /// row has no free text competing for the slot — it compares the vocabulary against the row's
+    /// only content rather than two orderings of the same pair; and line-breaking does not
+    /// distinguish the orderings either, since whichever clause goes last can be left widowed
+    /// (` · ` heads the wrapped line for some note lengths in this order, and the note's first word
+    /// is stranded for others in the reverse one). A designer may overrule this by swapping two
+    /// lines.
     ///
-    /// A visit with a note and no states is byte-identical to the row SCREENS 03 §8 draws.
+    /// A visit with a note and no states is byte-identical to the row SCREENS 03 §8 draws, and one
+    /// with states and no note reads `Visit · flowering` either way round — which is the tester's
+    /// own case, and the common one.
+    ///
+    /// The empty-note guard is `MemorialCopy.visitDetail`'s, which builds the same row from the same
+    /// field on screen 15 and has always had it. Without it a stored `""` renders as a pair of curly
+    /// quotes around nothing. `VisitOutboxWriter.enqueue` cannot write one (`.nilIfBlank`), but a
+    /// decoded row can carry one, and two functions drawing one row should not disagree about it.
     static func visitDetail(note: String?, phenologyTags: [PhenologyTag]) -> String {
         var clauses: [String] = []
+        // The curly quotes are the mock's, carried verbatim.
+        if let note, !note.isEmpty { clauses.append("“\(note)”") }
         if !phenologyTags.isEmpty {
             clauses.append(
                 VisitPhenologyVocabulary.order
@@ -851,8 +863,6 @@ struct TreeProfilePresentation {
                     .joined(separator: ", ")
             )
         }
-        // The curly quotes are the mock's, carried verbatim.
-        if let note { clauses.append("“\(note)”") }
         return clauses.isEmpty ? "" : " · " + clauses.joined(separator: " · ")
     }
 

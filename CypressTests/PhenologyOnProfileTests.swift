@@ -15,17 +15,22 @@
 //  The fix is the mock's own pattern, not a new one. SCREENS 03 §8 draws two C9 rows:
 //  `Visit · “Fog dripping off the crown”` and `Care · watered, mulched`. The second is a C9 detail
 //  slot carrying a contribution's structured vocabulary as a comma-joined prose list — which is
-//  exactly what an observed-state list is. See `TreeProfilePresentation.visitDetail(note:
-//  phenologyTags:)`.
+//  exactly what an observed-state list is. The first places the note immediately after the label,
+//  which is why the states follow it rather than displace it. See
+//  `TreeProfilePresentation.visitDetail(note:phenologyTags:)`.
 //
-//  Two things this file guards that are easy to lose:
+//  Three things this file guards that are easy to lose:
 //
 //  - **The words.** DECISIONS constraint 15 forbids the app inventing botanical content, so the
 //    prose here is `PhenologyTagLabel`'s chip copy lowercased — the words the contributor tapped —
 //    and the six of them are pinned below by value. A seventh state, a rename or a reorder fails
 //    here before it reaches a screen.
 //  - **The drawn row.** A visit with a note and no tags must still render byte-for-byte what the
-//    mock draws.
+//    mock draws, and the note must keep the position the mock gives it.
+//  - **The empty note.** `MemorialCopy.visitDetail` draws this same row from this same field on
+//    screen 15 and has always guarded a stored `""`; this one did not, so a decoded blank rendered
+//    as curly quotes around nothing. The two now agree, and `emptyNoteRendersNothing` asserts it of
+//    both.
 //
 
 import Foundation
@@ -126,15 +131,30 @@ struct PhenologyOnProfileTests {
 
     // MARK: - Composition
 
-    /// Both clauses present, observation first — the position `Care · watered, mulched` puts its own
-    /// vocabulary in, and the position that keeps the unbounded free text last so a wrap lands
-    /// inside the note rather than orphaning a separator. See `visitDetail(note:phenologyTags:)`.
-    @Test("note and observation both appear, observation first, each after its own separator")
+    /// Both clauses present, note first — the position SCREENS 03 §8 draws it in
+    /// (`**Visit** · “Fog dripping off the crown”`). The states follow rather than displace it.
+    /// See `visitDetail(note:phenologyTags:)` for why, and for the two arguments that did *not*
+    /// decide it.
+    @Test("note and observation both appear, note first, each after its own separator")
     func noteAndTagsCompose() {
         let subject = Self.presentation(
             visits: [Self.visit(note: "Fog dripping off the crown", tags: [.flowering])]
         )
-        #expect(subject.activity.first?.detail == " · flowering · “Fog dripping off the crown”")
+        #expect(subject.activity.first?.detail == " · “Fog dripping off the crown” · flowering")
+    }
+
+    /// A stored empty note renders nothing rather than a pair of curly quotes around nothing.
+    ///
+    /// `MemorialCopy.visitDetail` builds the same row from the same field on screen 15 and has
+    /// always guarded this; the two disagreed until now. Asserted on both sides of the observation,
+    /// because the artifact is worse beside a real one: ` · “” · flowering` reads as a note the
+    /// contributor wrote and the app lost.
+    @Test("an empty note is not a pair of empty quotes, with or without an observation")
+    func emptyNoteRendersNothing() {
+        #expect(TreeProfilePresentation.visitDetail(note: "", phenologyTags: [.flowering]) == " · flowering")
+        #expect(TreeProfilePresentation.visitDetail(note: "", phenologyTags: []) == "")
+        // The function this guard was taken from, on the same input — the two now agree.
+        #expect(MemorialCopy.visitDetail(note: "") == "")
     }
 
     /// The row SCREENS 03 §8 actually draws. It must not have moved.
@@ -151,7 +171,12 @@ struct PhenologyOnProfileTests {
 
     /// The chip row is tapped in whatever order the contributor's eye moved; the profile reads as a
     /// year regardless. `VisitPhenologyVocabulary.order` is the app's existing seasonal order — the
-    /// same one screen 04 lays the chips out in — so this introduces no second ordering.
+    /// same array the app's own screen-04 chip row is built from, `VisitCameraModel` through
+    /// `VisitCameraView` — so this introduces no second ordering.
+    ///
+    /// Note that the `Care` row on this same feed does *not* do this: it renders `event.actions` in
+    /// stored order. The parallel this change rests on is about the detail slot's *shape*, and it
+    /// stops here. Closing that is filed separately and deliberately not done in this change.
     @Test("observations read in seasonal order however they were tapped")
     func tagsRenderInSeasonalOrder() {
         let tappedBackwards = Self.presentation(
