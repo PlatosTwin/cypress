@@ -206,47 +206,48 @@ extension DeepLinkHarness {
     /// once (task #245, family of E245/E245-tab-bar — the same transition-window race #243 closed for
     /// `check()`'s push-side tab-bar assertion).
     ///
-    /// **The race this closes, and why it needs its own witness rather than `waitForPushedScreenToArrive`'s.**
-    /// `arrive()`'s existence check is satisfied the instant the cover's own anchor text enters the
-    /// tree — and `BottomSheet` (`Cypress/DesignSystem/Components/BottomSheet.swift`) puts that text
-    /// in the tree from its very first frame, at `opacity(settled ? 1 : 0)` with `settled` starting
-    /// `false`: the anchor exists before the sheet has risen at all, not merely before it finishes
-    /// rising. A caller that checks the covered screen's tab bar for non-hittability immediately after
-    /// `arrive()` can catch that pre-rise instant, where the tab bar behind is still genuinely,
-    /// correctly hittable — a false failure, not a real one.
+    /// **The race this closes.** `arrive()`'s existence check is satisfied the instant the cover's own
+    /// anchor text enters the tree — and `BottomSheet` (`Cypress/DesignSystem/Components/BottomSheet.swift`)
+    /// puts that text in the tree from its very first frame, at `opacity(settled ? 1 : 0)` with
+    /// `settled` starting `false`: the anchor exists before the sheet has risen at all, not merely
+    /// before it finishes rising. A caller that checks the covered screen's tab bar for
+    /// non-hittability immediately after `arrive()` can catch that pre-rise instant, where the tab bar
+    /// behind is still genuinely, correctly hittable — a false failure, not a real one.
     ///
-    /// A push has an outgoing screen that is known-hittable at the moment the push starts, so waiting
-    /// for it to go *not* hittable is a safe positive-turned-negative signal (`waitForPushedScreenToArrive`).
-    /// A `fullScreenCover` has no such known-hittable predecessor to watch depart — 09 and 10 draw no
-    /// close button, so the only thing to wait on is the cover itself arriving. Per `UIWait.swift`'s
-    /// own rule, that has to be a positive wait: `BottomSheet` names its scrim "Dismiss"
-    /// (`accessibilityAddTraits(.isButton)`, hidden only when there is no dismissal to offer) exactly
-    /// so VoiceOver has a named way out, and it is present and traited as a button as soon as the cover
-    /// mounts — so waiting for it to become *hittable* is a direct read of "the cover has risen and
-    /// scrim hit-testing is live," true only once `settled` has actually flipped. Once this returns,
-    /// a one-shot `isHittable` check on the screen behind is reading a settled frame rather than a
-    /// mid-animation one.
+    /// **The first witness tried here was wrong, not merely early — worth recording so it is not
+    /// tried again.** A push has an outgoing screen known-hittable at the moment the push starts, so
+    /// `waitForPushedScreenToArrive` waiting for it to go *not* hittable is safe. Reaching for the
+    /// same shape on the cover side, this waited for `BottomSheet`'s named "Dismiss" scrim control to
+    /// become hittable instead. Red-proofed clean in isolation, it then failed twice for real —
+    /// once in a full-suite run, once alone — always the same way: `"Dismiss"` sat present and never
+    /// hittable for the entire 30s. Not a race: `BottomSheet`'s file header says why — a full-height
+    /// `.standard` card leaves only the ~62pt status-bar strip of scrim exposed (`SheetExitUITests`'s
+    /// header calls the reachable sliver "~8pt"), so the scrim's own center — where `XCUIElement
+    /// .isHittable` samples — sits under the opaque card for the entire life of the cover. VoiceOver's
+    /// own traversal reaches "Dismiss" without hit-testing it (see the drag-zone comment in
+    /// `BottomSheet.swift`); `XCUIElement.isHittable` has no such exemption, so this witness can be
+    /// permanently false on a screen with no accessibility defect at all.
+    ///
+    /// **The witness actually used:** the same one `SheetExitUITests.waitForTitle` already uses for
+    /// these two screens — `settledFrame` on the cover's own anchor text. Unlike the scrim, the title
+    /// is drawn as ordinary card content, on top, not covered by anything; `settledFrame` first
+    /// confirms it is reachable (present *and* hittable) and then that its frame has stopped moving,
+    /// which is true only once the rise animation has actually finished. Once this returns, a one-shot
+    /// `isHittable` check on the screen behind is reading a settled frame rather than a mid-animation
+    /// one.
     @discardableResult
     func waitForCoverToArrive(
         _ app: XCUIApplication,
         screen: String,
+        anchor: String,
         file: StaticString = #filePath,
         line: UInt = #line
     ) -> Bool {
-        let dismiss = app.buttons["Dismiss"]
-        let arrived = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "exists == true AND hittable == true"), object: dismiss
-        )
-        guard XCTWaiter.wait(for: [arrived], timeout: 30) == .completed else {
-            XCTFail(
-                "\(screen): the cover's own \"Dismiss\" scrim control never became hittable within "
-                    + "30s — this is still the pre-rise frame rather than the settled cover the test "
-                    + "asked for",
-                file: file, line: line
-            )
-            return false
-        }
-        return true
+        let title = app.staticTexts
+            .matching(NSPredicate(format: "label BEGINSWITH %@", anchor))
+            .firstMatch
+        _ = settledFrame(title, "\(screen): the cover's own \"\(anchor)\" title", file: file, line: line)
+        return title.exists && title.isHittable
     }
 
     /// No interactive element anywhere in the tree may be unlabeled.
