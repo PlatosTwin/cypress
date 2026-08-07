@@ -35,6 +35,14 @@ import XCTest
 /// it can route around**, so the occlusion is asserted directly, as rectangles that must not
 /// intersect. Reachability is asserted too, and is now a claim worth making rather than a coin
 /// toss.
+///
+/// **And the frames are read without waiting on hittability** — `settledFrame(…,
+/// requireHittable: false)`. The first version of this file did wait, and a full-suite run on a
+/// loaded machine caught it: `settledFrame` on the recenter control spent 30 s waiting for a
+/// hittability that never came and reported *that*, where the two rectangles it was about to
+/// compare were sitting there readable the whole time. Hittability is the thing an occlusion
+/// removes, so a guard against occlusion cannot be allowed to depend on it. The reachability claim
+/// is made by its own test, once, where a 30 s wait is the point rather than an obstacle.
 final class IdentifyFABReachabilityTests: XCTestCase {
 
     override func setUp() {
@@ -135,12 +143,14 @@ final class IdentifyFABReachabilityTests: XCTestCase {
 
         let fabFrame = settledFrame(
             app.buttons[Self.fabLabel],
-            "the identify control (“\(Self.fabLabel)”), at AX5 with location denied"
+            "the identify control (“\(Self.fabLabel)”), at AX5 with location denied",
+            requireHittable: false
         )
 
         let legendFrame = settledFrame(
             container(app, Self.legendLabel),
-            Self.legendDescription
+            Self.legendDescription,
+            requireHittable: false
         )
         XCTAssertFalse(
             fabFrame.intersects(legendFrame),
@@ -150,19 +160,18 @@ final class IdentifyFABReachabilityTests: XCTestCase {
                 + "two blocks apart (task #252)"
         )
 
-        // Read AFTER the legend assertion, deliberately. `settledFrame` waits on hittability, so
-        // reading this frame earlier lets the recenter control's own reachability decide the run:
-        // red-proving the assertion below with a wide FAB/recenter overlap produced exactly that —
-        // the test went red on "the recenter control … never became hittable" rather than on the
-        // overlap it exists to catch. Reading it last keeps each assertion answerable on its own.
-        //
-        // What this ordering is NOT known to do is rescue the legend assertion above. That claim
-        // was made for the chip row in PR #51 and that PR's review refuted it by measurement on a
-        // 402 pt iPhone 16 Pro. It is a cheap guard against a coupling observed once, in one
-        // direction — not a property any device has demonstrated for anything but the recenter.
+        // PR #51 read this frame last, and argued in a comment that the order was load-bearing:
+        // `settledFrame` waited on hittability, so reading the recenter control earlier let its own
+        // reachability decide the run — a red-proof of the assertion below went red on "the
+        // recenter control … never became hittable" instead of on the overlap. **The order is no
+        // longer load-bearing, because the coupling it worked around is gone**: every read in this
+        // test passes `requireHittable: false`, so no measurement can be blocked by an occlusion,
+        // which is the one thing these assertions exist to find. Kept in this order only because a
+        // reader meets the neighbors in the order the screen stacks them.
         let recenterFrame = settledFrame(
             app.buttons[Self.recenterLabel],
-            "the recenter control (“\(Self.recenterLabel)”)"
+            "the recenter control (“\(Self.recenterLabel)”)",
+            requireHittable: false
         )
         XCTAssertFalse(
             fabFrame.intersects(recenterFrame),
@@ -190,11 +199,13 @@ final class IdentifyFABReachabilityTests: XCTestCase {
 
         let legendFrame = settledFrame(
             container(app, Self.legendLabel),
-            Self.legendDescription
+            Self.legendDescription,
+            requireHittable: false
         )
         let recenterFrame = settledFrame(
             app.buttons[Self.recenterLabel],
-            "the recenter control (“\(Self.recenterLabel)”)"
+            "the recenter control (“\(Self.recenterLabel)”)",
+            requireHittable: false
         )
         XCTAssertLessThanOrEqual(
             legendFrame.maxY,
