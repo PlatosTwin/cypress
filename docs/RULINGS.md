@@ -4376,9 +4376,6 @@ DECISIONS constraint 21 forbids.
 
 ### R56 — American spellings: what the guard checks, and what it cannot (task #140)
 
-*Pending. Cite this file as `docs/rulings-pending/american-spelling-guard.md` until the orchestrator
-splices a number; #140 delegated the guard's shape and scope.*
-
 #### The ruling
 
 **One named word list, `BritishSpelling.forms` in `CypressTests/BritishSpellingGuardTests.swift`, is
@@ -5420,3 +5417,387 @@ Red-proved: with the `ScrollView`/`.frame(maxHeight:)` wrapper removed from `Map
 (returning the plain `card` unconditionally), `mapLocationNoticeScrollsWhenOfferedLessThanItNeedsAtAX5`
 failed with `(bounded.height → 357.0) <= (budget + tolerance → 179.5)` — the card reported its full,
 unbounded height regardless of the budget it was given — then the wrapper was restored.
+
+### R66 — `MapLayout.locateButtonHeightAX5` and `.fabHeightAX5` are corrected to the bare footprints ERRATA E243 measured (owner ruling, 2026-08-06, task #246)
+
+**The owner ruled, 2026-08-06, verbatim: "correct them."**
+
+ERRATA E243 (task #30) found that `MapLayout.locateButtonHeightAX5 = 98` and `.fabHeightAX5 = 137`
+were never measurements of `MapRecenterButton` and `IdentifyFAB` — each was the control's real AX5
+footprint (44 pt and 83 pt) plus the 54 pt top safe-area inset that `AX5ReflowTests.ax5Size`'s
+measuring window inherited from whichever simulator it happened to run on. That entry fixed the
+test harness (`ax5Size` now subtracts the inherited inset, making the measurement
+device-independent) but left the two shipped constants untouched, on the reasoning that they feed
+`bottomSlotReservedAboveAX5` → `MapLayout.noticeMaxHeight(availableHeight:)`, which
+`MapLocationNotice`'s AX5 scroll budget documents itself as deliberately conservative rather than
+exact (RULINGS R53 §6). E243 flagged, but declined to take, the ~108 pt of scroll budget the
+over-reservation was costing the notice, calling correcting the constants downward "a decision for
+the owner, not for a ticket about a red simulator."
+
+**This ruling answers that open question, for these two constants specifically: correct them.**
+This supersedes R53 §6's conservative stance *only* for `locateButtonHeightAX5` and `.fabHeightAX5`
+— nothing else R53 §6 or E183 §2 established about the notice's scroll behavior, or about
+`MapLocationNotice` scrolling rather than growing off the screen (RULINGS R65), changes.
+
+**What changed** (`Cypress/Features/Map/MapKitBasemap.swift`):
+- `locateButtonHeightAX5`: `98` → `CypressSpacing.minTapTarget` (`44`). `MapRecenterButton` is a
+  fixed `minTapTarget` square and measures exactly that at `.accessibility5`, device-independently
+  — asserted by `AX5ReflowTests.bottomChromeControlsFitTheReservedBudgetAtAX5`.
+- `fabHeightAX5`: `137` → `83`, `IdentifyFAB`'s real AX5 footprint, measured through
+  `AX5ReflowTests.ax5Size` after E243's fix to that helper, device-independently on both the
+  iPhone 16 Pro and the iPhone 16e. Verified directly for this ruling by temporarily setting
+  `fabHeightAX5` to `1` and reading the resulting `AX5ReflowTests` failure message:
+  `(fab.height → 83.0) <= (MapLayout.fabHeightAX5 → 1.0)`.
+
+`bottomSlotReservedAboveAX5` and `noticeMaxHeight(availableHeight:)` are unchanged in shape — they
+still sum the same six terms — but now sum to a smaller number, so `MapLocationNotice` at AX5
+renders taller before it must scroll, on every one of the five call sites that pass a budget
+through `MapHomeView`.
+
+**Comments corrected**, not merely the numbers: the doc comments on both constants used to explain
+the 98 and 137 as (in one case) iOS growing the control's minimum hit target across the
+accessibility range, and (in both) a deliberately-left margin over the real footprint. Neither
+claim was true before this ruling and neither is repeated after it — the comments now say what
+E243 measured and cite it, without naming any document that has not been numbered yet.
+
+**Tests.** `AX5ReflowTests.bottomChromeControlsFitTheReservedBudgetAtAX5`'s two `<=` guards (kept
+as `<=`, not tightened to `==`, so a control that grows past its reservation in the future still
+fails loudly) and its exact `recenter.height == CypressSpacing.minTapTarget` check all pass
+unmodified against the corrected constants — they were already written against the bare footprints,
+not the old inflated numbers. Red-proofed by temporarily adding `.padding(.top, 10)` to
+`IdentifyFAB`'s body (inflating its real AX5 footprint to 93 pt, past the corrected 83 pt
+reservation) and rerunning: one issue, on the intended expectation —
+`Expectation failed: (fab.height → 93.0) <= (MapLayout.fabHeightAX5 → 83.0)` — restored, green
+again.
+
+Full `CypressTests`: `Test run with 1256 tests in 124 suites passed`. Full `CypressUITests`, iPhone
+16 Pro Max `DE8E11AE-4375-4C3B-A296-9B60A7DF1DB3`: `** TEST SUCCEEDED **`,
+`Executed 92 tests, with 0 failures`, `XCTest skipped=0`. Warnings certified on a fresh
+DerivedData build-for-testing (`Tools/verify_test_log.sh --warnings`): `SwiftCompile tasks=438`,
+`source=0` warnings, `files-checked=2` (both changed files actually compiled).
+
+**On the running screen**, AX5, `CYPRESS_LOCATION=denied` (screen 01's longest standing notice):
+with the old constants the notice's visible body text ran seven lines before the card's bottom
+edge; with the corrected constants the same notice, same device, same launch state, ran ten to
+eleven lines before the same cutoff — more of the sentence readable without scrolling, which is the
+108 pt of budget this ruling gives back. **Both figures are this ruling's change in isolation.**
+Task #250's `topChromeReservedAX5(topInset:)`, below, subtracts `topInset + 157` from that same
+budget — more than the 108 this ruling adds — so the *shipped* notice at AX5 scrolls sooner than it
+did before either change (six lines, measured in review). The errata entry cited next carries that
+arithmetic and its receipts. See
+ERRATA **E248** for a discovered side
+effect of the larger notice: in that same denied-location state, the recenter control (first in
+`bottomChrome`'s stack, so pushed furthest by the taller notice below it) lost hittability,
+occluded by the filter chip row above it — an existing, separately-documented overlap
+(`MapHomeView.chrome`'s own comment on the top/bottom chrome blocks overlapping "at accessibility
+sizes, where they already did") that this ruling's correction measurably worsened for this one
+control, in this one state. That was not a defect in what this ruling asked for — the two constants
+say what E243 measured, exactly, and are untouched by what follows.
+
+**Task #250 fixed the reachability question, in the same PR, rather than leaving it for a separate
+ticket as first planned.** `MapLayout.noticeMaxHeight` gained a second reservation
+(`topChromeReservedAX5(topInset:)`) for the room the search bar and filter chip row need, so the
+notice's AX5 budget stops short of where the recenter control would rise back into that chrome. The
+two constants this ruling corrected (`locateButtonHeightAX5`, `.fabHeightAX5`) are unchanged by
+that fix. See the errata entry above for the mechanism and the receipts.
+
+### R67 — The one thing R41's carve-out now holds: an empty `Needs care` map says so, once (task #247)
+
+**Owner instruction, verbatim, 2026-08-06:**
+
+> Leave as is, but we can add a quick and light pop-up toast or the like (as long as it dismisses
+> quick and doesn't pollute the map permanently) that says no trees need care.
+
+## What this decides, and what it deliberately leaves alone
+
+R41 is categorical — "no message ever accompanies a filter", its test being *"does text appear
+because a filter did something?"* — and it names exactly one permitted form for anything judged
+genuinely essential: a **single-dismiss popup**, "shown once, dismissed with one tap, never
+recurring for the same cause, never persistent on the glass". R41 then judged that nothing in the
+product qualified.
+
+The owner has now judged that one state does, and has chosen a briefer form than the one R41
+sanctioned: the popup dismisses itself rather than waiting for a tap. **That is the owner refining
+their own ruling**, so no delegated authority is being used here and R41's carve-out is not being
+read down by anyone.
+
+**"Leave as is" is the first half of the instruction and it binds.** Task #165's settlement stands
+untouched — "if nothing matches, fine", the empty map is the whole answer, and the `Clear filters`
+chip is the way out. Nothing about the filter row, the chips, or the empty-map behavior changes.
+E205's audit of the filter surfaces stays clean.
+
+## The state, exactly
+
+E244 is what made this state reachable. Until #240 the two condition chips did nothing at all to a
+clustered map — the predicate was applied to the pins already fetched, and at zoom ≤ 15 there are
+no pins to apply it to. E244 moved both into the `WHERE` clause, so `Needs care` now empties the
+map honestly. It closed with the product question open in its own words: "whether `Needs care` is
+worth a chip at all while the seed carries zero `declining` rows is a product question this task
+did not answer". This is the owner's answer: keep the chip, and say the one thing the empty screen
+means.
+
+`MapNeedsCareToast.isOwed` opens on four facts and nothing else:
+
+1. the whole `MapFilter` equals `.needsCare` — the chip on and **nothing else narrowing anything**;
+2. the search bar is off;
+3. the last read did not throw (`MapInventoryNotice.isOwed`'s argument, and E126's);
+4. the map has **zero markers** to draw — `markerCount`, so cluster badges count, which is the
+   whole of E244.
+
+**Condition 1 is an honesty gate, not merely a scoping one.** `Needs care` beside a decade draws an
+empty map for a reason nobody can attribute: a tree on this block may well need care and simply not
+have been planted in the 2010s. "No trees need care" would then claim more than the query asked. The
+sentence is true of exactly one query, so it is shown for exactly that query — which also means
+`In bloom`, `Yours`, `Favorites`, `Year`, `Site` and the legend species all keep R41's silence,
+enforced by `CypressTests/MapNeedsCareToastTests`.
+
+## The copy
+
+> **No trees need care**
+
+The owner's own words with a capital and nothing added. It carries no count (R41 names a count among
+the surfaces forbidden beside a filter), no "here" (that would be a claim about the ground rather
+than the record — the distinction `MapInventoryCopy` spends its comment on), and no explanatory
+second clause about what `declining` means or why the inventory holds none, which would be invented
+prose under DECISIONS constraint 15. **Flagged for the owner's approval in the PR; it is close to
+their own sentence and they hold the veto.**
+
+## The re-arm rule, which is the half the instruction is really about
+
+**One activation of the chip, one answer.** The gate is armed when `Needs care` is switched on, and
+disarmed by the first read that *finishes* after that — with trees, with nothing, **or with an
+error** — whether or not it produced a toast. Any other change to the filter, and any change to the
+search, takes a toast already up off the screen.
+
+**A press whose read failed has had its answer, and the answer was the error state.** This was
+missed on the first pass and found in review of PR #46: the disarm was reached only from `fetch()`'s
+success path, so a read that threw left the arm live indefinitely, and the next unrelated successful
+read — a plain pan, chip untouched, screens and minutes later — collected it and posted the toast.
+The sentence then answered the pan rather than the press, which is precisely the pollution this rule
+exists to prevent, reached through a transient network failure instead of directly.
+`noteReadFinished` is called from all three terminal paths now; `isOwed`'s `!readFailed` guard is
+what stops the failed read from *also* showing something, which is "a failed read is not an empty
+answer" (E126) applied to the arm as well as to the gate.
+
+**A cancelled read is deliberately not a finished one.** Every cancellation in `fetch()` means a
+newer fetch has already superseded it, so the press's answer is the read that actually lands. An
+answer spends the press; being overtaken does not.
+
+The alternative — post whenever the state holds — fires on every pan and every zoom across an empty
+filtered map. That is a toast that never stops arriving, which is the permanent pollution the
+instruction excludes in its own words. What is left is a toast that is the **answer to the press**:
+the reader asked what needs care around here, and the map answers once. Panning afterwards is a new
+question about the ground, not a second press of the chip, and the empty map is already its whole
+answer (task #165).
+
+## The form
+
+- **Three seconds**, then it removes itself. The owner asked for "quick" and for something that
+  "dismisses quick" and named no number; three seconds is the smallest commitment that satisfies
+  both halves. `MapModel.defaultNeedsCareToastDuration` is the one place a later ruling changes it.
+- **In the flow, immediately under the filter chips** — not an overlay over the map. It therefore
+  cannot cover the chips, the legend, or anything in the bottom block at ordinary sizes, and the
+  argument is `MapSuggestionList`'s one control up: an overlay leaves what it covers reachable by an
+  assistive technology and invisible to everyone else.
+- **It takes no touches** (`allowsHitTesting(false)`). There is nothing to press — the dismissal is
+  time — so a pan that starts on those few points still pans the map.
+- **Announced.** `MapHomeView` posts it as an `AccessibilityNotification.Announcement`, the same
+  mechanism the recenter control and `VisitPinAdjustView`'s nudge pad use: it reports without
+  stealing focus. The card also stays a real element in the tree for the reader sweeping the chrome
+  inside that window.
+- **Reduce Motion switches the fade off** rather than shortening it, through `cypressAnimation`.
+
+## What it costs at AX5, stated rather than glossed
+
+Photographed on the running app (iPhone 16e, 390 pt) at `accessibility5`: the toast is one line, it
+sits under the chip row, and it draws over part of the `What tree is this?` FAB for its three
+seconds. **That collision is pre-existing and this takes no new ground.** At AX5 the bottom block has
+already climbed into the chip row — the recenter control sits behind the `Needs care` chip and the
+FAB behind the row above it — which is the E183 §2 family, an open defect, and R53 §6 is the owner
+ruling that governs that slot. The species legend chip occupies *exactly* the same band permanently
+today; the toast borrows it for three seconds. Widening the fix to the bottom block's AX5 layout
+would be taking a design decision this task has no standing to take (constraint 21).
+
+## Not taken
+
+- **No general toast mechanism.** `MapToast` has one caller and its own comment says why it must
+  keep one: R41 is categorical precisely because each previous filter message "survived under a
+  different mechanism". Whether any other state deserves this form is the owner's, not a
+  precedent set here.
+- **No tap-to-dismiss and no queue.** Neither is in the instruction and both are surface nobody
+  asked for.
+
+## What holds it
+
+`CypressTests/MapNeedsCareToastTests` — eleven tests, six on the gate (including one that fails if
+any other narrowing can open it), one on the words, four driving the real `MapModel` through the
+real fetch path for the arming, the auto-dismissal, the re-arm rule, and a read that throws. Every answer comes from a fake
+API, so **nothing here depends on the shipped seed's zero `declining` rows staying zero.** Section 4
+of `CypressUITests/MapFilterAccessibilityTests` carries a note recording that R41's structural guard
+does not drive the one narrowing that produces this, and what a fourth case added there must expect.
+
+### R68 — Task #14's four residual design questions, decided (closes the design half of E85, E60, E119/E122)
+
+**2026-08-06.** Four questions that were design's to answer. A design agent measured each on the
+real app and the real seed and wrote them up as options with renders and computed ratios
+(`docs/design-proposals/2026-08-06-task14.md`, on the throwaway branch `design/14-proposals`,
+which is a camera rig and whose code ships nothing). The project owner read that document and
+answered, verbatim:
+
+> all of these look fine. go with your recommended options in each case
+
+That is the delegation this entry records, and the four recommendations below are what it approved.
+A fifth item — an AA failure the rig found on the way, ticket #249 — was approved in the same
+sentence and is recorded here too, because it changes what a screen draws.
+
+**What kind of entry this is.** Everything in `ERRATA.md` is a conflict found between documents that
+already existed. This is the other kind: a decision made where the documents said nothing, under
+authority that was granted rather than assumed. It follows R1's own distinction, carried from E8 —
+a **transcribed** value may not be changed, a **derived** value may be corrected, and an
+**overruled** value was already answered and is being changed anyway under a delegation. Two values
+here are overruled; nothing else in the palette moves.
+
+---
+
+### 1 — Screen 17's dark amber comes apart into two rungs (item 1a; closes E85's first question)
+
+**The question, as E85 put it:** C24's border, the state word and the tile glyph all collapse onto
+the single `#D99A4E` the dark palette gives amber, so the card, its word and its glyph become one
+hue at one weight.
+
+It is worse than E85 stated. Screen 17 draws **four** distinct ambers in light — `#EBD3A8` pill
+border, `#B8803A` card border (R1 darkened that one deliberately), `#B4711F` state word, `#8A5A17`
+reason line and glyph — and **one** after dark. The render is the argument: in dark the terminal
+card's *border* was the loudest thing on the screen, louder than any word on it, where in light it
+is quieter than the text it surrounds.
+
+**The ruling: one new dark amber, `#A2670D`, and it is for boundaries only.**
+`amberAttentionCardBorder` and `amberPillBorder` take it after dark. Every amber **mark** — the
+state word, the reason line, the tile glyph, the pill text — stays at `#D99A4E`, exactly where E8's
+derivation put it.
+
+`#A2670D` is a lightness-only move in OKLCh from `dark.accent.amber` `#D99A4E` — R1's method and the
+E120 precedent, run downward instead of up:
+
+```
+#D99A4E   L 0.7328   C 0.1193   H 69.11°
+#A2670D   L 0.5648   C 0.1189   H 69.35°      ΔL −0.168   ΔC −0.0004   ΔH +0.24°
+```
+
+Chroma and hue are held to 0.0004 and a quarter of a degree, so no hue enters the palette — the
+discipline R7 and E8 both keep. The lightness is chosen so the dark border lands on **3.39:1**
+against `surface.card`, the *same* ratio R1 chose for the light border, so the boundary reads at one
+strength in both appearances.
+
+| Pair | Light | Dark, before | Dark, now |
+|---|---|---|---|
+| C24 border on the card it identifies | 3.39 | 6.57 | **3.39** |
+| C24 border on the page behind it | 3.12 | 7.55 | **3.90** |
+| amber pill border on its fill | 1.28 | 6.11 | **3.15** |
+| state word / reason line / tile glyph | — | 6.57 / 6.57 / 6.11 | *unchanged* |
+
+WCAG 1.4.11's 3.0 floor binds on all three, for the reason R1 already established for C24:
+`surface.card` on `surface.screen` is 1.09:1, so the border is the only thing distinguishing the
+card. The light pill border is left at `#EBD3A8` / 1.28 — a pill is identified by its fill and its
+label, which is the same reading that leaves `amberChipSelectedBorder` where R1 found it.
+
+**What was declined, and why it is worth recording.** The three-rung alternate also moved the state
+word, to `#C18436`. It mirrors light's ordering exactly, and it costs a brand hue: the state word is
+`accentAmber`, Signal Amber, which also draws the amber map pin, and moving its dark value takes
+that pin from 7.08:1 to 5.40:1 on the dark map paper. A brand hue does not change on a screen nobody
+asked about. The "do nothing" alternate was also on the table and is genuinely defensible — every
+dark amber pair already cleared AA, so the collapse cost hierarchy and not accessibility.
+
+### 2 — Screen 16's 56 pt readout is left exactly as it is (item 1b; closes E85's second question)
+
+**The question:** the largest single piece of type in the app had never been looked at after dark.
+
+**Looked at. It holds, and nothing changes.** Dark reads 15.03:1 against light's 13.77:1 — a 9%
+difference, with *dark* the stronger, which is the halation worry stated as a number. Both proposed
+corrections were worse than the complaint. Dimming to light parity (`#DBE1D9`) is ΔE **0.029** in
+OKLab from the shipped value: above E8's 0.02 "the designer already wrote this color" threshold and
+far below its 0.05 rejection tolerance, which is to say it buys a new token for a move nobody can
+see. Dropping to the documented `text.body` dark rung makes the readout **quieter than the keypad
+digits below it**, and the subject of a screen must not be the dimmest thing on it.
+
+And the structural cost either way: `text.ink` is a **transcribed** D2 value, so changing it for one
+call site means overruling the designer app-wide or minting a screen-16-only ink token. For 0.029 in
+OKLab, neither. **No code changes for this item** — it is recorded so the question is closed rather
+than merely unasked.
+
+### 3 — Screen 10's link becomes a full-width row, and unclamps at accessibility sizes (item 2; closes E60's layout half)
+
+**The question:** E60 recorded that the mock's four-hex slug cannot name one of 195,309 trees, so
+the card renders the tree's own UUID, and 36 characters of mono 10.5 do not fit the drawn card
+beside a 72 pt thumbnail.
+
+**What the rig found changes the shape of the answer.** The string is `cypress.app/sf/tree/` plus a
+36-character UUID — **56 characters** — and the card's *full inner width* holds about 48 at the
+drawn size. **No two-column arrangement makes it one line.** Widening the text column is not the
+fix; giving two lines a place to live is.
+
+**And at accessibility sizes it was not wrapping at all — it was truncating to nothing.**
+`lineLimit(2)` in a column that narrow yielded `cypress.app/sf/tree/0…`: the reader got **none** of
+the identifier, which is precisely the outcome E60 says is worse than extra lines, happening today.
+
+**The ruling: 10a, plus releasing the line limit above the accessibility threshold.** Row 1 is the
+thumb beside name + location + strip, exactly as drawn. Row 2 is the link, at the card's full inner
+width, below both. **No new token and no new spacing** — `ShareMetrics.urlTop` (6) is the gap and
+`ShareMetrics.cardPadding` (14) the inset, both already this string's own. At AX5 the whole link now
+renders over several lines with no ellipsis, which is the only arrangement in which somebody at AX5
+can read or type it at all — E60's own reason for refusing to truncate it.
+
+The two alternates both kept the wrap where it was: indenting the row to the text column leaves the
+thumb's 72 pt of gutter unused, and sending the strip wide as well costs vertical space for a
+different benefit.
+
+**The short public slug is still open and is still the owner's.** E60 named it — a base32 of the id
+would restore the single line at any type size — and it changes the app's **public identifier**,
+against DECISIONS §2.5's commitment to "stable citable tree UUIDs". Nothing here touches it.
+
+### 4 — The vacant-site almanac tile is redrawn as the empty well (item 3; closes E119/E122's treatment half)
+
+**What was still open.** E122 closed the *contrast* half of this tile by swapping base and highlight.
+It did not touch the *treatment*: the tile was still a 34 pt rounded square with a radial-gradient
+blob at 45%/42%, which is the **same drawing** as the five living-tree tiles beside it, differing
+only in color. ROADMAP §1's decision on vacant sites is "a distinct planting-site state, **not** a
+variant of the tree profile", and R7/E119/E123 gave that state a drawn vocabulary everywhere else —
+the map pin, 14's empty photo well, the site screen, `LocationPrompt`. The almanac tile was the one
+member still wearing the tree's clothes.
+
+**The ruling: 12a — the empty well, at tile size.** `surfaceEmptyThumb` under a dashed
+`borderDashedStrong` edge, the exact treatment those three call sites already draw, at 34 pt. **No
+new token and no new hue**, and off the map a dashed frame is what this family already speaks: E119
+chose a *solid* ring for the map pin only because on the map dashes mean the community layer
+(DECISIONS §3.16), and screen 12 has no community layer.
+
+The alternate — the map pin's hollow ring, so the almanac row and the pin are literally the same
+mark — has cross-surface consistency in its favor and loses on legibility of kind: at 34 pt a ring
+can read as a bullet or a status dot, where a dashed frame can only read as an empty place.
+
+**On contrast, so it is not asked.** No C10 tile clears 3:1 against its card and none is meant to —
+`elder`'s base is 1.18:1 and the vacant mark 1.64:1, the same house-style band as `border.cool` at
+1.15:1 that `ContrastTests.knownFailures` already records. This is a treatment question. It does,
+however, close a *rendering* problem E122 only half-fixed; that half is an ERRATA matter and is
+written up in ERRATA **E249**.
+
+### 5 — Ticket #249: 17's state word moves at the call site, and Signal Amber is not touched
+
+Approved in the same sentence. The `retry` / `stopped` state word is `accentAmber` `#B4711F` at mono
+11 pt **bold** on `surface.card`: **3.95:1**, against a 4.5 floor, because WCAG's large-text
+exemption starts at 18 pt regular or 14 pt bold and 11 pt bold is neither.
+
+**The ruling: change what the screen draws, not what the token is.** The word is drawn in
+`amberChipSelectedText` `#8A5A17` — **5.91:1** on the card, and already the color of the reason line
+directly beneath it. Signal Amber is a brand hue with a reserved meaning (§1.1) that also draws the
+amber map pin; retinting it to clear a text floor on screen 17 would move a mark on screen 01. The
+finding itself is an ERRATA matter and is written up with the entry above.
+
+---
+
+**Where these landed.** `amberAttentionCardBorder` and `amberPillBorder` are now `overruled` in
+`CypressColor`, both listed in `overruledTokens` with their measured before/after, and both swatches
+updated in `TokenGallery`. The three boundary ratios and the marks that did not move are pinned in
+`ContrastTests`; the two call-site decisions (#249's color, screen 12's drawing) are pinned as values
+in `Task14DrawingDecisionTests`, because a contrast pin cannot see either. Screen 10's line-limit
+decision is `ShareMetrics.urlLineLimit(isAccessibilitySize:)`, pinned in `AX5ReflowTests`.
