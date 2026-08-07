@@ -159,9 +159,12 @@ struct LineChart: View {
                 .padding(.bottom, 4)
                 // Furniture, not prose — the same call, and the same cap, as the twelve month
                 // letters under `ChartMonthAxis` below. These four years mark x positions in the
-                // plot directly above them: unclamped they need 356 pt on a 329 pt plot, so the
-                // row wrapped and `2019` was drawn as `201` over `9` — a year reading as two
-                // numbers, marking nothing. Guarded by
+                // plot directly above them: unclamped the four labels measure 356 pt, and this row
+                // adds the 4 pt of horizontal padding above each side, so the row needs 364 pt on a
+                // 329 pt plot. It wrapped, and `2019` was drawn as `201` over `9` — a year reading
+                // as two numbers, marking nothing. (356 is the labels alone, 364 what the row asks
+                // for; either exceeds 329, so the conclusion never turned on which, but the first
+                // draft of this comment quoted the labels' figure as the row's.) Guarded by
                 // `AX5ReflowTests.theGrowthChartsYearAxisStaysOnOneLineAtAX5`.
                 .cypressTypographicFurniture()
             }

@@ -134,7 +134,8 @@ struct AX5ReflowTests {
         - 2 * CypressSpacing.Component.chartPaddingH
 
     /// The axis labels mark x positions in the plot above them, so a year that wrapped marks
-    /// nothing: at AX5 four unclamped years needed 356 pt of a 329 pt plot and the row broke
+    /// nothing: at AX5 four unclamped years measure 356 pt, and their row adds 4 pt of horizontal
+    /// padding each side, so it needs 364 pt of a 329 pt plot and broke
     /// `2019` into `201` over `9`. One line for four labels is the property — measured as "four
     /// labels are no taller than one", so the guard names the wrap rather than a pixel count.
     @Test("the growth chart's year axis stays on one line at AX5")

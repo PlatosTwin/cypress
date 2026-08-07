@@ -91,6 +91,22 @@ the drawn size — roughly double, which is the point of the cap being where it 
 file (`11-growth-history-{light,dark}.png`, `13-activity-{light,dark}.png`) are **byte-identical**
 before and after the change, MD5-compared across the two runs.
 
+**That comparison is only sound because it was controlled, and the technique does not generalize —
+read this before reusing it.** This PR's review produced an accidental same-tree control: a sweep run
+that turned out not to have recompiled (`SwiftCompile tasks=0`, so the binary was unchanged) was
+compared against another run of the same tree, and **23 of the 235 renders differed**. The sweep is
+not byte-deterministic run to run. Byte-identity across a *widened* set would therefore report
+differences that are noise, and a future round that MD5s the whole sweep will generate false
+positives.
+
+What makes the claim above safe is not MD5 by itself but the pairing: the four named files were
+confirmed *individually* deterministic under the same-tree control, and screen 11's AX5 legs differ
+under the change while staying stable under that control — so the delta is attributable to the change
+rather than to the sweep. Any future use of this technique needs the control first, on exactly the
+files it intends to compare. Note also which artifact supplied that control: a build that compiled
+nothing is precisely what E203 makes `verify_test_log.sh --warnings` refuse to certify a warning count
+from, and it was still the only thing that made this result trustworthy.
+
 **One judgment call, flagged rather than buried.** Capping a *value* label is a stronger claim than
 capping a divider: `47 cm` and `64` are content, not furniture, even though their placement is.
 The argument for it is that neither number is only there — `LineChart.accessibilityLabel` speaks
