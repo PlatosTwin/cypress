@@ -50,8 +50,9 @@ import XCTest
 /// existing class. `Tools/ui-test-shards.txt` carries this class's own measured runtime.
 ///
 /// **`debugDescription` is composition order, and that is now measured rather than suspected.** The
-/// map test below records what E230 found; the erratum filed with the coverage extension pushes it
-/// further — the query engine under both binding strategies, the snapshot's own `children` arrays
+/// map test below records what E230 found; **E230's amendment**, written with the three screens
+/// added below, pushes it further — the query engine under both binding strategies, the snapshot's
+/// own `children` arrays
 /// and `.children(matching:)` walked level by level all report the same order, and a purely
 /// geometric inversion (an element drawn 125 pt higher, composition untouched) moves none of them.
 /// Nothing this target can call sees a computed reading order, so every assertion in this file is

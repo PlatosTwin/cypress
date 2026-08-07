@@ -7,8 +7,8 @@
 //  ── The gap this closes, and the much larger one it does not ────────────────────────────────────
 //  Task #143 declared screen 01's swipe order with `accessibilitySortPriority` (E192's fix note).
 //  E230 then found that `debugDescription`'s element order does not move under that modifier, so
-//  nothing in `CypressUITests` verifies the mechanism. The pending erratum filed with this ticket
-//  extends that measurement to every ordering API the black-box target can reach — the query
+//  nothing in `CypressUITests` verifies the mechanism. **E230's amendment**, written with this
+//  test, extends that measurement to every ordering API the black-box target can reach — the query
 //  engine under both binding strategies, the snapshot's own `children` arrays, and
 //  `.children(matching:)` walked level by level — and finds the same thing for a stronger reason:
 //  every one of them reports raw view-composition order. Measured on the 16e, a purely GEOMETRIC
