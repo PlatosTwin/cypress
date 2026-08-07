@@ -157,6 +157,13 @@ struct LineChart: View {
                 .padding(.top, 2)
                 .padding(.horizontal, 4)
                 .padding(.bottom, 4)
+                // Furniture, not prose — the same call, and the same cap, as the twelve month
+                // letters under `ChartMonthAxis` below. These four years mark x positions in the
+                // plot directly above them: unclamped they need 356 pt on a 329 pt plot, so the
+                // row wrapped and `2019` was drawn as `201` over `9` — a year reading as two
+                // numbers, marking nothing. Guarded by
+                // `AX5ReflowTests.theGrowthChartsYearAxisStaysOnOneLineAtAX5`.
+                .cypressTypographicFurniture()
             }
         }
     }
@@ -252,26 +259,74 @@ struct LineChart: View {
         return "Growth plot. " + clauses.joined(separator: ". ") + "."
     }
 
+    /// Where the baseline label's *center* sits, in plot coordinates. The label is placed with
+    /// `.position`, so half of its own width extends to either side of this x — which is the whole
+    /// of what `AX5ReflowTests.theBaselineChartLabelStaysInsideItsCardAtAX5` checks.
+    static func baselineLabelCenterX(scale: CGFloat) -> CGFloat {
+        CypressSpacing.Component.chartGridlineX0 * scale + 16
+    }
+
     @ViewBuilder
     private func labels(scale: CGFloat) -> some View {
         if let latestLabel, let last = points.max(by: { $0.x < $1.x }) {
-            Text(latestLabel)
-                .font(CypressFont.mono13SemiBold)
-                .foregroundStyle(CypressColor.textInk)
+            ChartPlotLabel(latestLabel, role: .latest)
                 .position(
                     x: viewBox.width * scale - 14,
                     y: point(last, scale: scale).y
                 )
         }
         if let baselineLabel {
-            Text(baselineLabel)
-                .font(CypressFont.mono10)
-                .foregroundStyle(CypressColor.textFaint)
-                .position(
-                    x: CypressSpacing.Component.chartGridlineX0 * scale + 16,
-                    y: 92
-                )
+            ChartPlotLabel(baselineLabel, role: .baseline)
+                .position(x: Self.baselineLabelCenterX(scale: scale), y: 92)
         }
+    }
+}
+
+/// A value annotation drawn *inside* C23's plot box — the latest reading beside the last point
+/// (`64`), the oldest under the first (`47 cm`).
+///
+/// Furniture, not prose, for the reason C19's pin count is: both are placed by `.position` at a
+/// plot coordinate, inside a box whose height is the mock's drawn 100 pt at every text size (the
+/// header note above), so the layout around them cannot reflow to make room. Unclamped at AX5 the
+/// baseline label measured 111 pt wide against a center 26 pt from the plot's leading edge and was
+/// drawn 13.5 pt outside the card, over the page behind it.
+///
+/// Nothing is lost by the cap: the plot speaks both ends of every series through
+/// `LineChart.accessibilityLabel`, and screen 11 lists every reading underneath at full scale.
+struct ChartPlotLabel: View {
+
+    enum Role {
+        case latest
+        case baseline
+
+        var font: Font {
+            switch self {
+            case .latest: return CypressFont.mono13SemiBold
+            case .baseline: return CypressFont.mono10
+            }
+        }
+
+        var color: Color {
+            switch self {
+            case .latest: return CypressColor.textInk
+            case .baseline: return CypressColor.textFaint
+            }
+        }
+    }
+
+    let text: String
+    let role: Role
+
+    init(_ text: String, role: Role) {
+        self.text = text
+        self.role = role
+    }
+
+    var body: some View {
+        Text(text)
+            .font(role.font)
+            .foregroundStyle(role.color)
+            .cypressTypographicFurniture()
     }
 }
 
