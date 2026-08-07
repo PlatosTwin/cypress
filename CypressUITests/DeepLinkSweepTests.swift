@@ -145,6 +145,17 @@ final class DeepLinkSweepTests: XCTestCase, DeepLinkHarness {
     /// "stable" — see `frameHasSettled` in `UIWait.swift`. Read once per element and cached, not
     /// once per pair compared, so the nested loop below does not re-wait for the same element's
     /// frame on every label it happens to share.
+    ///
+    /// **The per-element budget matches every other hittability wait in the suite (30s), not the 5s
+    /// this shipped with (task #244).** The settle-or-finite treatment above was already correct —
+    /// it is not what failed. Main run 31096120555's `ui (3)` attempt 1 (tree 73b4850) failed exactly
+    /// here: `treeProfile`'s static text #5 ("DBH, 30–35 cm, from the city record") sat in the tree,
+    /// present, for longer than 5s without becoming hittable, on a runner sharing load across four
+    /// classes in the same shard. `assertReachable`'s own doc comment gives the reason every other
+    /// call site in the suite already uses the generous ceiling: it "costs nothing when the element
+    /// is reachable" and only extends how long a genuine defect takes to report. Nothing this method
+    /// asserts is weakened by the larger ceiling — a static text that never becomes hittable still
+    /// fails, just not on a budget this method's own six-launches-per-run cost was never sized against.
     func testNothingIsAnnouncedTwice() {
         continueAfterFailure = true
         defer { continueAfterFailure = false }
@@ -159,7 +170,7 @@ final class DeepLinkSweepTests: XCTestCase, DeepLinkHarness {
             let texts = app.staticTexts.allElementsBoundByIndex.filter { $0.isHittable }
             let frames = texts.enumerated().map { index, element in
                 settledFrame(
-                    element, "\(screen)'s static text #\(index) (“\(element.label)”)", timeout: 5
+                    element, "\(screen)'s static text #\(index) (“\(element.label)”)", timeout: 30
                 )
             }
 
