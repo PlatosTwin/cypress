@@ -53,29 +53,76 @@ struct MapSpeciesLegend: View {
     /// legend renders the selection as well as setting it.
     @Binding var selection: UUID?
 
-    private var named: [MapSpeciesPalette.Entry] {
+    /// **The entries this view actually draws**, which is not the same as `palette.entries` — a slot
+    /// whose species name has not arrived yet draws nothing (see this file's header).
+    ///
+    /// `static`, because `MapHomeView` has to reserve room for exactly the chips that will be drawn
+    /// and there must be one definition of which those are (task #258). A second copy of this filter
+    /// in the reservation would be a rule the two could disagree about, and the disagreement would
+    /// show up as the legend covering the identify FAB — the defect the reservation exists for.
+    static func named(in palette: MapSpeciesPalette) -> [MapSpeciesPalette.Entry] {
         palette.entries.filter { $0.name?.isEmpty == false }
     }
 
+    private var named: [MapSpeciesPalette.Entry] { Self.named(in: palette) }
+
+    /// **The ceiling this legend may grow to before it scrolls rather than pushing the chrome below
+    /// it off the screen** (task #258). `nil` for every caller that is not screen 01 — the same
+    /// bargain `MapLocationNotice.maxHeight` makes with the same slot's other occupant.
+    ///
+    /// It is a **backstop, and on every device this app is tested on it does not bind.**
+    /// `MapLayout.legendMaxHeight` gives the legend everything it asks for wherever the screen has
+    /// the room, so the rendering at both the default size and AX5 on a 402 pt or 430 pt phone is
+    /// byte-for-byte the wrapped `FlowRow` it has always been. What it changes is the case that has
+    /// no good answer: a short phone at an accessibility size, where the search bar, the chip row,
+    /// four wrapped legend chips, the recenter control and the FAB together want more than the glass
+    /// has. Something has to yield there, and it must not be the FAB — that control is screen 01's
+    /// only entrance to the visit flow, and the legend covering it is the whole of #258.
+    ///
+    /// The legend is what yields, for the reason RULINGS R53 §6 gave when it made the same call for
+    /// the notice: scrolled content is reachable and covered content is not. Every chip stays
+    /// pressable, which matters twice over here because the legend is also the species filter
+    /// (#116).
+    var maxHeight: CGFloat?
+
     var body: some View {
         if !named.isEmpty {
-            // Wraps rather than scrolls. Four common names can be long ("Brisbane Box", "New Zealand
-            // Christmas Tree") and a horizontal scroller on top of a map is a gesture competing with
-            // the pan underneath it — the one interaction screen 01 cannot afford to make ambiguous.
-            FlowRow(spacing: MapLayout.chipGap, lineSpacing: MapLayout.chipGap) {
-                ForEach(named) { entry in
-                    Button {
-                        selection = selection == entry.speciesID ? nil : entry.speciesID
-                    } label: {
-                        chip(entry)
-                    }
-                    .buttonStyle(.plain)
-                    .cypressHitArea()
+            if let maxHeight {
+                ScrollView {
+                    chips
                 }
+                .frame(maxHeight: maxHeight)
+                // Vertical only, and load-bearing for "unchanged where there is room": without it a
+                // legend well under its ceiling sits in a tall, mostly empty scroll well instead of
+                // hugging its own rows. `MapLocationNotice` and `MapSuggestionList` carry it for
+                // exactly this reason.
+                .fixedSize(horizontal: false, vertical: true)
+            } else {
+                chips
             }
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel(MapSpeciesLegendCopy.rowLabel)
         }
+    }
+
+    private var chips: some View {
+        // Wraps rather than scrolls *horizontally*. Four common names can be long ("Brisbane Box",
+        // "New Zealand Christmas Tree") and a horizontal scroller on top of a map is a gesture
+        // competing with the pan underneath it — the one interaction screen 01 cannot afford to
+        // make ambiguous. The vertical ceiling above is a different question and a different axis:
+        // it competes with nothing, because the rows it would scroll are rows the reader could not
+        // otherwise see at all.
+        FlowRow(spacing: MapLayout.chipGap, lineSpacing: MapLayout.chipGap) {
+            ForEach(named) { entry in
+                Button {
+                    selection = selection == entry.speciesID ? nil : entry.speciesID
+                } label: {
+                    chip(entry)
+                }
+                .buttonStyle(.plain)
+                .cypressHitArea()
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(MapSpeciesLegendCopy.rowLabel)
     }
 
     private func chip(_ entry: MapSpeciesPalette.Entry) -> some View {

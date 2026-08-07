@@ -30,11 +30,16 @@ import XCTest
 /// everywhere except a band reports reachable exactly when the sampling happens to find the band.
 /// The green runs were the luck, not the red ones.
 ///
-/// The fix is in `MapLayout.noticeMaxHeight` and `MapHomeView.topChromeBottom`. What this file
-/// takes from the episode is that **a hittability check cannot be relied on to report an occlusion
-/// it can route around**, so the occlusion is asserted directly, as rectangles that must not
-/// intersect. Reachability is asserted too, and is now a claim worth making rather than a coin
-/// toss.
+/// The fix is `MapLayout.legendReserved` and `.noticeMaxHeight`, which split the room below the
+/// filter chip row between the legend and the notice instead of giving all of it to the notice.
+/// **It is arithmetic on the palette rather than a measurement of the rendered block**, and this
+/// file is the only thing that can catch it being wrong: the first repair measured the top block's
+/// real bottom edge and handed it back through `@State`, which froze on roughly one launch in
+/// eight — the `GeometryReader` computing the right number while `onChange` never fired for the
+/// last transition. What this file takes from the episode is that **a hittability check cannot be
+/// relied on to report an occlusion it can route around**, so the occlusion is asserted directly,
+/// as rectangles that must not intersect. Reachability is asserted too, and is now a claim worth
+/// making rather than a coin toss.
 ///
 /// **And the frames are read without waiting on hittability** — `settledFrame(…,
 /// requireHittable: false)`. The first version of this file did wait, and a full-suite run on a
@@ -157,7 +162,7 @@ final class IdentifyFABReachabilityTests: XCTestCase {
             "the identify control \(fabFrame) overlaps the species legend \(legendFrame) — the top "
                 + "chrome is drawn over the bottom chrome, so this is the control covered rather "
                 + "than merely crowded, and `MapLayout.noticeMaxHeight` is no longer holding the "
-                + "two blocks apart (task #252)"
+                + "two blocks apart (tasks #252, #258)"
         )
 
         // PR #51 read this frame last, and argued in a comment that the order was load-bearing:
@@ -214,7 +219,9 @@ final class IdentifyFABReachabilityTests: XCTestCase {
                 + "\(recenterFrame.minY) — the top block is drawn over the bottom one, so every "
                 + "point of that overlap is a control the reader cannot see or press. "
                 + "`MapLayout.noticeMaxHeight` is reserving less than the top chrome actually "
-                + "occupies, which is what it does when it is given a measurement of 0 or none"
+                + "occupies — either `legendChipHeightAX5` no longer bounds one legend chip, or "
+                + "something new has been added to the top block below the chip row without a "
+                + "reservation of its own (task #258)"
         )
     }
 }
