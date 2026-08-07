@@ -243,7 +243,7 @@ struct AX5ReflowTests {
     // MARK: - RULINGS R53 §6's AX5 ruling (owner decision 2026-08-05) · MapLocationNotice scrolls rather than overflows
 
     /// `MapLayout.locateButtonHeightAX5` and `.fabHeightAX5`, the inputs to
-    /// `noticeMaxHeight(availableHeight:topInset:)`, are what the bottom slot reserves for the two
+    /// `noticeMaxHeight(availableHeight:topInset:topChromeBottom:chromeHeight:)`, are what the bottom slot reserves for the two
     /// controls stacked above the notice. Guarded here so a control that outgrows its reservation fails
     /// loudly instead of quietly under-reserving the notice's scroll budget.
     ///
@@ -296,7 +296,7 @@ struct AX5ReflowTests {
     // MARK: - Task #250 · The top chrome's own reservation
 
     /// `MapLayout.searchBarHeightAX5` and `.chipRowHeightAX5` are the inputs to
-    /// `topChromeReservedAX5(topInset:)`, which `noticeMaxHeight(availableHeight:topInset:)`
+    /// `topChromeReservedAX5(topInset:)`, which `noticeMaxHeight(availableHeight:topInset:topChromeBottom:chromeHeight:)`
     /// subtracts so the recenter control — first in `bottomChrome`'s bottom-anchored stack — cannot
     /// rise above the filter chip row's own bottom edge no matter how tall the notice below it
     /// grows. Guarded the same way `bottomChromeControlsFitTheReservedBudgetAtAX5` guards the other
