@@ -52,12 +52,18 @@ final class IdentifyFABReachabilityTests: XCTestCase {
     /// `MapRecenterCopy.label`.
     private static let recenterLabel = "Center the map on you"
 
-    /// `MapFilterCopy.rowLabel` — the chip row's own named accessibility group.
-    private static let chipRowLabel = "Filter trees"
-
     /// `MapSpeciesLegendCopy.rowLabel`. **The last child of the top-anchored block**, and therefore
     /// the one whose bottom edge is that block's bottom edge — which is the whole of #252.
     private static let legendLabel = "Species shown in color on this map"
+
+    /// What an absent legend means, said in the failure rather than left for the next agent to work
+    /// out. `MapSpeciesLegend` "draws nothing when it has colored none", so the only way it is
+    /// missing is that screen 01's opening camera is showing no trees — E216's geometry, which
+    /// `Tools/run_tests.sh`'s camera preflight heals and stamps in the `CYPRESS-RUN` header. It is
+    /// the same standing assumption `AlmanacGroupTapTests` makes when it waits for tree pins.
+    private static let legendDescription =
+        "the species legend (“\(legendLabel)”) — absent only when the opening camera is showing no "
+            + "trees at all, which is a device-state question (E216) and not a layout one"
 
     /// AX5 with location denied. Denied is the state that puts the *longest* of the three standing
     /// sentences (`MapLocationCopy.message`) into the notice slot, which is what drives the shared
@@ -104,16 +110,26 @@ final class IdentifyFABReachabilityTests: XCTestCase {
     /// and #252 is the record of a control that was covered for 83 % of its own area and reported
     /// reachable in four runs out of six. Two rectangles either intersect or they do not.
     ///
-    /// Three neighbors, each read immediately before the assertion that uses it so that a failure
+    /// Two neighbors, each read immediately before the assertion that uses it so that a failure
     /// names the pair it is about:
     ///
     /// - the **species legend**, the last child of the top-anchored block, which is drawn *over*
     ///   this one (`MapHomeView.chrome` applies the bottom block first, deliberately) and whose
     ///   height at AX5 is a function of how many species the visible camera has colored;
-    /// - the **filter chip row**, anchored to the top of the same block and growing down;
     /// - the **recenter control**, immediately above this one in the same bottom-anchored `VStack`
     ///   and the first thing pushed into it when the notice below claims more room than
     ///   `MapLayout.bottomSlotReservedAboveAX5` reserved.
+    ///
+    /// **The filter chip row is deliberately not a third**, and it was, in PR #51's version of this
+    /// file. With the legend present its rectangle lies strictly between this control and the chip
+    /// row — measured on an iPhone 16 Pro at AX5: chip row `y 158.33–218`, legend `y 230–492.67` —
+    /// so no geometry reaches the chip row without crossing the legend first, and the assertion
+    /// could never be the one that fires. Nor could it be red-proved for its own reason: lifting the
+    /// bottom block the 430 pt needed to put the FAB on the chip row puts the chip row *over* the
+    /// FAB, and the run then dies on this control's own hittability instead. An assertion that
+    /// cannot be driven red is not a guard. The pair it was standing in for —
+    /// `MapRecenterUITests.testTheRecenterControlClearsTheFilterChipRowAtAX5WithLocationDenied` —
+    /// is guarded, on another shard, for the control immediately above this one.
     func testTheFABClearsTheChromeAroundItAtAX5WithLocationDenied() {
         let app = launchAtAX5Denied()
 
@@ -124,7 +140,7 @@ final class IdentifyFABReachabilityTests: XCTestCase {
 
         let legendFrame = settledFrame(
             container(app, Self.legendLabel),
-            "the species legend (“\(Self.legendLabel)”)"
+            Self.legendDescription
         )
         XCTAssertFalse(
             fabFrame.intersects(legendFrame),
@@ -134,27 +150,16 @@ final class IdentifyFABReachabilityTests: XCTestCase {
                 + "two blocks apart (task #252)"
         )
 
-        let chipRowFrame = settledFrame(
-            container(app, Self.chipRowLabel),
-            "the filter chip row (“\(Self.chipRowLabel)”)"
-        )
-        XCTAssertFalse(
-            fabFrame.intersects(chipRowFrame),
-            "the identify control \(fabFrame) overlaps the filter chip row \(chipRowFrame) — the "
-                + "top chrome now reaches down into the control's own space, which is how a control "
-                + "ends up present in the tree and not hittable (E248)"
-        )
-
-        // Read AFTER the assertions above, deliberately. `settledFrame` waits on hittability, so
+        // Read AFTER the legend assertion, deliberately. `settledFrame` waits on hittability, so
         // reading this frame earlier lets the recenter control's own reachability decide the run:
         // red-proving the assertion below with a wide FAB/recenter overlap produced exactly that —
         // the test went red on "the recenter control … never became hittable" rather than on the
         // overlap it exists to catch. Reading it last keeps each assertion answerable on its own.
         //
-        // What this ordering is NOT known to do is rescue the two assertions above. That was the
-        // comment's first claim in PR #51, and that PR's review refuted it by measurement on a
+        // What this ordering is NOT known to do is rescue the legend assertion above. That claim
+        // was made for the chip row in PR #51 and that PR's review refuted it by measurement on a
         // 402 pt iPhone 16 Pro. It is a cheap guard against a coupling observed once, in one
-        // direction — not a property any device has demonstrated for the chip row or the legend.
+        // direction — not a property any device has demonstrated for anything but the recenter.
         let recenterFrame = settledFrame(
             app.buttons[Self.recenterLabel],
             "the recenter control (“\(Self.recenterLabel)”)"
@@ -185,7 +190,7 @@ final class IdentifyFABReachabilityTests: XCTestCase {
 
         let legendFrame = settledFrame(
             container(app, Self.legendLabel),
-            "the species legend (“\(Self.legendLabel)”)"
+            Self.legendDescription
         )
         let recenterFrame = settledFrame(
             app.buttons[Self.recenterLabel],
