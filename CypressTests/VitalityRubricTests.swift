@@ -244,20 +244,34 @@ struct VitalityRubricTests {
                 "SCREENS 05 \u{a7}3's rubric table has no row for level \(level); it parsed as \(screens)"
             )
 
-            let coda =
-                "Ticket #261 landed one rubric in three places on purpose \u{2014} whichever is "
-                + "right, they cannot differ."
-            let productDrift =
-                "level \(level) (\(vitality.label)): PRODUCT \u{a7}3 has drifted from the shipped "
-                + "copy. PRODUCT says \u{201c}\(inProduct)\u{201d}; Vitality.anchor says "
-                + "\u{201c}\(shipped)\u{201d}. \(coda)"
-            let screensDrift =
-                "level \(level) (\(vitality.label)): SCREENS 05 \u{a7}3 has drifted from the "
-                + "shipped copy. SCREENS says \u{201c}\(inScreens)\u{201d}; Vitality.anchor says "
-                + "\u{201c}\(shipped)\u{201d}. \(coda)"
+            // Which source moved is decided by the majority, not by treating one as the base: two
+            // sources agreeing against a third is what identifies the third. "They disagree" is not
+            // actionable when there are three of them, and the whole ruling is that there is one
+            // rubric.
+            let culprit: String
+            switch (inProduct == shipped, inScreens == shipped, inProduct == inScreens) {
+            case (true, true, _):
+                culprit = ""
+            case (false, false, true):
+                culprit = "**Vitality.anchor has drifted from both documents.**"
+            case (false, true, _):
+                culprit = "**PRODUCT \u{a7}3 has drifted from the other two.**"
+            case (true, false, _):
+                culprit = "**SCREENS 05 \u{a7}3 has drifted from the other two.**"
+            default:
+                culprit = "**All three disagree**, so this is not one edit going astray."
+            }
 
-            #expect(inProduct == shipped, "\(productDrift)")
-            #expect(inScreens == shipped, "\(screensDrift)")
+            let message =
+                "level \(level) (\(vitality.label)): \(culprit)\n"
+                + "  Vitality.anchor: \u{201c}\(shipped)\u{201d}\n"
+                + "  PRODUCT \u{a7}3:      \u{201c}\(inProduct)\u{201d}\n"
+                + "  SCREENS 05 \u{a7}3:   \u{201c}\(inScreens)\u{201d}\n"
+                + "Ticket #261 landed one rubric in these three places on purpose, closing a fork "
+                + "that had stood since the handoff \u{2014} whichever of them is right, they "
+                + "cannot differ."
+
+            #expect(inProduct == shipped && inScreens == shipped, "\(message)")
         }
     }
 
