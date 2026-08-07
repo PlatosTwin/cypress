@@ -38,10 +38,16 @@ Two notes on the tooling itself, both deliberate:
   command asks for its fields by name and `email` is not among them, so it cannot reach a CI
   artifact that anyone with repo access can download for months. The opaque tester relationship id
   is kept instead, which is enough to tell testers apart and to tie several reports to one person.
-  Verified on the real artifact: zero `@` characters in the JSON.
+  Verified on the real artifact: zero `@` characters in the JSON. The address is also never
+  *fetched*: `include` asks only for `build`, because an included `betaTesters` resource carries
+  `email` too, and the tester id the command wants is in `relationships.tester.data.id` without it.
+  Not asking is structural where filtering afterwards is a promise.
 - **The screenshots are downloaded, not just linked.** Apple serves them from pre-signed URLs that
   expire — the two here expire 2026-08-14 — so a JSON kept for comparison would point at nothing
-  within the week. The images travel in the artifact and the JSON records the expiry.
+  within the week. The images travel in the artifact and the JSON records the expiry. The download
+  is `https`-only, size-capped, and writes to a filename this program constructs from a sanitized
+  id: the id, the URL and the body all come from the network, and none of them may decide what CI
+  reads off disk or where it writes.
 
 ## The feedback, and what it is
 
@@ -59,11 +65,18 @@ includes the glyph box and SwiftUI's `.lineSpacing()` is only the gap added betw
 
     lineSpacing ≈ size × (lineHeight − 1.2)
 
-All four tokens defined there obey it exactly — 15/1.55 → 5.25, 13.5/1.50 → 4.05, 12.5/1.45 →
-3.125, 11.5/1.30 → 1.15. SCREENS 04 gives the caption mono 10.5px at `line-height:1.4`, which
-converts to **2.1**. `VisitMetrics.Camera.ghostCaptionLineSpacing` was **4.2** — `10.5 × 0.4`, the
-same arithmetic with the `− 1.2` dropped, and so double the leading the mock asks for. It has held
-that value since the M0 walking-skeleton commit and was never revisited.
+Its four numeric tokens obey it exactly — 15/1.55 → 5.25, 13.5/1.50 → 4.05, 12.5/1.45 → 3.125,
+11.5/1.30 → 1.15. (`speciesHero` and `treeNameHero` are clamped to 0: their mock line-heights are
+*tighter* than the natural box, so the formula would go negative. They sit outside the rule by
+their own documented intent, not in violation of it.) SCREENS 04 gives the caption mono 10.5px at
+`line-height:1.4`, which converts to **2.1**. `VisitMetrics.Camera.ghostCaptionLineSpacing` was
+**4.2** — `10.5 × 0.4`, which is the subtraction performed with the **wrong constant**: the font's
+natural line box taken as 1.0 instead of 1.2, and so double the leading the mock asks for.
+
+Worth being precise about, because the obvious gloss is wrong and this sentence is what a future
+engineer meets when the test goes red: the `− 1.2` did not go *missing*. Dropping it altogether
+would give `10.5 × 1.4 = 14.7`, not 4.2. The value has held 4.2 since the M0 walking-skeleton
+commit and was never revisited.
 
 Because the caption's `max-width:80px` wraps this string to four lines, the error was multiplied
 across three gaps: 6.3pt of extra stack, and a column that reads as four separately floating words
@@ -85,12 +98,14 @@ There are three ways out and all three are the owner's call, not a branch's:
 3. leave it, on the grounds that the mock's own string stacks three lines deep on purpose and a
    fourth is within the drawn intent.
 
-Worth noting that the project has already ruled on this exact geometry once, in the other
-direction: R14 drops the `max-width:80px` at accessibility sizes precisely because the cap
-"is the one part of it the type ramp cannot survive — at AX5 it is a column of single stacked
-syllables". The tester is reporting a milder form of the same symptom at the default type size,
-caused by a longer string rather than by the ramp. The principle for dropping the cap therefore
-exists; whether it extends to the default size is a design decision.
+Worth noting that the project has already dropped this cap once, in the other direction. SCREENS
+04's accessibility variant — headed "(R14; …)", so the drop happens under R14's authority, though
+R14 itself rules on the viewfinder floor and the scrolling controls and never mentions the caption
+— says at `docs/distilled/SCREENS.md:839–840` that the cap "is the one part of it the type ramp
+cannot survive — at AX5 it is a column of single stacked syllables". The tester is reporting a
+milder form of the same symptom at the default type size, caused by a longer string rather than by
+the ramp. The precedent for dropping the cap therefore exists; whether it extends to the default
+size is a design decision.
 
 **Proposed ticket.** *Decide the ghost caption's no-ghost treatment.* Where:
 `VisitMetrics.Camera.ghostCaptionMaxWidth` and `VisitCameraModel.ghostCaption`
@@ -118,12 +133,17 @@ is the owner's. Verification depends entirely on which is chosen.
 
 ## One thing found while checking, unrelated to the feedback
 
-`VisitMetrics.Saved.footnoteLineSpacing` is `6.5`. SCREENS gives that footnote 13.5px at
-`line-height:1.5`, which is exactly the spec of `CypressFont.LineSpacing.body135` — the token the
-same view already uses for the font itself, whose value is `4.05`. So the constant both deviates
-from the documented conversion and duplicates a token that already holds the right answer. Same
-defect class as the caption, different screen, no tester report attached; left alone here rather
-than widened into an unreviewed sweep of every bespoke leading in the app.
+`VisitMetrics.Saved.footnoteLineSpacing` is `6.5`. SCREENS (`docs/distilled/SCREENS.md:1352`)
+gives that footnote `line-height:1.5`; the 13.5px is not stated there but comes from the view's own
+`.cypressBody135(...)` at `VisitSavedView.swift:240`. The conversion therefore gives `4.05`, which
+is exactly `CypressFont.LineSpacing.body135` — and `.cypressBody135(...)` *already applies* it. So
+line 241 overrides a correct value with a wrong one, and the honest fix is to delete the modifier
+rather than edit the constant.
+
+This is **not** the caption's arithmetic repeated: the 1.0-line-box slip would give `13.5 × 0.5 =
+6.75`, not 6.5. The two are the same defect class only in the loose sense of deviating from the
+documented conversion. Different screen, no tester report attached, and a fix that changes a screen
+nobody complained about — tracked as ticket #257 rather than folded in here.
 
 ## What the API cannot tell us
 

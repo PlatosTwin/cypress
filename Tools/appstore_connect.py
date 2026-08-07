@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -93,7 +94,13 @@ def call(method: str, path: str, bearer: str, body: dict | None = None) -> dict:
     try:
         return request_json(method, path, bearer, body)
     except urllib.error.HTTPError as error:
-        detail = error.read().decode(errors="replace")[:2000]
+        # Guarded for the same reason `try_call` guards it: a 429 can arrive with no readable
+        # body, and an unguarded `.read()` then raises out of `tempfile` — turning a clean
+        # "HTTP 429" exit into a traceback, in the release workflow's `next-build-number`.
+        try:
+            detail = error.read().decode(errors="replace")[:2000]
+        except Exception:
+            detail = "(no body)"
         fail(f"{method} {url} -> HTTP {error.code}\n{detail}", 4)
     except urllib.error.URLError as error:
         fail(f"{method} {url} -> {error.reason}", 4)
@@ -286,15 +293,18 @@ def cmd_status() -> None:
 #   GET /v1/apps/{id}/customerReviews                     the public store reviews, if any
 #   GET /v1/apps/{id}/appStoreVersions                    only to say whether reviews CAN exist
 #
-# Both feedback collections take include=build,tester, sort=-createdDate, limit<=200, and carry
+# Both feedback collections accept include=build,tester, sort=-createdDate, limit<=200, and carry
 # the same device attributes; the screenshot one adds `screenshots`, an array of pre-signed URLs
 # with their own expirationDate.
 #
-# EMAIL IS DELIBERATELY DROPPED. Both submission resources carry the tester's `email`. This
-# command never reads it into its output: the JSON is uploaded as a CI artifact that anyone with
-# repo access can download for months, and a tester's address is not a fact triage needs. The
-# opaque tester relationship id is kept instead, which is enough to tell two testers apart and
-# to tie several reports to one person.
+# EMAIL IS DELIBERATELY NEVER FETCHED. Both submission resources carry the tester's `email`, and
+# so does the `betaTesters` resource that `include=tester` would sidecar. This command asks for
+# neither: the sparse fieldsets below name their attributes explicitly and `email` is not among
+# them, and `include` asks only for `build`. The JSON is uploaded as a CI artifact that anyone
+# with repo access can download for months, and a tester's address is not a fact triage needs.
+# The opaque tester id is kept instead — `relationships.tester.data.id`, which the API returns
+# without including the tester resource — and it is enough to tell two testers apart and to tie
+# several reports to one person.
 # --------------------------------------------------------------------------------------------
 
 # The device fields both submission types share, in the order a human wants to read them.
@@ -332,14 +342,59 @@ def submission_record(item: dict, builds: dict[str, dict]) -> dict:
     return record
 
 
+# Everything outside this set is replaced in a filename built from a server-supplied id.
+UNSAFE_IN_FILENAME = re.compile(r"[^A-Za-z0-9._-]")
+
+SCREENSHOT_MAX_BYTES = 25 * 1024 * 1024  # a phone screenshot is well under 1 MB
+
+
+def screenshot_path(directory: str, submission_id: str, index: int) -> str | None:
+    """Where image `index` of submission `submission_id` is allowed to be written, or None.
+
+    The submission id comes from App Store Connect. In practice it is an opaque URL-safe string,
+    but "in practice" is not a property of a value that decides where CI writes a file — so the
+    name is CONSTRUCTED here rather than accepted. Every character outside `[A-Za-z0-9._-]`
+    becomes `_`, which leaves nothing that can traverse: `../../etc/passwd` becomes
+    `.._.._etc_passwd`. Note that stripping `..` would NOT be enough on its own — `....//` is
+    still a traversal after one pass of that.
+
+    The containment check afterwards is deliberate belt-and-braces: it does not trust the
+    substitution above to have been exhaustive, and it is what makes the guarantee "inside
+    `directory`" rather than "inside `directory` if the regex is right".
+    """
+    cleaned = UNSAFE_IN_FILENAME.sub("_", submission_id).lstrip(".")[:120]
+    if not cleaned:
+        cleaned = "submission"
+    candidate = os.path.join(directory, f"{cleaned}-{index}.png")
+    root = os.path.realpath(directory)
+    resolved = os.path.realpath(candidate)
+    if root != resolved and not resolved.startswith(root + os.sep):
+        return None
+    return candidate
+
+
 def download(url: str, destination: str) -> str:
     """Fetch a pre-signed screenshot. No Authorization header — the URL carries its own, and
-    sending the JWT to a CDN host would put it somewhere it does not belong."""
+    sending the JWT to a CDN host would put it somewhere it does not belong.
+
+    HTTPS ONLY. `urlopen` honours `file://`, so without this guard a malformed or hostile
+    `screenshots[].url` would read a local file off the runner and publish it in the artifact.
+    The URL arrives over TLS from Apple and is very unlikely to be either, but "unlikely" is not
+    the standard for a value from the network deciding what gets read off disk.
+    """
+    scheme = urllib.parse.urlsplit(url).scheme.lower()
+    if scheme != "https":
+        return f"{os.path.basename(destination)}: refused, scheme {scheme!r} is not https"
     try:
         with urllib.request.urlopen(url, timeout=120) as response:
-            payload = response.read()
+            # Bounded for the same reason the crash logs are: an artifact is not a place to
+            # discover that a response was larger than the disk.
+            payload = response.read(SCREENSHOT_MAX_BYTES + 1)
     except (urllib.error.HTTPError, urllib.error.URLError, ValueError) as error:
-        return f"{destination}: not downloaded ({error})"
+        return f"{os.path.basename(destination)}: not downloaded ({error})"
+    if len(payload) > SCREENSHOT_MAX_BYTES:
+        return (f"{os.path.basename(destination)}: refused, larger than "
+                f"{SCREENSHOT_MAX_BYTES} bytes")
     with open(destination, "wb") as handle:
         handle.write(payload)
     return ""
@@ -356,11 +411,26 @@ def collect_feedback(bearer: str, app: str, screenshot_dir: str | None) -> dict:
     }
 
     # Builds first, so every submission can name the build it came from. `include=build` returns
-    # the build resource too, but only for builds still present; this map is the fallback and is
-    # cheap (one paginated list we already know how to read).
-    builds = {b["id"]: b for b in all_builds(bearer, app)}
+    # the build resource too, but only for builds still present; this map is the fallback.
+    #
+    # Read through `paged`, NOT through `all_builds`. `all_builds` is `call`-based and exits the
+    # process on any HTTP error, so this — the first network read here, and by its own design the
+    # most expendable one, since `include=build` already sidecars what it provides — used to take
+    # all four collections down with it. A key that could not read /builds returned no artifact at
+    # all, which is precisely the outcome `try_call` exists to prevent. `all_builds` itself stays
+    # fatal, because its other caller is `next-build-number`, where a silently short list hands
+    # back a build number already used.
+    build_query = urllib.parse.urlencode(
+        {"filter[app]": app, "limit": "200", "sort": "-version"})
+    build_list, _ = paged(bearer, f"/builds?{build_query}", notes)
+    builds = {b["id"]: b for b in build_list}
 
-    common = {"limit": "200", "sort": "-createdDate", "include": "build,tester"}
+    # `include=build` only. NOT `tester`: an included `betaTesters` resource carries the tester's
+    # `email`, and this command's whole privacy posture is that the address is never fetched. The
+    # tester id it does want lives in `relationships.tester.data.id`, which the API returns
+    # without the include — so asking for the resource would fetch an address to then discard it.
+    # Not asking is structural where filtering is a promise.
+    common = {"limit": "200", "sort": "-createdDate", "include": "build"}
 
     screenshot_query = urllib.parse.urlencode(
         dict(common, **{"fields[betaFeedbackScreenshotSubmissions]": SUBMISSION_FIELDS}))
@@ -384,9 +454,14 @@ def collect_feedback(bearer: str, app: str, screenshot_dir: str | None) -> dict:
         os.makedirs(screenshot_dir, exist_ok=True)
         for record in screenshot_records:
             for index, image in enumerate(record["screenshots"], start=1):
-                name = f"{record['id']}-{index}.png"
-                problem = download(image.get("url") or "", os.path.join(screenshot_dir, name))
-                image["file"] = None if problem else name
+                target = screenshot_path(screenshot_dir, record.get("id") or "", index)
+                if target is None:
+                    image["file"] = None
+                    notes.append(f"submission id {record.get('id')!r} does not yield a filename "
+                                 f"inside the screenshots directory; image {index} not written")
+                    continue
+                problem = download(image.get("url") or "", target)
+                image["file"] = None if problem else os.path.basename(target)
                 if problem:
                     notes.append(problem)
 
@@ -524,6 +599,11 @@ def cmd_feedback(arguments: list[str]) -> None:
             fail(f"usage: appstore_connect.py feedback [--json <path>] "
                  f"[--screenshots <dir>]  (got {flag!r})", 2)
     bearer = token()
+    # `app_id` is the one read here that is still allowed to end the process, and deliberately so:
+    # all five collections are `/apps/{id}/…`, so without the id there is nothing to degrade TO.
+    # Degrading would emit a report of five empty lists — indistinguishable from a genuine "no
+    # feedback yet", which is the exact confusion `appStoreVersionsReadable` exists to prevent.
+    # Every other read reachable from here goes through `try_call`/`paged` and records a note.
     report = collect_feedback(bearer, app_id(bearer), screenshot_dir)
     if json_path:
         with open(json_path, "w") as handle:

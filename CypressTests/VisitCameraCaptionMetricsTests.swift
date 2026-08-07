@@ -8,11 +8,15 @@
 //  What was actually wrong. SCREENS 04 draws the caption as mono 10.5px at `line-height:1.4`.
 //  CSS `line-height` is a multiple of the font size that INCLUDES the glyph box; SwiftUI's
 //  `.lineSpacing()` is only the extra gap added BETWEEN lines. `CypressFont.LineSpacing` states
-//  the conversion — `size × (lineHeight − 1.2)` — and every token defined there obeys it.
-//  `VisitMetrics.Camera.ghostCaptionLineSpacing` did not: it was `4.2`, which is `10.5 × 0.4`,
-//  the same arithmetic with the `− 1.2` dropped, and therefore double the leading the mock asks
-//  for. At the caption's `max-width:80px` the no-ghost string wraps to four lines, so the error
-//  was multiplied across three gaps and the column read as four floating words.
+//  the conversion — `size × (lineHeight − 1.2)` — and its four numeric tokens obey it exactly.
+//  (`speciesHero` and `treeNameHero` are clamped to 0 by their own doc comments and deliberately
+//  do not; ticket #257 covers whether the clamp deserves a test of its own.)
+//  `VisitMetrics.Camera.ghostCaptionLineSpacing` did not: it was `4.2`, which is `10.5 × 0.4` —
+//  the subtraction performed with the wrong constant, taking the font's natural line box as 1.0
+//  rather than 1.2, and therefore double the leading the mock asks for. Note that this is NOT
+//  the `− 1.2` going missing altogether, which would give `10.5 × 1.4 = 14.7`.
+//  At the caption's `max-width:80px` the no-ghost string wraps to four lines, so the error was
+//  multiplied across three gaps and the column read as four floating words.
 //
 //  Why this test is shaped the way it is. Asserting `ghostCaptionLineSpacing == 2.1` on its own
 //  would be a restatement of the source file: it would pass for a wrong rule as happily as for a
@@ -37,7 +41,11 @@ struct VisitCameraCaptionMetricsTests {
     /// The calibration. These four values are not this branch's to pick — they are the shipped
     /// tokens — and each is stated in SCREENS' type ramp with the line-height used here. If this
     /// goes red, the formula below is wrong and nothing else in this file means anything.
-    @Test("the documented conversion reproduces every shipped line-spacing token")
+    ///
+    /// Four, not six: `speciesHero` and `treeNameHero` are clamped to 0 because their mock
+    /// line-heights are *tighter* than the natural box (`25 × (1.1 − 1.2)` is negative), so they
+    /// are outside this rule by their own documented intent rather than in violation of it.
+    @Test("the documented conversion reproduces the four numeric line-spacing tokens")
     func conversionMatchesShippedTokens() {
         // (token value, font size, SCREENS line-height)
         let ramp: [(String, Double, Double, Double)] = [
@@ -63,7 +71,7 @@ struct VisitCameraCaptionMetricsTests {
         let actual = Double(VisitMetrics.Camera.ghostCaptionLineSpacing)
         #expect(
             abs(actual - expected) < 0.001,
-            "ghostCaptionLineSpacing is \(actual); mono 10.5 at line-height 1.4 converts to \(expected), and \(10.5 * 0.4) is what dropping the − 1.2 produces"
+            "ghostCaptionLineSpacing is \(actual); mono 10.5 at line-height 1.4 converts to \(expected). If you are looking at \(10.5 * 0.4), that is the natural line box taken as 1.0 rather than 1.2 — the subtraction happening with the wrong constant, not going missing"
         )
     }
 }
