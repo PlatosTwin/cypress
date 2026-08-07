@@ -781,8 +781,10 @@ struct TreeProfilePresentation {
                 id: visit.id,
                 kind: .visit,
                 label: "Visit",
-                // The separator and the curly quotes are the mock's, carried verbatim.
-                detail: visit.note.map { " · “\($0)”" } ?? "",
+                detail: TreeProfilePresentation.visitDetail(
+                    note: visit.note,
+                    phenologyTags: visit.phenologyTags
+                ),
                 timestamp: TreeProfilePresentation.dayStamp.string(from: visit.capturedAt)
             )
         }
@@ -814,6 +816,49 @@ struct TreeProfilePresentation {
             return visibleVisits.items.first { $0.id == item.id }?.capturedAt ?? .distantPast
         }
         return profile.careEvents.items.first { $0.id == item.id }?.capturedAt ?? .distantPast
+    }
+
+    /// Everything after the bold `Visit`, separator included: the note the mock draws, and then
+    /// the observed states the visit recorded.
+    ///
+    /// **Why the phenology belongs here and is not a new surface.** A TestFlight tester on build 18
+    /// tagged a visit and asked where that goes; the answer was nowhere, because this line read the
+    /// note and dropped `visits.phenology_tags`. The mock's own second row on 03 is
+    /// `Care · watered, mulched` — a C9 detail slot carrying a contribution's structured vocabulary
+    /// as a comma-joined prose list, which is what `careActionLabel` below exists to produce. A
+    /// visit's observed states are the same class of value on the same feed, so this is the drawn
+    /// pattern applied to a field the row already had, not a section the mocks do not draw
+    /// (DECISIONS constraint 21).
+    ///
+    /// The composition is the one judgment call: note first, in the curly quotes the mock draws,
+    /// then the states after a second ` · `. That leaves the drawn row byte-identical for a visit
+    /// with a note and no tags, and appends rather than reorders. C9's body wraps — it carries no
+    /// line limit — so a long note cannot push the states out of sight.
+    static func visitDetail(note: String?, phenologyTags: [PhenologyTag]) -> String {
+        var clauses: [String] = []
+        // The curly quotes are the mock's, carried verbatim.
+        if let note { clauses.append("“\(note)”") }
+        if !phenologyTags.isEmpty {
+            clauses.append(
+                VisitPhenologyVocabulary.order
+                    .filter(phenologyTags.contains)
+                    .map(TreeProfilePresentation.phenologyTagLabel)
+                    .joined(separator: ", ")
+            )
+        }
+        return clauses.isEmpty ? "" : " · " + clauses.joined(separator: " · ")
+    }
+
+    /// `flowering` / `leaf out, flowering` — the phenology vocabulary in prose, the shape
+    /// `careActionLabel` gives `CareAction`.
+    ///
+    /// Derived from `PhenologyTagLabel`, which is the chip copy on screen 04, so the words a
+    /// contributor tapped are the words they read back. Deriving rather than restating keeps one
+    /// source for them: DECISIONS constraint 15 forbids inventing botanical content, and a second
+    /// switch is the place a seventh state or a renamed sixth would appear unnoticed.
+    /// `PhenologyStageVocabularyTests` pins all six strings.
+    static func phenologyTagLabel(_ tag: PhenologyTag) -> String {
+        PhenologyTagLabel.text(for: tag).lowercased()
     }
 
     /// `watered, mulched` — the BUILD-PLAN §4 vocabulary in prose.
