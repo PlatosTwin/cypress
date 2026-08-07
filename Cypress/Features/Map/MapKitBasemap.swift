@@ -505,7 +505,7 @@ enum MapLayout {
     /// deliberately lets the top block draw over the bottom one in. Reserving either would come
     /// straight out of `MapLocationNotice`'s budget in the standing state, where they are not on
     /// screen. It is a real gap and it is named rather than papered over: at AX5, with four species
-    /// coloured *and* the toast up, the legend is pushed down past this bound for those three
+    /// colored *and* the toast up, the legend is pushed down past this bound for those three
     /// seconds. See this task's errata entry.
     static func topChromeBottomAX5(
         screenHeight: CGFloat,

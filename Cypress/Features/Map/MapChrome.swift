@@ -471,9 +471,19 @@ struct MapSearchStatus: View {
 /// `MapSuggestionList` argues this at length one control up and every word applies: an overlay
 /// leaves whatever it covers reachable by an assistive technology while invisible to everyone
 /// else, and puts the element somewhere other than where a reader looks for it. In the flow it
-/// cannot cover the chips, the legend, the recenter control, the FAB or the bottom card at any
-/// Dynamic Type size — at AX5 it wraps and the legend below it moves down, which is what the rest
-/// of this stack already does.
+/// cannot cover the chips or the legend: at AX5 it wraps and the legend below it moves down, which
+/// is what the rest of this stack already does.
+///
+/// **This used to claim it could not cover the recenter control, the FAB or the bottom card either,
+/// and that was never true** (task #258). Being in the flow of the top-anchored block says nothing
+/// about the *other* block — `MapHomeView.chrome` draws the top one over the bottom one
+/// deliberately, and this card pushes everything below it in its own stack down by its own height.
+/// `MapLayout.topChromeBottomAX5` reserves room for the species legend so the standing screen
+/// cannot reach the FAB; **it does not reserve room for this card**, because that reservation would
+/// come out of `MapLocationNotice`'s budget in every second the card is not on screen, which is
+/// almost all of them. So for the three seconds it shows, at AX5, with a full palette, this card
+/// can push the legend past its reservation and onto the bottom chrome. A known transient gap,
+/// named rather than denied.
 ///
 /// **2 · It takes no touches.** `allowsHitTesting(false)`: the map is directly behind it and a pan
 /// that started on those few points would otherwise die on a card that is about to disappear.
