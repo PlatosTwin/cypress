@@ -66,14 +66,17 @@
 # applied where the file's own numbers do not reach.
 #
 # `IdentifyFABReachabilityTests` (task #252) was added afterwards and has never been on CI. Its 2
-# tests took 12.3s (7.7s + 4.6s) in a class-only run on a local iPhone 16 Plus simulator, which is a
-# different machine and a different device from every number in the table above.
+# tests took 12.3s (7.7s + 4.6s) in a class-only run on a local iPhone 16 Plus simulator, and 14.6s
+# for the same 2 tests on a local iPhone 16 Pro in PR #51's review — neither is the machine or the
+# device any number in the table above came from. The placement below uses the larger of the two.
 #
 # Placed on the `DeepLinkVoiceOverTests` line, and here is the addition this file insists on. The
-# four lines, summed from the table: 332.6s, 350.1s, 344.8s, 344.5s. (Those reproduce the three
-# figures the notes above cite independently — 332.6s, 344.8s, and the SheetExit line's 327.0s
+# four lines, summed from the table above TOGETHER WITH the two classes recorded only in the notes
+# (`PhotoBrowserReachabilityTests` 33.2s on line 2 and `ReadingOrderAccessibilityTests` 17.5s on
+# line 4 — the table alone does not reach them): 332.6s, 350.1s, 344.8s, 344.5s. (Those reproduce
+# the three figures the notes above cite independently — 332.6s, 344.8s, and the SheetExit line's 327.0s
 # before `ReadingOrderAccessibilityTests` joined it — which is the only reason to trust the other
-# one.) The `DeepLinkVoiceOverTests` line is now the shortest at 332.6s, so 332.6 + 12.3 = 344.9s
+# one.) The `DeepLinkVoiceOverTests` line is now the shortest at 332.6s, so 332.6 + 14.6 = 347.2s
 # and the pace-setter stays where it was, Shard 2 at 350.1s. Adding to the shortest line is what
 # minimizes the longest one, which is the whole point of the rule at the top of this file — and note
 # it is the same line the PR #14 review rejected for `ReadingOrderAccessibilityTests`. It was the

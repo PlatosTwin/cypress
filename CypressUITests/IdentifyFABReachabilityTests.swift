@@ -19,8 +19,12 @@ import XCTest
 ///
 /// **Why this stops at reachability rather than pressing the control.** Screen 02 is `VisitFlowView`,
 /// a camera flow, and a press here would make every run of this file depend on a camera session and
-/// its privacy grant. `AccessibilityTreeTests` already asserts screen 01's identify control is in the
-/// tree as a typed button; what was missing is whether AX5 leaves it somewhere a finger can land.
+/// its privacy grant. Reachability is the gap worth closing first, and it is a real gap: before this
+/// file, the only place in `CypressUITests` naming this control was `SheetExitUITests`, which reads
+/// it as the witness that a sheet finished leaving, at the default content size.
+/// `AccessibilityTreeTests` does not cover it either — `testMapChromeIsReachable` asserts the search
+/// field alone, and `testNoUnlabeledButtonsOnLaunch` constrains only the buttons it finds, so it
+/// passes whether or not this one is in the tree.
 final class IdentifyFABReachabilityTests: XCTestCase {
 
     override func setUp() {
@@ -41,7 +45,7 @@ final class IdentifyFABReachabilityTests: XCTestCase {
     /// `MapFilterCopy.rowLabel` — the chip row's own named accessibility group.
     private static let chipRowLabel = "Filter trees"
 
-    /// AX5 with location denied. Denied is the state that puts the *longest* of the four standing
+    /// AX5 with location denied. Denied is the state that puts the *longest* of the three standing
     /// sentences (`MapLocationCopy.message`) into the notice slot, which is what drives the shared
     /// block closest to its budget — the same state task #250 measured the occlusion in.
     private func launchAtAX5Denied() -> XCUIApplication {
@@ -103,13 +107,18 @@ final class IdentifyFABReachabilityTests: XCTestCase {
                 + "ends up present in the tree and not hittable (E248)"
         )
 
-        // Read AFTER the assertion above, and the order is load-bearing rather than stylistic. The
-        // recenter control sits between the chip row and the FAB, so any layout that pushes the FAB
-        // up into the chip row has already pushed the recenter control further into it — and the
-        // chip row draws over both (E248). Reading all three frames first therefore made the
-        // assertion above unreachable: `settledFrame` waits on hittability, so the run died on the
-        // recenter control's own reachability and reported that instead. Red-proving this test found
-        // it; the first arrangement went red for the wrong reason.
+        // Read AFTER the assertion above, deliberately. `settledFrame` waits on hittability, so
+        // reading this frame earlier lets the recenter control's own reachability decide the run:
+        // red-proving the assertion below with a wide FAB/recenter overlap produced exactly that —
+        // the test went red on "the recenter control … never became hittable" rather than on the
+        // overlap it exists to catch. Reading it last keeps each assertion answerable on its own.
+        //
+        // What this ordering is NOT known to do is rescue the chip-row assertion above. That was
+        // this comment's first claim, and PR #51's review refuted it by measurement: with all three
+        // frames read first, the chip-row red-proof still fired correctly on a 402 pt iPhone 16 Pro,
+        // where the recenter control clears the chip row by ~97 pt and never loses hittability. So
+        // this is a cheap guard against a coupling observed once, in one direction — not a property
+        // any device has demonstrated for the chip row.
         let recenterFrame = settledFrame(
             app.buttons[Self.recenterLabel],
             "the recenter control (“\(Self.recenterLabel)”)"
