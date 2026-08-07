@@ -864,11 +864,19 @@ height, so they always sum to it.
 
    | Level | Title | Anchor line |
    |---|---|---|
-   | 1 | `1 · Severe decline` | `Mostly bare crown, major dead limbs` |
-   | 2 | `2 · Poor` | `Large dead sections, 25–50% dieback` |
-   | 3 | `3 · Fair` | `Noticeably thin, 10–25% dieback` |
-   | 4 | `4 · Good` | `Canopy mostly full, isolated dead twigs` |
-   | 5 | `5 · Thriving` | `Dense canopy, vigorous new growth` |
+   | 1 | `1 · Severe decline` | `Over half the crown is dead wood or bare in season; major limbs dead` |
+   | 2 | `2 · Poor` | `26 to 50% of the crown is dead wood or bare; large dead sections` |
+   | 3 | `3 · Fair` | `11 to 25% of the crown is dead wood; noticeably thin but clearly in leaf` |
+   | 4 | `4 · Good` | `1 to 10% of the crown is dead wood; canopy otherwise full` |
+   | 5 | `5 · Thriving` | `No dead wood visible; canopy full for the season` |
+
+   **The five anchor lines above are the one copy string in this document that is NOT transcribed
+   from the HTML export.** They are the owner's decision on ticket #261, landed here, in
+   `PRODUCT.md` §3 and in `Vitality.anchor` together. The export and `SPEC-PHASE1.md` §6 had stated
+   the rubric copy differently since the handoff, and `PRODUCT.md` won on the dieback bands because
+   RULINGS R13 reserves a class's *meaning* to `PRODUCT.md` and a band is a class's operational
+   definition. The export's original five lines are quoted in the ruling. The titles, the level
+   numbers, the order and every layout value in this section are still the export's, unchanged.
 
 4. **`Foliage`** micro-label + C5 segmented: `Full` · **`Thinning`** (selected) · `Sparse` · `Bare`
 5. **`Structure · flag anything you see`** micro-label + wrapping chips (`gap:7px`):
