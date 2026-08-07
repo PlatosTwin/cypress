@@ -139,6 +139,36 @@ because the 430 pt lift needed to put the FAB on the chip row puts the chip row 
 the run then dies on the FAB's own hittability. An assertion that cannot be driven red is not a
 guard. PR #51's review had already flagged the same assertion as dominated, on weaker grounds.
 
+#### The same mistake again, one layer down: the guard measured through a hittability gate
+
+The first version of this ticket's own guard read every frame with `settledFrame`, which waits for
+the element to be **hittable** before reporting its frame. That is right for its eleven existing
+callers — they read a frame in order to touch something — and it is wrong here, for the reason this
+whole entry is about. A full-suite run on a loaded machine (`fab2-full-16pro-2.log`, 96 tests, 1
+failure) reported:
+
+    testTheTopChromeStaysClearOfTheBottomChromeAtAX5WithLocationDenied :
+    the recenter control (“Center the map on you”) is in the accessibility tree but never
+    became hittable within 30s
+
+— one XCUITest button query in that test took **20 seconds** (`t = 7.08s` → `t = 27.03s`, three other
+agents building on the machine) — where the two rectangles the test was about to compare were
+readable throughout. The guard against occlusion had made itself depend on the thing an occlusion
+removes.
+
+`settledFrame` now takes `requireHittable:`, default `true`, and this file's geometric reads pass
+`false`. Nothing is weakened, because the claim changes with it: "these two rectangles do not
+intersect" is a different sentence from "a reader can press this", and the second is asserted on its
+own, once, by `testTheFABIsReachableAtAX5WithLocationDenied`, where a 30 s wait is the point.
+
+**What that run does not settle**, and this entry will not pretend otherwise: whether the recenter
+control was genuinely covered at that moment or whether a heavily contended machine simply could not
+resolve its hittability. The two are indistinguishable from the message the run produced, which is
+the defect in the guard rather than a fact about the app — the run before it and the run after it
+were green on the same tree and the same device, and the same class's first test, which reads the
+same control 40 s earlier, passed. The change above is what makes the next occurrence answerable:
+whatever it is, it will now print two rectangles.
+
 #### The rule worth keeping
 
 **A hittability check is not an occlusion check.** `isHittable` is allowed to route around an
