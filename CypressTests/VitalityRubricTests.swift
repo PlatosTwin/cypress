@@ -48,13 +48,13 @@ struct VitalityRubricTests {
 
     @Test("every class's anchor states the band that class claims", arguments: VitalityRubricTests.bands)
     fileprivate func everyClassStatesItsBand(band: VitalityBand) {
-        #expect(
-            band.vitality.anchor.contains(band.phrase),
-            "\(band) claims \(band.percents.lowerBound)\u{2013}\(band.percents.upperBound)% dieback, "
-                + "but its anchor does not state that band: \u{201c}\(band.vitality.anchor)\u{201d}. "
-                + "A class's band is its operational definition (RULINGS R13 reserves a class's "
-                + "meaning to PRODUCT.md); a rater holding a percentage must find the row naming it."
-        )
+        let claim = "\(band.percents.lowerBound)\u{2013}\(band.percents.upperBound)% dieback"
+        let message =
+            "\(band) claims \(claim), but its anchor does not state that band: "
+            + "\u{201c}\(band.vitality.anchor)\u{201d}. A class's band is its operational definition "
+            + "(RULINGS R13 reserves a class's meaning to PRODUCT.md); a rater holding a percentage "
+            + "must find the row that names it."
+        #expect(band.vitality.anchor.contains(band.phrase), "\(message)")
     }
 
     @Test("the band table names all five classes, worst first")
@@ -68,13 +68,12 @@ struct VitalityRubricTests {
     func bandsPartitionTheWholePercents() {
         for percent in 0...100 {
             let owners = Self.bands.filter { $0.percents.contains(percent) }
-            #expect(
-                owners.count == 1,
-                "\(percent)% crown dieback is claimed by \(owners.count) classes "
-                    + "(\(owners.map(\.description).joined(separator: ", "))). A rater who reads "
-                    + "that value off a crown has "
-                    + (owners.isEmpty ? "no row to tap" : "more than one row that fits") + "."
-            )
+            let named: String = owners.map(\.description).joined(separator: ", ")
+            let consequence: String = owners.isEmpty ? "no row to tap" : "more than one row that fits"
+            let message: String =
+                "\(percent)% crown dieback is claimed by \(owners.count) classes (\(named)). "
+                + "A rater who reads that value off a crown has \(consequence)."
+            #expect(owners.count == 1, "\(message)")
         }
     }
 
@@ -92,12 +91,12 @@ struct VitalityRubricTests {
     /// copy — and copy that has to stay repaired.
     @Test("no anchor asks about discoloration", arguments: Vitality.allCases)
     func noAnchorAsksAboutDiscoloration(vitality: Vitality) {
-        #expect(
-            !vitality.anchor.lowercased().contains("discolor"),
-            "\(vitality.classNumber) \u{00b7} \(vitality.label) asks about discoloration: "
-                + "\u{201c}\(vitality.anchor)\u{201d}. A deciduous species in fall color is in leaf, "
-                + "so the seasonality gate does not and must not suppress the rubric for it "
-                + "(ERRATA E33), and a rater in October reads seasonal color as decline."
-        )
+        let row = "\(vitality.classNumber) \u{00b7} \(vitality.label)"
+        let message =
+            "\(row) asks about discoloration: \u{201c}\(vitality.anchor)\u{201d}. A deciduous "
+            + "species in fall color is in leaf, so the seasonality gate does not and must not "
+            + "suppress the rubric for it (ERRATA E33), and a rater in October reads seasonal "
+            + "color as decline."
+        #expect(!vitality.anchor.lowercased().contains("discolor"), "\(message)")
     }
 }
