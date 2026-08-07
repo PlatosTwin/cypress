@@ -274,12 +274,19 @@ grouping claim — a caption and its value arrive as one stop. **What this does 
 screens' order is still unasserted, and three were examined and deliberately left out because their
 order is a property of seed or device state rather than of the code (11 growth history and 13
 activity resolve to trees with no rows at all; 17 outbox reads a device-local queue). **The
-`accessibilitySortPriority` question is now settled, in the negative and for a structural reason**:
-not only `debugDescription` but the query engine under both binding strategies, the snapshot's own
-`children` arrays and `.children(matching:)` all report raw view-composition order — a purely
-geometric inversion of two elements moves none of them — so no ordering API this target can call
-will ever observe that mechanism, and there is no point looking for another one. See ERRATA **E230**
-and its amendment. What replaces the search is `CypressTests/MapSwipeOrderDeclarationTests`, which
+`accessibilitySortPriority` question is settled for one whole class of API, in the negative and for
+a structural reason**: not only `debugDescription` but the query engine under both binding
+strategies, the snapshot's own `children` arrays and `.children(matching:)` all report raw
+view-composition order — a purely geometric inversion of two elements moves none of them. Those five
+are *traversals of one `XCUIElementSnapshot`*, not five independent instruments, and that is exactly
+why the result generalises the way it does: **no traversal of that snapshot can observe a sort
+priority**, so reaching for a sixth traversal is not worth anyone's time. **What is NOT closed** —
+this sentence over-claimed it before PR #54's review — is focus-driven or
+assistive-technology-driven order, a different mechanism that does not read the snapshot at all.
+That reviewer tried a focus-engine probe (`typeKey(.tab)` then a `hasFocus` sweep) and got no
+element reporting focus on a simulator without Full Keyboard Access: **no counterexample and no
+working probe — untried, not refuted**, and the place for the next attempt to start. See ERRATA
+**E230** and its amendment. What replaces the search is `CypressTests/MapSwipeOrderDeclarationTests`, which
 pins that screen 01's declared priorities descend in the same order the block composes its children,
 since that agreement is what makes a composition-order assertion mean anything at all. Verifying the
 mechanism itself on the glass is still a physical-phone VoiceOver pass — the debt E192 recorded, and

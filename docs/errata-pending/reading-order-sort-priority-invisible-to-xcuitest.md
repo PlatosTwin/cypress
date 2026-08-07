@@ -4,7 +4,10 @@
 
 E230 measured one instrument (`debugDescription`, via `DeepLinkHarness.treeOrder`) against one
 mutation (screen 01's search field dropped from priority 6 to 2) and found no movement. It closed
-with an explicit piece of unfinished business, quoted in `docs/ROADMAP.md`'s "Also outstanding":
+with an explicit piece of unfinished business, in its own closing paragraph (`docs/ERRATA.md`, E230,
+"Suggested follow-up, not done here") — **not** in `docs/ROADMAP.md`'s "Also outstanding", which
+cites E230 by number and does not restate the question. An earlier draft of this entry said it did;
+PR #54's review checked and it does not:
 
 > filing whether any lower-level XCUITest API exposes `accessibilityElements`-array order directly
 > rather than through `debugDescription`'s dump — not investigated here for lack of time, and worth
@@ -68,18 +71,32 @@ field=169 in `composition`.
 2. **Geometry is invisible too**, which E230 could not have concluded: its second experiment moved
    `MapFilterChips` above `SearchBar` in the `VStack`, and that changes composition order *and*
    geometry together. `flat` separates them, and geometry loses.
-3. Therefore **every ordering API this target can reach reports raw view-composition order** — one
-   snapshot tree, several traversals and binding strategies over it, none of them a computed reading
-   order. An API that cannot see an element move 125 pt up the glass is not going to see a number
-   that only matters to a sort the accessibility server performs.
+3. Therefore **every way of reading the automation snapshot reports raw view-composition order** —
+   one `XCUIElementSnapshot`, five traversals and binding strategies over it, none of them a
+   computed reading order. The five are **not five independent instruments**, and nothing here
+   should be read as five agreeing witnesses: they share one blind spot by construction. That is
+   what makes the conclusion general in the direction it IS general — a tree that cannot show an
+   element moving 125 pt up the glass will not show a number that only matters to a sort the
+   accessibility server performs, whichever way you walk it.
 4. `composition` supplies a second, independent proof of (1) that does not depend on (3): the
    shipped priorities were left intact there (field 6 > chips 4) and only the composition changed,
    and every probe reported chips-before-field — the order the priorities say is wrong. A
    priority-aware probe could not have printed that.
 
-**So the answer to E230's fifteen-minute question is: no such API exists in this target, and the
-reason is not that the right one has not been found.** Nothing further is owed to searching; the
-next person can stop here.
+**So the answer to E230's fifteen-minute question is: no such SNAPSHOT-READING API exists in this
+target, and the reason is not that the right traversal has not been found.** Looking for a sixth
+traversal is owed nothing.
+
+**What this does not close, and what the next person should try first.** Snapshot traversal is one
+class of API. A **focus engine** is another, and it does not read this tree: order there would come
+from the focus system walking the hierarchy, not from the automation snapshot. It is **unprobed by
+anyone so far**. PR #54's reviewer attempted it — `typeKey(.tab)` followed by a `hasFocus` sweep —
+and got `none`: no element reported focus at all on a simulator without Full Keyboard Access
+enabled. That is neither a counterexample nor a working probe, so the honest status is
+**inconclusive, and recorded here so it is not re-derived from scratch**. Anyone resuming this
+should start by enabling Full Keyboard Access on the device and re-running that probe, and only
+then decide whether a focus walk sees anything the snapshot does not. The same goes, a fortiori,
+for a real assistive technology, which is E192's physical-phone debt.
 
 #### What was done about it
 
@@ -114,3 +131,12 @@ experiment apparatus and were reverted before this branch's first commit — the
 in no history. The measurements above are the artifact; the apparatus is described here in enough
 detail to rebuild it in an hour if anyone ever needs to re-run it against a future SDK, which is the
 only reason it would be worth rebuilding.
+
+**Say plainly what that costs a reader.** These numbers **cannot be re-derived from the tree — only
+re-measured.** Nothing in the repository lets anyone check the `.offset` that produced `flat`, the
+400-node budget, or the frames quoted above; the table is the artifact and CLAUDE.md's rule about
+not trusting an artifact you did not watch being produced applies to it as much as to anything else.
+PR #54's reviewer did rebuild the apparatus independently and reproduced every row (including the
+124.3 pt geometric inversion, the identical `priority`/`flat`/`control` indices, and
+`visited=218 truncated=false` on the level walk) — so the result has been measured twice, by two
+people, from two builds. The next reader after that has this paragraph and a rebuild, not a re-run.

@@ -393,15 +393,19 @@ final class ReadingOrderAccessibilityTests: XCTestCase, DeepLinkHarness {
     /// which side of a heading a chip falls on; rewording a chip moves nothing.
     func testReportKeepsEachVocabularyUnderItsOwnHeading() {
         let app = launch("report")
+
+        // **Terminated from teardown, not from the end of the method (PR #54 review, N5).** Every
+        // `guard let … = position(…) else { return }` below leaves by a path that does not reach a
+        // trailing `app.terminate()`, and this project has already paid twice for state inherited
+        // between UI tests on one device (ERRATA E202, E216). A teardown block runs however the
+        // test exits — including whatever unwinding `continueAfterFailure = false` performs, which
+        // is a detail this file should not have to be right about.
+        addTeardownBlock { app.terminate() }
         guard arrive(app, screen: "report", anchor: "Report an issue") else { return }
         guard waitForPushedScreenToArrive(app, screen: "report") else {
-            app.terminate()
             return
         }
-        guard let ordered = orderedTree(app, screen: "report") else {
-            app.terminate()
-            return
-        }
+        guard let ordered = orderedTree(app, screen: "report") else { return }
 
         // `ReportCopy.hazardSectionLabel` / `.noteSectionLabel`.
         let hazardHeading = "Safety hazard \u{00b7} for the city\u{2019}s crew"
@@ -453,8 +457,6 @@ final class ReadingOrderAccessibilityTests: XCTestCase, DeepLinkHarness {
                 + "still inside the section that reaches the city\u{2019}s crew, and would believe "
                 + "a hazard had been filed (ERRATA E131)"
         )
-
-        app.terminate()
     }
 
     // MARK: - Screen 16 · say what, say how, then the digits, then the save
@@ -480,15 +482,19 @@ final class ReadingOrderAccessibilityTests: XCTestCase, DeepLinkHarness {
     /// `Last recorded \u{2026}` line are not asserted because they carry per-tree data.
     func testMeasureAsksWhatAndHowBeforeItOffersDigitsOrSave() {
         let app = launch("measure")
+
+        // **Terminated from teardown, not from the end of the method (PR #54 review, N5).** Every
+        // `guard let … = position(…) else { return }` below leaves by a path that does not reach a
+        // trailing `app.terminate()`, and this project has already paid twice for state inherited
+        // between UI tests on one device (ERRATA E202, E216). A teardown block runs however the
+        // test exits — including whatever unwinding `continueAfterFailure = false` performs, which
+        // is a detail this file should not have to be right about.
+        addTeardownBlock { app.terminate() }
         guard arrive(app, screen: "measure", anchor: "Measure") else { return }
         guard waitForPushedScreenToArrive(app, screen: "measure") else {
-            app.terminate()
             return
         }
-        guard let ordered = orderedTree(app, screen: "measure") else {
-            app.terminate()
-            return
-        }
+        guard let ordered = orderedTree(app, screen: "measure") else { return }
 
         // `MeasureCopy.kindLabel`, `.kindSegment(_:)`, `.methodLabel`, `.saveCTA`, and
         // `SegmentedControl.method`'s three options — copied by hand (E116, no `import Cypress`).
@@ -561,8 +567,6 @@ final class ReadingOrderAccessibilityTests: XCTestCase, DeepLinkHarness {
                 + "before the keys that give it something to save, and saves the readout\u{2019}s "
                 + "zero"
         )
-
-        app.terminate()
     }
 
     // MARK: - Screen 09 · the four things you did, before the optional well, before Done
@@ -584,21 +588,33 @@ final class ReadingOrderAccessibilityTests: XCTestCase, DeepLinkHarness {
     /// card has risen. `waitForCoverToArrive` is the settle this suite already uses for exactly
     /// these two screens; reading `debugDescription` without it reads a tree mid-animation.
     ///
-    /// **The map behind it is in the tree, and that is fine.** Every anchor below is unique to the
-    /// care log, and the assertions are relative positions among them — the map's own element
-    /// count varies with the camera and with how many pins it drew, and nothing here depends on it.
+    /// **The map behind it is in the tree, and that is fine — but the reason is the failure mode,
+    /// not an invariant (PR #54 review, N6).** `position(of:)` takes the FIRST match, so an anchor
+    /// this screen shares with the map behind it would resolve to the map's copy. That the labels
+    /// below do not collide is an observation of the tree this was built against, not something
+    /// this file checks; R16's keyboard `Done` is a live example of the same word in the same
+    /// session's vocabulary, absent here only because nothing is focused. **What makes it safe to
+    /// rely on is the direction of the failure**: an anchor resolving to an earlier element makes
+    /// the `LessThan` comparisons fail loudly, printing both positions — it cannot pass. A flake
+    /// risk, not a false-green risk, and that distinction is why this is written down rather than
+    /// left as "the map is fine". The map's element count varying with the camera and its pin count
+    /// is genuinely irrelevant: every assertion here is a relative position.
     func testCareLogRecordsWhatYouDidBeforeOfferingToFinish() {
         let app = launch("careLog")
+
+        // **Terminated from teardown, not from the end of the method (PR #54 review, N5).** Every
+        // `guard let … = position(…) else { return }` below leaves by a path that does not reach a
+        // trailing `app.terminate()`, and this project has already paid twice for state inherited
+        // between UI tests on one device (ERRATA E202, E216). A teardown block runs however the
+        // test exits — including whatever unwinding `continueAfterFailure = false` performs, which
+        // is a detail this file should not have to be right about.
+        addTeardownBlock { app.terminate() }
         guard arrive(app, screen: "careLog", anchor: "Care log") else { return }
         guard waitForCoverToArrive(app, screen: "careLog", anchor: "Care log") else {
             XCTFail("careLog: the sheet never settled, so nothing below is reading a stable tree")
-            app.terminate()
             return
         }
-        guard let ordered = orderedTree(app, screen: "careLog") else {
-            app.terminate()
-            return
-        }
+        guard let ordered = orderedTree(app, screen: "careLog") else { return }
 
         // `CareActionLabel` (in `Chip.swift`), `CareLogCopy.optionalWell` and `.doneCTA` — copied
         // by hand (E116).
@@ -645,7 +661,5 @@ final class ReadingOrderAccessibilityTests: XCTestCase, DeepLinkHarness {
                 + "\u{2018}Done\u{2019} at \(doneIndex) — it is past the control that ends the "
                 + "screen, so a listener never reaches it"
         )
-
-        app.terminate()
     }
 }

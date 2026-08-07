@@ -63,12 +63,23 @@
 #   Shard 3  148.0 + 133.6 + 28.4 + 34.8                = 344.8s
 #   Shard 4  80.0 + 72.3 + 64.0 + 42.5 + 30.4 + 37.8    = 327.0s   + 35.6 = 362.6s
 #
-# Moving it does not help: Shard 1 becomes 332.6 + 35.6 = 368.2s and Shard 2 becomes 350.1 + 35.6
-# = 385.7s, both worse than 362.6s. The four shards sit within ~30s of one another and this class
-# now costs more than that spread, so wherever it goes it sets the pace; Shard 4 is the arrangement
-# where it sets the pace lowest. The gate's longest TESTS therefore move 344.8s → 362.6s, +17.8s,
-# on a pipeline whose per-shard BUILD is ~10 minutes — this file's own "diminishing returns"
-# paragraph, which is why the answer here is arithmetic and not a fifth shard.
+# Moving it does not help: Shard 1 becomes 332.6 + 35.6 = 368.2s, Shard 2 becomes 350.1 + 35.6
+# = 385.7s, and Shard 3 becomes 344.8 + 35.6 = 380.4s — all worse than 362.6s. The four shards sit
+# within ~30s of one another and this class now costs more than that spread, so wherever it goes it
+# sets the pace; Shard 4 is the arrangement where it sets the pace lowest. The gate's longest TESTS
+# therefore move 344.8s → 362.6s, +17.8s, on a pipeline whose per-shard BUILD is ~10 minutes — this
+# file's own "diminishing returns" paragraph, which is why the answer here is arithmetic and not a
+# fifth shard.
+#
+# THE WINNING MARGIN IS INSIDE THE NOISE, AND THE CONCLUSION SURVIVES IT ANYWAY (PR #54 review, N7).
+# Best (Shard 4, 362.6s) beats second best (Shard 1, 368.2s) by 5.6s, and those two totals are not
+# built from measurements taken on one machine: the table above is a CI iPhone 17 Pro, PhotoBrowser's
+# 33.2s is a local 16 Plus, and this class's 35.6s is a local 16e. 5.6s is well inside that spread,
+# so the Shard 4 / Shard 1 ordering must NOT be read as measured — it is a coin flip on this
+# evidence. What IS robust is what the placement turns on: Shards 2 and 3 cost ~18-23s more than
+# either, and no arrangement stops this class setting the pace, because it now costs more than the
+# whole spread between shards. Either of the top two is right and the class is already on one of
+# them. Re-measure on a single machine before moving it for a number this small.
 #
 # THE FLOOR WAS ONE CLASS, AND #204 MOVED IT. `DeepLinkVoiceOverTests` was 462.8s — 35% of the
 # suite — because two of its 28 tests SWEEP every deep-linked screen, launching once per screen,
