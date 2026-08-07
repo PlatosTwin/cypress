@@ -142,6 +142,21 @@ struct MapHomeView: View {
                 // composes it with.
                 .accessibilitySortPriority(1)
                 BottomTabBar(selection: tabBinding)
+                #if DEBUG
+                // Diagnostic-only, and only in the accessibility tree of a run that asked for it
+                // (task #241) — see `MapPanProbe`. Zero size and not hit-testable so it cannot
+                // steal a touch or a layout inch from anything real; lowest sort priority so it
+                // cannot move ahead of a screen's actual reading order in the one suite where it
+                // ever exists at all.
+                if MapPanProbe.isEnabled {
+                    Text(MapPanProbe.shared.summary)
+                        .accessibilityIdentifier(MapPanProbe.accessibilityIdentifier)
+                        .frame(width: 1, height: 1)
+                        .opacity(0.001)
+                        .allowsHitTesting(false)
+                        .accessibilitySortPriority(-1000)
+                }
+                #endif
             }
             .ignoresSafeArea()
         }
