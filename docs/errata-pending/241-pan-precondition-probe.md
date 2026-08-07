@@ -15,13 +15,18 @@ E242's amendment. Both nights had heavily loaded runners (5+ concurrent full-sui
 
 The brief's own framing was two candidate mechanisms: the synthesized drag never reaches the map, or
 it reaches the map and the camera is driven back to center by something else. Reading
-`MapHomeView.swift` and `MapAnnotationLayer.swift` end to end for every path that can move `position`
-(the only `@State` `flyTo(_:meters:)` writes) turns up exactly two:
+`MapHomeView.swift` and `MapAnnotationLayer.swift` end to end for every **writer of `position`** —
+not merely every caller of `flyTo(_:meters:)`, which is where a first pass of this entry stopped and
+why it claimed two — turns up **three**:
 
-1. `centerOnUserIfNeeded()`, called from `.task` on appear and from `.onChange(of:
+1. `centerOnUserIfNeeded()` → `flyTo`, called from `.task` on appear and from `.onChange(of:
    location.availability)`, gated by `hasCenteredOnUser` (a one-shot `@State`) and
    `MapCameraMemory.shared.readerMovedCamera`.
-2. `recenter()`, called only from a tap on the recenter control.
+2. `recenter()` → `flyTo`, called only from a tap on the recenter control.
+3. `zoom(into cluster:)` (`MapHomeView.swift:715`), which writes `position` directly rather than
+   through `flyTo`. It is wired as `onSelectCluster:` and reached from
+   `MapAnnotationLayer`'s `mapView(_:didSelect:)` whenever the tapped annotation is a
+   `TreeClusterAnnotation`.
 
 Neither is reachable inside `panUntilMoved`'s own window (before `switchTabs` runs). `launchCentered()`
 already waits for the control to read `Centered on you` before returning, which means
@@ -33,8 +38,18 @@ fires when `location.availability` *changes* — and under `CYPRESS_LOCATION`, i
 delegate and makes `start()`/`stop()` no-ops, so a pinned run publishes exactly one `Availability` for
 the life of the process. `.onChange` never fires a second time.
 
+Writer (3) is **not** ruled out by either of those latches, and the review of this branch was right
+to say so. The app's own gesture recognizers are installed with `cancelsTouchesInView = false`, so
+MapKit's selection handling runs on the same touch stream a synthesized drag travels on: a drag that
+begins on a cluster badge can plausibly reach `didSelect`. What it cannot do is produce *this*
+symptom in the obvious way — `zoom(into:)` moves the camera to the cluster's own region rather than
+back to the reader, which is a camera that moved. The residue, stated rather than waved away: a
+cluster sitting on the reader's own position would leave a camera that both moved and still reads as
+centered, so writer (3) is a path this entry narrows by argument, not one it eliminates by latch.
+
 **So, on the app's code as it stands today, "the gesture landed and the camera was driven back to
-center" has no reachable path during this precondition.** That does not prove it cannot happen — a
+center" has no reachable path through the two `flyTo` callers during this precondition.** That does
+not prove it cannot happen — a
 future code change could add one, or `MKMapView` itself could exhibit UIKit-side rubber-banding this
 investigation did not reproduce — but it means the far more likely mechanism, on the evidence
 available, is that the synthesized drag is not being read as a pan at all under load: the same shape
@@ -59,6 +74,19 @@ the app under a UI test is a separate process from the one whose stdout `xcodebu
 only the test-runner process's own `print` calls (confirmed to work) show up in the log. The
 accessibility element has neither problem, and it is read the same way the test already reads the
 recenter control's own state, so nothing new had to be taught to the harness.
+
+**Why this one element is not `.accessibilityHidden(true)`, unlike `MapProbeOverlay`.** Review
+raised the tension with ARCHITECTURE §7 — identifiers scattered through production views are a tax
+this project declined to pay — and with this codebase's own precedent, `MapProbeOverlay`, which
+hides itself on the principle that an instrument must not participate in what it measures. The
+precedent does not transfer, for the reason that makes it a precedent: `MapProbeOverlay` is read by
+a human eye, so hiding it costs nothing, while this probe is read *through* the accessibility tree
+by XCUITest, and hiding it would make it unreadable — an instrument that cannot be read is not an
+instrument. What keeps it from participating is the gate instead: it exists only under `#if DEBUG`
+**and** only when `MapPanProbe.isEnabled` (the `CYPRESS_PAN_PROBE` launch variable) is set, so it is
+absent from the tree of every other test in the suite, at zero size, non-hit-testable, and at the
+lowest sort priority in the one run that asks for it. §7's tax is not paid by a view that does not
+exist in any shipping or ordinary-test configuration.
 
 **Red-proofed.** Temporarily made `pan(_:)` a no-op and ran
 `testADeliberatePanSurvivesLeavingForJournalAndBack` alone: it failed for the expected reason, and the
@@ -110,9 +138,14 @@ compiled).
 Two full `CypressUITests` suite runs, iPhone 16e `3A1F212D-8F3A-41F1-AF72-EC95E155A4C9`, via
 `Tools/run_tests.sh` + `Tools/verify_test_log.sh`:
 
-- Head `0a35781`, `CYPRESS-RUN: started 2026-08-06 16:54:15 PDT` (scheme's default test plan, so
-  the `CypressTests` Swift Testing suite ran too) — `VERIFY-OK: Executed 92 tests, with 0 failures
-  (0 unexpected) in 1371.898 (1376.480) seconds`, `XCTest skipped=0`, `** TEST SUCCEEDED **`.
+- Head `0a35781`, `CYPRESS-RUN: started 2026-08-06 16:54:15 PDT` — `VERIFY-OK: Executed 92 tests,
+  with 0 failures (0 unexpected) in 1371.898 (1376.480) seconds`, `XCTest skipped=0`,
+  `** TEST SUCCEEDED **`. A first pass of this entry described this run as the scheme's default test
+  plan, "so the `CypressTests` Swift Testing suite ran too." **The quoted line refutes that**, and
+  the tool says why: `verify_test_log.sh` builds its `VERIFY-OK` as
+  `${SWIFT_LINE:-$XCTEST_LINE}` and appends `| XCTest: …` whenever both ran, so a *bare*
+  `Executed N tests` line is emitted only when Swift Testing did **not** run. This was an XCTest-only
+  run, like the one below it. Read the shape of the line, not the intent of the command.
 - Head `39600a7` (current, after the stale-comment fix — a doc-comment-only change inside
   `#if DEBUG`), `CYPRESS-RUN: started 2026-08-06 17:22:55 PDT`, `-only-testing:CypressUITests` —
   `VERIFY-OK: Executed 92 tests, with 0 failures (0 unexpected) in 1431.214 (1435.775) seconds`,
