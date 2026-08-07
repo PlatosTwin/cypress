@@ -47,8 +47,23 @@ final class MapRecenterUITests: XCTestCase {
         return app
     }
 
+    /// AX5 with location denied — screen 01's longest standing notice
+    /// (`MapLocationCopy.message`), the state task #250 measured the occlusion in.
+    private func launchAtAX5(location: String) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchEnvironment[Self.locationKey] = location
+        app.launchArguments += [
+            "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"
+        ]
+        app.launch()
+        return app
+    }
+
     /// The one string this file and the app have to agree on: `MapRecenterCopy.label`.
     private static let controlLabel = "Center the map on you"
+
+    /// `MapFilterCopy.rowLabel` — the chip row's own named accessibility group.
+    private static let chipRowLabel = "Filter trees"
 
     private func recenterControl(_ app: XCUIApplication) -> XCUIElement {
         app.buttons[Self.controlLabel]
@@ -113,6 +128,45 @@ final class MapRecenterUITests: XCTestCase {
         XCTAssertTrue(
             app.buttons["Settings"].exists,
             "the refusal names Settings as the way out and offers no way to get there"
+        )
+    }
+
+    /// **Task #250.** Correcting `MapLayout.locateButtonHeightAX5` and `.fabHeightAX5`
+    /// to their bare AX5 footprints (task #246) gave `MapLocationNotice` back the ~108 pt of scroll
+    /// budget those inflated constants had been silently eating — the ticket's actual goal — and, as
+    /// a measured side effect, let the notice grow tall enough at AX5 to push `bottomChrome`'s
+    /// bottom-anchored `VStack` (recenter, then FAB, then notice) up far enough that the recenter
+    /// control, first in the stack, rose behind the top-anchored filter chip row: present in the
+    /// tree, `isHittable == false`.
+    ///
+    /// This is the state that showed it: the longest of the four `MapOpening.Standing` sentences
+    /// (`MapLocationCopy.message`, location denied) forces the notice as close to its AX5 budget as
+    /// any shipped copy gets. `MapLayout`'s reservation now also accounts for the room the top chrome
+    /// (search bar + chip row) needs, so the recenter control's frame must clear the chip row's own
+    /// frame — not merely happen to still be hittable, which a coincidence of this run's exact
+    /// numbers could satisfy without the geometry actually being disjoint.
+    func testTheRecenterControlClearsTheFilterChipRowAtAX5WithLocationDenied() {
+        let app = launchAtAX5(location: "denied")
+
+        // The row's named container rides on the `ScrollView` since the row became one (#166), and
+        // which element type XCUITest files a labeled SwiftUI scroller under is not a contract worth
+        // pinning (`MapFilterAccessibilityTests.rowContainer`) — both spellings are accepted.
+        let other = app.otherElements[Self.chipRowLabel]
+        let chipRow = other.exists ? other : app.scrollViews[Self.chipRowLabel]
+        let chipRowFrame = settledFrame(chipRow, "the filter chip row (“\(Self.chipRowLabel)”)")
+
+        let control = recenterControl(app)
+        assertReachable(
+            control,
+            "screen 01's control labeled “\(Self.controlLabel)”, at AX5 with location denied"
+        )
+        let controlFrame = settledFrame(control, "the recenter control")
+
+        XCTAssertFalse(
+            controlFrame.intersects(chipRowFrame),
+            "the recenter control \(controlFrame) overlaps the filter chip row \(chipRowFrame) — "
+                + "the chrome the chips own now reaches down into the control's own space, which is "
+                + "how it ends up present in the tree and not hittable"
         )
     }
 }

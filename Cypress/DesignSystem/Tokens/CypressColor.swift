@@ -127,10 +127,10 @@ enum CypressColor {
     /// E8 drew the line between a *transcribed* value, which may not be changed, and a *derived*
     /// one, which may be corrected. R1 adds the third case: a hex the designer wrote, replaced
     /// because it fails WCAG AA and the alternative was editing 61 call sites to route around it.
-    /// Every one of these carries `RULINGS R1` and its measured before/after in the comment above
-    /// it, so a designer can find every place their intent was substituted for and reverse it in
-    /// one pass. There are five, they are listed in `overruledTokens`, and there should never be
-    /// a sixth without another ruling.
+    /// Every one of these carries the ruling it was made under and its measured before/after in the
+    /// comment above it, so a designer can find every place their intent was substituted for and
+    /// reverse it in one pass. They are listed in `overruledTokens` — count them there rather than
+    /// here — and there should never be another one without another ruling.
     ///
     /// The retint itself is `Tools/retint_ramp.py` — lightness moves in OKLCh, chroma and hue are
     /// held, and each half is measured on every ground it is drawn on rather than assumed from
@@ -510,12 +510,27 @@ enum CypressColor {
     // with two values and no more: `dark.accent.amber` `#D99A4E` is the mark, `dark.accent.amberBg`
     // `#2E271A` is the ground under it. D1 sends the amber pin to the first; D2 sends the `est.`
     // badge to both. Every amber fill below therefore derives to `#2E271A` and every amber mark to
-    // `#D99A4E`, which mints no hex. What that loses is recorded on `borderAmberSoft`.
+    // `#D99A4E`. What that loses is recorded on `borderAmberSoft`.
+    //
+    // **It mints one hex, and only for boundaries.** Two values and no more is exactly one value
+    // for four roles once a *border* is one of them, and screen 17 drew the result: in dark the
+    // terminal card's edge was as loud as the words inside it. `#A2670D` — a lightness-only move
+    // off `#D99A4E`, derived on `amberAttentionCardBorder` — is the dark boundary rung, taken by
+    // that token and by `amberPillBorder`. No mark moves; see task #14 item 1a.
 
     /// Amber pill / banner fill `#F8EFDF` ↔ **derived** `dark.accent.amberBg` `#2E271A` (02, 06, 17).
     static let amberPillFill = derived(light: 0xF8EFDF, dark: 0x2E271A)
-    /// Amber pill / banner border `#EBD3A8` ↔ **derived** `dark.accent.amber` `#D99A4E`.
-    static let amberPillBorder = derived(light: 0xEBD3A8, dark: 0xD99A4E)
+    /// Amber pill / banner border `#EBD3A8` ↔ **overruled** to `#A2670D`, from the derived
+    /// `dark.accent.amber` `#D99A4E`.
+    ///
+    /// **RULINGS (pending · task #14, item 1a).** One of the two boundaries that take the new dark
+    /// amber; see `amberAttentionCardBorder` for the derivation and the whole argument. Here the
+    /// pill's edge was reading at **6.11:1 on its own fill**, the same ratio as the *text* inside
+    /// it, so the pill was a word inside a louder ring. Measured **6.11 → 3.15** on `amberPillFill`,
+    /// which clears 1.4.11's 3.0 and puts the boundary back below the mark. Light is untouched: at
+    /// `#EBD3A8` it reads 1.28 on the fill, and 1.4.11 does not bind on a pill that is identified by
+    /// its fill and its label.
+    static let amberPillBorder = overruled(light: 0xEBD3A8, dark: 0xA2670D)
     /// Amber pill / banner text `#8A5A17` ↔ **derived** `dark.accent.amber` `#D99A4E`.
     /// 6.1:1 on the derived fill, against 5.2:1 in light.
     static let amberPillText = derived(light: 0x8A5A17, dark: 0xD99A4E)
@@ -529,8 +544,8 @@ enum CypressColor {
 
     /// Amber attention card fill `#FFFFFF` (12, 17) — the `surface.card` token.
     static let amberAttentionCardFill = surfaceCard
-    /// Amber attention card border — **overruled** to `#B8803A` in light, from §1.2's `#D9A05B`.
-    /// Dark keeps the derived `#D99A4E` (`1.5px`).
+    /// Amber attention card border — **overruled** in both halves: `#B8803A` in light, from §1.2's
+    /// `#D9A05B`; `#A2670D` in dark, from the derived `dark.accent.amber` `#D99A4E` (`1.5px`).
     ///
     /// **RULINGS R1** (ERRATA E108). C24 is `surface.card` on `surface.screen` at 1.09:1, so this
     /// 1.5 pt border is the only thing saying the card is different — which is exactly the case
@@ -540,12 +555,36 @@ enum CypressColor {
     ///
     /// Measured **2.30 → 3.39** on the card and **2.12 → 3.12** on the screen. Both grounds on
     /// purpose: a boundary is adjacent to a surface on each side, and the page is the harder of
-    /// the two. Dark is 6.57 / 7.55 and is not touched.
+    /// the two.
     ///
     /// This is the one place the three light amber border weights come apart. `borderAmberMid`
     /// and `amberChipSelectedBorder` are the same `#D9A05B` and stay there: a selected chip is
     /// identified by its fill and its label, not by its edge, so 1.4.11 does not bind on them.
-    static let amberAttentionCardBorder = overruled(light: 0xB8803A, dark: 0xD99A4E)
+    ///
+    /// **RULINGS (pending · task #14, item 1a). The dark half now moves too, and it moves the other
+    /// way.** Light draws four distinct ambers on 17 and dark collapsed them onto one: the pill
+    /// border, this card's border, the `retry` word and the reason line were all `#D99A4E`, which
+    /// made the terminal card's *boundary* the loudest thing on the dark screen — louder than any
+    /// word on it, where in light it is quieter than the text it surrounds. The failure is
+    /// hierarchy, not legibility; every dark amber pair already cleared AA.
+    ///
+    /// `#A2670D` is a **lightness-only** move in OKLCh from `dark.accent.amber` `#D99A4E` — R1's
+    /// method and the E120 precedent, run downward instead of up:
+    ///
+    ///     #D99A4E  L 0.7328  C 0.1193  H 69.11°
+    ///     #A2670D  L 0.5648  C 0.1189  H 69.35°   ΔL −0.168, ΔC −0.0004, ΔH +0.24°
+    ///
+    /// Chroma and hue are held to 0.0004 and a quarter of a degree, so no hue enters the palette —
+    /// the discipline R7 and E8 both keep. The lightness is chosen so the dark border lands on
+    /// **3.39:1** against `surface.card`, the same ratio R1 chose for the light border, so the
+    /// boundary reads at one strength in both appearances. Measured **6.57 → 3.39** on the card and
+    /// **7.55 → 3.90** on the page; both clear 1.4.11's 3.0 floor, which binds here for the reason
+    /// stated above.
+    ///
+    /// **Every amber *mark* stays exactly where E8's derivation put it** — the `retry` word, the
+    /// reason line, the tile glyph and the pill text are all still `#D99A4E`. Two rungs where dark
+    /// had one, boundary below mark, as light has it.
+    static let amberAttentionCardBorder = overruled(light: 0xB8803A, dark: 0xA2670D)
 
     /// 311 hazard panel fill `#F8EFDF` ↔ **derived** `#2E271A` (06).
     static let hazardPanelFill = derived(light: 0xF8EFDF, dark: 0x2E271A)
@@ -652,7 +691,8 @@ enum CypressColor {
     // 1. **≥ 3:1 (WCAG 1.4.11, non-text mark) on every ground screen 01 draws** — `map.paper`,
     //    `map.grid`, the street band, the park block and its inset ring, the ocean and the beach —
     //    in **both** appearances. Fourteen grounds per slot, 56 measurements, all pinned in
-    //    `ContrastTests.speciesPinsOnTheMap`. The park block is the binding one in light and the
+    //    `ContrastTests.speciesPinsInLight` and `.speciesPinsInDark`, over the
+    //    `ContrastTests.speciesOnTheMap` pair set. The park block is the binding one in light and the
     //    park ring in dark; the paper everyone would have measured against is the easiest of the
     //    seven, which is how a palette passes on paper and vanishes over Golden Gate Park.
     // 2. **≥ 0.10 apart from each other in OKLab ΔE**, five times the ~0.02 just-noticeable
@@ -1089,6 +1129,12 @@ extension CypressColor {
         /// mark is `borderDashedStrong`, the dashed ring R7 gave the map pin and the site screen and
         /// the well all speak. Reusing `elder` or `newGrowth` would paint a hole in the pavement in a
         /// living tree's color, which is the exact category error R7 removed from the map (E119).
+        ///
+        /// **These are still the two colors screen 12 draws for a vacant site, and they are no longer
+        /// drawn as a radial.** Task #14 item 3 replaced the tile's drawing — not its palette — with
+        /// the dashed empty well `IconTextRow.emptyWell` renders: `surfaceEmptyThumb` filled under a
+        /// `borderDashedStrong` dashed edge. The pair below therefore reads as fill and edge rather
+        /// than as ground and highlight, which is why the two cases stay exactly as R10 left them.
         case vacantSite
 
         var id: String { rawValue }
@@ -1509,8 +1555,6 @@ extension CypressColor {
         // The amber family. Two documented ambers and no more; see `borderAmberSoft`.
         .init("amberPillFill", .derived, light: 0xF8EFDF, dark: 0x2E271A,
               basis: "amber ground → dark.accent.amberBg", color: amberPillFill),
-        .init("amberPillBorder", .derived, light: 0xEBD3A8, dark: 0xD99A4E,
-              basis: "amber mark → dark.accent.amber; loses a weight", color: amberPillBorder),
         .init("amberPillText", .derived, light: 0x8A5A17, dark: 0xD99A4E,
               basis: "amber mark → dark.accent.amber; 6.1:1", color: amberPillText),
         .init("amberChipSelectedFill", .derived, light: 0xF8EFDF, dark: 0x2E271A,
@@ -1572,7 +1616,7 @@ extension CypressColor {
         .init("TileAccent.newGrowth.base", .derived, light: 0xEDF2E0, dark: 0x1F2E22,
               basis: "tinted-fill rule at the new-growth hue", color: TileAccent.newGrowth.base),
         .init("TileAccent.vacantSite.base", .derived, light: 0xC4CEB4, dark: 0x364133,
-              basis: "R10/E122: borderDashedStrong — the dashed-ring ground, visible, no new hue",
+              basis: "R10/E122: borderDashedStrong — now screen 12's dashed tile edge rather than a gradient ground (task #14 item 3); no new hue",
               color: TileAccent.vacantSite.base),
         .init("TileAccent.water.base", .derived, light: 0xE8EEF2, dark: 0x282F34,
               basis: "tinted-fill rule at the water hue", color: TileAccent.water.base),
@@ -1587,11 +1631,12 @@ extension CypressColor {
 
     // MARK: Overruled — reverse these or keep them
 
-    /// The five values RULINGS R1 changed after they had been transcribed from SCREENS.md. Every
-    /// other row in this sheet is a value the document never gave; these five are values it gave
-    /// and that were replaced anyway, so they are the only rows where a designer is being told
-    /// their own hex was substituted for rather than filled in. `light` is the shipped value; the
-    /// hex the designer wrote is in the basis line, so review is a two-column read.
+    /// The values a ruling changed after they had already been answered — transcribed from
+    /// SCREENS.md, or derived onto a documented dark rung. Every other row in this sheet is a value
+    /// nobody had answered; these are answers that were replaced anyway, so they are the only rows
+    /// where a designer is being told their own hex was substituted for rather than filled in.
+    /// `light` is the shipped value; the hex that was there before is in the basis line, so review
+    /// is a two-column read.
     ///
     /// Reversing one is one line here and one line on the token. What comes back with it is the
     /// AA failure in ERRATA E106, so the reversal wants an answer to that in the same pass.
@@ -1613,9 +1658,12 @@ extension CypressColor {
         .init("estimatedBadgeText", .overruled, light: 0x836324, dark: 0xD99A4E,
               basis: "R1 · was #8A6A2A in light; 4.19 → 4.64 on its fill. D7 meaning. Dark is untouched.",
               color: estimatedBadgeText),
-        .init("amberAttentionCardBorder", .overruled, light: 0xB8803A, dark: 0xD99A4E,
-              basis: "R1 · was #D9A05B in light; 2.30 → 3.39 on the card and 2.12 → 3.12 on the page. Dark is the derived amber, untouched.",
+        .init("amberAttentionCardBorder", .overruled, light: 0xB8803A, dark: 0xA2670D,
+              basis: "R1 · was #D9A05B in light; 2.30 → 3.39 on the card and 2.12 → 3.12 on the page. Task #14 1a · dark was #D99A4E; lightness-only in OKLCh to 6.57 → 3.39 on the card and 7.55 → 3.90 on the page, so the boundary sits below the mark as it does in light.",
               color: amberAttentionCardBorder),
+        .init("amberPillBorder", .overruled, light: 0xEBD3A8, dark: 0xA2670D,
+              basis: "Task #14 1a · dark was the derived #D99A4E; the same lightness-only move, 6.11 → 3.15 on amberPillFill. Light is untouched.",
+              color: amberPillBorder),
         .init("searchGlyph", .overruled, light: 0x6C7764, dark: 0x94A496,
               basis: "R1a · was #77836F in light; 3.93 → 4.63 on the search fill composited over the map paper. Dark is D1's #94A496 at 6.06, untouched.",
               color: searchGlyph),

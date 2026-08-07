@@ -440,9 +440,9 @@
     "semantic_hash": "0f80ca39f22a4b4a31df016398177e8d"
   },
   "Cypress/DesignSystem/Components/IconTextRow.swift": {
-    "mtime": 1785713950.300313,
-    "ast_hash": "350c9785ad26cfa98edfb7989c90cfbf",
-    "semantic_hash": "350c9785ad26cfa98edfb7989c90cfbf"
+    "mtime": 1786067432.3221729,
+    "ast_hash": "eefff9680e0943cd5048d0d1e0fbde75",
+    "semantic_hash": ""
   },
   "Cypress/DesignSystem/Components/LeafGlyph.swift": {
     "mtime": 1784660872.7579274,
@@ -530,9 +530,9 @@
     "semantic_hash": "76d876ce505f4e9dc5f64876ee0ac9f6"
   },
   "Cypress/DesignSystem/Tokens/CypressColor.swift": {
-    "mtime": 1785756682.5050724,
-    "ast_hash": "21442a4743cb3dd1e8a2310777773a8f",
-    "semantic_hash": "21442a4743cb3dd1e8a2310777773a8f"
+    "mtime": 1786067432.3231275,
+    "ast_hash": "9f9276151c12d56baf8ab9068ef0d8bf",
+    "semantic_hash": ""
   },
   "Cypress/DesignSystem/Tokens/CypressFont.swift": {
     "mtime": 1785756682.5057018,
@@ -565,9 +565,9 @@
     "semantic_hash": "c159ef7e17e4f7bf039e573f91587d0e"
   },
   "Cypress/DesignSystem/Tokens/TokenGallery.swift": {
-    "mtime": 1785756682.5075107,
-    "ast_hash": "c6cd27cec20fe71fb752c58c9e34ccb1",
-    "semantic_hash": "c6cd27cec20fe71fb752c58c9e34ccb1"
+    "mtime": 1786067432.3237827,
+    "ast_hash": "9679decf6390e98c15b25a6c07c3a089",
+    "semantic_hash": ""
   },
   "Cypress/Features/AccountAsk/AccountAskModel.swift": {
     "mtime": 1785756682.5077834,
@@ -760,8 +760,8 @@
     "semantic_hash": ""
   },
   "Cypress/Features/Map/MapChrome.swift": {
-    "mtime": 1785964457.8678887,
-    "ast_hash": "18251332e4748a590e393208de5d82cb",
+    "mtime": 1786067432.3245206,
+    "ast_hash": "4f824c144635d1e7d032300b5be5d51a",
     "semantic_hash": ""
   },
   "Cypress/Features/Map/MapFilter.swift": {
@@ -780,13 +780,13 @@
     "semantic_hash": "fea869a76731745e0ee9d6f252663c70"
   },
   "Cypress/Features/Map/MapHomeView.swift": {
-    "mtime": 1785964457.8684185,
-    "ast_hash": "92a7bc5410e219490adf649ea46379df",
+    "mtime": 1786067432.3253167,
+    "ast_hash": "f813b7cfa61d38ba419bff16f63ea652",
     "semantic_hash": ""
   },
   "Cypress/Features/Map/MapKitBasemap.swift": {
-    "mtime": 1785997423.842356,
-    "ast_hash": "03e2379d8652da870d167d3aa423133b",
+    "mtime": 1786067432.32599,
+    "ast_hash": "c1a3c30c708d27b1cdbc32b769c6c936",
     "semantic_hash": ""
   },
   "Cypress/Features/Map/MapLocationProvider.swift": {
@@ -795,8 +795,8 @@
     "semantic_hash": ""
   },
   "Cypress/Features/Map/MapModel.swift": {
-    "mtime": 1786010965.954591,
-    "ast_hash": "e88079e549adea051b0d8c746f7efbcb",
+    "mtime": 1786067432.3269413,
+    "ast_hash": "93453bc1edf9f29167dc9f73e439c5cb",
     "semantic_hash": ""
   },
   "Cypress/Features/Map/MapOpeningCamera.swift": {
@@ -900,9 +900,9 @@
     "semantic_hash": "6ec9de8ac114911818b20b759d3708d4"
   },
   "Cypress/Features/Outbox/OutboxView.swift": {
-    "mtime": 1785756682.5286765,
-    "ast_hash": "a1fce427341e896bf95a847a4b6e39bc",
-    "semantic_hash": "a1fce427341e896bf95a847a4b6e39bc"
+    "mtime": 1786067432.3278363,
+    "ast_hash": "1db32fbea7cedcd352ef5912952065b1",
+    "semantic_hash": ""
   },
   "Cypress/Features/Photos/PhotoImage.swift": {
     "mtime": 1785713950.3091116,
@@ -990,9 +990,9 @@
     "semantic_hash": "e40448d0a6c5aa6cefc5c67860f3bfe6"
   },
   "Cypress/Features/Share/ShareView.swift": {
-    "mtime": 1785756682.5339782,
-    "ast_hash": "531513d7ba30aaa2745a4a234b9a8463",
-    "semantic_hash": "531513d7ba30aaa2745a4a234b9a8463"
+    "mtime": 1786067432.3283656,
+    "ast_hash": "6389c2820659fa70acf104dd3a383b81",
+    "semantic_hash": ""
   },
   "Cypress/Features/Site/SiteModel.swift": {
     "mtime": 1785756682.5349126,
@@ -1300,9 +1300,9 @@
     "semantic_hash": "e882ea841228981b53c2cbd49826ce4d"
   },
   "CypressTests/ContrastTests.swift": {
-    "mtime": 1785756682.5586517,
-    "ast_hash": "d9e512ee326374eddb698ab6eb26f5d4",
-    "semantic_hash": "d9e512ee326374eddb698ab6eb26f5d4"
+    "mtime": 1786067432.3294806,
+    "ast_hash": "e7d55246f328f423e8acec9d764cdf15",
+    "semantic_hash": ""
   },
   "CypressTests/DeletionTombstoneTests.swift": {
     "mtime": 1785756682.559201,
@@ -1650,8 +1650,8 @@
     "semantic_hash": ""
   },
   "CypressUITests/MapFilterAccessibilityTests.swift": {
-    "mtime": 1785985803.0068243,
-    "ast_hash": "06a6ea90b814505ac388e411468d0f59",
+    "mtime": 1786067432.330807,
+    "ast_hash": "b780be01dd2c537c751dd472c46eaae7",
     "semantic_hash": ""
   },
   "CypressUITests/MapSearchUITests.swift": {
@@ -1675,7 +1675,7 @@
     "semantic_hash": "31c62c6fa4d79b7c4c85f76b76fd3a1a"
   },
   "Fixtures/seed/schema.sql": {
-    "mtime": 1785983905.2711198,
+    "mtime": 1786031002.3195903,
     "ast_hash": "c6522972da499ed3b248bbb8cf048e98",
     "semantic_hash": ""
   },
@@ -1860,8 +1860,8 @@
     "semantic_hash": "c4f48ab0a3d487f5a965e8d683c2ba1b"
   },
   "CLAUDE.md": {
-    "mtime": 1785943035.7303915,
-    "ast_hash": "04c795ea54e94510d7247fe7008fd34f",
+    "mtime": 1786067432.3214743,
+    "ast_hash": "2586c35b4d811eea4951f6b90c9e820b",
     "semantic_hash": ""
   },
   "CRITIQUES.md": {
@@ -1910,8 +1910,8 @@
     "semantic_hash": "c0f1dd67f2cd86ecaadeb440a633739e"
   },
   "docs/ERRATA.md": {
-    "mtime": 1786012490.8184903,
-    "ast_hash": "6f08c13de3e06f7087a26370e0519a35",
+    "mtime": 1786067465.5736895,
+    "ast_hash": "86f7a478ae4dba3ed3ad4ece229e52a3",
     "semantic_hash": ""
   },
   "docs/ROADMAP.md": {
@@ -1920,8 +1920,8 @@
     "semantic_hash": ""
   },
   "docs/RULINGS.md": {
-    "mtime": 1785978332.9002001,
-    "ast_hash": "26a9c06386156eab73d1e1f7e30521de",
+    "mtime": 1786067465.593818,
+    "ast_hash": "66662e1fdc5cebc0127b84ece5b9787e",
     "semantic_hash": ""
   },
   "docs/distilled/DECISIONS.md": {
@@ -2105,8 +2105,8 @@
     "semantic_hash": "ed2efcbf362fcb0ba7fdba2b6bae9f49"
   },
   "CypressTests/AX5ReflowTests.swift": {
-    "mtime": 1785997423.8427565,
-    "ast_hash": "81c40b8c48dd0b9dd3fe22a54761a1f5",
+    "mtime": 1786067432.328848,
+    "ast_hash": "802382d48a6140cb6cbaff0487c937a4",
     "semantic_hash": ""
   },
   "CypressTests/AnonymizedPhotoNoticeTests.swift": {
@@ -2245,8 +2245,8 @@
     "semantic_hash": ""
   },
   "CypressUITests/MapRecenterUITests.swift": {
-    "mtime": 1785811758.7823124,
-    "ast_hash": "af13c806b17d860740b195c8eaf2ed1b",
+    "mtime": 1786067432.3312266,
+    "ast_hash": "46b5e85f771d309a9e68ade09ef29bbf",
     "semantic_hash": ""
   },
   "CypressUITests/MissingPinnedFix.swift": {
@@ -2285,8 +2285,8 @@
     "semantic_hash": "4e59b6816ce844bb84e7bc159c2e37a5"
   },
   "Tools/publish_cities.py": {
-    "mtime": 1785983905.272503,
-    "ast_hash": "861f26787a032ee461f29225a8845bad",
+    "mtime": 1786067432.3316903,
+    "ast_hash": "a527991e3ccae20237ecb8d68d4a3181",
     "semantic_hash": ""
   },
   "server/go.mod": {
@@ -2330,9 +2330,9 @@
     "semantic_hash": "b7d92a8c1678060e6ab6cd98e4e52e84"
   },
   "docs/investigations/city-publishing.md": {
-    "mtime": 1785633532.067757,
-    "ast_hash": "6f9c6d2c93de7159c7069ffc0a35aa82",
-    "semantic_hash": "6f9c6d2c93de7159c7069ffc0a35aa82"
+    "mtime": 1786067432.3332663,
+    "ast_hash": "81d6fe929f8050c0c92d2fa72f74f4a5",
+    "semantic_hash": ""
   },
   "docs/investigations/nyc-street-trees.md": {
     "mtime": 1785600526.9179196,
@@ -2345,9 +2345,9 @@
     "semantic_hash": "ce5c8cb969ea4af7c46759951b3f5bd7"
   },
   "server/README.md": {
-    "mtime": 1785653000.7583983,
-    "ast_hash": "62bf254f9cfdd5ac80d18ea179ba3761",
-    "semantic_hash": "62bf254f9cfdd5ac80d18ea179ba3761"
+    "mtime": 1786067432.3348825,
+    "ast_hash": "a68e7dcfe2baeb47be771d6a5acda301",
+    "semantic_hash": ""
   },
   "Tools/stage_graphify.sh": {
     "mtime": 1785811545.8260298,
@@ -2360,13 +2360,13 @@
     "semantic_hash": ""
   },
   "CypressUITests/DeepLinkHarness.swift": {
-    "mtime": 1785943035.7543027,
-    "ast_hash": "c678b7547040bcdec79e54a5fbc5f288",
+    "mtime": 1786022109.8849428,
+    "ast_hash": "81b5f3795b5ce530b23b5a99405db264",
     "semantic_hash": ""
   },
   "CypressUITests/DeepLinkSweepTests.swift": {
-    "mtime": 1786012490.81938,
-    "ast_hash": "81367bbb508548eae662bee46bfc9bda",
+    "mtime": 1786022109.8852673,
+    "ast_hash": "748ec53e8c7c408ff3c80ec1a587c1e3",
     "semantic_hash": ""
   },
   "Cypress/Features/Map/MapHeading.swift": {
@@ -2497,6 +2497,21 @@
   "CypressUITests/FrameFinitenessGateTests.swift": {
     "mtime": 1785985803.0060124,
     "ast_hash": "79290306267486619869fbece6adc6b8",
+    "semantic_hash": ""
+  },
+  "Cypress/Features/Map/MapNeedsCareToast.swift": {
+    "mtime": 1786067432.32744,
+    "ast_hash": "51ed754b0c9bd5e75604132eb1efa83e",
+    "semantic_hash": ""
+  },
+  "CypressTests/MapNeedsCareToastTests.swift": {
+    "mtime": 1786067432.329783,
+    "ast_hash": "65b145a11e21c2166b638fb39073f680",
+    "semantic_hash": ""
+  },
+  "CypressTests/Task14DrawingDecisionTests.swift": {
+    "mtime": 1786067432.3301742,
+    "ast_hash": "4df41be4c8f0036711eb5c01b15da633",
     "semantic_hash": ""
   }
 }

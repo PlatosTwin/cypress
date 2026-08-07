@@ -170,9 +170,65 @@ struct AX5ReflowTests {
         )
     }
 
+    // MARK: - Task #14 item 2 · screen 10's link releases its clamp at AX5 (E60)
+
+    /// **The reflow decision, as a value.** `StatGrid.columnCount` and `QuadActionRow.rows` are the
+    /// precedent: a layout choice that depends on the type size is a function a test can read,
+    /// because a ternary buried inside a `.lineLimit` modifier can be inverted without anything
+    /// going red.
+    ///
+    /// Two lines at the drawn sizes, no cap above the accessibility threshold. E60's governing
+    /// sentence is that half a link with an ellipsis on the end is worse than a link on two lines —
+    /// and at AX5 `lineLimit(2)` was delivering `cypress.app/sf/tree/0…`, which is not half the
+    /// link but a fifth of it.
+    @Test("the share link's line cap comes off above the accessibility threshold")
+    func shareURLLineLimitReleasesAtAccessibilitySizes() {
+        #expect(ShareMetrics.urlLineLimit(isAccessibilitySize: false) == 2)
+        #expect(ShareMetrics.urlLineLimit(isAccessibilitySize: true) == nil)
+    }
+
+    /// …and releasing it is not cosmetic, which the value test alone cannot say.
+    ///
+    /// The same string, in the same font, offered the same width the card gives it, measured at AX5
+    /// with the cap and without: uncapped must be **strictly taller**. Equal heights would mean the
+    /// cap was never binding, the release buys the reader nothing, and the test above would be
+    /// pinning a decision with no effect — a guard that cannot fail is not evidence. The width is
+    /// the card's full inner width, which is what item 2's layout change gives the link: the
+    /// phone's width less `cardPadding` on each side.
+    @Test("uncapping the link at AX5 actually buys the reader more of it")
+    func releasingTheShareURLClampAddsLines() async {
+        let link = "cypress.app/sf/tree/0300b83f-6a1e-4c9b-8f2d-1b7e5a904c31"
+        let innerWidth = Self.phoneWidth - (ShareMetrics.cardPadding * 2)
+        func height(lineLimit: Int?) async -> CGFloat {
+            await Self.ax5Size(
+                of: Text(link)
+                    .font(CypressFont.mono105)
+                    .lineLimit(lineLimit)
+                    .fixedSize(horizontal: false, vertical: true),
+                width: innerWidth,
+                settleIterations: 2
+            ).height
+        }
+        let capped = await height(lineLimit: ShareMetrics.urlLineLimit)
+        let released = await height(lineLimit: nil)
+        #expect(
+            released > capped,
+            """
+            at AX5 the link measured \(released) pt uncapped against \(capped) pt at \
+            lineLimit(\(ShareMetrics.urlLineLimit)), in the \(innerWidth) pt the card gives it. \
+            Equal heights would mean the cap never bound and the release buys the reader nothing — \
+            E60's whole objection is that the capped rendering shows a fifth of the identifier.
+            """
+        )
+    }
+
     /// E196 §5, post-#146 shape: the three-destination share row. Fragmentation is judged by
     /// looking; what geometry can hold is that the row never forces the sheet wide — a regression
     /// to intrinsic-width cells would.
+    ///
+    /// It also guards item 2's layout change from the other side: the link is now a full-width row
+    /// of its own, and a full-width row that insisted on its intrinsic width would push screen 10
+    /// off both edges of the glass exactly as E196 §1's amber pill did.
     @Test("the share sheet stays inside the phone's width at AX5")
     func shareSheetFitsThePhoneWidthAtAX5() async {
         let measured = await Self.ax5Size(
@@ -187,8 +243,8 @@ struct AX5ReflowTests {
     // MARK: - RULINGS R53 §6's AX5 ruling (owner decision 2026-08-05) · MapLocationNotice scrolls rather than overflows
 
     /// `MapLayout.locateButtonHeightAX5` and `.fabHeightAX5`, the inputs to
-    /// `noticeMaxHeight(availableHeight:)`, are what the bottom slot reserves for the two controls
-    /// stacked above the notice. Guarded here so a control that outgrows its reservation fails
+    /// `noticeMaxHeight(availableHeight:topInset:)`, are what the bottom slot reserves for the two
+    /// controls stacked above the notice. Guarded here so a control that outgrows its reservation fails
     /// loudly instead of quietly under-reserving the notice's scroll budget.
     ///
     /// **`<=`, not `==`, and the difference is the whole of ticket #30.** These two assertions were
@@ -197,14 +253,14 @@ struct AX5ReflowTests {
     /// iPhone 16 Pro it was recorded on. On an iPhone 16e the same inset is 47 pt, so the same
     /// unmodified tree measured 91 and 130 and this test failed on the device rather than on the
     /// code. `ax5Size` now takes the inset back off (see its own note), which makes the measurement
-    /// device-independent — and leaves the reservations *larger* than the footprints they reserve
-    /// for, which is the direction `noticeMaxHeight` documents itself as taking ("conservative
-    /// rather than exact"). Over-reserving costs the notice room it does not use; under-reserving
-    /// is E183 §2, the card growing off the top of the screen. Only one of those is a defect, and
-    /// `<=` is the assertion that names it.
+    /// device-independent. Under-reserving is E183 §2, the card growing off the top of the screen;
+    /// `<=` is the assertion that names that direction as the only defect.
     ///
-    /// Correcting the reservations down to the footprints would change what ships at AX5 under an
-    /// owner ruling (R53 §6) and is not this ticket's to take.
+    /// **`MapLayout.locateButtonHeightAX5` and `.fabHeightAX5` were corrected to the bare footprints
+    /// this test measures (44 and 83) on 2026-08-06, by direct owner ruling** — superseding
+    /// RULINGS R53 §6's conservative stance for these two constants specifically. `<=` is kept
+    /// rather than tightened to `==` because the guard's job is catching under-reservation if a
+    /// control's footprint ever grows again, not asserting today's exact numbers a second time.
     @Test("the recenter control and the FAB fit what the notice's scroll budget reserves at AX5")
     func bottomChromeControlsFitTheReservedBudgetAtAX5() async {
         let recenter = await Self.ax5Size(of: MapRecenterButton(engagement: .away, action: {}))
@@ -233,6 +289,40 @@ struct AX5ReflowTests {
             """
             MapRecenterButton measures \(recenter.height) pt at AX5 against the \
             \(CypressSpacing.minTapTarget) pt frame it declares — it is no longer a fixed square
+            """
+        )
+    }
+
+    // MARK: - Task #250 · The top chrome's own reservation
+
+    /// `MapLayout.searchBarHeightAX5` and `.chipRowHeightAX5` are the inputs to
+    /// `topChromeReservedAX5(topInset:)`, which `noticeMaxHeight(availableHeight:topInset:)`
+    /// subtracts so the recenter control — first in `bottomChrome`'s bottom-anchored stack — cannot
+    /// rise above the filter chip row's own bottom edge no matter how tall the notice below it
+    /// grows. Guarded the same way `bottomChromeControlsFitTheReservedBudgetAtAX5` guards the other
+    /// two reservation inputs: `<=`, so either control growing past what is reserved for it fails
+    /// loudly instead of quietly under-reserving.
+    ///
+    /// **Both grow with Dynamic Type, unlike `MapRecenterButton`.** `SearchBar`'s field and
+    /// `MapFilterChips`'s pills carry `CypressFont.body145` text, and the row stays one line at
+    /// every size (#166) rather than wrapping, so neither is a fixed frame the way the recenter
+    /// square is — the bound is a footprint, not an exact measurement repeated.
+    @Test("the search bar and the filter chip row fit what the top-chrome reservation gives them at AX5")
+    func topChromeFitsItsReservedBudgetAtAX5() async {
+        let bar = await Self.ax5Size(of: SearchBar(text: .constant("")))
+        let chips = await Self.ax5Size(of: MapFilterChips(filter: .constant(.all)))
+        #expect(
+            bar.height <= MapLayout.searchBarHeightAX5,
+            """
+            SearchBar now measures \(bar.height) pt at AX5, past the \
+            \(MapLayout.searchBarHeightAX5) pt the top-chrome reservation gives it
+            """
+        )
+        #expect(
+            chips.height <= MapLayout.chipRowHeightAX5,
+            """
+            MapFilterChips now measures \(chips.height) pt at AX5, past the \
+            \(MapLayout.chipRowHeightAX5) pt the top-chrome reservation gives it
             """
         )
     }

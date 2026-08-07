@@ -520,6 +520,27 @@ final class MapFilterAccessibilityTests: XCTestCase {
     }
 
     // MARK: - 4 · The line over the map, which must never exist again (RULINGS R41, task #180)
+    //
+    // ── R41's carve-out has exactly one occupant since task #247, and this section does not see
+    //    it. Read this before adding a fourth narrowing below. ─────────────────────────────────
+    //
+    // R41 permits one form for anything judged genuinely essential — a popup, "never persistent on
+    // the glass" — and judged that nothing qualified. The owner's instruction of 2026-08-06 put one
+    // thing in it: pressing `Needs care` **on its own** over a map that comes back with nothing
+    // draws a brief, self-dismissing toast reading `MapNeedsCareToastCopy.message`. It is text that
+    // appears because a filter did something, and `assertNoCompanionText` would correctly fail on
+    // it — the rule is unchanged and the exception is the owner's, not this file's.
+    //
+    // **It does not fire for any narrowing `testNoTextAccompaniesAFilter` drives**, and that is a
+    // property of the gate rather than luck: `MapNeedsCareToast.isOwed` compares the whole
+    // `MapFilter` against `.needsCare`, so the species entry alone, the species *conjoined with*
+    // `Needs care`, and a filter set inside the drawer are all outside it. The narrowing that would
+    // produce it is `Needs care` and nothing else, which this section never sets.
+    //
+    // So: a fourth case that turns `Needs care` on alone will see the toast, and must **not** be
+    // "fixed" by excluding the sentence by name — that is the hard-coded-copy tolerance this file's
+    // own comments forbid. The scope of the exception is pinned where it belongs, in
+    // `CypressTests/MapNeedsCareToastTests`, which fails if any other filter can open the gate.
 
     /// `MapFilterCopy.result`'s two forms, kept as a *forbidden* shape: `31 trees`, `1 tree`, or
     /// `1458 trees—showing 151`. Nothing may match this any more.
