@@ -402,14 +402,14 @@ enum MapLayout {
     // built, and it does not work.** A `GeometryReader` in a `.background` on the top block, its
     // `maxY` handed to `@State` through `onChange`, removed the occlusion on most launches and froze
     // on some — the same value for the whole life of the process, from the first sample to the last.
-    // Instrumented over 32 launches on an iPhone 16 Pro (three froze), the numbers say exactly what
-    // happened: the `GeometryReader` re-rendered with the correct 492.67 while the `@State` value
-    // and the last value the `onChange` action was *given* were the same stale intermediate (425.0,
-    // a three-row legend; 357.33, a two-row one). **No write was lost — the action was simply never
-    // called for the last transition**, and `onChange` is edge-triggered over a value that then
-    // never changes again, so nothing re-delivers it. Four wirings of the same idea (`onChange`, a
-    // `PreferenceKey` on the ancestor with and without a `@MainActor` hop, and on the producing
-    // block) all flake, because they are all edge-triggered channels out of the layout system.
+    // Instrumented over 32 launches on an iPhone 16 Pro, three froze, and in those three the
+    // `GeometryReader` re-rendered with the correct 492.67 while the `@State` value and the last
+    // value the `onChange` action was *given* were the same stale intermediate (425.0, a three-row
+    // legend; 357.33, a two-row one). **The best explanation is that the action was never called
+    // for the last transition** — `onChange` is edge-triggered over a value that then never changes
+    // again, so nothing re-delivers it. It is not the only explanation the three probes admit, and
+    // the pending errata entry names the other; what is not in doubt is that four wirings of the
+    // same idea flake, and all four are edge-triggered channels out of the layout system.
     //
     // The palette is not. `MapSpeciesPalette` is model state that `MapHomeView` already observes, so
     // the number of chips is known *before* layout rather than reported back out of it, and there is
@@ -636,7 +636,8 @@ enum MapLayout {
     /// straight out of `MapLocationNotice`'s budget in the standing state, where they are not on
     /// screen. It is a real gap and it is named rather than papered over: at AX5, with four species
     /// colored *and* the toast up, the legend is pushed down past this bound for those three
-    /// seconds. See this task's errata entry.
+    /// seconds. See `docs/ERRATA.md` once the orchestrator splices this branch's pending entry
+    /// under its real number at merge.
     static func topChromeBottom(
         screenHeight: CGFloat,
         topInset: CGFloat,
