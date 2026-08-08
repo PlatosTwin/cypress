@@ -131,15 +131,21 @@ Care performed. Chip toggles, ≤30 s, offline-capable. Phase 1 action set (verb
 
 ### Vitality scale (anchored rubric, draft v0 — needs urban forestry advisor sign-off before launch)
 
-Five classes, each with reference photos shown inline at rating time. Simplified derivative of USFS urban crown-condition classes; mapping to the source protocol documented in the export schema. Verbatim:
+Five classes, each with reference photos shown inline at rating time. Simplified derivative of USFS urban crown-condition classes; mapping to the source protocol documented in the export schema.
 
-| Class | Label | Anchor (plain language) |
-|---|---|---|
-| 5 | Thriving | Full, dense canopy for the season; vigorous new growth; no visible dieback |
-| 4 | Good | Canopy mostly full; minor thinning or isolated dead twigs (under 10% dieback) |
-| 3 | Fair | Noticeable thinning or discoloration; dieback 10 to 25%; still clearly viable |
-| 2 | Poor | Sparse canopy; major dead limbs; dieback 25 to 50%; stress obvious |
-| 1 | Severe decline | Mostly bare in season; over 50% dieback; survival doubtful |
+**These five anchor sentences are not the handoff transcription — they are the owner's decision on ticket #261**, and they are the one place this document departs from `SPEC-PHASE1.md` §6 deliberately (§11 conflict 23). The sentences below, the identical table in `SCREENS.md` 05 §3 and `Vitality.anchor` were landed together, closing a fork that had stood since both documents were distilled: `SPEC-PHASE1.md` §6 and the design export stated the rubric copy differently, and neither distilled document was wrong. **The #261 ruling on the vitality rubric quotes both superseded tables verbatim in its §0**, so a transcription check that finds `SPEC-PHASE1.md` §6 disagreeing with the table below has found the intended state rather than drift. `CypressTests/VitalityRubricTests.swift` asserts that this table, `SCREENS.md` 05 §3 and `Vitality.anchor` still state the same five sentences, so the agreement is enforced rather than merely recorded. RULINGS R13's split stands — `SCREENS.md` owns screen copy, this document owns a class's meaning, and a dieback band is meaning.
+
+| Class | Label | Anchor (plain language) | Dieback band |
+|---|---|---|---|
+| 5 | Thriving | No dead wood visible; canopy full for the season | 0% |
+| 4 | Good | 1 to 10% of the crown is dead wood; canopy otherwise full | 1–10% |
+| 3 | Fair | 11 to 25% of the crown is dead wood; noticeably thin but clearly in leaf | 11–25% |
+| 2 | Poor | 26 to 50% of the crown is dead wood or bare; large dead sections | 26–50% |
+| 1 | Severe decline | Over half the crown is dead wood or bare in season; major limbs dead | 51–100% |
+
+The bands partition the whole percents 0–100 exactly once, which the draft-v0 table did not: 0% and 25% each named two rows. The scale is a documented collapse of the seven i-Tree / Nowak classes (excellent → 5, good → 4, fair → 3, poor → 2, critical + dying → 1); their `dead` class is not a vitality class here but the `Appears dead` status segment.
+
+**Still draft v0.** The decision did not discharge this section's own "needs urban forestry advisor sign-off before launch", did not close §2.5 P-C1 in `DECISIONS.md`, and did not move ERRATA E30 — the five per-class reference photographs remain the M2 entry gate and do not exist. What the advisor is being asked to underwrite is listed in the #261 ruling on the vitality rubric.
 
 **Seasonality rule:** deciduous species are rated only in leaf-on season. The app suppresses the vitality UI off-season using species leaf phenology; structure flags remain available year-round. Phenology surfaces are species-aware — an evergreen never shows fall color.
 
@@ -488,3 +494,4 @@ Conflicts and gaps found between the two documents (SPEC-PHASE1 was written agai
 20. **Observer competency / training records** are declared as a core concept but have no Phase 1 schema (`users` has no training records) and no calibration UI before Phase 2.
 21. **Photo `shot_type` selection** is never specified as a user action in the Visit flow (only a "shot-type hint chip"), so how shot_type gets set is undefined.
 22. **Offline favorites** are listed as outbox mutations, but favoriting is also the account-gate trigger — behavior for an anonymous offline favorite is undefined.
+23. **The rubric's anchor sentences differed between the two handoff artifacts, and no longer follow either.** `SPEC-PHASE1.md` §6 and the `Cypress Screens.dc.html` design export stated all five differently, from the day both were distilled; §3 here transcribed the first and `SCREENS.md` 05 §3 the second, both faithfully. Resolved on ticket #261: the owner's approved sentences replace both, in §3, in `SCREENS.md` 05 §3 and in `Vitality.anchor` together, and the #261 ruling on the vitality rubric quotes both superseded tables. This is a resolved conflict, recorded here because §3 is now the only section of this document that departs from its source on purpose. Item 1 above — *which* rubric — is a different question and stays open.

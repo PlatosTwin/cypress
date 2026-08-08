@@ -9,10 +9,24 @@ import Foundation
 ///
 /// Color is secondary coding only (D3) and therefore lives in the design system, not here.
 ///
-/// Status: the rubric is "draft v0 — needs urban forestry advisor sign-off before launch"
-/// (PRODUCT §3, DECISIONS §2.5 P-C1). Which rubric ultimately ships — USFS urban FIA crown classes
-/// wholesale or this validated five-class derivative — is still open; the raw value is the integer
-/// 1–5 stored in `observations.vitality`, so a later mapping stays possible.
+/// **The five anchor sentences are the owner's decision on ticket #261.** Before it, this file
+/// carried PRODUCT §3's original draft-v0 sentences while `SCREENS.md` 05 §3 carried five different
+/// ones — two handoff artifacts that had disagreed since the day both were distilled, not a
+/// transcription error in either. The decision closes that fork rather than adjudicating it: the
+/// approved sentences land in PRODUCT §3, `SCREENS.md` 05 §3 and here **together**, so the two
+/// source tables and the app now state one rubric. RULINGS R13 still holds — `SCREENS.md` owns
+/// screen copy, PRODUCT owns a class's meaning, and a dieback band is meaning.
+///
+/// The scale is a documented collapse of the seven i-Tree / Nowak urban crown-condition classes:
+/// excellent → `.thriving`, good → `.good`, fair → `.fair`, poor → `.poor`, critical and dying
+/// merged → `.severeDecline`. Their `dead` class is deliberately not a vitality class; it is the
+/// `Appears dead` status segment, which opens a review flag where a vitality integer opens nothing.
+///
+/// Status: the rubric is still "draft v0 — needs urban forestry advisor sign-off before launch"
+/// (PRODUCT §3, DECISIONS §2.5 P-C1). **#261 did not discharge that, and did not move ERRATA E30**
+/// — the five per-class reference photographs are still the M2 entry gate and still do not exist.
+/// What an advisor is being asked to underwrite is listed in the ruling; the raw value is the
+/// integer 1–5 stored in `observations.vitality`, so a later mapping stays possible.
 public enum Vitality: Int, Codable, Sendable, Hashable, CaseIterable, Comparable {
     case severeDecline = 1
     case poor = 2
@@ -31,20 +45,35 @@ public enum Vitality: Int, Codable, Sendable, Hashable, CaseIterable, Comparable
         }
     }
 
-    /// Plain-language anchor sentence, verbatim from the PRODUCT §3 rubric table.
+    /// Plain-language anchor sentence, verbatim from the rubric table (ticket #261).
     /// Always visible at rating time (D3) — never truncated, never moved into a view.
+    ///
+    /// **Every row states its dieback band, and the five bands partition the whole percents 0–100
+    /// exactly once**: `.thriving` 0, `.good` 1–10, `.fair` 11–25, `.poor` 26–50, `.severeDecline`
+    /// over half. The draft-v0 sentences did not: read literally, 0 percent satisfied both "no
+    /// visible dieback" and "under 10% dieback", and 25 percent satisfied both "10 to 25%" and "25
+    /// to 50%", so two of the values a rater is most likely to produce named two rows each.
+    ///
+    /// **Row 3 no longer mentions discoloration**, because the seasonality gate cannot exclude the
+    /// month in which discoloration is normal. `Species.leafOnMonths` runs a deciduous window from
+    /// the opening of new growth to the *close of the fall-color season*, so fall color sits inside
+    /// leaf-on by construction — the intended behavior, and the same derivation ERRATA E33 repaired
+    /// for a different bug. A tree in fall color is therefore in leaf, ratable, and discolored, and
+    /// the old row 3 pointed its rater there. The repair is copy: adding a second condition to the
+    /// gate would suppress the rubric in the fall for trees that are in leaf, which is what E33
+    /// exists to prevent.
     public var anchor: String {
         switch self {
         case .thriving:
-            return "Full, dense canopy for the season; vigorous new growth; no visible dieback"
+            return "No dead wood visible; canopy full for the season"
         case .good:
-            return "Canopy mostly full; minor thinning or isolated dead twigs (under 10% dieback)"
+            return "1 to 10% of the crown is dead wood; canopy otherwise full"
         case .fair:
-            return "Noticeable thinning or discoloration; dieback 10 to 25%; still clearly viable"
+            return "11 to 25% of the crown is dead wood; noticeably thin but clearly in leaf"
         case .poor:
-            return "Sparse canopy; major dead limbs; dieback 25 to 50%; stress obvious"
+            return "26 to 50% of the crown is dead wood or bare; large dead sections"
         case .severeDecline:
-            return "Mostly bare in season; over 50% dieback; survival doubtful"
+            return "Over half the crown is dead wood or bare in season; major limbs dead"
         }
     }
 
