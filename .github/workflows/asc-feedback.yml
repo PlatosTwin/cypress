@@ -1,0 +1,61 @@
+# What the app's testers and customers have actually said — on demand, in about a minute.
+#
+# TestFlight feedback is only visible by clicking through the App Store Connect web UI, one
+# submission at a time, and it expires: the screenshots a tester attaches are served from
+# pre-signed URLs with an expiry date, so a link copied out of the UI is dead within days. This
+# workflow pulls the whole set through the API, writes it as JSON and downloads the images, so a
+# triage pass reads a file instead of a web page, and a later run can diff against this one.
+#
+# WHY IT RUNS HERE AND NOT ON A LAPTOP. No machine of the owner's carries an App Store Connect
+# key, deliberately — the credentials exist only as the three repository secrets read below. The
+# same rule as the seed publish: nobody is asked to paste a key.
+#
+# Runs on ubuntu and touches no Xcode, so it costs a minute rather than the release workflow's
+# ninety. Read-only: every request is a GET, it lists and it never writes.
+#
+# Run it from the Actions tab -> "App Store Connect feedback" -> Run workflow, then download the
+# `asc-feedback` artifact.
+name: App Store Connect feedback
+
+# Note for whoever runs this first after it lands: `workflow_dispatch` is only dispatchable once
+# the file is on the default branch, so this was proved on the branch under a temporary `push:`
+# trigger (run 31195352441, removed in the following commit) rather than left unrun until merge.
+on:
+  workflow_dispatch:
+
+jobs:
+  feedback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ask App Store Connect what the testers said
+        env:
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          # A venv for the same reason asc-status.yml uses one: the runner's Python is externally
+          # managed, and --break-system-packages trades the runner's toolchain for one saved
+          # command.
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet --disable-pip-version-check pyjwt cryptography
+          mkdir -p feedback-out
+          # The human summary goes to the job log; the JSON and the images go to the artifact.
+          # Nothing here echoes an environment variable — the three secrets are passed to the
+          # process and are never named on a command line, where `ps` and the log would see them.
+          "$RUNNER_TEMP/venv/bin/python" Tools/appstore_connect.py feedback \
+            --json feedback-out/asc-feedback.json \
+            --screenshots feedback-out/screenshots
+
+      - name: Upload the feedback
+        # `always()` so a run that fetched half the collections still hands over the half it got;
+        # the JSON's own `notes` array says which half.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: asc-feedback
+          path: feedback-out
+          if-no-files-found: warn
