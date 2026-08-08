@@ -243,29 +243,68 @@ enum MapLayout {
     /// which does scale with Dynamic Type, so this is genuinely not `fabPaddingV * 2` plus a fixed
     /// glyph.
     ///
-    /// **Corrected 2026-08-06**, for the same reason and under the same ruling as
-    /// `locateButtonHeightAX5` above: E243 found the old `137` carried the same 54 pt safe-area
-    /// term. The FAB's real AX5 footprint is 83 pt, measured through `AX5ReflowTests.ax5Size`
-    /// after that helper's fix (subtracting the measuring window's inherited safe-area insets),
-    /// device-independently on both the iPhone 16 Pro and the iPhone 16e.
-    static let fabHeightAX5: CGFloat = 83
+    /// **Corrected 2026-08-06** under owner ruling, for the same reason as `locateButtonHeightAX5`
+    /// above: E243 found the old `137` carried a 54 pt safe-area term that belonged to the
+    /// measuring window rather than to the view. That correction was right about the inset.
+    ///
+    /// **It was wrong about the number, and 83 shipped as a bound that does not hold** (task #258,
+    /// PR #60 review B2). `AX5ReflowTests.ax5Size` offered the FAB `phoneWidth` = 393 pt; screen 01
+    /// offers it the phone's width less `sideInset` on each side. **The label wraps between 361 pt
+    /// and 370 pt of content width** — 393 pt and 402 pt of phone — so at 393 the harness saw one
+    /// line and 83 pt, and every phone at or below 393 pt draws three lines and **135.67 pt**.
+    /// Read off the accessibility tree of a running iPhone 16e (390 pt): `(127, 503.33, 247.33,
+    /// 135.67)`, against `(60, 571, 364.33, 83)` on an iPhone 16 Pro Max. The 52.67 pt shortfall
+    /// put the recenter control 30 pt up inside the species legend and turned #258's own guard red
+    /// on a device it had not been run on. The old `137` was closer to the truth than the `83` that
+    /// replaced it; what E243 actually removed was the inset, and the width blindness came in with
+    /// it unnoticed.
+    ///
+    /// **One number rather than a width threshold, deliberately.** A `fabHeightAX5(contentWidth:)`
+    /// would reserve 83 above 393 pt and 136 below, and would be exact — at the cost of a wrap
+    /// threshold in a constant, which is a number that moves the next time the label, the font or
+    /// the glyph changes and moves silently. The bound over-reserves 53 pt on phones wider than
+    /// 393 pt, which comes out of `MapLocationNotice`'s scroll budget and out of nothing else, and
+    /// it buys back margin on exactly the narrow phones where PR #60's review measured only 25.67 pt
+    /// between the legend and this control.
+    ///
+    /// Guarded by `AX5ReflowTests.bottomChromeControlsFitTheReservedBudgetAtAX5`, which now sweeps
+    /// `heightBoundWidths` **with screen 01's own gutters applied** — the two changes are one
+    /// change, because the constant is only as honest as the width it was measured at.
+    static let fabHeightAX5: CGFloat = 136
+
+    /// The same footprint at the largest **ordinary** Dynamic Type size, `.xxxLarge`: 54 pt,
+    /// measured through the swept harness at every width.
+    ///
+    /// **Reserving 136 at every type size was not affordable and it was caught here** (task #258).
+    /// `bottomSlotReservedAbove` is subtracted from the screen whatever the reader's text size
+    /// is, on the standing argument that at ordinary sizes the notice is nowhere near its budget —
+    /// true when the term was 83, and false at 136 on a 667 pt phone, where the AX5 reservation put
+    /// `MapSpeciesLegend` into a `ScrollView` **at the default content size**. That would have been
+    /// a scroller over the map for a reader who had asked for nothing. Every reservation on this
+    /// screen now tracks the size the reader is actually running.
+    static let fabHeightLarge: CGFloat = 55
 
     /// Everything `bottomChrome`'s `VStack` stacks above the notice slot, at or above the worst
     /// case (`.accessibility5`) either control ever measures: the recenter control, the gap to the
     /// FAB, the FAB, the gap to the card, and the card's own gap down to the tab bar. Reserved
     /// unconditionally — at ordinary sizes both controls are far smaller than this, so the notice
     /// is left with more room than it asks for and nothing about its rendering changes; see
-    /// `noticeMaxHeight(availableHeight:topInset:)`.
-    static let bottomSlotReservedAboveAX5: CGFloat =
-        locateButtonHeightAX5 + locateToFabGap + fabHeightAX5 + fabToCardGap
-            + tabBarHeight + cardToTabBarGap
+    /// `noticeMaxHeight(screenHeight:topInset:namedSpecies:isAccessibilitySize:)`.
+    static func bottomSlotReservedAbove(isAccessibilitySize: Bool) -> CGFloat {
+        locateButtonHeightAX5
+            + locateToFabGap
+            + (isAccessibilitySize ? fabHeightAX5 : fabHeightLarge)
+            + fabToCardGap
+            + tabBarHeight
+            + cardToTabBarGap
+    }
 
     // MARK: The top chrome's own reservation (task #250)
     //
     // Correcting `locateButtonHeightAX5`/`fabHeightAX5` above (task #246) gave `MapLocationNotice`
     // back the ~108 pt of scroll budget those inflated constants had been silently eating — the
     // ticket's own goal, and the taller notice that resulted is the point of #246. But
-    // `bottomSlotReservedAboveAX5` only ever named what `bottomChrome`'s `VStack` stacks *above the
+    // `bottomSlotReservedAbove` only ever named what `bottomChrome`'s `VStack` stacks *above the
     // notice, inside that same block* — the recenter control, the FAB, their gaps, the tab bar. It
     // never named anything about `MapHomeView.chrome`'s other, top-anchored block (the search bar
     // and the filter chip row), because at ordinary sizes the two blocks do not meet. At AX5 they
@@ -287,7 +326,18 @@ enum MapLayout {
     /// frame: the field carries Dynamic-Type text (`CypressFont.body145`), so it grows with the
     /// size rather than staying a fixed square. Guarded by
     /// `AX5ReflowTests.topChromeFitsItsReservedBudgetAtAX5`.
+    ///
+    /// **PR #60 proposed raising this to 85 and that was wrong** (task #258, review B3). The
+    /// derivation was `158.33 − 12 − 62` from an iPhone 16 Pro's chip-row frame, with the 62 built
+    /// from `topInset = 54` — and 54 is E243's *synthetic-window* inset, which is the exact number
+    /// E243 exists to warn is not the app's. The 16 Pro Max reports the same chip-row `minY` of
+    /// 158.33 with a real inset of 62, so the subtraction was 8 pt out. Measured directly instead,
+    /// through the swept harness at the width screen 01 gives it: **76.67 pt at all six of
+    /// `AX5ReflowTests.heightBoundWidths`**, which the original 77 bounds. Reverted, and left here
+    /// because a constant that has been wrongly "corrected" once will be again.
     static let searchBarHeightAX5: CGFloat = 77
+    /// `SearchBar` at the largest ordinary size, `.xxxLarge`: 49 pt measured, 50 reserved.
+    static let searchBarHeightLarge: CGFloat = 50
     /// `MapFilterChips`'s own AX5 footprint — the collapsed row only. `isExpanded` starts `false`,
     /// and the opened drawer (behind `MapFilterCopy.moreLabel`) pushes the row's *own* bottom edge
     /// down when the reader opens it themselves, which is not room this reservation owes anybody in
@@ -295,13 +345,16 @@ enum MapLayout {
     /// labels are Dynamic-Type text and the row stays one line at every size (#166) rather than
     /// wrapping, so its height tracks the text without ever taking a second line.
     static let chipRowHeightAX5: CGFloat = 60
+    /// `MapFilterChips` at the largest ordinary size, `.xxxLarge`: 34.67 pt measured, 36 reserved.
+    static let chipRowHeightLarge: CGFloat = 36
 
     /// The room the top chrome — `MapHomeView.chrome`'s `.top` overlay, down through the filter
     /// chip row — needs before the recenter control may rise into it.
     ///
     /// **`topInset` is read live, not baked in.** It is `GeometryReader`'s own
     /// `proxy.safeAreaInsets.top`, threaded down from `MapHomeView.chrome` through `bottomChrome`
-    /// to `noticeMaxHeight(availableHeight:topInset:)` below — never folded into a `MapLayout`
+    /// to `noticeMaxHeight(screenHeight:topInset:namedSpecies:isAccessibilitySize:)` below — never
+    /// folded into a `MapLayout`
     /// constant, because #246/E243 is exactly the lesson that a safe-area inset baked into a
     /// constant silently doubles up with the real one on whichever simulator happens to measure it
     /// (54 pt on an iPhone 16 Pro, 47 on an iPhone 16e, and neither the iPhone 16 Pro Max's own
@@ -312,19 +365,342 @@ enum MapLayout {
     /// with (`MapHomeView.chrome`'s `.padding(.top:)` and its `VStack`'s own `spacing:`), so this
     /// sum is exactly the y-coordinate — in the same screen coordinates `bottomChrome` positions the
     /// recenter control in — of the chip row's own bottom edge.
-    static func topChromeReservedAX5(topInset: CGFloat) -> CGFloat {
-        topInset + searchTopInset + searchBarHeightAX5 + chipRowTop + chipRowHeightAX5
+    static func topChromeReserved(topInset: CGFloat, isAccessibilitySize: Bool) -> CGFloat {
+        topInset
+            + searchTopInset
+            + (isAccessibilitySize ? searchBarHeightAX5 : searchBarHeightLarge)
+            + chipRowTop
+            + (isAccessibilitySize ? chipRowHeightAX5 : chipRowHeightLarge)
+    }
+
+    // MARK: The rest of the top chrome, which the chip row is not the bottom of (task #258)
+    //
+    // `topChromeReserved` above stops at the filter chip row, and its own doc says so: the sum is
+    // "exactly the y-coordinate … of the chip row's own bottom edge". **The chip row is not the last
+    // child of that block.** Below it the same `VStack` stacks the `Needs care` toast, the search
+    // status line, and — whenever the visible camera has colored any species at all, which is the
+    // standing state on this screen — `MapSpeciesLegend`, whose chips wrap onto as many lines as
+    // their names need.
+    //
+    // Measured on an iPhone 16 Pro (402 pt), AX5, `CYPRESS_LOCATION=denied`, at `origin/main`: the
+    // legend is `(16, 230, 344.33, 262.67)`, so the top block ends at y 492.67 against the 211 pt
+    // the reservation predicted; the recenter control was at y 315 and the identify FAB at
+    // `(22, 371, 364.33, 83)` — **inside the legend's rectangle**, and drawn over by it, because
+    // `MapHomeView.chrome` applies the bottom block first so that the top block draws over it. The
+    // FAB is screen 01's only entrance to the visit flow, and all but the bottom 14 pt of it was
+    // covered. That is #250's defect one child further down the same stack.
+    //
+    // It read as a flaky test rather than a bug for a reason worth keeping: XCUITest resolves
+    // `isHittable` by hit-testing the activation point and then points sampled inside the frame, so
+    // a control covered everywhere except a 14 pt band reports reachable whenever the sampling lands
+    // in the band. See `CypressUITests/IdentifyFABReachabilityTests`, which asserts the rectangles
+    // instead.
+    //
+    // ── Why this is arithmetic on the model and not a measurement ────────────────────────────────
+    //
+    // The obvious repair is to measure the top block's real bottom edge and feed it back. **It was
+    // built, and it does not work.** A `GeometryReader` in a `.background` on the top block, its
+    // `maxY` handed to `@State` through `onChange`, removed the occlusion on most launches and froze
+    // on some — the same value for the whole life of the process, from the first sample to the last.
+    // Instrumented over 32 launches on an iPhone 16 Pro, three froze, and in those three the
+    // `GeometryReader` re-rendered with the correct 492.67 while the `@State` value and the last
+    // value the `onChange` action was *given* were the same stale intermediate (425.0, a three-row
+    // legend; 357.33, a two-row one). **The best explanation is that the action was never called
+    // for the last transition** — `onChange` is edge-triggered over a value that then never changes
+    // again, so nothing re-delivers it. **It is inferred rather than established**: the probe that
+    // reports what the action was given writes into non-observed storage from inside the measuring
+    // closure and is read back through the same render, so a reordering of that write against its
+    // own publication fits the same three readings. What is not in doubt is that four wirings of
+    // the same idea flake, and all four are edge-triggered channels out of the layout system.
+    //
+    // The palette is not. `MapSpeciesPalette` is model state that `MapHomeView` already observes, so
+    // the number of chips is known *before* layout rather than reported back out of it, and there is
+    // no channel to drop anything.
+
+    /// One `MapSpeciesLegend` chip's own footprint at an accessibility Dynamic Type size.
+    ///
+    /// A **bound**, in the sense `searchBarHeightAX5` is: the chip is one line of
+    /// `CypressFont.body12SemiBold` (`.lineLimit(1)`, which is what makes a chip's height
+    /// independent of how long the species' name is) inside `chipPaddingVFilter` top and bottom.
+    /// Measured 59.67 pt on an iPhone 16 Pro at AX5 — `(262.67 − 3 × chipGap) / 4` from the legend's
+    /// own frame — and guarded by `AX5ReflowTests.theSpeciesLegendFitsItsReservationAtAX5`.
+    static let legendChipHeightAX5: CGFloat = 60
+
+    /// The same footprint at the largest **ordinary** Dynamic Type size, `.xxxLarge`.
+    ///
+    /// Two buckets rather than one, because unlike every other reservation in this file this one is
+    /// multiplied by up to four. Reserving the AX5 figure unconditionally — the bargain
+    /// `bottomSlotReservedAbove` makes — would take 276 pt off `noticeMaxHeight` at the default
+    /// content size, where the legend is nowhere near that tall, and would put `MapLocationNotice`
+    /// into a scroll on a screen with room to spare. Gating on
+    /// `dynamicTypeSize.isAccessibilitySize` buys a step at the AX1 boundary instead, and both
+    /// sides of the step are bounds that a guard measures rather than guesses.
+    static let legendChipHeightLarge: CGFloat = 36
+
+    /// Which of the two above applies at the size the reader is running.
+    static func legendChipHeight(isAccessibilitySize: Bool) -> CGFloat {
+        isAccessibilitySize ? legendChipHeightAX5 : legendChipHeightLarge
+    }
+
+    /// What `MapSpeciesLegend` would take if nothing stopped it — 0 when it draws nothing.
+    ///
+    /// **An upper bound by construction, not an estimate.** `FlowRow` puts *at most* one chip on a
+    /// line, so `count` chips occupy at most `count` lines; every chip is exactly one line tall
+    /// (`.lineLimit(1)`), so every line is at most `legendChipHeight` tall. A legend whose names are
+    /// short enough to pair up on a line is therefore over-reserved and never under-reserved, which
+    /// is the only direction that can put a control back underneath another one. Guarded by
+    /// `AX5ReflowTests.theSpeciesLegendFitsItsReservationAtAX5`.
+    ///
+    /// - Parameter count: how many entries the legend will draw — `MapSpeciesLegend.named(in:)`,
+    ///   which is the one definition of that, so the reservation and the view cannot disagree.
+    static func legendNaturalHeight(namedSpecies count: Int, isAccessibilitySize: Bool) -> CGFloat {
+        guard count > 0 else { return 0 }
+        return CGFloat(count) * legendChipHeight(isAccessibilitySize: isAccessibilitySize)
+            + CGFloat(count - 1) * chipGap
+    }
+
+    /// **Everything below the filter chip row is shared between two growable things**, and this is
+    /// the room they share: the screen, less what `bottomChrome` stacks above the notice, less the
+    /// chip row's own bottom edge, less the gap the two blocks must keep between them.
+    ///
+    /// Both consumers are bounded out of this one number, so the arithmetic that keeps them apart is
+    /// stated once. `AX5ReflowTests.theReservedBlocksNeverMeet` asserts the consequence over every
+    /// screen and inset the app runs on.
+    static func chromeSlackBelowChipRow(
+        screenHeight: CGFloat,
+        topInset: CGFloat,
+        isAccessibilitySize: Bool
+    ) -> CGFloat {
+        max(
+            0,
+            screenHeight
+                - bottomSlotReservedAbove(isAccessibilitySize: isAccessibilitySize)
+                - topChromeReserved(topInset: topInset, isAccessibilitySize: isAccessibilitySize)
+                // The one vertical rhythm this screen's chrome has (`locateToFabGap` is the same
+                // number for the same reason). Without it the two blocks come to rest exactly edge
+                // to edge, which is a knife edge for the reader and for any guard asserting they do
+                // not intersect.
+                - chipRowTop
+        )
+    }
+
+    /// **The height `MapLocationNotice` is never given less than** (task #258, PR #60 review B4).
+    ///
+    /// The first version of this split served the legend first and gave the notice whatever was
+    /// left, which on a short phone is **nothing**: `noticeMaxHeight` came out at 0 on a 667 pt
+    /// screen at every inset, and `MapHomeView.standingNotice` hands that straight to
+    /// `MapLocationNotice(maxHeight:)` for all four arms — including the refused arm, whose
+    /// `Settings` button is the only way the reader has to fix the permission the card is about. A
+    /// `ScrollView` at `frame(maxHeight: 0)` draws nothing. **A fix for an unreachable FAB that
+    /// makes the permission remedy unreachable instead has not fixed anything**, and RULINGS R53 §6
+    /// ruled that this card *scrolls*, not that it disappears.
+    ///
+    /// The number is the card at its smallest that still carries an action: a one-line title, no
+    /// message, and the button — **92.67 pt, identical at all six of
+    /// `AX5ReflowTests.heightBoundWidths`**, rounded up. At this budget the button sits at
+    /// `cardPaddingV`…`cardPaddingV + 59.67` and is *fully* visible without scrolling, which is the
+    /// property that matters; the message, and the second line of a title that takes two, are what
+    /// scroll. Guarded by `AX5ReflowTests.theNoticeFloorFitsItsOwnActionButton`.
+    ///
+    /// It is deliberately not the *whole* first row (143 pt for the denied title at AX5, 243.67 for
+    /// `Location Services are off` at 375 pt). A floor that large is affordable on a 440 pt phone
+    /// and takes the species legend below one chip on a 667 pt one — it would buy a fully readable
+    /// title by making the legend useless. What the reader sees at each width is in `docs/ERRATA.md`
+    /// once the orchestrator splices this branch's pending entry under its real number at merge.
+    static let noticeFloorAX5: CGFloat = 93
+
+    /// The same card at `.xxxLarge`: 65 pt measured, 66 reserved.
+    static let noticeFloorLarge: CGFloat = 66
+
+    /// Whichever floor applies at the size the reader is running.
+    static func noticeFloor(isAccessibilitySize: Bool) -> CGFloat {
+        isAccessibilitySize ? noticeFloorAX5 : noticeFloorLarge
+    }
+
+    /// The ceiling `MapSpeciesLegend` may draw in before it must scroll.
+    ///
+    /// The legend is served first out of `chromeSlackBelowChipRow` **and the notice's floor is
+    /// taken off the top before it is** — so "served first" now means "served first out of what is
+    /// left over the floor", which is what stops this from zeroing the card below it. Serving it
+    /// first at all is the deliberate half: the legend is the top block's last child, so it is the
+    /// thing physically between the chip row and the identify FAB, and giving the notice priority
+    /// would leave the legend to be cut — the legend's cut *is* the defect.
+    static func legendCeiling(
+        screenHeight: CGFloat,
+        topInset: CGFloat,
+        isAccessibilitySize: Bool
+    ) -> CGFloat {
+        // `chipRowTop` is the `VStack`'s own spacing above the legend, which is part of what the top
+        // block occupies and is not part of what the legend may draw in.
+        max(
+            0,
+            chromeSlackBelowChipRow(
+                screenHeight: screenHeight,
+                topInset: topInset,
+                isAccessibilitySize: isAccessibilitySize
+            )
+                - chipRowTop
+                - noticeFloor(isAccessibilitySize: isAccessibilitySize)
+        )
+    }
+
+    /// **How much room this screen is short of housing both occupants**, in points — 0 when it can
+    /// house them.
+    ///
+    /// The split cannot always succeed, and the failure has to be *sayable* rather than absorbed by
+    /// whichever term happens to be the remainder. `legendCeiling` clamps at 0, so once the slack
+    /// falls below `chipRowTop + noticeFloorAX5` the legend is given nothing at all and the notice
+    /// starts eating into its own floor — silently, if nobody asks. This is the asking.
+    ///
+    /// `AX5ReflowTests.theChromeBudgetCanHouseBothOccupants` asserts it is 0 for every screen and
+    /// inset the app runs on, so a device or a Dynamic-Type change that makes screen 01 unhousable
+    /// fails the unit suite with a number rather than shipping a zero-height control.
+    static func chromeBudgetShortfall(
+        screenHeight: CGFloat,
+        topInset: CGFloat,
+        isAccessibilitySize: Bool
+    ) -> CGFloat {
+        max(
+            0,
+            chipRowTop + noticeFloor(isAccessibilitySize: isAccessibilitySize)
+                - chromeSlackBelowChipRow(
+                    screenHeight: screenHeight,
+                    topInset: topInset,
+                    isAccessibilitySize: isAccessibilitySize
+                )
+        )
+    }
+
+    /// The ceiling to hand `MapSpeciesLegend.maxHeight` — **`nil` unless it actually binds.**
+    ///
+    /// The nil is not a shortcut. A non-nil ceiling puts the legend inside a `ScrollView`, and a
+    /// `ScrollView` over a map takes touches across its whole frame where the bare `FlowRow` takes
+    /// them only on the chips themselves (`MapHomeView.chrome`: "the empty width beside a chip has
+    /// never taken a touch"). Screen 01 cannot afford to make the pan ambiguous, so the scroller
+    /// appears only where the alternative is a control the reader cannot reach at all: a short phone
+    /// at an accessibility size, where `topChromeReserved` plus four AX5 chips plus the bottom
+    /// block comes to 461 pt of a 667 pt screen's 398 pt of room. On every device this suite runs
+    /// — 402 pt and 430 pt, default size and AX5 — the legend is inside its ceiling and this returns
+    /// `nil`, so the view is byte-for-byte the one that shipped.
+    ///
+    /// Something has to yield in that squeeze, and it is the legend rather than the FAB because a
+    /// scrolled chip is reachable and a covered control is not — RULINGS R53 §6's own argument,
+    /// applied to the other occupant of the same slot. Every chip stays pressable, which matters
+    /// twice here because the legend is also the species filter (#116).
+    static func legendMaxHeight(
+        screenHeight: CGFloat,
+        topInset: CGFloat,
+        namedSpecies count: Int,
+        isAccessibilitySize: Bool
+    ) -> CGFloat? {
+        guard count > 0 else { return nil }
+        let natural = legendNaturalHeight(
+            namedSpecies: count,
+            isAccessibilitySize: isAccessibilitySize
+        )
+        let ceiling = legendCeiling(
+            screenHeight: screenHeight,
+            topInset: topInset,
+            isAccessibilitySize: isAccessibilitySize
+        )
+        return natural <= ceiling ? nil : ceiling
+    }
+
+    /// The room the legend's block takes out of the slack: what it will actually occupy, plus the
+    /// `VStack` gap above it.
+    static func legendReserved(
+        screenHeight: CGFloat,
+        topInset: CGFloat,
+        namedSpecies count: Int,
+        isAccessibilitySize: Bool
+    ) -> CGFloat {
+        guard count > 0 else { return 0 }
+        let natural = legendNaturalHeight(
+            namedSpecies: count,
+            isAccessibilitySize: isAccessibilitySize
+        )
+        let ceiling = legendCeiling(
+            screenHeight: screenHeight,
+            topInset: topInset,
+            isAccessibilitySize: isAccessibilitySize
+        )
+        return chipRowTop + min(natural, ceiling)
+    }
+
+    /// **Where the top chrome really ends**, in the screen coordinates `bottomChrome` positions the
+    /// recenter control in: the chip row's bottom edge (`topChromeReserved`) plus the legend
+    /// below it.
+    ///
+    /// The `Needs care` toast and the search status line sit in the same stack and are **not**
+    /// reserved here. Both are transient — the toast dismisses itself after three seconds and the
+    /// status line exists only while a search is running, and a search is the state R25/#143
+    /// deliberately lets the top block draw over the bottom one in. Reserving either would come
+    /// straight out of `MapLocationNotice`'s budget in the standing state, where they are not on
+    /// screen. It is a real gap and it is named rather than papered over: at AX5, with four species
+    /// colored *and* the toast up, the legend is pushed down past this bound for those three
+    /// seconds. See `docs/ERRATA.md` once the orchestrator splices this branch's pending entry
+    /// under its real number at merge.
+    static func topChromeBottom(
+        screenHeight: CGFloat,
+        topInset: CGFloat,
+        namedSpecies: Int,
+        isAccessibilitySize: Bool
+    ) -> CGFloat {
+        topChromeReserved(topInset: topInset, isAccessibilitySize: isAccessibilitySize)
+            + legendReserved(
+                screenHeight: screenHeight,
+                topInset: topInset,
+                namedSpecies: namedSpecies,
+                isAccessibilitySize: isAccessibilitySize
+            )
     }
 
     /// The height `MapLocationNotice` may take in the bottom slot before it must scroll instead
-    /// of growing past the top of the screen, or up into the chip row above it (task #250).
+    /// of growing past the top of the screen, or up into the top chrome above it (tasks #250, #258).
     /// Conservative rather than exact — it reserves the AX5 heights of the recenter control and the
     /// FAB even when Dynamic Type is nowhere near AX5, because at ordinary sizes the notice never
     /// gets close to this budget regardless, and a budget computed once from constants is simpler
     /// than measuring the controls' actual height on every layout pass for a slot this is the
     /// backstop for, not the primary fit.
-    static func noticeMaxHeight(availableHeight: CGFloat, topInset: CGFloat) -> CGFloat {
-        availableHeight - bottomSlotReservedAboveAX5 - topChromeReservedAX5(topInset: topInset)
+    ///
+    /// **What is left of `chromeSlackBelowChipRow` once the legend has taken its ceiling** (task
+    /// #258). The two are complementary halves of one number, so no arrangement of them can hand
+    /// the same point to both blocks.
+    ///
+    /// **`screenHeight`, not the safe area's height** (task #258). Every other term here is measured
+    /// from the top of the *screen* — `topChromeReserved` has `topInset` in it, and
+    /// `bottomSlotReservedAbove` ends at `tabBarHeight`, which is `bottomChrome`'s padding from
+    /// the bottom of the block it is anchored in, and that block is `MapCanvas`'s `.ignoresSafeArea`
+    /// overlay. This subtracted them from `GeometryReader`'s `size.height` instead, which is the
+    /// safe area, so it had been ~93 pt conservative on a notched phone the whole time: harmless
+    /// while the number being subtracted was 211, and not harmless once the legend's 276 joins it —
+    /// the two together leave a *negative* budget out of the safe area's 781 pt and a workable 98 pt
+    /// out of the screen's 874. The screen's height needs no measurement: it is the safe area plus
+    /// the two insets that bound it, all three of which `MapHomeView`'s root `GeometryReader`
+    /// already has.
+    ///
+    /// Clamped at zero. A budget below zero is not a smaller budget, it is a `frame(maxHeight:)`
+    /// SwiftUI is entitled to treat as garbage.
+    static func noticeMaxHeight(
+        screenHeight: CGFloat,
+        topInset: CGFloat,
+        namedSpecies: Int,
+        isAccessibilitySize: Bool
+    ) -> CGFloat {
+        max(
+            0,
+            chromeSlackBelowChipRow(
+                screenHeight: screenHeight,
+                topInset: topInset,
+                isAccessibilitySize: isAccessibilitySize
+            )
+                - legendReserved(
+                    screenHeight: screenHeight,
+                    topInset: topInset,
+                    namedSpecies: namedSpecies,
+                    isAccessibilitySize: isAccessibilitySize
+                )
+        )
     }
 
     // MARK: The z-order of the marker layer (task #150)

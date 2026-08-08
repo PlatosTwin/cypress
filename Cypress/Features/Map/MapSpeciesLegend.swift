@@ -53,28 +53,86 @@ struct MapSpeciesLegend: View {
     /// legend renders the selection as well as setting it.
     @Binding var selection: UUID?
 
-    private var named: [MapSpeciesPalette.Entry] {
+    /// **The entries this view actually draws**, which is not the same as `palette.entries` — a slot
+    /// whose species name has not arrived yet draws nothing (see this file's header).
+    ///
+    /// `static`, because `MapHomeView` has to reserve room for exactly the chips that will be drawn
+    /// and there must be one definition of which those are (task #258). A second copy of this filter
+    /// in the reservation would be a rule the two could disagree about, and the disagreement would
+    /// show up as the legend covering the identify FAB — the defect the reservation exists for.
+    static func named(in palette: MapSpeciesPalette) -> [MapSpeciesPalette.Entry] {
         palette.entries.filter { $0.name?.isEmpty == false }
     }
 
+    private var named: [MapSpeciesPalette.Entry] { Self.named(in: palette) }
+
+    /// **The ceiling this legend may grow to before it scrolls rather than pushing the chrome below
+    /// it off the screen** (task #258). `nil` for every caller that is not screen 01 — the same
+    /// bargain `MapLocationNotice.maxHeight` makes with the same slot's other occupant.
+    ///
+    /// `MapLayout.legendMaxHeight` gives the legend everything it asks for wherever the screen has
+    /// the room, and returns `nil` there so this branch is not taken at all — at every ordinary
+    /// content size, on every supported phone, the rendering is byte-for-byte the wrapped `FlowRow`
+    /// it has always been. It binds at AX5 with a full four-species palette on the phones at or
+    /// below 402 pt, where the search bar, the chip row, four wrapped legend chips,
+    /// `MapLocationNotice`'s own floor, the recenter control and the FAB together want more than the
+    /// glass has. Something has to yield there, and it must not be the FAB — that control is screen
+    /// 01's only entrance to the visit flow, and the legend covering it is the whole of #258.
+    /// `AX5ReflowTests.theLegendCeilingBindsWhereTheArithmeticSaysItDoes` carries the boundary.
+    ///
+    /// The legend is what yields, for the reason RULINGS R53 §6 gave when it made the same call for
+    /// the notice: scrolled content is reachable and covered content is not. Every chip stays
+    /// pressable, which matters twice over here because the legend is also the species filter
+    /// (#116).
+    var maxHeight: CGFloat?
+
     var body: some View {
         if !named.isEmpty {
-            // Wraps rather than scrolls. Four common names can be long ("Brisbane Box", "New Zealand
-            // Christmas Tree") and a horizontal scroller on top of a map is a gesture competing with
-            // the pan underneath it — the one interaction screen 01 cannot afford to make ambiguous.
-            FlowRow(spacing: MapLayout.chipGap, lineSpacing: MapLayout.chipGap) {
-                ForEach(named) { entry in
-                    Button {
-                        selection = selection == entry.speciesID ? nil : entry.speciesID
-                    } label: {
-                        chip(entry)
-                    }
-                    .buttonStyle(.plain)
-                    .cypressHitArea()
+            if let maxHeight {
+                ScrollView {
+                    chips
                 }
+                .frame(maxHeight: maxHeight)
+                // Vertical only, and load-bearing for "unchanged where there is room": without it a
+                // legend well under its ceiling sits in a tall, mostly empty scroll well instead of
+                // hugging its own rows. `MapLocationNotice` and `MapSuggestionList` carry it for
+                // exactly this reason.
+                .fixedSize(horizontal: false, vertical: true)
+                // **The labeled group is the scroller, not the rows inside it** (task #258). An
+                // element's frame is what an assistive technology draws its cursor around and what
+                // XCUITest measures, and the rows inside a clamped `ScrollView` extend past the
+                // window that clips them: on an iPhone 16e at AX5 the visible legend ends at y 417
+                // and the `FlowRow` inside it reports a bottom edge of 477.67 — 48 pt of element
+                // over controls it does not draw on. Labeling the outer view reports the rectangle
+                // the reader can actually see and touch. Found by this ticket's own geometric
+                // guard, which went red on a screen that was, in a screenshot, correct.
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel(MapSpeciesLegendCopy.rowLabel)
+            } else {
+                chips
+                    .accessibilityElement(children: .contain)
+                    .accessibilityLabel(MapSpeciesLegendCopy.rowLabel)
             }
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel(MapSpeciesLegendCopy.rowLabel)
+        }
+    }
+
+    private var chips: some View {
+        // Wraps rather than scrolls *horizontally*. Four common names can be long ("Brisbane Box",
+        // "New Zealand Christmas Tree") and a horizontal scroller on top of a map is a gesture
+        // competing with the pan underneath it — the one interaction screen 01 cannot afford to
+        // make ambiguous. The vertical ceiling above is a different question and a different axis:
+        // it competes with nothing, because the rows it would scroll are rows the reader could not
+        // otherwise see at all.
+        FlowRow(spacing: MapLayout.chipGap, lineSpacing: MapLayout.chipGap) {
+            ForEach(named) { entry in
+                Button {
+                    selection = selection == entry.speciesID ? nil : entry.speciesID
+                } label: {
+                    chip(entry)
+                }
+                .buttonStyle(.plain)
+                .cypressHitArea()
+            }
         }
     }
 

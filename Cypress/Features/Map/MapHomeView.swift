@@ -49,6 +49,11 @@ struct MapHomeView: View {
     @Environment(AppRouter.self) private var router
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
+    /// **Read here so `MapLayout` can reserve for the legend without measuring it** (task #258).
+    /// The legend's chips are Dynamic-Type text and there are up to four of them, so what they
+    /// occupy is the one reservation on this screen that a single AX5 constant would be wildly
+    /// wrong about at the default size. See `MapLayout.legendChipHeight(isAccessibilitySize:)`.
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var model: MapModel
     /// **Where the map opens: the camera this install was last left on** (#115).
     ///
@@ -131,7 +136,17 @@ struct MapHomeView: View {
                             // rather than a fixed number of points, because the thing it must not
                             // swallow — the map, the FAB, the tree card — is measured in shares of
                             // the display too. See `MapSuggestionList.share`.
-                            availableHeight: proxy.size.height
+                            availableHeight: proxy.size.height,
+                            // **The whole screen, reconstructed rather than measured** (task #258).
+                            // The chrome is `MapCanvas`'s `.ignoresSafeArea()` overlay, so both its
+                            // blocks are positioned in a rectangle the height of the display, and
+                            // `MapLayout.noticeMaxHeight`'s other terms count from the top of that
+                            // rectangle. This proxy's own `size.height` is the safe area. Nothing
+                            // here needs a second `GeometryReader` — the three numbers that make
+                            // the screen's height are all on this one.
+                            screenHeight: proxy.size.height
+                                + proxy.safeAreaInsets.top
+                                + proxy.safeAreaInsets.bottom
                         )
                     }
                 )
@@ -310,7 +325,7 @@ struct MapHomeView: View {
     // MARK: - Overlay
 
     @ViewBuilder
-    private func chrome(topInset: CGFloat, availableHeight: CGFloat) -> some View {
+    private func chrome(topInset: CGFloat, availableHeight: CGFloat, screenHeight: CGFloat) -> some View {
         @Bindable var model = model
 
         // Two absolutely positioned blocks, exactly as 01 describes them — a `Spacer` between them
@@ -338,7 +353,7 @@ struct MapHomeView: View {
         // sorts first; priorities compare among siblings, which each of these sets is.
         Color.clear
             .overlay(alignment: .bottom) {
-                bottomChrome(topInset: topInset, availableHeight: availableHeight)
+                bottomChrome(topInset: topInset, screenHeight: screenHeight)
                     .accessibilitySortPriority(1)
             }
             .overlay(alignment: .top) {
@@ -404,7 +419,19 @@ struct MapHomeView: View {
                     // `MapSpeciesLegend` for why the filter and the legend had to be one control.
                     MapSpeciesLegend(
                         palette: model.speciesPalette,
-                        selection: $model.filter.speciesID
+                        selection: $model.filter.speciesID,
+                        // **The one thing between the chip row and the identify FAB** (task #258).
+                        // `nil` wherever the screen has room for the legend the palette asks for,
+                        // which is every device the suite runs on at every type size — the view is
+                        // then exactly the one that shipped, with no scroller over the map. It is a
+                        // number only on a short phone at an accessibility size, where the chrome
+                        // wants more room than the glass has. See `MapLayout.legendMaxHeight`.
+                        maxHeight: MapLayout.legendMaxHeight(
+                            screenHeight: screenHeight,
+                            topInset: topInset,
+                            namedSpecies: MapSpeciesLegend.named(in: model.speciesPalette).count,
+                            isAccessibilitySize: dynamicTypeSize.isAccessibilitySize
+                        )
                     )
                     .accessibilitySortPriority(1)
                 }
@@ -439,11 +466,12 @@ struct MapHomeView: View {
     /// pretending anything inside either of them moved. See the comment at the reorder.
     ///
     /// **`topInset` (task #250).** This block's own layout does not use it — it is
-    /// passed through to `MapLayout.noticeMaxHeight(availableHeight:topInset:)` alone, so the
-    /// notice's AX5 scroll budget stays small enough that the recenter control, first in the
-    /// `VStack` below, cannot rise above the top chrome's own chip row no matter how tall the
-    /// notice grows. See `MapLayout`'s "top chrome's own reservation" section for the mechanism.
-    private func bottomChrome(topInset: CGFloat, availableHeight: CGFloat) -> some View {
+    /// passed through to `MapLayout.noticeMaxHeight(screenHeight:topInset:namedSpecies:isAccessibilitySize:)`
+    /// alone, so the notice's AX5 scroll budget stays small enough that the recenter control, first
+    /// in the `VStack` below, cannot rise into the top chrome no matter how tall the notice grows.
+    /// See `MapLayout`'s "top chrome's own reservation" section for the mechanism, and the section
+    /// after it (task #258) for why the chip row is not the bottom of that chrome.
+    private func bottomChrome(topInset: CGFloat, screenHeight: CGFloat) -> some View {
         VStack(alignment: .trailing, spacing: 0) {
             // Above the FAB and right-aligned with it, inside the same absolutely positioned
             // block — which is the position MapKit's own `MapUserLocationButton` could not
@@ -462,8 +490,12 @@ struct MapHomeView: View {
                 .padding(.bottom, MapLayout.fabToCardGap)
             bottomSlot(
                 noticeMaxHeight: MapLayout.noticeMaxHeight(
-                    availableHeight: availableHeight,
-                    topInset: topInset
+                    screenHeight: screenHeight,
+                    topInset: topInset,
+                    // The chips the legend will actually draw, counted through the legend's own
+                    // definition of that so the two cannot drift apart.
+                    namedSpecies: MapSpeciesLegend.named(in: model.speciesPalette).count,
+                    isAccessibilitySize: dynamicTypeSize.isAccessibilitySize
                 )
             )
         }
