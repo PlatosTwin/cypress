@@ -270,7 +270,17 @@ enum VisitMetrics {
         static let ghostCaptionBottom: CGFloat = 44
         static let ghostCaptionLeading: CGFloat = 34
         static let ghostCaptionMaxWidth: CGFloat = 80
-        static let ghostCaptionLineSpacing: CGFloat = 4.2
+        /// `10.5 × (1.4 − 1.2)`. CSS `line-height` includes the glyph box and SwiftUI's
+        /// `.lineSpacing()` does not, so the conversion subtracts the font's own ~1.2× line box —
+        /// the rule stated on `CypressFont.LineSpacing`, whose four *numeric* tokens follow it
+        /// exactly (`speciesHero` and `treeNameHero` are clamped to 0 and deliberately do not).
+        /// This was `4.2` (`10.5 × 0.4`) from the M0 skeleton onward: the subtraction was
+        /// performed with the wrong constant, taking the natural line box as **1.0** rather than
+        /// 1.2 — `10.5 × (1.4 − 1.0)` — so the caption carried double the intended leading. A
+        /// tester on build 18 reported it "cut off and flows poorly": at the 80 pt cap the
+        /// no-ghost string wraps to four lines, and the doubled leading is what made that column
+        /// read as four separately floating words. Pinned by `VisitCameraCaptionMetricsTests`.
+        static let ghostCaptionLineSpacing: CGFloat = 2.1
 
         /// "the last full-tree photo at **30 % opacity**" — the one number the whole screen exists
         /// for (PRODUCT §5 M4, SCREENS 04).
