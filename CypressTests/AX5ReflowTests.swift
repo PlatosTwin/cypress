@@ -44,7 +44,7 @@ struct AX5ReflowTests {
     // measured only there is blind in the one direction that matters.** `MapLayout.fabHeightAX5`
     // was 83, measured through `ax5Size` at 393 pt and correct there. On an iPhone 16e (390 pt) the
     // FAB's label takes an extra line and the control occupies **135.67 pt** — 52.67 pt past what
-    // `bottomSlotReservedAboveAX5` reserves for it, which put the recenter control 30 pt up inside
+    // `bottomSlotReservedAbove` reserves for it, which put the recenter control 30 pt up inside
     // the species legend and turned #258's own new guard red on a device it had not been run on.
     // Three points of width, and the guard could not see it.
     //
@@ -422,6 +422,18 @@ struct AX5ReflowTests {
             notice's scroll budget reserves for it
             """
         )
+        let fabLarge = await Self.widestReflow(
+            of: IdentifyFAB(action: {}),
+            horizontalInset: MapLayout.sideInset,
+            size: .xxxLarge
+        )
+        #expect(
+            fabLarge.height <= MapLayout.fabHeightLarge,
+            """
+            IdentifyFAB measures \(fabLarge.height) pt at .xxxLarge on a \(fabLarge.phoneWidth) pt \
+            phone, past the \(MapLayout.fabHeightLarge) pt reserved for it at ordinary sizes
+            """
+        )
         #expect(
             fab.height <= MapLayout.fabHeightAX5,
             """
@@ -448,7 +460,7 @@ struct AX5ReflowTests {
     // MARK: - Task #250 · The top chrome's own reservation
 
     /// `MapLayout.searchBarHeightAX5` and `.chipRowHeightAX5` are the inputs to
-    /// `topChromeReservedAX5(topInset:)`, which
+    /// `topChromeReserved(topInset:isAccessibilitySize:)`, which
     /// `noticeMaxHeight(screenHeight:topInset:namedSpecies:isAccessibilitySize:)` subtracts so the
     /// recenter control — first in `bottomChrome`'s bottom-anchored stack — cannot
     /// rise above the filter chip row's own bottom edge no matter how tall the notice below it
@@ -475,6 +487,31 @@ struct AX5ReflowTests {
             """
             SearchBar now measures \(bar.height) pt at AX5 on a \(bar.phoneWidth) pt phone, past \
             the \(MapLayout.searchBarHeightAX5) pt the top-chrome reservation gives it
+            """
+        )
+        let barLarge = await Self.widestReflow(
+            of: SearchBar(text: .constant("")),
+            horizontalInset: MapLayout.sideInset,
+            size: .xxxLarge
+        )
+        let chipsLarge = await Self.widestReflow(
+            of: MapFilterChips(filter: .constant(.all)),
+            horizontalInset: MapLayout.sideInset,
+            size: .xxxLarge
+        )
+        #expect(
+            barLarge.height <= MapLayout.searchBarHeightLarge,
+            """
+            SearchBar measures \(barLarge.height) pt at .xxxLarge on a \(barLarge.phoneWidth) pt \
+            phone, past the \(MapLayout.searchBarHeightLarge) pt reserved at ordinary sizes
+            """
+        )
+        #expect(
+            chipsLarge.height <= MapLayout.chipRowHeightLarge,
+            """
+            MapFilterChips measures \(chipsLarge.height) pt at .xxxLarge on a \
+            \(chipsLarge.phoneWidth) pt phone, past the \(MapLayout.chipRowHeightLarge) pt \
+            reserved at ordinary sizes
             """
         )
         #expect(
@@ -590,6 +627,11 @@ struct AX5ReflowTests {
     /// where the bare `FlowRow` takes them only on the chips. That is a real cost and it is now paid
     /// on some devices; it is paid at AX5 with a full palette only, and the alternative on those
     /// phones is a control the reader cannot reach.
+    ///
+    /// **The boundary sits between 402 pt and 430 pt.** A full four-chip legend needs 264 pt at AX5;
+    /// the ceiling is 224 pt on an iPhone 16 Pro and 274 pt on an iPhone 16 Plus. So the three
+    /// narrower phones scroll it and the two widest do not — and at ordinary content sizes none of
+    /// them do, which is the second assertion and the one that must never change.
     @Test("the legend's ceiling binds on the narrow phones at AX5 and on none at ordinary sizes")
     func theLegendCeilingBindsWhereTheArithmeticSaysItDoes() {
         // (phone width, screen height, its real top inset) for the five phones this ticket names.
@@ -597,8 +639,8 @@ struct AX5ReflowTests {
             ("iPhone SE 375x667", 667, 20, true),
             ("iPhone 16e 390x844", 844, 47, true),
             ("iPhone 16 Pro 402x874", 874, 54, true),
-            ("iPhone 16 Plus 430x932", 932, 62, true),
-            ("iPhone 16 Pro Max 440x956", 956, 62, true)
+            ("iPhone 16 Plus 430x932", 932, 62, false),
+            ("iPhone 16 Pro Max 440x956", 956, 62, false)
         ]
         for phone in phones {
             let atAX5 = MapLayout.legendMaxHeight(
@@ -715,12 +757,16 @@ struct AX5ReflowTests {
                             isAccessibilitySize: isAccessibilitySize
                         )
                         #expect(
-                            notice >= MapLayout.noticeFloorAX5,
+                            notice >= MapLayout.noticeFloor(
+                                isAccessibilitySize: isAccessibilitySize
+                            ),
                             """
                             on a \(screenHeight) pt screen with a \(topInset) pt top inset, \
                             \(namedSpecies) legend chip(s), isAccessibilitySize=\
                             \(isAccessibilitySize): MapLocationNotice is given \(notice) pt \
-                            against a floor of \(MapLayout.noticeFloorAX5) — at 0 it and its \
+                            against a floor of \
+                            \(MapLayout.noticeFloor(isAccessibilitySize: isAccessibilitySize)) — \
+                            at 0 it and its \
                             Settings button draw nothing at all, which R53 §6 ruled out when it \
                             ruled the card scrolls
                             """
@@ -739,6 +785,19 @@ struct AX5ReflowTests {
     /// zero.
     @Test("the notice's floor fits the card that carries its own action button")
     func theNoticeFloorFitsItsOwnActionButton() async {
+        let smallestLarge = await Self.widestReflow(
+            of: MapLocationNotice(title: "L", message: "", onOpenSettings: {}, maxHeight: nil),
+            horizontalInset: MapLayout.cardInset,
+            size: .xxxLarge
+        )
+        #expect(
+            smallestLarge.height <= MapLayout.noticeFloorLarge,
+            """
+            the smallest MapLocationNotice that still carries an action measures \
+            \(smallestLarge.height) pt at .xxxLarge, past the \(MapLayout.noticeFloorLarge) pt \
+            floor reserved for it at ordinary sizes
+            """
+        )
         let smallest = await Self.widestReflow(
             of: MapLocationNotice(title: "L", message: "", onOpenSettings: {}, maxHeight: nil),
             horizontalInset: MapLayout.cardInset
@@ -766,9 +825,11 @@ struct AX5ReflowTests {
     func theChromeBudgetCanHouseBothOccupants() {
         for screenHeight in Self.supportedScreenHeights {
             for topInset in Self.supportedTopInsets {
+                for isAccessibilitySize in [true, false] {
                 let shortfall = MapLayout.chromeBudgetShortfall(
                     screenHeight: screenHeight,
-                    topInset: topInset
+                    topInset: topInset,
+                    isAccessibilitySize: isAccessibilitySize
                 )
                 #expect(
                     shortfall == 0,
@@ -777,9 +838,11 @@ struct AX5ReflowTests {
                     pt short of housing screen 01's chrome: the search bar, the chip row, one \
                     legend chip, MapLocationNotice's own floor, the recenter control and the \
                     identify FAB do not fit together at AX5. No arithmetic here can fix that — it \
-                    is a stop-and-ask about what screen 01 drops on that device
+                    is a stop-and-ask about what screen 01 drops on that device \
+                    (isAccessibilitySize=\(isAccessibilitySize))
                     """
                 )
+                }
             }
         }
     }
@@ -787,8 +850,8 @@ struct AX5ReflowTests {
     /// **The two blocks screen 01 draws its chrome in cannot meet**, said as arithmetic rather than
     /// as a screenshot.
     ///
-    /// The top chrome's bottom edge is `topChromeBottomAX5`; the bottom chrome's top edge is the
-    /// screen's height less what `bottomSlotReservedAboveAX5` stacks above the notice and the notice
+    /// The top chrome's bottom edge is `topChromeBottom`; the bottom chrome's top edge is the
+    /// screen's height less what `bottomSlotReservedAbove` stacks above the notice and the notice
     /// itself, and the notice cannot exceed `noticeMaxHeight`. Asserted over every screen size this
     /// app runs on and every legend size, in the worst case for the notice (it takes its whole
     /// budget), so the ordering holds by arithmetic and the UI guard confirms rather than discovers.
@@ -801,7 +864,7 @@ struct AX5ReflowTests {
             for topInset in Self.supportedTopInsets {
                 for namedSpecies in 0...MapSpeciesSlot.allCases.count {
                     for isAccessibilitySize in [true, false] {
-                        let top = MapLayout.topChromeBottomAX5(
+                        let top = MapLayout.topChromeBottom(
                             screenHeight: screenHeight,
                             topInset: topInset,
                             namedSpecies: namedSpecies,
@@ -813,7 +876,11 @@ struct AX5ReflowTests {
                             namedSpecies: namedSpecies,
                             isAccessibilitySize: isAccessibilitySize
                         )
-                        let bottom = screenHeight - MapLayout.bottomSlotReservedAboveAX5 - notice
+                        let bottom = screenHeight
+                            - MapLayout.bottomSlotReservedAbove(
+                                isAccessibilitySize: isAccessibilitySize
+                            )
+                            - notice
                         #expect(
                             top <= bottom,
                             """
