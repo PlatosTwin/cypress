@@ -348,3 +348,47 @@ poll built on `grep -c 'Test Case .* passed$'` reported **0** for nine minutes o
 because the line ends in `(4.596 seconds).` and not in `passed`. It had been calibrated against a
 looser pattern minutes earlier and then tightened without re-calibrating. The run was fine; the
 instrument was not.
+
+#### Verified on four widths, on the merged tree
+
+PR #60's review found this ticket's own guard red on an iPhone 16e, on a change verified only at
+402 pt and 430 pt — the two widths it had been tuned against. **A layout fix verified only on the
+widths it was tuned against is not verified**, and that is the durable lesson of the round rather
+than any one constant. All four now, every log carrying its own `CYPRESS-RUN` header, `head 2b63daf`,
+`active-city=none`, `camera-auto-healed no`, `XCTest skipped=0`:
+
+| log | device | width | result |
+|---|---|---|---|
+| `fab258-r3-16e.log` | iPhone 16e `3A1F212D` | 390 | `Executed 99 tests, with 0 failures in 1517.169s` |
+| `fab258-r3-16pro.log` | iPhone 16 Pro `EA0AD796` | 402 | `Executed 99 tests, with 0 failures in 1434.302s` |
+| `fab258-r3-16plus.log` | iPhone 16 Plus `24D1629F` | 430 | `Executed 99 tests, with 0 failures in 1456.284s` |
+| `fab258-r3-16promax.log` | iPhone 16 Pro Max `DE8E11AE` | 440 | `Executed 99 tests, with 0 failures in 1500.089s` |
+| `fab258-r3-unit.log` | 16 Pro Max | — | `Test run with 1310 tests in 132 suites passed` |
+| `fab258-r3-fresh-warnings.log` | 16e, **fresh** DerivedData | — | `VERIFY-WARNINGS: source=0 non-source=3 compile-tasks=446 files-checked=7` |
+
+The warnings certifier was calibrated before it was believed (E203): naming a file the build did not
+compile returns `VERIFY-FAIL: cannot certify a warning count for: … — no SwiftCompile task for those
+files in this log`, so the green above is a certification rather than a no-op.
+
+#### The measurement artifact the four-width run found, which was not a layout defect
+
+Worth carrying, because it cost a wrong conclusion for ten minutes and the screenshot is what settled
+it. With the ceiling binding on the 16e, `testTheTopChromeStaysClearOfTheBottomChromeAtAX5WithLocationDenied`
+went red — legend `maxY` 477.67 against a bottom chrome at 429.33. The arithmetic said it should not:
+the notice was rendering at exactly its 92.67 pt floor, which only happens when the legend *is*
+clamped.
+
+A screenshot of the running app resolved it in one look: three legend chips, the fourth scrolled
+away, the FAB fully clear, the `Settings` button visible. **The layout was correct and the frame was
+not.** `.accessibilityElement(children: .contain)` sat on the `FlowRow` *inside* the `ScrollView`,
+so the labeled element's frame was the scroll **content** — 262.67 pt of rows — rather than the
+201 pt window that clips them. XCUITest measured the content, and so would VoiceOver's cursor.
+
+That is a real accessibility defect in its own right, not merely a test artifact: an element whose
+frame extends 48 pt over controls it does not draw on is wrong for every consumer of that frame. The
+label now sits on the outermost view in both branches. The guard was right to be red — it was
+reporting a rectangle that really was where it said it was.
+
+**And the rule underneath it is the one this whole ticket keeps paying for: look at the running
+screen.** The numbers said "clamped" and "not clamped" at the same time; only the screenshot said
+which half was lying.
