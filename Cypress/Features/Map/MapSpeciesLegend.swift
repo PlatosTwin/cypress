@@ -70,14 +70,15 @@ struct MapSpeciesLegend: View {
     /// it off the screen** (task #258). `nil` for every caller that is not screen 01 — the same
     /// bargain `MapLocationNotice.maxHeight` makes with the same slot's other occupant.
     ///
-    /// It is a **backstop, and on every device this app is tested on it does not bind.**
     /// `MapLayout.legendMaxHeight` gives the legend everything it asks for wherever the screen has
-    /// the room, so the rendering at both the default size and AX5 on a 402 pt or 430 pt phone is
-    /// byte-for-byte the wrapped `FlowRow` it has always been. What it changes is the case that has
-    /// no good answer: a short phone at an accessibility size, where the search bar, the chip row,
-    /// four wrapped legend chips, the recenter control and the FAB together want more than the glass
-    /// has. Something has to yield there, and it must not be the FAB — that control is screen 01's
-    /// only entrance to the visit flow, and the legend covering it is the whole of #258.
+    /// the room, and returns `nil` there so this branch is not taken at all — at every ordinary
+    /// content size, on every supported phone, the rendering is byte-for-byte the wrapped `FlowRow`
+    /// it has always been. It binds at AX5 with a full four-species palette on the phones at or
+    /// below 402 pt, where the search bar, the chip row, four wrapped legend chips,
+    /// `MapLocationNotice`'s own floor, the recenter control and the FAB together want more than the
+    /// glass has. Something has to yield there, and it must not be the FAB — that control is screen
+    /// 01's only entrance to the visit flow, and the legend covering it is the whole of #258.
+    /// `AX5ReflowTests.theLegendCeilingBindsWhereTheArithmeticSaysItDoes` carries the boundary.
     ///
     /// The legend is what yields, for the reason RULINGS R53 §6 gave when it made the same call for
     /// the notice: scrolled content is reachable and covered content is not. Every chip stays
@@ -97,8 +98,20 @@ struct MapSpeciesLegend: View {
                 // hugging its own rows. `MapLocationNotice` and `MapSuggestionList` carry it for
                 // exactly this reason.
                 .fixedSize(horizontal: false, vertical: true)
+                // **The labeled group is the scroller, not the rows inside it** (task #258). An
+                // element's frame is what an assistive technology draws its cursor around and what
+                // XCUITest measures, and the rows inside a clamped `ScrollView` extend past the
+                // window that clips them: on an iPhone 16e at AX5 the visible legend ends at y 417
+                // and the `FlowRow` inside it reports a bottom edge of 477.67 — 48 pt of element
+                // over controls it does not draw on. Labeling the outer view reports the rectangle
+                // the reader can actually see and touch. Found by this ticket's own geometric
+                // guard, which went red on a screen that was, in a screenshot, correct.
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel(MapSpeciesLegendCopy.rowLabel)
             } else {
                 chips
+                    .accessibilityElement(children: .contain)
+                    .accessibilityLabel(MapSpeciesLegendCopy.rowLabel)
             }
         }
     }
@@ -121,8 +134,6 @@ struct MapSpeciesLegend: View {
                 .cypressHitArea()
             }
         }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(MapSpeciesLegendCopy.rowLabel)
     }
 
     private func chip(_ entry: MapSpeciesPalette.Entry) -> some View {
