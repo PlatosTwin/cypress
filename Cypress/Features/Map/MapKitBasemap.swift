@@ -407,9 +407,11 @@ enum MapLayout {
     // value the `onChange` action was *given* were the same stale intermediate (425.0, a three-row
     // legend; 357.33, a two-row one). **The best explanation is that the action was never called
     // for the last transition** — `onChange` is edge-triggered over a value that then never changes
-    // again, so nothing re-delivers it. It is not the only explanation the three probes admit, and
-    // the pending errata entry names the other; what is not in doubt is that four wirings of the
-    // same idea flake, and all four are edge-triggered channels out of the layout system.
+    // again, so nothing re-delivers it. **It is inferred rather than established**: the probe that
+    // reports what the action was given writes into non-observed storage from inside the measuring
+    // closure and is read back through the same render, so a reordering of that write against its
+    // own publication fits the same three readings. What is not in doubt is that four wirings of
+    // the same idea flake, and all four are edge-triggered channels out of the layout system.
     //
     // The palette is not. `MapSpeciesPalette` is model state that `MapHomeView` already observes, so
     // the number of chips is known *before* layout rather than reported back out of it, and there is
@@ -503,8 +505,8 @@ enum MapLayout {
     /// It is deliberately not the *whole* first row (143 pt for the denied title at AX5, 243.67 for
     /// `Location Services are off` at 375 pt). A floor that large is affordable on a 440 pt phone
     /// and takes the species legend below one chip on a 667 pt one — it would buy a fully readable
-    /// title by making the legend useless. See this task's errata entry for what the reader sees at
-    /// each width.
+    /// title by making the legend useless. What the reader sees at each width is in `docs/ERRATA.md`
+    /// once the orchestrator splices this branch's pending entry under its real number at merge.
     static let noticeFloorAX5: CGFloat = 93
 
     /// The same card at `.xxxLarge`: 65 pt measured, 66 reserved.
