@@ -263,15 +263,34 @@ every pushed screen has a reachable Back. **Screen 19 remains unread, and the re
 seed holds only `alive` and `vacant_site`, so no `removed` tree exists to open a memorial with, and
 faking one would be the exact class of lie the suite exists to catch. **Reading order and grouping
 have partial coverage now (task #221).** `ReadingOrderAccessibilityTests` asserts composition order
-on three screens chosen because a wrong order there is a real usability failure: the map's field →
+on six screens chosen because a wrong order there is a real usability failure: the map's field →
 suggestions → filter chips, screen 05's five vitality rows in rubric order (worst to best, never
-phrasing-dependent), and screen 03's identity block before the primary CTA before the secondary quad
-actions. `testAStatCardIsOneStop` (E118) already asserted the narrower grouping claim — a caption and
-its value arrive as one stop. **What this does not close**: every other screen's order is still
-unasserted, and — found while building the map test — `debugDescription`, the only order XCUITest
-exposes to a black-box test here, does not appear to move under `accessibilitySortPriority` at all, so
-nothing in this suite can yet verify that mechanism specifically (map task #143's fix for E183 §3 is
-therefore still unverified by any automated test); see ERRATA **E230**.)
+phrasing-dependent), screen 03's identity block before the primary CTA before the secondary quad
+actions, and — added since — the three screens that WRITE: screen 06's two chip vocabularies each
+kept under its own heading (the boundary E131 rests on), screen 16's kind and method controls before
+the keypad before `Save measurement`, and screen 09's four care toggles before the optional
+photo/note well before `Done`. `testAStatCardIsOneStop` (E118) already asserted the narrower
+grouping claim — a caption and its value arrive as one stop. **What this does not close**: several
+screens' order is still unasserted, and three were examined and deliberately left out because their
+order is a property of seed or device state rather than of the code (11 growth history and 13
+activity resolve to trees with no rows at all; 17 outbox reads a device-local queue). **The
+`accessibilitySortPriority` question is settled for one whole class of API, in the negative and for
+a structural reason**: not only `debugDescription` but the query engine under both binding
+strategies, the snapshot's own `children` arrays and `.children(matching:)` all report raw
+view-composition order — a purely geometric inversion of two elements moves none of them. Those five
+are *traversals of one `XCUIElementSnapshot`*, not five independent instruments, and that is exactly
+why the result generalises the way it does: **no traversal of that snapshot can observe a sort
+priority**, so reaching for a sixth traversal is not worth anyone's time. **What is NOT closed** —
+this sentence over-claimed it before PR #54's review — is focus-driven or
+assistive-technology-driven order, a different mechanism that does not read the snapshot at all.
+That reviewer tried a focus-engine probe (`typeKey(.tab)` then a `hasFocus` sweep) and got no
+element reporting focus on a simulator without Full Keyboard Access: **no counterexample and no
+working probe — untried, not refuted**, and the place for the next attempt to start. See ERRATA
+**E230** and its amendment. What replaces the search is `CypressTests/MapSwipeOrderDeclarationTests`, which
+pins that screen 01's declared priorities descend in the same order the block composes its children,
+since that agreement is what makes a composition-order assertion mean anything at all. Verifying the
+mechanism itself on the glass is still a physical-phone VoiceOver pass — the debt E192 recorded, and
+unchanged.)
 
 *(The "Two contrast pairs are still failing" entry that stood here is resolved. E120 fixed the C10 locked glyph via lightness-only OKLCh (3.06:1/3.05:1), and E122 fixed the C23 chart series via the same method — chartSeriesPrimary 2.53→3.05, chartSeriesTertiary 2.27→3.06, both moved from `knownFailures` to `retinted`.)*
 

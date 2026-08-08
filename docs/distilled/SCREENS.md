@@ -7,6 +7,11 @@ export) and cross-checked against `_unzipped/design_handoff_cypress/README.md` a
 **Ground rules for this document**
 
 - Every hex, px value, and copy string below is transcribed from the HTML. Nothing is invented.
+  **One deliberate exception, and it is the only one:** screen 05's five vitality anchor lines
+  (`05 · Light check-in`, item 3) are the owner's decision on ticket #261, not the export's copy.
+  The export and `SPEC-PHASE1.md` §6 stated that one table differently from the day both were
+  distilled, and the fork was closed toward a single approved text. The note beside the table says
+  so, and the #261 ruling on the vitality rubric quotes the export's original five lines verbatim.
 - Where the source does not specify something (a tap target, a transition, an empty state), it is
   marked **NOT SPECIFIED**.
 - Copy strings are verbatim, including the typographic characters the file actually uses:
@@ -864,11 +869,23 @@ height, so they always sum to it.
 
    | Level | Title | Anchor line |
    |---|---|---|
-   | 1 | `1 · Severe decline` | `Mostly bare crown, major dead limbs` |
-   | 2 | `2 · Poor` | `Large dead sections, 25–50% dieback` |
-   | 3 | `3 · Fair` | `Noticeably thin, 10–25% dieback` |
-   | 4 | `4 · Good` | `Canopy mostly full, isolated dead twigs` |
-   | 5 | `5 · Thriving` | `Dense canopy, vigorous new growth` |
+   | 1 | `1 · Severe decline` | `Over half the crown is dead wood or bare in season; major limbs dead` |
+   | 2 | `2 · Poor` | `26 to 50% of the crown is dead wood or bare; large dead sections` |
+   | 3 | `3 · Fair` | `11 to 25% of the crown is dead wood; noticeably thin but clearly in leaf` |
+   | 4 | `4 · Good` | `1 to 10% of the crown is dead wood; canopy otherwise full` |
+   | 5 | `5 · Thriving` | `No dead wood visible; canopy full for the season` |
+
+   **The five anchor lines above are the one copy string in this document that is NOT transcribed
+   from the HTML export** (see the ground rules at the top). They are the owner's decision on ticket
+   #261, landed here, in `PRODUCT.md` §3 and in `Vitality.anchor` together. The export and
+   `SPEC-PHASE1.md` §6 had stated the rubric copy differently since the handoff, and `PRODUCT.md`
+   won on the dieback bands because RULINGS R13 reserves a class's *meaning* to `PRODUCT.md` and a
+   band is a class's operational definition. **The #261 ruling on the vitality rubric quotes the
+   export's original five lines verbatim in its §0**, so a transcription check that finds the export
+   disagreeing with the table above has found the intended state rather than drift. The agreement
+   between this table, `PRODUCT.md` §3 and `Vitality.anchor` is asserted by
+   `CypressTests/VitalityRubricTests.swift`, not left to a reader to notice. The titles, the level
+   numbers, the order and every layout value in this section are still the export's, unchanged.
 
 4. **`Foliage`** micro-label + C5 segmented: `Full` · **`Thinning`** (selected) · `Sparse` · `Bare`
 5. **`Structure · flag anything you see`** micro-label + wrapping chips (`gap:7px`):

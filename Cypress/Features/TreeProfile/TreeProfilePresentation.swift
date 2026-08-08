@@ -781,8 +781,10 @@ struct TreeProfilePresentation {
                 id: visit.id,
                 kind: .visit,
                 label: "Visit",
-                // The separator and the curly quotes are the mock's, carried verbatim.
-                detail: visit.note.map { " · “\($0)”" } ?? "",
+                detail: TreeProfilePresentation.visitDetail(
+                    note: visit.note,
+                    phenologyTags: visit.phenologyTags
+                ),
                 timestamp: TreeProfilePresentation.dayStamp.string(from: visit.capturedAt)
             )
         }
@@ -814,6 +816,66 @@ struct TreeProfilePresentation {
             return visibleVisits.items.first { $0.id == item.id }?.capturedAt ?? .distantPast
         }
         return profile.careEvents.items.first { $0.id == item.id }?.capturedAt ?? .distantPast
+    }
+
+    /// Everything after the bold `Visit`, separator included: the note the mock draws, then the
+    /// observed states the visit recorded.
+    ///
+    /// **Why the phenology belongs here and is not a new surface.** A TestFlight tester on build 18
+    /// tagged a visit and asked where that goes; the answer was nowhere, because this line read the
+    /// note and dropped `visits.phenology_tags`. The mock's own second row on 03 is
+    /// `Care · watered, mulched` — a C9 detail slot carrying a contribution's structured vocabulary
+    /// as a comma-joined prose list, which is what `careActionLabel` below exists to produce. A
+    /// visit's observed states are the same class of value on the same feed, so this is the drawn
+    /// pattern applied to a field the row already had, not a section the mocks do not draw
+    /// (DECISIONS constraint 21).
+    ///
+    /// **The note keeps the position the mock gives it**, and the states follow. This was decided on
+    /// the mock's own positioning, not on how the row happens to wrap: SCREENS 03 §8 draws
+    /// `**Visit** · “Fog dripping off the crown”`, so the note is the one clause the mock actually
+    /// places, and constraint 21's spirit is not to relocate what is drawn in order to make room for
+    /// what is not. Two things that are *not* reasons, recorded because both were argued and neither
+    /// survived: the parallel with `Care · watered, mulched` is weaker than it looks, because that
+    /// row has no free text competing for the slot — it compares the vocabulary against the row's
+    /// only content rather than two orderings of the same pair; and line-breaking does not
+    /// distinguish the orderings either, since whichever clause goes last can be left widowed
+    /// (` · ` heads the wrapped line for some note lengths in this order, and the note's first word
+    /// is stranded for others in the reverse one). A designer may overrule this by swapping two
+    /// lines.
+    ///
+    /// A visit with a note and no states is byte-identical to the row SCREENS 03 §8 draws, and one
+    /// with states and no note reads `Visit · flowering` either way round — which is the tester's
+    /// own case, and the common one.
+    ///
+    /// The empty-note guard is `MemorialCopy.visitDetail`'s, which builds the same row from the same
+    /// field on screen 15 and has always had it. Without it a stored `""` renders as a pair of curly
+    /// quotes around nothing. `VisitOutboxWriter.enqueue` cannot write one (`.nilIfBlank`), but a
+    /// decoded row can carry one, and two functions drawing one row should not disagree about it.
+    static func visitDetail(note: String?, phenologyTags: [PhenologyTag]) -> String {
+        var clauses: [String] = []
+        // The curly quotes are the mock's, carried verbatim.
+        if let note, !note.isEmpty { clauses.append("“\(note)”") }
+        if !phenologyTags.isEmpty {
+            clauses.append(
+                VisitPhenologyVocabulary.order
+                    .filter(phenologyTags.contains)
+                    .map(TreeProfilePresentation.phenologyTagLabel)
+                    .joined(separator: ", ")
+            )
+        }
+        return clauses.isEmpty ? "" : " · " + clauses.joined(separator: " · ")
+    }
+
+    /// `flowering` / `leaf out, flowering` — the phenology vocabulary in prose, the shape
+    /// `careActionLabel` gives `CareAction`.
+    ///
+    /// Derived from `PhenologyTagLabel`, which is the chip copy on screen 04, so the words a
+    /// contributor tapped are the words they read back. Deriving rather than restating keeps one
+    /// source for them: DECISIONS constraint 15 forbids inventing botanical content, and a second
+    /// switch is the place a seventh state or a renamed sixth would appear unnoticed.
+    /// `PhenologyStageVocabularyTests` pins all six strings.
+    static func phenologyTagLabel(_ tag: PhenologyTag) -> String {
+        PhenologyTagLabel.text(for: tag).lowercased()
     }
 
     /// `watered, mulched` — the BUILD-PLAN §4 vocabulary in prose.
