@@ -188,3 +188,35 @@ At the freeze rate actually measured (3 of 32, ≈ 9.4 %), 80 clean launches wou
 probability 0.906⁸⁰ ≈ 3.6 × 10⁻⁴; at the ~1-in-4 rate the previous round reported, ≈ 10⁻¹⁰. The
 arithmetic is worth stating and it is the weaker half of the argument: the stronger half is that the
 channel which dropped the value no longer exists.
+
+#### One more instrument-calibration note, paid for on the way
+
+The unit suite failed **twice in a row** on the iPhone 16 Pro on this branch, with no `✘` and no
+`Expectation failed` anywhere in either log — the test process exited mid-run
+(`Restarting after unexpected exit, crash, or test timeout`, preceded by `CAMetalLayer ignoring
+invalid setDrawableSize width=0.000000 height=0.000000`). Two failures at the same commit is not the
+shape of a flake, and the obvious reading was that this branch's four new `ax5Size` measurements had
+broken it.
+
+They had not. The controls:
+
+| tree | device | result |
+|---|---|---|
+| this branch | 16 Pro, busy machine | died mid-run, twice |
+| this branch | 16 Plus, quiet | `✔ Test run with 1286 tests in 127 suites passed` |
+| `origin/main` | 16 Pro, quiet | `✔ Test run with 1292 tests in 130 suites passed` |
+| this branch, merged | 16 Pro, quiet | `✔ Test run with 1297 tests in 130 suites passed` |
+
+Both failures fell inside a window when two other agents' reviewer worktrees were building on this
+machine; both greens are from a quiet one. `run_tests.sh`'s collision guard runs **at start**, so a
+run that is already going when a second one begins gets no warning at all — the guard cannot refuse
+on a collision that has not happened yet. **A crash with no failed assertion in the log is a
+machine-state report until a control says otherwise**, and the control that settles it is the same
+tree on a quiet machine plus a known-green tree on the same device. 1292 + 5 new tests = 1297, which
+is the other half of reading that table.
+
+And a smaller one, in the same family as the four ad-hoc-command errors CLAUDE.md lists: a progress
+poll built on `grep -c 'Test Case .* passed$'` reported **0** for nine minutes of a healthy run,
+because the line ends in `(4.596 seconds).` and not in `passed`. It had been calibrated against a
+looser pattern minutes earlier and then tightened without re-calibrating. The run was fine; the
+instrument was not.
