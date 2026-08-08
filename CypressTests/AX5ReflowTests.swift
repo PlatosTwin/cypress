@@ -62,22 +62,46 @@ struct AX5ReflowTests {
     /// 440). 390 is in the list because it is where the FAB's label wraps and 393 is not.
     nonisolated static let heightBoundWidths: [CGFloat] = [375, 390, 393, 402, 430, 440]
 
-    /// The **worst** height `content` measures across `heightBoundWidths`, with the width that
-    /// produced it — which is what a bound has to be compared against.
+    /// Every screen height the app runs on: iPhone SE, 16e, 16 Pro, 16 Plus, 16 Pro Max.
+    nonisolated static let supportedScreenHeights: [CGFloat] = [667, 844, 852, 874, 932, 956]
+
+    /// The top safe-area insets those phones report — 20 on a home-button phone, 47/54/62 on the
+    /// notched and Dynamic Island ones. Crossed with the heights above rather than paired, because a
+    /// reservation that is only correct on the pairing that exists today is one device away from
+    /// being wrong.
+    nonisolated static let supportedTopInsets: [CGFloat] = [20, 47, 54, 62]
+
+    /// The **worst** height `content` measures across `heightBoundWidths`, with the phone width that
+    /// produced it — which is what a height bound has to be compared against.
     ///
-    /// Every height reservation in `MapLayout` goes through this rather than through `ax5Size`
-    /// directly. `ax5Size` remains the right instrument for a *width* guard, where the proposal is
-    /// the claim being tested.
+    /// **`horizontalInset` is the whole point and it is not optional.** The first attempt at this
+    /// helper swept the six widths and found *nothing*: the FAB measured 83.0 pt at 375 pt just as
+    /// it did at 440, while the running iPhone 16e reported 135.67. Width was never the blind spot
+    /// by itself — the blind spot is that `ax5Size` offers the control **the phone's width**, and
+    /// screen 01 offers it the phone's width *less its gutters*. The FAB's label wraps between
+    /// 361 pt and 370 pt of content, which is 393 pt and 402 pt of phone: `phoneWidth` = 393 sits
+    /// three points on the safe side of a threshold that is not about phones at all.
+    ///
+    /// Calibrated against a case whose answer was known before it was believed: with the inset
+    /// applied this reports 135.67 × 247.33 at 375/390/393 and 83.0 × 364 at 402/430/440, which is
+    /// the pair of frames PR #60's reviewer read off the accessibility tree of a running iPhone 16e
+    /// and iPhone 16 Pro Max. Without it, 83.0 everywhere.
+    ///
+    /// - Parameter horizontalInset: what screen 01 takes off each side before this control is laid
+    ///   out. `MapLayout.sideInset` for anything in the top block and for the two bottom-block
+    ///   controls (`cardInset` on the block plus `sideInset - cardInset` on the control);
+    ///   `MapLayout.cardInset` for the bottom slot's own occupants.
     static func widestReflow(
         of content: @autoclosure () -> some View,
+        horizontalInset: CGFloat,
         settleIterations: Int = 2,
         size: DynamicTypeSize = .accessibility5
-    ) async -> (height: CGFloat, width: CGFloat) {
-        var worst: (height: CGFloat, width: CGFloat) = (0, 0)
+    ) async -> (height: CGFloat, phoneWidth: CGFloat) {
+        var worst: (height: CGFloat, phoneWidth: CGFloat) = (0, 0)
         for width in heightBoundWidths {
             let measured = await ax5Size(
                 of: content(),
-                width: width,
+                width: width - 2 * horizontalInset,
                 settleIterations: settleIterations,
                 size: size
             )
@@ -378,20 +402,33 @@ struct AX5ReflowTests {
     /// control's footprint ever grows again, not asserting today's exact numbers a second time.
     @Test("the recenter control and the FAB fit what the notice's scroll budget reserves at AX5")
     func bottomChromeControlsFitTheReservedBudgetAtAX5() async {
-        let recenter = await Self.ax5Size(of: MapRecenterButton(engagement: .away, action: {}))
-        let fab = await Self.ax5Size(of: IdentifyFAB(action: {}))
+        // **Swept, with screen 01's gutters applied** (task #258, PR #60 review B2). Read
+        // `widestReflow`'s own note before changing this back: measured at a bare `phoneWidth` this
+        // assertion reported 83 pt for a control that occupies 135.67 on any phone at or below
+        // 393 pt, and shipped that as a bound.
+        let recenter = await Self.widestReflow(
+            of: MapRecenterButton(engagement: .away, action: {}),
+            horizontalInset: MapLayout.sideInset
+        )
+        let fab = await Self.widestReflow(
+            of: IdentifyFAB(action: {}),
+            horizontalInset: MapLayout.sideInset
+        )
         #expect(
             recenter.height <= MapLayout.locateButtonHeightAX5,
             """
-            MapRecenterButton now measures \(recenter.height) pt at AX5, past the \
-            \(MapLayout.locateButtonHeightAX5) pt the notice's scroll budget reserves for it
+            MapRecenterButton now measures \(recenter.height) pt at AX5 on a \
+            \(recenter.phoneWidth) pt phone, past the \(MapLayout.locateButtonHeightAX5) pt the \
+            notice's scroll budget reserves for it
             """
         )
         #expect(
             fab.height <= MapLayout.fabHeightAX5,
             """
-            IdentifyFAB now measures \(fab.height) pt at AX5, past the \
-            \(MapLayout.fabHeightAX5) pt the notice's scroll budget reserves for it
+            IdentifyFAB now measures \(fab.height) pt at AX5 on a \(fab.phoneWidth) pt phone, past \
+            the \(MapLayout.fabHeightAX5) pt the notice's scroll budget reserves for it — this is \
+            the bound whose 393 pt measurement hid a three-line label on every phone at or below \
+            393 pt (task #258)
             """
         )
         // The exact half, kept exact: the recenter control is a fixed `minTapTarget` square and
@@ -425,20 +462,26 @@ struct AX5ReflowTests {
     /// square is — the bound is a footprint, not an exact measurement repeated.
     @Test("the search bar and the filter chip row fit what the top-chrome reservation gives them at AX5")
     func topChromeFitsItsReservedBudgetAtAX5() async {
-        let bar = await Self.ax5Size(of: SearchBar(text: .constant("")))
-        let chips = await Self.ax5Size(of: MapFilterChips(filter: .constant(.all)))
+        let bar = await Self.widestReflow(
+            of: SearchBar(text: .constant("")),
+            horizontalInset: MapLayout.sideInset
+        )
+        let chips = await Self.widestReflow(
+            of: MapFilterChips(filter: .constant(.all)),
+            horizontalInset: MapLayout.sideInset
+        )
         #expect(
             bar.height <= MapLayout.searchBarHeightAX5,
             """
-            SearchBar now measures \(bar.height) pt at AX5, past the \
-            \(MapLayout.searchBarHeightAX5) pt the top-chrome reservation gives it
+            SearchBar now measures \(bar.height) pt at AX5 on a \(bar.phoneWidth) pt phone, past \
+            the \(MapLayout.searchBarHeightAX5) pt the top-chrome reservation gives it
             """
         )
         #expect(
             chips.height <= MapLayout.chipRowHeightAX5,
             """
-            MapFilterChips now measures \(chips.height) pt at AX5, past the \
-            \(MapLayout.chipRowHeightAX5) pt the top-chrome reservation gives it
+            MapFilterChips now measures \(chips.height) pt at AX5 on a \(chips.phoneWidth) pt \
+            phone, past the \(MapLayout.chipRowHeightAX5) pt the top-chrome reservation gives it
             """
         )
     }
@@ -450,14 +493,15 @@ struct AX5ReflowTests {
     /// The names are the long ones `MapSpeciesLegend`'s header quotes — the point of the fixture is
     /// to force the *worst* shape, one chip per line, which is what
     /// `MapLayout.legendReserved(namedSpecies:isAccessibilitySize:)` claims to bound.
-    private static func legend(count: Int) -> MapSpeciesLegend {
+    private static func legend(count: Int, maxHeight: CGFloat? = nil) -> MapSpeciesLegend {
         let names = ["New Zealand Christmas Tree", "Southern Magnolia", "Brisbane Box", "Chinese Elm"]
         let entries = MapSpeciesSlot.allCases.prefix(count).enumerated().map { index, slot in
             MapSpeciesPalette.Entry(slot: slot, speciesID: UUID(), count: 10, name: names[index])
         }
         return MapSpeciesLegend(
             palette: MapSpeciesPalette(entries: Array(entries)),
-            selection: .constant(nil)
+            selection: .constant(nil),
+            maxHeight: maxHeight
         )
     }
 
@@ -484,9 +528,9 @@ struct AX5ReflowTests {
         for count in 1...MapSpeciesSlot.allCases.count {
             for isAccessibilitySize in [true, false] {
                 let size: DynamicTypeSize = isAccessibilitySize ? .accessibility5 : .xxxLarge
-                let measured = await Self.ax5Size(
+                let measured = await Self.widestReflow(
                     of: Self.legend(count: count),
-                    settleIterations: 2,
+                    horizontalInset: MapLayout.sideInset,
                     size: size
                 )
                 let reserved = MapLayout.legendNaturalHeight(
@@ -497,7 +541,7 @@ struct AX5ReflowTests {
                     measured.height <= reserved,
                     """
                     MapSpeciesLegend with \(count) chip(s) measures \(measured.height) pt at \
-                    \(size), past the \(reserved) pt MapLayout.legendNaturalHeight bounds it at — \
+                    \(size) on a \(measured.phoneWidth) pt phone, past the \(reserved) pt MapLayout.legendNaturalHeight bounds it at — \
                     the top \
                     chrome then reaches further down screen 01 than MapLayout.noticeMaxHeight holds \
                     the bottom chrome back from, which is the identify FAB covered by the legend \
@@ -534,33 +578,100 @@ struct AX5ReflowTests {
         }
     }
 
-    /// **The ceiling does not bind on any device the suite runs on**, which is the claim that makes
-    /// "unchanged where there is room" true rather than hoped for: `legendMaxHeight` returns `nil`
-    /// there, so no `ScrollView` is introduced over the map and the legend renders as it always has.
+    /// **Where the legend's ceiling binds, stated rather than assumed.**
     ///
-    /// The four assigned simulators' screen heights, at both ends of the type ramp, with the palette
-    /// full. If this ever goes red the trade has changed and somebody should be told, not have it
-    /// quietly start scrolling.
-    @Test("the legend's ceiling does not bind on the devices this suite runs on")
-    func theLegendCeilingDoesNotBindOnTestedDevices() {
-        for screenHeight in [852.0, 874.0, 932.0, 956.0] as [CGFloat] {
-            for isAccessibilitySize in [true, false] {
-                let ceiling = MapLayout.legendMaxHeight(
-                    screenHeight: screenHeight,
-                    topInset: 54,
-                    namedSpecies: MapSpeciesSlot.allCases.count,
-                    isAccessibilitySize: isAccessibilitySize
-                )
-                #expect(
-                    ceiling == nil,
-                    """
-                    a full legend on a \(screenHeight) pt screen (isAccessibilitySize=\
-                    \(isAccessibilitySize)) is now capped at \(ceiling as Any) — it would be put \
-                    in a ScrollView over the map, which takes touches the bare FlowRow does not
-                    """
-                )
-            }
+    /// The first version of this test asserted the ceiling binds on *no* device the suite runs, and
+    /// that was true when `MapLayout.fabHeightAX5` was 83 and the notice had no floor. Both changed
+    /// (PR #60 review B2 and B4), and with them this: a full palette at AX5 now scrolls on the
+    /// narrower phones. Rather than delete the claim, it is inverted into a record of the
+    /// boundary — so the next person to move a constant sees which devices they moved across.
+    ///
+    /// A binding ceiling puts `MapSpeciesLegend` in a `ScrollView`, which takes touches over the map
+    /// where the bare `FlowRow` takes them only on the chips. That is a real cost and it is now paid
+    /// on some devices; it is paid at AX5 with a full palette only, and the alternative on those
+    /// phones is a control the reader cannot reach.
+    @Test("the legend's ceiling binds on the narrow phones at AX5 and on none at ordinary sizes")
+    func theLegendCeilingBindsWhereTheArithmeticSaysItDoes() {
+        // (phone width, screen height, its real top inset) for the five phones this ticket names.
+        let phones: [(name: String, height: CGFloat, topInset: CGFloat, bindsAtAX5: Bool)] = [
+            ("iPhone SE 375x667", 667, 20, true),
+            ("iPhone 16e 390x844", 844, 47, true),
+            ("iPhone 16 Pro 402x874", 874, 54, true),
+            ("iPhone 16 Plus 430x932", 932, 62, true),
+            ("iPhone 16 Pro Max 440x956", 956, 62, true)
+        ]
+        for phone in phones {
+            let atAX5 = MapLayout.legendMaxHeight(
+                screenHeight: phone.height,
+                topInset: phone.topInset,
+                namedSpecies: MapSpeciesSlot.allCases.count,
+                isAccessibilitySize: true
+            )
+            #expect(
+                (atAX5 != nil) == phone.bindsAtAX5,
+                """
+                \(phone.name): a full legend at AX5 is capped at \(atAX5 as Any), and this test \
+                says it should\(phone.bindsAtAX5 ? "" : " not") be. A ScrollView over the map \
+                appears or disappears with this answer — decide it deliberately, do not adjust the \
+                table to match a constant somebody moved
+                """
+            )
+            let ordinary = MapLayout.legendMaxHeight(
+                screenHeight: phone.height,
+                topInset: phone.topInset,
+                namedSpecies: MapSpeciesSlot.allCases.count,
+                isAccessibilitySize: false
+            )
+            #expect(
+                ordinary == nil,
+                """
+                \(phone.name): a full legend at an ordinary content size is capped at \
+                \(ordinary as Any) — at ordinary sizes the legend must never scroll, because at \
+                ordinary sizes the screen has the room and a scroller over the map costs the pan
+                """
+            )
         }
+    }
+
+    /// **`MapSpeciesLegend` actually clamps when it is given a ceiling** — the branch that only runs
+    /// on the phones the test above says it binds on, and which PR #60 shipped with no coverage.
+    ///
+    /// **Not through `ax5Size`.** RULINGS R53 §6 records that helper reading a 200 pt-capped
+    /// `ScrollView` as 254 pt, because it mounts in a real window and ends on an unbounded
+    /// `sizeThatFits`; `mapLocationNoticeScrollsWhenOfferedLessThanItNeedsAtAX5` uses bare hosting
+    /// for the same reason and this follows it. The budget is derived from the view's own unbounded
+    /// height rather than written as a literal, so it stays a real cap if the palette copy changes.
+    @Test("the species legend scrolls rather than growing past a ceiling it cannot fit in at AX5")
+    func theSpeciesLegendClampsToItsCeilingAtAX5() {
+        func height(maxHeight: CGFloat?) -> CGFloat {
+            let host = UIHostingController(rootView: AnyView(
+                Self.legend(count: MapSpeciesSlot.allCases.count, maxHeight: maxHeight)
+                    .environment(\.dynamicTypeSize, .accessibility5)
+            ))
+            return host.sizeThatFits(
+                in: CGSize(
+                    width: Self.narrowestPhoneWidth - 2 * MapLayout.sideInset,
+                    height: .greatestFiniteMagnitude
+                )
+            ).height
+        }
+        let unbounded = height(maxHeight: nil)
+        let budget = unbounded / 2
+        let bounded = height(maxHeight: budget)
+        let tolerance: CGFloat = 1
+        #expect(
+            bounded <= budget + tolerance,
+            """
+            MapSpeciesLegend measured \(bounded) pt against a \(budget) pt ceiling (its own \
+            unbounded AX5 height is \(unbounded) pt) — it grew past the bound it was given instead \
+            of scrolling, which on a short phone is the species legend back on top of the identify \
+            FAB (task #258)
+            """
+        )
+        #expect(
+            unbounded > budget,
+            "the ceiling never bound, so this proves nothing — \(unbounded) pt against \(budget)"
+        )
     }
 
     /// **A slot whose species name has not arrived is not a chip**, and the reservation counts chips.
@@ -580,6 +691,99 @@ struct AX5ReflowTests {
         #expect(MapSpeciesLegend.named(in: palette).count == 2)
     }
 
+    /// **`MapLocationNotice` is never handed a budget that draws nothing** (PR #60 review B4).
+    ///
+    /// The defect this replaces: the legend was served first out of the whole slack and the notice
+    /// took the remainder, so on a 667 pt screen `noticeMaxHeight` was **0.0 at every inset** and
+    /// `MapHomeView.standingNotice` passed that into `MapLocationNotice(maxHeight:)` for all four
+    /// arms — including the refused arm and its `Settings` button, the reader's only way to fix the
+    /// permission the card exists to explain. The ordering guard below was green throughout, because
+    /// removing a control from the screen satisfies an ordering.
+    ///
+    /// Asserted over every screen and inset the app runs on, at every palette size and both ends of
+    /// the type ramp, so the floor is a property of the arithmetic rather than of one device.
+    @Test("the notice is never given less room than its own action button needs")
+    func theNoticeNeverFallsBelowItsFloor() {
+        for screenHeight in Self.supportedScreenHeights {
+            for topInset in Self.supportedTopInsets {
+                for namedSpecies in 0...MapSpeciesSlot.allCases.count {
+                    for isAccessibilitySize in [true, false] {
+                        let notice = MapLayout.noticeMaxHeight(
+                            screenHeight: screenHeight,
+                            topInset: topInset,
+                            namedSpecies: namedSpecies,
+                            isAccessibilitySize: isAccessibilitySize
+                        )
+                        #expect(
+                            notice >= MapLayout.noticeFloorAX5,
+                            """
+                            on a \(screenHeight) pt screen with a \(topInset) pt top inset, \
+                            \(namedSpecies) legend chip(s), isAccessibilitySize=\
+                            \(isAccessibilitySize): MapLocationNotice is given \(notice) pt \
+                            against a floor of \(MapLayout.noticeFloorAX5) — at 0 it and its \
+                            Settings button draw nothing at all, which R53 §6 ruled out when it \
+                            ruled the card scrolls
+                            """
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    /// **The floor is enough for the thing it exists to protect.**
+    ///
+    /// `noticeFloorAX5` is a number in `MapLayout`; this is the measurement that makes it mean
+    /// something. The card at its smallest that still carries an action — one line of title, no
+    /// message, the button — must fit inside the floor at every width, or the floor is a smaller
+    /// zero.
+    @Test("the notice's floor fits the card that carries its own action button")
+    func theNoticeFloorFitsItsOwnActionButton() async {
+        let smallest = await Self.widestReflow(
+            of: MapLocationNotice(title: "L", message: "", onOpenSettings: {}, maxHeight: nil),
+            horizontalInset: MapLayout.cardInset
+        )
+        #expect(
+            smallest.height <= MapLayout.noticeFloorAX5,
+            """
+            the smallest MapLocationNotice that still carries an action measures \
+            \(smallest.height) pt at AX5 on a \(smallest.phoneWidth) pt phone, past the \
+            \(MapLayout.noticeFloorAX5) pt floor reserved for it — the Settings button no longer \
+            fits in the room the split guarantees, so on a short phone it would need scrolling to \
+            reach (task #258)
+            """
+        )
+    }
+
+    /// **The split can say when it cannot house both**, rather than absorbing the failure into
+    /// whichever term happens to be the remainder.
+    ///
+    /// `legendCeiling` clamps at zero, so once the slack falls under `chipRowTop + noticeFloorAX5`
+    /// the legend silently gets nothing and the notice starts eating its own floor. That is a real
+    /// possibility on a short phone at AX5 and it must fail here, with the shortfall in points,
+    /// rather than on a reader's screen.
+    @Test("every screen the app runs on can house both the legend and the notice")
+    func theChromeBudgetCanHouseBothOccupants() {
+        for screenHeight in Self.supportedScreenHeights {
+            for topInset in Self.supportedTopInsets {
+                let shortfall = MapLayout.chromeBudgetShortfall(
+                    screenHeight: screenHeight,
+                    topInset: topInset
+                )
+                #expect(
+                    shortfall == 0,
+                    """
+                    a \(screenHeight) pt screen with a \(topInset) pt top inset is \(shortfall) \
+                    pt short of housing screen 01's chrome: the search bar, the chip row, one \
+                    legend chip, MapLocationNotice's own floor, the recenter control and the \
+                    identify FAB do not fit together at AX5. No arithmetic here can fix that — it \
+                    is a stop-and-ask about what screen 01 drops on that device
+                    """
+                )
+            }
+        }
+    }
+
     /// **The two blocks screen 01 draws its chrome in cannot meet**, said as arithmetic rather than
     /// as a screenshot.
     ///
@@ -593,8 +797,8 @@ struct AX5ReflowTests {
     /// the insets span what those devices report.
     @Test("the reserved top chrome always ends above the reserved bottom chrome")
     func theReservedBlocksNeverMeet() {
-        for screenHeight in [667.0, 852.0, 874.0, 932.0, 956.0] as [CGFloat] {
-            for topInset in [20.0, 47.0, 54.0, 62.0] as [CGFloat] {
+        for screenHeight in Self.supportedScreenHeights {
+            for topInset in Self.supportedTopInsets {
                 for namedSpecies in 0...MapSpeciesSlot.allCases.count {
                     for isAccessibilitySize in [true, false] {
                         let top = MapLayout.topChromeBottomAX5(
