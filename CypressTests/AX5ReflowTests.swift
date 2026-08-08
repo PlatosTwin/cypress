@@ -38,6 +38,54 @@ struct AX5ReflowTests {
     nonisolated static let phoneWidth: CGFloat = 393
     static let phoneHeight: CGFloat = 852
 
+    // MARK: - The widths a height bound has to hold at (task #258, PR #60 review B2)
+    //
+    // **`phoneWidth` is the sweep's camera, not the app's narrowest phone, and a height bound
+    // measured only there is blind in the one direction that matters.** `MapLayout.fabHeightAX5`
+    // was 83, measured through `ax5Size` at 393 pt and correct there. On an iPhone 16e (390 pt) the
+    // FAB's label takes an extra line and the control occupies **135.67 pt** — 52.67 pt past what
+    // `bottomSlotReservedAboveAX5` reserves for it, which put the recenter control 30 pt up inside
+    // the species legend and turned #258's own new guard red on a device it had not been run on.
+    // Three points of width, and the guard could not see it.
+    //
+    // This is the E243 family from the same side as #258's own thesis: **the synthetic window is
+    // the optimistic one.** A width guard only has to hold at the width it is offered; a *height*
+    // bound has to hold at every width the app runs, because text reflows and every reflow is
+    // taller. So height bounds sweep, and they sweep down to the narrowest phone iOS 17 runs on.
+
+    /// The narrowest phone the app supports: iPhone SE (2nd/3rd generation), 375 × 667 pt.
+    /// `IPHONEOS_DEPLOYMENT_TARGET = 17.0`, `TARGETED_DEVICE_FAMILY = 1`, portrait only.
+    nonisolated static let narrowestPhoneWidth: CGFloat = 375
+
+    /// Every width a height bound is asserted at: the narrowest phone, the sweep's camera, and the
+    /// four simulators this project's agents run on (16e 390, 16 Pro 402, 16 Plus 430, 16 Pro Max
+    /// 440). 390 is in the list because it is where the FAB's label wraps and 393 is not.
+    nonisolated static let heightBoundWidths: [CGFloat] = [375, 390, 393, 402, 430, 440]
+
+    /// The **worst** height `content` measures across `heightBoundWidths`, with the width that
+    /// produced it — which is what a bound has to be compared against.
+    ///
+    /// Every height reservation in `MapLayout` goes through this rather than through `ax5Size`
+    /// directly. `ax5Size` remains the right instrument for a *width* guard, where the proposal is
+    /// the claim being tested.
+    static func widestReflow(
+        of content: @autoclosure () -> some View,
+        settleIterations: Int = 2,
+        size: DynamicTypeSize = .accessibility5
+    ) async -> (height: CGFloat, width: CGFloat) {
+        var worst: (height: CGFloat, width: CGFloat) = (0, 0)
+        for width in heightBoundWidths {
+            let measured = await ax5Size(
+                of: content(),
+                width: width,
+                settleIterations: settleIterations,
+                size: size
+            )
+            if measured.height > worst.height { worst = (measured.height, width) }
+        }
+        return worst
+    }
+
     /// Hosts `content` at AX5 in an off-screen window and returns what it says it needs when
     /// offered the phone's width and unbounded height — `ScreenSweepShots.capture`'s mechanism,
     /// reduced to the measurement.
