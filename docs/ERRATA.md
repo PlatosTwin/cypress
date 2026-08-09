@@ -16230,7 +16230,8 @@ Full `CypressTests`: `Test run with 1257 tests in 124 suites passed`. Full `Cypr
 ### E249 — Two findings the task-#14 design sweep turned up on the way, and neither was its to close (ticket #249, ticket #251)
 
 Both came out of the measurement rig behind `docs/design-proposals/2026-08-06-task14.md`
-(2026-08-06, branch `design/14-proposals` — a camera rig whose code ships nothing). Both are
+(2026-08-06, written on branch `design/14-proposals` — a camera rig whose code shipped nothing, and
+which no longer exists; the document itself was landed on main 2026-08-08). Both are
 findings about screens that already shipped rather than about the questions the rig was asked, which
 is why they are here and not in the rulings entry beside them. Both are now closed by ticket #251.
 

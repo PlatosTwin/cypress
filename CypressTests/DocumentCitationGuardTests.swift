@@ -28,20 +28,32 @@
 //  in prose usually names a kind of file rather than a file, and the false-positive rate is not
 //  worth the two root-level documents it would cover.
 //
-//  **Paths whose first component is not a real top-level directory.** `dist/upload.sh` is cited
-//  three times in ERRATA E247 and does not exist: `dist/` is *generated per run* by
-//  `Tools/publish_cities.py` (see `docs/investigations/city-publishing.md`). A generated artifact is
-//  a legitimate thing to name and an illegitimate thing to require on disk. Rather than carry an
-//  exemption list — which rots silently, and is the "input deletion" shape this repo has already
-//  been bitten by — the rule is structural: a first component that is not a directory in this
-//  repository is not a repo-relative path, so it is not this guard's business. §2's per-prefix
-//  floors are what stop that rule from quietly swallowing a prefix that *should* be checked.
+//  **Generated paths.** `dist/upload.sh` is cited four times across ERRATA E247 and
+//  `docs/investigations/city-publishing.md`, and `Fixtures/raw/…` several more; both are gitignored
+//  and regenerable. A generated artifact is a legitimate thing to name and an illegitimate thing to
+//  require on disk, so `generatedPrefixes` reads `.gitignore` rather than carrying a list here —
+//  see its own note for what the earlier "is it a real top-level directory" rule got wrong in both
+//  directions.
 //
 //  **Whether a citation names the right file.** `Tools/run_tests.sh` and `Tools/verify_test_log.sh`
 //  are indistinguishable to a scanner. Same limit `PendingCitationGuardTests` records: this catches
 //  the citation that resolves to nothing, not the one that resolves wrongly.
 //
-//  **Anchors and URLs.** `#section` and anything with a scheme are skipped.
+//  **Anchors, URLs, and fenced blocks.** `#section`, anything with a scheme, and anything inside a
+//  ``` fence are skipped.
+//
+//  ── Shapes it knowingly lets through ────────────────────────────────────────────────────────
+//  Measured against a probe document, not assumed. Each is a real dangling citation this guard
+//  reports as clean, listed so the next reader does not mistake its silence for a proof:
+//    · an extension outside the allowlist — `.csv`, `.html`, `.sql`, `.xcconfig`, `.geojson`.
+//      `mocks/cypress-mocks.html` is cited six times and is invisible for exactly this reason.
+//    · a leading `~` or `..`.
+//    · a hidden top-level directory — `.github/workflows/…` is excluded twice over, by the
+//      pattern's first-character class and by `contentsOfDirectory`'s defaults.
+//    · a path that resolves to a *directory* rather than a file.
+//    · a citation broken across a line break.
+//  Widening the extension list is the tempting fix and is not free: `.csv` alone turns five
+//  committed `Fixtures/raw/…` citations red, which is why `generatedPrefixes` had to land first.
 //
 
 import Foundation
@@ -66,8 +78,38 @@ enum DocumentCitationGuard {
     ]
 
     /// A backticked, slash-bearing, extension-carrying token.
+    ///
+    /// **The close is a lookahead, not a backtick.** The repo's most common tool citation is
+    /// `` `Tools/verify_test_log.sh <log>` `` — path, then arguments, then the backtick. Anchoring
+    /// on the backtick made 17 occurrences across 5 distinct tools invisible, including every
+    /// citation of the two scripts CLAUDE.md requires be used to judge a run.
     private static var backtickedPattern: String {
-        "`([A-Za-z0-9_][A-Za-z0-9_.-]*(?:/[A-Za-z0-9_.-]+)+\\.(?:" + extensions.joined(separator: "|") + "))`"
+        "`([A-Za-z0-9_][A-Za-z0-9_.-]*(?:/[A-Za-z0-9_.-]+)+\\.(?:"
+            + extensions.joined(separator: "|") + "))(?=`|\\s)"
+    }
+
+    /// Directory prefixes the repository itself declares generated, read from `.gitignore`.
+    ///
+    /// **This replaces "is the first component a real top-level directory", which was wrong in both
+    /// directions.** `dist/` is created at the repo root by `Tools/publish_cities.py --out` during
+    /// the seed publish, so on any machine mid-publish that rule flipped and four committed prose
+    /// citations went red — a unit result depending on untracked working-tree state, during a
+    /// workflow CLAUDE.md documents as recurring and agent-side. In the other direction
+    /// `Fixtures/raw/` is `dist/`'s exact twin — gitignored, regenerable — but *is* a real
+    /// top-level path, so five absent citations under it escaped only because their extensions
+    /// happened not to be allowlisted; adding `csv` would have turned committed ERRATA prose red.
+    ///
+    /// Reading `.gitignore` fixes both and cannot drift from the repository the way a list here
+    /// would: the repo already states what it generates.
+    static func generatedPrefixes(root: URL) -> [String] {
+        guard let text = try? String(
+            contentsOf: root.appendingPathComponent(".gitignore"), encoding: .utf8
+        ) else { return [] }
+        return text.components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.hasPrefix("#") && !$0.hasPrefix("!") && $0.hasSuffix("/") }
+            .map { $0.hasPrefix("/") ? String($0.dropFirst()) : $0 }
+            .filter { !$0.isEmpty }
     }
 
     /// A markdown link or image target. The `!` is optional because an image is a link that draws.
@@ -89,12 +131,26 @@ enum DocumentCitationGuard {
     }
 
     /// One pattern's capture group 1, with the line each match starts on.
+    ///
+    /// **Fenced blocks are skipped, and that is not a nicety.** A fence is where a document shows
+    /// what a citation *looks like* rather than making one — and the link pattern needs no
+    /// extension, so any `x[i](y)` in any snippet under `docs/` would be required to resolve on
+    /// disk. A ```` ```markdown ```` fence demonstrating `![](images/EXAMPLE.png)` and a Python
+    /// snippet containing `handlers[key](fallback.png)` both failed the suite before this. There
+    /// are no live instances today; the next document that explains markdown syntax was the bug.
     private static func matches(
         of pattern: String, in source: String, document: String
     ) -> [Citation] {
         guard let expression = try? NSRegularExpression(pattern: pattern) else { return [] }
         var found: [Citation] = []
+        var fenced = false
         for (index, line) in source.components(separatedBy: "\n").enumerated() {
+            if line.trimmingCharacters(in: .whitespaces).hasPrefix("```") {
+                fenced.toggle()
+                continue
+            }
+            guard !fenced else { continue }
+
             let text = line as NSString
             for match in expression.matches(
                 in: line, range: NSRange(location: 0, length: text.length)
@@ -165,6 +221,7 @@ struct DocumentCitationGuardTests {
     func everyCitedPathResolves() throws {
         let root = AppSourceLiterals.repositoryRoot()
         let prefixes = DocumentCitationGuard.topLevelDirectories(root: root)
+        let generated = DocumentCitationGuard.generatedPrefixes(root: root)
         var missing: [DocumentCitationGuard.Citation] = []
 
         for document in DocumentCitationGuard.documents(root: root) {
@@ -173,7 +230,9 @@ struct DocumentCitationGuardTests {
                 in: source, document: document.relative
             ) {
                 guard let head = citation.target.split(separator: "/").first,
-                      prefixes.contains(String(head)) else { continue }
+                      prefixes.contains(String(head)),
+                      !generated.contains(where: { citation.target.hasPrefix($0) })
+                else { continue }
                 if !DocumentCitationGuard.resolves(citation, root: root, relativeToDocument: false) {
                     missing.append(citation)
                 }
@@ -223,24 +282,34 @@ struct DocumentCitationGuardTests {
     // MARK: - 2. The guard can see what it claims to have checked
 
     /// **An absence is what a broken sweep reports too.** §1 asserts that nothing is missing, and a
-    /// scan that read no documents, or matched no citations, satisfies that perfectly. Both floors
-    /// below are measured, not remembered — `find docs -name '*.md'` and the extractor itself, on
-    /// this worktree, 2026-08-08 — and both sit under the measurement, because their job is to
-    /// catch a sweep that found the wrong tree, not to track how the documents grow.
+    /// scan that read no documents, or matched no citations, satisfies that perfectly.
     ///
-    /// **Per prefix, not in total.** A combined floor would let `CypressUITests` (2 citations) or
-    /// `server` (1) drop out of the scan entirely while `Cypress` and `CypressTests` alone cleared
-    /// the bar — and a prefix silently dropping out is precisely the failure mode the structural
-    /// `dist/` rule in this file's header could otherwise introduce. Only the four large prefixes
-    /// are floored: the small ones move by one when a single sentence is rewritten, and a floor
-    /// that fails on ordinary editing teaches people to raise floors rather than read them.
+    /// **These are OCCURRENCES, not distinct paths, and every number here came out of this test's
+    /// own counter.** That distinction is not pedantry: the first version of these floors was
+    /// measured with a shell `grep … | sort -u` while the loop below counts every hit, so they were
+    /// pinned at 30/28/14/12 against true values of 47/57/134/53 — up to 8.4× of slack, and a
+    /// failure message that would have read *"matched 134 citation(s) under Tools/; there were 17
+    /// when this was written"* to whoever hit it next. To re-measure, raise a floor to 9999 and
+    /// read the number the failure prints. Do not use a different instrument, and do not repin from
+    /// memory.
+    ///
+    /// The margin is ~12% under each measurement: enough that ordinary editing does not trip it,
+    /// tight enough that a *partial* blinding does. That mattered — dropping `-` from the
+    /// extractor's character class leaves `Cypress` at 46 and `docs` at 37, both under these
+    /// floors, and both over the old ones.
+    ///
+    /// **Per prefix, not in total.** A combined floor would let `CypressUITests` (1 citation) or
+    /// `server` (4) drop out of the scan entirely while `Cypress` and `CypressTests` alone cleared
+    /// the bar. Only the four large prefixes are floored: the small ones move by one when a single
+    /// sentence is rewritten, and a floor that fails on ordinary editing teaches people to raise
+    /// floors rather than read them.
     @Test("the sweep read the real documents and matched real citations")
     func theGuardCanSeeWhatItClaimsToCheck() throws {
         let root = AppSourceLiterals.repositoryRoot()
 
         let documents = DocumentCitationGuard.documents(root: root)
         #expect(
-            documents.count >= 28,
+            documents.count >= 29,
             """
             the sweep found \(documents.count) documents under docs/; it held 33 when this was \
             written, so this is not that tree. Re-measure before repinning — do not repin from \
@@ -273,7 +342,7 @@ struct DocumentCitationGuardTests {
         }
 
         let floors: [(prefix: String, floor: Int, measured: Int)] = [
-            ("CypressTests", 30, 36), ("Cypress", 28, 34), ("Tools", 14, 17), ("docs", 12, 15)
+            ("CypressTests", 41, 47), ("Cypress", 50, 57), ("Tools", 118, 134), ("docs", 46, 53)
         ]
         for target in floors {
             let found = counted[target.prefix] ?? 0
@@ -310,31 +379,39 @@ struct DocumentCitationGuardTests {
     @Test("the path extractor finds a cited file, and declines a cited test symbol")
     func thePathExtractorDeclinesItsNearMisses() {
         let specimen = """
-        1 · a real one: `Tools/run_tests.sh` is how the suite runs.
-        2 · another, nested: `docs/distilled/SCREENS.md` holds the wording.
-        3 · a test symbol, slash-bearing and extensionless: `CypressTests/AX5ReflowTests`
-        4 · a test symbol with a dotted member: `MapMarkerRenderingTests.clusterBadgeFollowsItsCount`
-        5 · an errata range, which is not a path: `E119/E122` and `§9b/§10`
-        6 · a bare filename, deliberately uncovered: `Package.swift`
-        7 · a generated artifact, structurally excluded by §1: `dist/upload.sh`
+        1 · the citation this guard exists for: `docs/design-proposals/2026-08-06-task14.md`
+        2 · a tool with arguments, the repo's commonest form: `Tools/verify_test_log.sh <log>`
+        3 · a plain one: `Tools/run_tests.sh` is how the suite runs.
+        4 · another, nested: `docs/distilled/SCREENS.md` holds the wording.
+        5 · a test symbol, slash-bearing and extensionless: `CypressTests/AX5ReflowTests`
+        6 · a test symbol with a dotted member: `MapMarkerRenderingTests.clusterBadgeFollowsItsCount`
+        7 · an errata range, which is not a path: `E119/E122` and `§9b/§10`
+        8 · a bare filename, deliberately uncovered: `Package.swift`
+        9 · a generated artifact, dropped by §1's .gitignore rule, not by this pattern: `dist/upload.sh`
         """
 
         let hits = DocumentCitationGuard.backtickedPaths(in: specimen, document: "specimen.md")
         #expect(
-            hits.map(\.target) == ["Tools/run_tests.sh", "docs/distilled/SCREENS.md", "dist/upload.sh"],
+            hits.map(\.target) == [
+                "docs/design-proposals/2026-08-06-task14.md",
+                "Tools/verify_test_log.sh",
+                "Tools/run_tests.sh",
+                "docs/distilled/SCREENS.md",
+                "dist/upload.sh"
+            ],
             "the extractor reported \(hits.map(\.target))"
         )
-        #expect(hits.map(\.line) == [1, 2, 7], "the extractor mislocated: \(hits.map(\.line))")
+        #expect(hits.map(\.line) == [1, 2, 3, 4, 9], "the extractor mislocated: \(hits.map(\.line))")
 
-        // `dist/upload.sh` is matched here on purpose and dropped by §1's prefix rule, not by the
-        // pattern. Proving that split matters: if the pattern declined it instead, §2's per-prefix
-        // floors could not tell a structurally-excluded prefix from one that stopped matching.
-        #expect(
-            !DocumentCitationGuard.topLevelDirectories(
-                root: AppSourceLiterals.repositoryRoot()
-            ).contains("dist"),
-            "dist/ now exists, so §1 would begin requiring generated artifacts on disk"
-        )
+        // Line 1 is not decoration. Every path in the first version of this specimen was
+        // hyphen-free, so dropping `-` from the pattern's character class left all four §2 floors
+        // clear, this test green — and `2026-08-06-task14.md` unmatched, meaning R68's and E249's
+        // citations silently stopped being checked. A guard fully green and blind to the one
+        // citation it was written for. The specimen must contain the real thing, not a likeness.
+        //
+        // Line 9 is matched here on purpose and dropped by §1's `.gitignore` rule rather than by
+        // this pattern: keeping the split visible is what lets §2's floors tell a deliberately
+        // excluded prefix from one that stopped matching.
 
         // The control §1's silence needs: prose with none of the shape must come back empty.
         let clean = DocumentCitationGuard.backtickedPaths(
