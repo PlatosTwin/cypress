@@ -610,10 +610,25 @@ enum MapLayout {
     ///
     /// **Below one peek of room it gives up rather than making things worse.** A ceiling under
     /// `chip − legendPeek` is already a cut chip; a ceiling under `legendPeek` is a sliver this
-    /// cannot improve by making it smaller, and a screen that short is a `chromeBudgetShortfall`
-    /// report rather than a quantization problem. Guarded by
-    /// `AX5ReflowTests.theLegendCeilingAlwaysCutsAChipAtAX5`, which measures the chips off the view
-    /// and the ceiling off `legendMaxHeight` rather than recomputing either.
+    /// cannot improve by making it smaller, because the only direction available is down.
+    ///
+    /// **Nothing else reports that screen either, and an earlier draft of this comment said
+    /// otherwise** (PR #63 review N1). It claimed such a screen "is a `chromeBudgetShortfall` report
+    /// rather than a quantization problem". It is not: `chromeBudgetShortfall` asks whether the
+    /// slack covers `chipRowTop + noticeFloor`, which says nothing about the legend's share of what
+    /// is left, and `AX5ReflowTests.theChromeBudgetCanHouseBothOccupants` already asserts it is **0
+    /// for every screen and inset this app runs on** — so by construction it never speaks for any of
+    /// them. Measured: a 667 pt screen leaves 24 pt of legend at a 47 pt inset, 17 at 54 and 9 at
+    /// 62, with a shortfall of 0.0 at all three. A legend under one chip is a real gap, it is
+    /// **unreported**, and it is named here rather than assigned to a guard that cannot see it. No
+    /// shipping phone is in it — 667 pt is the home-button iPhone SE, whose inset is 20 and whose
+    /// ceiling is 45 — but the sweep crosses heights with insets precisely because tomorrow's phone
+    /// may pair them differently.
+    ///
+    /// Guarded by `AX5ReflowTests.theLegendCeilingAlwaysCutsAChipAtAX5`, which measures the chips
+    /// off the view and the ceiling off `legendMaxHeight` rather than recomputing either — and
+    /// which gates that exemption on the room the screen had rather than on the ceiling this
+    /// returns, so a quantizer that hands back a sliver cannot excuse itself with it (review B1).
     static func quantizedLegendCeiling(_ ceiling: CGFloat, isAccessibilitySize: Bool) -> CGFloat {
         let chip = legendChipHeight(isAccessibilitySize: isAccessibilitySize)
         let row = chip + chipGap

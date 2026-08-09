@@ -702,11 +702,20 @@ struct AX5ReflowTests {
     /// perceptibility claim being defended — at AX5 that is ~12 pt of a capsule — and it holds with
     /// room to spare on every screen below.
     ///
-    /// **Under one chip of ceiling only the upper bound applies.** Quantization can move a ceiling
-    /// down, never up: on a screen with less than a chip's worth of room the reader sees one cut
-    /// chip and no arithmetic can conjure a second. What must still hold there is that the one chip
-    /// reads as cut rather than as whole — `MapLayout.chromeBudgetShortfall` is what speaks for a
-    /// screen that short, not this.
+    /// **The floor is excused by the room the screen has, never by the ceiling that came back**
+    /// (PR #63 review B1). Quantization can move a ceiling down and never up, so a screen with less
+    /// than a peek's worth of room cannot be given one and this cannot ask for it. The first version
+    /// of that exemption was written `if ceiling >= chip`, which reads the *output* — and a
+    /// `legendMaxHeight` patched to `min(quantizedLegendCeiling(…), 5)` draws a 5 pt strip with no
+    /// chip in it on all 24 pairs and passes, because it exempts itself. Both bounds are now gated
+    /// on `legendCeiling`, the room this screen actually had, which no change to the quantizer can
+    /// fake. The exemption is real and it is reached by the real tree: a 667 pt screen at a 62 pt
+    /// inset has 9 pt of room, which is a sliver nothing here can improve.
+    ///
+    /// **And quantization may spend at most one row.** The rule is "the nearest qualifying height
+    /// below", so a ceiling that comes back more than a row under the room the screen had is not a
+    /// quantized ceiling — that is the same probe from the other side, and it is what fails a
+    /// `legendMaxHeight` pinned at any constant.
     @Test("a clamped species legend always cuts a chip rather than ending on one, at AX5")
     func theLegendCeilingAlwaysCutsAChipAtAX5() async {
         let count = MapSpeciesSlot.allCases.count
@@ -754,21 +763,25 @@ struct AX5ReflowTests {
                     isAccessibilitySize: true
                 )
                 let screen = "a \(screenHeight) pt screen with a \(topInset) pt top inset"
+                // **The room this screen has below the chip row**, before the quantizer touches it.
+                // Every exemption below is gated on this rather than on what came back, so a
+                // quantizer that returns a sliver cannot excuse itself (PR #63 review B1).
+                let room = MapLayout.legendCeiling(
+                    screenHeight: screenHeight,
+                    topInset: topInset,
+                    isAccessibilitySize: true
+                )
                 guard let ceiling else {
                     // No ceiling means no scroller and nothing hidden — which is only honest if the
                     // legend really does fit. A `nil` returned over a legend that does not fit is
                     // the whole of #258 back again, and it would make every assertion below vacuous.
                     #expect(
-                        full.height <= MapLayout.legendCeiling(
-                            screenHeight: screenHeight,
-                            topInset: topInset,
-                            isAccessibilitySize: true
-                        ),
+                        full.height <= room,
                         """
                         \(screen): MapLayout.legendMaxHeight returned nil, so MapSpeciesLegend \
                         draws its full \(full.height) pt unclamped — but the room below the chip \
-                        row is only \(MapLayout.legendCeiling(screenHeight: screenHeight, topInset: topInset, isAccessibilitySize: true)) pt, \
-                        so it is drawing over the identify FAB again (task #258)
+                        row is only \(room) pt, so it is drawing over the identify FAB again \
+                        (task #258)
                         """
                     )
                     continue
@@ -799,17 +812,34 @@ struct AX5ReflowTests {
                     #72); MapLayout.quantizedLegendCeiling is what moves it off the boundary
                     """
                 )
-                if ceiling >= chip {
-                    #expect(
-                        peek >= leastVisible,
-                        """
-                        \(screen): the \(ceiling) pt ceiling ends \(peek) pt into the chip below \
-                        \(wholeChips) whole one(s) — a \(peek) pt sliver of a \(chip) pt chip is \
-                        not a chip the reader can see, so \(count - wholeChips) species filter(s) \
-                        are hidden behind what looks like the end of the list (task #72)
-                        """
-                    )
-                }
+                // `min(leastVisible, room)`: a fifth of a chip wherever the screen has a fifth of a
+                // chip to give, and otherwise every point it does have. The second arm is the only
+                // honest exemption — the quantizer never adds room — and it is gated on the room
+                // rather than on its own answer, so a quantizer that hands back a sliver out of a
+                // 201 pt screen is red here (PR #63 review B1).
+                #expect(
+                    peek >= min(leastVisible, room),
+                    """
+                    \(screen): the \(ceiling) pt ceiling ends \(peek) pt into the chip below \
+                    \(wholeChips) whole one(s) — a \(peek) pt sliver of a \(chip) pt chip is not a \
+                    chip the reader can see, so \(count - wholeChips) species filter(s) are hidden \
+                    behind what looks like the end of the list. This screen had \(room) pt below \
+                    the chip row to work with (task #72)
+                    """
+                )
+                // Quantizing means landing on the nearest qualifying height *below* — at most one
+                // row's worth of chips is what that can ever cost. A ceiling further under the
+                // room than that was not quantized, whatever else it was.
+                #expect(
+                    ceiling > room - (row + 1),
+                    """
+                    \(screen): the ceiling came back at \(ceiling) pt out of \(room) pt of room — \
+                    \(room - ceiling) pt given up, where quantizing to the nearest qualifying \
+                    height can cost at most one row (\(row) pt). Whatever produced this is not \
+                    MapLayout.quantizedLegendCeiling moving a ceiling off a chip boundary, and \
+                    every point it threw away is a species filter the reader cannot reach (task #72)
+                    """
+                )
             }
         }
     }

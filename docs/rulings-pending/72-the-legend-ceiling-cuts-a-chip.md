@@ -162,6 +162,77 @@ built: `legendMaxHeight` was made to return `nil` unconditionally, and the suite
 Red on the branch that would otherwise have been vacuous, and #258's own guards went red beside it.
 The probe was reverted and the unit suite re-run on the restored tree.
 
+#### The third door, which the review found open (PR #63 review B1)
+
+The two doors above were the ones this branch thought to construct. **There was a third, and it is
+the one this repo's dominant defect class predicts**: the guard's perceptibility floor was gated
+`if ceiling >= chip`, which reads the *ceiling that came back* — the very thing a broken quantizer
+controls. A `legendMaxHeight` patched to `min(quantizedLegendCeiling(…), 5)` draws a 5 pt strip with
+no chip in it on all 24 pairs, hides all four species filters, and **passed**, because a ceiling
+under one chip exempted itself from the only assertion that would have caught it.
+
+It was not hypothetical. The real tree already landed in the unguarded region: a 667 pt screen at a
+62 pt inset has 9 pt of ceiling — under the guard's own `leastVisible` of 11.93 and under
+production's own `legendPeek` of 15 — and was green, silently.
+
+**The fix is to gate the exemption on the input rather than the output.** Both bounds now read
+`MapLayout.legendCeiling` — the room the screen actually had below the chip row — which no change to
+the quantizer can fake:
+
+- `peek >= min(leastVisible, room)`. A fifth of a chip wherever the screen has a fifth of a chip to
+  give, and otherwise every point it does have. The quantizer only ever moves down, so "this screen
+  is too short" is the one honest exemption, and it is now stated as that rather than inferred from
+  the answer.
+- `ceiling > room − (row + 1)`. Quantizing means landing on the nearest qualifying height *below*,
+  so at most one row is what it can ever cost. Same probe from the other side, and it is what fails
+  a ceiling pinned at any constant.
+
+The reviewer proposed `rawCeiling < chip || ceiling >= chip` and invited a better one. That
+assertion is red on a legitimate quantization: a raw ceiling of 65 pt is one whole chip and 5 pt of
+gap — no peek at all — and the rule correctly moves it to 45, a cut first chip, which the proposal's
+second arm forbids. No pair in the sweep is in that band today, so it is a latent false alarm rather
+than a current one; the `min(leastVisible, room)` form closes the same hole without it, and the
+row-cost assertion adds a bound the proposal does not have.
+
+**Both red-proved, each on its own assertion.** The reviewer's own mutation, 28 issues:
+
+    ✘ Expectation failed: (peek → 5.0) >= (min(leastVisible, room) → 11.933333333333332)
+    ↳ a 844.0 pt screen with a 47.0 pt top inset: the 5.0 pt ceiling ends 5.0 pt into the chip below
+      0 whole one(s) … This screen had 201.0 pt below the chip row to work with (task #72)
+
+and a ceiling pinned at 45 — which *does* cut a chip, so the peek bounds accept it and only the
+row-cost assertion fires, which is why that assertion earns its place:
+
+    ✘ Expectation failed: (ceiling → 45.0) > (room - (row + 1) → 132.33333333333334)
+    ↳ a 844.0 pt screen with a 47.0 pt top inset: the ceiling came back at 45.0 pt out of 201.0 pt of
+      room — 156.0 pt given up, where quantizing to the nearest qualifying height can cost at most
+      one row (67.66666666666666 pt)
+
+#### A legend under one chip is unreported, and no guard speaks for it
+
+Named here rather than left to a guard that cannot see it (review N1). An earlier draft of
+`quantizedLegendCeiling`'s doc said a screen that short "is a `chromeBudgetShortfall` report rather
+than a quantization problem". **That is false.** `chromeBudgetShortfall` asks whether the slack
+covers `chipRowTop + noticeFloor`, which says nothing about the legend's share of what remains — and
+`theChromeBudgetCanHouseBothOccupants` asserts it is 0 for every screen and inset the app runs on, so
+by construction it never speaks for any of them. A 667 pt screen leaves 24 pt of legend at a 47 pt
+inset, 17 at 54 and 9 at 62, with a shortfall of **0.0** at all three.
+
+No shipping phone is in that region: 667 pt is the home-button iPhone SE, whose inset is 20 and whose
+ceiling is 45. The sweep crosses heights with insets anyway, because a reservation correct only on
+today's pairings is one device away from being wrong — which is exactly how this was found. Whether
+a legend that short should exist at all is a product question this ticket does not answer.
+
+#### What the change costs the FAB's clearance: nothing, and structurally
+
+An earlier draft of this branch's PR said the change "moves the top chrome further from the FAB".
+**It does not, and the true property is the better one** (review N3). PR #63's reviewer measured it
+on a running iPhone 16e at AX5: the legend's bottom edge moves 416 → 396 and the FAB's top edge
+moves 485.33 → 465.33, so the clearance is **69.33 pt before and after**. `noticeMaxHeight` absorbs
+the 20 pt the legend gives up, because the two are complementary halves of one number. The clearance
+is not improved by this change; it is *preserved by construction*, which is what should be claimed
+for it.
+
 #### Verified on the merged tree
 
 The branch contains `origin/main` at `fc68efc`, so the branch tree **is** the merged tree; `head`
