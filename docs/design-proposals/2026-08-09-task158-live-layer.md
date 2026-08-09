@@ -26,8 +26,10 @@ Every claim below was read out of the code in this repository at `0e1df35`, not 
 | **Stack** | Argue it on trade-offs, and do the Go JWKS survey rather than defer it | §8 — the survey tips it to **Go**, reversing this document's own first recommendation |
 
 **The acceptance criterion #158 is finished against**, in the owner's words: *"when I add a photo on
-my device, the photo propagates to all other users."* §1.1 walks that path end to end and finds one
-step that is not built and is not #158's to decide.
+my device, the photo propagates to all other users."* §1.1 walks that path end to end. Its last step
+— publication — has no mechanism in the corpus, and the owner ruled one on 2026-08-09: first-party
+photographs publish without screening at launch, a **deliberate deviation from DECISIONS §4**,
+recorded as such in §1.3 with the cost it was taken against.
 
 **One thing the owner should read before anything else: §1.** The scope ruling is compatible with
 RULINGS **R36** under one reading of it and revises R36 under the other. I specify the first. If the
@@ -97,17 +99,13 @@ reach for (b) at any point along its path.
    any connection" (screen 17 §3). So on cellular the visit propagates and the photograph waits,
    which is correct, and is the first case where the criterion is *partly* met and says so on
    screen 17.
-5. **Moderation decides publication, and this step is not built.** `Photo` carries
+5. **Moderation decides publication, and it is ruled rather than built — §1.3.** `Photo` carries
    `isPubliclyVisible` (`moderationState == .approved && deletedAt == nil`) and
    `isVisibleToItsContributor` (`deletedAt == nil`), kept apart deliberately (ERRATA E37), with
    `TreeProfile.isPhotoVisible(_:own:)` the single predicate over them (E215). **Every photo in the
-   app is `.pending`** — `TreeProfile.ownPhotoIDs`' own comment says so. So a photograph that syncs
-   perfectly still appears on nobody else's screen, because nothing moves it to `.approved`.
-   DECISIONS §4 names the Phase-1 mechanism — "nudity/person safety screening and the face/plate blur
-   pipeline" are its stated exception to what is not built — and it does not exist. **This is a
-   dependency of the criterion, not a decision #158 may take:** auto-approving first-party
-   photographs is a governance call, and moderator surfaces are a web deliverable (ARCHITECTURE §8).
-   Named and handed back.
+   app is `.pending`** — `TreeProfile.ownPhotoIDs`' own comment says so, nothing in the shipping app
+   writes `.approved`, and `Photo.moderationState`'s own header says the same. Without a rule, a
+   photograph that syncs perfectly appears on nobody else's screen. The owner has ruled one: §1.3.
 6. **The other device reads it.** `treeProfile(id:)`'s community half — the `photos` series,
    `photoTallies`, and the `ownPhotoIDs` / `deletablePhotoIDs` / `anonymizedPhotoIDs` sets — comes
    from the server, and `photoData(id:)` fetches bytes this device never wrote. The payload was built
@@ -137,6 +135,88 @@ to make one merged national corpus queryable before any phone can hold it — bu
 ruling, it re-costs the machine (§4.1), and it requires a failure state on every screen in the app
 (§4.3). Those are three separate decisions and none of them is a spec agent's. §4 gives the owner the
 numbers either way, because the case against (b) is only worth anything if it is costed.
+
+### 1.3 First-party photographs publish without screening at launch — a deliberate deviation
+
+**Ruled by the project owner, 2026-08-09, having been shown the cost in the same sentence.**
+
+**What the corpus says, stated first so the deviation is legible as one.** DECISIONS §4 lists, among
+the things explicitly *not* built, "content AI in Phase 1 beyond nudity/person safety screening and
+the face/plate blur pipeline" — that is, those two **are** Phase-1 scope. BUILD-PLAN §10 puts the
+blur at upload, and `Photo.blurApplied` is the column that records it. **Neither exists.** Nothing in
+this repository sets `blurApplied` to true — it is written from the model and read back and never
+raised — and nothing writes `.approved`.
+
+**What was ruled.** A first-party photograph is published on upload, without screening and without
+blur, at launch. **The named cost, which the owner accepted rather than was spared:** an unscreened
+photograph can carry a face, a licence plate, or the inside of somebody's front garden, and under
+this rule it reaches other people's screens. That is the exact harm E147 cites as the reason a
+contributor may delete their own photograph, and the exact harm the §4 pipeline exists to prevent.
+
+This is recorded as a deviation, dated and attributed, so that a reader in six months can tell it was
+**chosen** rather than overlooked. It is not a design that happens to skip a step.
+
+**Three things "auto-approve" does not yet specify, and what this document proposes for each.**
+
+**(a) What first-party means: the signed-in account, not the device.** The three candidates differ
+once an account can be made in seconds, and they differ in what a takedown can act against.
+
+- *This device* is the weakest and should be excluded. The device credential of §5.8 "is not an
+  attestation and does not claim to be" — a reinstall mints a new one — so a device-scoped rule gives
+  an operator nothing to act against and no way to make an action stick.
+- *A contributor whose prior photographs stand* is the strongest and cannot be the launch rule: every
+  contributor's first photograph would be unscreened under it too, so it does not close the case it
+  is built for. It is the right shape for later (see (c)).
+- *The signed-in account* is the recommendation. It is the only arm carrying an external
+  verification — Apple has verified control of an Apple ID, and §5.2's `/auth/revoke` gives that
+  verification a way to be withdrawn — and it gives a takedown a subject that survives a reinstall.
+
+  It also has a property worth more than it first appears: **it makes a drawn sentence true instead
+  of needing new copy.** Screen 15's body reads *"An account backs them up and lets them join each
+  tree's public timeline."* Under this rule that is literally what an account does, and an anonymous
+  contributor's photographs stay visible to them and to nobody else — which is `isVisibleToItsContributor`
+  behaving exactly as E37 designed it, and which is D9's funnel unchanged. No screen changes.
+
+**(b) The way down, which is what makes the posture coherent rather than bare.** Two paths exist
+today and one does not.
+
+- **The contributor's own removal — exists.** `deletePhoto(id:)` is on the protocol, gated by
+  `TreeProfile.deletablePhotoIDs`, and its own documentation argues it as a privacy control before a
+  tidiness one, in the same terms as the risk this rule creates: "a photograph can hold a face, a
+  license plate or the inside of somebody's front garden, and the person who took it has to be able
+  to take it back" (E147, #78). Under auto-approve that control stops being a convenience and becomes
+  the first line, so it must be reachable wherever a photograph is shown.
+- **Operator takedown — exists, and costs the client nothing.** `Photo.moderationState` is a `var`
+  with a `.rejected` case, and `isPubliclyVisible` is evaluated at render time from the payload. So a
+  photograph flipped to `.rejected` server-side stops being drawn on every other device at its next
+  `treeProfile` read, with **no app change, no new screen, and no migration**. Moderator surfaces are
+  a web deliverable by ARCHITECTURE §8, so the console this implies is already out of scope for iOS
+  by an existing ruling rather than by omission.
+- **An in-app report-this-photograph control — does not exist, and #158 must not invent one.**
+  `ReviewFlag.Kind` carries five cases — `appears_dead`, `appears_removed`, `duplicate_suspected`,
+  `wrong_species`, `removed_but_active`, plus `never_existed` — and **not one of them is about a
+  photograph**. Adding one widens the `review_flags` `CHECK` (a migration, §7) and the control itself
+  is a screen not in the mocks (DECISIONS constraint 21). Named as the gap it is.
+
+  **And `setPhotoVote` is not a report.** It is the thumb up/down feeding `PhotoTally` and A3's hero
+  selection — a *ranking* signal. Reading a downvote as a takedown request would let a popularity
+  mechanism decide a safety question, and would quietly give a brigade a removal tool. If a report
+  path is wanted, it is its own kind on its own ticket.
+
+**(c) Re-screening, so nothing approved under this rule is permanently exempt.** The rule must expire
+against the pipeline §4 asks for, and the mechanism should be in place before the pipeline is, or
+the backlog is unidentifiable when it arrives.
+
+- **The server's photo row records *why* it is approved.** `.approved` alone cannot distinguish
+  "screened and passed" from "auto-approved under the launch rule," and a state you cannot
+  distinguish is a backlog you cannot re-run. This is a server-side column: the client never reads
+  it, `isPubliclyVisible` is unchanged, and **there is no client migration in it** (§7).
+- **`blurApplied` is already the cursor for the blur half**, and truthfully false on every row in
+  existence — so the re-screen queue is "every photograph with `blur_applied = 0`", which needs no
+  new bookkeeping at all.
+- **When the pipeline lands it runs over that backlog**, and anything it fails moves to `.rejected` —
+  which the client already honors at render time, by the same mechanism as an operator takedown. The
+  client change required for re-screening is **none**, and that is the point of specifying it now.
 
 ---
 
@@ -887,12 +967,25 @@ reading back rather than accept it.
 Step 4 is where the scope ruling's weight sits, and steps 5–6 depend on it rather than on the email
 route.
 
-**What this order does not deliver, and it is the last inch of the acceptance criterion.** With all
-six done, a photograph taken on one phone syncs, uploads, and arrives in another device's
-`treeProfile` payload — and is still not drawn, because it is `.pending` and `isPubliclyVisible` is
-false (§1.1 step 5). Closing that needs a moderation disposition, which is a governance decision and
-a web deliverable, not a line of iOS. **#158 should not be marked as meeting the owner's sentence
-until that exists**, and saying so now is cheaper than discovering it at the demo.
+**The last inch of the acceptance criterion, and it is now inside this ticket.** With the six steps
+done, a photograph taken on one phone syncs, uploads and arrives in another device's `treeProfile`
+payload — and whether it is *drawn* turns on `isPubliclyVisible`, which needs `.approved`. The owner's
+§1.3 ruling supplies that: a photograph from a **signed-in account** is approved on upload. So **#158
+meets the owner's sentence end to end, gated on §1.3's rule rather than on a moderation service that
+does not exist.**
+
+Two obligations ride with that and belong in the same ticket, not a later one:
+
+- **The way down ships with the way up** (§1.3b). `deletePhoto` must be reachable wherever a
+  photograph is shown, and the server must be able to move a row to `.rejected`. Auto-approve without
+  a takedown is the version of this rule that should not ship.
+- **The re-screen bookkeeping ships before the pipeline** (§1.3c) — the server-side approval-reason
+  column, and `blur_applied = 0` as the backlog cursor. Both cost the client nothing; both are
+  unrecoverable after the fact if the backlog cannot be identified.
+
+An anonymous contributor's photographs stay visible to them alone until they sign in. That is
+`isVisibleToItsContributor` doing what E37 designed it to do, and it makes screen 15's drawn promise
+literally true, so no copy moves.
 
 ---
 
