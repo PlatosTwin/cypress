@@ -108,10 +108,11 @@ gap from **`MapSpeciesLegend` itself**, measured through `widestReflow` at every
 would keep passing at whatever the production code did, which is this repo's dominant test-suite
 defect (CLAUDE.md: *could this guard pass while the defect it names is present?*).
 
-Four ways it could have passed while the defect was present, and what closes each. **Three of
-these were found by writing them down and the fourth by a reviewer** — the list below was
-confidently three items long when this branch first shipped, which is its own instance of the
-lesson: an enumeration of the ways a guard can lie is never known to be complete.
+**The doors tried**, and what closes each. Not the doors there are: this list shipped as a confident
+"three ways", a reviewer opened a fourth, and a later review opened a fifth (below, still open). A
+count is the one thing this list must not carry — **the completeness claim is what let the fourth
+through, and it has now been wrong twice.** What follows is a record of what was tried, and the last
+entry is a door known to be open.
 
 - **Recomputing the ceiling.** Closed by reading it off `legendMaxHeight`; the red-proof below is the
   evidence, since the only difference between red and green is the production function.
@@ -125,6 +126,18 @@ lesson: an enumeration of the ways a guard can lie is never known to be complete
 - **The exemption for a screen too short to show a peek**, which was gated on the ceiling that came
   back rather than on the room the screen had — so a quantizer returning a sliver exempted itself.
   Found in review; the section below is the whole of it.
+- **A `room` that under-reports, which is self-certifying** — and this one is **open**. Both bounds
+  measure the ceiling against `legendCeiling`, so a `legendCeiling` that is itself wrong puts the
+  same wrong number on both sides and both bounds hold. PR #63's reviewer mutated it to return
+  `min(5, real)` at AX5 on `screenHeight <= 874` only, clamping the legend to a 5 pt strip on the SE,
+  the 16e and the 16 Pro, and **the full unit suite stayed green.** Its first attempt, at every
+  content size, *was* caught — by the boundary table's ordinary-size arm — so scoping the fault to
+  AX5 is what slips past. The honest shape of the gap: **the boundary table guards the ceiling's
+  nil-ness and nothing guards its magnitude.** The reviewer's proportionate fix, left here for
+  whoever picks it up: extend `theLegendCeilingBindsWhereTheArithmeticSaysItDoes` from "does it bind"
+  to "and by roughly how much" — the 16e's AX5 ceiling is at least two chips, say — as an anchor that
+  does not recompute `MapLayout`'s own arithmetic. It is out of this ticket's scope and the
+  orchestrator is filing it.
 
 **The thresholds are looser than the production rule on purpose.** `MapLayout` reserves in bounds
 (`legendChipHeightAX5` = 60, a bound on a chip that measures 59.67), so its landing drifts by up to
@@ -155,7 +168,7 @@ failure message, not the color, is what was read. With the quantization in place
 bound, the binding boundary, the clamp, the shortfall, the two blocks never meeting — is green
 throughout both runs.
 
-#### The other way this guard could have passed while the defect was present, constructed and run
+#### A door constructed here: the ceiling that is never handed out
 
 A guard that only asserts the peek *when there is a ceiling* can be satisfied by never handing out a
 ceiling — and "stop clamping the legend" is a plausible thing for a later change to do. So it was
@@ -168,18 +181,21 @@ built: `legendMaxHeight` was made to return `nil` unconditionally, and the suite
 Red on the branch that would otherwise have been vacuous, and #258's own guards went red beside it.
 The probe was reverted and the unit suite re-run on the restored tree.
 
-#### The third door, which the review found open (PR #63 review B1)
+#### The door the review found open (PR #63 review B1)
 
-The two doors above were the ones this branch thought to construct. **There was a third, and it is
-the one this repo's dominant defect class predicts**: the guard's perceptibility floor was gated
+The doors above were the ones this branch thought to construct. The one it did not is **the one this
+repo's dominant defect class predicts**: the guard's perceptibility floor was gated
 `if ceiling >= chip`, which reads the *ceiling that came back* — the very thing a broken quantizer
 controls. A `legendMaxHeight` patched to `min(quantizedLegendCeiling(…), 5)` draws a 5 pt strip with
 no chip in it on all 24 pairs, hides all four species filters, and **passed**, because a ceiling
 under one chip exempted itself from the only assertion that would have caught it.
 
-It was not hypothetical. The real tree already landed in the unguarded region: a 667 pt screen at a
-62 pt inset has 9 pt of ceiling — under the guard's own `leastVisible` of 11.93 and under
-production's own `legendPeek` of 15 — and was green, silently.
+The sweep already reached the unguarded region: a 667 pt screen at a 62 pt inset leaves 9 pt of
+ceiling — under the guard's own `leastVisible` of 11.93 and under production's own `legendPeek` of
+15 — and was green, silently. **That pair is synthetic, and the review's first account of it (and
+this entry's) called it live.** 667 pt is the home-button iPhone SE, whose inset is 20, whose room is
+51 and whose ceiling is 45 — healthy. The hole was real and reachable by the sweep; no shipping phone
+was in it. The orchestrator filed task #73 on the shipping question.
 
 **The fix is to gate the exemption on the input rather than the output.** Both bounds now read
 `MapLayout.legendCeiling` — the room the screen actually had below the chip row — which no change to
@@ -214,6 +230,12 @@ row-cost assertion fires, which is why that assertion earns its place:
       room — 156.0 pt given up, where quantizing to the nearest qualifying height can cost at most
       one row (67.66666666666666 pt)
 
+**That pin does something this entry did not claim for it, and the review checked**: 45 pt is
+*above* the room on the 667 pt screens, and a ceiling above the room fires
+`theNoticeIsNeverGivenLessRoomThanItsOwnActionButtonNeeds` — 12 further issues, from a guard this
+ticket did not write. The direction the quantizer must never move is therefore closed independently
+of anything here.
+
 #### A legend under one chip is unreported, and no guard speaks for it
 
 Named here rather than left to a guard that cannot see it (review N1). An earlier draft of
@@ -227,7 +249,8 @@ inset, 17 at 54 and 9 at 62, with a shortfall of **0.0** at all three.
 No shipping phone is in that region: 667 pt is the home-button iPhone SE, whose inset is 20 and whose
 ceiling is 45. The sweep crosses heights with insets anyway, because a reservation correct only on
 today's pairings is one device away from being wrong — which is exactly how this was found. Whether
-a legend that short should exist at all is a product question this ticket does not answer.
+a legend that short should exist at all is a product question this ticket does not answer; it is
+**task #73**.
 
 #### What the change costs the FAB's clearance: nothing, and structurally
 
