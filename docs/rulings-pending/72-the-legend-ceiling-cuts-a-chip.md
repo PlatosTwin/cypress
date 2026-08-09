@@ -235,17 +235,22 @@ for it.
 
 #### Verified on the merged tree
 
-The branch contains `origin/main` at `fc68efc`, so the branch tree **is** the merged tree; `head`
-`cef0c26` on every log below, iPhone 16 Pro Max `DE8E11AE-…`, `active-city=none`,
-`camera-auto-healed no`.
+The branch contains `origin/main` at `fc68efc`, so the branch tree **is** the merged tree. Re-run in
+full after review round 1: `head 068b83a` on every log below, iPhone 16 Pro Max `DE8E11AE-…`,
+`active-city=none`, `camera-auto-healed no`.
 
 | log | what | result |
 |---|---|---|
-| `unit-final-72.log` | `CypressTests` | `✔ Test run with 1318 tests in 133 suites passed` |
-| `ui-72.log` | `CypressUITests` | `Executed 99 tests, with 0 failures`, `XCTest skipped=0` |
-| `warnings-72.log` | **fresh** DerivedData, `build-for-testing` | `VERIFY-WARNINGS: source=0 non-source=3 compile-tasks=447 files-checked=3` |
+| `unit-r2-72.log` | `CypressTests` | `✔ Test run with 1318 tests in 133 suites passed` |
+| `ui-r2-72.log` | `CypressUITests` | `Executed 99 tests, with 0 failures`, `XCTest skipped=0` |
+| `warnings-r2-72.log` | **fresh** DerivedData, `build-for-testing` | `VERIFY-WARNINGS: source=0 non-source=3 compile-tasks=447 files-checked=4` |
 | `redproof-72.log` | the guard against the unquantized tree | 8 issues, one per defective screen |
-| `vacuous-72.log` | the guard against an always-`nil` ceiling | red, as above |
+| `vacuous-72.log` | the guard against an always-`nil` ceiling | red |
+| `b1-probe-5pt.log` | the guard against `min(quantized…, 5)` (review B1) | 28 issues |
+| `b1-probe-pinned.log` | the guard against a ceiling pinned at 45 | red on the row-cost bound only |
+
+Round 1's own logs (`unit-final-72.log`, `ui-72.log`, `warnings-72.log`, `head cef0c26`) were green
+on the same three counts; they are superseded rather than contradicted.
 
 The warnings certifier was calibrated before it was believed (E203): asked to certify a file the
 build did not compile it answers `VERIFY-FAIL: cannot certify a warning count for:
