@@ -269,7 +269,11 @@ treated a consequence:
 - which annotations land in that state depends on where the camera was left — fixed at the state
   (`CYPRESS_MAP_CAMERA`, `Cypress/Features/Map/DebugMapCameraOverride.swift`);
 - enumerating that many elements against a live tree is itself a race — an index that stopped
-  resolving mid-walk failed CI once even with both of the above in place.
+  resolving mid-walk failed CI three times with both of the above in place (indexes 25, 3 and 17,
+  the last on a tree byte-identical to a passing run). Fixed at the binding for
+  `testNothingIsAnnouncedTwice`: `allElementsBoundByAccessibilityElement` and one read of each
+  value into a plain `(String, CGRect)`, so nothing re-resolves a proxy mid-comparison.
+  `assertEveryControlIsLabeled` still walks by index and has not been seen to lose one.
 
 **The scope itself is untouched, and it is the actual defect**: a labeling audit of screen 18 that
 passes or fails on the contents of screen 01 is not an audit of screen 18. The shape of the repair is

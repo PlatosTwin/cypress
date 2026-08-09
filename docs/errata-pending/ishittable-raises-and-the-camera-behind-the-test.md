@@ -275,19 +275,11 @@ Gate Park (`37.769402,-122.486198`, `camera-trees=0`) and the preflight skipped:
   elements of a screen it does not own is still the deeper defect; pinning the camera makes what it
   reads deterministic rather than making it read the right thing. Scoping the walk to the presented
   screen's own subtree is a larger change to what that helper claims, and it is not this ticket.
-- **The enumeration race is still live, and has now been seen twice.** CI run 31338381219, shard
-  `ui (3)`, `DeepLinkSweepTests.testNothingIsAnnouncedTwice`:
-
-      Failed to get matching snapshot: No matches found for Element at index 3 from input {(
-          StaticText, StaticText, StaticText )}
-
-  The loop asked for index 3 of a query that had four matches when it took the count and three by
-  the time it resolved — two retries a second apart, and the tree never came back. That is the same
-  defect as the `Element at index 25` failure recorded above, with `app.frame` already hoisted out
-  of the loop, so hoisting narrowed the window rather than closing it. It is a property of walking
-  every element of the app against a live tree, which is the ROADMAP entry on
-  `assertEveryControlIsLabeled`'s scope, not a property of any of this round's repairs — the same
-  shard passed on the run before it (31332870414), and this round's diff does not touch that file.
+- ~~**The enumeration race is still live, and has now been seen twice.**~~ **Fixed** — three
+  sightings, and the account is now the last section of this entry, "The enumeration race was an
+  ordinal, and the ordinal is gone". Left here as a stub rather than deleted, because the two
+  paragraphs above it are what a reader will have just read: hoisting `app.frame` narrowed this
+  window and did not close it, and that was correct as far as it went.
 
 #### Correction: the legend was there, and the test was waiting for the wrong element
 
@@ -421,3 +413,123 @@ element, and it is also what they print for an element that is present under a n
 asking about. One sentence, two causes, and the entry above spent a whole round on the wrong one —
 after correctly refusing the brief's *first* mis-attribution three sections earlier. Reading the log
 caught that one. Not reading these three caught nothing.
+
+#### The enumeration race was an ordinal, and the ordinal is gone
+
+Three sightings, all `DeepLinkSweepTests.testNothingIsAnnouncedTwice` on shard `ui (3)` of this
+branch, all the same sentence with a different number in it:
+
+| run | commit | message |
+| --- | --- | --- |
+| 31329045652 | `3143a5c` | `No matches found for Element at index 25` |
+| 31338381219 | `7fbb818` | `No matches found for Element at index 3 from input {( StaticText, StaticText, StaticText )}` |
+| 31340854135 | `885a044` | `No matches found for Element at index 17 from input {(` |
+
+**The third is the one that settles what kind of failure this is.** `885a044` differs from
+`58833e9` in one markdown file and nothing else — `git ls-tree` over `Cypress CypressTests
+CypressUITests Tools` gives the same hash for both — and `58833e9`'s run (31339588378) passed
+`ui (3)` in twelve minutes. Same code, same shard, one green and one red. There is no diff to
+blame, and a green re-run would have proved only that it is intermittent.
+
+**The mechanism is the binding, not the tree.** `allElementsBoundByIndex` returns proxies bound to
+an *ordinal*. The proxy holds no reference to an element; every later `.frame`, `.isHittable` or
+`.label` re-runs the query and takes the *n*th match of whatever it finds this time. When the tree
+changes under the walk, *n* stops resolving — and XCUITest raises rather than answering, exactly as
+`isHittable` does at the top of this entry. The second sighting's message says it out loud: four
+matches when the count was taken, three by the time index 3 resolved.
+
+That method gave the race an unusual amount of room. It launches six times per run and walks *every*
+static text in the app each time, on a screen `arrive()` has only established the existence of. The
+nested duplicate-check then read `.label` off an index-bound proxy once per element in the outer
+loop and again for every pair in the inner one: on screen 18, with 29 reachable static texts, up to
+about four hundred extra re-resolutions of a query against a live tree, for values that had already
+been read.
+
+**The repair, in the method** (`CypressUITests/DeepLinkSweepTests.swift`):
+
+- `allElementsBoundByAccessibilityElement` in place of `allElementsBoundByIndex`. Each proxy is
+  bound to the underlying accessibility element, so a later read resolves by identity; a *neighbor*
+  leaving the tree no longer takes this element's handle with it. `AnonymizedPhotoNoticeUITests`
+  already used that spelling.
+- Each element's label and settled frame read **once**, into a plain `(String, CGRect)`. The pair
+  comparison is arithmetic over those values and touches no proxy at all, which is where the O(n²)
+  went.
+- `.exists` before the hittability filter, the same spelling `assertEveryControlIsLabeled` uses, so
+  an element that has already left is skipped rather than raised on.
+- **A guard that the screen was examined at all.** There was none. An enumeration that returned an
+  empty array — a query spelling that stopped matching, a screen that had not finished arriving —
+  passed silently, which is this project's own signature defect shape.
+- Containment asked in **both** orientations. The version replaced asked only whether the earlier
+  entry contained the later one, which reads the sequence as if the query engine returned wrappers
+  before leaves; it promises no such thing, and reading an order out of that sequence is what E118
+  was filed for.
+
+`settledFrame` is untouched and still gates every rectangle compared, on the same 30 s per-element
+budget (#244). Nothing about what the method asserts is weaker.
+
+#### The hazard in that spelling, ruled out on the device before it was relied on
+
+`allElementsBoundByAccessibilityElement` de-duplicates by accessibility element. This method exists
+to catch a labeled container that also exposes a labeled child saying the same words — if those
+collapsed to one entry it would stop being able to find its own defect and stay green forever.
+
+Measured on iPhone 16 Pro `EA0AD796-…` at 402 pt, by enumerating both spellings on all six screens
+the method visits and printing `label@frame` for each. Hittable static texts:
+
+| screen | `allElementsBoundByIndex` | `allElementsBoundByAccessibilityElement` | same labels and frames |
+| --- | --- | --- | --- |
+| treeProfile | 20 | 20 | yes |
+| site | 17 | 17 | yes |
+| species | 14 | 14 | yes |
+| growthHistory (duplicate planted) | 5 | 5 | yes |
+| activity | 3 | 3 | yes |
+| outbox | 29 | 29 | yes |
+
+The planted duplicate is the part that matters: two `Text`s carrying one label at two type sizes, so
+that the larger rectangle strictly contains the smaller. Both spellings returned **two** entries for
+it —
+
+    PROBE@(158.5, 120.0, 85.0, 37.33)
+    PROBE@(181.33, 129.67, 39.33, 18.0)
+
+— so the de-duplication is by accessibility element and not by anything the defect shares.
+
+**What no binding rescues, and it is worth writing down.** A labeled SwiftUI container is filed as an
+`Other`, not as a `StaticText`. Both spellings tried —
+
+    VStack { Text("…") }.accessibilityElement(children: .contain).accessibilityLabel("…")
+    Text("…").padding(40).accessibilityElement(children: .contain).accessibilityLabel("…")
+
+— produced an `Other` and a `StaticText` at the *same* rectangle, and `app.staticTexts` returns only
+the child. So this method sees the E104 shape only when the wrapper is itself a `StaticText`. That
+limit predates the binding change and is not repaired by it. (Also measured in passing, because it
+was assumed otherwise while building the specimen: `.frame(width:…, height:…)` and `.padding(…)` do
+**not** enlarge a `Text`'s accessibility frame — a padded `Text` and its unpadded twin came back as
+the same rectangle to the pixel.)
+
+#### The red-proofs
+
+All watched on iPhone 16 Pro `EA0AD796-…` at 402 pt, each restored afterwards. The specimen is a
+real duplicate announcement added to screen 11 — `ZStack { Text("PROBE").font(.treeNameHero);
+Text("PROBE").font(.latinName13) }` — so the app genuinely says one thing twice.
+
+| state | observed |
+| --- | --- |
+| specimen in, repaired method | **red**, and on the right sentence: `growthHistory: 'PROBE' is announced by an element at (158.5, 120.0, 85.0, 37.333…) and again by one inside it at (181.333…, 129.666…, 39.333…, 18.0), so it is heard twice` — one failure, from the one screen carrying the specimen |
+| specimen in, `nesting` cut back to one direction | **red**, same sentence — so the query engine returned the container first here, and the one-directional version would have caught this specimen too |
+| specimen reversed (leaf declared first), one direction | **green**, `Executed 2 tests, with 0 failures` — and legitimately: the probe shows only **one** hittable `PROBE` in that arrangement. A `Text` drawn under its twin stops being hittable and the filter drops it before any comparison |
+| specimen removed | see the five repeat runs below |
+
+**So the both-orientations change is not proved by a red run, and this entry does not claim it is.**
+The reverse arrangement could not be synthesized at all: the contained element must be drawn on top
+to be hittable, and drawn on top it enumerates second. The change is kept because it costs one
+`contains` and because the alternative is a test whose correctness depends on an order E118 says
+nothing may depend on — said plainly here rather than dressed as a measurement.
+
+#### What this does not fix
+
+The ROADMAP's "Also outstanding" entry on `assertEveryControlIsLabeled`'s **scope** stands
+untouched. That helper audits every element in the app rather than the screen under test, and this
+change makes a *different* method's enumeration survive a moving tree; it does not narrow what
+either method looks at. The scope question is still owed, and deleting that entry on the strength of
+this would be trading a design defect for a green.
