@@ -150,6 +150,9 @@ enum CypressAPISurface {
         let code: [Character]
         /// Indices inside a region compiled only when `DEBUG` is defined.
         let debugOnly: Set<Int>
+        /// Every `extension <name>` body in the file, indexed by the name extended — built once
+        /// here rather than re-scanned per name.
+        let extensions: [String: [Range<Int>]]
     }
 
     static let appSources: [SourceFile] = {
@@ -160,7 +163,12 @@ enum CypressAPISurface {
                 ? String(url.path.dropFirst(root.path.count + 1))
                 : url.path
             let code = Array(BorrowedGlyphAPI.codeOnly(in: text))
-            return SourceFile(path: relative, code: code, debugOnly: Parser.debugOnlyRegions(code))
+            return SourceFile(
+                path: relative,
+                code: code,
+                debugOnly: Parser.debugOnlyRegions(code),
+                extensions: Parser.extensionBodiesByName(in: code)
+            )
         }
     }()
 
@@ -213,7 +221,7 @@ enum CypressAPISurface {
     static let extensionMembers: [ExtensionMember] = {
         let requiredMethods = Set(requirementMethods.map { Parser.MethodKey($0) })
         return appSources.flatMap { file -> [ExtensionMember] in
-            Parser.extensionBodies(of: "CypressAPI", in: file.code).flatMap { body -> [ExtensionMember] in
+            (file.extensions["CypressAPI"] ?? []).flatMap { body -> [ExtensionMember] in
                 let methods = Parser.methods(in: file.code, range: body).map { method in
                     ExtensionMember(
                         description: (method.isStatic ? "static func " : "func ") + method.signature.description,
@@ -223,7 +231,11 @@ enum CypressAPISurface {
                 }
                 let properties = Parser.properties(in: file.code, range: body).map { property in
                     ExtensionMember(
-                        description: "\(property.keyword) \(property.name)",
+                        // A subscript has no name of its own; printing the keyword twice reads as a
+                        // parser fault rather than as the finding.
+                        description: property.keyword == property.name
+                            ? property.keyword
+                            : "\(property.keyword) \(property.name)",
                         path: file.path,
                         isRequirement: requirementPropertyNames.contains(property.name)
                     )
@@ -266,10 +278,12 @@ enum CypressAPISurface {
             }
         }
 
-        // Witnesses contributed by `extension <TypeName>` blocks elsewhere.
-        for name in byName.keys {
-            for file in appSources {
-                for body in Parser.extensionBodies(of: name, in: file.code) {
+        // Witnesses contributed by `extension <TypeName>` blocks elsewhere. Each file's extensions
+        // are already indexed by name, so this is a dictionary lookup per file rather than a scan
+        // per conformance per file.
+        for file in appSources {
+            for (name, bodies) in file.extensions where byName[name] != nil {
+                for body in bodies {
                     let declared = Set(
                         Parser.methods(in: file.code, range: body, excluding: file.debugOnly)
                             .map(\.signature)
@@ -335,13 +349,25 @@ enum Parser {
     }
 
     /// Whether `word` sits at `index` as a whole token.
+    ///
+    /// **Written without allocating.** This is called once per character of every file in the app
+    /// target, several times over, and the first version built `Array(word)` *and* a second array
+    /// from the slice on every one of those calls. That is what took this suite from 18.6 s to
+    /// 43.3 s — a third of the whole unit run — and it scales with the file count, which #158 adds
+    /// to. The cheap `first` check in front rejects almost every position on one comparison.
     static func word(_ chars: [Character], at index: Int, is word: String) -> Bool {
-        let w = Array(word)
-        guard index >= 0, index + w.count <= chars.count else { return false }
-        guard Array(chars[index..<(index + w.count)]) == w else { return false }
+        guard index >= 0, let first = word.first, index < chars.count, chars[index] == first else {
+            return false
+        }
+        let count = word.count
+        guard index + count <= chars.count else { return false }
+        var offset = index
+        for character in word {
+            if chars[offset] != character { return false }
+            offset += 1
+        }
         if index > 0, isIdentifier(chars[index - 1]) { return false }
-        let after = index + w.count
-        if after < chars.count, isIdentifier(chars[after]) { return false }
+        if offset < chars.count, isIdentifier(chars[offset]) { return false }
         return true
     }
 
@@ -376,9 +402,14 @@ enum Parser {
         return nil
     }
 
-    /// Every `extension <name> { … }` body in the file.
-    static func extensionBodies(of name: String, in chars: [Character]) -> [Range<Int>] {
-        var out: [Range<Int>] = []
+    /// Every `extension <name> { … }` body in the file, indexed by the name extended.
+    ///
+    /// **One pass, not one pass per name.** The union that gives a conformance its witnesses from
+    /// `extension <TypeName>` blocks used to ask this question once per conformance per file —
+    /// sixteen conformances against 264 files is 4,224 whole-file scans, and #158 grows both
+    /// factors. The index is built once per file and looked up.
+    static func extensionBodiesByName(in chars: [Character]) -> [String: [Range<Int>]] {
+        var out: [String: [Range<Int>]] = [:]
         var i = 0
         while i < chars.count {
             guard word(chars, at: i, is: "extension") else { i += 1; continue }
@@ -386,8 +417,9 @@ enum Parser {
             while j < chars.count, chars[j] == " " { j += 1 }
             var read = ""
             while j < chars.count, isIdentifier(chars[j]) { read.append(chars[j]); j += 1 }
-            if read == name, let brace = nextBrace(chars, from: j) {
-                out.append((brace + 1)..<(endOfBlock(chars, open: brace, opener: "{", closer: "}") - 1))
+            if !read.isEmpty, let brace = nextBrace(chars, from: j) {
+                let end = endOfBlock(chars, open: brace, opener: "{", closer: "}")
+                out[read, default: []].append((brace + 1)..<(end - 1))
                 i = brace
             }
             i += 1
@@ -1122,15 +1154,26 @@ struct APIConformanceGuardTests {
     /// one erases `LocalAPI` — the conformance every screen in the shipped app is actually holding —
     /// and asks it the question whose two answers are distinguishable.
     ///
-    /// **Why one requirement and not four.** Of the four value-returning defaults, three are
-    /// indistinguishable from the real implementation over an empty store: `mapMembership` is `[]`
-    /// either way, `deviceContributions` is `.none` either way, `isFavorite` is false either way.
-    /// That coincidence is the defect's whole camouflage and it is why the bug survived. Only
-    /// `speciesGuide` separates cleanly against the attached seed: the default is
-    /// `SpeciesGuide(species:)`, whose `cityTreeCount` is nil — literally the "species guide with no
-    /// population line" this ticket names — while `LocalAPI` counts the inventory. So this gate
-    /// checks the one that can be checked, and the structural gates cover the rest.
-    @Test("a shipping conformance's own witness survives the erasure")
+    /// **Three of the four value-returning defaults, and why not the fourth.**
+    ///
+    /// This gate first claimed that only `speciesGuide` could be checked, because over an *empty*
+    /// store `mapMembership` is `[]` either way and `deviceContributions` is `.none` either way.
+    /// That was true of the empty store and false as a statement about the requirements, and review
+    /// measured it rather than arguing it: give the store one device-added tree and one
+    /// device-owned favorite — four lines — and both separate from their defaults immediately.
+    ///
+    /// The correction matters in the direction that stings. `mapMembership` and
+    /// `deviceContributions` are precisely the two that answered **silently on the tree as it
+    /// stood**; `speciesGuide` is the one that becomes dangerous later, at step 4 of #158. A gate
+    /// covering only `speciesGuide` covered the future case and neither present one.
+    ///
+    /// `isFavorite` is genuinely indistinguishable and stays uncovered here, which is a finding
+    /// rather than an omission: its default is `grove().first { … }?.isFavorite`, and `grove()` is
+    /// `LocalAPI`'s own witness, so the default computes the right answer *by calling the real
+    /// implementation*. No fixture separates them, because there is nothing to separate — the
+    /// difference is one indexed SELECT against a whole-list read (#167), which is a cost, not an
+    /// answer. Gate 4 is what holds `isFavorite` to being declared.
+    @Test("a shipping conformance's own witnesses survive the erasure")
     func aShippingConformanceSurvivesTheErasure() async throws {
         let seedURL = try #require(
             SeedDatabase.urlInBundle(Bundle(for: SeedBundleToken.self)) ?? SeedDatabase.urlInBundle(),
@@ -1151,17 +1194,73 @@ struct APIConformanceGuardTests {
         }
         let species = try #require(speciesID, "the attached seed has no species with a tree on it")
 
-        // The erasure every screen performs. Holding the concrete type here is what E125 says
-        // cannot see the defect, so the type is thrown away on purpose before the call.
-        let api: any CypressAPI = LocalAPI(store: store, deviceID: UUID())
-        let guide = try await api.speciesGuide(id: species, near: nil)
+        let deviceID = UUID()
+        let concrete = LocalAPI(store: store, deviceID: deviceID)
 
+        // One tree this device added, so `mapMembership(.yours)` and `deviceContributions()` have
+        // something to be right about. Written through the API rather than into the table, so the
+        // fixture cannot drift from what the app actually produces.
+        let added = try await concrete.addTree(
+            TreeDraft(
+                coordinate: Coordinate(latitude: 37.7596, longitude: -122.4269),
+                photoLocalPath: "/dev/null",
+                attribution: Attribution(userID: nil, deviceID: deviceID)
+            )
+        )
+        // …and one favorite this device holds.
+        try await store.queue.write { connection in
+            _ = try ContributionStore().applyFavoriteToggle(
+                owner: .device(deviceID),
+                treeID: added.id,
+                clientUUID: UUID(),
+                isFavorite: true,
+                at: Date(),
+                connection: connection
+            )
+        }
+
+        // The erasure every screen performs. Holding the concrete type here is what E125 says
+        // cannot see the defect, so the type is thrown away on purpose before the calls.
+        let api: any CypressAPI = concrete
+
+        let guide = try await api.speciesGuide(id: species, near: nil)
         #expect(
             guide.cityTreeCount != nil,
             """
             `speciesGuide` returned no population count through `any CypressAPI` over a seeded store. \
             That is exactly what `SpeciesGuide(species:)` — the protocol-extension default — returns, \
             and it is the species guide with no population line #76 exists to make unshippable. \
+            LocalAPI's witness was not reached.
+            """
+        )
+
+        let favorites = try await api.mapMembership(.favorites)
+        #expect(
+            favorites.contains(added.id),
+            """
+            `mapMembership(.favorites)` came back without a tree this device has hearted \
+            (\(favorites.count) member(s)). The protocol-extension default returns the empty set, \
+            which draws screen 01 with nothing favorited in the whole city. LocalAPI's witness was \
+            not reached.
+            """
+        )
+
+        let yours = try await api.mapMembership(.yours)
+        #expect(
+            yours.contains(added.id),
+            """
+            `mapMembership(.yours)` came back without a tree this device added \
+            (\(yours.count) member(s)). Same default, same empty map, same reason.
+            """
+        )
+
+        let contributions = try await api.deviceContributions()
+        #expect(
+            contributions.total > 0,
+            """
+            `deviceContributions()` reported nothing held after this device added a tree and hearted \
+            it. `.none` is the protocol-extension default, and screen 15 renders it as a device that \
+            has contributed nothing — the thing it must never say to somebody about to sign in. \
             LocalAPI's witness was not reached.
             """
         )
