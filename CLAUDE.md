@@ -136,13 +136,16 @@ conflicts with convenience, the rule wins.
 - A deliberate gap in the E/R sequence is a reservation for a live branch — never fill it.
 - **Schema versions are the opposite: never reserved, never skipped.** One migration author per
   round, named explicitly. If your task turns out to need a migration, STOP and report.
-- **There are two schema-version spaces and they now genuinely collide at 14.** The *writable*
-  database's migration counter is `AppSchema.currentVersion` (`PRAGMA user_version`); the
-  *published seed/city file* version is `SeedDatabase.newestKnownSchemaVersion` (R37's
-  `s<schema_version>`). They are unrelated. **Read both from the code, never from this file** —
-  this bullet claimed the writable one was 13 for a round after v14 landed, which is the confusion
-  it exists to prevent. Say which one you mean, every time: four tickets sat "blocked on v14" for
-  a week because one advanced and the other was assumed to have.
+- **There are two schema-version spaces and this bullet will not tell you their numbers.** The
+  *writable* database's migration counter is `AppSchema.currentVersion` (`PRAGMA user_version`,
+  computed as the highest entry in `AppSchema.migrations`); the *published seed/city file* version
+  is `SeedDatabase.newestKnownSchemaVersion` (R37's `s<schema_version>`). They are unrelated and
+  they advance independently. **Read both from the code, never from this file** — and note that
+  the numbers have been struck from this bullet on purpose, because it has now gone stale twice:
+  once claiming the writable one was 13 after v14 landed, and once claiming the two "genuinely
+  collide at 14" after the published one had moved to 16. Both times inside the sentence written
+  to prevent that. Say which one you mean, every time: four tickets sat "blocked on v14" for a
+  week because one advanced and the other was assumed to have.
 - Never `git add -A` on main; stage explicit paths — another agent's untracked work may share
   the checkout.
 - A rename of a shared identifier breaks every other live branch even when correctly scoped to
