@@ -108,4 +108,9 @@ protocol, but a requirement that is in the protocol and whose default is comfort
 a missing implementation.
 
 The cheap guard, named rather than written: a test that holds `any CypressAPI` and asserts each
-method reaches the concrete implementation rather than the extension.
+method reaches the concrete implementation rather than the extension. **This is now task #76**, and
+its ordering is part of the finding rather than a scheduling detail: it runs before or alongside the
+work that completes `RemoteAPI`, never after. A conformance that compiles while fourteen methods are
+missing cannot report whether the fifteenth was written — so landing the guard first leaves every
+unimplemented method failing until it is real, and landing it afterwards means auditing an
+implementation the compiler has agreed with the whole way.
