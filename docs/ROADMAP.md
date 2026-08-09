@@ -254,6 +254,36 @@ roads darker and exposes no way to recolor them independently. `MapCanvas(basema
 kept as the seam for a vector basemap. Not scheduled — it is a real visual departure from the mock,
 and worth doing only if the map's look is judged to matter more than the work.
 
+**`assertEveryControlIsLabeled` asserts over a screen it does not own.** `DeepLinkHarness
+.assertEveryControlIsLabeled` walks `app.buttons`, `app.staticTexts` and five more queries — *every
+element in the app*, not the screen under test. Screens 09, 10 and 18 are presented over the map tab
+root rather than pushed, so screen 01's MapKit annotations stay in the accessibility tree behind
+them and are read as part of that screen's audit. `DeepLinkSweepTests.testNothingIsAnnouncedTwice`
+does the same thing one query wider.
+
+Everything that has gone wrong with this is a consequence of the scope, and each fix so far has
+treated a consequence:
+
+- an annotation whose frame XCUITest can resolve no activation point inside makes `isHittable`
+  **raise** — fixed at the read (`XCUIElement.isHittableWithoutRaising`, `CypressUITests/UIWait.swift`);
+- which annotations land in that state depends on where the camera was left — fixed at the state
+  (`CYPRESS_MAP_CAMERA`, `Cypress/Features/Map/DebugMapCameraOverride.swift`);
+- enumerating that many elements against a live tree is itself a race — an index that stopped
+  resolving mid-walk failed CI once even with both of the above in place.
+
+**The scope itself is untouched, and it is the actual defect**: a labeling audit of screen 18 that
+passes or fails on the contents of screen 01 is not an audit of screen 18. The shape of the repair is
+to scope the walk to the presented screen's own subtree — but that changes what the helper *claims*,
+and the claim is load-bearing: the helper's own comment records that it is scoped to what is hittable
+"for the same reason E116's version is", and four files depend on it. It needs its own red-proof
+(a genuinely unlabeled control on the screen under test must still be caught) and an argument about
+what happens to the elements that stop being examined.
+
+Not scheduled, deliberately. The suite is green and the two symptom fixes are guarded
+(`HittabilityFilterGateTests`, `FrameFinitenessGateTests`, `DebugMapCameraOverrideTests`), so this is
+a correctness-of-claim question rather than a live failure. The full history is in the errata entry
+for the hittability round.
+
 *(The "structural VoiceOver is not machine-checked" entry that stood here is resolved. `CypressUITests`
 is a black-box XCUITest target (E116), and `DebugDeepLink`'s `CYPRESS_SCREEN` environment variable
 opens any screen for it (E117), so fifteen structural tests now read the accessibility tree of the map
