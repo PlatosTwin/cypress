@@ -201,8 +201,9 @@ enum DocumentCitationGuard {
 
     /// Every directory sitting at the repository root, by name.
     ///
-    /// This is what decides whether a citation is repo-relative at all — see the header on
-    /// `dist/upload.sh`.
+    /// This is clause 1 of `isCheckable`: what keeps paths written relative to some other root
+    /// — `Core/…`, `Features/…`, `cities/…` — out of the sweep. §4 asserts it can see the real
+    /// repository, because a stubbed version leaves every other test green while §1 checks nothing.
     static func topLevelDirectories(root: URL) -> Set<String> {
         let contents = (try? FileManager.default.contentsOfDirectory(
             at: root, includingPropertiesForKeys: [.isDirectoryKey]
@@ -453,9 +454,13 @@ struct DocumentCitationGuardTests {
             )
         }
 
-        // Checked — `Fixtures/raw/…` is the one that matters. It carries 46 tracked files, so it is
-        // NOT gitignored whatever `.gitignore` says, and a `.gitignore`-derived rule wrongly
-        // excluded it.
+        // Checked. `Fixtures/raw/…` is the one that matters: it carries 46 tracked files, so it is
+        // NOT gitignored whatever `.gitignore` says, and the derived rule wrongly excluded it.
+        // These are shapes, not a claim that each file exists — the predicate is string logic and
+        // is tested as such. `Fixtures/seed/schema.sql.md` is deliberately hypothetical: it probes
+        // that excluding the *file* `Fixtures/seed/cypress-seed.sqlite` does not swallow its
+        // directory. The real sibling there is `schema.sql`, whose extension is not allowlisted, so
+        // no live citation can make this point.
         for checked in [
             "Fixtures/raw/nyc/sample_full_25.json",
             "Fixtures/seed/schema.sql.md",
@@ -464,9 +469,22 @@ struct DocumentCitationGuardTests {
         ] {
             #expect(
                 DocumentCitationGuard.isCheckable(checked, topLevel: topLevel),
-                "\(checked) is a committed file and its citation must be checked"
+                "\(checked) must stay this guard's business; an adjacent exclusion swallowed it"
             )
         }
+
+        // **The input, not just the predicate.** Everything above supplies its own `topLevel` set,
+        // so all of it passes while the real `topLevelDirectories` returns nothing — and then §1
+        // checks zero citations and reports a clean corpus, §2's floors counting before filtering
+        // and never moving. That is this file's own defect one argument up. Round 1's `dist`
+        // tripwire was the only thing that had ever exercised this function against the real tree,
+        // and deleting it took this with it. Asserting a fact rather than an absence, so unlike
+        // that tripwire it does not depend on working-tree state.
+        #expect(
+            DocumentCitationGuard.topLevelDirectories(root: AppSourceLiterals.repositoryRoot())
+                .isSuperset(of: ["Cypress", "CypressTests", "Tools", "docs", "Fixtures"]),
+            "the real repository's top-level directories are not visible, so §1 checks nothing"
+        )
 
         // Clause 1, on its own: a path relative to some other root is not this guard's business.
         for foreign in ["Core/Rubric/Vitality.swift", "cities/sf.json", "Features/Map/MapChrome.swift"] {
@@ -518,7 +536,7 @@ struct DocumentCitationGuardTests {
         6 · a test symbol with a dotted member: `MapMarkerRenderingTests.clusterBadgeFollowsItsCount`
         7 · an errata range, which is not a path: `E119/E122` and `§9b/§10`
         8 · a bare filename, deliberately uncovered: `Package.swift`
-        9 · a generated artifact, dropped by §1's .gitignore rule, not by this pattern: `dist/upload.sh`
+        9 · a generated artifact, dropped by `notRequiredOnDisk`, not by this pattern: `dist/upload.sh`
         """
 
         let hits = DocumentCitationGuard.backtickedPaths(in: specimen, document: "specimen.md")
@@ -540,9 +558,11 @@ struct DocumentCitationGuardTests {
         // citations silently stopped being checked. A guard fully green and blind to the one
         // citation it was written for. The specimen must contain the real thing, not a likeness.
         //
-        // Line 9 is matched here on purpose and dropped by §1's `.gitignore` rule rather than by
-        // this pattern: keeping the split visible is what lets §2's floors tell a deliberately
-        // excluded prefix from one that stopped matching.
+        // Line 9 is matched here on purpose and dropped by `notRequiredOnDisk` rather than by
+        // this pattern. Keeping that split visible is what makes §4's job legible: the pattern's
+        // business is what a path *looks* like, the predicate's is whether it is ours to check.
+        // (An earlier version of this comment claimed §2's floors covered the exclusion rule. They
+        // do not — they count before filtering. See §4.)
 
         // The control §1's silence needs: prose with none of the shape must come back empty.
         let clean = DocumentCitationGuard.backtickedPaths(
