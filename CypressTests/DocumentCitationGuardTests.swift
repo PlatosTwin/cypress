@@ -340,13 +340,22 @@ struct DocumentCitationGuardTests {
     func theGuardCanSeeWhatItClaimsToCheck() throws {
         let root = AppSourceLiterals.repositoryRoot()
 
+        // **This floor counts a corpus that breathes, and the breathing is by design.** An entry
+        // written on a branch lives as its own file in one of the two staging directories CLAUDE.md
+        // names until a splice round folds it into `ERRATA.md`/`RULINGS.md` and deletes it, so the
+        // document count climbs through a round and drops at the end of one. It was 33 when this
+        // guard was written and 38 the morning of the splice that landed E250–E261 and R69–R72;
+        // **22 immediately after**, which is the permanent corpus with nothing in flight and
+        // therefore the number this floor has to survive. Re-measure on a tree with both staging
+        // directories empty before repinning — do not repin from memory, and do not repin off a
+        // tree mid-round, which reads high by however many entries happen to be open.
         let documents = DocumentCitationGuard.documents(root: root)
         #expect(
-            documents.count >= 29,
+            documents.count >= 19,
             """
-            the sweep found \(documents.count) documents under docs/; it held 33 when this was \
-            written, so this is not that tree. Re-measure before repinning — do not repin from \
-            memory.
+            the sweep found \(documents.count) documents under docs/; it held 22 with nothing \
+            pending when this was last measured, so this is not that tree. Re-measure before \
+            repinning — do not repin from memory.
             """
         )
 
