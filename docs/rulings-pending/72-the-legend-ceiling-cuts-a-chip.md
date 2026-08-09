@@ -264,22 +264,35 @@ for it.
 
 #### Verified on the merged tree
 
-The branch contains `origin/main` at `fc68efc`, so the branch tree **is** the merged tree. Re-run in
-full after review round 1: `head 068b83a` on every log below, iPhone 16 Pro Max `DE8E11AE-…`,
-`active-city=none`, `camera-auto-healed no`.
+**main moved while this branch was in review** — PR #62 landed task #71, which rewrote
+`Tools/run_tests.sh` and `Tools/verify_test_log.sh`, the instruments every number here was measured
+with, and added `MapLayoutDefaultsAgreeTests`. The earlier revisions of this entry said "the branch
+contains `origin/main`, so the branch tree **is** the merged tree", and that stopped being true the
+moment #62 merged. main was merged in (clean; the two changes touch disjoint files) and everything
+below was re-run on the merged tree at `head a332abc`, iPhone 16 Pro Max `DE8E11AE-…`,
+`active-city=none`.
+
+Worth its own line, because #71 changed what the harness *does* to the device: `run_tests.sh` now
+parses the app's opening coordinate out of **`MapKitBasemap.swift`** — the file this ticket edits —
+and refuses if that parse disagrees with `DebugLocationOverride.swift`'s. It did not refuse, and it
+normalized the camera onto `37.7596,-122.4269` as designed, so this branch's edits to that file do
+not disturb #71's parse. That is a fact about the merged tree that neither branch's own green could
+have told anyone.
 
 | log | what | result |
 |---|---|---|
-| `unit-r2-72.log` | `CypressTests` | `✔ Test run with 1318 tests in 133 suites passed` |
-| `ui-r2-72.log` | `CypressUITests` | `Executed 99 tests, with 0 failures`, `XCTest skipped=0` |
-| `warnings-r2-72.log` | **fresh** DerivedData, `build-for-testing` | `VERIFY-WARNINGS: source=0 non-source=3 compile-tasks=447 files-checked=4` |
+| `unit-merged-72.log` | `CypressTests`, merged tree | `✔ Test run with 1320 tests in 134 suites passed` |
+| `ui-merged-72.log` | `CypressUITests`, merged tree | `Executed 99 tests, with 0 failures`, `XCTest skipped=0` |
+| `warnings-merged-72.log` | **fresh** DerivedData, merged tree | `VERIFY-WARNINGS: source=0 non-source=3 compile-tasks=448 files-checked=5` |
 | `redproof-72.log` | the guard against the unquantized tree | 8 issues, one per defective screen |
 | `vacuous-72.log` | the guard against an always-`nil` ceiling | red |
 | `b1-probe-5pt.log` | the guard against `min(quantized…, 5)` (review B1) | 28 issues |
 | `b1-probe-pinned.log` | the guard against a ceiling pinned at 45 | red on the row-cost bound only |
 
-Round 1's own logs (`unit-final-72.log`, `ui-72.log`, `warnings-72.log`, `head cef0c26`) were green
-on the same three counts; they are superseded rather than contradicted.
+The pre-merge runs (`unit-r2-72.log`, `ui-r2-72.log`, `warnings-r2-72.log` at `head 068b83a`, 1318
+tests in 133 suites; and round 1's at `cef0c26`) were green on the same three counts. They proved
+the branch. Only the merged-tree runs above prove main — the count moves 1318 → 1320 because #71's
+new suite arrives with the merge, which is the whole reason a branch's green is not a merge's.
 
 The warnings certifier was calibrated before it was believed (E203): asked to certify a file the
 build did not compile it answers `VERIFY-FAIL: cannot certify a warning count for:
