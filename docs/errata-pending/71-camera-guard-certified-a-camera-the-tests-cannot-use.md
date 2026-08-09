@@ -48,6 +48,35 @@ Which cameras do that is a fact about MapKit's layout of one particular block. I
 geometry a rule can enumerate, and this was the *third* geometry after "too wide" (E202-B) and
 "over nothing" (E216).
 
+#### Pass and fail are a threshold on one continuous cost, not two states
+
+This is the most useful thing the ticket turned up, and it was only visible because two people
+measured the same camera on two different screens and got opposite verdicts.
+
+Back to back at **430 pt**, preflight bypassed, single test, controls on both sides:
+
+    normalized-default     12.365 s
+    ticket-camera          34.713 s
+    normalized-default-2   12.475 s
+
+That is 2.8× — on the width where the ticket's camera **passes**. At 402 pt the same comparison is
+254 s against 12.5 s, and there the test fails. The reviewer's camera behaves the same way with the
+widths swapped: it fails at 430 pt and passes at 402 pt, in 254 s against 12.5 s.
+
+So there are not two states. `assertEveryControlIsLabeled` reads `isHittable` on every button in
+the app, background map annotations included, and XCUITest spends retry budget on each annotation
+whose activation point it cannot resolve. A camera that leaves more unresolvable annotations behind
+costs more budget. It **raises** only when the budget finally runs out, and where that happens
+depends on how many such annotations the screen width put on the map. Pass and fail are two sides
+of one threshold on a continuous cost.
+
+**The sentence worth keeping: "it passes on this camera" is not evidence the camera is fine, only
+that the budget held.** A 20× runtime on an unchanged test is the same finding as a failure, arriving
+early. It is also why two careful people each failed to reproduce the other's red without either
+being wrong, and it is the real argument for normalizing the camera rather than enumerating bad
+ones: an enumeration can only ever list the cameras that have already crossed the threshold on some
+screen somebody happened to run.
+
 #### Two premises in the brief, checked rather than inherited
 
 Both were wrong, and one of them would have sent the repair to the wrong place.
@@ -88,6 +117,14 @@ is rewritten before the suite runs. `compute_safe_camera` prefers that point and
 densest-seed-bin computation as the fallback for a city whose inventory does not reach the app's
 default.
 
+*`viewport-trees` is honest about the stored camera and pessimistic about the screen.* It counts
+seed rows inside the rectangle the **stored spans** describe, not inside the rectangle MapKit
+actually draws — MapKit aspect-fits the region to the view, so the drawn rectangle is generally
+taller or wider than the stored one. Aspect-corrected, the ticket's camera at 430 pt holds 76 trees
+where the header reports 21. So the number is a floor, not a drawn-pin count, and it must not be
+read as "this is what the map shows". It is in the header to make the ±250 m box's blind spot
+visible, which it does at either precision.
+
 *The drift band, and why the first one was indefensible.* The first cut allowed 50 m of centre and a
 0.5×–2× span band while justifying the number, in its own comment, by a readback drift measured at
 ~0.2 m and spans "a fraction of a percent" out — 250× and ~100× looser than its own evidence, and it
@@ -108,6 +145,21 @@ pre-existing false certification restored without a word. It now strips comments
 against `DebugLocationFixtures.missionDolores` in a different file, and **refuses** on any failure.
 `MapLayoutDefaultsAgreeTests` asserts the cross-check's premise in Swift, so the agreement the
 script leans on is itself guarded.
+
+The span needed one more thing, found in review after the coordinate was already safe, and it is
+worth recording because it is the same defect wearing the other value's clothes. `[0-9.]+` with no
+trailing anchor stops at the first character it cannot eat and reports what it got, so Swift's own
+digit separator — `CLLocationDistance = 3_00` — parsed as **3**, silently. Nothing downstream
+caught it: zoom capped at 21 (≥ 16, E202-B passes), `camera-trees=553` (E216 passes),
+`viewport-trees=0` which is *the same 0 the correct 120 m default reports* and so cannot
+discriminate, `camera_matches_target` comparing against the same wrong target and therefore
+converging, and the Swift test green because Swift reads 300 and 300 is under the pin threshold it
+asserts. Six checks, all agreeing, all wrong. The number must now end at a token boundary
+(`[0-9.]+([[:space:]]|$)`), which turns that into no match, and no match is a refusal.
+
+**The coordinate has a second declaration to be checked against and the span has none.** That
+asymmetry is why the span's only defence is the strictness of its own pattern, and why the pattern
+is anchored rather than permissive.
 
 *Two header flags, not one.* `camera-auto-healed` keeps E202-B's meaning — this device was in one of
 the two anomalous states — and stays rare, which is the only condition under which it discriminates.
@@ -166,6 +218,12 @@ that break the anchor (`Coordinate(` split across lines, a wrapped `longitude:`,
 `CLLocationDistance(120)`, a computed `var`, the file renamed) all refuse with a message naming which
 declaration was not found. Making the two files disagree refuses with both coordinates quoted.
 
+Two more after the span anchor landed: `= 3_00` and `= 1_20`, Swift's own digit separator, both now
+refuse where `3_00` previously parsed as **3** in silence. And four spellings that must keep
+parsing, so the anchor is shown not to over-refuse: plain `120`, `120.0`, `120` with trailing
+whitespace, and `120` followed by a line comment. A guard that refuses everything is not a fix — the
+same standard the tolerance was held to.
+
 Building that rig found a bug in the parser it was built to test: with a value missing, the awk
 `END` line printed an empty field, `read` split on whitespace runs, and every later field shifted
 left — so the counts ended up holding coordinates and the refusal named the wrong declaration. The
@@ -218,6 +276,19 @@ specifically, not about the whole diff.
 - **The excerpt still prints two lines per Swift Testing failure**, not one: the issue line (which
   carries the expectation) and the test line. Only the two aggregate shapes are dropped. Cutting
   further would mean parsing Swift Testing's output rather than filtering it.
+- **The harness now hard-depends on the shape of two Swift source files, and that is a new class
+  of harness outage.** `run_tests.sh` refuses — every run, unit and UI alike — if it cannot parse
+  `MapLayout.defaultCenter`/`defaultSpanMeters` out of `MapKitBasemap.swift` or
+  `DebugLocationFixtures.missionDolores` out of `DebugLocationOverride.swift`, or if the two
+  disagree. A **legitimate** refactor of either file therefore blocks the suite until somebody
+  reads the refusal and updates the parser. That is deliberate — the alternative is the silent
+  fall-through this ticket exists to remove, and refusing loudly is the whole design — but it is a
+  real cost and it is written here rather than left to be discovered. Three things make it
+  survivable: the refusal names the file and says which declaration it could not find,
+  `MapLayoutDefaultsAgreeTests` goes red in the same run so the cause is visible from the test
+  suite as well as the harness, and `CYPRESS_RUN_TESTS_SKIP_PREFLIGHT=1` is an escape hatch that
+  stamps its own use into the log. The shapes it accepts are enumerated in the red-proof table
+  above, which is the list to read before reshaping either declaration.
 - **`viewport-trees` is reported and never refused on.** A camera whose own rectangle holds no
   trees is the app's documented behaviour at its own default, so a guard that refused it would
   refuse the app. Whether the suite *should* open somewhere with pins in view is a product

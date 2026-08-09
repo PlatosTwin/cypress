@@ -308,8 +308,22 @@ read_app_default_camera() {
         match(s, /longitude:[[:space:]]*-?[0-9.]+/); lo = substr(s, RSTART, RLENGTH); sub(/longitude:[[:space:]]*/, "", lo)
         nlat++
       }
-      if (match($0, /static[[:space:]]+let[[:space:]]+defaultSpanMeters[[:space:]]*:[[:space:]]*CLLocationDistance[[:space:]]*=[[:space:]]*[0-9.]+/)) {
-        s = substr($0, RSTART, RLENGTH); match(s, /=[[:space:]]*[0-9.]+$/)
+      # The trailing `([[:space:]]|$)` is the whole difference between reading this number and
+      # inventing one (#71 review round 3). Without it `[0-9.]+` stops at the first character it
+      # cannot eat and reports what it got: Swift permits digit separators, so
+      # `CLLocationDistance = 3_00` parsed as **3**, silently, and every downstream check agreed
+      # with it — zoom capped at 21 (≥16, so E202-B passes), `camera-trees=553` (E216 passes),
+      # `viewport-trees=0` which is the SAME 0 the correct 120 m default reports and therefore
+      # cannot discriminate, and `camera_matches_target` comparing against the same wrong
+      # `SAFE_*` so it converged. `MapLayoutDefaultsAgreeTests` stayed green too, because Swift
+      # reads 300 and 300 is under the pin threshold it asserts. A self-consistent wrong answer,
+      # which is precisely the shape this parser was rewritten to stop — left open in the one
+      # value that has no second declaration anywhere to be cross-checked against.
+      #
+      # Requiring the number to END at a token boundary turns that into no match at all, and no
+      # match is a REFUSAL. There is no reading of `3_00` this script should guess at.
+      if (match($0, /static[[:space:]]+let[[:space:]]+defaultSpanMeters[[:space:]]*:[[:space:]]*CLLocationDistance[[:space:]]*=[[:space:]]*[0-9.]+([[:space:]]|$)/)) {
+        s = substr($0, RSTART, RLENGTH); match(s, /=[[:space:]]*[0-9.]+/)
         sp = substr(s, RSTART, RLENGTH); sub(/=[[:space:]]*/, "", sp)
         nspan++
       }
