@@ -76,6 +76,80 @@ CLAIMED_FILES=("$@")
 fail() { echo "VERIFY-FAIL: $1" >&2; exit 1; }
 note() { echo "VERIFY-NOTE: $1"; }
 
+# ── The failure itself, printed rather than left behind in a file (task #71) ────────────────
+#
+# WHY. Until this existed, a red shard said exactly one line in GitHub Actions:
+#
+#     VERIFY-FAIL: ** TEST FAILED ** present
+#
+# and nothing else. The log with the assertion in it IS uploaded — `testflight.yml` has kept a
+# `Keep the log, whatever happened` step on `unit` and every `ui` shard since 47b7d12
+# (2026-08-03), and the artifacts are on every red run — but reading it costs a download, an
+# unzip and a grep, so in practice three red runs on 2026-08-08/09 were called flake by people
+# who never opened one. A verdict a reader will not act on is a verdict that does not count.
+#
+# So the judgment now carries its own evidence: the same script that says a run failed says
+# which test and what it said, into the job log, and locally, and on every re-read of the
+# artifact afterwards. This does not replace the artifact — a truncated excerpt is not a log —
+# it removes the step between seeing red and knowing why.
+#
+# The three shapes, and they are the three this repo actually produces:
+#   XCTest, with a source location:  /…/IdentifyFABReachabilityTests.swift:205: error: -[…] : failed - …
+#   XCTest, without one:             <unknown>:0: error: -[CypressUITests.X testY] : Failed to determine hittability of …
+#   Swift Testing:                   ✘ Test "…" recorded an issue at File.swift:12:5: Expectation failed: …
+#
+# Calibrated before it was believed, per CLAUDE.md — run against two logs whose answers were
+# already known: a UI log with exactly one known failure (1 line) and a green unit log of 1,317
+# tests (0 lines). A pattern like `failed` or `error:` alone reports 37 lines on that green log,
+# because xcodebuild prints both words routinely in builds that are fine.
+FAILURE_EXCERPT_MAX=25
+FAILURE_EXCERPT_COLUMNS=400
+print_test_failures() {
+  local lines count
+  # Swift Testing prints FOUR `✘` lines per failing test — the issue, the test, its suite, and
+  # the run — and only the first names the expectation. Left in, a single failure spent four of
+  # the 25 slots below and a dozen would have pushed the informative lines out with their own
+  # bookkeeping (#71 review, N9). The two aggregate shapes go: `✘ Suite …` and `✘ Test run with …`
+  # say only how many, which the VERIFY-FAIL line already says.
+  lines="$(grep -E 'error: -\[|recorded an issue|^[[:space:]]*✘ ' "$LOG" \
+             | grep -vE '^[[:space:]]*✘ (Suite |Test run with )' \
+             | sed 's/^[[:space:]]*//' | awk '!seen[$0]++')"
+  if [ -z "$lines" ]; then
+    echo "  (no per-test failure line matched in $LOG — read the log itself; the run may have" >&2
+    echo "   died before any test reported, which is a different problem from a failing test)" >&2
+    return 0
+  fi
+  count="$(printf '%s\n' "$lines" | grep -c .)"
+  # Clipped because one XCTest message in this suite is a 400-character sentence and a wrapped
+  # wall of them is as unreadable as no message at all.
+  #
+  # Clipped by CHARACTER, in perl, and the route there is worth recording because two shorter
+  # spellings are wrong on this platform (#71 review, N9):
+  #   - `cut -c1-400` counts BYTES. These messages are full of typographic quotes and em dashes —
+  #     the CI failure quoted in this repo's errata contains both — so a byte cut lands inside a
+  #     multi-byte sequence and emits a partial character. Verified: `cut -c1-5` of a line
+  #     starting `aaa“` yields `aaa\xe2\x80`, a broken glyph.
+  #   - `sed 's/\(.\{400\}\).*/\1 …/'` does not work at all. BSD sed caps interval repetition at
+  #     255 and errors out with `RE error: maximum repetition exceeds 255`, which took the whole
+  #     excerpt with it — a nit fix that removed the feature it was polishing.
+  #   - macOS `awk` is byte-based too, even under a UTF-8 locale: `length` on that same line
+  #     reports 15, not 11. So it is no better than `cut`.
+  # Decoding explicitly with `FB_DEFAULT` also means a log holding invalid bytes gets U+FFFD and
+  # keeps going, rather than printing `Malformed UTF-8` warnings into the middle of the failure
+  # report — which the `-CSD` spelling does.
+  printf '%s\n' "$lines" | head -n "$FAILURE_EXCERPT_MAX" \
+    | perl -pe 'BEGIN { binmode(STDIN, ":raw"); } use Encode; no warnings;
+                $_ = Encode::decode("UTF-8", $_, Encode::FB_DEFAULT);
+                if (length($_) > '"$FAILURE_EXCERPT_COLUMNS"') {
+                  $_ = substr($_, 0, '"$FAILURE_EXCERPT_COLUMNS"') . " \x{2026}\n";
+                }
+                $_ = Encode::encode("UTF-8", $_);' \
+    | sed 's/^/  /' >&2
+  if [ "$count" -gt "$FAILURE_EXCERPT_MAX" ]; then
+    echo "  … and $((count - FAILURE_EXCERPT_MAX)) more failure line(s) — full log: $LOG" >&2
+  fi
+}
+
 [ -f "$LOG" ] || fail "log does not exist: $LOG"
 
 # Freshness — a stale log at the same path has produced a false green before.
@@ -197,7 +271,11 @@ if [ "$HAS_XCTEST_PHASE" = 1 ]; then
     fail "an XCTest phase started (Test Case lines present) but the log has neither ** TEST SUCCEEDED ** nor ** TEST FAILED ** — that phase is incomplete (killed/interrupted/still running), not passing"
 fi
 
-grep -q '\*\* TEST FAILED \*\*' "$LOG" && fail "** TEST FAILED ** present"
+if grep -q '\*\* TEST FAILED \*\*' "$LOG"; then
+  echo "VERIFY-FAIL-DETAIL: what failed, from $LOG —" >&2
+  print_test_failures
+  fail "** TEST FAILED ** present"
+fi
 
 # A real pass line: Swift Testing's count is the only meaningful unit-test line —
 # and it must be NONZERO: "Test run with 0 tests passed" is a missed -only-testing
@@ -219,6 +297,8 @@ XCTEST_LINE=$(grep -E 'Executed [1-9][0-9]* tests?' "$LOG" | tail -1)
 # Scan every "Executed" line the log contains, not just the last one.
 XCTEST_FAILURE_LINES=$(grep -E 'Executed [0-9]+ tests?,' "$LOG" | grep -E '[1-9][0-9]* failures?')
 if [ -n "$XCTEST_FAILURE_LINES" ]; then
+  echo "VERIFY-FAIL-DETAIL: what failed, from $LOG —" >&2
+  print_test_failures
   fail "XCTest reports failures: $(printf '%s' "$XCTEST_FAILURE_LINES" | sed 's/^[[:space:]]*//' | paste -sd '; ' -)"
 fi
 
@@ -226,6 +306,8 @@ if [ -z "$SWIFT_LINE" ] && [ -z "$XCTEST_LINE" ]; then
   fail "nothing actually executed ('Executed 0 tests' green is XCTest blind to Swift Testing, or an empty scheme/filter)"
 fi
 if printf '%s' "$SWIFT_LINE" | grep -q 'failed'; then
+  echo "VERIFY-FAIL-DETAIL: what failed, from $LOG —" >&2
+  print_test_failures
   fail "Swift Testing reports failures: $SWIFT_LINE"
 fi
 
