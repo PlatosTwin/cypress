@@ -103,9 +103,16 @@ note() { echo "VERIFY-NOTE: $1"; }
 # tests (0 lines). A pattern like `failed` or `error:` alone reports 37 lines on that green log,
 # because xcodebuild prints both words routinely in builds that are fine.
 FAILURE_EXCERPT_MAX=25
+FAILURE_EXCERPT_COLUMNS=400
 print_test_failures() {
   local lines count
+  # Swift Testing prints FOUR `✘` lines per failing test — the issue, the test, its suite, and
+  # the run — and only the first names the expectation. Left in, a single failure spent four of
+  # the 25 slots below and a dozen would have pushed the informative lines out with their own
+  # bookkeeping (#71 review, N9). The two aggregate shapes go: `✘ Suite …` and `✘ Test run with …`
+  # say only how many, which the VERIFY-FAIL line already says.
   lines="$(grep -E 'error: -\[|recorded an issue|^[[:space:]]*✘ ' "$LOG" \
+             | grep -vE '^[[:space:]]*✘ (Suite |Test run with )' \
              | sed 's/^[[:space:]]*//' | awk '!seen[$0]++')"
   if [ -z "$lines" ]; then
     echo "  (no per-test failure line matched in $LOG — read the log itself; the run may have" >&2
@@ -113,9 +120,31 @@ print_test_failures() {
     return 0
   fi
   count="$(printf '%s\n' "$lines" | grep -c .)"
-  # `cut -c` because one XCTest message in this suite is a 400-character sentence and a wrapped
+  # Clipped because one XCTest message in this suite is a 400-character sentence and a wrapped
   # wall of them is as unreadable as no message at all.
-  printf '%s\n' "$lines" | head -n "$FAILURE_EXCERPT_MAX" | cut -c1-400 | sed 's/^/  /' >&2
+  #
+  # Clipped by CHARACTER, in perl, and the route there is worth recording because two shorter
+  # spellings are wrong on this platform (#71 review, N9):
+  #   - `cut -c1-400` counts BYTES. These messages are full of typographic quotes and em dashes —
+  #     the CI failure quoted in this repo's errata contains both — so a byte cut lands inside a
+  #     multi-byte sequence and emits a partial character. Verified: `cut -c1-5` of a line
+  #     starting `aaa“` yields `aaa\xe2\x80`, a broken glyph.
+  #   - `sed 's/\(.\{400\}\).*/\1 …/'` does not work at all. BSD sed caps interval repetition at
+  #     255 and errors out with `RE error: maximum repetition exceeds 255`, which took the whole
+  #     excerpt with it — a nit fix that removed the feature it was polishing.
+  #   - macOS `awk` is byte-based too, even under a UTF-8 locale: `length` on that same line
+  #     reports 15, not 11. So it is no better than `cut`.
+  # Decoding explicitly with `FB_DEFAULT` also means a log holding invalid bytes gets U+FFFD and
+  # keeps going, rather than printing `Malformed UTF-8` warnings into the middle of the failure
+  # report — which the `-CSD` spelling does.
+  printf '%s\n' "$lines" | head -n "$FAILURE_EXCERPT_MAX" \
+    | perl -pe 'BEGIN { binmode(STDIN, ":raw"); } use Encode; no warnings;
+                $_ = Encode::decode("UTF-8", $_, Encode::FB_DEFAULT);
+                if (length($_) > '"$FAILURE_EXCERPT_COLUMNS"') {
+                  $_ = substr($_, 0, '"$FAILURE_EXCERPT_COLUMNS"') . " \x{2026}\n";
+                }
+                $_ = Encode::encode("UTF-8", $_);' \
+    | sed 's/^/  /' >&2
   if [ "$count" -gt "$FAILURE_EXCERPT_MAX" ]; then
     echo "  … and $((count - FAILURE_EXCERPT_MAX)) more failure line(s) — full log: $LOG" >&2
   fi

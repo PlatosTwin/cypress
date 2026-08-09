@@ -317,9 +317,12 @@ jobs:
         run: Tools/verify_test_log.sh --warnings "$RUNNER_TEMP/unit.log"
 
       # `retention-days` is stated rather than left at the repository default of 90 (task #71).
-      # A CI log is read within days of the run that produced it or never, and CLAUDE.md's
-      # standing rule is that an artifact you did not watch being produced is not evidence — a
-      # two-month-old log at a familiar name is exactly the thing somebody reads as a fresh one.
+      # Thirty days for the text logs and not fourteen: an errata entry cites the run it was
+      # written from, and a citation whose artifact expires before the next reader follows it is
+      # worse than a long retention (#71 review, N10). Thirty outlives a review round and still
+      # falls short of the two-month-old log somebody mistakes for a fresh one — which the
+      # CYPRESS-RUN header is the real defence against. The 110 MB result bundles below keep the
+      # shorter life, because size is the thing worth rationing.
       - name: Keep the log, whatever happened
         if: always()
         uses: actions/upload-artifact@v4
@@ -327,7 +330,7 @@ jobs:
           name: unit-log
           path: ${{ runner.temp }}/unit.log
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 30
 
       # The result bundle only on failure. It carries what the text log cannot — per-test
       # timings, attachments, each failure's own source location — and it is tens of megabytes,
@@ -402,7 +405,7 @@ jobs:
           name: ui-log-${{ matrix.shard }}
           path: ${{ runner.temp }}/ui-${{ matrix.shard }}.log
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 30
 
       # See the unit job's copy of this step for why the bundle is failure-only.
       - name: Keep the result bundle when the shard went red
