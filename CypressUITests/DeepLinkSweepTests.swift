@@ -128,12 +128,46 @@ final class DeepLinkSweepTests: XCTestCase, DeepLinkHarness {
     /// is a screen that takes twice as long to hear. Checked as containment rather than adjacency,
     /// because that is the shape the defect actually takes — a labeled wrapper around a labeled leaf.
     ///
-    /// **`allElementsBoundByIndex` is used here as a set, never as an order, and that restriction is
-    /// load-bearing (ERRATA E118).** Its sequence is the query engine's match order, which is neither
-    /// the accessibility hierarchy's nor the screen's geometry: on screen 05 it returns the pinned
-    /// `Save check-in` at y=710 *before* the `Back` at y=69, while the hierarchy has Back nine
-    /// positions earlier. A reading-order assertion built on it reports defects that do not exist. If
-    /// VoiceOver's order is ever tested here, it has to come from recursing the element tree.
+    /// **The enumeration is a set, never an order, and that restriction is load-bearing (ERRATA
+    /// E118).** Whichever `allElements…` spelling produces it, the sequence is the query engine's
+    /// match order, which is neither the accessibility hierarchy's nor the screen's geometry: on
+    /// screen 05 it returns the pinned `Save check-in` at y=710 *before* the `Back` at y=69, while
+    /// the hierarchy has Back nine positions earlier. A reading-order assertion built on it reports
+    /// defects that do not exist. If VoiceOver's order is ever tested here, it has to come from
+    /// recursing the element tree. The containment comparison below therefore asks about **both**
+    /// orientations of every pair — see the comment on it.
+    ///
+    /// **Bound by accessibility element rather than by index, and every value read out of a proxy
+    /// exactly once.** `allElementsBoundByIndex` hands back proxies bound to an *ordinal*: every
+    /// later `.frame`, `.isHittable` or `.label` re-resolves the query by that number against a live
+    /// tree, and when the tree changes under the walk the number stops resolving and XCUITest raises
+    ///
+    ///     Failed to get matching snapshot: No matches found for Element at index 25
+    ///
+    /// which is a report about the walk rather than about the app. This method walks every static
+    /// text in the app six times per run, on a screen that is still settling, so it met that raise
+    /// three times on PR #66 — at index 25, index 3 and index 17, the last of them on a tree
+    /// byte-identical to one the same shard had passed. `allElementsBoundByAccessibilityElement`
+    /// binds each proxy to the underlying accessibility element instead, so a later read resolves by
+    /// identity and a change in the *count* costs the walk nothing.
+    ///
+    /// **The hazard that spelling carries, ruled out on the device rather than argued about.** It
+    /// de-duplicates by accessibility element, and this method exists to catch a labeled container
+    /// that also exposes a labeled child saying the same words — if those ever collapsed to one
+    /// entry the test would stop being able to find its own defect and stay green. Measured on
+    /// iPhone 16 Pro at 402 pt, on all six screens, and with a duplicate deliberately planted on
+    /// screen 11: the two spellings return the same count, the same labels and the same frames every
+    /// time, and the planted pair — two `Text`s carrying one label, the larger rectangle strictly
+    /// containing the smaller — comes back as two entries under both. What survives *neither*
+    /// spelling is a labeled container XCUITest files as an `Other`: `app.staticTexts` does not
+    /// return it, so the E104 shape is only visible here when the wrapper is itself a `StaticText`.
+    /// That is a limit on this method's reach which predates the binding, and it is recorded in
+    /// `docs/errata-pending/` rather than left implied.
+    ///
+    /// **This narrows the window rather than closing it.** An element that leaves the tree between
+    /// the snapshot and a later read is still gone; what changes is that a *neighbor* leaving no
+    /// longer takes this element's identity with it. `.exists` is asked first for the same reason
+    /// `assertEveryControlIsLabeled` asks it, so a vanished element is skipped rather than raised on.
     ///
     /// **Every frame compared here goes through `settledFrame`, not a raw `.frame` read — this was
     /// the one call site in the suite that compared geometry with no settle-or-finite wait at all.**
@@ -177,33 +211,79 @@ final class DeepLinkSweepTests: XCTestCase, DeepLinkHarness {
             // message below interpolates. `app.frame` is a query: reading it once per element put a
             // `Find the Target Application` round trip between every pair of element queries, and on
             // PR #66's first CI run this loop died on "No matches found for Element at index 25" —
-            // the index having stopped resolving while the enumeration walked it.
+            // the index having stopped resolving while the enumeration walked it. The hoist narrowed
+            // that window and did not close it (index 3, then index 17); binding by accessibility
+            // element rather than by index is what removed the ordinal there was to lose.
             let appFrame = app.frame
-            let texts = app.staticTexts.allElementsBoundByIndex
-                .filter { $0.isHittableWithoutRaising(onScreen: appFrame) }
-            let frames = texts.enumerated().map { index, element in
-                settledFrame(
-                    element, "\(screen)'s static text #\(index) (“\(element.label)”)", timeout: 30
-                )
-            }
+            let texts = app.staticTexts.allElementsBoundByAccessibilityElement
+                .filter { $0.exists && $0.isHittableWithoutRaising(onScreen: appFrame) }
 
-            for (index, outer) in texts.enumerated() {
-                let label = outer.label.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !label.isEmpty else { continue }
-                for innerIndex in (index + 1)..<texts.count {
-                    let inner = texts[innerIndex]
-                    guard inner.label.trimmingCharacters(in: .whitespacesAndNewlines) == label
-                    else { continue }
+            // **Each element's label and settled frame read once, into plain values.** Everything
+            // below is arithmetic over `String` and `CGRect` and touches no proxy at all. The
+            // version this replaces read `.label` once per element in the outer loop and again for
+            // every pair in the inner one — O(n²) re-resolutions of a query against a tree that is
+            // still settling, for a screen with twenty to thirty reachable static texts on it.
+            let announced: [(label: String, frame: CGRect)] = texts.enumerated()
+                .map { index, element in
+                    let label = element.label.trimmingCharacters(in: .whitespacesAndNewlines)
+                    return (
+                        label,
+                        settledFrame(
+                            element, "\(screen)'s static text #\(index) (“\(label)”)", timeout: 30
+                        )
+                    )
+                }
+
+            // A screen this method read nothing from is not a screen it checked. Without this an
+            // enumeration that returned an empty array — a query spelling that stopped matching,
+            // a screen that had not finished arriving — is indistinguishable from a clean screen.
+            XCTAssertGreaterThan(
+                announced.count, 0,
+                "\(screen): not one static text was reachable, so no pair was compared and this "
+                    + "screen was not actually examined"
+            )
+
+            for (index, outer) in announced.enumerated() where !outer.label.isEmpty {
+                for inner in announced[(index + 1)...] where inner.label == outer.label {
                     // Containment, not mere repetition: two different rows may legitimately say the
                     // same words. One element drawn inside another saying them is the defect.
-                    XCTAssertFalse(
-                        frames[index].contains(frames[innerIndex]),
-                        "\(screen): '\(label)' is announced by an element at \(frames[index]) and "
-                            + "again by one inside it at \(frames[innerIndex]), so it is heard twice"
+                    //
+                    // **Both orientations, because the enumeration is a set (E118).** The version
+                    // this replaces asked only whether the EARLIER entry contained the later one,
+                    // which reads the sequence as if the query engine returned wrappers before
+                    // leaves. It does not promise that.
+                    //
+                    // **What was actually measured, rather than what would be convenient to claim.**
+                    // In the one specimen this could be planted on — two `Text`s with one label, the
+                    // larger strictly containing the smaller — the query engine did return the
+                    // container first, so the single-direction version caught it too. The reverse
+                    // orientation could not be synthesized: declaring the small one first puts it
+                    // *under* its twin, whereupon it stops being hittable and the filter above
+                    // correctly drops it, and the pair the comparison would have seen is gone. So
+                    // this is a guard against an order nobody here has observed — kept because it
+                    // costs one `contains` and because reading an order out of this sequence is
+                    // exactly what E118 was filed for, not because a run went red without it.
+                    guard let nested = Self.nesting(outer.frame, inner.frame) else { continue }
+                    XCTFail(
+                        "\(screen): '\(outer.label)' is announced by an element at "
+                            + "\(nested.container) and again by one inside it at "
+                            + "\(nested.contained), so it is heard twice"
                     )
                 }
             }
             app.terminate()
         }
+    }
+
+    /// Which of two rectangles contains the other, if either does.
+    ///
+    /// Pure `CGRect` arithmetic and a static function so it can be reasoned about — and, if it ever
+    /// earns one, tested — without a live element. `CGRect.contains` is true of two equal
+    /// rectangles, which is deliberate: two elements saying the same words in the same place are
+    /// heard twice as surely as a wrapper and its leaf are.
+    static func nesting(_ a: CGRect, _ b: CGRect) -> (container: CGRect, contained: CGRect)? {
+        if a.contains(b) { return (a, b) }
+        if b.contains(a) { return (b, a) }
+        return nil
     }
 }
