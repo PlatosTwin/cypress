@@ -692,8 +692,8 @@ struct AX5ReflowTests {
     /// carrying its own copy of that arithmetic passes at whatever the production code does, which
     /// is the failure this suite has shipped four times in one day (CLAUDE.md, "could this guard
     /// pass while the defect it names is present?"). Revert the quantization in `MapLayout` and this
-    /// goes red naming the phone; that is the red-proof, and its message is in this branch's
-    /// pending ruling.
+    /// goes red naming the screen it fired on; that is the red-proof, and its message is quoted in
+    /// this branch's report.
     ///
     /// **The two thresholds are looser than the production rule on purpose.** `MapLayout` works in
     /// the *bounds* it reserves with (`legendChipHeightAX5` = 60, a bound on a chip that measures
