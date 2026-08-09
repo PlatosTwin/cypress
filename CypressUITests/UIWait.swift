@@ -252,24 +252,42 @@ enum ContainerSpelling: CaseIterable {
 /// the screen has room for. The transient is the app rendering honestly at a partial palette, not
 /// XCUITest being capricious.
 ///
-/// Two consequences the old three lines got wrong, and a comment in two of those files asserted the
-/// opposite of:
+/// ── What was measured on the device, and what each measurement rules out ────────────────────
+/// Probed on iPhone 16 Pro `EA0AD796-…` at 402 pt, polling both spellings of the legend at full
+/// query rate. Four launches at AX5 with the camera pinned, plus one run that drives the palette
+/// deliberately by tapping a legend entry (which narrows the map to one species, so the palette
+/// drops to one named entry and the ceiling stops binding):
 ///
-/// - **`scrollViews` is not the safe default either.** Which branch is live depends on the species
-///   count, the screen height and the content size; at ordinary sizes the legend is an `Other` for
-///   the whole run.
-/// - **The transient has a perfectly good frame.** It is the unclamped legend, laid out and on the
-///   glass, so a guard built out of `frameCanAnswerHittability` alone would accept it — and the
-///   rectangle it hands back is the *pre-clamp* one, which is the wrong rectangle for exactly the
-///   occlusion assertions that read it.
+///     default content size, 10 s   other=true  scroll=false  (16.0, 159.67, 285.0, 117.33)
+///     AX5, full palette,    10 s   other=false scroll=true   (16.0, 230.0,  370.0, 181.0)
+///     AX5, narrowed to one, 15 s   other=true  scroll=false  (16.0, 230.0,  416.33, 59.67)
+///     AX5, filter cleared,  15 s   other=false scroll=true   (16.0, 230.0,  370.0, 181.0)
+///
+/// Three things that decide the rule, none of them deducible from the CI log alone:
+///
+/// - **`scrollViews` is not the safe default either**, so "prefer the scroller" would be guessing
+///   the other way. At the default content size the legend is an `Other` for the whole run.
+/// - **The `Other` is a fully laid-out element with an ordinary frame** — on the glass, finite, with
+///   an interior — so `frameCanAnswerHittability` accepts it. A guard built out of that predicate
+///   alone, which was the other candidate for this rule, would bind the transient every time.
+/// - **It is stable while it lasts.** 117 consecutive samples of one unchanging rectangle in the
+///   narrowed state, so "two consecutive reads agree" does not reject it either. Both spellings
+///   flipped inside a single sample (< 0.65 s) when the palette changed.
+///
+/// So the only thing that separates the transient from the answer is **how long it lasts**, and the
+/// rule has to be a duration. What the frame check still buys is the *incremental* case: a palette
+/// that fills one species at a time grows the legend on every arrival, and a container whose
+/// rectangle is still changing resolves to nothing.
 ///
 /// ── The rule ────────────────────────────────────────────────────────────────────────────────
 /// A spelling resolves when it has existed **with an unchanging, usable frame** for
-/// `settlingWindow` seconds of continuous observation. Existence alone is what the old code
-/// trusted; the frame is what says the palette has stopped growing, because every arriving species
-/// changes the legend's height. `frameHasSettled` and `frameCanAnswerHittability` are the same two
-/// predicates the rest of this file is built on, so nothing new is being invented — what is new is
-/// that the *choice of element* waits, instead of one read of a still-settling screen deciding it.
+/// `settlingWindow` seconds of continuous observation, and both spellings are re-read every round,
+/// so one that leaves the tree loses whatever credit it had built up.
+///
+/// **This narrows the window; it does not close it.** A partial palette that held still for longer
+/// than `settlingWindow` and only then completed would still be believed. That is a bound on how
+/// long the app may go on rebuilding, not a proof that it has stopped, and it is written here
+/// rather than left for the next reader to discover.
 ///
 /// Pure arithmetic over samples with an explicit clock, deliberately: `FrameFinitenessGateTests`
 /// drives it with synthetic rounds — no live element, no simulator — the same way `frameHasSettled`
@@ -278,10 +296,16 @@ struct ContainerSpellingResolution {
 
     /// **How long a spelling must hold still before it is believed.**
     ///
-    /// Measured, not guessed: see `resolvedContainer`'s note on the local probe, and the write-up in
-    /// `docs/errata-pending/`. It is a liveness bound and costs nothing but itself — the loop returns
-    /// as soon as the window has elapsed on a container that is not moving.
-    static let settlingWindow: TimeInterval = 3
+    /// Sized from the CI log this was written for rather than picked: on that runner the failing
+    /// test's read at t = 4.23 s found an `Other`, and the passing test's read at t = 6.92 s found
+    /// none — so the flip fell inside a ~2.7 s band, and four seconds of holding still clears it
+    /// with margin. It is also longer than `MapOpening.patience` (`MapOpeningCamera.swift`,
+    /// `.seconds(3)`), the app's own budget for state that is still arriving after a launch.
+    ///
+    /// Locally it buys nothing and costs its own length: on a quiet Mac the palette is already
+    /// complete before the first sample `XCUIApplication.launch()` allows. Four call sites, so about
+    /// sixteen seconds across the UI suite — the price of the wait is the whole point of it.
+    static let settlingWindow: TimeInterval = 4
 
     let window: TimeInterval
 

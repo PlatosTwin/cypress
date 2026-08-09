@@ -206,9 +206,13 @@ final class FrameFinitenessGateTests: XCTestCase {
     /// screen, and does not move — so `frameCanAnswerHittability` and `frameHasSettled` both accept
     /// it. Only the duration does.
     func testATransientOtherIsNeverResolvedTo() {
-        let resolved = drive(until: 12) { time in
-            if time < 2.0 { return [.other: self.unclampedLegend] }
-            if time < 2.5 { return [:] }
+        // The `Other` holds still for very nearly the whole window before it goes, which is the
+        // boundary the rule actually has to hold at — not a transient so short that any duration
+        // would have caught it.
+        let goes = ContainerSpellingResolution.settlingWindow - 0.2
+        let resolved = drive(until: 20) { time in
+            if time < goes { return [.other: self.unclampedLegend] }
+            if time < goes + 0.5 { return [:] }
             return [.scrollView: self.clampedLegend]
         }
         XCTAssertEqual(
@@ -218,10 +222,10 @@ final class FrameFinitenessGateTests: XCTestCase {
                 + "`ScrollView` must never be the answer, and the `ScrollView` must be"
         )
         XCTAssertGreaterThanOrEqual(
-            resolved?.at ?? 0, 2.5 + ContainerSpellingResolution.settlingWindow,
-            "the `ScrollView` arrived at 2.5 s and was resolved at \(resolved?.at ?? -1) s, which is "
-                + "less than a full settling window after it appeared — the window is not being "
-                + "counted from when the element actually arrived"
+            resolved?.at ?? 0, goes + 0.5 + ContainerSpellingResolution.settlingWindow,
+            "the `ScrollView` arrived at \(goes + 0.5) s and was resolved at \(resolved?.at ?? -1) "
+                + "s, which is less than a full settling window after it appeared — the window is "
+                + "not being counted from when the element actually arrived"
         )
     }
 
