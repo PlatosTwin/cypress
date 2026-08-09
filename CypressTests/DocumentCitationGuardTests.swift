@@ -28,12 +28,10 @@
 //  in prose usually names a kind of file rather than a file, and the false-positive rate is not
 //  worth the two root-level documents it would cover.
 //
-//  **Generated paths.** `dist/upload.sh` is cited four times across ERRATA E247 and
-//  `docs/investigations/city-publishing.md`, and `Fixtures/raw/…` several more; both are gitignored
-//  and regenerable. A generated artifact is a legitimate thing to name and an illegitimate thing to
-//  require on disk, so `generatedPrefixes` reads `.gitignore` rather than carrying a list here —
-//  see its own note for what the earlier "is it a real top-level directory" rule got wrong in both
-//  directions.
+//  **Generated and copied-in paths.** `dist/upload.sh` and the two seed `.sqlite` files are
+//  legitimate things to name and illegitimate things to require on disk. `notRequiredOnDisk` names
+//  them, and §4 proves both directions of the rule every build — read its note before touching it,
+//  because deriving this set from `.gitignore` was tried and is wrong in principle.
 //
 //  **Whether a citation names the right file.** `Tools/run_tests.sh` and `Tools/verify_test_log.sh`
 //  are indistinguishable to a scanner. Same limit `PendingCitationGuardTests` records: this catches
@@ -52,8 +50,11 @@
 //      pattern's first-character class and by `contentsOfDirectory`'s defaults.
 //    · a path that resolves to a *directory* rather than a file.
 //    · a citation broken across a line break.
+//    · a citation inside a four-space-indented code block. Fenced blocks are skipped, including
+//      inside a blockquote; indented ones are not, because telling them from list continuation is
+//      more machinery than the zero live instances justify.
 //  Widening the extension list is the tempting fix and is not free: `.csv` alone turns five
-//  committed `Fixtures/raw/…` citations red, which is why `generatedPrefixes` had to land first.
+//  committed `Fixtures/raw/…` citations into scope — see §4, which pins the list for that reason.
 //
 
 import Foundation
@@ -88,32 +89,66 @@ enum DocumentCitationGuard {
             + extensions.joined(separator: "|") + "))(?=`|\\s)"
     }
 
-    /// Directory prefixes the repository itself declares generated, read from `.gitignore`.
+    /// The paths a citation may legitimately name that this guard must never require on disk, and
+    /// why each one.
     ///
-    /// **This replaces "is the first component a real top-level directory", which was wrong in both
-    /// directions.** `dist/` is created at the repo root by `Tools/publish_cities.py --out` during
-    /// the seed publish, so on any machine mid-publish that rule flipped and four committed prose
-    /// citations went red — a unit result depending on untracked working-tree state, during a
-    /// workflow CLAUDE.md documents as recurring and agent-side. In the other direction
-    /// `Fixtures/raw/` is `dist/`'s exact twin — gitignored, regenerable — but *is* a real
-    /// top-level path, so five absent citations under it escaped only because their extensions
-    /// happened not to be allowlisted; adding `csv` would have turned committed ERRATA prose red.
+    /// **This is deliberately a list, after reading `.gitignore` was tried and was wrong in
+    /// principle.** `.gitignore` states what *would* be ignored, not what is absent, and **git never
+    /// ignores a tracked file**. So `Fixtures/raw/` — 46 committed files — is not ignored at all
+    /// despite its `.gitignore` line, and excluding it silently stopped a permanent file's citation
+    /// from being checked. In the other direction the seed is hidden by two *file* patterns
+    /// (`Fixtures/seed/*.sqlite`, `Cypress/Resources/cypress-seed.sqlite`) that a directory-shaped
+    /// reader skips: 23 committed citations went red on any checkout that had not yet run
+    /// `Tools/setup_worktree.sh`, which is every fresh clone. The derivation was not subtly wrong,
+    /// it was modelling the wrong thing.
     ///
-    /// Reading `.gitignore` fixes both and cannot drift from the repository the way a list here
-    /// would: the repo already states what it generates.
-    static func generatedPrefixes(root: URL) -> [String] {
-        guard let text = try? String(
-            contentsOf: root.appendingPathComponent(".gitignore"), encoding: .utf8
-        ) else { return [] }
-        return text.components(separatedBy: "\n")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.hasPrefix("#") && !$0.hasPrefix("!") && $0.hasSuffix("/") }
-            .map { $0.hasPrefix("/") ? String($0.dropFirst()) : $0 }
-            .filter { !$0.isEmpty }
+    /// A list was rejected the first time on the grounds that it rots silently. That objection was
+    /// correct, and the answer is not a cleverer derivation — it is §4, which pins this list and
+    /// exercises both directions of the predicate on every build, so rot is loud.
+    static let notRequiredOnDisk = [
+        // Generated per run by `Tools/publish_cities.py --out`; exists only mid-publish.
+        "dist/",
+        // Gitignored build products of `Tools/build_seed.py`, copied into a worktree by
+        // `Tools/setup_worktree.sh`. Absent on every fresh clone, ~103 MB when present.
+        "Cypress/Resources/cypress-seed.sqlite",
+        "Fixtures/seed/cypress-seed.sqlite"
+    ]
+
+    /// Whether a cited path is this guard's business at all.
+    ///
+    /// Two clauses, and §4 red-proves each **separately**, because together they once hid a defect:
+    /// `dist/upload.sh` was excluded by both at the same time, so stubbing the exclusion list out
+    /// entirely left all five tests green and nothing said the rule had stopped working.
+    ///
+    /// 1. The first component names a real top-level directory — this is what keeps `Core/…`,
+    ///    `Features/…`, `cities/…` and `design_handoff_cypress/…` (13 occurrences of paths written
+    ///    relative to some other root) out of the sweep.
+    /// 2. It is not one of the paths above.
+    static func isCheckable(_ target: String, topLevel: Set<String>) -> Bool {
+        guard let head = target.split(separator: "/").first,
+              topLevel.contains(String(head)) else { return false }
+        return !notRequiredOnDisk.contains { target.hasPrefix($0) }
     }
 
     /// A markdown link or image target. The `!` is optional because an image is a link that draws.
     private static let linkPattern = #"!?\[[^\]]*\]\(([^)\s]+)\)"#
+
+    /// Whether a line opens or closes a fenced block.
+    ///
+    /// **The `>` strip is not cosmetic.** A fence inside a blockquote — how a document quotes
+    /// another document's example — is still a fence, and without this the block is scanned: a
+    /// probe showed `![](…-NOPE.png)` inside `> ```python` reported as a dangling image.
+    ///
+    /// Four-space-indented code blocks are markdown code and are **not** recognised here; see the
+    /// header's let-through list. Distinguishing them from list continuation is more machinery than
+    /// the zero live instances justify.
+    static func isFenceMarker(_ line: String) -> Bool {
+        var text = line.trimmingCharacters(in: .whitespaces)
+        while text.hasPrefix(">") {
+            text = String(text.dropFirst()).trimmingCharacters(in: .whitespaces)
+        }
+        return text.hasPrefix("```")
+    }
 
     /// Every backticked path citation in one document's text.
     static func backtickedPaths(in source: String, document: String) -> [Citation] {
@@ -145,7 +180,7 @@ enum DocumentCitationGuard {
         var found: [Citation] = []
         var fenced = false
         for (index, line) in source.components(separatedBy: "\n").enumerated() {
-            if line.trimmingCharacters(in: .whitespaces).hasPrefix("```") {
+            if isFenceMarker(line) {
                 fenced.toggle()
                 continue
             }
@@ -221,7 +256,6 @@ struct DocumentCitationGuardTests {
     func everyCitedPathResolves() throws {
         let root = AppSourceLiterals.repositoryRoot()
         let prefixes = DocumentCitationGuard.topLevelDirectories(root: root)
-        let generated = DocumentCitationGuard.generatedPrefixes(root: root)
         var missing: [DocumentCitationGuard.Citation] = []
 
         for document in DocumentCitationGuard.documents(root: root) {
@@ -229,9 +263,7 @@ struct DocumentCitationGuardTests {
             for citation in DocumentCitationGuard.backtickedPaths(
                 in: source, document: document.relative
             ) {
-                guard let head = citation.target.split(separator: "/").first,
-                      prefixes.contains(String(head)),
-                      !generated.contains(where: { citation.target.hasPrefix($0) })
+                guard DocumentCitationGuard.isCheckable(citation.target, topLevel: prefixes)
                 else { continue }
                 if !DocumentCitationGuard.resolves(citation, root: root, relativeToDocument: false) {
                     missing.append(citation)
@@ -361,6 +393,105 @@ struct DocumentCitationGuardTests {
             """
             the extractor matched \(links) relative link target(s); there were 21 when this was \
             written, all of them the task-14 proposal renders
+            """
+        )
+
+        // An odd number of fence markers leaves the scanner inside a fence for the rest of the
+        // file, and everything below the last marker goes unread — silently, and reported as clean.
+        // This is the natural shape of a document that *shows* a fence inside a fence. Nothing in
+        // the corpus does today; this makes the day one does a loud failure rather than a quiet
+        // hole in the sweep.
+        for document in documents {
+            let source = try String(contentsOf: document.url, encoding: .utf8)
+            let markers = source.components(separatedBy: "\n")
+                .filter(DocumentCitationGuard.isFenceMarker).count
+            #expect(
+                markers.isMultiple(of: 2),
+                """
+                \(document.relative) has \(markers) fence markers, an odd number, so everything \
+                after the last one was skipped and reported as clean. Balance the fences, or the \
+                sweep is reading only part of this document.
+                """
+            )
+        }
+    }
+
+    // MARK: - 4. The exclusion rule itself, in both directions
+
+    /// **A rule with no test is a rule that has already stopped working and not told anyone.** The
+    /// first version of this exclusion could be replaced by `return []` with all five tests still
+    /// green, because `dist/upload.sh` was excluded twice over — by the top-level-directory clause
+    /// *and* by the list — so deleting one changed nothing observable. That is the same
+    /// "computed and discarded" shape this repo has been bitten by before, and the reason the two
+    /// clauses are asserted separately here rather than through their combined effect.
+    ///
+    /// §2's floors cannot cover this: they count **before** filtering, so a citation leaving §1's
+    /// scope moves no floor at all. Adding `Tools/` to the exclusions removed a planted dangling
+    /// path from §1's report while every floor stayed green.
+    @Test("the exclusion list is what it says, and excludes exactly what it should")
+    func theExclusionRuleWorksInBothDirections() {
+        #expect(
+            DocumentCitationGuard.notRequiredOnDisk == [
+                "dist/", "Cypress/Resources/cypress-seed.sqlite", "Fixtures/seed/cypress-seed.sqlite"
+            ],
+            "the exclusion list changed: \(DocumentCitationGuard.notRequiredOnDisk)"
+        )
+
+        let topLevel: Set<String> = ["Cypress", "CypressTests", "Tools", "docs", "Fixtures", "dist"]
+
+        // Excluded — each for its own reason, and `dist` is in `topLevel` here on purpose so that
+        // clause 2 is what does the work. Under the real repository `dist/` is usually absent and
+        // clause 1 would mask this; that masking is exactly what hid the missing test.
+        for excluded in [
+            "dist/upload.sh",
+            "Cypress/Resources/cypress-seed.sqlite",
+            "Fixtures/seed/cypress-seed.sqlite"
+        ] {
+            #expect(
+                !DocumentCitationGuard.isCheckable(excluded, topLevel: topLevel),
+                "\(excluded) must never be required on disk — it is generated or copied in"
+            )
+        }
+
+        // Checked — `Fixtures/raw/…` is the one that matters. It carries 46 tracked files, so it is
+        // NOT gitignored whatever `.gitignore` says, and a `.gitignore`-derived rule wrongly
+        // excluded it.
+        for checked in [
+            "Fixtures/raw/nyc/sample_full_25.json",
+            "Fixtures/seed/schema.sql.md",
+            "Tools/run_tests.sh",
+            "docs/design-proposals/2026-08-06-task14.md"
+        ] {
+            #expect(
+                DocumentCitationGuard.isCheckable(checked, topLevel: topLevel),
+                "\(checked) is a committed file and its citation must be checked"
+            )
+        }
+
+        // Clause 1, on its own: a path relative to some other root is not this guard's business.
+        for foreign in ["Core/Rubric/Vitality.swift", "cities/sf.json", "Features/Map/MapChrome.swift"] {
+            #expect(
+                !DocumentCitationGuard.isCheckable(foreign, topLevel: topLevel),
+                "\(foreign) does not start at the repository root and must not be checked"
+            )
+        }
+    }
+
+    /// The allowlist is what decides whether a token is a path at all, and §3's specimen exercises
+    /// only two of its twelve entries — so seven of them could be deleted with every floor clear
+    /// and the specimen green. Same family as the hyphen hole, less bite, one line to close.
+    @Test("the extension allowlist is pinned")
+    func theExtensionAllowlistIsPinned() {
+        #expect(
+            DocumentCitationGuard.extensions == [
+                "md", "swift", "py", "sh", "json", "yml", "yaml", "sqlite", "txt", "png",
+                "plist", "pbxproj"
+            ],
+            """
+            the extension allowlist changed to \(DocumentCitationGuard.extensions). Removing one \
+            blinds the sweep to every citation carrying it, and neither §2's floors nor §3's \
+            specimen would notice. Adding one is not free either: `csv` alone puts five committed \
+            `Fixtures/raw/…` citations in scope.
             """
         )
     }
