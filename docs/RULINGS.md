@@ -5640,9 +5640,10 @@ does not drive the one narrowing that produces this, and what a fourth case adde
 
 **2026-08-06.** Four questions that were design's to answer. A design agent measured each on the
 real app and the real seed and wrote them up as options with renders and computed ratios
-(`docs/design-proposals/2026-08-06-task14.md`, on the throwaway branch `design/14-proposals`,
-which is a camera rig and whose code ships nothing). The project owner read that document and
-answered, verbatim:
+(`docs/design-proposals/2026-08-06-task14.md`, written on the throwaway branch
+`design/14-proposals` — a camera rig whose code shipped nothing, and which no longer exists. The
+document itself was landed on main 2026-08-08, so this citation resolves). The project owner read
+that document and answered, verbatim:
 
 > all of these look fine. go with your recommended options in each case
 
