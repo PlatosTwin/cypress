@@ -74,8 +74,9 @@ same answer: **make the careless spelling unrepresentable.**
 #### The repairs
 
 **1. One spelling of the filter, and a gate that keeps it that way.**
-`XCUIElement.isHittableWithoutRaising` (`CypressUITests/UIWait.swift`) asks `frameCanAnswerHittability`
-first — finite, and with an interior — and returns `false` where the raw property would raise. Every
+`XCUIElement.isHittableWithoutRaising(in:)` (`CypressUITests/UIWait.swift`) asks
+`frameCanAnswerHittability` first — finite, with an interior, and intersecting the app's own frame —
+and returns `false` where the raw property would raise. Every
 filter position in `CypressUITests` now calls it: `DeepLinkHarness.assertEveryControlIsLabeled` and
 `.waitForCoverToArrive`, `DeepLinkSweepTests.testNothingIsAnnouncedTwice`, `AccessibilityTreeTests`'
 own site, `MapFilterAccessibilityTests.swipeRow`/`.revealedChip`,
@@ -129,20 +130,95 @@ is no span to degenerate. The refusal comes from the app's own admission rule, w
 rather than restates; `MapCameraMemory.isWorthRemembering` and `maximumSpanDegrees` are `nonisolated`
 for that reason, so the seam can consult them rather than keep a second copy of the threshold.
 
+#### The guard as first written did not work, and only a watched run said so
+
+This is the part worth reading. `frameCanAnswerHittability` was first written with two conditions —
+finite, and with an interior — because those are the two the CI log's frame fails. The third,
+**"somewhere on the screen"**, existed in `AccessibilityTreeTests` and was deliberately left out of
+the shared helper, with a comment arguing that a control scrolled off the glass has a perfectly
+finite frame and a perfectly good answer to `isHittable`, so excluding it is a choice about what
+that test means rather than a guard against a raise.
+
+That comment was wrong, and it was wrong in the direction that reads as careful. Reproduced on the
+iPhone 16 Pro at 402 pt with the ticket camera written onto the device and the preflight skipped:
+
+| state | result |
+| --- | --- |
+| raw `isHittable`, camera unpinned | **red** — `Failed to determine hittability of "City tree, Southern Magnolia" Button`, 16.0 s |
+| two-condition guard, camera unpinned | **red** — same message, same test |
+| three-condition guard, camera unpinned | green, 48.8 s |
+
+Instrumenting the loop to print each frame immediately before the read that raised gives the reason
+in one line:
+
+    DIAG-FRAME button (-31.0, 850.0, 30.0, 30.0) finite=true label=City tree, Southern Magnolia
+
+Finite, 30 × 30, a real rectangle in every respect — and x −31 to −1 on a 402 pt screen, so every
+point of it is off the left edge. XCUITest's fallback is to sample points *inside the frame*; when
+none is on the glass there is nothing to sample, which is what its own message has been saying all
+along: "no suggested hit points based on element frame". **The two raises this suite has actually
+seen have different frames**, and only one of them is decidable without knowing where the screen is.
+
+The general lesson is the narrow one CLAUDE.md already states: a guard was written from the one
+piece of evidence in hand, its comment reasoned confidently about the case it had *not* seen, and
+the reasoning was only caught because the fix was driven red and then green rather than written and
+believed. `AccessibilityTreeTests` had all three conditions from the start; hoisting two of them was
+a regression dressed as a consolidation.
+
+#### The 48.8 s in that table is also a finding
+
+Green, and four times the 12.5 s the same test takes at a normalized camera (measured under #71).
+That is #71's own "pass and fail are a threshold on one continuous cost" arithmetic, unchanged: the
+guard stops the raise, and XCUITest still spends retry budget on every annotation it cannot resolve.
+**The frame guard makes the failure not happen; the camera pin makes the work not happen.** Neither
+repair makes the other redundant, which is the argument for doing both rather than picking one.
+
 #### The red-proofs
 
-*(filled in below from watched runs)*
+All watched, on iPhone 16 Pro `EA0AD796-…` at 402 pt, each restored afterwards.
+
+*The gate (`HittabilityFilterGateTests`), both halves:*
+
+| break | observed |
+| --- | --- |
+| a bare `.filter { $0.isHittable }` put back into `DeepLinkSweepTests` | red: `(offenders → ["DeepLinkSweepTests.swift [174]"]).isEmpty → false` — the right file and the right line |
+| the helper's definition moved out of `UIWait.swift` (still compiling) | red on the helper-existence check only; the offenders check stayed quiet |
+
+*The predicate (`FrameFinitenessGateTests`), body replaced with `true`:* all four negative
+assertions red, each with its own message — the sweep's frame, the pin-adjust frame, the non-finite
+rectangle with an interior, the finite rectangle without one — and
+`testAnOrdinaryFrameCanAnswerHittability` **green**, which is the half that shows the guard is not
+simply refusing everything.
+
+*The camera seam (`DebugMapCameraOverrideTests`), one break at a time:*
+
+| break | observed |
+| --- | --- |
+| `flush()` forgets it is pinned | red: "a pinned camera is never written back to the device" |
+| `loadIfNeeded` ignores the pin | red: "a pinned camera is what the map opens on, whatever is on disk", printing the on-disk camera where the pin should be |
+| `hasRememberedCamera` ignores the pin | red: "a pinned camera is not a camera the reader left", `.whereYouLeftOff` where `.theCityFallback` is required |
+
+In each of those runs the other three camera tests stayed green, including the control
+("with nothing pinned, the camera on disk is still read and still written") — without which all
+three could have passed on a `MapCameraMemory` that had simply stopped working.
+
+*End to end, on the device, `IdentifyFABReachabilityTests` with `map.lastCamera` written to Golden
+Gate Park (`37.769402,-122.486198`, `camera-trees=0`) and the preflight skipped:*
+
+- camera pin removed — **red**, two of the three tests, on the legend never appearing. The CI
+  failure, reproduced locally on demand.
+- camera pin restored, same device state — `Executed 3 tests, with 0 failures` in 21.2 s.
+- and the device's `map.lastCamera` read back afterwards was **still Golden Gate Park, unchanged**,
+  which is the write-back guard proved on a real device rather than in a `UserDefaults` double.
 
 #### Not done, and why
 
-- **The raise itself is not synthesized in a test.** There is no way to make XCUITest report
-  `{{inf, inf}, {0.0, 0.0}}` on demand from inside the suite — CLAUDE.md's own note that
+- **The raise is reproduced but not synthesized.** Reproducing it needs a specific camera on a
+  specific screen width, which is a device state a test cannot set for itself; there is no way to
+  make XCUITest report an unresolvable activation point from inside the suite. CLAUDE.md's note that
   `.allowsHitTesting(false)` does not go red is the same wall from the other side, and an `.offset`
-  off screen produces a perfectly finite frame that `isHittable` answers `false` to without raising.
-  What is proved instead is split: the predicate is proved directly against the exact rectangle the
-  CI log printed (`FrameFinitenessGateTests`), and the wiring — that every filter position calls it
-  — is proved by breaking the gate. Neither is a substitute for reproducing the raise, and this is
-  written here rather than left to be discovered.
+  off screen produces exactly the kind of frame the *third* condition catches — which is how that
+  condition came to be tested at all, by accident of the failure rather than by design.
 - **Assertion-position reads are untouched.** They can raise too, on an element specific enough that
   it has not happened. Changing them would change what they claim, which is a separate decision from
   this one.

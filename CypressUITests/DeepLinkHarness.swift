@@ -300,7 +300,7 @@ extension DeepLinkHarness {
             .matching(NSPredicate(format: "label BEGINSWITH %@", anchor))
             .firstMatch
         _ = settledFrame(title, "\(screen): the cover's own \"\(anchor)\" title", file: file, line: line)
-        return title.exists && title.isHittableWithoutRaising
+        return title.exists && title.isHittableWithoutRaising(in: app)
     }
 
     /// No interactive element anywhere in the tree may be unlabeled.
@@ -334,7 +334,7 @@ extension DeepLinkHarness {
                 // them. One placed where XCUITest can compute no activation point does not answer
                 // `false` to `isHittable`; it raises, and the raise is the test failure. That is
                 // `DeepLinkVoiceOverTests.testPinAdjust` on the run task #71 was written from.
-                guard element.exists, element.isHittableWithoutRaising else { continue }
+                guard element.exists, element.isHittableWithoutRaising(in: app) else { continue }
                 checked += 1
                 XCTAssertFalse(
                     element.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,

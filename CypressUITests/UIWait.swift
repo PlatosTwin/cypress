@@ -170,16 +170,33 @@ func frameHasSettled(previous: CGRect, current: CGRect) -> Bool {
 
 /// Whether a rectangle is one `XCUIElement.isHittable` can be *asked about* without raising.
 ///
-/// Finite, and with an interior. See `XCUIElement.isHittableWithoutRaising` for why the question
-/// has to be asked at all; this half is pure `CGRect` arithmetic so `FrameFinitenessGateTests`
-/// proves it with no live element and no simulator, the same way `frameHasSettled` is proved.
+/// Three conditions, and **each one was measured rather than reasoned about** — the first draft of
+/// this function had only the first two, and the raise it was written to stop went straight through
+/// it on a watched run:
 ///
-/// **Zero width or height is not a degenerate case of finiteness, it is the second half of the
-/// condition.** The frame that actually failed in CI was `{{inf, inf}, {0.0, 0.0}}` — non-finite
-/// *and* empty — but `{{10, 10}, {0, 0}}` has no interior either, and an activation point cannot be
-/// computed inside a rectangle with no inside.
-func frameCanAnswerHittability(_ rect: CGRect) -> Bool {
-    isFiniteFrame(rect) && rect.width > 0 && rect.height > 0
+/// - **Finite.** `{{inf, inf}, {0.0, 0.0}}` is the frame CI run 31300530216 printed when
+///   `DeepLinkSweepTests.testNothingIsAnnouncedTwice` died.
+/// - **With an interior.** An activation point cannot be computed inside a rectangle with no
+///   inside, and `{{10, 10}, {0, 0}}` is finite.
+/// - **Somewhere on the screen.** `(-31.0, 850.0, 30.0, 30.0)` — finite, 30 × 30, a real rectangle
+///   in every respect, and every point of it off the left edge of a 402 pt device. That is the
+///   frame of the `"City tree, Southern Magnolia"` annotation that raised in
+///   `DeepLinkVoiceOverTests.testPinAdjust`, read out of the element immediately before the read
+///   that raised. XCUITest's fallback is to sample points *inside the frame*; when none of them is
+///   on the screen there is nothing to sample, and the message says so — "no suggested hit points
+///   based on element frame".
+///
+/// The third condition existed in `AccessibilityTreeTests` and this function was first written
+/// without it, on the argument that a control scrolled off the glass has a perfectly good answer to
+/// `isHittable`. **That argument is wrong for a map annotation**: a scrolled-away control is inside
+/// its scroll view's window, while a MapKit annotation is placed in absolute screen coordinates and
+/// can sit entirely outside them.
+///
+/// Pure `CGRect` arithmetic, so `FrameFinitenessGateTests` proves it against both measured
+/// rectangles with no live element and no simulator, the same way `frameHasSettled` is proved.
+/// Finiteness is tested first and `&&` short-circuits, so `intersects` is never handed an infinity.
+func frameCanAnswerHittability(_ rect: CGRect, onScreen screen: CGRect) -> Bool {
+    isFiniteFrame(rect) && rect.width > 0 && rect.height > 0 && rect.intersects(screen)
 }
 
 extension XCUIElement {
@@ -200,24 +217,32 @@ extension XCUIElement {
     ///
     /// **Where it comes from.** Screen 01 is a full-bleed `Map` whose pins are SwiftUI annotations
     /// MapKit hosts and places itself, and a screen presented *over* the map tab root leaves those
-    /// annotations in the accessibility tree behind it. One placed at the edge of the basemap can be
-    /// in the tree with a frame that has no interior — and which annotations land in that state is a
-    /// fact about where the camera is pointed, which is device state. So this failed on a device left
-    /// pointed at one block and not on one left pointed at another.
+    /// annotations in the accessibility tree behind it. An annotation the camera happens to place at
+    /// or beyond the edge of the basemap can be in the tree with a frame XCUITest can resolve no
+    /// activation point inside — and which annotations land in that state is a fact about where the
+    /// camera is pointed, which is device state. So this failed on a device left pointed at one
+    /// block and not on one left pointed at another.
     ///
-    /// **Nothing is weakened, because it is the same judgment.** An element with no interior, or one
-    /// XCUITest could not resolve a position for at all, is not reachable by an assistive technology
-    /// either — skipping it is exactly the answer `isHittable` was being asked for, expressed in a
-    /// way that cannot raise. A test that means to *assert* reachability still says so: this is for
-    /// the filter positions, where the property decides whether an element is examined at all, and
-    /// `assertReachable` is for the claims.
+    /// **The app frame is a parameter and not a convenience.** The two raises this suite has
+    /// actually seen have *different* frames — `{{inf, inf}, {0.0, 0.0}}` and
+    /// `(-31.0, 850.0, 30.0, 30.0)`, the second a perfectly ordinary 30 × 30 rectangle sitting off
+    /// the left edge of the screen — and only the first is decidable from the element alone. A
+    /// version of this without the screen was written, and watched to go through it unchanged on the
+    /// run that produced the second.
+    ///
+    /// **Nothing is weakened, because it is the same judgment.** An element with no interior, one
+    /// XCUITest could not resolve a position for, or one drawn entirely off the glass is not
+    /// reachable by an assistive technology either — skipping it is exactly the answer `isHittable`
+    /// was being asked for, expressed in a way that cannot raise. A test that means to *assert*
+    /// reachability still says so: this is for the filter positions, where the property decides
+    /// whether an element is examined at all, and `assertReachable` is for the claims.
     ///
     /// **This does not close the window, it narrows it.** `frame` and `isHittable` are two separate
-    /// snapshots, so an element can still go non-finite between them on a contended runner. The
-    /// pinned opening camera (`CYPRESS_MAP_CAMERA`) is what stops the annotations getting into that
-    /// state in the first place; this is the guard for everything that is not the map.
-    var isHittableWithoutRaising: Bool {
-        guard frameCanAnswerHittability(frame) else { return false }
+    /// snapshots, so an element can still move between them on a contended runner. The pinned
+    /// opening camera (`CYPRESS_MAP_CAMERA`, `DebugMapCamera`) is what stops the annotations getting
+    /// into that state in the first place; this is the guard for everything that is not the map.
+    func isHittableWithoutRaising(in app: XCUIApplication) -> Bool {
+        guard frameCanAnswerHittability(frame, onScreen: app.frame) else { return false }
         return isHittable
     }
 }

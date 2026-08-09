@@ -92,7 +92,7 @@ final class AnonymizedPhotoNoticeUITests: XCTestCase {
         // finger. Scrolled to deliberately rather than left to `tap()`'s own attempt, which is the
         // difference between a test that fails on the sentence and one that fails on the geometry.
         var swipes = 0
-        while !row.isHittableWithoutRaising && swipes < 4 {
+        while !row.isHittableWithoutRaising(in: app) && swipes < 4 {
             app.swipeUp()
             swipes += 1
         }
@@ -123,7 +123,7 @@ final class AnonymizedPhotoNoticeUITests: XCTestCase {
             .matching(NSPredicate(format: "label BEGINSWITH %@", Self.noticeOpening))
         XCTAssertTrue(
             wait(timeout: 10) {
-                notices.allElementsBoundByAccessibilityElement.contains { $0.isHittableWithoutRaising }
+                notices.allElementsBoundByAccessibilityElement.contains { $0.isHittableWithoutRaising(in: app) }
             },
             "the viewer opened over a photograph nobody owns, drew no delete, and said nothing "
                 + "about why — an empty corner is not an explanation. "

@@ -109,8 +109,8 @@ struct HittabilityFilterGateTests {
         let mustNotCatch = """
         XCTAssertTrue(delete.isHittable, "the delete is in the tree and nothing could press it")
         XCTAssertFalse(tab.isHittable, "a tab behind a modal cover must stay unreachable")
-        guard element.exists, element.isHittableWithoutRaising else { continue }
-        for _ in 0..<6 where !element.isHittableWithoutRaising { swipeRow(app, left: true) }
+        guard element.exists, element.isHittableWithoutRaising(in: app) else { continue }
+        for _ in 0..<6 where !element.isHittableWithoutRaising(in: app) { swipeRow(app, left: true) }
         guard control.exists, control.isReachable else { return }
         """
         #expect(
@@ -145,7 +145,7 @@ struct HittabilityFilterGateTests {
         // is deleted, which is the opposite of what it is for.
         let helperSource = sources.first { $0.name == Self.helperFile }
         #expect(
-            helperSource?.code.contains("var \(Self.helper): Bool") == true,
+            helperSource?.code.contains("func \(Self.helper)(in app: XCUIApplication) -> Bool") == true,
             """
             \(Self.helperFile) no longer defines `\(Self.helper)`. Either the helper was removed — \
             in which case every filter position in the suite is unguarded again — or it moved, and \

@@ -75,16 +75,17 @@ final class AccessibilityTreeTests: XCTestCase {
             // .testNothingIsAnnouncedTwice`). One spelling now, in the helper, guarded by
             // `HittabilityFilterGateTests` — the same argument `deliberateDrag` settled for drags.
             //
-            // The on-screen test below is this file's own extra filter and is not part of the
-            // shared helper: a button scrolled off the glass has a perfectly finite frame and a
-            // perfectly good answer to `isHittable`, so excluding it is a choice about what this
-            // test means, not a guard against a raise.
-            let frame = button.frame
-            guard frameCanAnswerHittability(frame), frame.intersects(app.frame) else { continue }
-            guard button.isHittableWithoutRaising else { continue }
+            // **All three conditions this file had are in the helper, including the on-screen one.**
+            // A first cut of the helper left that one behind, on the argument that a control
+            // scrolled off the glass answers `isHittable` perfectly well — true of a control inside
+            // a scroll view, and false of a MapKit annotation, which is placed in absolute screen
+            // coordinates and can sit entirely outside them. The frame that raised in
+            // `testPinAdjust` was `(-31.0, 850.0, 30.0, 30.0)`: finite, 30 × 30, and wholly off the
+            // left edge of a 402 pt device. This file had it right the first time.
+            guard button.isHittableWithoutRaising(in: app) else { continue }
             XCTAssertFalse(
                 button.label.trimmingCharacters(in: .whitespaces).isEmpty,
-                "an interactive control at \(frame) has no accessibility label"
+                "an interactive control at \(button.frame) has no accessibility label"
             )
         }
     }

@@ -87,35 +87,81 @@ final class FrameFinitenessGateTests: XCTestCase {
 
     // MARK: - Whether the frame can answer a hittability question at all
 
-    /// **The frame that actually failed**, verbatim from CI run 31300530216's `ui (3)`:
-    /// `{{inf, inf}, {0.0, 0.0}}`. `isHittable` on an element reading this does not return `false` —
-    /// it raises, and the raise is the test failure. See `XCUIElement.isHittableWithoutRaising`.
-    func testTheFrameFromTheCIFailureCannotAnswerHittability() {
-        let observed = CGRect(
-            x: CGFloat.infinity, y: CGFloat.infinity, width: 0, height: 0
-        )
+    /// A 402 pt device, portrait — the width both CI and this project's own 16 Pro run at, and the
+    /// one the second measured rectangle below was read on.
+    private let screen = CGRect(x: 0, y: 0, width: 402, height: 874)
+
+    /// **The first frame that actually raised**, verbatim from CI run 31300530216's `ui (3)`, where
+    /// `DeepLinkSweepTests.testNothingIsAnnouncedTwice` died: `{{inf, inf}, {0.0, 0.0}}`.
+    func testTheFrameFromTheSweepFailureCannotAnswerHittability() {
         XCTAssertFalse(
-            frameCanAnswerHittability(observed),
+            frameCanAnswerHittability(
+                CGRect(x: CGFloat.infinity, y: CGFloat.infinity, width: 0, height: 0),
+                onScreen: screen
+            ),
             "the exact frame that raised in run 31300530216 must be filtered out before "
                 + "`isHittable` is asked about it"
         )
     }
 
-    /// Emptiness is the second half of the condition, not a special case of the first: a finite
-    /// rectangle with no interior has no point to compute an activation point inside either.
+    /// **The second frame that actually raised, and the one that makes the case for the screen
+    /// argument.** `(-31.0, 850.0, 30.0, 30.0)` — the `"City tree, Southern Magnolia"` annotation in
+    /// `DeepLinkVoiceOverTests.testPinAdjust`, read out of the element immediately before the read
+    /// that raised, on a 402 pt device.
+    ///
+    /// It is finite. It is 30 × 30. Every condition a frame check without the screen would ask, it
+    /// satisfies — which is not a deduction: a version of this guard without the screen was written,
+    /// and the raise went straight through it on a watched run. What is wrong with it is that
+    /// x −31 to −1 is entirely off the left edge, so XCUITest's fallback — sampling points inside
+    /// the frame — has nothing on the glass to sample. Its message says exactly that: "no suggested
+    /// hit points based on element frame".
+    func testTheFrameFromThePinAdjustFailureCannotAnswerHittability() {
+        XCTAssertFalse(
+            frameCanAnswerHittability(CGRect(x: -31, y: 850, width: 30, height: 30), onScreen: screen),
+            "a finite 30×30 rectangle lying wholly off the left edge of the screen must be "
+                + "filtered out — this is the frame that raised in testPinAdjust, and a guard that "
+                + "only asks about finiteness and area lets it through"
+        )
+    }
+
+    /// The finiteness half, on its own. The sweep's frame fails two conditions at once, so it cannot
+    /// show either one carrying weight by itself — a rectangle that is non-finite and has an
+    /// interior can.
+    func testANonFiniteFrameWithAnInteriorCannotAnswerHittability() {
+        XCTAssertFalse(
+            frameCanAnswerHittability(
+                CGRect(x: CGFloat.infinity, y: CGFloat.infinity, width: 44, height: 44),
+                onScreen: screen
+            ),
+            "a rectangle XCUITest could not resolve a position for is not one to ask about "
+                + "hittability, however large it claims to be"
+        )
+    }
+
+    /// Emptiness on its own: a finite rectangle on the screen with no interior has no point to
+    /// compute an activation point inside either.
     func testAFiniteFrameWithNoInteriorCannotAnswerHittability() {
-        XCTAssertFalse(frameCanAnswerHittability(CGRect(x: 10, y: 10, width: 0, height: 44)))
-        XCTAssertFalse(frameCanAnswerHittability(CGRect(x: 10, y: 10, width: 44, height: 0)))
-        XCTAssertFalse(frameCanAnswerHittability(.zero))
+        XCTAssertFalse(frameCanAnswerHittability(CGRect(x: 10, y: 10, width: 0, height: 44), onScreen: screen))
+        XCTAssertFalse(frameCanAnswerHittability(CGRect(x: 10, y: 10, width: 44, height: 0), onScreen: screen))
+        XCTAssertFalse(frameCanAnswerHittability(.zero, onScreen: screen))
     }
 
     /// The half that keeps the guard from being a filter that refuses everything. An ordinary
     /// control must still be asked, or every reachability filter in the suite would silently skip
     /// every element and the tests standing on them would check nothing.
+    ///
+    /// **Partly on the glass counts.** A control whose top is above the screen still has points
+    /// inside the frame for XCUITest to sample, and whether it is *hittable* is then XCUITest's
+    /// question to answer rather than a raise. The rule is "somewhere on the screen", not "wholly
+    /// on it" — `PrimaryCTAReachabilityTests.isWhollyOnTheGlass` is the stronger claim, and it is a
+    /// claim rather than a filter.
     func testAnOrdinaryFrameCanAnswerHittability() {
-        XCTAssertTrue(frameCanAnswerHittability(CGRect(x: 18, y: 69, width: 44, height: 44)))
-        // Off the top of the screen is still a real rectangle: whether an element scrolled out of
-        // view is *hittable* is XCUITest's question to answer, and answering it is not a raise.
-        XCTAssertTrue(frameCanAnswerHittability(CGRect(x: -100, y: -100, width: 44, height: 44)))
+        XCTAssertTrue(
+            frameCanAnswerHittability(CGRect(x: 18, y: 69, width: 44, height: 44), onScreen: screen)
+        )
+        XCTAssertTrue(
+            frameCanAnswerHittability(CGRect(x: 18, y: -20, width: 44, height: 44), onScreen: screen),
+            "a control half off the top of the screen has points to sample and must still be asked"
+        )
     }
 }
