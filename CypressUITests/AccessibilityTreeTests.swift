@@ -63,28 +63,25 @@ final class AccessibilityTreeTests: XCTestCase {
             let button = app.buttons.element(boundBy: i)
             guard button.exists else { continue }
 
-            // **The frame is asked about before hittability, and that order is load-bearing.**
-            // `isHittable` does not return `false` for an element XCUITest cannot compute an
-            // activation point for — it *raises*, and the test fails with
+            // **The frame is asked about before hittability, and that order is load-bearing.** The
+            // whole of why is on `XCUIElement.isHittableWithoutRaising` (`UIWait.swift`), which is
+            // where this file's own hand-rolled version of the check now lives: `isHittable` does
+            // not return `false` for an element XCUITest cannot compute an activation point for, it
+            // *raises*, and this file found that first — on task #121's branch, when the map tests
+            // began pinning their own fix and the camera they leave behind changed.
             //
-            //     Failed to determine hittability of "City tree, Southern Magnolia" Button:
-            //     Activation point invalid and no suggested hit points based on element frame
+            // It stopped here, which is the reason it came back twice under other tests' names
+            // (`DeepLinkVoiceOverTests.testPinAdjust`, `DeepLinkSweepTests
+            // .testNothingIsAnnouncedTwice`). One spelling now, in the helper, guarded by
+            // `HittabilityFilterGateTests` — the same argument `deliberateDrag` settled for drags.
             //
-            // which is not a defect report about anything. Screen 01 is a full-bleed `Map` and its
-            // pins are SwiftUI annotations MapKit hosts and places itself; one sitting at the edge
-            // of the basemap can be in the tree with a frame that has no interior. Whether any pin
-            // is in that state depends on where the camera is, which depends on device state — so
-            // this failed on a device left pointed at one block and not on one left pointed at
-            // another, which is E202's shape wearing an accessibility failure's clothes. Found on
-            // task #121's branch, when the map tests began pinning their own fix and the camera they
-            // leave behind changed.
-            //
-            // An element with no interior is not reachable by an assistive technology either, so
-            // skipping it is the same judgment `isHittable` was being asked for — expressed in a
-            // way that cannot raise.
+            // The on-screen test below is this file's own extra filter and is not part of the
+            // shared helper: a button scrolled off the glass has a perfectly finite frame and a
+            // perfectly good answer to `isHittable`, so excluding it is a choice about what this
+            // test means, not a guard against a raise.
             let frame = button.frame
-            guard frame.width > 0, frame.height > 0, frame.intersects(app.frame) else { continue }
-            guard button.isHittable else { continue }
+            guard frameCanAnswerHittability(frame), frame.intersects(app.frame) else { continue }
+            guard button.isHittableWithoutRaising else { continue }
             XCTAssertFalse(
                 button.label.trimmingCharacters(in: .whitespaces).isEmpty,
                 "an interactive control at \(frame) has no accessibility label"

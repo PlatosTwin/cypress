@@ -226,6 +226,16 @@ struct RootView: View {
             deepLinkFailure = failure
             return
         }
+        // And a junk `CYPRESS_MAP_CAMERA`, for the same reason one level over: a seam that fell back
+        // to the remembered camera would leave a deep-link test reading a screen drawn over whichever
+        // block the last run left the map on — which is the state `DebugMapCameraOverride` exists to
+        // remove, restored in silence. Reported after the location, because a pinned fix moves the
+        // camera and is therefore the more upstream of the two.
+        if let failure = DebugMapCameraOverride.resolve().failure {
+            deepLinkAttempted = true
+            deepLinkFailure = failure
+            return
+        }
         guard let request = DebugDeepLink.requested() else { return }
         deepLinkAttempted = true
         switch request {

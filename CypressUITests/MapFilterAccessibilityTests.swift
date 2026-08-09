@@ -150,7 +150,7 @@ final class MapFilterAccessibilityTests: XCTestCase {
     private func swipeRow(_ app: XCUIApplication, left: Bool) {
         let anchors = [Self.alwaysOnToggle] + Self.conditionChips + [Self.moreChip, Self.clear]
         guard let anchor = anchors.map({ app.buttons[$0] })
-            .first(where: { $0.exists && $0.isHittable }) else { return }
+            .first(where: { $0.exists && $0.isHittableWithoutRaising }) else { return }
         left ? anchor.swipeLeft() : anchor.swipeRight()
     }
 
@@ -174,9 +174,9 @@ final class MapFilterAccessibilityTests: XCTestCase {
     @discardableResult
     private func revealedChip(_ label: String, _ app: XCUIApplication) -> XCUIElement {
         let element = chip(label, app)
-        for _ in 0..<6 where !element.isHittable { swipeRow(app, left: true) }
-        for _ in 0..<6 where !element.isHittable { swipeRow(app, left: false) }
-        if element.isHittable {
+        for _ in 0..<6 where !element.isHittableWithoutRaising { swipeRow(app, left: true) }
+        for _ in 0..<6 where !element.isHittableWithoutRaising { swipeRow(app, left: false) }
+        if element.isHittableWithoutRaising {
             _ = settledFrame(element, "the “\(label)” chip", timeout: 5)
         }
         return element

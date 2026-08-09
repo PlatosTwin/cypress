@@ -84,4 +84,38 @@ final class FrameFinitenessGateTests: XCTestCase {
         XCTAssertTrue(isFiniteFrame(CGRect(x: 0, y: 0, width: 10, height: 10)))
         XCTAssertTrue(isFiniteFrame(.zero))
     }
+
+    // MARK: - Whether the frame can answer a hittability question at all
+
+    /// **The frame that actually failed**, verbatim from CI run 31300530216's `ui (3)`:
+    /// `{{inf, inf}, {0.0, 0.0}}`. `isHittable` on an element reading this does not return `false` —
+    /// it raises, and the raise is the test failure. See `XCUIElement.isHittableWithoutRaising`.
+    func testTheFrameFromTheCIFailureCannotAnswerHittability() {
+        let observed = CGRect(
+            x: CGFloat.infinity, y: CGFloat.infinity, width: 0, height: 0
+        )
+        XCTAssertFalse(
+            frameCanAnswerHittability(observed),
+            "the exact frame that raised in run 31300530216 must be filtered out before "
+                + "`isHittable` is asked about it"
+        )
+    }
+
+    /// Emptiness is the second half of the condition, not a special case of the first: a finite
+    /// rectangle with no interior has no point to compute an activation point inside either.
+    func testAFiniteFrameWithNoInteriorCannotAnswerHittability() {
+        XCTAssertFalse(frameCanAnswerHittability(CGRect(x: 10, y: 10, width: 0, height: 44)))
+        XCTAssertFalse(frameCanAnswerHittability(CGRect(x: 10, y: 10, width: 44, height: 0)))
+        XCTAssertFalse(frameCanAnswerHittability(.zero))
+    }
+
+    /// The half that keeps the guard from being a filter that refuses everything. An ordinary
+    /// control must still be asked, or every reachability filter in the suite would silently skip
+    /// every element and the tests standing on them would check nothing.
+    func testAnOrdinaryFrameCanAnswerHittability() {
+        XCTAssertTrue(frameCanAnswerHittability(CGRect(x: 18, y: 69, width: 44, height: 44)))
+        // Off the top of the screen is still a real rectangle: whether an element scrolled out of
+        // view is *hittable* is XCUITest's question to answer, and answering it is not a raise.
+        XCTAssertTrue(frameCanAnswerHittability(CGRect(x: -100, y: -100, width: 44, height: 44)))
+    }
 }

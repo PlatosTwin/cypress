@@ -167,7 +167,11 @@ final class DeepLinkSweepTests: XCTestCase, DeepLinkHarness {
             let app = launch(screen)
             guard arrive(app, screen: screen, anchor: anchor) else { continue }
 
-            let texts = app.staticTexts.allElementsBoundByIndex.filter { $0.isHittable }
+            // `isHittableWithoutRaising`, not the raw property (`UIWait.swift`). This filters every
+            // static text in the app, and CI run 31300530216's `ui (3)` died right here: "Failed to
+            // determine hittability of StaticText at {{inf, inf}, {0.0, 0.0}}". A frame with no
+            // interior is not an unreachable element being reported, it is `isHittable` raising.
+            let texts = app.staticTexts.allElementsBoundByIndex.filter { $0.isHittableWithoutRaising }
             let frames = texts.enumerated().map { index, element in
                 settledFrame(
                     element, "\(screen)'s static text #\(index) (“\(element.label)”)", timeout: 30

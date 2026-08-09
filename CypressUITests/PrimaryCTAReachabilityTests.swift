@@ -238,6 +238,10 @@ final class PrimaryCTAReachabilityTests: XCTestCase {
     private func launchAtAX5(_ screen: String) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment[Self.screenKey] = screen
+        // Screens 09 and 10 on this table are covers over the map tab root, and `buttonLabels`
+        // reads every button in the app to compose its failure message. Same reason `DeepLinkHarness
+        // .launch` pins the camera; the one spelling lives on `DebugMapCamera`.
+        DebugMapCamera.pin(app)
         app.launchArguments += [
             "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"
         ]
@@ -299,7 +303,7 @@ final class PrimaryCTAReachabilityTests: XCTestCase {
                     + "\(spent) swipes, so the CTA was never brought into the state this probe "
                     + "judges it in"
             )
-            guard control.exists, control.isHittable else { return }
+            guard control.exists, control.isHittableWithoutRaising else { return }
             control.tap()
         }
 
@@ -373,7 +377,7 @@ final class PrimaryCTAReachabilityTests: XCTestCase {
     @discardableResult
     private func reach(_ element: XCUIElement, in app: XCUIApplication, wholly: Bool = false) -> Int {
         func satisfied() -> Bool {
-            guard element.exists, element.isHittable else { return false }
+            guard element.exists, element.isHittableWithoutRaising else { return false }
             return wholly ? isWhollyOnTheGlass(element, in: app) : true
         }
         // One short wait first: a screen that has just been deep-linked is still settling, and every
@@ -435,7 +439,11 @@ final class PrimaryCTAReachabilityTests: XCTestCase {
     private func buttonLabels(_ app: XCUIApplication) -> String {
         let labels = app.buttons.allElementsBoundByIndex
             .prefix(30)
-            .map { "“\($0.label)”\($0.isHittable ? "" : " (not hittable)")" }
+            // The guarded spelling even here: this maps over EVERY button in the app, so on any
+            // screen presented over the map tab root it reads screen 01's annotations. A failure
+            // message that raises on its way to being composed replaces the diagnosis it was
+            // written to give (`UIWait.swift`).
+            .map { "“\($0.label)”\($0.isHittableWithoutRaising ? "" : " (not hittable)")" }
         return labels.isEmpty ? "no buttons at all" : labels.joined(separator: ", ")
     }
 

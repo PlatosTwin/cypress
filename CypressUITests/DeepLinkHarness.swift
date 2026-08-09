@@ -23,6 +23,53 @@ import XCTest
 /// files want, and a name as ordinary as `launch` should not be visible to the rest.
 protocol DeepLinkHarness: XCTestCase {}
 
+/// **Where screen 01's camera is, for every launch in this suite that does not care where it is.**
+///
+/// A free enum rather than a member of `DeepLinkHarness` for `DeepLinkOverrideReset`'s reason: the
+/// classes that need this are not all conformers — `PrimaryCTAReachabilityTests` reaches the same
+/// screens through its own `launchAtAX5`, and `IdentifyFABReachabilityTests` is not a deep-link test
+/// at all — and a second hand-copied literal is how one fix becomes two that drift.
+///
+/// ── Why a test that is not about the map pins the map ────────────────────────────────────────
+/// Screens 09, 10 and 18 are presented *over* the map tab root rather than pushed, so screen 01's
+/// annotations stay in the accessibility tree behind them, and `assertEveryControlIsLabeled` walks
+/// `app.buttons` — every button in the app. Which annotations MapKit draws, and where, is decided by
+/// the camera; the camera was whatever the last launch happened to leave in `map.lastCamera`; and an
+/// annotation placed where XCUITest can compute no activation point makes `isHittable` **raise**
+/// rather than answer. That is `DeepLinkVoiceOverTests.testPinAdjust`, and `DeepLinkSweepTests
+/// .testNothingIsAnnouncedTwice` on CI run 31300530216.
+///
+/// `isHittableWithoutRaising` (`UIWait.swift`) stops the raise. This stops the *state* that produces
+/// it — the difference between a suite that survives device state and one that does not depend on
+/// it. It also removes the second, unrelated symptom of the same inheritance: a camera with no trees
+/// under it draws no species legend, which is what `IdentifyFABReachabilityTests` spent 30 s waiting
+/// for on CI runs 31291434427, 31294993494 and 31300530216.
+///
+/// **`Tools/run_tests.sh`'s camera preflight is a different guarantee, not this one** (task #71). It
+/// normalizes the device's stored camera once, before `xcodebuild` starts; it cannot say anything
+/// about the camera the twentieth app launch of a sweep inherits from the nineteenth. A pinned
+/// camera is also never written back, so a run that sets this leaves the device as it found it.
+enum DebugMapCamera {
+    /// `DebugMapCameraOverride.environmentKey`, copied by hand for this target's usual reason —
+    /// nothing here imports `Cypress` (see `PrimaryCTAReachabilityTests`' file comment).
+    static let key = "CYPRESS_MAP_CAMERA"
+
+    /// `DebugMapCameraFixtures.westernAddition`, verbatim: 780 seed trees inside the ±250 m box
+    /// `Tools/run_tests.sh count_camera_trees` uses, measured on 2026-08-03 and recorded on
+    /// `DebugLocationFixtures`.
+    ///
+    /// **Not `MapLayout.defaultCenter`.** The app's own fallback is Mission Dolores Park, whose
+    /// 120 × 261 m opening view contains no inventoried tree at all — `defaultSpanMeters`' doc
+    /// comment says so and every `CYPRESS-RUN` header stamps `viewport-trees=0` for it. It is the
+    /// right place for the app to open and the wrong place for a test that needs a pin on screen.
+    static let dense = "37.78485,-122.4215"
+
+    /// Pins `app`'s opening camera. Called by every launch helper in the classes above.
+    static func pin(_ app: XCUIApplication) {
+        app.launchEnvironment[key] = dense
+    }
+}
+
 /// A process-wide, one-time reset of this device's `tree_status_overrides`, run before the first
 /// `.memorial` (or `.deadProfile`) case of the suite (ERRATA E217 "Still open").
 ///
@@ -60,6 +107,11 @@ enum DeepLinkOverrideReset {
         didRun = true
         let app = XCUIApplication()
         app.launchEnvironment[clearKey] = "1"
+        // This launch asks for no screen and reads nothing, but it is still a launch of the app with
+        // the map tab root underneath the banner — and an unpinned one would be free to write a
+        // camera into `map.lastCamera` for the very tests this reset runs ahead of. Pinned, it
+        // writes nothing (see `DebugMapCamera`).
+        DebugMapCamera.pin(app)
         app.launch()
         let banner = app.staticTexts[clearedText]
         // Generous for `arrive`'s reason: a cold launch pays the seed-attach cost before anything —
@@ -80,6 +132,7 @@ extension DeepLinkHarness {
     func launch(_ screen: String) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment[Self.deepLinkScreenKey] = screen
+        DebugMapCamera.pin(app)
         app.launch()
         return app
     }
@@ -247,7 +300,7 @@ extension DeepLinkHarness {
             .matching(NSPredicate(format: "label BEGINSWITH %@", anchor))
             .firstMatch
         _ = settledFrame(title, "\(screen): the cover's own \"\(anchor)\" title", file: file, line: line)
-        return title.exists && title.isHittable
+        return title.exists && title.isHittableWithoutRaising
     }
 
     /// No interactive element anywhere in the tree may be unlabeled.
@@ -274,7 +327,14 @@ extension DeepLinkHarness {
         for (kind, query) in controls {
             for index in 0..<query.count {
                 let element = query.element(boundBy: index)
-                guard element.exists, element.isHittable else { continue }
+                // **`isHittableWithoutRaising`, never the raw property, and this is the call site
+                // that proves why** (`UIWait.swift`). This walks `app.buttons` — every button in the
+                // app, not just the screen under test — and screens 09, 10 and 18 are presented
+                // *over* the map tab root, so screen 01's annotations are still in the tree behind
+                // them. One placed where XCUITest can compute no activation point does not answer
+                // `false` to `isHittable`; it raises, and the raise is the test failure. That is
+                // `DeepLinkVoiceOverTests.testPinAdjust` on the run task #71 was written from.
+                guard element.exists, element.isHittableWithoutRaising else { continue }
                 checked += 1
                 XCTAssertFalse(
                     element.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
