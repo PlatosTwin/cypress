@@ -517,7 +517,8 @@ enum MapLayout {
         isAccessibilitySize ? noticeFloorAX5 : noticeFloorLarge
     }
 
-    /// The ceiling `MapSpeciesLegend` may draw in before it must scroll.
+    /// The ceiling `MapSpeciesLegend` may draw in before it must scroll — **the raw arithmetic,
+    /// before `quantizedLegendCeiling` moves it off a chip's edge.**
     ///
     /// The legend is served first out of `chromeSlackBelowChipRow` **and the notice's floor is
     /// taken off the top before it is** — so "served first" now means "served first out of what is
@@ -542,6 +543,103 @@ enum MapLayout {
                 - chipRowTop
                 - noticeFloor(isAccessibilitySize: isAccessibilitySize)
         )
+    }
+
+    // MARK: The ceiling lands mid-chip, never on one (task #72)
+    //
+    // `legendCeiling` above is a subtraction, and a subtraction has no opinion about where in the
+    // chip stack its answer falls. On the phones where it binds it landed, by arithmetic accident,
+    // where a reader cannot tell it bound at all: a 844 pt screen at a 47 pt inset gives 201 pt,
+    // which is three whole chips (195 pt) and 6 pt of the gap under them — **no part of the fourth
+    // chip is on the screen.** A 852 pt screen at the same inset gives 209 and shows 6 pt of it, a
+    // sliver thin enough to read as a rendering seam. Both draw a tidy stack of whole chips with
+    // nothing beneath, which is what a *complete* list looks like.
+    //
+    // That is worse here than a clipped list normally is, because **the legend is also the species
+    // filter** (#116). A fourth chip nobody can see is a fourth narrowing nobody knows the map has:
+    // the screen says "these are the species" when the truth is "these are three of the species,
+    // scroll". The owner decided (task #72) to spend a few points of chip on saying so.
+    //
+    // The correction only ever moves the ceiling **down**. Up is where `MapLocationNotice`'s floor
+    // and the identify FAB's clearance live — E248/#258's defect and the reason there is a ceiling
+    // at all — so a rule that could raise it would be re-opening the thing this file spends 200
+    // lines closing. Down costs the legend chips and gives the notice room, and both are safe
+    // directions.
+
+    /// **How much of a chip must show past the ceiling, and how much of it must be hidden** — a
+    /// quarter of one, at either end of the type ramp: 15 pt at AX5, 9 pt at `.xxxLarge`.
+    ///
+    /// Two claims in one number, and they are the same claim from both sides. A quarter of a chip
+    /// showing is a slice of capsule wide enough to read as a chip rather than as a seam; a quarter
+    /// of it hidden is a cut deep enough to read as a cut rather than as a chip that happens to end
+    /// there. The rule is symmetric because the failure is: at 0 pt of peek the reader is told the
+    /// list ends, and at 59 pt of a 59.67 pt chip they are told the same thing.
+    ///
+    /// **A quarter rather than a half, deliberately.** The peek is bought with chips: the quantized
+    /// ceiling is the *largest* height that satisfies the rule, so the smaller the required peek,
+    /// the more of the legend stays on the screen. Demanding half a chip would take an 874 pt
+    /// screen's third species name off the display to show more of a fourth one it was already
+    /// showing 20 pt of — a worse screen for the reader by the measure this ticket is about, which
+    /// is how many of the filters they can see. A quarter is the least that is legible, and the
+    /// least is what this should ask for.
+    static let legendPeekShare: CGFloat = 0.25
+
+    /// The peek in points, at the size the reader is running.
+    static func legendPeek(isAccessibilitySize: Bool) -> CGFloat {
+        legendChipHeight(isAccessibilitySize: isAccessibilitySize) * legendPeekShare
+    }
+
+    /// **`ceiling`, moved down to the nearest height that cuts a chip visibly** (task #72).
+    ///
+    /// The chips stack at `row = legendChipHeight + chipGap`, so chip *i* occupies
+    /// `[i·row, i·row + chip]` and the window at `ceiling` shows `shown` points of the first chip it
+    /// does not contain whole. `shown` saturates at a whole chip: a remainder past a chip's bottom
+    /// edge is the *gap* below it, and a window ending in the gap shows nothing at all of the chip
+    /// after it — which is the 201 pt case above, and the reason this cannot be written as a
+    /// remainder against `row`.
+    ///
+    /// Where `shown` is already between `legendPeek` and a chip less `legendPeek`, the ceiling is
+    /// returned untouched: it is already cutting a chip and there is nothing to buy. Otherwise the
+    /// ceiling drops to the **largest** height whose peek is exactly `chip − legendPeek` — the
+    /// deepest cut the rule allows, which is also the one that keeps the most of the legend on the
+    /// screen, and which leaves most of the partly-shown species' name readable.
+    ///
+    /// **It never returns more than it was given**, which is the whole of its safety: every caller's
+    /// clearance from the identify FAB and the notice's floor is computed from `legendCeiling`, and
+    /// a quantization that could round *up* would be spending points that belong to those two.
+    ///
+    /// **Below one peek of room it gives up rather than making things worse.** A ceiling under
+    /// `chip − legendPeek` is already a cut chip; a ceiling under `legendPeek` is a sliver this
+    /// cannot improve by making it smaller, because the only direction available is down.
+    ///
+    /// **Nothing else reports that screen either, and an earlier draft of this comment said
+    /// otherwise** (PR #63 review N1). It claimed such a screen "is a `chromeBudgetShortfall` report
+    /// rather than a quantization problem". It is not: `chromeBudgetShortfall` asks whether the
+    /// slack covers `chipRowTop + noticeFloor`, which says nothing about the legend's share of what
+    /// is left, and `AX5ReflowTests.theChromeBudgetCanHouseBothOccupants` already asserts it is **0
+    /// for every screen and inset this app runs on** — so by construction it never speaks for any of
+    /// them. Measured: a 667 pt screen leaves 24 pt of legend at a 47 pt inset, 17 at 54 and 9 at
+    /// 62, with a shortfall of 0.0 at all three. A legend under one chip is a real gap, it is
+    /// **unreported**, and it is named here rather than assigned to a guard that cannot see it. No
+    /// shipping phone is in it — 667 pt is the home-button iPhone SE, whose inset is 20 and whose
+    /// ceiling is 45 — but the sweep crosses heights with insets precisely because tomorrow's phone
+    /// may pair them differently.
+    ///
+    /// Guarded by `AX5ReflowTests.theLegendCeilingAlwaysCutsAChipAtAX5`, which measures the chips
+    /// off the view and the ceiling off `legendMaxHeight` rather than recomputing either — and
+    /// which gates that exemption on the room the screen had rather than on the ceiling this
+    /// returns, so a quantizer that hands back a sliver cannot excuse itself with it (review B1).
+    static func quantizedLegendCeiling(_ ceiling: CGFloat, isAccessibilitySize: Bool) -> CGFloat {
+        let chip = legendChipHeight(isAccessibilitySize: isAccessibilitySize)
+        let row = chip + chipGap
+        let peek = legendPeek(isAccessibilitySize: isAccessibilitySize)
+        let wholeRows = (ceiling / row).rounded(.down)
+        let shown = min(max(0, ceiling - wholeRows * row), chip)
+        guard shown < peek || shown > chip - peek else { return ceiling }
+        let target = chip - peek
+        let landing = ((ceiling - target) / row).rounded(.down)
+        guard landing >= 0 else { return ceiling }
+        return landing * row + target
     }
 
     /// **How much room this screen is short of housing both occupants**, in points — 0 when it can
@@ -579,14 +677,21 @@ enum MapLayout {
     /// never taken a touch"). Screen 01 cannot afford to make the pan ambiguous, so the scroller
     /// appears only where the alternative is a control the reader cannot reach at all: a short phone
     /// at an accessibility size, where `topChromeReserved` plus four AX5 chips plus the bottom
-    /// block comes to 461 pt of a 667 pt screen's 398 pt of room. On every device this suite runs
-    /// — 402 pt and 430 pt, default size and AX5 — the legend is inside its ceiling and this returns
-    /// `nil`, so the view is byte-for-byte the one that shipped.
+    /// block wants more than the glass has. At every ordinary content size, on every supported
+    /// phone, this returns `nil` and the view is byte-for-byte the wrapped `FlowRow` that shipped;
+    /// at AX5 with a full palette it binds at or below 402 pt and does not at 430 and 440.
+    /// `AX5ReflowTests.theLegendCeilingBindsWhereTheArithmeticSaysItDoes` carries that boundary as a
+    /// table of five named phones.
     ///
     /// Something has to yield in that squeeze, and it is the legend rather than the FAB because a
     /// scrolled chip is reachable and a covered control is not — RULINGS R53 §6's own argument,
     /// applied to the other occupant of the same slot. Every chip stays pressable, which matters
     /// twice here because the legend is also the species filter (#116).
+    ///
+    /// **And when it binds, it binds mid-chip** (task #72): the ceiling handed back is
+    /// `quantizedLegendCeiling`'s, so the clipped legend always ends part-way down a chip rather
+    /// than on the seam between two of them. A reader who cannot see that the list continues cannot
+    /// see that the filter continues either.
     static func legendMaxHeight(
         screenHeight: CGFloat,
         topInset: CGFloat,
@@ -603,11 +708,24 @@ enum MapLayout {
             topInset: topInset,
             isAccessibilitySize: isAccessibilitySize
         )
-        return natural <= ceiling ? nil : ceiling
+        guard natural > ceiling else { return nil }
+        // Quantized only on the branch that binds (task #72). Applying it inside `legendCeiling`
+        // itself would move the *raw* number this comparison is made against, and the two widest
+        // phones — where the whole legend fits with points to spare — would acquire a `ScrollView`
+        // over the map because a quantized ceiling happened to fall below a natural height that was
+        // never in question. `AX5ReflowTests.theLegendCeilingBindsWhereTheArithmeticSaysItDoes`
+        // carries that boundary, and it is the same table as before this ticket.
+        return quantizedLegendCeiling(ceiling, isAccessibilitySize: isAccessibilitySize)
     }
 
     /// The room the legend's block takes out of the slack: what it will actually occupy, plus the
     /// `VStack` gap above it.
+    ///
+    /// **Derived from `legendMaxHeight` rather than computed alongside it** (task #72). What the
+    /// legend occupies is the ceiling when it binds and its natural height when it does not, which
+    /// is exactly what that function already decides — and the two disagreeing by so much as the
+    /// quantization's few points would be the reservation under-reading the view again, which is
+    /// #258's defect in its original form.
     static func legendReserved(
         screenHeight: CGFloat,
         topInset: CGFloat,
@@ -615,16 +733,16 @@ enum MapLayout {
         isAccessibilitySize: Bool
     ) -> CGFloat {
         guard count > 0 else { return 0 }
-        let natural = legendNaturalHeight(
+        let drawn = legendMaxHeight(
+            screenHeight: screenHeight,
+            topInset: topInset,
+            namedSpecies: count,
+            isAccessibilitySize: isAccessibilitySize
+        ) ?? legendNaturalHeight(
             namedSpecies: count,
             isAccessibilitySize: isAccessibilitySize
         )
-        let ceiling = legendCeiling(
-            screenHeight: screenHeight,
-            topInset: topInset,
-            isAccessibilitySize: isAccessibilitySize
-        )
-        return chipRowTop + min(natural, ceiling)
+        return chipRowTop + drawn
     }
 
     /// **Where the top chrome really ends**, in the screen coordinates `bottomChrome` positions the

@@ -84,6 +84,13 @@ struct MapSpeciesLegend: View {
     /// the notice: scrolled content is reachable and covered content is not. Every chip stays
     /// pressable, which matters twice over here because the legend is also the species filter
     /// (#116).
+    ///
+    /// **A clipped legend has to look clipped** (task #72). `MapLayout.quantizedLegendCeiling`
+    /// moves the number below off the edge of whichever chip it would otherwise land on, so this
+    /// view always ends part-way down a chip — a quarter of one showing at the least, and a quarter
+    /// of one hidden at the least. Without it the arithmetic landed, on the phones where it binds,
+    /// on a tidy stack of whole chips with nothing under them: a fourth filter the reader has no
+    /// way to know is there is a fourth filter the reader does not have.
     var maxHeight: CGFloat?
 
     var body: some View {

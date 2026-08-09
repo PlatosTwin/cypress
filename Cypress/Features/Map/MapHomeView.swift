@@ -421,11 +421,16 @@ struct MapHomeView: View {
                         palette: model.speciesPalette,
                         selection: $model.filter.speciesID,
                         // **The one thing between the chip row and the identify FAB** (task #258).
-                        // `nil` wherever the screen has room for the legend the palette asks for,
-                        // which is every device the suite runs on at every type size — the view is
-                        // then exactly the one that shipped, with no scroller over the map. It is a
-                        // number only on a short phone at an accessibility size, where the chrome
-                        // wants more room than the glass has. See `MapLayout.legendMaxHeight`.
+                        // `nil` wherever the screen has room for the legend the palette asks for —
+                        // every device at every ordinary type size, where the view is exactly the
+                        // one that shipped with no scroller over the map. It is a number at AX5
+                        // with a full palette on the phones at or below 402 pt, where the chrome
+                        // wants more room than the glass has: 181 pt on a 16e, measured on the
+                        // device. **This comment said "every device at every type size" and that
+                        // was stale from the round that added the ceiling** (PR #63 review N4) —
+                        // the same sentence was corrected in `legendMaxHeight`'s own doc and its
+                        // twin was left here. See `MapLayout.legendMaxHeight`, and
+                        // `.quantizedLegendCeiling` for why the number lands mid-chip (task #72).
                         maxHeight: MapLayout.legendMaxHeight(
                             screenHeight: screenHeight,
                             topInset: topInset,
