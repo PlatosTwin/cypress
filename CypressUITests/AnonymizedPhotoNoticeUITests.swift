@@ -123,7 +123,9 @@ final class AnonymizedPhotoNoticeUITests: XCTestCase {
             .matching(NSPredicate(format: "label BEGINSWITH %@", Self.noticeOpening))
         XCTAssertTrue(
             wait(timeout: 10) {
-                notices.allElementsBoundByAccessibilityElement.contains { $0.isHittableWithoutRaising(in: app) }
+                let appFrame = app.frame
+                return notices.allElementsBoundByAccessibilityElement
+                    .contains { $0.isHittableWithoutRaising(onScreen: appFrame) }
             },
             "the viewer opened over a photograph nobody owns, drew no delete, and said nothing "
                 + "about why — an empty corner is not an explanation. "

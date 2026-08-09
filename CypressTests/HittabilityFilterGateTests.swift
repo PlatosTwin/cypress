@@ -145,7 +145,8 @@ struct HittabilityFilterGateTests {
         // is deleted, which is the opposite of what it is for.
         let helperSource = sources.first { $0.name == Self.helperFile }
         #expect(
-            helperSource?.code.contains("func \(Self.helper)(in app: XCUIApplication) -> Bool") == true,
+            helperSource?.code.contains("func \(Self.helper)(onScreen screen: CGRect) -> Bool") == true
+                && helperSource?.code.contains("func \(Self.helper)(in app: XCUIApplication) -> Bool") == true,
             """
             \(Self.helperFile) no longer defines `\(Self.helper)`. Either the helper was removed — \
             in which case every filter position in the suite is unguarded again — or it moved, and \

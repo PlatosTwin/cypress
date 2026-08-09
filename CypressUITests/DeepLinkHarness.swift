@@ -323,6 +323,9 @@ extension DeepLinkHarness {
             ("slider", app.sliders),
             ("link", app.links),
         ]
+        // Read once, not once per element: `app.frame` is a query, and this walks every control in
+        // the app across seven element types. See `isHittableWithoutRaising(onScreen:)`.
+        let appFrame = app.frame
         var checked = 0
         for (kind, query) in controls {
             for index in 0..<query.count {
@@ -334,7 +337,7 @@ extension DeepLinkHarness {
                 // them. One placed where XCUITest can compute no activation point does not answer
                 // `false` to `isHittable`; it raises, and the raise is the test failure. That is
                 // `DeepLinkVoiceOverTests.testPinAdjust` on the run task #71 was written from.
-                guard element.exists, element.isHittableWithoutRaising(in: app) else { continue }
+                guard element.exists, element.isHittableWithoutRaising(onScreen: appFrame) else { continue }
                 checked += 1
                 XCTAssertFalse(
                     element.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,

@@ -241,9 +241,31 @@ extension XCUIElement {
     /// snapshots, so an element can still move between them on a contended runner. The pinned
     /// opening camera (`CYPRESS_MAP_CAMERA`, `DebugMapCamera`) is what stops the annotations getting
     /// into that state in the first place; this is the guard for everything that is not the map.
-    func isHittableWithoutRaising(in app: XCUIApplication) -> Bool {
-        guard frameCanAnswerHittability(frame, onScreen: app.frame) else { return false }
+    /// **Take the screen as a rectangle when filtering more than one element, and this is not a
+    /// micro-optimization — it is a correctness requirement, found in CI.**
+    ///
+    /// `app.frame` is a *query*, not a stored property: every read is a round trip that refreshes
+    /// the accessibility snapshot. The convenience overload below reads it, so calling that one
+    /// inside a `filter` over every static text in the app interleaves an application query between
+    /// every pair of element queries — visible in the log as `Find the Target Application` on
+    /// alternating lines — which both doubles the enumeration's elapsed time and doubles the number
+    /// of moments at which the tree can change under it. `DeepLinkSweepTests
+    /// .testNothingIsAnnouncedTwice` then failed on PR #66's first CI run with
+    ///
+    ///     Failed to get matching snapshot: No matches found for Element at index 25
+    ///
+    /// which is not the raise this file exists to prevent — it is `allElementsBoundByIndex` handing
+    /// out an index that stopped resolving while the loop walked it. Hoist `app.frame` above any
+    /// loop and pass it here.
+    func isHittableWithoutRaising(onScreen screen: CGRect) -> Bool {
+        guard frameCanAnswerHittability(frame, onScreen: screen) else { return false }
         return isHittable
+    }
+
+    /// The one-element spelling. Reads `app.frame` itself, which is one extra query — fine for a
+    /// single named control, wrong inside a loop. See the overload above.
+    func isHittableWithoutRaising(in app: XCUIApplication) -> Bool {
+        isHittableWithoutRaising(onScreen: app.frame)
     }
 }
 

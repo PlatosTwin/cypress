@@ -171,7 +171,16 @@ final class DeepLinkSweepTests: XCTestCase, DeepLinkHarness {
             // static text in the app, and CI run 31300530216's `ui (3)` died right here: "Failed to
             // determine hittability of StaticText at {{inf, inf}, {0.0, 0.0}}". A frame with no
             // interior is not an unreachable element being reported, it is `isHittable` raising.
-            let texts = app.staticTexts.allElementsBoundByIndex.filter { $0.isHittableWithoutRaising(in: app) }
+            //
+            // **The app's rectangle is hoisted out of the closure**, and `appFrame` rather than
+            // `screen` because `screen` is already this loop's screen *name*, which every failure
+            // message below interpolates. `app.frame` is a query: reading it once per element put a
+            // `Find the Target Application` round trip between every pair of element queries, and on
+            // PR #66's first CI run this loop died on "No matches found for Element at index 25" —
+            // the index having stopped resolving while the enumeration walked it.
+            let appFrame = app.frame
+            let texts = app.staticTexts.allElementsBoundByIndex
+                .filter { $0.isHittableWithoutRaising(onScreen: appFrame) }
             let frames = texts.enumerated().map { index, element in
                 settledFrame(
                     element, "\(screen)'s static text #\(index) (“\(element.label)”)", timeout: 30

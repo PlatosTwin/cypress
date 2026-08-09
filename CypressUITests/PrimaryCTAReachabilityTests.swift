@@ -437,13 +437,14 @@ final class PrimaryCTAReachabilityTests: XCTestCase {
     /// has an errata entry for exactly that shape of report (E153: blaming the almanac for something
     /// else). Bounded, because a screen with sixty controls would drown the message it is in.
     private func buttonLabels(_ app: XCUIApplication) -> String {
+        let appFrame = app.frame
         let labels = app.buttons.allElementsBoundByIndex
             .prefix(30)
             // The guarded spelling even here: this maps over EVERY button in the app, so on any
             // screen presented over the map tab root it reads screen 01's annotations. A failure
             // message that raises on its way to being composed replaces the diagnosis it was
             // written to give (`UIWait.swift`).
-            .map { "“\($0.label)”\($0.isHittableWithoutRaising(in: app) ? "" : " (not hittable)")" }
+            .map { "“\($0.label)”\($0.isHittableWithoutRaising(onScreen: appFrame) ? "" : " (not hittable)")" }
         return labels.isEmpty ? "no buttons at all" : labels.joined(separator: ", ")
     }
 

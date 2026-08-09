@@ -59,6 +59,8 @@ final class AccessibilityTreeTests: XCTestCase {
     func testNoUnlabeledButtonsOnLaunch() {
         let app = launch()
         XCTAssertTrue(app.buttons.firstMatch.waitForExistence(timeout: 10))
+        // One read, above the loop: `app.frame` is a query. See `isHittableWithoutRaising(onScreen:)`.
+        let appFrame = app.frame
         for i in 0..<app.buttons.count {
             let button = app.buttons.element(boundBy: i)
             guard button.exists else { continue }
@@ -82,7 +84,7 @@ final class AccessibilityTreeTests: XCTestCase {
             // coordinates and can sit entirely outside them. The frame that raised in
             // `testPinAdjust` was `(-31.0, 850.0, 30.0, 30.0)`: finite, 30 × 30, and wholly off the
             // left edge of a 402 pt device. This file had it right the first time.
-            guard button.isHittableWithoutRaising(in: app) else { continue }
+            guard button.isHittableWithoutRaising(onScreen: appFrame) else { continue }
             XCTAssertFalse(
                 button.label.trimmingCharacters(in: .whitespaces).isEmpty,
                 "an interactive control at \(button.frame) has no accessibility label"

@@ -149,8 +149,11 @@ final class MapFilterAccessibilityTests: XCTestCase {
     /// a drag that starts on a chip scrolls the row, which is #166's own interaction.
     private func swipeRow(_ app: XCUIApplication, left: Bool) {
         let anchors = [Self.alwaysOnToggle] + Self.conditionChips + [Self.moreChip, Self.clear]
+        // `app.frame` is a query; read once rather than once per anchor, and this helper is called
+        // from inside `revealedChip`'s swipe loops. See `isHittableWithoutRaising(onScreen:)`.
+        let appFrame = app.frame
         guard let anchor = anchors.map({ app.buttons[$0] })
-            .first(where: { $0.exists && $0.isHittableWithoutRaising(in: app) }) else { return }
+            .first(where: { $0.exists && $0.isHittableWithoutRaising(onScreen: appFrame) }) else { return }
         left ? anchor.swipeLeft() : anchor.swipeRight()
     }
 
@@ -174,9 +177,10 @@ final class MapFilterAccessibilityTests: XCTestCase {
     @discardableResult
     private func revealedChip(_ label: String, _ app: XCUIApplication) -> XCUIElement {
         let element = chip(label, app)
-        for _ in 0..<6 where !element.isHittableWithoutRaising(in: app) { swipeRow(app, left: true) }
-        for _ in 0..<6 where !element.isHittableWithoutRaising(in: app) { swipeRow(app, left: false) }
-        if element.isHittableWithoutRaising(in: app) {
+        let appFrame = app.frame
+        for _ in 0..<6 where !element.isHittableWithoutRaising(onScreen: appFrame) { swipeRow(app, left: true) }
+        for _ in 0..<6 where !element.isHittableWithoutRaising(onScreen: appFrame) { swipeRow(app, left: false) }
+        if element.isHittableWithoutRaising(onScreen: appFrame) {
             _ = settledFrame(element, "the “\(label)” chip", timeout: 5)
         }
         return element

@@ -165,6 +165,42 @@ the reasoning was only caught because the fix was driven red and then green rath
 believed. `AccessibilityTreeTests` had all three conditions from the start; hoisting two of them was
 a regression dressed as a consolidation.
 
+#### `app.frame` is a query, and the fix's first CI run failed on it
+
+The repair passed the whole suite locally — unit, UI, warnings — and then failed CI on the very test
+it was written for, with a message it had never produced before:
+
+    Failed to get matching snapshot: No matches found for Element at index 25
+
+Not a raise. `allElementsBoundByIndex` hands out proxies bound to an *index*, and index 25 stopped
+resolving while the loop walked it. The cause is one line of the log, and it is the fix's own:
+
+    t = 8.43s  Find the Target Application 'app.cypress.Cypress'
+    t = 8.51s  Find the "A proven performer in San Francisco, …" StaticText
+    t = 8.55s  Find the StaticText (Element at index 25)
+    t = 9.58s      Find the StaticText (Element at index 25) (retry 1)
+
+**`app.frame` is a query, not a stored property.** The first spelling of the helper took an
+`XCUIApplication` and read `app.frame` inside itself, so a `filter` over every static text in the
+app put an application query between every pair of element queries — the `Find the Target
+Application` lines above, one per element. That doubled both the enumeration's elapsed time and the
+number of moments at which the tree could change under it, and the enumeration lost its own index.
+
+The repair is to make the primitive take the rectangle — `isHittableWithoutRaising(onScreen:)` — and
+hoist `app.frame` above every loop; the `in app:` overload stays for the single named control, where
+one extra query is nothing. Six loops were hoisted.
+
+Two things worth keeping from it. **A guard that is correct can still be too expensive to be
+correct**, when what it guards is an enumeration racing a live tree. And **the local suite was green
+on this**, twice, on a quiet Mac: the failure needed CI's three-core runner to widen the window. That
+is `assertReachable`'s founding observation arriving from a new direction, and it is the argument for
+CI being part of the verification rather than a formality after it.
+
+*(The hoisting also introduced, and caught in review before it ran, a shadowed `screen`: in
+`DeepLinkSweepTests` the loop variable of that name is the screen's *name*, interpolated into every
+failure message in the method. `let screen = app.frame` compiles and quietly rewrites six failure
+messages to say `(0.0, 0.0, 402.0, 874.0)` where they said `treeProfile`. It is `appFrame` now.)*
+
 #### The 48.8 s in that table is also a finding
 
 Green, and four times the 12.5 s the same test takes at a normalized camera (measured under #71).
