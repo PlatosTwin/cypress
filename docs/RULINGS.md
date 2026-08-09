@@ -5802,3 +5802,1094 @@ updated in `TokenGallery`. The three boundary ratios and the marks that did not 
 `ContrastTests`; the two call-site decisions (#249's color, screen 12's drawing) are pinned as values
 in `Task14DrawingDecisionTests`, because a contrast pin cannot see either. Screen 10's line-limit
 decision is `ShareMetrics.urlLineLimit(isAccessibilitySize:)`, pinned in `AX5ReflowTests`.
+
+### R69 — The vitality rubric — three candidates, and the owner's decision
+
+**Decision, 2026-08-07: the owner chose Candidate A.** Candidates B and C were not chosen. §0 below
+records the decision and the condition on it; §§1–7 are the deliberation as it was written before the
+decision and are kept unchanged, because the reasoning is what an advisor will be handed.
+
+The original framing of this document follows. It was written before the decision and says, correctly
+for its moment, that nothing in it is a decision — that is now true of §§1–7 only:
+
+> Drafted for owner decision, following the pattern that closed E48's empty-grove copy (E239): draft
+> candidates, the owner approves or redlines one, and the approved text ships verbatim. **Nothing here
+> is a decision.** PRODUCT §3 calls the shipped scale "draft v0 — needs urban forestry advisor sign-off
+> before launch" and DECISIONS §2.5 P-C1 calls the choice OPEN; no candidate below removes that
+> requirement, and the one thing this document tries hardest to do is say which horticultural claims
+> each candidate would be asking an advisor to underwrite.
+
+---
+
+#### 0. The decision
+
+**On 2026-08-07 the owner chose Candidate A**: ratify the current draft as a documented collapse of
+the USFS i-Tree / Nowak crown-condition classes, with the band boundaries repaired. The five sentences
+in §3, Candidate A, are the approved text.
+
+**Candidate B was not chosen.** **Candidate C was not chosen.** Their write-ups stay in §3 unchanged:
+they are the record of what was weighed, and §5's list of what needs an advisor's signature is partly
+built out of them.
+
+Two things the decision does **not** do, both restated from §4 because they are conditions and not
+decoration:
+
+- It does **not** discharge PRODUCT §3's "needs urban forestry advisor sign-off before launch", and it
+  does not close DECISIONS §2.5 P-C1. §5 is the list the advisor is being asked to underwrite, and
+  item 1 — that five Cypress classes are a faithful collapse of the seven i-Tree / Nowak classes — is
+  the one Candidate A rests on entirely.
+- It does **not** move E30. The five per-class reference photographs are still the M2 entry gate and
+  still do not exist. §4's second condition stands: pursue NRS-194's Figures 8 and 9 regardless.
+
+##### The decision is gated on ticket #260
+
+**Implementing Candidate A is blocked until #260 is resolved.** Candidate A is a repair of **PRODUCT
+§3's** boundaries, and RULINGS R13 currently says `SCREENS.md`, not `PRODUCT.md`, is the wording
+authority for exactly these five sentences. Landing Candidate A into `Vitality.swift` before that
+conflict is settled would be writing repaired PRODUCT text into the app under a standing ruling that
+says PRODUCT text is not what ships.
+
+#260 is the investigation §6 asked for when it said "somebody who was there should say which". Its
+findings are ERRATA **E258**, and the two facts that bear on this decision are:
+
+- The two tables have disagreed since 1c469cf, because `PRODUCT.md` transcribes `SPEC-PHASE1.md` §6
+  and `SCREENS.md` transcribes the `Cypress Screens.dc.html` design export, and those two handoff
+  artifacts disagree. Neither distilled document is a transcription error, and neither table has
+  changed since.
+- R13's holding is sound but its worked example is wrong, and R13's own meaning/wording split puts the
+  dieback bands on PRODUCT's side — a band is a class's operational definition, not its phrasing. The
+  recommendation to the owner is therefore to correct R13's example rather than reverse the ruling,
+  and to land Candidate A's sentences in **PRODUCT §3, `SCREENS.md` 05 §3 and `Vitality.swift`
+  together**, closing the fork instead of adjudicating it. That is what §1 already required of
+  whichever candidate won.
+
+##### One correction to §1's arithmetic, carried over from #260
+
+§1's first defect ("the bands own their endpoints twice") is right in substance and overstated in
+detail, and §5 item 2 repeats the overstatement. Read literally, "under 10%" excludes 10 and "over
+50%" excludes 50, so:
+
+- **25 percent** is genuinely double-owned — row 3's `10 to 25%` and row 2's `25 to 50%` are both
+  inclusive.
+- **0 percent** is genuinely double-owned — row 5's `no visible dieback` and row 4's `under 10%`. This
+  was not previously reported.
+- **10 percent** belongs to row 3 alone; **50 percent** belongs to row 2 alone.
+
+So the shipped table has one ambiguous interior boundary and one ambiguous endpoint, not three
+ambiguous boundaries. **This does not change the recommendation or the repair.** Candidate A's bands —
+`No dead wood visible` / `1 to 10%` / `11 to 25%` / `26 to 50%` / `Over half` — were checked against
+every integer from 0 to 100 and are exhaustive and non-overlapping, which the shipped table is not.
+
+§1's second defect (row 3's discoloration clause against the seasonality gate) was re-checked against
+`Vitality.isRatingPermitted` and `Species.leafOnMonths` and holds exactly as written. One thing #260
+adds: E33 records that every `seasonal` in the shipped seed is empty, so every deciduous species takes
+the documented April–October fallback, which contains October — the problem is live today, not latent.
+
+---
+
+#### 1. What the question actually is
+
+##### The standing record
+
+DECISIONS §2.5 P-C1 states the stake in one sentence: **every observation collected before the rubric
+exists is permanently un-normalizable.** DECISIONS §2.8 lists it as blocking Phase 1 data collection.
+PRODUCT §11's open-questions list asks it as a binary — adopt USFS urban FIA crown classes wholesale,
+or ship a simplified five-class derivative validated against them. `docs/ROADMAP.md`'s "Also
+outstanding" section repeats that the source documents themselves flag this as the highest-value
+unresolved question.
+
+##### What ships today, read from the code rather than from the docs
+
+`Cypress/Core/Rubric/Vitality.swift` is the whole rubric. Five cases, `severeDecline = 1` … `thriving
+= 5`; `label` and `anchor` carry the copy; `rubric` carries the order, worst first. Nothing else in
+the app authors a class label or an anchor sentence — `CheckInPresentation.vitalityRows` maps
+`Vitality.rubric`, and `VitalityRow` has no initializer that accepts copy. The seam the ROADMAP
+promised is real and I checked it: **replacing the anchor sentences is an edit to one file.**
+
+The anchor sentences the app draws are PRODUCT §3's, verbatim:
+
+| Level | Label | Anchor as shipped |
+|---|---|---|
+| 1 | Severe decline | Mostly bare in season; over 50% dieback; survival doubtful |
+| 2 | Poor | Sparse canopy; major dead limbs; dieback 25 to 50%; stress obvious |
+| 3 | Fair | Noticeable thinning or discoloration; dieback 10 to 25%; still clearly viable |
+| 4 | Good | Canopy mostly full; minor thinning or isolated dead twigs (under 10% dieback) |
+| 5 | Thriving | Full, dense canopy for the season; vigorous new growth; no visible dieback |
+
+**Found while reading, and it needs its own correction independently of anything decided here.**
+RULINGS R13 ruled that `SCREENS.md` owns the exact words under each vitality level and that "its
+wording is what ships"; `PRODUCT.md` stays the authority on the rubric's *meaning*. `SCREENS.md` 05 §3
+draws five different, shorter anchor lines (`Mostly bare crown, major dead limbs`; `Large dead
+sections, 25–50% dieback`; `Noticeably thin, 10–25% dieback`; `Canopy mostly full, isolated dead
+twigs`; `Dense canopy, vigorous new growth`). **The app ships PRODUCT's five, not SCREENS.md's five.**
+R13 was recorded on 2026-07-24, three days after screen 05 was built, and the code was never brought
+across; R13's own text quotes PRODUCT's level-1 sentence while ruling that SCREENS.md owns the
+wording, so the ruling may itself have been written against the wrong table. Whichever candidate is
+approved, the approved text has to land in **both** documents and the code, and the divergence should
+be recorded as an erratum rather than quietly overwritten.
+
+##### What replacing the placeholder touches, measured
+
+- **Free.** The five anchor sentences. `ReadingOrderAccessibilityTests
+  .testCheckInVitalityRowsReadInRubricOrder` matches rows by `hasPrefix` on the *title* only, so
+  anchor phrasing is genuinely not pinned by any test. This is what the brief means by "never
+  phrasing-dependent", and it holds.
+- **Cheap but not free.** The five class **labels**. They exist in two places
+  (`Vitality.label` and `CypressColor.Vitality.name`, the design-token gradient enum) and are
+  hardcoded as five literals in `ReadingOrderAccessibilityTests`. A rename is three edits.
+- **Expensive.** Renaming class 5. `StatusBadge.Kind.thriving` draws a `THRIVING` badge on screens
+  01, 03, D1 and D2 whenever the latest observation is class 5, and that badge is documented in
+  `SCREENS.md` §2 as one of exactly three. Renaming the top class renames a badge on the map.
+- **A stop-and-report.** Changing the *number* of classes. `AppSchema`'s `observations.vitality` is
+  `CHECK (vitality IS NULL OR vitality BETWEEN 1 AND 5)`, `SCREENS.md` §1.2 specifies exactly five
+  reference-swatch gradients in light and dark, and `CypressColor.Vitality` has five cases. Per
+  CLAUDE.md, a task that turns out to need a migration stops and reports. R13 also puts a level added
+  or redefined in PRODUCT's hands, not SCREENS.md's.
+
+##### What choosing a rubric does *not* unblock
+
+**E30.** BUILD-PLAN §8 and DECISIONS constraint 19 make the five per-class reference photographs an M2
+entry gate — the check-in screen does not ship without them. There are no such assets in the
+repository; what draws today is SCREENS.md §1.2's gradient placeholder, and D3 makes color secondary
+coding only, so the swatch carries none of the calibration the photograph is there to provide. **The
+words were never the gate. The photographs are.** Section 4 says what I think follows from that.
+
+##### Two defects in the shipped text that any candidate should fix
+
+1. **The bands own their endpoints twice.** "under 10%", "10 to 25%", "25 to 50%", "over 50%": a
+   rater who reads exactly 25 percent dieback has two rows that both fit, and a rater who reads
+   exactly 10 percent has two more. The source these bands derive from does not do this (see §3,
+   Candidate A). *(Overstated — see §0's correction. 25 percent and 0 percent are double-owned; 10 and
+   50 are not. The defect and the repair stand.)*
+2. **Row 3 asks about discoloration in a month when discoloration is normal.** The anchor says
+   "Noticeable thinning or discoloration". `Vitality.isRatingPermitted` suppresses the section only
+   for a deciduous species out of leaf, and `Species.leafOnMonths` is derived so that
+   `fall_color_months` sit *inside* the leaf-on window (E33). A red maple in October is therefore
+   ratable, in leaf, and noticeably discolored, and the shipped anchor points its rater at row 3. No
+   candidate below keeps "discoloration" unqualified in a row that a seasonal color change satisfies.
+
+A third, softer point: row 1 ends "survival doubtful", which is a **prognosis**, not an observation.
+Screen 05 records what somebody saw. The register everywhere else in this app is to say the true thing
+and stop (R12's lineage, `CheckInCopy.reviewNotice`, E239's empty grove). A volunteer predicting
+whether a tree lives is a different act from a volunteer counting dead limbs, and the schema stores
+one integer either way.
+
+---
+
+#### 2. What the seed can support — a premise refuted
+
+The brief offers "a rubric driven by what the seed data can already distinguish" as one of three
+possible approaches. **The seed can distinguish nothing about tree condition, so this is not an
+available axis.** Read from `Fixtures/seed/cypress-seed.sqlite`:
+
+- `trees` has no condition, dieback, vigor or vitality column of any kind. Its `status` CHECK admits
+  five values, and the shipped file contains exactly two: 174,425 `alive` and 24,200 `vacant_site`.
+  (This is the same fact that keeps screen 19 out of `ReadingOrderAccessibilityTests`.)
+- The six DataSF passthrough columns are free text about legal status, caretaker and permits.
+  `city_raw` is NULL on all 198,625 rows.
+- The quantitative columns that do exist are not condition: `dbh_city_cm_min`/`max` on 166,984 rows
+  and `planted_year` on 38,184.
+- Vitality lives only in `observations`, which is the *writable* database, created empty on first
+  launch. Every vitality integer that will ever exist is one a volunteer is about to produce.
+
+So the rubric's job is not to describe data the project has. It is to **manufacture** the only
+condition data this project will ever hold, which is exactly why P-C1 calls pre-rubric observations
+permanently un-normalizable.
+
+One thing the seed *can* support, and Candidate C uses it: species identity and neighbors.
+`leaf_retention` is populated for 468 of 731 species, covering 157,088 of the 174,425 alive trees, and
+the species screen already counts others nearby. A rubric that asks "compared with the same species
+nearby" is answerable from data the app already holds.
+
+---
+
+#### 3. The candidates
+
+Each is given worst-to-best, which is `Vitality.rubric`'s order and is asserted by
+`ReadingOrderAccessibilityTests`.
+
+---
+
+##### Candidate A — ratify draft v0 as a documented collapse of the i-Tree / USFS crown-condition classes, with its boundaries repaired
+
+**The approach.** Change as little as possible and make the existing derivation explicit and correct.
+PRODUCT §3 already describes the scale as a "simplified derivative of USFS urban crown-condition
+classes", and that claim checks out: the seven-class condition scale used by i-Tree Eco and published
+in the urban-forestry literature by Nowak and colleagues runs excellent (<1 percent crown dieback),
+good (1–10), fair (11–25), poor (26–50), critical (51–75), dying (76–99), dead (100). Draft v0 is that
+scale with critical and dying merged and dead removed:
+
+| i-Tree / Nowak class | percent dieback | Cypress row |
+|---|---|---|
+| excellent | under 1 | 5 · Thriving |
+| good | 1–10 | 4 · Good |
+| fair | 11–25 | 3 · Fair |
+| poor | 26–50 | 2 · Poor |
+| critical + dying | 51–99 | 1 · Severe decline |
+| dead | 100 | not a vitality class — the `Appears dead` status segment |
+
+That is a clean collapse, not an invention. What is wrong with the shipped text is the transcription:
+the source's bands do not overlap and Cypress's do, and two of Cypress's sentences carry clauses the
+source does not (discoloration, and a survival prognosis).
+
+**The five rows.**
+
+| Level | Label | Anchor |
+|---|---|---|
+| 1 | `1 · Severe decline` | `Over half the crown is dead wood or bare in season; major limbs dead` |
+| 2 | `2 · Poor` | `26 to 50% of the crown is dead wood or bare; large dead sections` |
+| 3 | `3 · Fair` | `11 to 25% of the crown is dead wood; noticeably thin but clearly in leaf` |
+| 4 | `4 · Good` | `1 to 10% of the crown is dead wood; canopy otherwise full` |
+| 5 | `5 · Thriving` | `No dead wood visible; canopy full for the season` |
+
+**What it costs.**
+
+- *Of the volunteer:* a percentage estimate of crown dieback, from the sidewalk, with no card and no
+  training. This is the real price. In the source protocol the same estimate is made by two observers
+  from different viewpoints against a printed density-transparency card.
+- *What it can distinguish:* five levels of dead wood as a fraction of the crown, and nothing else. It
+  cannot distinguish a tree that is thin from drought from a tree that is thin from pruning, cannot
+  see a hollow trunk (the structure chips carry that separately), and deliberately says nothing about
+  leaf color.
+- *What it needs that the project does not have:* an advisor's ratification that merging critical and
+  dying into one row does not destroy a distinction a city needs, and a decision on which side of 10,
+  25 and 50 the boundaries fall. The five reference photographs (E30) remain missing.
+- *What it commits the project to:* percent crown dieback as the measured quantity, permanently, and
+  therefore to joinability with any city's own i-Tree Eco run. That joinability is the concrete cash
+  value of P-C1's "normalizable".
+- *Mechanically:* zero label changes, zero test changes, zero token changes, no migration. One `Core`
+  file, plus the SCREENS.md/PRODUCT reconciliation §1 describes.
+
+---
+
+##### Candidate B — adopt USFS GTR NRS-194's crown vigor classes whole, inverted
+
+**The approach.** Stop deriving and adopt a published federal field guide verbatim. Roman et al.
+(2020), *Urban Tree Monitoring: A Field Guide*, Gen. Tech. Rep. NRS-194, USDA Forest Service Northern
+Research Station, §2.11 and Table 10, defines **crown vigor** as five classes from a visual
+examination of the crown, reflecting the proportion of the crown showing fine-twig dieback, foliage
+discoloration and/or defoliation, plus major branch loss. Class 1 is healthy (under 10 percent
+cumulative, no major branch mortality), class 2 is slightly unhealthy (10–25 percent), class 3
+moderately unhealthy (26–50), class 4 severely unhealthy (over 50, foliage still present), class 5
+dead. It explicitly excludes trunk condition and structural stability, and it is written for urban
+forest managers, interns and **citizen scientists** — the same audience as this app.
+
+It runs the opposite direction from Cypress, so it inverts. Inverted, its five classes fill Cypress's
+five rows exactly, with no invention and no schema change.
+
+**The five rows.**
+
+| Level | Label | Anchor |
+|---|---|---|
+| 1 | `1 · Dead` | `No green leaves, no live buds, no green tissue under the bark` |
+| 2 | `2 · Severely unhealthy` | `Over half the crown shows dead twigs, discolored or missing leaves; some foliage still present` |
+| 3 | `3 · Moderately unhealthy` | `26 to 50% of the crown shows dead twigs, discolored or missing leaves` |
+| 4 | `4 · Slightly unhealthy` | `10 to 25% of the crown shows dead twigs, discolored or missing leaves` |
+| 5 | `5 · Healthy` | `Under 10%; no major branch loss and no large broken branches` |
+
+**What it costs.**
+
+- *Of the volunteer:* the same percentage estimate as Candidate A, over a **compound** quantity —
+  dieback, discoloration and defoliation added together. Harder to hold in the head, and it reopens
+  the October problem: a deciduous tree in fall color is discolored by definition, and NRS-194's
+  users are assumed to be running a defined monitoring season that this app does not have.
+- *What it can distinguish:* the same five bands, plus a dead tree — which is the collision. Screen
+  05 already has an `Appears dead` segment two sections above the rubric, and it is a different kind
+  of statement: `ObservationStatus.appearsDead` opens a `review_flags` row for a community reviewer
+  (E170, `CheckInCopy.reviewNotice`), while a vitality integer opens nothing. A card that asks the
+  same question twice with two different consequences is a card that will get two different answers.
+  E29 and DECISIONS constraint 7 exist because these two vocabularies have already been confused once.
+- *What it needs that the project does not have:* an advisor's confirmation that the inversion is the
+  right presentation for a volunteer app, and a resolution for the dead-row collision. It needs
+  **less** botanical sourcing than any other candidate, because the sentences are a federal
+  publication, and US Government works are not under copyright.
+- *What it commits the project to:* NRS-194's vocabulary in the app's own voice. "Slightly unhealthy"
+  and "moderately unhealthy" are clinical where Cypress is warm, and there is no room to soften them
+  without ceasing to be the standard.
+- *Mechanically:* all five labels change. That is `Vitality.label`, `CypressColor.Vitality.name`,
+  five literals in `ReadingOrderAccessibilityTests` — **and** `StatusBadge`, because there is no
+  longer a "Thriving" class for the `THRIVING` badge on screens 01, 03, D1 and D2 to key on. The badge
+  is documented in `SCREENS.md` §2, so that is a stop-and-ask under DECISIONS constraint 21, not an
+  edit. No migration.
+
+**The reason to want B anyway, which is not about the words.** NRS-194 ships **per-class reference
+photographs**: Figure 8 gives all five classes for young, recently planted trees; Figure 9 gives the
+four live classes for mature street trees. That is the exact artifact E30 says does not exist and
+DECISIONS constraint 19 makes an entry gate. Figure 9's photographs are credited to R.A. Hallett,
+USDA Forest Service; Figure 8's are credited to B.S. Breger, "used with permission", which is a
+permission granted to the Forest Service and not automatically to us. See §6.
+
+---
+
+##### Candidate C — what a volunteer can see from the sidewalk, with no percentages at all
+
+**The approach.** Assume the percentage is the thing that goes wrong, and remove it. Anchor every row
+on something a person can check by looking, without estimating a fraction: whole limbs with no leaves,
+whether leaves reach the branch tips, whether this year's shoots are visible, and comparison with the
+same species nearby. The last of these is the reference-tree device the ICP Forests crown-condition
+manual uses for defoliation, and it is answerable from data the app already has (§2).
+
+**The five rows.**
+
+| Level | Label | Anchor |
+|---|---|---|
+| 1 | `1 · Severe decline` | `More bare branches than leafy ones; whole limbs carry no leaves` |
+| 2 | `2 · Poor` | `Several whole limbs are bare; wide gaps you can see sky through` |
+| 3 | `3 · Fair` | `Thinner than others of the same species nearby; bare twig ends throughout` |
+| 4 | `4 · Good` | `Leafy throughout; a few dead twigs at the branch tips` |
+| 5 | `5 · Thriving` | `Leafy right out to the branch tips; this year's shoots easy to see` |
+
+**What it costs.**
+
+- *Of the volunteer:* the least of the three. No fraction, no card, no arithmetic. Row 3 asks for a
+  comparison, which needs another tree of the same species in sight and is the one row that can fail
+  to be answerable.
+- *What it can distinguish:* honestly, fewer than five things. "More bare than leafy" and "several
+  whole limbs bare" are not separated by any defined quantity, and rows 4 and 5 differ by the presence
+  of new shoots, which is a shoot-extension judgment rather than a crown judgment — Bond (2010) and
+  the CTLA guide both treat average shoot extension as its own parameter, not as the top of a crown
+  scale.
+- *What it needs that the project does not have:* **the most sourcing of the three.** Every one of
+  these five sentences is a horticultural claim with no citation behind it, which is precisely what
+  DECISIONS constraint 15 forbids inventing. It is also un-normalizable by construction: no mapping
+  to i-Tree, to NRS-194, or to anything a city collects, which is the harm P-C1 names.
+- *The evidence cuts against it.* Hallett and Hallett (2018) is the one published study of volunteers
+  running exactly this protocol on exactly this population: 22 volunteers, mostly high-school
+  students, two hours of training, checked against an expert on 59 living trees. Fine-twig dieback —
+  the percentage — showed the *best* agreement of any variable. Crown transparency, computed from
+  photographs, was the worst. That is evidence that the percentage is not the hard part, and that this
+  candidate spends comparability to fix a problem smaller than it assumes.
+- *Mechanically:* labels unchanged, so it is as cheap as Candidate A. One `Core` file.
+
+---
+
+#### 4. Recommendation
+
+**Take Candidate A, and pursue Candidate B's photographs separately.** Reasoning, in the order that
+decided it:
+
+1. **P-C1 names the harm as un-normalizable data, and only A preserves the normalization PRODUCT
+   already claims.** The scale's value to a city is that its numbers can be joined to that city's own
+   i-Tree Eco run. C throws that away outright. B keeps a different normalization but pays for it with
+   a dead row that collides with the Status control on the same card.
+2. **The one measurement of volunteers doing this work says the percentage is not the failure mode.**
+   Hallett and Hallett (2018) found best agreement on fine-twig dieback. Candidate C's whole premise
+   is that the percentage is what breaks; the published evidence says otherwise.
+3. **A is the only candidate with no stop-and-ask in it.** B renames a badge documented in SCREENS.md
+   §2, which DECISIONS constraint 21 makes a stop-and-ask, and puts "Dead" on a card that already
+   reports dead trees through a review flag. A touches one `Core` file.
+4. **The words were never the gate.** E30 is the gate, and E30 is about photographs. Adopting a
+   different set of sentences does not move it one inch, so the criterion for choosing between
+   sentences should be "which is cheapest to be wrong about", and that is A.
+
+Two conditions on that recommendation, and they are not decorative:
+
+- **A is a recommendation about what to send an advisor, not a substitute for one.** PRODUCT §3 says
+  draft v0 needs sign-off; §5 below lists exactly what the advisor is being asked to underwrite.
+- **Go after NRS-194's Figures 8 and 9 regardless of which candidate wins.** They are published
+  per-class reference photographs of urban street trees, from a federal field guide aimed at citizen
+  scientists, in a five-class scale that maps onto ours by inversion. If those photographs can be
+  cleared, E30's entry gate becomes a licensing question with an identified source rather than a
+  photo shoot with no brief — and that is worth more to this project than any of the three sets of
+  sentences above.
+
+**Not recommended, and worth saying so explicitly: do not ship draft v0 unchanged.** The overlapping
+boundaries and the October discoloration problem in §1 are defects in the current text whichever
+rubric eventually wins, and both are cheap to fix now.
+
+---
+
+#### 5. What needs an authoritative botanical source
+
+Named plainly, because flagging these is part of the deliverable. Each is a claim I am not qualified
+to make and the project cannot presently stand behind.
+
+1. **That five Cypress classes are a faithful collapse of the seven i-Tree / Nowak classes** — and
+   specifically that merging critical (51–75 percent) and dying (76–99 percent) into one `Severe
+   decline` row does not destroy a distinction a city needs. This underwrites Candidate A entirely.
+2. **Where the boundaries fall.** 25 percent and 0 percent currently belong to two rows each; 10 and
+   50 do not (§0's correction amends this item, which originally named 10, 25 and 50). The arithmetic
+   problem is mine to point at; the fix is an advisor's to pick.
+3. **Whether crown dieback alone is the right quantity, or whether discoloration and defoliation
+   belong in it.** A uses dieback alone; B follows NRS-194 and adds the other two. These give
+   different answers on the same tree in the same month.
+4. **How seasonal leaf color interacts with the rating.** `Vitality.isRatingPermitted` gates only on
+   leaf-on/leaf-off, and `fall_color_months` fall inside the leaf-on window by construction (E33). If
+   the rubric mentions discoloration at all, either the gate needs a second condition or the anchor
+   needs a seasonal qualifier. This is the same advisor who owes an answer on E7's invented
+   April-to-October leaf-on fallback.
+5. **Whether "vigorous new growth" belongs at the top of a crown scale.** It is a shoot-extension
+   judgment, which Bond (2010) and the CTLA guide treat as a separate parameter. It appears in draft
+   v0's row 5, in SCREENS.md 05 §3's row 5, and in Candidate C's row 5.
+6. **Whether a volunteer should be asked for a prognosis at all.** "Survival doubtful" (draft v0, row
+   1) is a prediction. Removing it, as all three candidates do, is itself a judgment an advisor should
+   ratify rather than a copy edit.
+7. **Every sentence in Candidate C.** None of them has a source. If C is chosen, all five need
+   writing by somebody qualified, not redlining.
+
+---
+
+#### 6. What I could not resolve
+
+- **The photograph licensing.** NRS-194 is a USDA Forest Service publication and the *text* of Table
+  10 is a US Government work. The photographs are credited individually: Figure 9's four mature-street-
+  tree images to R.A. Hallett, USDA Forest Service; Figure 8's five young-tree images to B.S. Breger,
+  "used with permission". A permission granted to the Forest Service is not a permission granted to
+  us. This needs a real answer before E30 leans on them.
+- **The HTHC field guide itself.** "Tree Health Metrics: A Brief Field Guide" (R. Hallett), the
+  Healthy Trees Healthy Cities protocol document, 404s at its Conservation Gateway URL. Secondary
+  descriptions say its crown vigor classes are the same five as NRS-194 Table 10, which is consistent
+  with Hallett being an author of both, but I could not read the guide directly and am not asserting
+  it.
+- **Whether an urban-forestry advisor is engaged.** PRODUCT §3, PRODUCT §11 and DECISIONS §2.5 all
+  route this to one, and I have no visibility into whether that person exists yet. If they do not,
+  that — not the choice between these three — is the blocking item.
+- **The R13 divergence's history.** I established that the app draws PRODUCT's sentences, that
+  SCREENS.md draws different ones, and that R13 says SCREENS.md's ship. I did not establish whether
+  R13 was written knowing that, or whether it was written against PRODUCT's table by mistake. Somebody
+  who was there should say which, because it determines whether this is a code defect or a ruling
+  defect. **Answered by ticket #260** — see §0. Nobody was there; git was. The two tables came in
+  disagreeing from two different handoff artifacts, R13 illustrated itself with a string that only the
+  running app produces, and its holding survives while its example does not.
+- **Anything requiring a build.** This is a documentation branch; nothing was compiled and no test was
+  run. Every mechanical claim in §1 comes from reading `Vitality.swift`, `CheckInPresentation.swift`,
+  `CheckInView.swift`, `StatusBadge.swift`, `CypressColor.swift`, `AppSchema.swift` and
+  `ReadingOrderAccessibilityTests.swift`, and from querying the seed directly. The seed figures are
+  from `Fixtures/seed/cypress-seed.sqlite` in this worktree and are reproducible with `sqlite3`.
+- **Whether five is the right number at all.** Bond (2010) argues from Roloff that four classes suffice
+  for urban work, and that finer resolution is misplaced precision — no evidence exists that tree
+  health actually changes across a 5 percent dieback boundary. NRS-194 has four *live* classes.
+  Cypress has five, pinned by a schema CHECK, five design tokens and a design export. Changing that
+  number is a migration, and per CLAUDE.md this task stops and reports rather than proposing one. It
+  is recorded here because it is a real question that an advisor may well raise, and the answer will
+  cost more than any of the three candidates above.
+
+---
+
+#### 7. Sources
+
+Every citation below was fetched and read for this document, not recalled.
+
+- Roman, L.A.; van Doorn, N.S.; McPherson, E.G.; Scharenbroch, B.C.; Henning, J.G.; Östberg, J.P.A.;
+  Mueller, L.S.; Koeser, A.K.; Mills, J.R.; Hallett, R.A.; Sanders, J.E.; Battles, J.J.; Boyer, D.J.;
+  Fristensky, J.P.; Mincey, S.K.; Peper, P.J.; Vogt, J. 2020. *Urban tree monitoring: a field guide.*
+  Gen. Tech. Rep. NRS-194. Madison, WI: USDA Forest Service, Northern Research Station. 48 p.
+  Crown vigor is §2.11, Table 10, p. 28; reference photographs are Figures 8 (p. 29) and 9 (p. 30).
+  <https://research.fs.usda.gov/treesearch/60818>
+- Hallett, R.; Hallett, T. 2018. Citizen science and tree health assessment: how useful are the data?
+  *Arboriculture & Urban Forestry* 44(6): 236–247. doi:10.48044/jauf.2018.021.
+  <https://auf.isa-arbor.com/content/44/6/236>
+- Bond, J. 2010. Tree condition: health. *Arborist News*, February 2010: 34–38. International Society
+  of Arboriculture. Reviews CTLA and FIA, and argues for four classes in urban work.
+- Schomaker, M.E.; Zarnoch, S.J.; Bechtold, W.A.; Latelle, D.J.; Burkman, W.G.; Cox, S.M. 2007.
+  *Crown-condition classification: a guide to data collection and analysis.* Gen. Tech. Rep. SRS-102.
+  Asheville, NC: USDA Forest Service, Southern Research Station. 78 p. This is the "USFS urban FIA
+  crown classes" PRODUCT §11 names. <https://research.fs.usda.gov/treesearch/27730>
+- Nowak, D.J.; Crane, D.E.; Stevens, J.C.; Hoehn, R.E.; Walton, J.T.; Bond, J. 2008. A ground-based
+  method of assessing urban forest structure and ecosystem services. *Arboriculture & Urban Forestry*
+  34(6): 347–358. The seven condition classes i-Tree Eco uses.
+- ICP Forests. *Manual on methods and criteria for harmonized sampling, assessment, monitoring and
+  analysis of the effects of air pollution on forests*, Part IV: Visual Assessment of Crown Condition.
+  The reference-tree device Candidate C borrows. <https://www.icp-forests.org/>
+- Healthy Trees, Healthy Cities, USDA Forest Service / The Nature Conservancy.
+  <https://research.fs.usda.gov/nrs/nrs/centers/nyc/hthc>
+
+Internal, cited by number as CLAUDE.md requires: DECISIONS §2.5 P-C1, §2.8, constraints 15, 19, 21;
+PRODUCT §3, §11; SCREENS.md 05 §3 and §1.2; RULINGS R12, R13; ERRATA E7, E9, E28, E29, E30, E33, E170,
+E239.
+
+### R70 — Candidate A is the vitality rubric; the fork closes; R13's worked example is corrected
+
+Ticket #261. The owner chose **Candidate A** from the candidates document, RULINGS **R69**, and
+then ruled on the document conflict that blocked it (ticket #260, ERRATA **E258**): **close the
+fork.** The five
+anchor sentences below now stand identically in `docs/distilled/PRODUCT.md` §3,
+`docs/distilled/SCREENS.md` 05 §3 and `Cypress/Core/Rubric/Vitality.swift`, landed in one commit, so
+the two source tables and the app state one rubric.
+
+| Level | Label | Anchor | Dieback band |
+|---|---|---|---|
+| 1 | `Severe decline` | `Over half the crown is dead wood or bare in season; major limbs dead` | 51–100% |
+| 2 | `Poor` | `26 to 50% of the crown is dead wood or bare; large dead sections` | 26–50% |
+| 3 | `Fair` | `11 to 25% of the crown is dead wood; noticeably thin but clearly in leaf` | 11–25% |
+| 4 | `Good` | `1 to 10% of the crown is dead wood; canopy otherwise full` | 1–10% |
+| 5 | `Thriving` | `No dead wood visible; canopy full for the season` | 0% |
+
+Labels, level numbers and rubric order are unchanged. The text is Candidate A's §3 table verbatim.
+
+**A test, not a note, is what holds this.** `CypressTests/VitalityRubricTests.swift` parses the two
+distilled tables out of the markdown at build time and asserts, level by level, that they and
+`Vitality.anchor` state the same five sentences. A prose cross-reference asks a future reader to
+notice; the test refuses to let the fork reopen at all, and names which of the three sources drifted
+when one does.
+
+#### 0. What was superseded, quoted here so it survives splicing
+
+Both originals are reproduced verbatim below **because the two documents that carried them were
+themselves unnumbered when this was written** — the candidates document and the #260 entry, now
+RULINGS **R69** and ERRATA **E258** — and neither survives as a file of its own. Without this
+section, the note each distilled document now carries would point at a record with no forwarding
+address, which is the failure the note exists to prevent.
+
+`docs/distilled/PRODUCT.md` §3 as it stood before this ruling, byte-identical to `SPEC-PHASE1.md` §6
+(lines 174–178):
+
+| Class | Label | Anchor (plain language) |
+|---|---|---|
+| 5 | Thriving | Full, dense canopy for the season; vigorous new growth; no visible dieback |
+| 4 | Good | Canopy mostly full; minor thinning or isolated dead twigs (under 10% dieback) |
+| 3 | Fair | Noticeable thinning or discoloration; dieback 10 to 25%; still clearly viable |
+| 2 | Poor | Sparse canopy; major dead limbs; dieback 25 to 50%; stress obvious |
+| 1 | Severe decline | Mostly bare in season; over 50% dieback; survival doubtful |
+
+`docs/distilled/SCREENS.md` 05 §3 as it stood before this ruling, byte-identical to
+`design_handoff_cypress/Cypress Screens.dc.html` inside the committed `Cypress.zip`, en dashes and
+all:
+
+| Level | Title | Anchor line |
+|---|---|---|
+| 1 | `1 · Severe decline` | `Mostly bare crown, major dead limbs` |
+| 2 | `2 · Poor` | `Large dead sections, 25–50% dieback` |
+| 3 | `3 · Fair` | `Noticeably thin, 10–25% dieback` |
+| 4 | `4 · Good` | `Canopy mostly full, isolated dead twigs` |
+| 5 | `5 · Thriving` | `Dense canopy, vigorous new growth` |
+
+Neither table was a transcription error. Each distilled document transcribed a different handoff
+artifact faithfully, and the two artifacts disagreed. A future transcription check that finds either
+table above in its primary and this ruling's table in the distilled document has found the intended
+state, not drift.
+
+**Where this is deferred to:** `docs/distilled/PRODUCT.md` §3 and §11, and
+`docs/distilled/SCREENS.md`'s ground rules and 05 §3 each cite this ruling for the superseded tables.
+While it was unnumbered they named ticket #261 rather than a filename — CLAUDE.md forbids citing a
+pending filename, and a ticket number stays resolvable either side of a splice; they now cite this
+entry by number.
+
+#### 1. R13's holding stands. R13's worked example does not, and is corrected here.
+
+R13 ruled that `SCREENS.md` holds screen 05's anchor sentences and that "its wording is what ships",
+reserving a class's *meaning* to `PRODUCT.md`. That holding is sound and is not disturbed.
+
+R13 illustrated itself with:
+
+> `1 · Severe decline · Mostly bare in season; over 50% dieback; survival doubtful`
+
+**That string exists in no document and in no mock.** `1 · Severe decline` is `SCREENS.md`'s title
+column; `Mostly bare in season; over 50% dieback; survival doubtful` was `PRODUCT.md` §3's anchor. It
+is what `VitalityRow.title` and `VitalityRow.anchor` compose at runtime
+(`CheckInPresentation.swift`) — the example was read off the running app in the belief that what the
+app drew was screen 05's copy. The correction is to the example, not to the ruling.
+
+**Replace R13's example with the composed row as it now reads:**
+
+> `1 · Severe decline · Over half the crown is dead wood or bare in season; major limbs dead`
+
+That string is again what the app composes, and it is now also what both source tables say, which is
+the point of closing the fork: the example can no longer diverge from a document.
+
+#### 2. Why the fork closed toward `PRODUCT.md`'s quantities rather than the export's wording
+
+The two handoff artifacts disagreed from the day both were distilled; neither distilled document was
+a transcription error. `SCREENS.md`'s export copy stated a dieback band on rows 2 and 3 and none on
+rows 1, 4 and 5, so a rater holding an estimate of 5 percent or of 60 percent found no row naming a
+number they could match. **A class's dieback band is its operational definition, and R13 puts
+definitions in `PRODUCT.md`'s hands.** What the export owns here is the register — short, readable on
+a sidewalk — not the quantity. Candidate A keeps a quantity in every row and is written in that
+register.
+
+Both documents now carry a note saying the rubric copy is this decision rather than a transcription,
+because both declare themselves verbatim transcriptions of their primaries and a reader who does not
+know that will re-file the ticket.
+
+#### 3. What this ruling does NOT decide, and must not be read as deciding
+
+- It does **not** discharge PRODUCT §3's "draft v0 — needs urban forestry advisor sign-off before
+  launch", and it does **not** close `DECISIONS.md` §2.5 P-C1. A rubric was chosen; its horticulture
+  was not certified.
+- It does **not** move ERRATA E30. The five per-class reference photographs are still the M2 entry
+  gate under DECISIONS constraint 19 and still do not exist. The words were never the gate.
+- The list of claims that need an authoritative botanical source is §5 of RULINGS **R69** and is
+  unchanged by this ruling. In short: that
+  five Cypress classes are a faithful collapse of seven i-Tree / Nowak classes and that merging
+  critical with dying loses nothing a city needs; which side of 10, 25 and 50 the boundaries fall;
+  whether crown dieback alone is the quantity, or discoloration and defoliation belong in it; how
+  seasonal leaf color interacts with the rating; whether "vigorous new growth" belongs at the top of a
+  crown scale; and whether a volunteer should be asked for a prognosis at all. Removing "survival
+  doubtful" and "vigorous new growth" from the shipped copy is itself a judgment an advisor should
+  ratify rather than a copy edit.
+- Pursuing NRS-194's Figures 8 and 9, and their licensing, stays open and stays worth more to E30
+  than any set of sentences.
+
+#### 4. Scope held
+
+No label changed, so nothing reached `CypressColor.Vitality.name`, `StatusBadge.Kind.thriving` and
+its two token pairs, the token and component galleries, or `SpeciesPresentation.nearbySubtitle` —
+which lowercases `Vitality.label` into screen 07's `214 photos · thriving`, a verbatim `SCREENS.md`
+copy string on a second screen. No token, no schema, no migration, and the number of classes is
+unchanged, so `observations.vitality`'s `CHECK (… BETWEEN 1 AND 5)` and the five reference-swatch
+gradients are untouched.
+
+### R71 — The species legend's AX5 ceiling lands part-way down a chip, so a clamped legend looks clamped (owner decision, task #72)
+
+The ceiling task #258 gave `MapSpeciesLegend` is a subtraction, and a subtraction has no opinion
+about where in the chip stack its answer falls. On the phones where it binds it landed, by
+arithmetic accident, exactly where a reader cannot tell that it bound: on a whole number of chips,
+or a few points past one. The legend is **also the species filter** (#116), so the screen was
+telling the reader "these are the species this map has colored" when the truth was "these are three
+of them, scroll". The owner decided this ticket rather than leaving it. **The size of the peek was
+delegated**; it is a quarter of a chip, and the argument for that number is below.
+
+#### What the ceiling actually did, measured before anything was changed
+
+`MapLayout.legendCeiling` is `screenHeight − topInset − 596` at AX5, and the legend it clips is four
+chips of 59.67 pt with 8 pt between them — so where the ceiling lands inside that stack is decided
+by two numbers nobody chose together. Swept over every screen height and top inset the app runs on
+(`AX5ReflowTests.supportedScreenHeights × .supportedTopInsets`, 24 pairs), **8 of the 24 clip the
+legend somewhere a reader cannot see**:
+
+| screen | inset | ceiling | whole chips shown | of the next chip | what it looks like |
+|---|---|---|---|---|---|
+| 667 | 20 | 51.0 | 0 | 51.0 of 59.67 | one chip, near enough whole — 3 filters hidden |
+| 844 | 47 | 201.0 | 3 | **0.0** | three chips and clean surface — 1 filter hidden |
+| 844 | 54 | 194.0 | 2 | 58.67 | three chips, the third 1 pt short — 1 filter hidden |
+| 844 | 62 | 186.0 | 2 | 50.67 | as above |
+| 852 | 47 | 209.0 | 3 | **6.0** | a 6 pt sliver, reads as a rendering seam |
+| 852 | 54 | 202.0 | 3 | **0.0** | three chips and clean surface |
+| 852 | 62 | 194.0 | 2 | 58.67 | |
+| 874 | 20 | 258.0 | 3 | 55.0 | |
+
+The real pairings this bites on are the iPhone SE (667/20 → 51 pt, less than one chip) and the
+iPhone 16e (844/47 → 201 pt, three whole chips and **no part of the fourth**). An iPhone 16 Pro
+(874/54 → 224 pt) already shows 20.67 pt of its fourth chip, which is a third of one and legible as
+cut — **the ticket's premise that 375, 390 and 402 all hide the fourth chip behind a ~6 pt sliver is
+wrong on two of the three.** The 6 pt sliver is real, and it belongs to an 852 pt screen.
+
+Rendered rather than argued: at 390 pt the before-shot is three whole capsules over clean surface,
+with `Chinese Elm` — a filter the reader can tap — nowhere on the screen.
+
+#### The rule
+
+`MapLayout.quantizedLegendCeiling(_:isAccessibilitySize:)` moves the ceiling **down** to the nearest
+height whose bottom edge falls between `legendPeek` and a chip less `legendPeek` into whichever chip
+it cuts. Two claims in one number, and they are the same claim from both sides: a quarter of a chip
+showing is a slice of capsule wide enough to read as a chip, and a quarter of it hidden is a cut
+deep enough to read as a cut. At 0 pt of peek the reader is told the list ends; at 59 of a 59.67 pt
+chip they are told the same thing.
+
+**Down only.** Up is where `MapLocationNotice`'s floor and the identify FAB's clearance live — E248
+and #258's defect, and the reason there is a ceiling at all. A rule that could raise the ceiling
+would be re-opening the thing that work closed. Down costs the legend chips and gives the notice
+room, and both are safe directions.
+
+**Applied on the binding branch only**, not inside `legendCeiling`. Quantizing the raw ceiling would
+move the number `legendMaxHeight` compares the legend's natural height against, and the two widest
+phones — where the whole legend fits with points to spare — would acquire a `ScrollView` over the
+map because a quantized ceiling happened to fall under a natural height that was never in question.
+The five-phone boundary table in `theLegendCeilingBindsWhereTheArithmeticSaysItDoes` is unchanged by
+this ticket, and that is deliberate.
+
+`legendReserved` is now *derived from* `legendMaxHeight` rather than computed beside it. What the
+legend occupies is the ceiling when it binds and its natural height when it does not, which is what
+that function already decides; the two disagreeing by even the quantization's few points would be
+the reservation under-reading the view, which is #258's defect in its original form.
+
+#### Why a quarter of a chip, and not a half
+
+The peek is bought with chips. The quantized ceiling is the **largest** height that satisfies the
+rule, so the smaller the required peek, the more of the legend stays on the screen — and the rule
+only fires when the ceiling is *outside* the band, so a generous threshold does not buy a bigger
+peek where there already is one, it evicts a whole chip to make one.
+
+Concretely: an 874 pt screen shows 20.67 pt of its fourth chip today. At a quarter-chip threshold
+that is inside the band and is left alone. At a half-chip threshold it is not, and the ceiling would
+drop a whole row — the reader would lose the *third* species' name in order to see more of a fourth
+one they could already see. By the measure this ticket is about, which is how many of the four
+filters the reader knows exist, that is a worse screen.
+
+A quarter is the least that is legible, and the least is what a rule like this should ask for. The
+renders are what settled it rather than the arithmetic: at 20.67 pt the fourth chip shows its
+capsule top and the tops of its glyphs; at 45.67 pt (what the rule lands on when it fires) the
+partly-shown chip's name is fully readable and only its capsule bottom is cut, which is the best
+outcome available — the reader gets the name *and* the signal.
+
+#### What it costs, on the five named phones
+
+Measured through `MapLayout`, and the two clamped cases rendered at AX5 and looked at:
+
+| phone | ceiling before | after | what the reader sees |
+|---|---|---|---|
+| iPhone SE 375 × 667 | 51.0 | **45.0** | one chip, now visibly cut instead of near-whole |
+| iPhone 16e 390 × 844 | 201.0 | **181.0** | two whole chips and 45.67 pt of the third — its name readable, its capsule cut. Before: three whole chips, no fourth |
+| iPhone 16 Pro 402 × 874 | 224.0 | 224.0 (unchanged) | three whole chips and 20.67 pt of the fourth |
+| iPhone 16 Plus 430 × 932 | no ceiling | no ceiling | the whole legend, no scroller |
+| iPhone 16 Pro Max 440 × 956 | no ceiling | no ceiling | as above |
+
+The cost is on the 16e: one species name moves from *whole* to *cut but readable*, and in exchange
+the reader learns there is a fourth filter. Every clamped chip stays pressable — the legend is still
+a `ScrollView` and every chip is still a filter. `MapLocationNotice`'s budget grows by the same
+points the legend gives up (they are complementary halves of one number), so nothing else on screen
+01 loses anything.
+
+#### The guard, and the shape of guard it deliberately is not
+
+`AX5ReflowTests.theLegendCeilingAlwaysCutsAChipAtAX5` takes the ceiling from
+**`MapLayout.legendMaxHeight`** — the same call `MapHomeView` makes — and the chip height and row
+gap from **`MapSpeciesLegend` itself**, measured through `widestReflow` at every width in
+`heightBoundWidths`. It recomputes neither. A probe carrying its own copy of the ceiling arithmetic
+would keep passing at whatever the production code did, which is this repo's dominant test-suite
+defect (CLAUDE.md: *could this guard pass while the defect it names is present?*).
+
+**The doors tried**, and what closes each. Not the doors there are: this list shipped as a confident
+"three ways", a reviewer opened a fourth, and a later review opened a fifth (below, still open). A
+count is the one thing this list must not carry — **the completeness claim is what let the fourth
+through, and it has now been wrong twice.** What follows is a record of what was tried, and the last
+entry is a door known to be open.
+
+- **Recomputing the ceiling.** Closed by reading it off `legendMaxHeight`; the red-proof below is the
+  evidence, since the only difference between red and green is the production function.
+- **A `nil` ceiling making every assertion vacuous.** If `legendMaxHeight` returns `nil` there is no
+  clamp and nothing to cut, so the peek assertions are skipped — which would make "clamp nothing,
+  ever" a way to pass. The `nil` branch therefore asserts the legend's *measured* height fits inside
+  `legendCeiling`; a `nil` returned over a legend that does not fit is #258 back again and goes red.
+- **The chips no longer being one per row**, which would make every row position in the test fiction.
+  Asserted before anything is derived from it: a four-chip fixture must measure four chips and three
+  gaps, or the test fails saying so.
+- **The exemption for a screen too short to show a peek**, which was gated on the ceiling that came
+  back rather than on the room the screen had — so a quantizer returning a sliver exempted itself.
+  Found in review; the section below is the whole of it.
+- **A `room` that under-reports, which is self-certifying** — and this one is **open**. Both bounds
+  measure the ceiling against `legendCeiling`, so a `legendCeiling` that is itself wrong puts the
+  same wrong number on both sides and both bounds hold. PR #63's reviewer mutated it to return
+  `min(5, real)` at AX5 on `screenHeight <= 874` only, clamping the legend to a 5 pt strip on the SE,
+  the 16e and the 16 Pro, and **the full unit suite stayed green.** Its first attempt, at every
+  content size, *was* caught — by the boundary table's ordinary-size arm — so scoping the fault to
+  AX5 is what slips past. The honest shape of the gap: **the boundary table guards the ceiling's
+  nil-ness and nothing guards its magnitude.** The reviewer's proportionate fix, left here for
+  whoever picks it up: extend `theLegendCeilingBindsWhereTheArithmeticSaysItDoes` from "does it bind"
+  to "and by roughly how much" — the 16e's AX5 ceiling is at least two chips, say — as an anchor that
+  does not recompute `MapLayout`'s own arithmetic. It is out of this ticket's scope and the
+  orchestrator is filing it.
+
+**The thresholds are looser than the production rule on purpose.** `MapLayout` reserves in bounds
+(`legendChipHeightAX5` = 60, a bound on a chip that measures 59.67), so its landing drifts by up to
+a point per row against the chip the view draws; the guard asserts a fifth of a chip where
+production targets a quarter. A fifth of a chip is the perceptibility claim being defended.
+
+#### Red-proof
+
+The guard was written first and run against the unquantized tree, so its first run is the proof.
+`AX5ReflowTests` at `612d8ca^`, iPhone 16 Pro Max `DE8E11AE-…`, `redproof-72.log`: **8 issues, one
+per defective screen**, each naming its own screen and inset. Two of the eight verbatim:
+
+    ✘ Expectation failed: (peek → 0.0) >= (leastVisible → 11.933333333333332)
+    ↳ a 844.0 pt screen with a 47.0 pt top inset: the 201.0 pt ceiling ends 0.0 pt into the chip
+      below 3 whole one(s) — a 0.0 pt sliver of a 59.66666666666666 pt chip is not a chip the reader
+      can see, so 1 species filter(s) are hidden behind what looks like the end of the list (task #72)
+
+    ✘ Expectation failed: (peek → 51.0) <= (chip - leastVisible → 47.73333333333333)
+    ↳ a 667.0 pt screen with a 20.0 pt top inset: the 51.0 pt ceiling shows 0 whole chip(s) and 51.0
+      pt of the next — of a 59.66666666666666 pt chip, so it reads as a complete list with 4
+      filter(s) hidden under it. The ceiling has to cut a chip by at least 11.933333333333332 pt for
+      the reader to see there is more (task #72); MapLayout.quantizedLegendCeiling is what moves it
+      off the boundary
+
+Both fired on the assertion they were written for and named the screen that produced them — the
+failure message, not the color, is what was read. With the quantization in place the same suite is
+`✔ Test run with 24 tests in 1 suite passed`, and the rest of `AX5ReflowTests` — the reservation
+bound, the binding boundary, the clamp, the shortfall, the two blocks never meeting — is green
+throughout both runs.
+
+#### A door constructed here: the ceiling that is never handed out
+
+A guard that only asserts the peek *when there is a ceiling* can be satisfied by never handing out a
+ceiling — and "stop clamping the legend" is a plausible thing for a later change to do. So it was
+built: `legendMaxHeight` was made to return `nil` unconditionally, and the suite run.
+
+    ✘ a 667.0 pt screen with a 20.0 pt top inset: MapLayout.legendMaxHeight returned nil, so
+      MapSpeciesLegend draws its full 262.66666666666663 pt unclamped — but the room below the chip
+      row is only 51.0 pt, so it is drawing over the identify FAB again (task #258)
+
+Red on the branch that would otherwise have been vacuous, and #258's own guards went red beside it.
+The probe was reverted and the unit suite re-run on the restored tree.
+
+#### The door the review found open (PR #63 review B1)
+
+The doors above were the ones this branch thought to construct. The one it did not is **the one this
+repo's dominant defect class predicts**: the guard's perceptibility floor was gated
+`if ceiling >= chip`, which reads the *ceiling that came back* — the very thing a broken quantizer
+controls. A `legendMaxHeight` patched to `min(quantizedLegendCeiling(…), 5)` draws a 5 pt strip with
+no chip in it on all 24 pairs, hides all four species filters, and **passed**, because a ceiling
+under one chip exempted itself from the only assertion that would have caught it.
+
+The sweep already reached the unguarded region: a 667 pt screen at a 62 pt inset leaves 9 pt of
+ceiling — under the guard's own `leastVisible` of 11.93 and under production's own `legendPeek` of
+15 — and was green, silently. **That pair is synthetic, and the review's first account of it (and
+this entry's) called it live.** 667 pt is the home-button iPhone SE, whose inset is 20, whose room is
+51 and whose ceiling is 45 — healthy. The hole was real and reachable by the sweep; no shipping phone
+was in it. The orchestrator filed task #73 on the shipping question.
+
+**The fix is to gate the exemption on the input rather than the output.** Both bounds now read
+`MapLayout.legendCeiling` — the room the screen actually had below the chip row — which no change to
+the quantizer can fake:
+
+- `peek >= min(leastVisible, room)`. A fifth of a chip wherever the screen has a fifth of a chip to
+  give, and otherwise every point it does have. The quantizer only ever moves down, so "this screen
+  is too short" is the one honest exemption, and it is now stated as that rather than inferred from
+  the answer.
+- `ceiling > room − (row + 1)`. Quantizing means landing on the nearest qualifying height *below*,
+  so at most one row is what it can ever cost. Same probe from the other side, and it is what fails
+  a ceiling pinned at any constant.
+
+The reviewer proposed `rawCeiling < chip || ceiling >= chip` and invited a better one. That
+assertion is red on a legitimate quantization: a raw ceiling of 65 pt is one whole chip and 5 pt of
+gap — no peek at all — and the rule correctly moves it to 45, a cut first chip, which the proposal's
+second arm forbids. No pair in the sweep is in that band today, so it is a latent false alarm rather
+than a current one; the `min(leastVisible, room)` form closes the same hole without it, and the
+row-cost assertion adds a bound the proposal does not have.
+
+**Both red-proved, each on its own assertion.** The reviewer's own mutation, 28 issues:
+
+    ✘ Expectation failed: (peek → 5.0) >= (min(leastVisible, room) → 11.933333333333332)
+    ↳ a 844.0 pt screen with a 47.0 pt top inset: the 5.0 pt ceiling ends 5.0 pt into the chip below
+      0 whole one(s) … This screen had 201.0 pt below the chip row to work with (task #72)
+
+and a ceiling pinned at 45 — which *does* cut a chip, so the peek bounds accept it and only the
+row-cost assertion fires, which is why that assertion earns its place:
+
+    ✘ Expectation failed: (ceiling → 45.0) > (room - (row + 1) → 132.33333333333334)
+    ↳ a 844.0 pt screen with a 47.0 pt top inset: the ceiling came back at 45.0 pt out of 201.0 pt of
+      room — 156.0 pt given up, where quantizing to the nearest qualifying height can cost at most
+      one row (67.66666666666666 pt)
+
+**That pin does something this entry did not claim for it, and the review checked**: 45 pt is
+*above* the room on the 667 pt screens, and a ceiling above the room fires
+`theNoticeIsNeverGivenLessRoomThanItsOwnActionButtonNeeds` — 12 further issues, from a guard this
+ticket did not write. The direction the quantizer must never move is therefore closed independently
+of anything here.
+
+#### A legend under one chip is unreported, and no guard speaks for it
+
+Named here rather than left to a guard that cannot see it (review N1). An earlier draft of
+`quantizedLegendCeiling`'s doc said a screen that short "is a `chromeBudgetShortfall` report rather
+than a quantization problem". **That is false.** `chromeBudgetShortfall` asks whether the slack
+covers `chipRowTop + noticeFloor`, which says nothing about the legend's share of what remains — and
+`theChromeBudgetCanHouseBothOccupants` asserts it is 0 for every screen and inset the app runs on, so
+by construction it never speaks for any of them. A 667 pt screen leaves 24 pt of legend at a 47 pt
+inset, 17 at 54 and 9 at 62, with a shortfall of **0.0** at all three.
+
+No shipping phone is in that region: 667 pt is the home-button iPhone SE, whose inset is 20 and whose
+ceiling is 45. The sweep crosses heights with insets anyway, because a reservation correct only on
+today's pairings is one device away from being wrong — which is exactly how this was found. Whether
+a legend that short should exist at all is a product question this ticket does not answer; it is
+**task #73**.
+
+#### What the change costs the FAB's clearance: nothing, and structurally
+
+An earlier draft of this branch's PR said the change "moves the top chrome further from the FAB".
+**It does not, and the true property is the better one** (review N3). PR #63's reviewer measured it
+on a running iPhone 16e at AX5: the legend's bottom edge moves 416 → 396 and the FAB's top edge
+moves 485.33 → 465.33, so the clearance is **69.33 pt before and after**. `noticeMaxHeight` absorbs
+the 20 pt the legend gives up, because the two are complementary halves of one number. The clearance
+is not improved by this change; it is *preserved by construction*, which is what should be claimed
+for it.
+
+#### Verified on the merged tree
+
+**main moved while this branch was in review** — PR #62 landed task #71, which rewrote
+`Tools/run_tests.sh` and `Tools/verify_test_log.sh`, the instruments every number here was measured
+with, and added `MapLayoutDefaultsAgreeTests`. The earlier revisions of this entry said "the branch
+contains `origin/main`, so the branch tree **is** the merged tree", and that stopped being true the
+moment #62 merged. main was merged in (clean; the two changes touch disjoint files) and everything
+below was re-run on the merged tree at `head a332abc`, iPhone 16 Pro Max `DE8E11AE-…`,
+`active-city=none`.
+
+Worth its own line, because #71 changed what the harness *does* to the device: `run_tests.sh` now
+parses the app's opening coordinate out of **`MapKitBasemap.swift`** — the file this ticket edits —
+and refuses if that parse disagrees with `DebugLocationOverride.swift`'s. It did not refuse, and it
+normalized the camera onto `37.7596,-122.4269` as designed, so this branch's edits to that file do
+not disturb #71's parse. That is a fact about the merged tree that neither branch's own green could
+have told anyone.
+
+| log | what | result |
+|---|---|---|
+| `unit-merged-72.log` | `CypressTests`, merged tree | `✔ Test run with 1320 tests in 134 suites passed` |
+| `ui-merged-72.log` | `CypressUITests`, merged tree | `Executed 99 tests, with 0 failures`, `XCTest skipped=0` |
+| `warnings-merged-72.log` | **fresh** DerivedData, merged tree | `VERIFY-WARNINGS: source=0 non-source=3 compile-tasks=448 files-checked=5` |
+| `redproof-72.log` | the guard against the unquantized tree | 8 issues, one per defective screen |
+| `vacuous-72.log` | the guard against an always-`nil` ceiling | red |
+| `b1-probe-5pt.log` | the guard against `min(quantized…, 5)` (review B1) | 28 issues |
+| `b1-probe-pinned.log` | the guard against a ceiling pinned at 45 | red on the row-cost bound only |
+
+The pre-merge runs (`unit-r2-72.log`, `ui-r2-72.log`, `warnings-r2-72.log` at `head 068b83a`, 1318
+tests in 133 suites; and round 1's at `cef0c26`) were green on the same three counts. They proved
+the branch. Only the merged-tree runs above prove main — the count moves 1318 → 1320 because #71's
+new suite arrives with the merge, which is the whole reason a branch's green is not a merge's.
+
+The warnings certifier was calibrated before it was believed (E203): asked to certify a file the
+build did not compile it answers `VERIFY-FAIL: cannot certify a warning count for:
+NoSuchFileHere.swift — no SwiftCompile task for those files in this log`, so the count above is a
+certification rather than a no-op.
+
+#### What could not be verified here, and is worth a reviewer's device
+
+The three phones this ticket is about are 375, 390 and 402 pt, and this agent was assigned the
+iPhone 16 Pro Max (440), where **the ceiling does not bind at all**. The clamped legend was
+therefore rendered rather than photographed on a running phone: `MapSpeciesLegend` at
+`.accessibility5`, at each phone's own content width, hosted in a real window and drawn with
+`drawHierarchy` through `ShotBlankGuard` (`ImageRenderer` was tried first and returned a blank white
+image for every case, clamped or not — a control shot with no ceiling at all is what caught it).
+That is the view under its real ceiling, and it is not screen 01 in the reader's hand.
+
+### R72 — The live-layer sync API and account connectivity: scope, auth, stack, and how a photograph publishes
+
+*Project owner, 2026-08-09, on ticket #158, ruling on the four questions
+`docs/design-proposals/2026-08-09-task158-live-layer.md` put and on a fifth the spec surfaced while
+answering them. The spec is the argument; this is what was decided.*
+
+RULINGS **R36** settled which layer travels which way. This settles what gets built on top of it,
+and it does not reopen R36.
+
+---
+
+#### 1 — The full `CypressAPI` surface becomes remote-capable; R36 still decides what travels
+
+**Ruled: the whole protocol, not the write half.** "Full API surface" is readable two ways and the
+spec refused to choose silently: **(a)** every method gains a real `RemoteAPI` implementation while
+R36's routing decides what actually goes over the network, or **(b)** reads genuinely travel, which
+would revise R36 and adopt shape B from `docs/investigations/api-hosting.md`.
+
+**Reading (a) is what is built.** D16 says one database available over an API; R36 says which parts
+of it travel which way; a complete protocol and a local-first routing are therefore not in tension.
+(b) is not reached: R36 names its own trigger — cross-city queries outgrowing what a phone can hold —
+and the app installs one city at a time.
+
+**The acceptance criterion, in the owner's words:** *"we need to be in a spot where when I add a
+photo on my device, the photo propagates to all other users."* It is a community-layer requirement
+throughout, and R36 already rules the community layer live, so it is satisfied inside (a).
+
+**What (a) costs and buys, decided with it:**
+
+- Reads split three ways. City-layer reads stay local — the map's pan loop is a read every 200 ms and
+  two performance campaigns bought it. Community and account reads go to the server. A read that
+  falls back to the local answer must say that it did; an empty state is a claim, and this project
+  has already drawn one over a failed read.
+- `treeProfile`'s community half is **required**, not preferred: the criterion *is* somebody else's
+  profile returning a photograph their device never wrote. The community delta therefore ships in
+  #158 rather than in R36's later round.
+- Writes keep the outbox and gain a second sink. The drain currently *is* the local commit, so
+  "apply" and "send" must separate before anything is repointed at a server.
+
+#### 2 — Sign in with Apple ships first; the email magic link is deferred to its own ticket
+
+**Ruled: Apple first.** It is the only one of screen 15's three routes that needs no new UI — the
+identity token arrives from a system framework, no field, no password, no address typed into
+anything, and no third-party dependency on the client.
+
+**The email magic link is deferred, and the reason is a fact rather than a preference:** screen 15
+draws no text field, and a magic link needs an address. Supplying one means either a field on 15 —
+which widens `AccountLinkRequest`, the one type in this app whose narrowness *is* the no-passwords
+assertion, pinned by reflection — or a new sheet. Both are screens or states not in the mocks
+(DECISIONS constraint 21), and neither should happen as a side effect of a sync-API ticket. Until
+that ticket, `Use email` presents the existing "not yet" notice, which is the state ERRATA **E111**
+already designed for.
+
+**One consequence that is not optional.** Apple's account-deletion requirement means `DELETE /me`
+must call Apple's revocation endpoint, which needs a token that exists only if the authorization code
+was exchanged at sign-in. So the client sends the authorization code and the server stores the
+refresh token. RULINGS **R3** already ships account deletion; without this it cannot keep the promise
+Apple requires of it.
+
+#### 3 — A magic link opened on a device other than the one that asked is refused
+
+**Ruled: refuse.** Screen 15's headline is `Keep your three visits`, and the visits are on that
+phone. A session minted on a laptop claims nothing and carries nothing across, while telling the
+person they succeeded.
+
+The link is bound to the requesting installation's device id and is single-use. Presented from
+anywhere else the exchange returns `forbidden`, and the refusal is a **server-rendered page rather
+than an app screen** — a browser is not the app, so the app cannot draw it. The requesting phone
+changes no state and waits; there is no polling and no timeout to design.
+
+**The rendezvous code was considered and declined**, priced at two new screens — a page that issues
+and displays a code, and an in-app waiting state with a code field — plus a polling endpoint and a
+second credential. Recorded so a later round starts from the price rather than from scratch. This
+ruling binds the deferred email ticket; nothing in #158 implements it.
+
+#### 4 — The service is written in Go, and this is a sanctioned deviation from BUILD-PLAN §3
+
+**Ruled: Go + Postgres, one machine on `cypress-sync`.**
+
+DECISIONS constraint 20 makes BUILD-PLAN §3's stack table binding without a written reason, and
+`docs/ARCHITECTURE.md` §1 is the register of those reasons. Its backend row deviates on *not having a
+backend*, not on the stack, so Fastify was the incumbent and Go owes a fifth row. The spec carries
+that row for splicing; PostGIS is declined with it, because no server-side spatial query exists under
+R36's local read path and carrying an extension for a query nothing makes is not continuity.
+
+**The evidence, because the recommendation reversed on it.** The spec's first draft recommended
+Fastify on the grounds that the riskiest surface in the ticket — verifying Apple's identity tokens —
+had a more trodden path in Node, and it named its own tipping point: Go wins if a Go JWKS library
+proves trustworthy. The survey found that `coreos/go-oidc` refetches on an unknown key id behind a
+single flight (rotation with no cron) and checks algorithm, issuer, audience and expiry, with its
+algorithm default already matching the only algorithm Apple signs with; that the widely-cited
+alternative's advisory history lies entirely in encryption machinery this project never touches; and
+that **neither ecosystem mints Apple's client secret**, so the hand-written residue is identical in
+both. The delta the Fastify recommendation rested on does not exist. With auth a wash, two direct
+dependencies, no runtime to patch, a static binary and a machine already deployed decide it.
+
+**Where this ruling overrides the spec's own first recommendation, that is recorded rather than
+tidied away**, and the same evidence names what would overturn it: the owner's own fluency. One
+maintainer who reads TypeScript daily and Go rarely outweighs a smaller dependency tree, and that is
+the single input the survey could not supply.
+
+#### 5 — First-party photographs publish without screening at launch: a deliberate deviation
+
+**Ruled by the owner, having been shown the cost in the same sentence, and recorded here as a
+deviation rather than as a design that skips a step.**
+
+**What the corpus asks for.** DECISIONS §4 puts nudity/person-safety screening and the face/plate
+blur pipeline inside Phase 1 — they are its stated exception to what is not built — and BUILD-PLAN
+§10 puts the blur at upload. **Neither exists.** Nothing in this repository raises
+`Photo.blurApplied` or writes `.approved`.
+
+**What was ruled.** A photograph from a signed-in account is approved on upload, unscreened and
+unblurred, at launch. **The accepted cost:** an unscreened photograph can carry a face, a licence
+plate, or the inside of somebody's front garden, and under this rule it reaches other people's
+screens — the exact harm ERRATA **E147** cites as the reason a contributor may delete their own
+photograph.
+
+**First-party means the signed-in account, not the device.** The device credential is not an
+attestation and a reinstall mints a new one, so a device-scoped rule gives a takedown nothing that
+survives; an account carries Apple's verification and can have it withdrawn. It also makes screen
+15's drawn sentence — *"An account backs them up and lets them join each tree's public timeline"* —
+literally true, and leaves an anonymous contributor's photographs visible to them alone, which is
+`isVisibleToItsContributor` behaving as ERRATA **E37** designed it. No screen changes.
+
+**The way down ships with the way up.** `deletePhoto` already exists and is argued as a privacy
+control in these very terms; under this rule it stops being a convenience and becomes the first line,
+so it must be reachable wherever a photograph is shown. `Photo.moderationState` can move backwards
+and `isPubliclyVisible` is evaluated at render time, so an operator takedown removes a photograph
+from every other device at its next read with no app change, no new screen and no migration.
+**Auto-approve without a takedown is the version of this rule that must not ship.**
+
+**What does not exist, and #158 does not invent:** an in-app report-this-photograph control. No
+`ReviewFlag` kind is about a photograph; adding one is a migration and the control is a screen not in
+the mocks. And a photo **vote is not a report** — it feeds the hero selection, and reading a downvote
+as a takedown request would let a popularity mechanism decide a safety question.
+
+**The rule expires against the pipeline it stands in for.** The server records *why* a photograph is
+approved, so "auto-approved at launch" and "screened and passed" stay distinguishable and the backlog
+is re-runnable; `blur_applied = 0` is already a truthful cursor over every row in existence. When the
+§4 pipeline lands it runs over that backlog and anything it fails moves to `.rejected`, which the
+client already honors. **A photograph approved under this rule is not permanently exempt from the
+mechanism DECISIONS §4 asks for.**
+
+---
+
+**One thing is named and still open**, and it is not part of this ruling: re-consent when the license
+version moves. BUILD-PLAN §4 requires a text change to force it, the mechanism exists in
+`User.hasAcceptedLicense(version:)`, and there is no surface to put it on — re-consent is neither the
+account ask nor a setting. Named, not invented.
+
+**No migration was authored.** #158 needs exactly one, in the writable database's counter, to let an
+outbox row distinguish "applied locally" from "accepted by the server"; the spec names what it must
+do and stops. The published city-file version is untouched.
