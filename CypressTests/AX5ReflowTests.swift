@@ -675,6 +675,145 @@ struct AX5ReflowTests {
         }
     }
 
+    /// **A ceiling that lands on a chip's own edge tells the reader the list ends there** (task
+    /// #72).
+    ///
+    /// The legend is also the species filter (#116), so a chip the reader cannot see is a filter
+    /// the reader does not know exists. A clamped legend has to *look* clamped: the window must end
+    /// part-way down a chip, deep enough into it that the cut is visible and far enough into it that
+    /// the chip is visible. Landing on the boundary between two chips — or in the gap between them,
+    /// or 6 pt past a chip's bottom edge — draws a tidy stack of whole chips with nothing under it,
+    /// which is exactly what "there is nothing more" looks like.
+    ///
+    /// ── What this measures, and what it deliberately does not ────────────────────────────────
+    /// The ceiling comes out of **`MapLayout.legendMaxHeight`**, the same call `MapHomeView` makes,
+    /// and the chip metrics come off **`MapSpeciesLegend` itself** through the harness the
+    /// reservation's own bound is measured with. Nothing here recomputes the ceiling: a probe
+    /// carrying its own copy of that arithmetic passes at whatever the production code does, which
+    /// is the failure this suite has shipped four times in one day (CLAUDE.md, "could this guard
+    /// pass while the defect it names is present?"). Revert the quantization in `MapLayout` and this
+    /// goes red naming the phone; that is the red-proof, and its message is in this branch's
+    /// pending ruling.
+    ///
+    /// **The two thresholds are looser than the production rule on purpose.** `MapLayout` works in
+    /// the *bounds* it reserves with (`legendChipHeightAX5` = 60, a bound on a chip that measures
+    /// 59.67) and quantizes to a quarter-chip; this measures the chip the view actually draws, so
+    /// the landing drifts by up to a point per row against the bound. A fifth of a chip is the
+    /// perceptibility claim being defended — at AX5 that is ~12 pt of a capsule — and it holds with
+    /// room to spare on every screen below.
+    ///
+    /// **Under one chip of ceiling only the upper bound applies.** Quantization can move a ceiling
+    /// down, never up: on a screen with less than a chip's worth of room the reader sees one cut
+    /// chip and no arithmetic can conjure a second. What must still hold there is that the one chip
+    /// reads as cut rather than as whole — `MapLayout.chromeBudgetShortfall` is what speaks for a
+    /// screen that short, not this.
+    @Test("a clamped species legend always cuts a chip rather than ending on one, at AX5")
+    func theLegendCeilingAlwaysCutsAChipAtAX5() async {
+        let count = MapSpeciesSlot.allCases.count
+        // Measured off the view, not read off `MapLayout`: one chip's real height, and the real gap
+        // between two rows of them.
+        let oneChip = await Self.widestReflow(
+            of: Self.legend(count: 1),
+            horizontalInset: MapLayout.sideInset
+        )
+        let twoChips = await Self.widestReflow(
+            of: Self.legend(count: 2),
+            horizontalInset: MapLayout.sideInset
+        )
+        let full = await Self.widestReflow(
+            of: Self.legend(count: count),
+            horizontalInset: MapLayout.sideInset
+        )
+        let chip = oneChip.height
+        let gap = twoChips.height - 2 * chip
+        let row = chip + gap
+        // Calibration before belief: the whole arithmetic below assumes one chip per row, which is
+        // what this fixture's names are chosen to force and what `legendNaturalHeight` bounds. If
+        // two of them ever pair up on a line, every row position under this is wrong and the
+        // failures it reports would be fiction.
+        #expect(
+            abs(full.height - (CGFloat(count) * chip + CGFloat(count - 1) * gap)) < 0.5,
+            """
+            the fixture legend measured \(full.height) pt for \(count) chips against \
+            \(CGFloat(count) * chip + CGFloat(count - 1) * gap) pt for \(count) rows of \(chip) pt \
+            — the chips are no longer one per line, so this test's row positions are meaningless \
+            and its thresholds are measuring nothing
+            """
+        )
+        #expect(gap > 0, "two chips measured \(twoChips.height) pt against one at \(chip) pt")
+
+        /// A fifth of a chip, at both ends: enough of the next chip to notice, and enough of it
+        /// missing to read as cut.
+        let leastVisible = chip / 5
+        for screenHeight in Self.supportedScreenHeights {
+            for topInset in Self.supportedTopInsets {
+                let ceiling = MapLayout.legendMaxHeight(
+                    screenHeight: screenHeight,
+                    topInset: topInset,
+                    namedSpecies: count,
+                    isAccessibilitySize: true
+                )
+                let screen = "a \(screenHeight) pt screen with a \(topInset) pt top inset"
+                guard let ceiling else {
+                    // No ceiling means no scroller and nothing hidden — which is only honest if the
+                    // legend really does fit. A `nil` returned over a legend that does not fit is
+                    // the whole of #258 back again, and it would make every assertion below vacuous.
+                    #expect(
+                        full.height <= MapLayout.legendCeiling(
+                            screenHeight: screenHeight,
+                            topInset: topInset,
+                            isAccessibilitySize: true
+                        ),
+                        """
+                        \(screen): MapLayout.legendMaxHeight returned nil, so MapSpeciesLegend \
+                        draws its full \(full.height) pt unclamped — but the room below the chip \
+                        row is only \(MapLayout.legendCeiling(screenHeight: screenHeight, topInset: topInset, isAccessibilitySize: true)) pt, \
+                        so it is drawing over the identify FAB again (task #258)
+                        """
+                    )
+                    continue
+                }
+                // Where the window falls inside the chip stack the view lays out: chip i occupies
+                // [i·row, i·row + chip]. The fully visible ones are a prefix, so the chip the
+                // reader sees *part* of is the one at that prefix's own index.
+                let wholeChips = (0..<count).filter { CGFloat($0) * row + chip <= ceiling }.count
+                let peek = wholeChips < count
+                    ? max(0, ceiling - CGFloat(wholeChips) * row)
+                    : 0
+                #expect(
+                    wholeChips < count,
+                    """
+                    \(screen): all \(count) chips fit inside the \(ceiling) pt ceiling \
+                    (\(full.height) pt of legend), so MapSpeciesLegend is in a ScrollView that \
+                    clips nothing — a scroller over the map costs the pan and this one buys \
+                    nothing back
+                    """
+                )
+                #expect(
+                    peek <= chip - leastVisible,
+                    """
+                    \(screen): the \(ceiling) pt ceiling shows \(wholeChips) whole chip(s) and \
+                    \(peek) pt of the next — of a \(chip) pt chip, so it reads as a complete list \
+                    with \(count - wholeChips) filter(s) hidden under it. The ceiling has to cut a \
+                    chip by at least \(leastVisible) pt for the reader to see there is more (task \
+                    #72); MapLayout.quantizedLegendCeiling is what moves it off the boundary
+                    """
+                )
+                if ceiling >= chip {
+                    #expect(
+                        peek >= leastVisible,
+                        """
+                        \(screen): the \(ceiling) pt ceiling ends \(peek) pt into the chip below \
+                        \(wholeChips) whole one(s) — a \(peek) pt sliver of a \(chip) pt chip is \
+                        not a chip the reader can see, so \(count - wholeChips) species filter(s) \
+                        are hidden behind what looks like the end of the list (task #72)
+                        """
+                    )
+                }
+            }
+        }
+    }
+
     /// **`MapSpeciesLegend` actually clamps when it is given a ceiling** — the branch that only runs
     /// on the phones the test above says it binds on, and which PR #60 shipped with no coverage.
     ///
