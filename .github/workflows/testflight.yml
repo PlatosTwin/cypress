@@ -306,6 +306,7 @@ jobs:
           set -euo pipefail
           Tools/run_tests.sh "${{ steps.prep.outputs.udid }}" "$RUNNER_TEMP/unit.log" \
             -only-testing:CypressTests \
+            -resultBundlePath "$RUNNER_TEMP/unit.xcresult" \
             -derivedDataPath "$RUNNER_TEMP/dd"
           Tools/verify_test_log.sh "$RUNNER_TEMP/unit.log"
 
@@ -315,6 +316,10 @@ jobs:
       - name: Certify the zero-warning line
         run: Tools/verify_test_log.sh --warnings "$RUNNER_TEMP/unit.log"
 
+      # `retention-days` is stated rather than left at the repository default of 90 (task #71).
+      # A CI log is read within days of the run that produced it or never, and CLAUDE.md's
+      # standing rule is that an artifact you did not watch being produced is not evidence — a
+      # two-month-old log at a familiar name is exactly the thing somebody reads as a fresh one.
       - name: Keep the log, whatever happened
         if: always()
         uses: actions/upload-artifact@v4
@@ -322,6 +327,21 @@ jobs:
           name: unit-log
           path: ${{ runner.temp }}/unit.log
           if-no-files-found: warn
+          retention-days: 14
+
+      # The result bundle only on failure. It carries what the text log cannot — per-test
+      # timings, attachments, each failure's own source location — and it is tens of megabytes,
+      # so a green run has no reason to pay for the upload. `ignore`, not `warn`: a job that
+      # fails in `prepare`, before xcodebuild runs at all, has no bundle to keep and that is not
+      # a thing to warn about.
+      - name: Keep the result bundle when the suite went red
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-xcresult
+          path: ${{ runner.temp }}/unit.xcresult
+          if-no-files-found: ignore
+          retention-days: 14
 
   # ── The UI suite, one shard per runner ────────────────────────────────────────────────
   ui:
@@ -370,6 +390,7 @@ jobs:
           echo "shard ${{ matrix.shard }} runs ${#args[@]} class(es): $line"
           Tools/run_tests.sh "${{ steps.prep.outputs.udid }}" "$RUNNER_TEMP/ui-${{ matrix.shard }}.log" \
             "${args[@]}" \
+            -resultBundlePath "$RUNNER_TEMP/ui-${{ matrix.shard }}.xcresult" \
             -derivedDataPath "$RUNNER_TEMP/dd"
           Tools/verify_test_log.sh --expect-width "$GATE_SCREEN_WIDTH_PT" \
             "$RUNNER_TEMP/ui-${{ matrix.shard }}.log"
@@ -381,6 +402,17 @@ jobs:
           name: ui-log-${{ matrix.shard }}
           path: ${{ runner.temp }}/ui-${{ matrix.shard }}.log
           if-no-files-found: warn
+          retention-days: 14
+
+      # See the unit job's copy of this step for why the bundle is failure-only.
+      - name: Keep the result bundle when the shard went red
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-xcresult-${{ matrix.shard }}
+          path: ${{ runner.temp }}/ui-${{ matrix.shard }}.xcresult
+          if-no-files-found: ignore
+          retention-days: 14
 
   # ── One stable context for the branch ruleset to require ──────────────────────────────
   # The UI matrix's check contexts are named "ui (1)"…"ui (N)", and N is DERIVED from

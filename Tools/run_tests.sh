@@ -34,6 +34,12 @@
 #   is healed is a good fix in the wrong place, which is neither of those states. A healed run
 #   says so in its own header (`CYPRESS-RUN: camera-auto-healed`), so a log reader can tell an
 #   auto-healed run from an untouched one without diffing two runs (E202-B's own lesson).
+# - a camera NORMALIZATION (#71): the two heals above name known-bad geometries and certify
+#   everything else, which let through a camera that is narrow, covered, and still breaks
+#   `DeepLinkVoiceOverTests.testPinAdjust` on contact. So the remaining rule admits exactly one
+#   camera — the app's own `MapLayout.defaultCenter`, read out of the app's source — and replaces
+#   anything else with it. A device already there is untouched. See the long comment on that
+#   branch in `device_state_check` for the mechanism and for what the rule does not claim.
 # - bootstatus -b before anything: simctl against a Shutdown device fails quietly in && chains.
 # - camera grant: the unit suite hangs forever on a simulator that never granted camera.
 # - verify_test_log.sh at the end: the only judgment that counts.
@@ -118,11 +124,15 @@ read_screen() {
 # bundle and leaves the data container alone.
 # ---------------------------------------------------------------------------
 ACTIVE_CITY="none"; LAST_CAMERA="none"; CAMERA_ZOOM=""; CONTAINER=""
+# The remembered camera's four numbers, kept apart from the display string so the checks below
+# can do arithmetic on them rather than re-splitting the header line they print.
+CAM_LAT=""; CAM_LON=""; CAM_LAT_SPAN=""; CAM_LON_SPAN=""
 read_device_state() {
   local container
   container="$(xcrun simctl get_app_container "$UDID" "$APP_ID" data 2>/dev/null)" || container=""
   CONTAINER="$container"
   LAST_CAMERA="none"; CAMERA_ZOOM=""; CAMERA_TREES="n/a"
+  CAM_LAT=""; CAM_LON=""; CAM_LAT_SPAN=""; CAM_LON_SPAN=""
   if [ -z "$container" ]; then
     ACTIVE_CITY="n/a (app not installed)"; LAST_CAMERA="n/a (app not installed)"; return 0
   fi
@@ -139,8 +149,12 @@ read_device_state() {
   vals="$(printf '%s\n' "$raw" | awk '/^[[:space:]]*-?[0-9]/ {gsub(/[[:space:]]/,""); print}')"
   [ "$(printf '%s\n' "$vals" | grep -c .)" -eq 4 ] || return 0
   LAST_CAMERA="$(printf '%s\n' "$vals" | paste -sd, -)"
-  local lat_span; lat_span="$(printf '%s\n' "$vals" | sed -n '3p')"
-  local lon_span; lon_span="$(printf '%s\n' "$vals" | sed -n '4p')"
+  CAM_LAT="$(printf '%s\n' "$vals" | sed -n '1p')"
+  CAM_LON="$(printf '%s\n' "$vals" | sed -n '2p')"
+  CAM_LAT_SPAN="$(printf '%s\n' "$vals" | sed -n '3p')"
+  CAM_LON_SPAN="$(printf '%s\n' "$vals" | sed -n '4p')"
+  local lat_span; lat_span="$CAM_LAT_SPAN"
+  local lon_span; lon_span="$CAM_LON_SPAN"
   # MapZoom.level: zoom = log2(360 · viewWidth / (256 · Δlon)), floored. MapViewport clusters
   # at zoom ≤ 15 and draws individual pins at ≥ 16, so the pin threshold on THIS screen is
   # Δlon ≤ 360·W/(256·2^16). Screen 01's map is full-bleed, so viewWidth is the screen width.
@@ -174,23 +188,78 @@ read_device_state() {
 # columns leave, not to model the viewport, and this comment says so because a threshold whose
 # justification is lost becomes a number nobody dares change.
 CAMERA_TREES="n/a"
-count_camera_trees() {
-  local lat="$1" lon="$2"
-  local seed="$REPO/Cypress/Resources/cypress-seed.sqlite"
-  command -v sqlite3 >/dev/null 2>&1 || { CAMERA_TREES="n/a (no sqlite3)"; return 0; }
-  # Not an error: `setup_worktree.sh` copies the git-ignored seed in, and a worktree without it
-  # already fails 13 tests for its own reasons. Say so rather than refuse on the wrong grounds.
-  [ -f "$seed" ] || { CAMERA_TREES="n/a (no seed in this worktree)"; return 0; }
-  local box
+SEED="$REPO/Cypress/Resources/cypress-seed.sqlite"
+
+# The question above, asked of any coordinate and ANSWERED ON STDOUT — a plain integer, or empty
+# when it could not be asked. Split out from `count_camera_trees` (#71) because the safe-camera
+# computation below now needs to ask it of a candidate it is considering, and a helper that can
+# only write to one global cannot be asked twice.
+trees_within_250m() {
+  local lat="$1" lon="$2" box
+  command -v sqlite3 >/dev/null 2>&1 || return 1
+  [ -f "$SEED" ] || return 1
   box="$(awk -v la="$lat" -v lo="$lon" 'BEGIN{
     pi = 3.14159265358979;
     dlat = 250 / 111320;
     dlon = 250 / (111320 * cos(la * pi / 180));
     printf "%.6f %.6f %.6f %.6f", la-dlat, la+dlat, lo-dlon, lo+dlon }')"
   set -- $box
-  CAMERA_TREES="$(sqlite3 "$seed" \
-    "SELECT count(*) FROM trees WHERE lat BETWEEN $1 AND $2 AND lon BETWEEN $3 AND $4;" \
-    2>/dev/null)" || CAMERA_TREES="n/a (seed unreadable)"
+  sqlite3 "$SEED" \
+    "SELECT count(*) FROM trees WHERE lat BETWEEN $1 AND $2 AND lon BETWEEN $3 AND $4;" 2>/dev/null
+}
+
+count_camera_trees() {
+  local lat="$1" lon="$2" n
+  command -v sqlite3 >/dev/null 2>&1 || { CAMERA_TREES="n/a (no sqlite3)"; return 0; }
+  # Not an error: `setup_worktree.sh` copies the git-ignored seed in, and a worktree without it
+  # already fails 13 tests for its own reasons. Say so rather than refuse on the wrong grounds.
+  [ -f "$SEED" ] || { CAMERA_TREES="n/a (no seed in this worktree)"; return 0; }
+  n="$(trees_within_250m "$lat" "$lon")" && [ -n "$n" ] || { CAMERA_TREES="n/a (seed unreadable)"; return 0; }
+  CAMERA_TREES="$n"
+}
+
+# ---------------------------------------------------------------------------
+# The app's own opening camera, READ OUT OF THE APP'S SOURCE (#71).
+#
+# `MapLayout.defaultCenter` / `.defaultSpanMeters` are where screen 01 opens with nothing
+# remembered, they are the coordinate E216 names as its repair, and they are the anchor
+# `DebugDeepLink.center` resolves every deep-linked fixture from. Parsed rather than copied,
+# for the reason CLAUDE.md gives about the schema-version bullet that spent a round being wrong:
+# a literal in this script goes stale the day the app moves its default and nothing tells anyone.
+# ---------------------------------------------------------------------------
+APP_DEFAULT_LAT=""; APP_DEFAULT_LON=""; APP_DEFAULT_SPAN_M=""
+read_app_default_camera() {
+  local src="$REPO/Cypress/Features/Map/MapKitBasemap.swift"
+  [ -f "$src" ] || return 1
+  APP_DEFAULT_LAT="$(sed -n 's/.*defaultCenter *= *Coordinate(latitude: *\(-\{0,1\}[0-9.]*\).*/\1/p' "$src" | head -1)"
+  APP_DEFAULT_LON="$(sed -n 's/.*defaultCenter *= *Coordinate(latitude: *-\{0,1\}[0-9.]*, *longitude: *\(-\{0,1\}[0-9.]*\).*/\1/p' "$src" | head -1)"
+  APP_DEFAULT_SPAN_M="$(sed -n 's/.*defaultSpanMeters *: *CLLocationDistance *= *\([0-9.]*\).*/\1/p' "$src" | head -1)"
+  [ -n "$APP_DEFAULT_LAT" ] && [ -n "$APP_DEFAULT_LON" ] && [ -n "$APP_DEFAULT_SPAN_M" ]
+}
+
+# Is the remembered camera the app's own default, near enough that writing it again would be a
+# no-op? Center within `CAMERA_CENTER_TOLERANCE_M`, and span within half to double the app's.
+#
+# The tolerance absorbs MapKit's own readback drift and nothing more: a device left at the
+# default reads back `37.759602,-122.426903` against a source that says `37.7596,-122.4269`
+# (~0.2 m), with spans of 0.001081/0.001362 against a computed 0.001078/0.001363. It is NOT a
+# claim that everything inside 50 m is equally good — it is the width of "the same camera".
+CAMERA_CENTER_TOLERANCE_M=50
+camera_is_app_default() {
+  [ -n "$CAM_LAT" ] && [ -n "$CAM_LON" ] && [ -n "$CAM_LON_SPAN" ] || return 1
+  [ -n "$APP_DEFAULT_LAT" ] || return 1
+  awk -v la="$CAM_LAT" -v lo="$CAM_LON" -v dlon="$CAM_LON_SPAN" \
+      -v ra="$APP_DEFAULT_LAT" -v ro="$APP_DEFAULT_LON" -v m="$APP_DEFAULT_SPAN_M" \
+      -v tol="$CAMERA_CENTER_TOLERANCE_M" 'BEGIN{
+    pi = 3.14159265358979;
+    dy = (la - ra) * 111320;
+    dx = (lo - ro) * 111320 * cos(ra * pi / 180);
+    if (sqrt(dx*dx + dy*dy) > tol) exit 1;
+    want = m / (111320 * cos(ra * pi / 180));
+    if (want <= 0 || dlon <= 0) exit 1;
+    r = dlon / want;
+    if (r < 0.5 || r > 2) exit 1;
+    exit 0 }'
 }
 
 # ---------------------------------------------------------------------------
@@ -211,26 +280,48 @@ count_camera_trees() {
 # pin threshold of 16), so it does not need to be solved per-screen-width to clear the E202-B
 # gate; it is checked anyway below rather than trusted.
 # ---------------------------------------------------------------------------
-SAFE_LAT=""; SAFE_LON=""; SAFE_LAT_SPAN=""; SAFE_LON_SPAN=""; SAFE_TREES=""
+SAFE_LAT=""; SAFE_LON=""; SAFE_LAT_SPAN=""; SAFE_LON_SPAN=""; SAFE_TREES=""; SAFE_SOURCE=""
 compute_safe_camera() {
-  local seed="$REPO/Cypress/Resources/cypress-seed.sqlite"
   command -v sqlite3 >/dev/null 2>&1 || return 1
-  [ -f "$seed" ] || return 1
-  local row
-  row="$(sqlite3 -separator '|' "$seed" "
-    SELECT avg(lat), avg(lon), count(*)
-      FROM trees
-     GROUP BY CAST(lat/0.002 AS INT), CAST(lon/0.002 AS INT)
-     ORDER BY count(*) DESC
-     LIMIT 1;
-  " 2>/dev/null)" || return 1
-  [ -n "$row" ] || return 1
-  SAFE_LAT="$(printf '%s' "$row" | awk -F'|' '{print $1}')"
-  SAFE_LON="$(printf '%s' "$row" | awk -F'|' '{print $2}')"
-  SAFE_TREES="$(printf '%s' "$row" | awk -F'|' '{print $3}')"
+  [ -f "$SEED" ] || return 1
+  SAFE_LAT=""; SAFE_LON=""; SAFE_TREES=""; SAFE_SOURCE=""
+  local span_m=120
+
+  # First choice, and the only one that matters in practice: the app's own opening default
+  # (#71). Preferred over the densest bin because it is the camera the suite is known green on
+  # and the anchor `DebugDeepLink` resolves fixtures from — a heal that lands somewhere else,
+  # however tree-rich, still leaves the map and the fixtures looking at different parts of the
+  # city. Taken only if the seed actually covers it, so a city whose inventory does not reach
+  # the app's default still gets a working camera rather than a principled empty one.
+  if read_app_default_camera; then
+    span_m="$APP_DEFAULT_SPAN_M"
+    local n
+    n="$(trees_within_250m "$APP_DEFAULT_LAT" "$APP_DEFAULT_LON")"
+    if [ -n "${n:-}" ] && [ "$n" -gt 0 ] 2>/dev/null; then
+      SAFE_LAT="$APP_DEFAULT_LAT"; SAFE_LON="$APP_DEFAULT_LON"; SAFE_TREES="$n"
+      SAFE_SOURCE="app default center (MapLayout.defaultCenter)"
+    fi
+  fi
+
+  # Fallback: the densest ~220 m bin in the seed, derived at run time and never a literal.
+  if [ -z "$SAFE_LAT" ]; then
+    local row
+    row="$(sqlite3 -separator '|' "$SEED" "
+      SELECT avg(lat), avg(lon), count(*)
+        FROM trees
+       GROUP BY CAST(lat/0.002 AS INT), CAST(lon/0.002 AS INT)
+       ORDER BY count(*) DESC
+       LIMIT 1;
+    " 2>/dev/null)" || return 1
+    [ -n "$row" ] || return 1
+    SAFE_LAT="$(printf '%s' "$row" | awk -F'|' '{print $1}')"
+    SAFE_LON="$(printf '%s' "$row" | awk -F'|' '{print $2}')"
+    SAFE_TREES="$(printf '%s' "$row" | awk -F'|' '{print $3}')"
+    SAFE_SOURCE="densest seed bin"
+  fi
   [ -n "$SAFE_LAT" ] && [ -n "$SAFE_LON" ] || return 1
-  read -r SAFE_LAT_SPAN SAFE_LON_SPAN <<<"$(awk -v la="$SAFE_LAT" 'BEGIN{
-    pi = 3.14159265358979; m = 120
+  read -r SAFE_LAT_SPAN SAFE_LON_SPAN <<<"$(awk -v la="$SAFE_LAT" -v m="$span_m" 'BEGIN{
+    pi = 3.14159265358979
     printf "%.8f %.8f", m/111320, m/(111320*cos(la*pi/180)) }')"
   [ -n "$SAFE_LAT_SPAN" ] && [ -n "$SAFE_LON_SPAN" ]
 }
@@ -272,9 +363,17 @@ heal_camera() {
   if [ "$CAMERA_TREES" = "0" ]; then
     refuse "camera heal ($reason): computed camera still finds 0 seed trees within 250 m after healing."
   fi
+  # #71: when the heal aimed at the app's own default, converge on that too — otherwise the very
+  # next run re-reads the device, finds a camera that is still not the default, and heals again,
+  # forever, with every log claiming a repair that did not take.
+  case "$SAFE_SOURCE" in
+    "app default"*)
+      camera_is_app_default || refuse \
+        "camera heal ($reason): wrote the app's default camera but the device still reads back [${LAST_CAMERA}], which is not it." ;;
+  esac
   CAMERA_HEALED="yes"
   CAMERA_HEAL_REASON="$reason"
-  CAMERA_AFTER="map.lastCamera=[${LAST_CAMERA}]${CAMERA_ZOOM:+ zoom=$CAMERA_ZOOM} camera-trees=${CAMERA_TREES} (densest-bin n=${SAFE_TREES})"
+  CAMERA_AFTER="map.lastCamera=[${LAST_CAMERA}]${CAMERA_ZOOM:+ zoom=$CAMERA_ZOOM} camera-trees=${CAMERA_TREES} (source=${SAFE_SOURCE}, n=${SAFE_TREES})"
 }
 
 device_state_check() {
@@ -303,6 +402,46 @@ device_state_check() {
     echo "camera over uncovered ground (E216): map.lastCamera = [$LAST_CAMERA] → zoom" \
          "$CAMERA_ZOOM, and the seed holds 0 trees within 250 m of it. Healing…" >&2
     heal_camera "E216 uncovered"
+  # ── The rule that replaces certification with normalization (task #71) ────────────────────
+  #
+  # THE DEFECT THIS CLOSES. Both branches above name a KNOWN-BAD geometry and pass everything
+  # else. A stored camera of [37.759899,-122.414803] at zoom 18 with 501 seed trees inside 250 m
+  # satisfies both, was stamped `camera-trees=501 / camera-auto-healed no` — and
+  # `DeepLinkVoiceOverTests.testPinAdjust` fails on it, every time, reproduced here on the 16 Pro:
+  #
+  #     Failed to determine hittability of "City tree, Southern Magnolia" Button:
+  #     Activation point invalid and no suggested hit points based on element frame
+  #
+  # The mechanism is not about that camera's own geometry at all. Screen 18 is presented OVER the
+  # map tab root, so screen 01's annotations stay in the accessibility tree behind it, drawn at
+  # whatever `map.lastCamera` says — and `DeepLinkHarness.assertEveryControlIsLabeled` reads
+  # `isHittable` on every button in the app, background pins included. An annotation the remembered
+  # camera happens to place where XCUITest can compute no activation point raises, rather than
+  # answering false. Which cameras do that is a fact about MapKit's layout of a particular block,
+  # not something a rule can enumerate: this was the THIRD geometry after "too wide" (E202-B) and
+  # "over nothing" (E216), and there is no reason to think it is the last.
+  #
+  # So the burden is inverted. Instead of listing bad cameras and certifying the rest — a blacklist,
+  # which is exactly the "guard green precisely when its condition is present" shape CLAUDE.md
+  # warns about — exactly one camera is admitted: the app's own opening default, which is where a
+  # fresh install opens, where E216's repair points, and the anchor `DebugDeepLink` resolves every
+  # deep-linked fixture from. Anything else is REPLACED with it before the suite runs.
+  #
+  # WHAT THIS DOES AND DOES NOT CLAIM. It does not claim the default camera can serve any test —
+  # nothing in a shell script can know that. It claims something weaker and checkable: every run
+  # starts from ONE known camera, the one the suite is green on, instead of inheriting whichever
+  # of infinitely many the last run happened to leave. A result that moves between two runs of the
+  # same tree is then a device change somewhere else, not here.
+  #
+  # It is not a refusal of everything, either — a device already at the default is left untouched
+  # and stamps `camera-auto-healed no`, which is the ordinary case on a healthy machine and in CI
+  # (where the app is not yet installed and there is no camera to normalize).
+  elif [ -n "$CAM_LAT" ] && read_app_default_camera && ! camera_is_app_default; then
+    echo "camera is not the app's own opening default (#71): map.lastCamera = [$LAST_CAMERA] →" \
+         "zoom $CAMERA_ZOOM, camera-trees=$CAMERA_TREES — narrow and covered, and still not a" \
+         "state the suite is known green on. Normalizing onto" \
+         "${APP_DEFAULT_LAT},${APP_DEFAULT_LON}…" >&2
+    heal_camera "#71 not the app default"
   fi
 }
 
