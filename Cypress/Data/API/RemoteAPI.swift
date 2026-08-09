@@ -15,6 +15,26 @@ import Foundation
 /// At that point `LocalAPI` does not go away. It becomes the offline cache behind this: writes go
 /// to the outbox first regardless (ARCHITECTURE §4), the drain targets `RemoteAPI`, and reads fall
 /// back to the local store when the network is absent.
+///
+/// ── Why every requirement is written out here, including the ones a default would satisfy ───────
+///
+/// **Task #76.** This type used to declare 17 of the protocol's 31 requirements and inherit the
+/// other 14 from protocol extensions. That compiled, and "it compiles" was the whole of the
+/// evidence: ten of the inherited defaults threw `.notFound`, and four *returned a value* — a
+/// species guide with no population line, an empty `mapMembership`, `.none` contributions, and an
+/// `isFavorite` derived from `grove()`. A conformance that answers a question it never asked is
+/// indistinguishable, from the caller's side, from one that answered it correctly.
+///
+/// Two of those four only happened to be loud: `speciesGuide`'s default calls `species(id:)` and
+/// `isFavorite`'s calls `grove()`, both of which this type throws from, so the *default* threw by
+/// borrowing a refusal from a neighbouring stub. That is an accident of which methods were written
+/// first, and it evaporates the moment `species(id:)` and `grove()` become real — which is step 4 of
+/// the #158 plan. The other two, `mapMembership` and `deviceContributions`, answer today.
+///
+/// So the rule is the one `docs/design-proposals/2026-08-09-task158-live-layer.md` §3.3 states:
+/// every method this type is declared to implement, it implements — a refusal is an implementation,
+/// an inherited default is not. `CypressTests/APIConformanceGuardTests` is what keeps that true for
+/// the thirty-second requirement as well as these thirty-one.
 public struct RemoteAPI: CypressAPI {
     /// `/api/v1`.
     public let baseURL: URL
@@ -56,6 +76,46 @@ public struct RemoteAPI: CypressAPI {
         throw unimplemented
     }
 
+    /// Will call `POST /trees/{id}/species-assertions`' first-claim arm. Overrides the
+    /// `SpeciesClaim.swift` default, whose `.notFound` would say "there is no such tree" about a
+    /// tree the server has never been asked for.
+    public func claimSpecies(treeID: UUID, speciesID: UUID) async throws -> Tree {
+        throw unimplemented
+    }
+
+    /// Will call `POST /trees/{id}/species-assertions` (BUILD-PLAN §6). Overrides the
+    /// `SpeciesClaim.swift` default for `claimSpecies`' reason.
+    public func correctSpecies(treeID: UUID, speciesID: UUID) async throws -> Tree {
+        throw unimplemented
+    }
+
+    /// Will raise a `wrong_species` review flag server-side.
+    public func flagWrongSpecies(treeID: UUID) async throws {
+        throw unimplemented
+    }
+
+    /// Will close a species report server-side.
+    public func dismissSpeciesReview(flagID: UUID) async throws {
+        throw unimplemented
+    }
+
+    // MARK: - The record itself
+
+    /// Will raise a `never_existed` review flag server-side.
+    public func flagNeverExisted(treeID: UUID) async throws {
+        throw unimplemented
+    }
+
+    /// Will withdraw the record server-side, on a lead's authority.
+    public func withdrawRecord(flagID: UUID) async throws {
+        throw unimplemented
+    }
+
+    /// Will close a `never_existed` report server-side, leaving the record where it is.
+    public func dismissRecordReview(flagID: UUID) async throws {
+        throw unimplemented
+    }
+
     // MARK: - Species
 
     /// Will call `GET /species/{id}`.
@@ -66,6 +126,20 @@ public struct RemoteAPI: CypressAPI {
     /// Will call `GET /species?query=`, which has the trigram index on both names that the
     /// on-device prefix scan approximates (see `SpeciesQueries.search`).
     public func searchSpecies(query: String, limit: Int) async throws -> [Species] {
+        throw unimplemented
+    }
+
+    /// Will call `GET /species/{id}` with the caller's fix, so the server can count the inventory
+    /// around it.
+    ///
+    /// **Overrides `SpeciesGuide.swift`'s default, which is the sharpest of the four #76 cases.**
+    /// That default returns `SpeciesGuide(species: try await species(id: id))` — the entry with no
+    /// population facts attached — and screen 07 draws exactly that: a guide with no population
+    /// line, which is what it also draws for a species genuinely absent from the inventory. It
+    /// happens to throw here today only because `species(id:)` above throws; once step 4 of #158
+    /// makes `species(id:)` real, the inherited default would start rendering a truthful-looking
+    /// guide with the nearby half silently missing.
+    public func speciesGuide(id: UUID, near coordinate: Coordinate?) async throws -> SpeciesGuide {
         throw unimplemented
     }
 
@@ -109,10 +183,41 @@ public struct RemoteAPI: CypressAPI {
         throw unimplemented
     }
 
+    /// Will call `GET /photos/{id}`. Overrides `PhotoAccess.swift`'s `.notFound` default, which
+    /// tells a reader the photograph does not exist when the truth is that nothing was asked.
+    /// ERRATA **E125** is the same sentence from the other direction.
+    public func photoData(id: UUID) async throws -> Data {
+        throw unimplemented
+    }
+
+    /// Will `POST` the thumb. Overrides `PhotoAccess.swift`'s `.notFound` default for `photoData`'s
+    /// reason.
+    public func setPhotoVote(photoID: UUID, vote: PhotoVote?) async throws {
+        throw unimplemented
+    }
+
+    /// Will call `DELETE /photos/{id}` when the service lands (see the protocol's note on the
+    /// method). Overrides `PhotoAccess.swift`'s `.notFound` default.
+    public func deletePhoto(id: UUID) async throws -> PhotoDeletion {
+        throw unimplemented
+    }
+
     // MARK: - Personal surfaces
 
     /// Will call `GET /me/grove`.
     public func grove() async throws -> [GroveEntry] {
+        throw unimplemented
+    }
+
+    /// Will call `GET /me/grove` narrowed to one tree (#167).
+    ///
+    /// **Overrides the grove-derived default in `CypressAPI.swift`.** That default is correct for
+    /// any conformance whose `grove()` tells the truth — and this one's throws, so today the
+    /// default refuses by borrowing this type's own refusal one call down. That is an accident of
+    /// ordering, not a design: the day `grove()` becomes the real `GET /me/grove`, an inherited
+    /// `isFavorite` would quietly become the whole-list read #167 exists to stop screen 03's heart
+    /// making after every write.
+    public func isFavorite(treeID: UUID) async throws -> Bool {
         throw unimplemented
     }
 
@@ -136,12 +241,33 @@ public struct RemoteAPI: CypressAPI {
 
     /// Will not call anything. What a device is holding unattributed is a local fact by definition —
     /// the rows have not been sent — so the offline cache answers it and the server never does.
+    /// This is the #158 spec's **Class D**, the one method on the protocol that is device-only.
     ///
-    /// The protocol's `.none` default is therefore left in place rather than overridden to throw,
-    /// which is the opposite call from `groveSpecies()` and `almanac()`: those are the server's
-    /// answers and it has none, whereas this one is never the server's answer at all.
+    /// So the body is the same `.none` the extension in `DeviceContributions.swift` supplies, and
+    /// the difference between this and inheriting it is the entire point of task #76: the answer is
+    /// **written down here, with the reason beside it**, rather than arrived at by a conformance
+    /// having nothing to say. §3.3 of the spec: "the method's honest remote implementation *is* the
+    /// inherited local answer, and §3.3 is why that has to be said out loud rather than left as an
+    /// accident."
     ///
-    /// When `LocalAPI` becomes the cache behind this, it is the one that keeps answering it.
+    /// Read the `.none` as "this transport is not where a device's own unsent rows live", not as
+    /// "this device has contributed nothing" — which is why it is `.none` and not a throw: a throw
+    /// would put an error on screen 15 for a question that was answered correctly. When `LocalAPI`
+    /// becomes the cache behind this, it is the one that keeps answering it.
+    public func deviceContributions() async throws -> DeviceContributions {
+        .none
+    }
+
+    /// Will call the server's membership read for the `Yours` and `Favorites` chips (#116).
+    ///
+    /// **Overrides `MapMembership.swift`'s empty-set default, which is the second of the four #76
+    /// cases that answers rather than refuses** — and, unlike `speciesGuide` and `isFavorite`, it
+    /// answers today without borrowing anything: an empty `Set<UUID>` reaches `MapModel` as a
+    /// narrowing that matched nothing, and screen 01 draws a map on which this reader owns and
+    /// hearts no tree in the city. Nothing throws and nothing logs.
+    public func mapMembership(_ kind: MapMembership) async throws -> Set<UUID> {
+        throw unimplemented
+    }
 
     // MARK: - Reports and export
 
