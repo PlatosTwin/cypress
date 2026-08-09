@@ -218,8 +218,8 @@ final class FrameFinitenessGateTests: XCTestCase {
         XCTAssertEqual(
             resolved?.spelling, .scrollView,
             "the resolver bound to \(resolved.map { "\($0.spelling)" } ?? "nothing") — an `Other` "
-                + "that existed for the first 2 s of the launch and was then replaced by a "
-                + "`ScrollView` must never be the answer, and the `ScrollView` must be"
+                + "that held still for the first \(goes) s of the launch and was then replaced by "
+                + "a `ScrollView` must never be the answer, and the `ScrollView` must be"
         )
         XCTAssertGreaterThanOrEqual(
             resolved?.at ?? 0, goes + 0.5 + ContainerSpellingResolution.settlingWindow,
