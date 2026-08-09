@@ -108,7 +108,10 @@ gap from **`MapSpeciesLegend` itself**, measured through `widestReflow` at every
 would keep passing at whatever the production code did, which is this repo's dominant test-suite
 defect (CLAUDE.md: *could this guard pass while the defect it names is present?*).
 
-The three ways it could have passed while the defect was present, and what closes each:
+Four ways it could have passed while the defect was present, and what closes each. **Three of
+these were found by writing them down and the fourth by a reviewer** — the list below was
+confidently three items long when this branch first shipped, which is its own instance of the
+lesson: an enumeration of the ways a guard can lie is never known to be complete.
 
 - **Recomputing the ceiling.** Closed by reading it off `legendMaxHeight`; the red-proof below is the
   evidence, since the only difference between red and green is the production function.
@@ -119,6 +122,9 @@ The three ways it could have passed while the defect was present, and what close
 - **The chips no longer being one per row**, which would make every row position in the test fiction.
   Asserted before anything is derived from it: a four-chip fixture must measure four chips and three
   gaps, or the test fails saying so.
+- **The exemption for a screen too short to show a peek**, which was gated on the ceiling that came
+  back rather than on the room the screen had — so a quantizer returning a sliver exempted itself.
+  Found in review; the section below is the whole of it.
 
 **The thresholds are looser than the production rule on purpose.** `MapLayout` reserves in bounds
 (`legendChipHeightAX5` = 60, a bound on a chip that measures 59.67), so its landing drifts by up to
