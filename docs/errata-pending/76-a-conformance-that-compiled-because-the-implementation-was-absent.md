@@ -66,8 +66,10 @@ Two halves, and neither is an API implementation — #76 is the guard, #158 is t
      concrete type cannot see, with the probe's hand-written call list checked **both ways** against
      the parse;
    - `LocalAPI` — the conformance the shipped app actually holds — erased to `any CypressAPI` over
-     a seeded store must answer `speciesGuide` with a population count, which the protocol-extension
-     default cannot;
+     a seeded store carrying one device-added tree and one device-held favorite must answer
+     `speciesGuide` with a population count, `mapMembership(.favorites)` and `(.yours)` with that
+     tree, and `deviceContributions()` with something held. Each answer differs from the default's,
+     so each assertion separates the witness from the inheritance;
    - and two calibration gates ahead of all of them: two positive controls, two **negative**
      controls (`savePrivateReminder` and `outboxStatus` are named in prose inside the very file whose
      protocol body is parsed, and are not requirements), the shared source-file floor, and the
@@ -174,9 +176,25 @@ prefixes — without producing a false green, which is evidence about those eigh
 the ninth. The one family that did break it was conditional compilation, and that family now has its
 own gate.
 
-**Only one of the four value-returning defaults is checked live, and the reason is the defect itself.**
-Over an empty store `mapMembership` is `[]` either way, `deviceContributions` is `.none` either way,
-and `isFavorite` is false either way: the default and the real implementation agree, which is exactly
-the camouflage that let this survive. `speciesGuide` separates cleanly against the attached seed — the
-default's `cityTreeCount` is nil, `LocalAPI`'s is a count — so that is the one the erasure gate asks.
-The other three rest on the structural gates, and that is a real limit rather than a rounding of one.
+**Three of the four value-returning defaults are checked live; the fourth cannot be, and the reason
+is worth recording because the first version of this entry got it wrong.** That version claimed three
+of the four were indistinguishable from the real implementation. They are — over an *empty* store,
+which is a fact about the fixture and not about the requirements. Given one device-added tree and one
+device-held favorite, `mapMembership(.favorites)`, `mapMembership(.yours)` and `deviceContributions()`
+all separate from `[]` and `.none` at once. The claim was measured rather than argued in review, and
+the correction matters in the direction that stings: those two are exactly the pair that answered
+**silently on the tree as it stood**, so a gate covering only `speciesGuide` covered the case that
+becomes dangerous at #158 step 4 and neither case that was live.
+
+`isFavorite` is the one that genuinely does not separate, and that is a finding rather than a gap in
+the fixture. Its default is `grove().first { … }?.isFavorite`, and `grove()` is `LocalAPI`'s own
+witness — so the default reaches the real implementation and computes the right answer. There is
+nothing for a test to catch, because the difference between the default and the witness is one
+indexed SELECT against a whole-list read (#167): a cost, not an answer. Gate 4 is what holds
+`isFavorite` to being declared, and gate 4 is a structural gate for exactly this reason.
+
+**The erasure gate was red-proved too**, since three assertions passing in 37 ms is the kind of
+number that deserves a control: deleting `LocalAPI`'s `mapMembership` and `deviceContributions` so
+the extension defaults become the witnesses turns it red on all three —
+`mapMembership(.favorites) came back without a tree this device has hearted (0 member(s))`,
+the same for `.yours`, and `deviceContributions() reported nothing held`.
