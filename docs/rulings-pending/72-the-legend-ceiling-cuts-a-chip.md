@@ -149,6 +149,38 @@ failure message, not the color, is what was read. With the quantization in place
 bound, the binding boundary, the clamp, the shortfall, the two blocks never meeting — is green
 throughout both runs.
 
+#### The other way this guard could have passed while the defect was present, constructed and run
+
+A guard that only asserts the peek *when there is a ceiling* can be satisfied by never handing out a
+ceiling — and "stop clamping the legend" is a plausible thing for a later change to do. So it was
+built: `legendMaxHeight` was made to return `nil` unconditionally, and the suite run.
+
+    ✘ a 667.0 pt screen with a 20.0 pt top inset: MapLayout.legendMaxHeight returned nil, so
+      MapSpeciesLegend draws its full 262.66666666666663 pt unclamped — but the room below the chip
+      row is only 51.0 pt, so it is drawing over the identify FAB again (task #258)
+
+Red on the branch that would otherwise have been vacuous, and #258's own guards went red beside it.
+The probe was reverted and the unit suite re-run on the restored tree.
+
+#### Verified on the merged tree
+
+The branch contains `origin/main` at `fc68efc`, so the branch tree **is** the merged tree; `head`
+`cef0c26` on every log below, iPhone 16 Pro Max `DE8E11AE-…`, `active-city=none`,
+`camera-auto-healed no`.
+
+| log | what | result |
+|---|---|---|
+| `unit-final-72.log` | `CypressTests` | `✔ Test run with 1318 tests in 133 suites passed` |
+| `ui-72.log` | `CypressUITests` | `Executed 99 tests, with 0 failures`, `XCTest skipped=0` |
+| `warnings-72.log` | **fresh** DerivedData, `build-for-testing` | `VERIFY-WARNINGS: source=0 non-source=3 compile-tasks=447 files-checked=3` |
+| `redproof-72.log` | the guard against the unquantized tree | 8 issues, one per defective screen |
+| `vacuous-72.log` | the guard against an always-`nil` ceiling | red, as above |
+
+The warnings certifier was calibrated before it was believed (E203): asked to certify a file the
+build did not compile it answers `VERIFY-FAIL: cannot certify a warning count for:
+NoSuchFileHere.swift — no SwiftCompile task for those files in this log`, so the count above is a
+certification rather than a no-op.
+
 #### What could not be verified here, and is worth a reviewer's device
 
 The three phones this ticket is about are 375, 390 and 402 pt, and this agent was assigned the
