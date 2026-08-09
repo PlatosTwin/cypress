@@ -21,6 +21,13 @@ CI runs 31291434427, 31294993494 and 31300530216:
     device-state question (E216) and not a layout one never appeared in the accessibility tree at
     all within 30s
 
+> **The diagnosis of this second occurrence is wrong, and the correction is the last three sections
+> of this entry.** The legend failures were not the inherited camera. They were an un-waited read
+> that decides which *element type* the test then waits on — three lines, copied into three files.
+> One of the three run numbers above never failed this test at all. Read "Correction: the legend was
+> there, and the test was waiting for the wrong element" before taking anything between here and
+> there as a finding about the camera.
+
 **The brief for this ticket said both were `isHittable` raising. The second one is not**, and the
 difference decides where the repair goes: a frame guard cannot fix a legend that is not in the tree.
 Downloading the three shard logs was the whole of the check, and it took a minute — the artifacts
@@ -268,3 +275,130 @@ Gate Park (`37.769402,-122.486198`, `camera-trees=0`) and the preflight skipped:
   elements of a screen it does not own is still the deeper defect; pinning the camera makes what it
   reads deterministic rather than making it read the right thing. Scoping the walk to the presented
   screen's own subtree is a larger change to what that helper claims, and it is not this ticket.
+
+#### Correction: the legend was there, and the test was waiting for the wrong element
+
+Everything above about `isHittable` raising stands. The *second* occurrence — the species legend
+that "never appeared in the accessibility tree at all within 30s" — was attributed to the inherited
+camera, and that attribution is wrong. The camera is a real mechanism and it was red-proved (a
+device pointed at Golden Gate Park, where the legend genuinely exists under neither element type,
+went red and pinning turned it green). It is not what those CI runs were reporting.
+
+**The failure came back on the branch that fixed the camera.** CI run 31332870414, shard `ui (1)`,
+`claude/busy-newton-6aaab0` at `be80c04`, iPhone 17 Pro at 402 pt — the camera pinned by
+`DebugMapCamera` on every launch in that class, and `CYPRESS-RUN: camera-normalized no`,
+`device-state active-city=n/a (app not installed)`. Pass, pass, fail across three runs of the same
+branch. The log says what happened, in two lines from two tests of the *same class on the same
+install*:
+
+    testTheFABClearsTheChromeAroundIt…   t = 6.92s  Checking existence of `"Species shown …" Other`
+    (passed, 12.116 s)                   t = 8.29s  Expect `exists == 1` … ScrollView   → satisfied
+
+    testTheTopChromeStaysClearOf…        t = 4.23s  Checking existence of `"Species shown …" Other`
+    (failed, 36.354 s)                   t = 6.63s → 35.9s  Expect `exists == 1` … Other → never
+
+The legend was in the tree the whole time. The test was waiting for the other spelling of it.
+
+**The three lines, in three files.** `IdentifyFABReachabilityTests.container(_:_:)`,
+`MapFilterAccessibilityTests.rowContainer(_:)`, and an inline copy inside
+`MapRecenterUITests.testTheRecenterControlClearsTheFilterChipRowAtAX5WithLocationDenied`:
+
+    let other = app.otherElements[label]
+    return other.exists ? other : app.scrollViews[label]
+
+One un-waited read of a still-loading screen, deciding which element every later wait is spent on.
+Whichever way that single read lands is decided by how early it happens to run — and the two tests
+above differ only in that the passing one reads the FAB first (t = 4.89 → 6.55 s) and therefore
+asks about the legend 2.7 s later. This is E245's family: a one-shot read of a screen that has not
+finished arriving.
+
+#### Why the element type changes at all, which is the part that decides the repair
+
+Not XCUITest being capricious about labeled SwiftUI groups — which is what two of those three files
+asserted in a comment, and it is wrong. `MapSpeciesLegend.body` has **two branches**:
+
+- `MapLayout.legendMaxHeight` does not bind → `chips.accessibilityElement(children: .contain)`,
+  filed as an **`Other`**;
+- it binds → `ScrollView { chips }.accessibilityElement(children: .contain)`, filed as a
+  **`ScrollView`**. Task #258 put the label on the scroller deliberately, so the rectangle a test
+  measures is the one the reader can see rather than the `FlowRow` overflowing it.
+
+`legendMaxHeight` takes `namedSpecies count`, and that count **arrives asynchronously** as the map's
+query returns and the species names resolve. So a launch genuinely renders the legend as an `Other`
+first and a `ScrollView` once the palette outgrows the screen. The app is being honest; the test was
+reading it once.
+
+Measured on iPhone 16 Pro `EA0AD796-…` at 402 pt, polling both spellings at full query rate —
+four launches, plus one that drives the palette by tapping a legend entry (which narrows the map to
+one species, so the palette drops to one named entry and the ceiling stops binding):
+
+| state | `otherElements` | `scrollViews` | frame |
+| --- | --- | --- | --- |
+| default content size, 10 s | **present** | absent | `(16.0, 159.67, 285.0, 117.33)` |
+| AX5, full palette, 10 s | absent | **present** | `(16.0, 230.0, 370.0, 181.0)` |
+| AX5, narrowed to one species, 15 s | **present** | absent | `(16.0, 230.0, 416.33, 59.67)` |
+| AX5, filter cleared, 15 s | absent | **present** | `(16.0, 230.0, 370.0, 181.0)` |
+
+Three things that decide the rule, and only the measurement could have said any of them:
+
+- **`scrollViews` is not the safe default.** At the default content size the legend is an `Other`
+  for the whole run, so "prefer the scroller" is guessing the other way.
+- **The transient `Other` has an ordinary frame** — on the glass, finite, with an interior — so
+  `frameCanAnswerHittability`, the other candidate for this predicate, accepts it every time.
+- **It is stable while it lasts**: 117 consecutive samples of one unchanging rectangle in the
+  narrowed state. A "two consecutive reads agree" rule does not reject it either. Both spellings
+  flipped inside a single sample (< 0.65 s) when the palette changed.
+
+So the only thing separating the transient from the answer is **how long it lasts**, and the rule
+has to be a duration. That is not the predicate this ticket set out to write, and the measurement is
+what changed it.
+
+#### The repair
+
+`XCTestCase.resolvedContainer(_:labeled:_:)` and `ContainerSpellingResolution`
+(`CypressUITests/UIWait.swift`), called by all three sites, with the three hand-rolled copies
+deleted. Both spellings are re-read every round; a spelling resolves when it has existed with an
+unchanging, usable frame — `frameHasSettled` and `frameCanAnswerHittability`, the two predicates
+already in that file — for `settlingWindow` seconds of continuous observation, and one that leaves
+the tree loses whatever credit it had built up.
+
+`settlingWindow` is four seconds, sized from the log above: the failing read at t = 4.23 s found an
+`Other` and the passing read at t = 6.92 s found none, so the flip fell inside a ~2.7 s band. It is
+also longer than `MapOpening.patience` (`.seconds(3)`), the app's own budget for state still
+arriving after a launch.
+
+**A genuine absence still says so.** A camera showing no trees draws no legend under either
+spelling, and the failure for that keeps `assertReachable`'s sentence and now names both queries it
+watched, so the two causes can no longer be told apart only by luck.
+
+`ContainerSpellingGateTests` (unit suite, `DragGestureGateTests`' reason) fails the build if a
+fourth copy appears. Its instrument is `.scrollViews` appearing anywhere in `CypressUITests/` outside
+`UIWait.swift` — blunt on purpose, and `otherElements` is deliberately not the tell, because naming
+an `Other` directly is an ordinary correct thing to do.
+
+#### What the earlier logs actually say, now that they have been read
+
+The three run numbers cited at the top of this entry were taken from the ticket rather than from the
+logs. Downloaded and read:
+
+- **31300530216 never failed this test.** All three `IdentifyFABReachabilityTests` tests passed
+  (7.930 s, 5.673 s, 6.850 s). That run's failure is the `DeepLinkSweepTests` raise, which is
+  occurrence One. The citation was wrong.
+- **31291434427 and 31294993494 are the same defect as 31332870414, in the opposite direction.**
+  In both, the failing test's single un-waited read at t = 5.93 s and t = 7.29 s found **no**
+  `Other`, fell through to `scrollViews`, and then waited 30 s for a `ScrollView` — while the two
+  earlier tests of the same class, on the same install minutes before, had found the legend as an
+  **`Other`** and passed. Whatever the camera was doing in those runs, the third test was already
+  bound to a spelling that camera's legend does not use, and could not have passed if the legend had
+  arrived a millisecond later.
+
+Both of those runs also report `device-state active-city=n/a (app not installed)`: the CI runner
+installs the app fresh, so there is no camera inherited from a previous *run* to blame. The
+within-run inheritance this entry describes is real and is not what these logs show.
+
+**The lesson worth keeping is the one about the message.** "…never appeared in the accessibility
+tree at all within 30s" is what `assertReachable` and `settledFrame` print for a genuinely absent
+element, and it is also what they print for an element that is present under a name the test is not
+asking about. One sentence, two causes, and the entry above spent a whole round on the wrong one —
+after correctly refusing the brief's *first* mis-attribution three sections earlier. Reading the log
+caught that one. Not reading these three caught nothing.
