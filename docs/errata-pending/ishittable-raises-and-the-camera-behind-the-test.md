@@ -394,16 +394,22 @@ an `Other` directly is an ordinary correct thing to do.
 The three run numbers cited at the top of this entry were taken from the ticket rather than from the
 logs. Downloaded and read:
 
-- **31300530216 never failed this test.** All three `IdentifyFABReachabilityTests` tests passed
-  (7.930 s, 5.673 s, 6.850 s). That run's failure is the `DeepLinkSweepTests` raise, which is
-  occurrence One. The citation was wrong.
-- **31291434427 and 31294993494 are the same defect as 31332870414, in the opposite direction.**
-  In both, the failing test's single un-waited read at t = 5.93 s and t = 7.29 s found **no**
-  `Other`, fell through to `scrollViews`, and then waited 30 s for a `ScrollView` — while the two
-  earlier tests of the same class, on the same install minutes before, had found the legend as an
-  **`Other`** and passed. Whatever the camera was doing in those runs, the third test was already
-  bound to a spelling that camera's legend does not use, and could not have passed if the legend had
-  arrived a millisecond later.
+- **All three are the same defect as 31332870414, in the opposite direction.** In each, the failing
+  test's single un-waited read found **no** `Other`, fell through to `scrollViews`, and then waited
+  30 s for a `ScrollView` — while the two earlier tests of the same class, on the same install
+  minutes before, had found the legend as an **`Other`** and passed. Whatever the camera was doing in
+  those runs, the third test was already bound to a spelling that camera's legend does not use, and
+  could not have passed if the legend had arrived a millisecond later.
+
+> **This bullet said, for one revision, that "31300530216 never failed this test — all three passed
+> (7.930 s, 5.673 s, 6.850 s)." That is attempt 2.** The run has two `ui-log-1` artifacts under the
+> same name, one per attempt, and the newer of the two is the passing re-run. Attempt 1 fails at
+> `IdentifyFABReachabilityTests.swift:205` after 35.455 s, on `ScrollView`, exactly like the other
+> two. Downloading "the artifact called `ui-log-1`" from a run that was retried gets the attempt that
+> succeeded — which is the artifact-provenance rule in CLAUDE.md arriving in a shape it does not
+> name: not a stale file, but the *right* file for the wrong attempt. Fetch
+> `…/actions/runs/<id>/jobs?filter=all` first, read `run_attempt` per job, and pick the artifact by
+> `created_at` against the attempt that failed.
 
 Both of those runs also report `device-state active-city=n/a (app not installed)`: the CI runner
 installs the app fresh, so there is no camera inherited from a previous *run* to blame. The
