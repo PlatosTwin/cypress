@@ -164,4 +164,121 @@ final class FrameFinitenessGateTests: XCTestCase {
             "a control half off the top of the screen has points to sample and must still be asked"
         )
     }
+
+    // MARK: - Which element type a labeled container has settled into
+
+    /// Drives `ContainerSpellingResolution` with synthetic rounds, 0.15 s apart — the interval
+    /// `resolvedContainer`'s live loop uses — and reports what resolved and when.
+    ///
+    /// `rounds` is asked what exists at each sampled time, so a test writes the *history* of the
+    /// tree rather than a list of calls. No live element, no simulator, no app launch.
+    private func drive(
+        until end: TimeInterval,
+        window: TimeInterval = ContainerSpellingResolution.settlingWindow,
+        rounds: (TimeInterval) -> [ContainerSpelling: CGRect]
+    ) -> (spelling: ContainerSpelling, at: TimeInterval)? {
+        var resolution = ContainerSpellingResolution(window: window)
+        var time: TimeInterval = 0
+        while time <= end {
+            if let resolved = resolution.observe(rounds(time), at: time, onScreen: screen) {
+                return (resolved, time)
+            }
+            time += 0.15
+        }
+        return nil
+    }
+
+    /// The legend as it is drawn while its species palette is still filling: a plain group, laid
+    /// out, on the glass, with a perfectly measurable frame. Its only defect is that it is about to
+    /// be replaced.
+    private let unclampedLegend = CGRect(x: 16, y: 230, width: 370, height: 200)
+
+    /// The legend once `MapLayout.legendMaxHeight` binds: the clamped `ScrollView`.
+    private let clampedLegend = CGRect(x: 16, y: 230, width: 370, height: 262)
+
+    /// **The red-proof, and the CI failure this whole helper exists for.**
+    ///
+    /// An `Other` that is present and still for the first two seconds of a launch and then gone,
+    /// replaced by a `ScrollView`. Binding to the `Other` is exactly what the three hand-rolled
+    /// copies did, and it is what made the test wait 30 s for an element that no longer existed.
+    ///
+    /// Note what is *not* enough to reject it: the frame is finite, has an interior, is on the
+    /// screen, and does not move — so `frameCanAnswerHittability` and `frameHasSettled` both accept
+    /// it. Only the duration does.
+    func testATransientOtherIsNeverResolvedTo() {
+        let resolved = drive(until: 12) { time in
+            if time < 2.0 { return [.other: self.unclampedLegend] }
+            if time < 2.5 { return [:] }
+            return [.scrollView: self.clampedLegend]
+        }
+        XCTAssertEqual(
+            resolved?.spelling, .scrollView,
+            "the resolver bound to \(resolved.map { "\($0.spelling)" } ?? "nothing") — an `Other` "
+                + "that existed for the first 2 s of the launch and was then replaced by a "
+                + "`ScrollView` must never be the answer, and the `ScrollView` must be"
+        )
+        XCTAssertGreaterThanOrEqual(
+            resolved?.at ?? 0, 2.5 + ContainerSpellingResolution.settlingWindow,
+            "the `ScrollView` arrived at 2.5 s and was resolved at \(resolved?.at ?? -1) s, which is "
+                + "less than a full settling window after it appeared — the window is not being "
+                + "counted from when the element actually arrived"
+        )
+    }
+
+    /// The ordinary case, which is the half that stops this being a resolver that refuses
+    /// everything: one spelling, present and still from the first sample, resolves as soon as the
+    /// window has elapsed and not before.
+    func testAStableSpellingResolvesOnceTheWindowHasElapsed() {
+        let resolved = drive(until: 12) { _ in [.scrollView: self.clampedLegend] }
+        XCTAssertEqual(resolved?.spelling, .scrollView)
+        XCTAssertGreaterThanOrEqual(resolved?.at ?? 0, ContainerSpellingResolution.settlingWindow)
+        XCTAssertLessThan(
+            resolved?.at ?? .infinity, ContainerSpellingResolution.settlingWindow + 0.5,
+            "a container that never moves must be resolved as soon as the window has passed; "
+                + "waiting longer than that is a cost every caller pays for nothing"
+        )
+    }
+
+    /// **A frame that keeps changing is a palette that is still arriving.** Each species that
+    /// resolves its name adds a chip and grows the legend, and the height is the one channel that
+    /// says so — so a container whose rectangle never repeats must never resolve, however long it
+    /// has existed.
+    func testAContainerWhoseFrameKeepsChangingNeverResolves() {
+        let resolved = drive(until: 30) { time in
+            [.other: CGRect(x: 16, y: 230, width: 370, height: 100 + time)]
+        }
+        XCTAssertNil(
+            resolved,
+            "a container whose frame changed on every sample for 30 s was resolved anyway, at "
+                + "\(resolved?.at ?? -1) s — the settling half of the rule is not doing anything"
+        )
+    }
+
+    /// Leaving the tree spends the credit. A spelling that was still for almost a full window,
+    /// disappeared for one sample and came back must start its window again — otherwise a container
+    /// being rebuilt could be resolved across the rebuild.
+    func testLeavingTheTreeRestartsTheWindow() {
+        let gap = ContainerSpellingResolution.settlingWindow - 0.2
+        let resolved = drive(until: 20) { time in
+            if (gap...(gap + 0.3)).contains(time) { return [:] }
+            return [.scrollView: self.clampedLegend]
+        }
+        XCTAssertNotNil(resolved)
+        XCTAssertGreaterThanOrEqual(
+            resolved?.at ?? 0, gap + 0.3 + ContainerSpellingResolution.settlingWindow,
+            "a container that vanished at \(gap) s and returned at \(gap + 0.3) s resolved at "
+                + "\(resolved?.at ?? -1) s, which reuses credit it earned before the gap"
+        )
+    }
+
+    /// A frame no coordinate can be taken from earns no credit either, however patiently it sits
+    /// there — the same judgment `frameCanAnswerHittability` makes everywhere else in this file.
+    func testAContainerWithAnUnusableFrameNeverResolves() {
+        let offScreen = CGRect(x: -400, y: 850, width: 30, height: 30)
+        XCTAssertNil(
+            drive(until: 20) { _ in [.other: offScreen] },
+            "a container lying wholly off the left edge of the screen was resolved as the "
+                + "container to measure"
+        )
+    }
 }

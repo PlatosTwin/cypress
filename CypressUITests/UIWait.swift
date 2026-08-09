@@ -199,6 +199,218 @@ func frameCanAnswerHittability(_ rect: CGRect, onScreen screen: CGRect) -> Bool 
     isFiniteFrame(rect) && rect.width > 0 && rect.height > 0 && rect.intersects(screen)
 }
 
+/// The two element types XCUITest can file a labeled SwiftUI container under.
+///
+/// Not a matter of taste, and **not** a fact about XCUITest's filing habits — which is what this
+/// suite believed until PR #66 read `MapSpeciesLegend.body`. See `ContainerSpellingResolution`.
+enum ContainerSpelling: CaseIterable {
+    case other
+    case scrollView
+
+    /// How the query is spelled at a call site, for failure messages that can be searched for.
+    var query: String {
+        switch self {
+        case .other: return "otherElements"
+        case .scrollView: return "scrollViews"
+        }
+    }
+}
+
+/// **Which element type a labeled SwiftUI container is filed under is decided by the app, and the
+/// app can change its mind mid-launch.**
+///
+/// ── The measurement this exists because of ───────────────────────────────────────────────────
+/// Three files carried the same three lines:
+///
+///     let other = app.otherElements[label]
+///     return other.exists ? other : app.scrollViews[label]
+///
+/// One un-waited read, deciding which element every later wait would be spent on. It failed
+/// `IdentifyFABReachabilityTests
+/// .testTheTopChromeStaysClearOfTheBottomChromeAtAX5WithLocationDenied` intermittently in CI —
+/// pass, pass, fail across three runs of PR #66 — with *"the species legend … never appeared in the
+/// accessibility tree at all within 30s"*. The legend was there. The read had bound to the other
+/// spelling. From the failing shard log, against the passing test in the same class:
+///
+///     passing:  t=6.92s  Checking existence of `"Species shown …" Other`
+///               t=8.29s  Expect `exists == 1` for "…" ScrollView   → satisfied
+///     failing:  t=4.23s  Checking existence of `"Species shown …" Other`
+///               t=6.63s → 35.9s  Expect `exists == 1` for "…" Other → never satisfied
+///
+/// ── Why the transient exists, which is the part that decides the rule ────────────────────────
+/// `MapSpeciesLegend.body` has **two branches**, and picks between them on
+/// `MapLayout.legendMaxHeight`:
+///
+/// - ceiling does not bind → `chips.accessibilityElement(children: .contain)` — an **`Other`**;
+/// - ceiling binds → `ScrollView { chips }.accessibilityElement(children: .contain)` — a
+///   **`ScrollView`** (task #258 moved the label onto the scroller deliberately, so the measured
+///   rectangle is the one the reader can see rather than the `FlowRow` overflowing it).
+///
+/// `legendMaxHeight` takes `namedSpecies count`, and that count **arrives asynchronously** — the
+/// palette fills as the map's query comes back and the species names resolve. So early in a launch
+/// the legend is genuinely an `Other`, and it becomes a `ScrollView` when the count grows past what
+/// the screen has room for. The transient is the app rendering honestly at a partial palette, not
+/// XCUITest being capricious.
+///
+/// Two consequences the old three lines got wrong, and a comment in two of those files asserted the
+/// opposite of:
+///
+/// - **`scrollViews` is not the safe default either.** Which branch is live depends on the species
+///   count, the screen height and the content size; at ordinary sizes the legend is an `Other` for
+///   the whole run.
+/// - **The transient has a perfectly good frame.** It is the unclamped legend, laid out and on the
+///   glass, so a guard built out of `frameCanAnswerHittability` alone would accept it — and the
+///   rectangle it hands back is the *pre-clamp* one, which is the wrong rectangle for exactly the
+///   occlusion assertions that read it.
+///
+/// ── The rule ────────────────────────────────────────────────────────────────────────────────
+/// A spelling resolves when it has existed **with an unchanging, usable frame** for
+/// `settlingWindow` seconds of continuous observation. Existence alone is what the old code
+/// trusted; the frame is what says the palette has stopped growing, because every arriving species
+/// changes the legend's height. `frameHasSettled` and `frameCanAnswerHittability` are the same two
+/// predicates the rest of this file is built on, so nothing new is being invented — what is new is
+/// that the *choice of element* waits, instead of one read of a still-settling screen deciding it.
+///
+/// Pure arithmetic over samples with an explicit clock, deliberately: `FrameFinitenessGateTests`
+/// drives it with synthetic rounds — no live element, no simulator — the same way `frameHasSettled`
+/// and `frameCanAnswerHittability` are proved.
+struct ContainerSpellingResolution {
+
+    /// **How long a spelling must hold still before it is believed.**
+    ///
+    /// Measured, not guessed: see `resolvedContainer`'s note on the local probe, and the write-up in
+    /// `docs/errata-pending/`. It is a liveness bound and costs nothing but itself — the loop returns
+    /// as soon as the window has elapsed on a container that is not moving.
+    static let settlingWindow: TimeInterval = 3
+
+    let window: TimeInterval
+
+    /// Per spelling: when its current, unchanged frame was first observed, and what that frame is.
+    private var holding: [ContainerSpelling: (since: TimeInterval, frame: CGRect)] = [:]
+
+    /// Every spelling that has been observed at all, so a failure can tell "never in the tree" from
+    /// "in the tree and never still" — the first is a genuine absence and must keep saying so.
+    private(set) var everSeen: Set<ContainerSpelling> = []
+
+    init(window: TimeInterval = ContainerSpellingResolution.settlingWindow) {
+        self.window = window
+    }
+
+    /// Feeds one round of observations — the frame of each spelling that currently exists — and
+    /// answers with the spelling that has resolved, if any.
+    ///
+    /// When more than one has resolved in the same round the **longest-held** wins, with
+    /// `allCases` order as a deterministic tie-break. The app cannot currently produce that state
+    /// (a view renders one branch or the other, and a `ScrollView` is not filed under
+    /// `otherElements`), so this is a rule for a case that has not been observed rather than one
+    /// measured — said plainly here rather than asserted confidently.
+    mutating func observe(
+        _ round: [ContainerSpelling: CGRect],
+        at time: TimeInterval,
+        onScreen screen: CGRect
+    ) -> ContainerSpelling? {
+        for spelling in ContainerSpelling.allCases {
+            guard let frame = round[spelling] else {
+                holding[spelling] = nil
+                continue
+            }
+            // Recorded on existence rather than on usability, so a container that is in the tree
+            // with a frame nobody can measure reports as present-and-unsettled rather than absent.
+            everSeen.insert(spelling)
+            guard frameCanAnswerHittability(frame, onScreen: screen) else {
+                holding[spelling] = nil
+                continue
+            }
+            if let held = holding[spelling], frameHasSettled(previous: held.frame, current: frame) {
+                continue
+            }
+            holding[spelling] = (since: time, frame: frame)
+        }
+        return ContainerSpelling.allCases
+            .compactMap { spelling -> (ContainerSpelling, TimeInterval)? in
+                guard let held = holding[spelling], time - held.since >= window else { return nil }
+                return (spelling, held.since)
+            }
+            .min { $0.1 < $1.1 }?.0
+    }
+}
+
+extension XCTestCase {
+
+    /// **A labeled SwiftUI container, resolved to whichever element type it has settled into.**
+    ///
+    /// Replaces the three hand-copied `other.exists ? other : app.scrollViews[label]` helpers in
+    /// `IdentifyFABReachabilityTests`, `MapFilterAccessibilityTests` and `MapRecenterUITests` —
+    /// one fix copied by hand, which is the shape `DragGestureGateTests` and
+    /// `HittabilityFilterGateTests` already record. `ContainerSpellingGateTests` (unit suite) fails
+    /// the build if a fourth copy appears.
+    ///
+    /// `ContainerSpellingResolution` carries the whole argument for the rule. What this adds is the
+    /// live half: both spellings are re-read every round, so a spelling that stops existing loses
+    /// whatever credit it had built up, and nothing is decided by one read of a screen that is still
+    /// loading.
+    ///
+    /// **A genuine absence still says so.** A camera showing no trees draws no legend under either
+    /// spelling, and that is a real state this must not turn into a silent skip — the failure keeps
+    /// `assertReachable`'s sentence for it, and names both queries it watched.
+    ///
+    /// The `exists`-then-`frame` pair is two snapshots and can race, exactly as `settledFrame`'s own
+    /// loop can; a frame read of something that has just left the tree reads as unusable and simply
+    /// costs that spelling its round.
+    func resolvedContainer(
+        _ app: XCUIApplication,
+        labeled label: String,
+        _ description: String,
+        timeout: TimeInterval = 30,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) -> XCUIElement {
+        // `app.frame` is a query, not a stored property — read once, above the loop. See
+        // `isHittableWithoutRaising(onScreen:)`, and the CI failure that taught it.
+        let screen = app.frame
+        let elements: [ContainerSpelling: XCUIElement] = [
+            .other: app.otherElements[label],
+            .scrollView: app.scrollViews[label]
+        ]
+        var resolution = ContainerSpellingResolution()
+        let start = Date()
+        while Date().timeIntervalSince(start) < timeout {
+            var round: [ContainerSpelling: CGRect] = [:]
+            for spelling in ContainerSpelling.allCases {
+                guard let element = elements[spelling], element.exists else { continue }
+                round[spelling] = element.frame
+            }
+            let now = Date().timeIntervalSince(start)
+            if let resolved = resolution.observe(round, at: now, onScreen: screen),
+               let element = elements[resolved] {
+                return element
+            }
+            usleep(150_000)
+        }
+
+        let watched = ContainerSpelling.allCases
+            .map { "`\($0.query)[\"\(label)\"]`" }
+            .joined(separator: " or ")
+        XCTFail(
+            resolution.everSeen.isEmpty
+                ? "\(description) never appeared in the accessibility tree at all within "
+                    + "\(Int(timeout))s — neither as \(watched)"
+                : "\(description) is in the accessibility tree as "
+                    + "\(resolution.everSeen.map(\.query).sorted().joined(separator: " and "))"
+                    + ", and never held one element type with an unchanging frame for "
+                    + "\(Int(ContainerSpellingResolution.settlingWindow))s within \(Int(timeout))s. "
+                    + "Either the container is still being rebuilt — `MapSpeciesLegend` swaps "
+                    + "between a plain group and a `ScrollView` as its species palette fills — or "
+                    + "its frame never stops changing, and any rectangle taken from it is stale",
+            file: file, line: line
+        )
+        // Something has to be returned. The caller's own assertion is what a reader wants to see
+        // next, and with `continueAfterFailure = false` — which every class calling this sets —
+        // nothing runs after the failure above anyway.
+        return elements[.scrollView] ?? app.otherElements[label]
+    }
+}
+
 extension XCUIElement {
 
     /// `isHittable`, asked only when the element's frame can answer — `false` where the raw property

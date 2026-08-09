@@ -137,12 +137,22 @@ final class MapFilterAccessibilityTests: XCTestCase {
         return element
     }
 
-    /// The row's named container. It rides on the `ScrollView` since the row became one (#166),
-    /// and which element type XCUITest files a labeled SwiftUI scroller under is its business,
-    /// not a contract worth pinning — both spellings are accepted.
+    /// The row's named container, resolved to whichever element type it has settled into.
+    ///
+    /// It rides on the `ScrollView` since the row became one (#166) — `MapChrome` puts the label on
+    /// the scroller, and its own comment records that the outer `VStack`'s group vanished from the
+    /// tree when the chips moved inside. That is the app's decision and not a fact about XCUITest,
+    /// which is exactly why this waits for it rather than reading it once: see
+    /// `ContainerSpellingResolution` (`UIWait.swift`), where the same pattern's un-waited read
+    /// intermittently bound the *species legend* to a spelling that was about to disappear.
     private func rowContainer(_ app: XCUIApplication) -> XCUIElement {
-        let other = app.otherElements[Self.rowLabel]
-        return other.exists ? other : app.scrollViews[Self.rowLabel]
+        resolvedContainer(
+            app,
+            labeled: Self.rowLabel,
+            "the filter row's named container (“\(Self.rowLabel)”) — without it the row's chips "
+                + "arrive unannounced between the search field and the map",
+            timeout: 25
+        )
     }
 
     /// Drags the row one screen's worth, anchored on whichever chip is currently on the glass —
@@ -231,8 +241,10 @@ final class MapFilterAccessibilityTests: XCTestCase {
         let app = launch()
         _ = requireField(app)
 
+        // `rowContainer` waits, and fails with its own sentence naming both spellings it watched if
+        // the row never becomes a named container at all.
         XCTAssertTrue(
-            wait(timeout: 25) { self.rowContainer(app).exists },
+            rowContainer(app).exists,
             "the filter row is not a named container in the accessibility tree, so its chips arrive "
                 + "unannounced between the search field and the map"
         )

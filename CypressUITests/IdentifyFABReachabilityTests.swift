@@ -102,16 +102,6 @@ final class IdentifyFABReachabilityTests: XCTestCase {
         return app
     }
 
-    /// A named SwiftUI container, under either of the two element types XCUITest files one under.
-    ///
-    /// The chip row's container rides on a `ScrollView` since the row became one (#166) and the
-    /// legend's does not, and which spelling XCUITest picks for a labeled SwiftUI group is not a
-    /// contract worth pinning (`MapFilterAccessibilityTests.rowContainer`).
-    private func container(_ app: XCUIApplication, _ label: String) -> XCUIElement {
-        let other = app.otherElements[label]
-        return other.exists ? other : app.scrollViews[label]
-    }
-
     /// **The control is in the tree and a finger can land on it.**
     ///
     /// `exists` alone would pass on the defect this guards: E248's control was in the tree the whole
@@ -164,7 +154,7 @@ final class IdentifyFABReachabilityTests: XCTestCase {
         )
 
         let legendFrame = settledFrame(
-            container(app, Self.legendLabel),
+            resolvedContainer(app, labeled: Self.legendLabel, Self.legendDescription),
             Self.legendDescription,
             requireHittable: false
         )
@@ -214,7 +204,7 @@ final class IdentifyFABReachabilityTests: XCTestCase {
         let app = launchAtAX5Denied()
 
         let legendFrame = settledFrame(
-            container(app, Self.legendLabel),
+            resolvedContainer(app, labeled: Self.legendLabel, Self.legendDescription),
             Self.legendDescription,
             requireHittable: false
         )
