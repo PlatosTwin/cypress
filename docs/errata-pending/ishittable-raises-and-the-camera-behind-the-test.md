@@ -275,6 +275,19 @@ Gate Park (`37.769402,-122.486198`, `camera-trees=0`) and the preflight skipped:
   elements of a screen it does not own is still the deeper defect; pinning the camera makes what it
   reads deterministic rather than making it read the right thing. Scoping the walk to the presented
   screen's own subtree is a larger change to what that helper claims, and it is not this ticket.
+- **The enumeration race is still live, and has now been seen twice.** CI run 31338381219, shard
+  `ui (3)`, `DeepLinkSweepTests.testNothingIsAnnouncedTwice`:
+
+      Failed to get matching snapshot: No matches found for Element at index 3 from input {(
+          StaticText, StaticText, StaticText )}
+
+  The loop asked for index 3 of a query that had four matches when it took the count and three by
+  the time it resolved — two retries a second apart, and the tree never came back. That is the same
+  defect as the `Element at index 25` failure recorded above, with `app.frame` already hoisted out
+  of the loop, so hoisting narrowed the window rather than closing it. It is a property of walking
+  every element of the app against a live tree, which is the ROADMAP entry on
+  `assertEveryControlIsLabeled`'s scope, not a property of any of this round's repairs — the same
+  shard passed on the run before it (31332870414), and this round's diff does not touch that file.
 
 #### Correction: the legend was there, and the test was waiting for the wrong element
 
