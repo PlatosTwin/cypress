@@ -145,7 +145,23 @@ final class MapCameraMemory {
     ///
     /// The screen says different things in the two cases, so this is asked rather than inferred from
     /// `remembered != nil` at some later moment when it would no longer be the same question.
-    var hasRememberedCamera: Bool { openingSnapshot != nil }
+    ///
+    /// **A pinned camera answers `false`, and that is not a detail.** `MapOpeningCopy.showing`
+    /// turns this into one of two sentences the location notice ends with — "The map is where you
+    /// last left it." or the five-characters-longer "The map is over the middle of the city." — and
+    /// at AX5 the notice's height is what pushes the bottom chrome up against the top chrome, which
+    /// is precisely what `IdentifyFABReachabilityTests` measures.
+    ///
+    /// A pinned launch is not a reader returning to a camera they chose; it is the state CI is
+    /// actually in — a fresh install with no history — with the camera aimed. Answering `false`
+    /// keeps that class measuring the longer sentence, deterministically, instead of measuring
+    /// whichever one the previous launch in the same job happened to produce. Its first test used
+    /// to get the fallback sentence and its third the remembered one, on the same install, minutes
+    /// apart.
+    var hasRememberedCamera: Bool {
+        guard pinned == nil else { return false }
+        return openingSnapshot != nil
+    }
 
     /// The camera the reader left screen 01 on **during this process** — written by `note(_:)`,
     /// which `MapHomeView.rememberCamera` calls on the two edges where they stop looking at it.

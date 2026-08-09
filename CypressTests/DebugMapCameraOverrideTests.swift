@@ -265,6 +265,32 @@ struct DebugMapCameraOverrideTests {
         )
     }
 
+    /// **A pinned launch says what a first launch says.** `MapOpeningCopy.showing` ends the location
+    /// notice with one of two sentences, the fallback one is five characters longer, and at AX5 the
+    /// notice's height is what `IdentifyFABReachabilityTests` measures the bottom chrome against. A
+    /// pinned run reporting "where you last left it" would quietly hand that class the shorter
+    /// sentence and the weaker version of its own guard.
+    @MainActor
+    @Test("a pinned camera is not a camera the reader left")
+    func pinnedIsNotRemembered() {
+        let defaults = scratchDefaults("pinnedNotRemembered")
+        defaults.set(MapCameraMemory.encode(onDisk), forKey: MapCameraMemory.defaultsKey)
+
+        // The control: the same defaults, unpinned, do report a remembered camera.
+        #expect(MapCameraMemory(defaults: defaults).hasRememberedCamera)
+
+        guard let pin = pinned(DebugMapCameraFixtures.westernAddition) else {
+            Issue.record("the fixture did not parse")
+            return
+        }
+        let memory = MapCameraMemory(defaults: defaults, pinned: pin)
+        #expect(memory.hasRememberedCamera == false)
+        #expect(
+            MapOpening.showing(remembered: memory.hasRememberedCamera) == .theCityFallback,
+            "a pinned launch must produce the sentence a fresh install produces"
+        )
+    }
+
     /// Pinning is about where the map *opens*. A pan the test itself performs must still be visible
     /// to the screen when it is remade by a tab switch, or this seam would quietly change what
     /// `MapPanTabSwitchUITests` asserts (task #128).
