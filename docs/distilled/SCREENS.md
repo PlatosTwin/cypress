@@ -11,7 +11,7 @@ export) and cross-checked against `_unzipped/design_handoff_cypress/README.md` a
   (`05 · Light check-in`, item 3) are the owner's decision on ticket #261, not the export's copy.
   The export and `SPEC-PHASE1.md` §6 stated that one table differently from the day both were
   distilled, and the fork was closed toward a single approved text. The note beside the table says
-  so, and the #261 ruling on the vitality rubric quotes the export's original five lines verbatim.
+  so, and RULINGS R70 quotes the export's original five lines verbatim.
 - Where the source does not specify something (a tap target, a transition, an empty state), it is
   marked **NOT SPECIFIED**.
 - Copy strings are verbatim, including the typographic characters the file actually uses:
@@ -880,8 +880,8 @@ height, so they always sum to it.
    #261, landed here, in `PRODUCT.md` §3 and in `Vitality.anchor` together. The export and
    `SPEC-PHASE1.md` §6 had stated the rubric copy differently since the handoff, and `PRODUCT.md`
    won on the dieback bands because RULINGS R13 reserves a class's *meaning* to `PRODUCT.md` and a
-   band is a class's operational definition. **The #261 ruling on the vitality rubric quotes the
-   export's original five lines verbatim in its §0**, so a transcription check that finds the export
+   band is a class's operational definition. **RULINGS R70, the #261 ruling on the vitality
+   rubric, quotes the export's original five lines verbatim in its §0**, so a transcription check that finds the export
    disagreeing with the table above has found the intended state rather than drift. The agreement
    between this table, `PRODUCT.md` §3 and `Vitality.anchor` is asserted by
    `CypressTests/VitalityRubricTests.swift`, not left to a reader to notice. The titles, the level
