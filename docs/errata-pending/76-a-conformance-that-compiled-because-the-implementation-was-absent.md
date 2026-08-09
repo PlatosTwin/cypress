@@ -49,25 +49,67 @@ Two halves, and neither is an API implementation — #76 is the guard, #158 is t
    the backoff). The fourteenth is `deviceContributions()`, which returns `.none` — the spec's
    **Class D**, device-only and never remote — written down with its reason beside it rather than
    arrived at by having nothing to say.
-2. **`CypressTests/APIConformanceGuardTests`**, six gates, all measured off the working tree:
+2. **`CypressTests/APIConformanceGuardTests`**, eight gates, all measured off the working tree:
    - the requirement set is **parsed out of `Cypress/Data/API/CypressAPI.swift`** on every run, never
      listed by hand;
-   - every conformance in the app target that is *not* behind `#if DEBUG` must declare every
-     requirement, compared on name, argument labels, parameter types and return type;
+   - every conformance in the app target that a release build compiles must declare every
+     requirement, compared on name, argument labels, parameter types and return type. A conformance
+     is a **type**, not a declaration: its own body and every `extension <TypeName>` in the app
+     target contribute, minus anything a release build does not compile;
    - the set of such conformances must be the two this file names, so a third cannot land
      unclassified and a fixture cannot be smuggled out from behind `#if DEBUG`;
-   - no member of a `public extension CypressAPI` may be anything other than a protocol requirement
-     — **E125's mechanism**, guarded at the source;
+   - no member of a `public extension CypressAPI` — instance method, **`static` method, computed
+     `var` or `subscript`** — may be anything other than a protocol requirement; **E125's
+     mechanism**, guarded at the source;
    - a complete conformance erased to `any CypressAPI` must reach its own witnesses for all 31
      calls, which is the same erasure every screen performs and the one E125 says a test holding the
-     concrete type cannot see;
-   - and a calibration gate ahead of all of them, with two positive controls, two **negative**
+     concrete type cannot see, with the probe's hand-written call list checked **both ways** against
+     the parse;
+   - `LocalAPI` — the conformance the shipped app actually holds — erased to `any CypressAPI` over
+     a seeded store must answer `speciesGuide` with a population count, which the protocol-extension
+     default cannot;
+   - and two calibration gates ahead of all of them: two positive controls, two **negative**
      controls (`savePrivateReminder` and `outboxStatus` are named in prose inside the very file whose
-     protocol body is parsed, and are not requirements), and the shared source-file floor.
+     protocol body is parsed, and are not requirements), the shared source-file floor, and the
+     conditional-compilation classification checked branch by branch.
 
 Effects (`async`, `throws`) are deliberately **not** compared: a synchronous non-throwing witness
 legally satisfies an `async throws` requirement, so comparing them would red a conformance that is
 in fact complete.
+
+#### The half of it that was wrong, and how it was found
+
+The first version of this guard shipped to review with all six gates green **and the defect present**,
+which is the failure mode this repository names as its dominant one. `Parser.debugRegions` decided
+whether a region was DEBUG-only by asking whether the `#if` line *contained* the substring `DEBUG`,
+kept that verdict through `#else`, and was consulted only for the position of a **type declaration**.
+Three shapes defeat that, and the reviewer demonstrated all three live rather than arguing them:
+
+- `#if DEBUG … #else <conformance> #endif` — the `#else` branch is what a **release** build compiles,
+  and it was being marked debug-only, so a release-only conformance was filed as a preview double and
+  never asked to declare anything. It then inherited all fourteen defaults, `mapMembership → []` and
+  `deviceContributions → .none` among them.
+- `#if !DEBUG <conformance> #endif` — `contains("DEBUG")` matches the negation, same result.
+- `#if DEBUG` **inside** a shipping conformance's body — the classification was never applied to
+  members at all, so a requirement declared there counted as declared while the release build
+  inherited the default. **This shape is already in the tree**: `LocalAPI.swift` carries a 330-line
+  `#if DEBUG` region inside its conformance body.
+
+With two of the three present, on a build that really recompiled, the whole suite reported green.
+
+The fix is a real directive stack — `#if` pushes, `#elseif` replaces the top, `#else` replaces the top
+with **false**, `#endif` pops, and a condition counts as debug-only only when it is *exactly* `DEBUG`
+— applied to members as well as to declarations. Anything the scan cannot classify is treated as
+release-compiled, which is the direction that fails loudly.
+
+**The lesson is not "the parser had a bug".** The old comment on that function asserted the safe
+direction as an obvious property — *"a conformance this misses is classified as shipping, which is the
+direction that fails loudly"* — and that sentence was false for the three cases above. It was written
+because it seemed self-evident, and this repository's rule is that a confident comment is where bugs
+survive. The claim is now true because a gate makes it true:
+`theDirectiveStackClassifiesEachBranch` feeds eleven directive shapes to the scanner and checks each
+against an answer known before it ran, including a positive control, without which the whole gate
+could pass by the scan marking nothing at all.
 
 #### The trap this guard had to avoid, and the case that was constructed to check it
 
@@ -79,11 +121,20 @@ back to the parse — the probe records which requirement it reached, and the te
 names cover the *parsed* requirement set — so an unprobed requirement fails the test rather than
 quietly shrinking it.
 
-Four defect cases were constructed and run, each red for the reason named:
+Eight defect cases were constructed and run, each red for the reason named — four before review, and
+four more against the conditional-compilation family review found:
 
 - **the tree as it stood on main.** `RemoteAPI (Cypress/Data/API/RemoteAPI.swift) does not declare
-  14 of 31 CypressAPI requirements and would inherit a protocol-extension default for each:` — and
-  all fourteen listed by signature.
+  14 of 31 CypressAPI requirements` — and all fourteen listed by signature.
+- **a witness behind `#if DEBUG` inside a shipping conformance body** (the reviewer's shape (a)):
+  `… does not declare 1 of 31 … · mapMembership(_: MapMembership) -> Set<UUID>`.
+- **a conformance in an `#else` branch, and one under `#if !DEBUG`** (shapes (b) and (c)). Neither is
+  compiled by the Debug test build at all, which is precisely why a *source* scan has to see them:
+  `the app target's non-#if DEBUG CypressAPI conformances are ["LocalAPI", "ReleaseOnlyElseAPI",
+  "ReleaseOnlyNegatedAPI", "RemoteAPI"]`, plus `… does not declare 31 of 31 …` for each.
+- **a `var` and a `static func` in `extension CypressAPI`**, E125's mechanism in the two shapes the
+  first version of gate 5 filtered out: `2 member(s) of extension CypressAPI are not protocol
+  requirements: · static func makeDefault() -> Int · var apiFlavor`.
 - **a witness whose signature does not match.** `RemoteAPI.mapMembership` returning `[UUID]` instead
   of `Set<UUID>` compiles, does not satisfy the requirement, and leaves the default in force. This
   is the case a label-only comparison would have passed. `… does not declare 1 of 31 … ·
@@ -96,9 +147,14 @@ Four defect cases were constructed and run, each red for the reason named:
   requirement(s) have no call in this test, so nothing here can tell whether they dispatch:
   neighborhoodDigest.`
 
-A fifth, on the classification rather than the count: `RemoteAPI` wrapped in `#if DEBUG` produces
+And one on the classification rather than the count: `RemoteAPI` wrapped in `#if DEBUG` produces
 `the app target's non-#if DEBUG CypressAPI conformances are ["LocalAPI"], and this file expects
 ["LocalAPI", "RemoteAPI"]`.
+
+One case was run the other way, to check that a correct conformance is not reported as broken: a real
+`exportLatest` witness moved into `public extension RemoteAPI { … }` — which is what #158 will do to
+that file once 31 bodies need `// MARK:` sections — leaves gate 3 **green**. Before review it did not:
+it reported the method missing and diagnosed a protocol-extension default that was not in force.
 
 #### What it does not check, said out loud
 
@@ -113,3 +169,14 @@ argument for not taxing thirty-one fixtures to say so.
 
 And it reads Swift with a small scanner rather than a real parser. It handles the declaration shapes
 this repository writes; a shape it cannot read fails as a mismatch, which is red rather than green.
+The reviewer put eight reformattings through it — wrapped parameter lists, `where` clauses, attribute
+prefixes — without producing a false green, which is evidence about those eight and not a proof about
+the ninth. The one family that did break it was conditional compilation, and that family now has its
+own gate.
+
+**Only one of the four value-returning defaults is checked live, and the reason is the defect itself.**
+Over an empty store `mapMembership` is `[]` either way, `deviceContributions` is `.none` either way,
+and `isFavorite` is false either way: the default and the real implementation agree, which is exactly
+the camouflage that let this survive. `speciesGuide` separates cleanly against the attached seed — the
+default's `cityTreeCount` is nil, `LocalAPI`'s is a count — so that is the one the erasure gate asks.
+The other three rest on the structural gates, and that is a real limit rather than a rounding of one.
