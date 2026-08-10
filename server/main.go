@@ -1,62 +1,163 @@
-// PLACEHOLDER — R36 live-layer scaffolding, ticket #158.
+// Command cypress-sync is the live-layer sync API (ticket #158, RULINGS R72).
 //
-// This is NOT the sync API. It exists only to prove the Fly app, machine, region and
-// Tigris bucket are provisioned and reachable. #158 is spec-first: the real stack
-// decision (Go / Node / Fastify / something else) is explicitly still open, and this
-// file is expected to be deleted or rewritten wholesale when #158 lands.
+// It replaces the R36 placeholder that answered 501 to everything. One `shared-cpu-1x`/256 MB
+// machine on the `cypress-sync` Fly app, Postgres, two direct Go dependencies, a static binary.
 //
-// GET /health -> 200, JSON naming the git sha, with "placeholder": true
-// anything else -> 501, JSON saying the sync API is not built yet
+// ── What this service is and is not ────────────────────────────────────────────────────────────
+//
+// R36 rules which layer travels which way and R72 does not reopen it. The city layer — the map's
+// pan loop, species, the almanac — is answered on the phone from the installed city file and never
+// reaches here. What this service holds is the community layer and the account's own rows: the
+// things liveness actually buys, and the things a second device cannot know without it.
+//
+// ── Configuration ──────────────────────────────────────────────────────────────────────────────
+//
+// Every value comes from the environment and **none has a default**. A missing one is a refusal to
+// start, which is the only safe answer: a service that booted without `SESSION_SIGNING_KEY` would
+// mint forgeable sessions and look perfectly healthy doing it.
 package main
 
 import (
-	"encoding/json"
-	"log"
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/PlatosTwin/cypress/server/internal/api"
+	"github.com/PlatosTwin/cypress/server/internal/apple"
+	"github.com/PlatosTwin/cypress/server/internal/storage"
+	"github.com/PlatosTwin/cypress/server/internal/store"
+	"github.com/PlatosTwin/cypress/server/internal/tokens"
 )
 
-func writeJSON(w http.ResponseWriter, status int, body map[string]any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(body); err != nil {
-		log.Printf("encode error: %v", err)
+func main() {
+	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	if err := run(log); err != nil {
+		log.Error("fatal", "cause", err)
+		os.Exit(1)
 	}
 }
 
-func main() {
-	sha := os.Getenv("GIT_SHA")
-	if sha == "" {
-		sha = "unknown"
+// appleAuth joins the verifier and the token client into the one interface the handlers take.
+type appleAuth struct {
+	*apple.Verifier
+	*apple.Client
+}
+
+func run(log *slog.Logger) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	databaseURL, err := required("DATABASE_URL")
+	if err != nil {
+		return err
 	}
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
+	signingKey, err := required("SESSION_SIGNING_KEY")
+	if err != nil {
+		return err
+	}
+	signer, err := tokens.NewSigner([]byte(signingKey))
+	if err != nil {
+		return err
 	}
 
-	mux := http.NewServeMux()
-
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"status":      "ok",
-			"service":     "cypress-sync",
-			"git_sha":     sha,
-			"placeholder": true,
-			"ticket":      "#158",
-		})
-	})
-
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusNotImplemented, map[string]any{
-			"error":       "not_implemented",
-			"message":     "The Cypress sync API is not built yet. This is R36 scaffolding only; the API is ticket #158.",
-			"placeholder": true,
-			"ticket":      "#158",
-		})
-	})
-
-	log.Printf("placeholder server listening on :%s (git_sha=%s)", port, sha)
-	if err := http.ListenAndServe(":"+port, mux); err != nil {
-		log.Fatal(err)
+	appleConfig := apple.Config{
+		TeamID: os.Getenv("APPLE_TEAM_ID"),
+		KeyID:  os.Getenv("APPLE_KEY_ID"),
+		// Read as-is. The `.p8` arrives as its full PEM text, newlines and all; `apple` restores
+		// literal `\n` sequences as a tolerance for a secret store that flattened them, but nothing
+		// here requires base64 or any other pre-encoding.
+		PrivateKeyPEM: os.Getenv("APPLE_PRIVATE_KEY"),
+		BundleID:      os.Getenv("APPLE_BUNDLE_ID"),
 	}
+	if err := appleConfig.Validate(); err != nil {
+		return err
+	}
+
+	storageConfig := storage.Config{
+		AccessKeyID:     os.Getenv("AWS_ACCESS_KEY_ID"),
+		SecretAccessKey: os.Getenv("AWS_SECRET_ACCESS_KEY"),
+		Endpoint:        os.Getenv("AWS_ENDPOINT_URL_S3"),
+		Region:          os.Getenv("AWS_REGION"),
+		Bucket:          os.Getenv("BUCKET_NAME"),
+	}
+	if err := storageConfig.Validate(); err != nil {
+		return err
+	}
+
+	operatorToken, err := required("OPERATOR_TOKEN")
+	if err != nil {
+		// Not optional, and this is R72 ruling 5 rather than tidiness: the takedown ships in the
+		// same release as auto-approve, and a takedown route with no credential configured is a
+		// takedown that cannot be performed.
+		return err
+	}
+
+	dataStore, err := store.Open(ctx, databaseURL)
+	if err != nil {
+		return err
+	}
+	defer dataStore.Close()
+	log.Info("schema applied", "server_schema_version", store.SchemaVersion)
+
+	verifier, err := apple.NewVerifier(ctx, appleConfig.BundleID)
+	if err != nil {
+		return err
+	}
+
+	server := &api.Server{
+		Store:         dataStore,
+		Apple:         appleAuth{Verifier: verifier, Client: apple.NewClient(appleConfig)},
+		Signer:        signer,
+		Presigner:     storage.NewPresigner(storageConfig),
+		Log:           log,
+		GitSHA:        envOr("GIT_SHA", "unknown"),
+		OperatorToken: operatorToken,
+	}
+
+	httpServer := &http.Server{
+		Addr:              ":" + envOr("PORT", "8080"),
+		Handler:           server.Handler(),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+
+	go func() {
+		<-ctx.Done()
+		// The machine stops when idle (`auto_stop_machines`), so a graceful shutdown is not a
+		// nicety here — it is the normal path, several times a day.
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err := httpServer.Shutdown(shutdownCtx); err != nil {
+			log.Error("shutdown", "cause", err)
+		}
+	}()
+
+	log.Info("listening", "addr", httpServer.Addr, "git_sha", server.GitSHA)
+	if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
+}
+
+func required(name string) (string, error) {
+	value := os.Getenv(name)
+	if value == "" {
+		return "", fmt.Errorf("%s is not set", name)
+	}
+	return value, nil
+}
+
+func envOr(name, fallback string) string {
+	if value := os.Getenv(name); value != "" {
+		return value
+	}
+	return fallback
 }
