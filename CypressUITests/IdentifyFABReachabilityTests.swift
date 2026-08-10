@@ -70,13 +70,29 @@ final class IdentifyFABReachabilityTests: XCTestCase {
     private static let legendLabel = "Species shown in color on this map"
 
     /// What an absent legend means, said in the failure rather than left for the next agent to work
-    /// out. `MapSpeciesLegend` "draws nothing when it has colored none", so the only way it is
-    /// missing is that screen 01's opening camera is showing no trees — E216's geometry, which
-    /// `Tools/run_tests.sh`'s camera preflight heals and stamps in the `CYPRESS-RUN` header. It is
-    /// the same standing assumption `AlmanacGroupTapTests` makes when it waits for tree pins.
+    /// out. **There are two causes and this sentence names both**, because for one round it named
+    /// only the first and that cost a day: the legend was in the tree the whole time, `container`
+    /// below was waiting under an element type it does not use, and the failure text sent the
+    /// investigation at an unrelated diff.
+    ///
+    /// 1. **Device state.** `MapSpeciesLegend` "draws nothing when it has colored none", so a
+    ///    legend that is genuinely missing means screen 01's opening camera is showing no trees —
+    ///    E216's geometry, which `Tools/run_tests.sh`'s camera preflight heals and stamps in the
+    ///    `CYPRESS-RUN` header. It is the same standing assumption `AlmanacGroupTapTests` makes
+    ///    when it waits for tree pins.
+    /// 2. **The query.** `container` picks between two element types, and it used to pick from an
+    ///    unwaited `exists`. Read the `t = …` line for the first `Checking existence of` in the
+    ///    run's log: if the query that timed out names an element type the legend does not use,
+    ///    the legend was present and this is cause 2, not cause 1.
+    ///
+    /// Cause 2 is the likelier of the two on a loaded or slow machine, which is why it is named
+    /// first in the sentence a reader actually sees.
     private static let legendDescription =
-        "the species legend (“\(legendLabel)”) — absent only when the opening camera is showing no "
-            + "trees at all, which is a device-state question (E216) and not a layout one"
+        "the species legend (“\(legendLabel)”) — either `container(_:_:)` settled on an element "
+            + "type this legend does not use, in which case the legend was there and the query was "
+            + "wrong, or the opening camera is showing no trees at all, which is a device-state "
+            + "question (E216) and not a layout one. Check which element type the run's log waited "
+            + "on before reaching for E216"
 
     /// AX5 with location denied. Denied is the state that puts the *longest* of the three standing
     /// sentences (`MapLocationCopy.message`) into the notice slot, which is what drives the shared
@@ -96,9 +112,35 @@ final class IdentifyFABReachabilityTests: XCTestCase {
     /// The chip row's container rides on a `ScrollView` since the row became one (#166) and the
     /// legend's does not, and which spelling XCUITest picks for a labeled SwiftUI group is not a
     /// contract worth pinning (`MapFilterAccessibilityTests.rowContainer`).
+    ///
+    /// **`exists` is an unwaited snapshot, and an unwaited snapshot must never be what selects a
+    /// query branch.** This helper used to read `other.exists ? other : app.scrollViews[label]`.
+    /// The legend enters the tree asynchronously after launch — it draws only once the opening
+    /// camera has colored a species — so on a launch slow enough that the one snapshot missed it,
+    /// the helper committed to the `ScrollView` spelling *this legend never uses*, and the 30 s
+    /// wait in `settledFrame` below could not resolve for any amount of waiting. The failure then
+    /// said the legend "never appeared in the accessibility tree at all", which was false.
+    ///
+    /// It decided on ~10 ms. The same test on the same branch, on two CI runners of the same
+    /// class: the green run made that snapshot at `t = 4.25s` and found the legend; the red run
+    /// made it at `t = 4.26s` and did not. Three local runs at 390, 402 and 440 pt all made it at
+    /// `t ≈ 3.2s` and won, which is why the width the failure was first attributed to had nothing
+    /// to do with it.
+    ///
+    /// So both spellings are polled, for one shared budget rather than two: waiting out the full
+    /// timeout on `otherElements` before *starting* a second wait on `scrollViews` would double
+    /// the cost of a genuine absence, and a genuine absence is the case where a reader most wants
+    /// the answer promptly. The poll interval matches `settledFrame`'s own. When neither ever
+    /// arrives the `otherElements` element is returned, so the timeout a reader has to diagnose
+    /// names the spelling the legend actually uses instead of the one it does not.
     private func container(_ app: XCUIApplication, _ label: String) -> XCUIElement {
         let other = app.otherElements[label]
-        return other.exists ? other : app.scrollViews[label]
+        let scroller = app.scrollViews[label]
+        let deadline = Date().addingTimeInterval(30)
+        while Date() < deadline && !other.exists && !scroller.exists {
+            usleep(150_000)
+        }
+        return scroller.exists ? scroller : other
     }
 
     /// **The control is in the tree and a finger can land on it.**
