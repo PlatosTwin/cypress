@@ -187,6 +187,10 @@ type DeletionReport struct {
 // only thing that knows whether Apple accepted the revocation, and the row is about to be gone.
 type UnrevokedAppleToken string
 
+// DeleteAccount applies the choice to everything this service holds for a user, and tombstones it.
+//
+// See the block above this type for the tombstone and pending-key reasoning, which a stray edit
+// once detached from this function.
 func (s *Store) DeleteAccount(
 	ctx context.Context,
 	userID uuid.UUID,
@@ -326,12 +330,6 @@ func (s *Store) DeleteAccount(
 	return report, err
 }
 
-// ClearAppleRefreshToken forgets the token once it has been spent on a revocation.
-func (s *Store) ClearAppleRefreshToken(ctx context.Context, userID uuid.UUID) error {
-	_, err := s.pool.Exec(ctx, `UPDATE users SET apple_refresh_token = NULL WHERE id = $1`, userID)
-	return err
-}
-
 // IsTombstoned reports whether a key has been withdrawn.
 func (s *Store) IsTombstoned(ctx context.Context, key uuid.UUID) (bool, error) {
 	var found bool
@@ -339,4 +337,90 @@ func (s *Store) IsTombstoned(ctx context.Context, key uuid.UUID) (bool, error) {
 		SELECT EXISTS (SELECT 1 FROM anonymized_contributions WHERE client_uuid = $1)
 	`, key).Scan(&found)
 	return found, err
+}
+
+// ── The parked revocations ─────────────────────────────────────────────────────────────────────
+
+// ParkedRevocation is one un-revoked Apple token.
+type ParkedRevocation struct {
+	RefreshToken  string
+	FirstFailedAt time.Time
+	Attempts      int
+}
+
+// PendingAppleRevocations returns the oldest parked tokens, up to limit.
+//
+// Oldest first, so the row closest to its retention limit is retried before the ones with time
+// left — the opposite order would spend a capped batch on new rows and let old ones expire
+// un-retried.
+func (s *Store) PendingAppleRevocations(ctx context.Context, limit int) ([]ParkedRevocation, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT refresh_token, first_failed_at, attempts
+		  FROM pending_apple_revocations
+		 ORDER BY first_failed_at ASC
+		 LIMIT $1
+	`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var parked []ParkedRevocation
+	for rows.Next() {
+		var row ParkedRevocation
+		if err := rows.Scan(&row.RefreshToken, &row.FirstFailedAt, &row.Attempts); err != nil {
+			return nil, err
+		}
+		parked = append(parked, row)
+	}
+	return parked, rows.Err()
+}
+
+// RecordAppleRevocationAttempt moves `attempts` and `last_attempted_at` after a refusal.
+//
+// These two columns were unreachable before the drain existed: the `ON CONFLICT` arm that would
+// have written them can only fire if the same token is parked twice, and it cannot be, because the
+// `users` row it came from is deleted in the same transaction. So `attempts` was always 1 and
+// `last_attempted_at` always equalled `first_failed_at` — state that looked like a retry record and
+// recorded nothing.
+func (s *Store) RecordAppleRevocationAttempt(ctx context.Context, token string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE pending_apple_revocations
+		   SET attempts = attempts + 1, last_attempted_at = $2
+		 WHERE refresh_token = $1
+	`, token, s.now())
+	return err
+}
+
+// DeleteAppleRevocation removes a discharged obligation.
+func (s *Store) DeleteAppleRevocation(ctx context.Context, token string) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM pending_apple_revocations WHERE refresh_token = $1`, token)
+	return err
+}
+
+// ExpireAppleRevocations deletes everything past the retention limit and returns what it deleted.
+//
+// It returns the rows so the caller can log the abandonment: a revocation that will now never
+// happen is an operator's problem, and a row that vanished on a timer with no line in the log is
+// the compliance obligation disappearing quietly. The token itself is deliberately not returned —
+// nothing downstream needs it, and it is the thing being disposed of.
+func (s *Store) ExpireAppleRevocations(ctx context.Context, ttl time.Duration) ([]ParkedRevocation, error) {
+	cutoff := s.now().Add(-ttl)
+	rows, err := s.pool.Query(ctx, `
+		DELETE FROM pending_apple_revocations
+		 WHERE first_failed_at <= $1
+		RETURNING '', first_failed_at, attempts
+	`, cutoff)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var expired []ParkedRevocation
+	for rows.Next() {
+		var row ParkedRevocation
+		if err := rows.Scan(&row.RefreshToken, &row.FirstFailedAt, &row.Attempts); err != nil {
+			return nil, err
+		}
+		expired = append(expired, row)
+	}
+	return expired, rows.Err()
 }

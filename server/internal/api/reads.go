@@ -24,10 +24,16 @@ func (s *Server) grove(w http.ResponseWriter, r *http.Request, who caller) error
 	for _, entry := range entries {
 		rows = append(rows, map[string]any{
 			"tree_uuid":       entry.TreeUUID,
-			"last_visited_at": entry.LastVisitedAt,
+			"last_visited_at": stampOrNil(entry.LastVisitedAt),
 			"is_favorite":     entry.IsFavorite,
-			// `GroveRecord`'s own field names — `checkIns`, not `observations`. See store.Grove.
-			"record": entry.Record,
+			// `GroveRecord`, in its own keys. camelCase inside a snake_case response on purpose —
+			// it reconstructs a client type, so it speaks that type's synthesized names (wire.go).
+			"record": wireGroveRecord{
+				Visits:       entry.Record["visits"],
+				CheckIns:     entry.Record["checkIns"],
+				Measurements: entry.Record["measurements"],
+				CareEvents:   entry.Record["careEvents"],
+			},
 			// #176's hero: the photograph the row draws instead of the accent tile. A photo fact
 			// the phone cannot answer for a photograph it never wrote.
 			"hero_photo_id": entry.HeroPhotoID,
@@ -47,7 +53,7 @@ func (s *Server) groveSpecies(w http.ResponseWriter, r *http.Request, who caller
 	}
 	rows := make([]map[string]any, 0, len(known))
 	for _, entry := range known {
-		rows = append(rows, map[string]any{"species_id": entry.SpeciesID, "first_met": entry.FirstMet})
+		rows = append(rows, map[string]any{"species_id": entry.SpeciesID, "first_met": stamp(entry.FirstMet)})
 	}
 	// The neighborhood half — screen 08's ring denominator — is a fact about the *city's inventory*,
 	// which is Class L and lives in the installed city file (R36). It is deliberately not answered
@@ -136,7 +142,7 @@ func (s *Server) journal(w http.ResponseWriter, r *http.Request, who caller) err
 			"client_uuid": entry.ClientUUID,
 			"kind":        entry.Kind,
 			"tree_uuid":   entry.TreeUUID,
-			"occurred_at": entry.OccurredAt,
+			"occurred_at": stamp(entry.OccurredAt),
 			"payload":     json.RawMessage(entry.Payload),
 		})
 	}
@@ -191,7 +197,7 @@ func (s *Server) treeProfile(w http.ResponseWriter, r *http.Request, who caller)
 		photos = append(photos, map[string]any{
 			"photo_id":    photo.ID,
 			"shot_type":   photo.ShotType,
-			"captured_at": photo.CapturedAt,
+			"captured_at": stamp(photo.CapturedAt),
 			// Sent so the client can tell "everyone sees this" from "only you do" without
 			// re-deriving it — which is what makes screen 15's promise legible on screen.
 			"is_publicly_visible": photo.IsPubliclyVisible(),

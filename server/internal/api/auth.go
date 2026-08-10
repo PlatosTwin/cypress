@@ -8,7 +8,6 @@ import (
 	"errors"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/PlatosTwin/cypress/server/internal/apierr"
 	"github.com/PlatosTwin/cypress/server/internal/store"
@@ -88,8 +87,8 @@ func nonceMatches(raw, claim string) bool {
 type sessionResponse struct {
 	AccessToken      string    `json:"access_token"`
 	RefreshToken     string    `json:"refresh_token"`
-	ExpiresAt        time.Time `json:"expires_at"`
-	RefreshExpiresAt time.Time `json:"refresh_expires_at"`
+	ExpiresAt        Timestamp `json:"expires_at"`
+	RefreshExpiresAt Timestamp `json:"refresh_expires_at"`
 	UserID           uuid.UUID `json:"user_id"`
 }
 
@@ -119,14 +118,14 @@ func (s *Server) authOIDC(w http.ResponseWriter, r *http.Request) error {
 	// **opt-out by the party it defends against**: anybody holding a captured identity token simply
 	// omitted `nonce` and the comparison was skipped.
 	//
-	// So it fails closed. If the verified token carries a nonce claim, a matching raw nonce is
-	// required; if the caller sends one, the token must carry its hash. Only a token with no claim
-	// and a request with no nonce skips — and Apple always issues the claim when the app set one,
-	// so that pair means "this sign-in never had a nonce", not "the check was waived".
-	if identity.Nonce != "" || request.Nonce != "" {
-		if !nonceMatches(request.Nonce, identity.Nonce) {
-			return apierr.New(apierr.Unauthorized, "That sign-in could not be verified.")
-		}
+	// So it is **required**, not merely checked when offered. An earlier fix made it fail closed
+	// whenever either side carried one, which left exactly one window open: a token with no claim
+	// and a request with no nonce still skipped. That window depends on the client remembering to
+	// set `ASAuthorizationAppleIDRequest.nonce` — and this PR *is* the contract the client will be
+	// written against, so it can be closed by construction instead. A sign-in with no nonce on
+	// either side is refused.
+	if !nonceMatches(request.Nonce, identity.Nonce) {
+		return apierr.New(apierr.Unauthorized, "That sign-in could not be verified.")
 	}
 
 	refreshToken, err := s.Apple.ExchangeAuthorizationCode(r.Context(), request.AuthorizationCode)
@@ -186,8 +185,8 @@ func (s *Server) mintSession(r *http.Request, userID uuid.UUID) (sessionResponse
 	return sessionResponse{
 		AccessToken:      access,
 		RefreshToken:     refreshSecret,
-		ExpiresAt:        now.Add(tokens.AccessTokenLifetime),
-		RefreshExpiresAt: refreshExpiry,
+		ExpiresAt:        stamp(now.Add(tokens.AccessTokenLifetime)),
+		RefreshExpiresAt: stamp(refreshExpiry),
 		UserID:           userID,
 	}, nil
 }
@@ -243,8 +242,8 @@ func (s *Server) authRefresh(w http.ResponseWriter, r *http.Request) error {
 	writeJSON(w, s.Log, http.StatusOK, sessionResponse{
 		AccessToken:      access,
 		RefreshToken:     nextSecret,
-		ExpiresAt:        now.Add(tokens.AccessTokenLifetime),
-		RefreshExpiresAt: refreshExpiry,
+		ExpiresAt:        stamp(now.Add(tokens.AccessTokenLifetime)),
+		RefreshExpiresAt: stamp(refreshExpiry),
 		UserID:           session.UserID,
 	})
 	return nil
@@ -256,7 +255,7 @@ type registerDeviceRequest struct {
 
 type registerDeviceResponse struct {
 	DeviceToken string    `json:"device_token"`
-	ExpiresAt   time.Time `json:"expires_at"`
+	ExpiresAt   Timestamp `json:"expires_at"`
 }
 
 // registerDevice exchanges `app_state.deviceUUID` for a device token.
@@ -297,7 +296,7 @@ func (s *Server) registerDevice(w http.ResponseWriter, r *http.Request) error {
 		return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", err)
 	}
 
-	writeJSON(w, s.Log, http.StatusOK, registerDeviceResponse{DeviceToken: secret, ExpiresAt: expiresAt})
+	writeJSON(w, s.Log, http.StatusOK, registerDeviceResponse{DeviceToken: secret, ExpiresAt: stamp(expiresAt)})
 	return nil
 }
 

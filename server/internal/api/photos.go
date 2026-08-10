@@ -179,7 +179,7 @@ func (s *Server) photoData(w http.ResponseWriter, r *http.Request, who caller) e
 		"url":         source,
 		"expires_in":  int(presignLifetime.Seconds()),
 		"shot_type":   photo.ShotType,
-		"captured_at": photo.CapturedAt,
+		"captured_at": stamp(photo.CapturedAt),
 	})
 	return nil
 }

@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"slices"
 	"testing"
 	"time"
 
@@ -117,8 +118,12 @@ func newHarness(t *testing.T) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The nonce is required by construction (N10), so the harness carries a real pair: the raw
+	// value the app would keep, and the SHA-256 hex Apple echoes into the identity token.
 	fake := &fakeApple{
-		identity:     apple.Identity{Subject: "001234.abcdef.5678", Email: "a@b.test"},
+		identity: apple.Identity{
+			Subject: "001234.abcdef.5678", Email: "a@b.test", Nonce: sha256Hex(harnessNonce),
+		},
 		refreshToken: "apple-refresh-abc",
 	}
 	server := &Server{
@@ -197,7 +202,7 @@ func (h *harness) signIn(t *testing.T, deviceUUID *uuid.UUID) sessionResponse {
 	body := map[string]any{
 		"identity_token":     "an-identity-token",
 		"authorization_code": "an-authorization-code",
-		"nonce":              "",
+		"nonce":              harnessNonce,
 		"device_uuid":        deviceUUID,
 		"license_version":    "odbl-1.0",
 	}
@@ -441,7 +446,9 @@ func TestClaimIsIdempotentAndRefusesAnotherAccountsDevice(t *testing.T) {
 	}
 
 	// A second account on the same phone. The #174 guard.
-	h.apple.identity = apple.Identity{Subject: "009999.zzzz.0000", Email: "second@b.test"}
+	h.apple.identity = apple.Identity{
+		Subject: "009999.zzzz.0000", Email: "second@b.test", Nonce: sha256Hex(harnessNonce),
+	}
 	second := h.signIn(t, nil)
 	recorder := h.do(t, http.MethodPost, Prefix+"/devices/claim", second.AccessToken,
 		map[string]any{"device_uuid": deviceUUID, "license_version": "odbl-1.0"})
@@ -485,7 +492,7 @@ func TestSignInWithoutAnAuthorizationCodeIsRefused(t *testing.T) {
 	h := newHarness(t)
 	recorder := h.do(t, http.MethodPost, Prefix+"/auth/oidc", "", map[string]any{
 		"identity_token": "an-identity-token", "authorization_code": "",
-		"nonce": "", "device_uuid": nil, "license_version": nil,
+		"nonce": harnessNonce, "device_uuid": nil, "license_version": nil,
 	})
 	if recorder.Code == http.StatusOK {
 		t.Fatal("a sign-in with no authorization code succeeded; that account could never be " +
@@ -781,14 +788,14 @@ func TestProximityConflictCarriesTheCandidateList(t *testing.T) {
 
 	const lat, lon = 37.7601, -122.5050
 	first := h.do(t, http.MethodPost, Prefix+"/trees", deviceToken, map[string]any{
-		"client_uuid": uuid.New(), "lat": lat, "lon": lon, "display_name": "A tree",
+		"client_uuid": uuid.New(), "lat": lat, "lon": lon, "address": "1 Main St",
 	})
 	if first.Code != http.StatusOK {
 		t.Fatalf("first tree returned %d: %s", first.Code, first.Body.String())
 	}
 
 	second := h.do(t, http.MethodPost, Prefix+"/trees", deviceToken, map[string]any{
-		"client_uuid": uuid.New(), "lat": lat + 5.0/111_320.0, "lon": lon, "display_name": "The same tree",
+		"client_uuid": uuid.New(), "lat": lat + 5.0/111_320.0, "lon": lon, "address": "1 Main St",
 	})
 	if second.Code == http.StatusOK {
 		t.Fatal("a tree 5 m from another was accepted; the 10 m dedupe did not trip")
@@ -913,7 +920,7 @@ func TestReplayingATreeIsDuplicateNotAConflictWithItself(t *testing.T) {
 
 	const lat, lon = 37.7601, -122.5050
 	body := map[string]any{
-		"client_uuid": uuid.New(), "lat": lat, "lon": lon, "display_name": "A tree",
+		"client_uuid": uuid.New(), "lat": lat, "lon": lon, "address": "1 Main St",
 	}
 
 	first := h.do(t, http.MethodPost, Prefix+"/trees", deviceToken, body)
@@ -961,7 +968,7 @@ func TestATreeIdIsTheClientsOwnId(t *testing.T) {
 	treeID := uuid.New()
 
 	added := h.do(t, http.MethodPost, Prefix+"/trees", deviceToken, map[string]any{
-		"client_uuid": treeID, "lat": 37.7601, "lon": -122.5050, "display_name": "Mine",
+		"client_uuid": treeID, "lat": 37.7601, "lon": -122.5050, "address": "2 Main St",
 	})
 	if added.Code != http.StatusOK {
 		t.Fatalf("add returned %d: %s", added.Code, added.Body.String())
@@ -1014,13 +1021,13 @@ func TestProximityConflictCandidatesCarryAWholeTree(t *testing.T) {
 
 	const lat, lon = 37.7601, -122.5050
 	if got := h.do(t, http.MethodPost, Prefix+"/trees", deviceToken, map[string]any{
-		"client_uuid": uuid.New(), "lat": lat, "lon": lon, "display_name": "A tree",
+		"client_uuid": uuid.New(), "lat": lat, "lon": lon, "address": "1 Main St",
 	}); got.Code != http.StatusOK {
 		t.Fatalf("first tree returned %d: %s", got.Code, got.Body.String())
 	}
 
 	second := h.do(t, http.MethodPost, Prefix+"/trees", deviceToken, map[string]any{
-		"client_uuid": uuid.New(), "lat": lat + 5.0/111_320.0, "lon": lon, "display_name": "Same tree",
+		"client_uuid": uuid.New(), "lat": lat + 5.0/111_320.0, "lon": lon, "address": "1 Main St",
 	})
 	if second.Code == http.StatusOK {
 		t.Fatal("a tree 5 m from another was accepted")
@@ -1028,27 +1035,10 @@ func TestProximityConflictCandidatesCarryAWholeTree(t *testing.T) {
 
 	var body struct {
 		Detail struct {
-			Candidates []struct {
-				Tree struct {
-					ID                uuid.UUID `json:"id"`
-					Source            string    `json:"source"`
-					Status            string    `json:"status"`
-					VerificationState string    `json:"verification_state"`
-					Placement         string    `json:"placement"`
-					Coordinate        struct {
-						Lat float64 `json:"lat"`
-						Lon float64 `json:"lon"`
-					} `json:"coordinate"`
-					CreatedAt time.Time `json:"created_at"`
-				} `json:"tree"`
-				DistanceM             float64 `json:"distance_m"`
-				SpeciesScientificName *string `json:"species_scientific_name"`
-				SpeciesCommonName     *string `json:"species_common_name"`
-				Tell                  *struct {
-					Icon string `json:"icon"`
-					Text string `json:"text"`
-				} `json:"tell"`
-			} `json:"candidates"`
+			// The keys are `NearbyTree`'s and `Tree`'s **synthesized Swift property names** — see
+			// internal/api/wire.go for why a snake_case body would decode `speciesCurrentID` as a
+			// silent nil rather than throwing.
+			Candidates []wireNearbyTree `json:"candidates"`
 		} `json:"detail"`
 	}
 	if err := json.Unmarshal(second.Body.Bytes(), &body); err != nil {
@@ -1070,14 +1060,33 @@ func TestProximityConflictCandidatesCarryAWholeTree(t *testing.T) {
 		t.Errorf("verification_state = %q, want unverified — a community submission is neither a "+
 			"city row nor org-confirmed", candidate.Tree.VerificationState)
 	}
-	if candidate.Tree.Status == "" || candidate.Tree.Placement == "" {
-		t.Error("Tree's non-optional enum fields are empty; a decoder would throw on them")
+	// **Membership, not emptiness.** The guard this replaces asked whether the string was empty,
+	// which is one way a decoder throws; the way that was actually happening was a value outside
+	// the vocabulary (`"unknown"`), on every candidate. The vocabulary is read off Tree.swift in
+	// `TestTreePlacementMatchesTheSwiftVocabulary`; here it is enough that the value is one of them.
+	declaredPlacements := swiftEnumRawValues(t, "../../../Cypress/Core/Models/Tree.swift", "TreePlacement")
+	if !slices.Contains(declaredPlacements, candidate.Tree.Placement) {
+		t.Errorf("placement = %q, which is not a TreePlacement raw value %v — Tree.placement is "+
+			"non-optional, so every candidate would fail to decode", candidate.Tree.Placement, declaredPlacements)
 	}
-	if candidate.Tree.Coordinate.Lat == 0 || candidate.Tree.Coordinate.Lon == 0 {
+	declaredStatuses := swiftEnumRawValues(t, "../../../Cypress/Core/Models/Tree.swift", "TreeStatus")
+	if !slices.Contains(declaredStatuses, candidate.Tree.Status) {
+		t.Errorf("status = %q, which is not a TreeStatus raw value %v", candidate.Tree.Status, declaredStatuses)
+	}
+	if candidate.Tree.Coordinate.Latitude == 0 || candidate.Tree.Coordinate.Longitude == 0 {
 		t.Error("the tree carries no coordinate")
 	}
-	if candidate.Tree.CreatedAt.IsZero() {
-		t.Error("Tree.createdAt is non-optional and did not arrive")
+	// The keys themselves, on the bytes: `Coordinate`'s stored properties are `latitude` and
+	// `longitude`, and no key strategy turns `lat` into `latitude`.
+	for _, key := range []string{`"latitude"`, `"longitude"`, `"distanceM"`, `"verificationState"`} {
+		if !bytes.Contains(second.Body.Bytes(), []byte(key)) {
+			t.Errorf("the body does not carry %s; the client's synthesized CodingKeys expect it", key)
+		}
+	}
+	for _, absent := range []string{`"lat"`, `"lon"`, `"distance_m"`, `"verification_state"`} {
+		if bytes.Contains(second.Body.Bytes(), []byte(absent)) {
+			t.Errorf("the body still carries %s, which no Swift CodingKey matches", absent)
+		}
 	}
 	if candidate.DistanceM <= 0 || candidate.DistanceM > 10 {
 		t.Errorf("distance_m = %v, want a real distance inside the 10 m radius", candidate.DistanceM)
@@ -1090,7 +1099,7 @@ func TestProximityConflictCandidatesCarryAWholeTree(t *testing.T) {
 	if candidate.SpeciesScientificName != nil || candidate.SpeciesCommonName != nil {
 		t.Error("species names were invented; this service holds no species table")
 	}
-	for _, key := range []string{"species_scientific_name", "species_common_name", "tell"} {
+	for _, key := range []string{"speciesScientificName", "speciesCommonName", "tell"} {
 		if !bytes.Contains(second.Body.Bytes(), []byte(`"`+key+`"`)) {
 			t.Errorf("%s is absent rather than null; the client decodes an optional, and absent is "+
 				"a different fact from stated-as-unknown", key)
@@ -1234,6 +1243,7 @@ func TestNonceMustMatchWhenTheTokenCarriesOne(t *testing.T) {
 	h.apple.identity = apple.Identity{
 		Subject: "001234.abcdef.5678", Email: "a@b.test", Nonce: sha256Hex(raw),
 	}
+	_ = harnessNonce
 
 	// The happy arm: the raw nonce, hashed here, matching the claim.
 	recorder := h.do(t, http.MethodPost, Prefix+"/auth/oidc", "", map[string]any{
@@ -1541,6 +1551,9 @@ func TestAnAccessTokenDoesNotOutliveTheAccount(t *testing.T) {
 	}
 }
 
+// harnessNonce is the raw nonce every harness sign-in presents.
+const harnessNonce = "the-harness-nonce"
+
 func sha256Hex(raw string) string {
 	sum := sha256.Sum256([]byte(raw))
 	return hex.EncodeToString(sum[:])
@@ -1566,5 +1579,171 @@ func TestEveryRequestCarriesADeadline(t *testing.T) {
 	}
 	if until := time.Until(deadline); until <= 0 || until > requestTimeout+time.Second {
 		t.Errorf("the deadline is %v away, want about %v", until, requestTimeout)
+	}
+}
+
+// ── B7: the placement the client sends is the placement it reads back ──────────────────────────
+
+// TestPlacementRoundTripsAndDefaultsToTheDraftsDefault is the end-to-end half of B7.
+//
+// `community_trees.placement` was never written by any path, so `NearbyTree.Placement` was always
+// `""` and the handler substituted `"unknown"` — not a `TreePlacement`, on every candidate, always.
+// Writing it is the fix; reading it back through a *different* route than the one that wrote it is
+// what makes the fix visible.
+func TestPlacementRoundTripsAndDefaultsToTheDraftsDefault(t *testing.T) {
+	for name, submitted := range map[string]any{
+		"contributor_placed": "contributor_placed",
+		"gps":                "gps",
+		"absent":             nil,
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(t)
+			deviceToken := h.registerDeviceToken(t, uuid.New())
+
+			const lat, lon = 37.7601, -122.5050
+			body := map[string]any{
+				"client_uuid": uuid.New(), "lat": lat, "lon": lon,
+				"address": "1 Main St", "species_id": nil, "land_context": nil,
+			}
+			if submitted != nil {
+				body["placement"] = submitted
+			}
+			if got := h.do(t, http.MethodPost, Prefix+"/trees", deviceToken, body); got.Code != http.StatusOK {
+				t.Fatalf("add returned %d: %s", got.Code, got.Body.String())
+			}
+
+			// Read it back as a dedupe candidate, which is the only route that surfaces it.
+			second := h.do(t, http.MethodPost, Prefix+"/trees", deviceToken, map[string]any{
+				"client_uuid": uuid.New(), "lat": lat + 5.0/111_320.0, "lon": lon,
+				"address": nil, "species_id": nil, "land_context": nil,
+			})
+			if second.Code == http.StatusOK {
+				t.Fatal("the second tree did not trip the dedupe")
+			}
+
+			var envelope struct {
+				Detail struct {
+					Candidates []wireNearbyTree `json:"candidates"`
+				} `json:"detail"`
+			}
+			if err := json.Unmarshal(second.Body.Bytes(), &envelope); err != nil {
+				t.Fatal(err)
+			}
+			if len(envelope.Detail.Candidates) != 1 {
+				t.Fatalf("got %d candidates", len(envelope.Detail.Candidates))
+			}
+
+			want := defaultTreePlacement
+			if submitted != nil {
+				want = submitted.(string)
+			}
+			got := envelope.Detail.Candidates[0].Tree.Placement
+			if got != want {
+				t.Fatalf("placement round-tripped as %q, want %q", got, want)
+			}
+			declared := swiftEnumRawValues(t, "../../../Cypress/Core/Models/Tree.swift", "TreePlacement")
+			if !slices.Contains(declared, got) {
+				t.Fatalf("placement %q is not a TreePlacement raw value %v", got, declared)
+			}
+		})
+	}
+}
+
+// TestAnInvalidPlacementIsRefused stops the vocabulary being widened from the wire.
+func TestAnInvalidPlacementIsRefused(t *testing.T) {
+	h := newHarness(t)
+	deviceToken := h.registerDeviceToken(t, uuid.New())
+
+	recorder := h.do(t, http.MethodPost, Prefix+"/trees", deviceToken, map[string]any{
+		"client_uuid": uuid.New(), "lat": 37.7601, "lon": -122.505,
+		"address": nil, "placement": "unknown", "species_id": nil, "land_context": nil,
+	})
+	if recorder.Code == http.StatusOK {
+		t.Fatal("`unknown` was accepted as a placement; it is not a TreePlacement raw value and " +
+			"Tree.placement is non-optional, so every candidate carrying it fails to decode")
+	}
+	if code := decodeEnvelope(t, recorder).Error.Code; code != string(apierr.ValidationFailed) {
+		t.Fatalf("code = %q, want validation_failed", code)
+	}
+}
+
+// TestTheAddressIsTheClientsAddress is N13.
+//
+// `Tree.address` is the city's street address. A person-chosen name arriving in it would render as
+// an address on the resolution sheet, and `TreeDraft` has no name field to send one from anyway.
+func TestTheAddressIsTheClientsAddress(t *testing.T) {
+	h := newHarness(t)
+	deviceToken := h.registerDeviceToken(t, uuid.New())
+	const lat, lon = 37.7601, -122.5050
+
+	h.do(t, http.MethodPost, Prefix+"/trees", deviceToken, map[string]any{
+		"client_uuid": uuid.New(), "lat": lat, "lon": lon,
+		"address": "123 Judah St", "species_id": nil, "land_context": "street",
+	})
+	second := h.do(t, http.MethodPost, Prefix+"/trees", deviceToken, map[string]any{
+		"client_uuid": uuid.New(), "lat": lat + 5.0/111_320.0, "lon": lon,
+		"address": nil, "species_id": nil, "land_context": nil,
+	})
+
+	var envelope struct {
+		Detail struct {
+			Candidates []wireNearbyTree `json:"candidates"`
+		} `json:"detail"`
+	}
+	if err := json.Unmarshal(second.Body.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	candidate := envelope.Detail.Candidates[0]
+	if candidate.Tree.Address == nil || *candidate.Tree.Address != "123 Judah St" {
+		t.Fatalf("address = %v, want the street address the client sent", candidate.Tree.Address)
+	}
+	if candidate.Tree.StatedLandContext == nil || *candidate.Tree.StatedLandContext != "street" {
+		t.Fatalf("statedLandContext = %v, want street", candidate.Tree.StatedLandContext)
+	}
+}
+
+// ── N8: the envelope is lenient too ────────────────────────────────────────────────────────────
+
+func TestAnUnknownEnvelopeKeyDoesNotFailTheBatch(t *testing.T) {
+	h := newHarness(t)
+	deviceToken := h.registerDeviceToken(t, uuid.New())
+
+	key := uuid.New()
+	recorder := h.do(t, http.MethodPost, Prefix+"/sync", deviceToken, map[string]any{
+		"batch_id": "an-additive-top-level-key",
+		"items": []any{map[string]any{
+			"client_uuid": key, "kind": "visit", "tree_uuid": uuid.New(),
+			"occurred_at": time.Now().UTC(), "payload": json.RawMessage(`{}`),
+		}},
+	})
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 — an additive envelope key failed the whole batch "+
+			"non-retryably, which is the same blast radius the per-item fix was for", recorder.Code)
+	}
+	var response struct{ Results []syncResult }
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Results) != 1 || response.Results[0].Status != "applied" {
+		t.Fatalf("results = %+v, want the item applied", response.Results)
+	}
+}
+
+// ── N10: a sign-in with no nonce anywhere is refused ───────────────────────────────────────────
+
+func TestASignInWithNoNonceAnywhereIsRefused(t *testing.T) {
+	h := newHarness(t)
+	h.apple.identity = apple.Identity{Subject: "001234.abcdef.5678", Nonce: ""}
+
+	recorder := h.do(t, http.MethodPost, Prefix+"/auth/oidc", "", map[string]any{
+		"identity_token": "t", "authorization_code": "c", "nonce": "",
+		"device_uuid": nil, "license_version": nil,
+	})
+	if recorder.Code == http.StatusOK {
+		t.Fatal("a sign-in with no nonce on either side was accepted; that window depends on the " +
+			"client remembering to set one, and this PR is the contract it will be written against")
+	}
+	if code := decodeEnvelope(t, recorder).Error.Code; code != string(apierr.Unauthorized) {
+		t.Fatalf("code = %q, want unauthorized", code)
 	}
 }

@@ -207,9 +207,31 @@ CREATE TABLE IF NOT EXISTS community_trees (
     id           UUID PRIMARY KEY,
     lat          DOUBLE PRECISION NOT NULL CHECK (lat BETWEEN -90 AND 90),
     lon          DOUBLE PRECISION NOT NULL CHECK (lon BETWEEN -180 AND 180),
-    display_name TEXT,
+
+    -- `Tree.address` — the street address, and **not** a name the contributor chose.
+    --
+    -- There was briefly a `display_name` here, written into `Tree.address` on the way out. `Tree`
+    -- has nowhere for a person-chosen name (that is `TreeName` / `TreeProfile.activeName`), and
+    -- silently repurposing the address field would have drawn somebody's name for a tree as its
+    -- street address on the resolution sheet. `TreeDraft` carries `address` and no name, so this
+    -- column holds exactly what the client sends.
+    address      TEXT,
+
     species_id   UUID,
-    placement    TEXT,
+
+    -- `TreePlacement`, whose raw values are frozen by `AppSchema` v10's CHECK: there are two and
+    -- there is no unstated case. NOT NULL with `TreeDraft.placement`'s own default, so the default
+    -- on the boundary and the default in the column say the same thing — and so that nothing can
+    -- read back a value the client's non-optional `Tree.placement` cannot decode.
+    placement    TEXT NOT NULL DEFAULT 'gps'
+                 CHECK (placement IN ('gps', 'contributor_placed')),
+
+    -- `LandContext`, and nil means "they did not say" rather than any of the four. Nothing may
+    -- substitute a plausible answer: a guessed `street` on a tree in somebody's front yard is the
+    -- failure `TreeDraft.landContext` is written to prevent.
+    land_context TEXT CHECK (land_context IS NULL OR land_context IN (
+                     'street', 'city_park', 'private_property', 'other_public')),
+
     user_id      UUID REFERENCES users(id) ON DELETE SET NULL,
     device_id    UUID REFERENCES devices(id) ON DELETE SET NULL,
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -299,14 +321,28 @@ CREATE INDEX IF NOT EXISTS idx_photos_rescreen_backlog
 -- cannot be the end of the story on the outage path — it would discard the only credential that
 -- could ever satisfy the obligation, which is worse than the outage.
 --
--- **It holds a token and nothing else.** No user id, no email, no device: a joining key here would
--- re-create exactly what `AccountDeletionChoice` refuses a sentinel id for, and would turn a
--- compliance queue into a record of who deleted their account. What a row says is "this credential
--- is owed a revocation", which is all a retry needs.
+-- ── What this row is, stated accurately ────────────────────────────────────────────────────────
+--
+-- An earlier version of this comment said it holds "a token and nothing that could say whose it
+-- was". That is true of the *columns* and false of the *row*: an Apple refresh token, plus the
+-- client secret this same service mints, exchanges at Apple's token endpoint for an `id_token`
+-- carrying that person's `sub` and their email. So this table is a pointer to the identity of every
+-- person whose deletion hit an Apple outage — retained after a screen that promised erasure.
+--
+-- That is not a reason to keep nothing; the obligation is real. It is the reason the retention is
+-- **bounded**: `AppleRevocationTTL` is the hard limit, the drain deletes the row on success, and on
+-- expiry it deletes the row and logs loudly that a revocation was abandoned. An unbounded queue
+-- would be an indefinite identity pointer standing on a promise of erasure.
+--
+-- Nothing is stored here beyond what the revocation call itself needs.
 CREATE TABLE IF NOT EXISTS pending_apple_revocations (
-    -- The hash, not the token, would be useless: revoking needs the token itself.
-    refresh_token TEXT PRIMARY KEY,
-    first_failed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    -- The hash would be useless: revoking needs the token itself.
+    refresh_token     TEXT PRIMARY KEY,
+    first_failed_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     last_attempted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    attempts INTEGER NOT NULL DEFAULT 1
+    attempts          INTEGER NOT NULL DEFAULT 1
 );
+
+-- The drain's cursor: oldest first, so the row closest to its TTL is retried first.
+CREATE INDEX IF NOT EXISTS idx_pending_apple_revocations_age
+    ON pending_apple_revocations (first_failed_at);

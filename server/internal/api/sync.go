@@ -92,11 +92,16 @@ func (s *Server) sync(w http.ResponseWriter, r *http.Request, who caller) error 
 	// unrecognized field on one item returned `400 validation_failed` for the entire request, with
 	// no `results` at all — so a good item got no verdict, and `validation_failed` being
 	// non-retryable, a client following the taxonomy failed its whole queue terminally over one
-	// additive field. Strict decoding is kept; its blast radius is now one item.
+	// additive field.
+	//
+	// **The envelope is decoded leniently for the same reason, one level up.** Strict decoding here
+	// would mean an additive top-level key — a `batch_id`, a `schema_version` — failing the whole
+	// queue non-retryably, which is the identical blast radius the item fix was for. Strictness is
+	// kept exactly where a dropped field would silently lose a contribution: inside the item.
 	var request struct {
 		Items []json.RawMessage `json:"items"`
 	}
-	if err := decodeBody(r, &request); err != nil {
+	if err := decodeBodyLeniently(r, &request); err != nil {
 		return err
 	}
 	if len(request.Items) > maxSyncBatch {
@@ -227,111 +232,53 @@ type addTreeRequest struct {
 	// ClientUUID is the tree's id, not a separate idempotency key. A tree is addable offline and
 	// carries visits before it ever syncs, so the client necessarily minted the id first; see
 	// `community_trees` in schema.sql.
-	ClientUUID  uuid.UUID `json:"client_uuid"`
-	Lat         float64   `json:"lat"`
-	Lon         float64   `json:"lon"`
-	DisplayName string    `json:"display_name"`
+	ClientUUID uuid.UUID `json:"client_uuid"`
+	Lat        float64   `json:"lat"`
+	Lon        float64   `json:"lon"`
+	// Address is `TreeDraft.address` — the street address. There is deliberately no display-name
+	// field: `TreeDraft` has none, and `Tree` has nowhere to put one (a person-chosen name lives in
+	// `TreeName` / `TreeProfile.activeName`).
+	Address *string `json:"address"`
+	// Placement is `TreePlacement`'s raw value. Absent means `TreeDraft.placement`'s own default.
+	Placement *string `json:"placement"`
+	// SpeciesID is `TreeDraft.speciesID`, optional because BUILD-PLAN §6 makes it optional: "a
+	// required field does not collect better answers, it collects guesses."
+	SpeciesID *uuid.UUID `json:"species_id"`
+	// LandContext is `TreeDraft.landContext`. Nil means "they did not say" rather than any of the
+	// four, and nothing here may substitute a plausible answer.
+	LandContext *string `json:"land_context"`
 }
 
-// proximityCandidate is one row of `ProximityConflict.candidates`, which is `[NearbyTree]`.
+// treePlacements is `TreePlacement`, whose raw values are frozen by `AppSchema` v10's CHECK.
 //
-// ── Why this is shaped like a whole tree and not like an id ────────────────────────────────────
-//
-// The client's `NearbyTree` (`Cypress/Data/API/CypressAPI.swift`) wraps a whole `Tree`, plus
-// `distanceM`, `speciesScientificName`, `speciesCommonName` and a `tell`. A candidate list of bare
-// ids cannot construct one, and the phone cannot fill the gap from the installed city file either:
-// every candidate here is a **community-added** tree, which is by definition not in the city
-// inventory. So whatever `RemoteAPI` needs to build the list has to arrive in this body.
-//
-// Three fields are fixed rather than stored, and each is fixed because the value is knowable:
-//
-//   - `source` is always `community`. This table holds nothing else.
-//   - `verification_state` is always `unverified`. A community submission is neither a city row nor
-//     org-confirmed, which is exactly what that case means.
-//   - `tell` is always null. `IDTip` comes from the curated species pipeline (BUILD-PLAN §8), the
-//     shipped seed leaves `species.id_tips` empty, and BUILD-PLAN §15 forbids inventing botany. The
-//     field is present and null rather than absent, so the client decodes a `nil` tell rather than a
-//     missing key.
-//
-// `species_scientific_name` and `species_common_name` are null for the same reason `tell` is: this
-// service holds no species table — R36 keeps the inventory local — so it can carry the species *id*
-// a contributor asserted and nothing more. The client resolves the names from its own city file,
-// which is where they live.
-type proximityCandidate struct {
-	Tree      candidateTree `json:"tree"`
-	DistanceM float64       `json:"distance_m"`
+// There are two and there is no unstated case. `Tree.placement` is non-optional on the client, so a
+// value outside this set does not degrade — it throws the whole `Tree`, and with it the whole
+// `[NearbyTree]` and the whole `ProximityConflict`.
+var treePlacements = map[string]bool{"gps": true, "contributor_placed": true}
 
-	SpeciesScientificName *string `json:"species_scientific_name"`
-	SpeciesCommonName     *string `json:"species_common_name"`
-	Tell                  *idTip  `json:"tell"`
+// defaultTreePlacement is `TreeDraft.placement`'s own default, so the default on the boundary and
+// the default in the column say the same thing.
+const defaultTreePlacement = "gps"
+
+// landContexts is `LandContext` (`Cypress/Core/Models/CityRecord.swift`).
+var landContexts = map[string]bool{
+	"street": true, "city_park": true, "private_property": true, "other_public": true,
 }
 
-// candidateTree is `Tree`, restricted to what a community row can truthfully answer.
-//
-// Every field the client's `Tree` requires is present; the ones this service has no column behind
-// are explicitly null rather than omitted, so a decoder sees "not stated" instead of a missing key.
-type candidateTree struct {
-	ID                uuid.UUID  `json:"id"`
-	ExternalRef       *string    `json:"external_ref"`
-	IDSpace           *string    `json:"id_space"`
-	Source            string     `json:"source"`
-	Coordinate        coordinate `json:"coordinate"`
-	Address           *string    `json:"address"`
-	SiteType          *string    `json:"site_type"`
-	NeighborhoodID    *uuid.UUID `json:"neighborhood_id"`
-	Status            string     `json:"status"`
-	SpeciesCurrentID  *uuid.UUID `json:"species_current_id"`
-	PlantedYear       *int       `json:"planted_year"`
-	DBHCityCmRange    *intRange  `json:"dbh_city_cm_range"`
-	SiteLineage       *uuid.UUID `json:"site_lineage"`
-	VerificationState string     `json:"verification_state"`
-	Placement         string     `json:"placement"`
-	CityRecord        *struct{}  `json:"city_record"`
-	StatedLandContext *string    `json:"stated_land_context"`
-	CreatedAt         time.Time  `json:"created_at"`
-	UpdatedAt         time.Time  `json:"updated_at"`
-	DeletedAt         *time.Time `json:"deleted_at"`
-}
-
-type coordinate struct {
-	Lat float64 `json:"lat"`
-	Lon float64 `json:"lon"`
-}
-
-type intRange struct {
-	Min int `json:"min"`
-	Max int `json:"max"`
-}
-
-type idTip struct {
-	Icon string `json:"icon"`
-	Text string `json:"text"`
-}
-
-func candidateFrom(tree store.NearbyTree) proximityCandidate {
-	// `placement` is `TreePlacement`'s raw value; a row that never recorded one reads as the
-	// vocabulary's own unstated case rather than as an empty string the client cannot decode.
-	placement := tree.Placement
-	if placement == "" {
-		placement = "unknown"
-	}
-	var name *string
-	if tree.DisplayName != "" {
-		copied := tree.DisplayName
-		name = &copied
-	}
-	return proximityCandidate{
-		Tree: candidateTree{
+func candidateFrom(tree store.NearbyTree) wireNearbyTree {
+	return wireNearbyTree{
+		Tree: wireTree{
 			ID:                tree.ID,
 			Source:            "community",
-			Coordinate:        coordinate{Lat: tree.Lat, Lon: tree.Lon},
-			Address:           name,
+			Coordinate:        wireCoordinate{Latitude: tree.Lat, Longitude: tree.Lon},
+			Address:           tree.Address,
 			Status:            "alive",
 			SpeciesCurrentID:  tree.SpeciesID,
 			VerificationState: "unverified",
-			Placement:         placement,
-			CreatedAt:         tree.CreatedAt,
-			UpdatedAt:         tree.UpdatedAt,
+			Placement:         tree.Placement,
+			StatedLandContext: tree.LandContext,
+			CreatedAt:         stamp(tree.CreatedAt),
+			UpdatedAt:         stamp(tree.UpdatedAt),
 		},
 		DistanceM: tree.DistanceM,
 	}
@@ -365,6 +312,17 @@ func (s *Server) addTree(w http.ResponseWriter, r *http.Request, who caller) err
 		return apierr.New(apierr.ValidationFailed, "That location is not on the map.")
 	}
 
+	placement := defaultTreePlacement
+	if request.Placement != nil {
+		placement = *request.Placement
+	}
+	if !treePlacements[placement] {
+		return apierr.New(apierr.ValidationFailed, "That placement is not one this service accepts.")
+	}
+	if request.LandContext != nil && !landContexts[*request.LandContext] {
+		return apierr.New(apierr.ValidationFailed, "That land context is not one this service accepts.")
+	}
+
 	// Before the proximity query, not after.
 	existing, err := s.Store.CommunityTreeExists(r.Context(), request.ClientUUID)
 	if err != nil {
@@ -380,7 +338,7 @@ func (s *Server) addTree(w http.ResponseWriter, r *http.Request, who caller) err
 		return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", err)
 	}
 	if len(candidates) > 0 {
-		detail := make([]proximityCandidate, 0, len(candidates))
+		detail := make([]wireNearbyTree, 0, len(candidates))
 		for _, candidate := range candidates {
 			detail = append(detail, candidateFrom(candidate))
 		}
@@ -389,8 +347,15 @@ func (s *Server) addTree(w http.ResponseWriter, r *http.Request, who caller) err
 		return conflict
 	}
 
-	outcome, err := s.Store.AddTree(
-		r.Context(), request.ClientUUID, request.Lat, request.Lon, request.DisplayName, who.owner())
+	outcome, err := s.Store.AddTree(r.Context(), store.NewCommunityTree{
+		ID:          request.ClientUUID,
+		Lat:         request.Lat,
+		Lon:         request.Lon,
+		Address:     request.Address,
+		SpeciesID:   request.SpeciesID,
+		Placement:   placement,
+		LandContext: request.LandContext,
+	}, who.owner())
 	if err != nil {
 		return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", err)
 	}

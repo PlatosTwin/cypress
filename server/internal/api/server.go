@@ -283,6 +283,21 @@ func decodeBody(r *http.Request, into any) error {
 	return nil
 }
 
+// decodeBodyLeniently ignores unrecognized keys.
+//
+// For `POST /sync`'s envelope, where strictness has the wrong blast radius: an additive top-level
+// key would fail the whole batch with `validation_failed`, which is non-retryable, so a client
+// following the taxonomy would lose its entire queue over a field it added. The strictness that
+// matters — a dropped field silently losing a contribution — is applied inside each item, where the
+// cost of being wrong is one row.
+func decodeBodyLeniently(r *http.Request, into any) error {
+	decoder := json.NewDecoder(io.LimitReader(r.Body, maxBodyBytes))
+	if err := decoder.Decode(into); err != nil {
+		return apierr.Wrap(apierr.ValidationFailed, "That request could not be read.", err)
+	}
+	return nil
+}
+
 func writeJSON(w http.ResponseWriter, log *slog.Logger, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

@@ -133,6 +133,10 @@ func run(log *slog.Logger) error {
 		IdleTimeout:       120 * time.Second,
 	}
 
+	// The obligation R72 ruling 2 creates is discharged here, not merely recorded. On boot as well
+	// as on a tick, because this machine stops when idle and spends most of its life stopped.
+	go api.RunAppleRevocationDrain(ctx, dataStore, server.Apple, log)
+
 	go func() {
 		<-ctx.Done()
 		// The machine stops when idle (`auto_stop_machines`), so a graceful shutdown is not a

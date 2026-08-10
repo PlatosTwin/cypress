@@ -1,0 +1,43 @@
+{
+  "error": {
+    "code": "conflict",
+    "message": "There is already a tree recorded here.",
+    "retryable": false
+  },
+  "detail": {
+    "candidates": [
+      {
+        "tree": {
+          "id": "29323be5-1a2b-4c3d-8e4f-5a6b7c8d9e0f",
+          "externalRef": null,
+          "idSpace": null,
+          "source": "community",
+          "coordinate": {
+            "latitude": 37.7601,
+            "longitude": -122.505
+          },
+          "address": "1 Main St",
+          "siteType": null,
+          "neighborhoodID": null,
+          "status": "alive",
+          "speciesCurrentID": "7f3c1d22-5e6a-4b90-8c11-2d3e4f5a6b7c",
+          "plantedYear": null,
+          "dbhCityCmRange": null,
+          "siteLineage": null,
+          "verificationState": "unverified",
+          "placement": "contributor_placed",
+          "cityRecord": null,
+          "statedLandContext": "street",
+          "createdAt": "2026-08-09T18:41:46Z",
+          "updatedAt": "2026-08-09T18:41:46Z",
+          "deletedAt": null
+        },
+        "distanceM": 4.994382259970141,
+        "speciesScientificName": null,
+        "speciesCommonName": null,
+        "tell": null
+      }
+    ]
+  }
+}
+

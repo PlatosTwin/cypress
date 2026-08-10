@@ -284,9 +284,10 @@ type NearbyTree struct {
 	ID          uuid.UUID
 	Lat         float64
 	Lon         float64
-	DisplayName string
+	Address     *string
 	SpeciesID   *uuid.UUID
 	Placement   string
+	LandContext *string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 	DistanceM   float64
@@ -315,7 +316,7 @@ func (s *Store) TreesWithin(ctx context.Context, lat, lon, radiusM float64) ([]N
 	lonDelta := radiusM / (metresPerDegreeLat * cosLat)
 
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, lat, lon, coalesce(display_name, ''), species_id, coalesce(placement, ''),
+		SELECT id, lat, lon, address, species_id, placement, land_context,
 		       created_at, updated_at,
 		       6371000 * 2 * asin(sqrt(
 		           power(sin(radians(lat - $1) / 2), 2) +
@@ -336,8 +337,9 @@ func (s *Store) TreesWithin(ctx context.Context, lat, lon, radiusM float64) ([]N
 	var candidates []NearbyTree
 	for rows.Next() {
 		var tree NearbyTree
-		if err := rows.Scan(&tree.ID, &tree.Lat, &tree.Lon, &tree.DisplayName, &tree.SpeciesID,
-			&tree.Placement, &tree.CreatedAt, &tree.UpdatedAt, &tree.DistanceM); err != nil {
+		if err := rows.Scan(&tree.ID, &tree.Lat, &tree.Lon, &tree.Address, &tree.SpeciesID,
+			&tree.Placement, &tree.LandContext, &tree.CreatedAt, &tree.UpdatedAt,
+			&tree.DistanceM); err != nil {
 			return nil, err
 		}
 		// The box is a prefilter and admits corners beyond the radius; the haversine is the answer.
@@ -362,15 +364,35 @@ func (s *Store) CommunityTreeExists(ctx context.Context, id uuid.UUID) (bool, er
 	return found, err
 }
 
+// NewCommunityTree is what `POST /trees` records.
+//
+// The fields are `TreeDraft`'s, minus the ones that are not this table's business. `Placement` is
+// non-empty by construction — the handler defaults it to `TreeDraft`'s own default — because
+// `Tree.placement` is **non-optional** on the client and its raw values are frozen by `AppSchema`
+// v10's CHECK. A row that stored nothing there produced `"unknown"` on the wire, which is not a
+// `TreePlacement`, which threw the whole `Tree`, the whole `[NearbyTree]` and the whole
+// `ProximityConflict` — on every candidate, always.
+type NewCommunityTree struct {
+	ID          uuid.UUID
+	Lat         float64
+	Lon         float64
+	Address     *string
+	SpeciesID   *uuid.UUID
+	Placement   string
+	LandContext *string
+}
+
 // AddTree inserts a community tree under the client's own id.
-func (s *Store) AddTree(ctx context.Context, id uuid.UUID, lat, lon float64, name string, owner Owner) (ApplyOutcome, error) {
+func (s *Store) AddTree(ctx context.Context, tree NewCommunityTree, owner Owner) (ApplyOutcome, error) {
 	now := s.now()
 	tag, err := s.pool.Exec(ctx, `
 		INSERT INTO community_trees
-		    (id, lat, lon, display_name, user_id, device_id, created_at, updated_at)
-		VALUES ($1, $2, $3, nullif($4, ''), $5, $6, $7, $7)
+		    (id, lat, lon, address, species_id, placement, land_context,
+		     user_id, device_id, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
 		ON CONFLICT (id) DO NOTHING
-	`, id, lat, lon, name, owner.UserID, owner.DeviceID, now)
+	`, tree.ID, tree.Lat, tree.Lon, tree.Address, tree.SpeciesID, tree.Placement, tree.LandContext,
+		owner.UserID, owner.DeviceID, now)
 	if err != nil {
 		return Applied, err
 	}
@@ -378,16 +400,4 @@ func (s *Store) AddTree(ctx context.Context, id uuid.UUID, lat, lon float64, nam
 		return Duplicate, nil
 	}
 	return Applied, nil
-}
-
-// CommunityTree is a stored community tree, as the proximity candidate list needs it.
-type CommunityTree struct {
-	ID          uuid.UUID
-	Lat         float64
-	Lon         float64
-	DisplayName string
-	SpeciesID   *uuid.UUID
-	Placement   string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
 }

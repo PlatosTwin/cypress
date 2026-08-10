@@ -521,7 +521,9 @@ func TestProximityDedupeTripsWithinTenMetres(t *testing.T) {
 
 	// San Francisco, where the corpus is. One degree of latitude is ~111.32 km, so 5 m is ~4.5e-5°.
 	const lat, lon = 37.7601, -122.5050
-	if _, err := store.AddTree(context.Background(), uuid.New(), lat, lon, "A tree", DeviceOwner(deviceID)); err != nil {
+	if _, err := store.AddTree(context.Background(), NewCommunityTree{
+		ID: uuid.New(), Lat: lat, Lon: lon, Placement: "gps",
+	}, DeviceOwner(deviceID)); err != nil {
 		t.Fatal(err)
 	}
 
