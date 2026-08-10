@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -28,10 +29,20 @@ const dockerfilePath = "../../Dockerfile"
 
 // copyLine matches a `COPY` instruction at the start of a line, so a commented one is not a copy.
 //
+// **Case-insensitive, and that is a correctness fix rather than tidiness.** Docker accepts
+// `copy testdata ./testdata`, and an uppercase-only pattern simply did not see it — so a lowercase
+// COPY of a test-only path shipped it into the image while `TestDockerfileDoesNotCopyTestOnlyPaths`
+// stayed **green**. That is this guard committing the exact defect it was written to catch. It also
+// fixes the mirror image, where a lowercase copy of a real package read as "not copied" and gave a
+// false red.
+//
+// `^\s*` because Docker tolerates leading whitespace. A commented line is still not a copy: `#`
+// is not whitespace, so `# COPY foo` does not match.
+//
 // `COPY --from=…` is filtered in code rather than in the pattern: Go's regexp is RE2 and has no
 // negative lookahead, and a pattern that silently failed to compile would take the whole package
 // down — which is at least loud, but the readable version is better.
-var copyLine = regexp.MustCompile(`(?m)^COPY\s+(.+)$`)
+var copyLine = regexp.MustCompile(`(?im)^\s*COPY\s+(.+)$`)
 
 // TestDockerfileCopiesEveryPackage is the guard.
 func TestDockerfileCopiesEveryPackage(t *testing.T) {
@@ -47,9 +58,16 @@ func TestDockerfileCopiesEveryPackage(t *testing.T) {
 		}
 		root := strings.SplitN(pkg, string(filepath.Separator), 2)[0]
 		if !slices.Contains(copied, root) && !slices.Contains(copied, pkg) {
-			t.Errorf("the module compiles %q and the Dockerfile copies neither %q nor %q.\n"+
+			// A top-level package is its own root, so "neither X nor X" would name it twice and
+			// read as a bug in the message rather than as a repeated variable. The nested case
+			// keeps both, because either COPY would have been a fix.
+			missing := "does not copy " + strconv.Quote(root)
+			if root != pkg {
+				missing = "copies neither " + strconv.Quote(root) + " nor " + strconv.Quote(pkg)
+			}
+			t.Errorf("the module compiles %q and the Dockerfile %s.\n"+
 				"`go build` inside the image will fail with `no required module provides package "+
-				"github.com/PlatosTwin/cypress/server/%s`.\nCopied: %v", pkg, root, pkg, pkg, copied)
+				"github.com/PlatosTwin/cypress/server/%s`.\nCopied: %v", pkg, missing, pkg, copied)
 		}
 	}
 
@@ -85,6 +103,8 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY main.go ./
 COPY internal ./internal
+copy migrations ./migrations
+  COPY indented ./indented
 # COPY commented ./commented
 FROM scratch
 COPY --from=build /out/server /server
@@ -95,7 +115,10 @@ COPY --from=build /out/server /server
 	}
 
 	got := sourcesIn(t, path)
-	want := []string{"go.mod", "go.sum", "main.go", "internal"}
+	// `migrations` is lowercase and `indented` is whitespace-prefixed: Docker accepts both, so a
+	// reader that misses either is a guard with a hole in it. The lowercase case is not
+	// hypothetical — it was fail-open here and shipped `testdata/` past the other direction.
+	want := []string{"go.mod", "go.sum", "main.go", "internal", "migrations", "indented"}
 	for _, expected := range want {
 		if !slices.Contains(got, expected) {
 			t.Errorf("the reader missed %q in a specimen that copies it: %v", expected, got)
@@ -107,8 +130,8 @@ COPY --from=build /out/server /server
 			t.Errorf("the reader picked up %q, which is not a copied source directory: %v", absent, got)
 		}
 	}
-	if len(got) != 4 {
-		t.Errorf("the reader found %d sources in a specimen with 4: %v", len(got), got)
+	if len(got) != len(want) {
+		t.Errorf("the reader found %d sources in a specimen with %d: %v", len(got), len(want), got)
 	}
 }
 
