@@ -1,11 +1,17 @@
-# `server/` — R36 live-layer scaffolding (PLACEHOLDER for #158)
+# `server/` — the Cypress sync service
 
-Everything in this directory is a placeholder. It provisions and proves the infrastructure
-R36 calls for; it does **not** implement the sync API. That is ticket **#158**, which is
-spec-first, and the stack decision for it (Go, Node/Fastify, something else) is still open —
-this Go file was chosen because it is boring and disposable, not because it is the answer.
+The live layer: **Go + Postgres, one `shared-cpu-1x`/256 MB machine on the `cypress-sync` Fly app**.
+Ticket **#158**, ruled by RULINGS **R72**; the argument is
+`docs/design-proposals/2026-08-09-task158-live-layer.md`.
 
-R36: `docs/RULINGS.md`. The survey that chose Fly + Tigris: `docs/investigations/api-hosting.md`.
+This replaces the R36 placeholder that answered `501` to everything. The stack decision that file
+described as "still open" is closed: Go, two direct dependencies, PostGIS declined.
+
+**What this service is not.** RULINGS **R36** rules which layer travels which way and R72 does not
+reopen it. The city layer — the map's pan loop, species, the almanac — is answered on the phone from
+the installed city file and never reaches here. What this service holds is the community layer and
+the account's own rows: the things liveness actually buys, and the things a second device cannot
+know without it.
 
 ## What exists, exactly
 
@@ -76,10 +82,111 @@ measured on 2026-08-01: Tigris serves anonymous reads only on the dedicated publ
 public. And on those API endpoints anonymous HEAD returned 200 while GET returned 403, so a
 HEAD-based smoke check is a false green; verify publishes with a GET (dist/upload.sh does).
 
-## Behavior
+## The surface
 
-- `GET /health` → `200`, JSON: `status`, `service`, `git_sha`, `placeholder: true`, `ticket`.
-- everything else, any method → `501`, JSON saying the sync API is not built yet.
+All under `/api/v1`, except `/health`. Errors are always
+`{"error": {"code", "message", "retryable"}}` — the shape `APIError.Envelope`
+(`Cypress/Core/APIError.swift`) already decodes, with the same eight codes and the same
+`retryable` table. `CypressTests` is not what keeps those two in step;
+`server/internal/apierr/apierr_test.go` reads the Swift declaration directly, because a drifted code
+decodes to `server_error` rather than throwing and would look like an outage.
+
+| Route | What it does |
+|---|---|
+| `GET /health` | Liveness, and the git sha of the running build. |
+| `POST /auth/oidc` | Verifies an Apple identity token, **exchanges the authorization code**, mints a session. Optionally registers and claims the device in the same round trip. |
+| `POST /auth/refresh` | Rotates the refresh token, mints a new access token. |
+| `POST /devices/register` | Exchanges `app_state.deviceUUID` for a device token authorizing `POST /sync` for items carrying a deviceID and no userID. |
+| `POST /devices/claim` | The idempotent sweep that re-homes a device's unattributed rows onto an account. |
+| `DELETE /me` | Applies the client-sent `AccountDeletionChoice`, writes tombstones, calls Apple's revocation endpoint. |
+| `POST /sync` | The batch. Per-item results: `applied`, `duplicate`, `failed`. |
+| `POST /trees` | Adds a community tree; runs the 10 m proximity dedupe. |
+| `POST /photos/begin` | Reserves the photo id, returns a presigned Tigris `PUT`. |
+| `POST /photos/{id}/received` | Closes the 72 h binary grace window. |
+| `DELETE /photos/{id}` | The contributor taking their own photograph back. |
+| `GET /me/grove` | Class R. |
+| `GET /me/grove/species` | Class R. The ring's *denominator* is a city-inventory fact and stays local. |
+| `GET /me/grove/{treeID}/favorite` | Class R, narrowed to one tree (#167). |
+| `GET /me/journal` | Class R, cursor-paged. |
+| `GET /me/map-membership?kind=yours\|favorites` | Class R. |
+| `GET /trees/{id}` | The **community half** of `treeProfile`. R-required: this is the acceptance criterion's last mile. |
+| `GET /photos/{id}` | The photograph a device never wrote. |
+| `POST /operator/photos/{id}/reject` | Operator takedown. Not optional — see below. |
+
+### Three rules the code will not let you break quietly
+
+- **A 401 means the session, never the item.** `APIError.unauthorized.retryable` is `false` and
+  `OutboxRetryPolicy.nextState` reads exactly that, so an `unauthorized` on an *item* fails that
+  item terminally and prints "Sign in to send this" to somebody who is signed in (ERRATA **E261**
+  §3). The session is checked once, before any item is looked at. An item that genuinely is not this
+  identity's to send is `forbidden`.
+- **A photograph cannot be approved without recording why.** R72 ruling 5 requires the
+  approval-reason column *before* the screening pipeline, because `.approved` alone cannot tell
+  "screened and passed" from "auto-approved at launch" and that is unrecoverable after the fact. It
+  is a `CHECK`, not a convention. `blur_applied = false` is the re-screen backlog cursor and is
+  truthfully false on every row in existence.
+- **The takedown ships with the auto-approve.** "Auto-approve without a takedown is the version of
+  this rule that must not ship" (R72 ruling 5). It costs the client nothing: `moderationState` can
+  move backwards and `isPubliclyVisible` is evaluated at render time, so a rejected photograph stops
+  being drawn on every other device at its next read.
+
+## Schema
+
+`server/internal/store/schema.sql`, applied on boot (every statement is `IF NOT EXISTS`).
+
+**It is in neither of the app's two schema-version spaces.** `AppSchema.currentVersion` is the
+writable SQLite database's migration counter and `SeedDatabase.newestKnownSchemaVersion` is the
+published city file's; this is the server's own, it advances independently, and nothing here is a
+migration in either. #158 needs exactly one app-side migration and it is not authored on this
+branch.
+
+Tables: `users`, `devices`, `sessions`, `device_tokens`, `contributions`,
+`anonymized_contributions`, `favorites`, `community_trees`, `photos`.
+
+`contributions` is keyed on `client_uuid` — the PRIMARY KEY, not a unique index beside a surrogate,
+because dedupe is the table's whole job on the write path. `anonymized_contributions` mirrors
+`AppSchema` v13 column for column: a key and a timestamp, and nothing that could re-create the
+joining key `AccountDeletionChoice` refuses a sentinel id for.
+
+## Configuration
+
+Every value comes from the environment and **none has a default**. A missing one refuses the boot,
+which is the only safe answer: a service that started without `SESSION_SIGNING_KEY` would mint
+forgeable sessions and look perfectly healthy doing it.
+
+| Variable | Secret | Notes |
+|---|---|---|
+| `DATABASE_URL` | yes | Set by `fly postgres attach`. |
+| `SESSION_SIGNING_KEY` | yes | ≥ 32 bytes. Signs access tokens. |
+| `APPLE_TEAM_ID` | yes | `iss` of the Apple client secret. |
+| `APPLE_KEY_ID` | yes | `kid` of the Apple client secret. |
+| `APPLE_PRIVATE_KEY` | yes | The `.p8` file's full PEM text, newlines and all. Read as-is; a value whose newlines were flattened to `\n` is also accepted. |
+| `APPLE_BUNDLE_ID` | no | `app.cypress.Cypress`. In `fly.toml` `[env]`, not in secrets — it is in every copy of the app. |
+| `OPERATOR_TOKEN` | yes | Authorizes the takedown route. Required: a takedown with no credential configured is a takedown that cannot be performed. |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_ENDPOINT_URL_S3`, `AWS_REGION`, `BUCKET_NAME` | yes | Already app secrets, set by `flyctl storage create` (see above). |
+
+## Tests
+
+```sh
+go test ./...
+```
+
+The Apple half runs anywhere: token verification uses a locally-minted RSA key and an `httptest`
+JWKS endpoint, never Apple, because a test that called Apple would be measuring Apple's uptime and
+would pass by being skipped on a machine with no network.
+
+**The SQL half needs a real Postgres and skips loudly without one:**
+
+```sh
+CYPRESS_TEST_DATABASE_URL='postgres://…/postgres' go test ./...
+```
+
+There is deliberately no in-memory double behind the store. Claim idempotency, the #174 guard, the
+tombstone and the dedupe are all properties of `WHERE` clauses, `ON CONFLICT` arms, partial unique
+indexes and `CHECK` constraints; a Go map re-implementing them would prove only that the map agrees
+with itself, which is the shape of guard this project has repeatedly caught going green while the
+defect it named was present. Each test binary creates its own database, so packages running in
+parallel do not deadlock each other.
 
 ## Cost
 
@@ -94,11 +201,26 @@ machine on.**
 
 ## Deploy
 
-One command, from this directory:
+**Not from this branch.** Deployment is gated on the orchestrator, and the machine needs secrets and
+a Postgres that do not exist yet. What it will need:
+
+1. **Postgres.** `fly postgres create` (or an unmanaged single-node instance —
+   `docs/investigations/api-hosting.md` §7 flags the choice as open and nothing in this design
+   depends on it), then `fly postgres attach --app cypress-sync`, which sets `DATABASE_URL`.
+2. **Secrets**, in one `fly secrets set`: `SESSION_SIGNING_KEY` (32+ random bytes),
+   `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY`, `OPERATOR_TOKEN`. The `AWS_*` and
+   `BUCKET_NAME` values are already set on the app.
+3. **An Apple `.p8` key** with Sign in with Apple enabled, and the Service ID / key configured in
+   the Apple Developer account. Nothing in this repository can create one.
+4. **The deploy itself**, unchanged from the placeholder's:
 
 ```sh
 flyctl deploy --ha=false --build-arg GIT_SHA=$(git rev-parse HEAD)
 ```
 
-`--ha=false` matters: without it Fly creates a second machine, which is outside this app's
-one-machine budget.
+`--ha=false` still matters: without it Fly creates a second machine, which is outside this app's
+one-machine budget — and the rate limiter is in memory, so a second machine would also halve the
+limit it thinks it is enforcing.
+
+**One thing that is a code change, not a deploy step.** The rate limiter is per-process. If this app
+ever runs more than one machine, it moves to Postgres or Redis first.

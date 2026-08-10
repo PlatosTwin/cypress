@@ -1,9 +1,15 @@
-# PLACEHOLDER — R36 live-layer scaffolding, ticket #158.
+# The sync service (#158, RULINGS R72).
 # One app, one shared-cpu-1x/256MB machine in sjc, scaling to zero when idle.
 app = 'cypress-sync'
 primary_region = 'sjc'
 
 [build]
+
+[env]
+  # Not a secret: the bundle id is in `Cypress.xcodeproj` and in every copy of the app. It lives
+  # here rather than in `fly secrets` so that the one value a reviewer would want to check against
+  # the repo is checkable, and so a secret list holds only things that are actually secret.
+  APPLE_BUNDLE_ID = 'app.cypress.Cypress'
 
 [http_service]
   internal_port = 8080

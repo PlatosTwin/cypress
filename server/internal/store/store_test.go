@@ -321,6 +321,21 @@ func TestClaimRefusesADeviceHeldByAnotherAccount(t *testing.T) {
 // A row unlinked by a deletion has no owner by design. It must not be adoptable by the next person
 // to sign in on this phone — which is the client's `notAnonymized(table)` clause, and is why the
 // tombstone distinguishes "anonymized by a deletion" from "never had an account".
+//
+// ── What red-proofing this actually found, recorded so the next reader does not re-derive it ───
+//
+// Removing `AND anonymized_at IS NULL` from the sweep leaves this test **green**, and that is not
+// the test being weak — it is the invariant being held somewhere better. Anonymization clears
+// `device_id` as well as `user_id`, so an anonymized row never matches `WHERE device_id = $3` in
+// the first place; the predicate is defense in depth over a case the deletion has already made
+// unreachable.
+//
+// It earns its keep the moment the sweep is broadened. Dropping the device scope *and* the
+// predicate together does go red — and it goes red from `contributions_owner`, because setting
+// `user_id` on a row carrying `anonymized_at` satisfies neither arm of that CHECK. So the ordering
+// is: the deletion makes it unreachable, the predicate makes it explicit, and the CHECK makes it
+// unstorable. The assertion below is the backstop for all three, and fires only if every one of
+// them is removed.
 func TestClaimDoesNotAdoptAnonymizedRows(t *testing.T) {
 	store := testStore(t)
 	first := makeUser(t, store, "apple-sub-anon-first")
