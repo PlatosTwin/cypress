@@ -100,7 +100,8 @@ claim, not a filter: nothing is being skipped and the assertion's own message is
 wants. `HittabilityFilterGateTests` (unit suite, `DragGestureGateTests`' reason — it runs on every
 build and every shard, where a gate inside the UI suite could be skipped by the very sharding it
 protects) fails the build if a *filter-position* read reappears, and is calibrated in both
-directions: six real spellings it must catch, five it must leave alone.
+directions: fourteen real spellings it must catch, nine it must leave alone. (It was six and five,
+and the six had no `if` in them — see "Not done, and why".)
 
 **2. Four launch helpers stop inheriting the camera (`CYPRESS_MAP_CAMERA`).** The seam R58's
 `CYPRESS_LOCATION` is the model for, applied to the camera; the design decisions are in
