@@ -42,6 +42,27 @@ photo propagates to all other users"* — is therefore **not** satisfied by step
 claim it is. Step 1 is the seam: the local write is now separable from the send, which is the thing
 that had to be true before anything could be pointed at a server at all.
 
+#### The mistake this reasoning did not prevent, which is why the entry is worth reading
+
+The first draft of the split put the photo-binary block **downstream of the send gate** in the
+drain. Adversarial review found it. With a send sink wired, a drain with no signal committed the
+note and skipped the photograph, and 48 h of that expired the row terminally with the binary still
+staged and nothing in the app holding a reference to it — the quiet loss #158 exists to prevent,
+moved from the JSON half to the photo half. Latent today (`send == nil`), so the suite was green.
+
+**The lesson is that "apply versus send" has three things in it, not two.** The JSON apply, the JSON
+send, and the *photograph's* apply — and the third is easy to file under the wrong heading because
+the method is called `uploadPhoto` and upload sounds like send. It is not: through `LocalAPI` it is
+an ingest into the app container. Anything named for the network but wired to `LocalAPI` is a local
+commit, whatever the verb says. That is the same reading error E261 §2 records for `sync`, made a
+second time, inside the ticket whose whole purpose was to fix it the first time.
+
+Four doc comments asserted the correct invariant while the code did the opposite — CLAUDE.md's "a
+confident comment is where bugs have survived here", exactly. The regression test
+(`OutboxApplySendSplitTests.aFailedSendDoesNotHoldBackThePhotoLocalCommit`) therefore asserts the
+consequence — the apply sink was offered the binary, and the row no longer carries it — rather than
+the shape of the drain, so it survives the phases being rearranged again.
+
 #### The related fact, worth keeping beside it
 
 `markDoneIfComplete` takes `requiringRemoteSend:` as a parameter rather than reading a column,
@@ -49,4 +70,6 @@ because whether a send is owed is a property of the composition root and not of 
 `done` CHECK deliberately does not name `remote_sent`: every outbox row on every installed build is
 locally applied and has never been sent anywhere, so a `done` predicate requiring a send would have
 made the migration reject the rows it was migrating, and would have stranded every queued
-contribution on every phone until a server existed.
+contribution on every phone until a server existed. The parameter has **no default**: the unsafe
+answer is `false`, and a defaulted `false` is a hazard you get by forgetting rather than by
+choosing.
