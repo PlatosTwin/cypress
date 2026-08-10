@@ -764,3 +764,24 @@ defect", with the aggregate tell available immediately rather than over a day: f
 once, all of them the *arrival* wait rather than anything the change touches, on a device a
 neighbouring run had just finished with. It is worth a paragraph because the shape is so close to a
 genuine one — a deep-link seam that stopped resolving would print these exact sentences.
+
+#### The second CI run went red, and not here
+
+Run 31357536798, `ui (3)`, on the same code (the only commit between the two runs is this file):
+
+    AlmanacGroupTapTests.swift:257: error: … testWalkTheNineOpensAMapOfThemAll :
+    XCTAssertTrue failed - the Journal tab draws no “Neighborhood” segment,
+    so screen 12 has no entrance
+
+`Executed 19 tests, with 1 failure`, and **both sweep tests are in the passing 18** —
+`testEveryPushedScreenSaysWhereItIsFirst` in 59.2 s, `testNothingIsAnnouncedTwice` in 139.5 s. So the
+required `gate` is red again on this PR and it is red on a different class: `AlmanacGroupTapTests` is
+unchanged on this branch, runs *before* `DeepLinkSweepTests` in the shard's alphabetical order, and
+passed on run 31353769578 minutes earlier on the same tree.
+
+Its shape is a 30 s wait for `"Neighborhood" Button` that never arrives — the same family as the
+legend failure this entry corrects further up, and the same family main is currently red on
+(31355757575, `ui (1)`, `IdentifyFABReachabilityTests` at line 205). Recorded here because a reader
+who follows this entry's run numbers will find a red `gate` on the run that proves the repair, and
+the two facts have to sit next to each other: `testNothingIsAnnouncedTwice` passed on both CI runs;
+the gate is red for something else.
