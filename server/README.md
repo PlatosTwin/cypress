@@ -131,6 +131,30 @@ trustworthy behind the proxy**: anything reaching the app directly can choose it
 itself in an empty bucket. This is correct for the deployed topology and is a reason not to expose
 the machine on a second, unproxied route.
 
+### The key convention is not uniform, and the non-uniformity is load-bearing
+
+A payload that **reconstructs a client-owned Swift type** speaks that type's synthesized property
+names — camelCase: `distanceM`, `speciesCurrentID`, `checkIns`, `latitude`. Everything else — the
+error envelope, sync results, request bodies — is snake_case.
+
+Do not "fix" this. Swift's `.convertFromSnakeCase` maps `species_current_id` to `speciesCurrentId`,
+which never matches `Tree`'s synthesized `speciesCurrentID`, and because that property is optional
+the mismatch **decodes as nil without throwing**. A uniformly snake_case body would lose fields
+silently. `internal/api/wire.go` carries the full argument and cites the Swift file for every key.
+
+So `GET /me/grove` really does look like this, and it is correct:
+
+```json
+{"tree_uuid": "…", "hero_photo_id": "…", "record": {"visits": 3, "checkIns": 1}}
+```
+
+**Timestamps are RFC3339 at second precision, in UTC.** `JSONDecoder`'s `.iso8601` uses
+`.withInternetDateTime`, which rejects fractional seconds — Go's default `RFC3339Nano` would have
+failed to decode on the client, on every response carrying a date.
+
+`server/testdata/` holds a golden file per mirrored response shape, and its README states what the
+client-side conformance round (#158 step 4) owes them: Swift decode tests reading those exact files.
+
 ### Three rules the code will not let you break quietly
 
 - **A 401 means the session, never the item.** `APIError.unauthorized.retryable` is `false` and
@@ -221,6 +245,22 @@ parallel do not deadlock each other.
 
 **Expected: well under $1/month while idle; ~$2/month ceiling if something ever pins the
 machine on.**
+
+## The Apple revocation queue
+
+`DELETE /me` calls Apple's revocation endpoint (R72 ruling 2). If Apple refuses, the token is parked
+in `pending_apple_revocations` **before** the user row is deleted — otherwise the outage would
+destroy the only credential that could ever satisfy the obligation.
+
+It drains itself: `RunAppleRevocationDrain` retries on boot and every 15 minutes, deletes the row on
+success, and counts attempts on failure. Retention is bounded at **30 days** (`AppleRevocationTTL`),
+after which the row is deleted and an `ERROR` line records that a revocation was abandoned. That
+bound is not tidiness: a parked refresh token, plus the client secret this service mints, exchanges
+at Apple for that person's `sub` and email, so an unbounded queue would be an indefinite identity
+pointer held after a screen that promised erasure.
+
+**If you see `ABANDONED an Apple token revocation` in the logs**, an account was deleted here and
+may still be granted at Apple. That is a real compliance gap and the line is the only record of it.
 
 ## Deploy
 

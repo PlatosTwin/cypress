@@ -243,3 +243,92 @@ func swiftEnumRawValues(t *testing.T, path, name string) []string {
 	}
 	return values
 }
+
+// TestWireTreeCoversEveryTreePropertyAndSpellsThemAsSwiftDoes is M10's standing guard.
+//
+// `Tree` is `Codable` with synthesized keys, so its wire keys **are** its stored property names.
+// This reads them off `Tree.swift` and checks the emitted object against them, so neither the key
+// set nor its spelling is this author's transcription — the failure mode that shipped `lat`/`lon`
+// and would have shipped `species_current_id` decoding as a silent nil.
+func TestWireTreeCoversEveryTreePropertyAndSpellsThemAsSwiftDoes(t *testing.T) {
+	declared := swiftStoredPropertyNames(t, "../../../Cypress/Core/Models/Tree.swift", "Tree")
+	if len(declared) < 15 {
+		t.Fatalf("read %d stored properties from Tree, which is fewer than it has: %v", len(declared), declared)
+	}
+
+	encoded, err := json.Marshal(fixedCandidate().Tree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var emitted map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &emitted); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, property := range declared {
+		if _, found := emitted[property]; !found {
+			t.Errorf("Tree declares %q and wireTree does not emit it; a non-optional property "+
+				"missing throws the whole Tree, and an optional one decodes as a silent nil", property)
+		}
+	}
+	for key := range emitted {
+		if !slices.Contains(declared, key) {
+			t.Errorf("wireTree emits %q, which is not a stored property of Tree", key)
+		}
+	}
+}
+
+// TestSwiftPropertyExtractorIsCalibrated proves the reader against a known answer.
+func TestSwiftPropertyExtractorIsCalibrated(t *testing.T) {
+	specimen := `
+public struct Tree: CoreEntity, SoftDeletable {
+    public let id: UUID
+    /// a doc comment mentioning public var notAProperty: Int
+    public var externalRef: String?
+    public var speciesCurrentID: UUID?
+    public var dbhCityCmRange: IntRange?
+    public let createdAt: Date
+
+    public init(
+        id: UUID = UUID(),
+        externalRef: String? = nil
+    ) {
+        self.id = id
+    }
+
+    public var isDeleted: Bool { deletedAt != nil }
+}
+`
+	path := filepath.Join(t.TempDir(), "specimen.swift")
+	if err := os.WriteFile(path, []byte(specimen), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := swiftStoredPropertyNames(t, path, "Tree")
+	want := []string{"id", "externalRef", "speciesCurrentID", "dbhCityCmRange", "createdAt"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("the extractor read %v, want %v — note it must skip the computed `isDeleted` "+
+			"(a stored property has no `{`) and everything inside `init`", got, want)
+	}
+}
+
+// storedProperty matches `public let x: T` / `public var x: T`, and deliberately not a computed
+// property, whose declaration is followed by `{`.
+var storedProperty = regexp.MustCompile(`(?m)^\s{4}public\s+(?:let|var)\s+(\w+)\s*:\s*[^{\n]+$`)
+
+func swiftStoredPropertyNames(t *testing.T, path, name string) []string {
+	t.Helper()
+	source, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading %s: %v — this guard fails rather than skipping", path, err)
+	}
+	pattern := fmt.Sprintf(`(?s)public struct %s: [^{]*\{(.*?)\n    public init\(`, name)
+	block := regexp.MustCompile(pattern).FindSubmatch(source)
+	if block == nil {
+		t.Fatalf("did not find `public struct %s` with an init in %s", name, path)
+	}
+	var names []string
+	for _, match := range storedProperty.FindAllSubmatch(block[1], -1) {
+		names = append(names, string(match[1]))
+	}
+	return names
+}

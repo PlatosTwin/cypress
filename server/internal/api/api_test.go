@@ -1078,14 +1078,26 @@ func TestProximityConflictCandidatesCarryAWholeTree(t *testing.T) {
 	}
 	// The keys themselves, on the bytes: `Coordinate`'s stored properties are `latitude` and
 	// `longitude`, and no key strategy turns `lat` into `latitude`.
-	for _, key := range []string{`"latitude"`, `"longitude"`, `"distanceM"`, `"verificationState"`} {
-		if !bytes.Contains(second.Body.Bytes(), []byte(key)) {
-			t.Errorf("the body does not carry %s; the client's synthesized CodingKeys expect it", key)
+	// **Every key `Tree` declares, on the bytes.** A Go struct with the right tags proves the
+	// handler agrees with this test author's transcription; the point of listing them here is that
+	// the list is checked against the Swift declaration by
+	// `TestWireTreeCoversEveryTreeProperty` below, so neither side is the author's memory.
+	for _, key := range swiftStoredPropertyNames(t, "../../../Cypress/Core/Models/Tree.swift", "Tree") {
+		if !bytes.Contains(second.Body.Bytes(), []byte(`"`+key+`"`)) {
+			t.Errorf("the body does not carry %q; Tree's synthesized CodingKeys expect exactly that "+
+				"spelling, and no key strategy produces it from a snake_case body", key)
 		}
 	}
-	for _, absent := range []string{`"lat"`, `"lon"`, `"distance_m"`, `"verification_state"`} {
+	for _, key := range []string{`"distanceM"`, `"speciesScientificName"`, `"speciesCommonName"`, `"tell"`} {
+		if !bytes.Contains(second.Body.Bytes(), []byte(key)) {
+			t.Errorf("the body does not carry %s; NearbyTree's synthesized CodingKeys expect it", key)
+		}
+	}
+	for _, absent := range []string{`"lat"`, `"lon"`, `"distance_m"`, `"verification_state"`,
+		`"species_current_id"`, `"neighborhood_id"`, `"created_at"`} {
 		if bytes.Contains(second.Body.Bytes(), []byte(absent)) {
-			t.Errorf("the body still carries %s, which no Swift CodingKey matches", absent)
+			t.Errorf("the body still carries %s, which no Swift CodingKey matches — and because the "+
+				"matching property is optional it would decode as a silent nil rather than throwing", absent)
 		}
 	}
 	if candidate.DistanceM <= 0 || candidate.DistanceM > 10 {
