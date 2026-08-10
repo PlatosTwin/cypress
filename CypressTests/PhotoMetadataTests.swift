@@ -508,7 +508,7 @@ struct PhotoMetadataTests {
 
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID, photoDirectory: photoDirectory)
-        let outbox = OutboxQueue(queue: store.queue, transport: APIOutboxTransport(api: api))
+        let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
 
         let subjectPhoto = try VisitPhotoStaging.write(
             try Self.cameraJPEG(), for: UUID(), shotType: .fullTree

@@ -19,7 +19,7 @@ struct OutboxWifiCountTests {
         let clock = OutboxTestSupport.Clock()
         let store = try await CypressStore.inMemory()
         let transport = OutboxTestSupport.ScriptedTransport(script: script)
-        return (OutboxQueue(queue: store.queue, transport: transport, now: clock.closure), clock)
+        return (OutboxQueue(queue: store.queue, apply: transport, now: clock.closure), clock)
     }
 
     private static func enqueueVisitWithPhoto(on queue: OutboxQueue, at moment: Date) async throws {

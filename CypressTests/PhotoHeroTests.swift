@@ -109,7 +109,7 @@ struct PhotoHeroTests {
     private static func harness() async throws -> (LocalAPI, OutboxQueue) {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: deviceID, photoDirectory: Self.photoDirectory())
-        return (api, OutboxQueue(queue: store.queue, transport: APIOutboxTransport(api: api)))
+        return (api, OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api)))
     }
 
     private static func jpeg(width: Int = 40, height: Int = 60) throws -> Data {

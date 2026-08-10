@@ -45,7 +45,7 @@ struct FavoriteRoundTripTests {
         let url = try #require(InventoryContractTests.seedURL, "no seed database; set CYPRESS_SEED_PATH")
         let store = try await CypressStore.inMemory(seedURL: url)
         let api = LocalAPI(store: store, deviceID: deviceID)
-        let outbox = OutboxQueue(queue: store.queue, transport: APIOutboxTransport(api: api))
+        let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
         // A real standing record out of the shipped inventory, resolved the way `DebugDeepLink`
         // resolves one: nothing here invents a tree id.
         let candidates = try await api.treesNear(

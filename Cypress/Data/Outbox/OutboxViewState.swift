@@ -179,14 +179,14 @@ public struct OutboxSnapshot: Sendable, Equatable {
         // The sentence this count drives is `awaitingWifi(photoCount:)` — "The note is saved. N
         // photos are waiting for wi-fi." Screen 17's footnote makes that sentence a promise, so
         // every clause of it has to be true before the count claims it: the note really is saved
-        // (`jsonSynced`), binaries really are still on the device, the row is still trying rather
+        // (`locallyApplied`), binaries really are still on the device, the row is still trying rather
         // than given up on, and the toggle really is what is holding them. The old predicate
         // asserted none of the four and swept up a visit enqueued a moment ago, and a
         // `validation_failed` row that happened to carry a photo, into a sentence that told the
         // contributor the opposite of what had happened (ERRATA E32).
         let awaitingWifi = syncPhotosOnWifiOnly
             ? records.filter {
-                $0.jsonSynced
+                $0.locallyApplied
                     && !$0.item.photos.isEmpty
                     && ($0.item.state == .pending || $0.item.state == .uploading)
             }

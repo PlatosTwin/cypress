@@ -45,7 +45,12 @@ public struct DataLayer: Sendable {
         // `users` table on device (ERRATA E86). Absent, or an unknown string, reads as `.member`.
         let role = (try await store.appState(.currentUserRole)).flatMap(UserRole.init(rawValue:)) ?? .member
         let api = LocalAPI(store: store, deviceID: deviceID, userID: userID, role: role)
-        let outbox = OutboxQueue(queue: store.queue, transport: APIOutboxTransport(api: api))
+        // Two sinks, and only one of them exists yet (RULINGS R72 §1). `apply` is the local commit:
+        // a contribution is on its tree the moment the drain runs, offline or not. `send` is left
+        // off because there is no server — and it is left off by *omitting an argument*, not by
+        // moving `LocalAPI` across, because moving it would delete the local write while every layer
+        // carried on behaving exactly as written (ERRATA E261 §2).
+        let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
 
         // Anything left `uploading` belongs to a previous launch that was killed mid-drain. It is
         // recovered on the first drain; doing it here as well means the outbox screen shows the

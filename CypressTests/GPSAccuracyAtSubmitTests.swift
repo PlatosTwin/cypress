@@ -97,7 +97,7 @@ struct GPSAccuracyAtSubmitTests {
                 attribution: .anonymous(deviceID: deviceID)
             )
         )
-        let outbox = OutboxQueue(queue: store.queue, transport: APIOutboxTransport(api: api))
+        let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
         return Bench(api: api, outbox: outbox, tree: tree)
     }
 

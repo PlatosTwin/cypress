@@ -5,12 +5,42 @@ import Foundation
 /// Narrower than `CypressAPI` on purpose: the drain's correctness — zero loss, zero duplicates,
 /// the exact backoff schedule — is testable against scripted failures without standing up a store,
 /// a seed, or a photo directory. `APIOutboxTransport` adapts the real API onto it.
+///
+/// **This is the *apply* sink** (RULINGS R72 §1). It is what commits a mutation to this device's
+/// own tables, it runs first, and it runs whether or not there is a network — a contribution is on
+/// its tree the moment the drain runs. The send sink is `OutboxSendSink` below, and the two are
+/// separate types rather than one type used twice because they are not interchangeable: swapping a
+/// remote implementation into this position does not add a network to a local write, it removes the
+/// local write (ERRATA E261 §2).
 public protocol OutboxTransport: Sendable {
     /// `POST /sync`. One result per item, matched on `clientUUID`.
     func sync(_ items: [OutboxItem]) async throws -> [SyncResult]
     /// Uploads one photo binary, with the shot type it was framed as. Gated by the wifi-only
     /// toggle; the JSON above never is.
     func uploadPhoto(_ photo: OutboxPhoto, for item: OutboxItem) async throws
+}
+
+/// The **send** sink: the retryable half of a drain, and the half `OutboxRetryPolicy` was written
+/// for (RULINGS R72 §1, spec §6.1).
+///
+/// Injected, and `nil` on every build shipped so far — there is no server yet, and with none wired
+/// the queue's observable behavior is exactly what it was before the split. Nothing in this PR
+/// wires `RemoteAPI` into this position.
+///
+/// **It carries `sync` and deliberately not `uploadPhoto`, which is a scope statement and not an
+/// omission.** The apply sink's photo upload is a *move*: `LocalAPI.uploadPhoto` strips the
+/// metadata into the app container and then removes the staged file, so by the time a send sink
+/// could run there is nothing at `OutboxPhoto.path` left to send, and `beginPhotoUpload` mints a
+/// fresh `photos` row per call, so re-running the local half to keep the bytes around would
+/// duplicate the record. Sending binaries needs per-photo completion tracking and a source the
+/// remote can still read — its own design, its own migration and its own ticket. The protocol has
+/// no photo method so that a future author has to add one rather than inherit a silent no-op, which
+/// is the failure ERRATA E125 records paying for once already.
+public protocol OutboxSendSink: Sendable {
+    /// `POST /sync` against a real server. One result per item, matched on `clientUUID`.
+    /// `duplicate` is a success here for the same reason it is on the apply side: the server dedupes
+    /// on `client_uuid` exactly as the local unique index does.
+    func sync(_ items: [OutboxItem]) async throws -> [SyncResult]
 }
 
 /// What one drain pass did. Returned for tests and for the outbox screen's summary line.
@@ -21,6 +51,9 @@ public struct DrainReport: Sendable, Equatable {
     public var failedTerminally = 0
     /// Items whose JSON went but whose photos are waiting for wi-fi.
     public var awaitingWifi = 0
+    /// Items a send sink accepted on this pass. Zero whenever no send sink is wired, which is what
+    /// makes "the local write still happened" separable from "it went somewhere" in a test.
+    public var sent = 0
 }
 
 /// The local-first mutation queue.
@@ -29,10 +62,25 @@ public struct DrainReport: Sendable, Equatable {
 /// written here first and only then attempted, which is true even though `LocalAPI` is on the other
 /// side today. Nothing here disappears silently — an item that cannot sync says so, says why, and
 /// waits (screen 17).
+///
+/// # Two sinks, in order
+///
+/// A drain does two things that used to look like one (ERRATA E261 §2). **Apply** commits the
+/// mutation to this device's own tables; it goes first and it is not conditional on anything, which
+/// is why a visit saved in a park is on its tree before the phone has seen a network again.
+/// **Send** forwards it to a server; it is injectable, it is `nil` on every build shipped so far,
+/// and it is the half the 48 h backoff exists for. An item that fails to apply is never offered to
+/// the send sink, and an item the send sink refuses keeps the local write it already has.
+///
+/// With no send sink wired every observable behavior of this type is what it was before the split:
+/// the same states, the same counts, the same screen 17.
 public actor OutboxQueue {
     private let queue: DatabaseQueue
     private let store = OutboxStore()
-    private let transport: OutboxTransport
+    /// Commits the mutation to this device. First, unconditional, offline or not.
+    private let apply: any OutboxTransport
+    /// Sends it on to a server, when there is one. `nil` on every build shipped so far.
+    private let send: (any OutboxSendSink)?
     private let now: @Sendable () -> Date
     private var observers: [UUID: @Sendable () async -> Void] = [:]
     private var isDraining = false
@@ -45,9 +93,22 @@ public actor OutboxQueue {
     /// today", so a day is the shortest span that keeps that section honest.
     public static let completedRetention: TimeInterval = 24 * 60 * 60
 
-    public init(queue: DatabaseQueue, transport: OutboxTransport, now: @escaping @Sendable () -> Date = { Date() }) {
+    /// - Parameters:
+    ///   - apply: the sink that commits a mutation to this device's own tables. Named `apply` and
+    ///     not `transport` on purpose: the one-line change that looks like the whole job is
+    ///     replacing this value with a remote implementation, which would delete the local write
+    ///     without any layer reporting an error (ERRATA E261 §2).
+    ///   - send: the sink that forwards it to a server, when one exists. `nil` today, and with it
+    ///     `nil` the drain behaves exactly as it did before the split.
+    public init(
+        queue: DatabaseQueue,
+        apply: any OutboxTransport,
+        send: (any OutboxSendSink)? = nil,
+        now: @escaping @Sendable () -> Date = { Date() }
+    ) {
         self.queue = queue
-        self.transport = transport
+        self.apply = apply
+        self.send = send
         self.now = now
     }
 
@@ -142,33 +203,85 @@ public actor OutboxQueue {
             return report
         }
 
-        // --- Phase A: the JSON items. Batched, because §6's /sync is a batch endpoint, and
-        // unconditional, because the wifi toggle does not apply to them.
-        let needingJSON = live.filter { !$0.jsonSynced }
-        var resultsByClientUUID: [UUID: SyncResult] = [:]
-        var transportFailure: Error?
+        // --- Phase A: apply, batched, because §6's /sync is a batch endpoint, and unconditional,
+        // because neither the wifi toggle nor the absence of a network applies to it. This is the
+        // local commit: after it, the contribution is on its tree (RULINGS R72 §1).
+        let needingApply = live.filter { !$0.locallyApplied }
+        var applyResults: [UUID: SyncResult] = [:]
+        var applyFailure: Error?
 
-        if !needingJSON.isEmpty {
+        if !needingApply.isEmpty {
             do {
-                let results = try await transport.sync(needingJSON.map(\.item))
-                for result in results { resultsByClientUUID[result.clientUUID] = result }
+                let results = try await apply.sync(needingApply.map(\.item))
+                for result in results { applyResults[result.clientUUID] = result }
             } catch {
-                transportFailure = error
+                applyFailure = error
             }
         }
 
-        // --- Phase B: apply, per item, in FIFO order.
+        // --- Phase B: settle the apply half, per item, in FIFO order. An item that could not be
+        // applied drops out here and is not offered to the send sink: nothing may be sent that this
+        // device has not committed, which is also `AppSchema` v15's second CHECK.
+        var applied: [OutboxStore.Record] = []
         for record in live {
+            guard !record.locallyApplied else {
+                applied.append(record)
+                continue
+            }
             let settledAt = now()
 
-            if !record.jsonSynced {
-                if let transportFailure {
-                    try await recordFailure(record, error: transportFailure, at: settledAt, report: &report)
+            if let applyFailure {
+                try await recordFailure(record, error: applyFailure, at: settledAt, report: &report)
+                continue
+            }
+            guard let result = applyResults[record.item.clientUUID] else {
+                // A batch that came back without an entry for an item we sent is a protocol
+                // break, not a success. Treating it as a failure keeps the item alive.
+                try await recordFailure(record, error: APIError.serverError, at: settledAt, report: &report)
+                continue
+            }
+            guard result.isSuccess else {
+                try await recordFailure(
+                    record,
+                    error: result.error ?? APIError.serverError,
+                    at: settledAt,
+                    report: &report
+                )
+                continue
+            }
+            try await queue.write { connection in
+                try store.markLocallyApplied(record.id, at: settledAt, connection: connection)
+            }
+            applied.append(record)
+        }
+
+        // --- Phase C: send, batched, and only when a send sink is wired. With none, this is skipped
+        // entirely and every row below settles on the apply result alone, which is the behavior that
+        // shipped.
+        var sendResults: [UUID: SyncResult] = [:]
+        var sendFailure: Error?
+        if let send {
+            let needingSend = applied.filter { !$0.remoteSent }
+            if !needingSend.isEmpty {
+                do {
+                    let results = try await send.sync(needingSend.map(\.item))
+                    for result in results { sendResults[result.clientUUID] = result }
+                } catch {
+                    sendFailure = error
+                }
+            }
+        }
+
+        // --- Phase D: settle the send half and the binaries, per item, in FIFO order.
+        for record in applied {
+            let settledAt = now()
+
+            if send != nil, !record.remoteSent {
+                if let sendFailure {
+                    try await recordFailure(record, error: sendFailure, at: settledAt, report: &report)
                     continue
                 }
-                guard let result = resultsByClientUUID[record.item.clientUUID] else {
-                    // A batch that came back without an entry for an item we sent is a protocol
-                    // break, not a success. Treating it as a failure keeps the item alive.
+                guard let result = sendResults[record.item.clientUUID] else {
                     try await recordFailure(record, error: APIError.serverError, at: settledAt, report: &report)
                     continue
                 }
@@ -182,8 +295,9 @@ public actor OutboxQueue {
                     continue
                 }
                 try await queue.write { connection in
-                    try store.markJSONSynced(record.id, at: settledAt, connection: connection)
+                    try store.markRemotelySent(record.id, at: settledAt, connection: connection)
                 }
+                report.sent += 1
             }
 
             // --- Photo binaries.
@@ -204,7 +318,9 @@ public actor OutboxQueue {
                 var photoFailure: Error?
                 for photo in record.item.photos {
                     do {
-                        try await transport.uploadPhoto(photo, for: record.item)
+                        // The apply sink only. `OutboxSendSink` carries no photo method and says
+                        // why: the staged file is consumed by this call.
+                        try await apply.uploadPhoto(photo, for: record.item)
                         try await queue.write { connection in
                             try store.removePhoto(atPath: photo.path, from: record.id, at: settledAt, connection: connection)
                         }
@@ -220,7 +336,12 @@ public actor OutboxQueue {
             }
 
             try await queue.write { connection in
-                try store.markDoneIfComplete(record.id, at: settledAt, connection: connection)
+                try store.markDoneIfComplete(
+                    record.id,
+                    requiringRemoteSend: send != nil,
+                    at: settledAt,
+                    connection: connection
+                )
             }
             report.synced += 1
         }
@@ -385,7 +506,12 @@ public actor OutboxQueue {
     }
 }
 
-/// Adapts a `CypressAPI` onto `OutboxTransport`.
+/// Adapts a `CypressAPI` onto `OutboxTransport`, the **apply** sink.
+///
+/// In the shipping composition root the API behind it is `LocalAPI`, and that is what makes this
+/// the local commit rather than a network call. It deliberately does not conform to
+/// `OutboxSendSink`: a type that satisfied both would let one value be wired into both positions,
+/// which is the confusion the split exists to end.
 public struct APIOutboxTransport: OutboxTransport {
     private let api: any CypressAPI
 

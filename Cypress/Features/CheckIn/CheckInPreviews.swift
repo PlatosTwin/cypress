@@ -97,7 +97,7 @@ enum CheckInPreviewFixtures {
 
     static func outbox() -> OutboxQueue {
         // In-memory and unmigrated: the previews draw the card, they do not save from it.
-        OutboxQueue(queue: try! DatabaseQueue.inMemory(), transport: CheckInPreviewTransport())
+        OutboxQueue(queue: try! DatabaseQueue.inMemory(), apply: CheckInPreviewTransport())
     }
 
     @MainActor

@@ -62,7 +62,7 @@ struct PrivateReminderTests {
     func savesWithoutAnAccount() async throws {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
-        let outbox = OutboxQueue(queue: store.queue, transport: APIOutboxTransport(api: api))
+        let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
         let tree = try await Self.makeTree(api: api)
 
         // Exactly what screen 06 hands the composition root.
@@ -94,7 +94,7 @@ struct PrivateReminderTests {
     func doubleTapIsOneReminder() async throws {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
-        let outbox = OutboxQueue(queue: store.queue, transport: APIOutboxTransport(api: api))
+        let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
         let tree = try await Self.makeTree(api: api)
 
         // One draft, two taps — the id is minted per selection, which is what makes the second tap a
@@ -141,7 +141,7 @@ struct PrivateReminderTests {
         do {
             let store = try await CypressStore.open(databaseURL: databaseURL, seedURL: nil)
             let api = LocalAPI(store: store, deviceID: Self.deviceID)
-            let outbox = OutboxQueue(queue: store.queue, transport: APIOutboxTransport(api: api))
+            let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
             let tree = try await Self.makeTree(api: api)
             treeID = tree.id
 
@@ -163,7 +163,7 @@ struct PrivateReminderTests {
         do {
             let store = try await CypressStore.open(databaseURL: databaseURL, seedURL: nil)
             let api = LocalAPI(store: store, deviceID: Self.deviceID)
-            let outbox = OutboxQueue(queue: store.queue, transport: APIOutboxTransport(api: api))
+            let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
 
             let afterRelaunch = try await api.privateReminders()
             #expect(afterRelaunch.map(\.id) == [saved], "the applied reminder did not survive relaunch")
@@ -248,7 +248,7 @@ struct PrivateReminderTests {
 
         // The new vocabulary is storable and the old one still is.
         try connection.execute("""
-            INSERT INTO outbox (id, kind, client_uuid, payload, photo_paths, state, json_synced,
+            INSERT INTO outbox (id, kind, client_uuid, payload, photo_paths, state, local_applied,
                 window_started_at, created_at, updated_at)
             VALUES ('\(UUID().uuidString)','private_reminder','\(UUID().uuidString)','{}','[]','pending',0,
                 '\(now)','\(now)','\(now)')
@@ -280,7 +280,7 @@ struct PrivateReminderTests {
     func claimDeviceAdoptsIdempotently() async throws {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
-        let outbox = OutboxQueue(queue: store.queue, transport: APIOutboxTransport(api: api))
+        let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
         let tree = try await Self.makeTree(api: api)
         let other = try await Self.makeTree(api: api, at: -122.40)
 

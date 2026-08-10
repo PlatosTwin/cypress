@@ -153,7 +153,7 @@ enum VisitPreviewFixtures {
     /// An unmigrated in-memory queue — the previews draw the screens, they do not save from them.
     /// Screens 02, 04 and 18 read rather than write, so nothing here ever hits the `outbox` table.
     static func outbox() -> OutboxQueue {
-        OutboxQueue(queue: try! DatabaseQueue.inMemory(), transport: VisitPreviewTransport())
+        OutboxQueue(queue: try! DatabaseQueue.inMemory(), apply: VisitPreviewTransport())
     }
 
     /// A *migrated* queue, for the one fixture that actually enqueues — `receipt()`. The screen-18
@@ -162,7 +162,7 @@ enum VisitPreviewFixtures {
     /// is there; nothing is seeded, because a receipt is a write and not a read.
     static func migratedOutbox() async throws -> OutboxQueue {
         let store = try await CypressStore.inMemory()
-        return OutboxQueue(queue: store.queue, transport: VisitPreviewTransport())
+        return OutboxQueue(queue: store.queue, apply: VisitPreviewTransport())
     }
 
     // ── 02 ────────────────────────────────────────────────────────────────────────────────────

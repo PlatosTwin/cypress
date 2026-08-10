@@ -74,7 +74,7 @@ struct ModerationTests {
     private static func harness(role: UserRole) async throws -> (LocalAPI, OutboxQueue) {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: deviceID, role: role)
-        let outbox = OutboxQueue(queue: store.queue, transport: APIOutboxTransport(api: api))
+        let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
         return (api, outbox)
     }
 

@@ -53,7 +53,7 @@ enum OutboxPreviewFixtures {
         failCount: Int = 0,
         reason: String? = nil,
         code: APIError? = nil,
-        jsonSynced: Bool = false,
+        locallyApplied: Bool = false,
         createdAt: Date,
         updatedAt: Date? = nil,
         sequence: Int64
@@ -73,7 +73,8 @@ enum OutboxPreviewFixtures {
         return OutboxStore.Record(
             sequence: sequence,
             item: item,
-            jsonSynced: jsonSynced,
+            locallyApplied: locallyApplied,
+            remoteSent: false,
             windowStartedAt: createdAt,
             nextAttemptAt: state == .pending ? createdAt.addingTimeInterval(30) : nil
         )
@@ -173,7 +174,7 @@ enum OutboxPreviewFixtures {
                 OutboxPhoto(path: "/tmp/cypress-preview-5.jpg", shotType: .leaf)
             ],
             reason: OutboxFailureReason.awaitingWifi(photoCount: 3),
-            jsonSynced: true,
+            locallyApplied: true,
             createdAt: at(9, 30),
             sequence: 5
         )
@@ -185,7 +186,7 @@ enum OutboxPreviewFixtures {
         record(
             .visit(Visit(treeID: ginkgoID, attribution: attribution, gpsAccuracyM: 5, capturedAt: at(9, 50))),
             state: .done,
-            jsonSynced: true,
+            locallyApplied: true,
             createdAt: at(9, 50),
             updatedAt: at(9, 56),
             sequence: 6
@@ -202,7 +203,7 @@ enum OutboxPreviewFixtures {
                 actions: [.watered]
             )),
             state: .done,
-            jsonSynced: true,
+            locallyApplied: true,
             createdAt: at(9, 38),
             updatedAt: at(9, 41),
             sequence: 7

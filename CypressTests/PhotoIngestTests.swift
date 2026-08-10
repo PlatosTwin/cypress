@@ -147,7 +147,7 @@ struct PhotoIngestTests {
 
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID, photoDirectory: photoDirectory)
-        let outbox = OutboxQueue(queue: store.queue, transport: APIOutboxTransport(api: api))
+        let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
 
         // No seed here, so the subject is a community add — the same path screen 02 takes when the
         // tree is not in the inventory.

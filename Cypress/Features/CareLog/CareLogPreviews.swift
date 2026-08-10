@@ -74,7 +74,7 @@ enum CareLogPreviewFixtures {
 
     static func outbox() -> OutboxQueue {
         // In-memory and unmigrated: the previews draw the sheet, they do not save from it.
-        OutboxQueue(queue: try! DatabaseQueue.inMemory(), transport: CareLogPreviewTransport())
+        OutboxQueue(queue: try! DatabaseQueue.inMemory(), apply: CareLogPreviewTransport())
     }
 
     @MainActor
